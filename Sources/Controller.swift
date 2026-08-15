@@ -273,7 +273,7 @@ final class PromptController: NSObject, NSWindowDelegate {
         // y_fraction refers to the top of the *card*, not the top of the window, so changing the
         // mascot's height never pushes the input line somewhere else.
         let cardTop = f.maxY - f.height * Config.shared.yFraction
-        let windowTop = cardTop + (Style.mascotH - Style.mascotFootInset - Style.mascotOverlap) + Style.mascotTopPad
+        let windowTop = cardTop + (mascot.boxSize.height - mascot.footInset - mascot.overlap) + Style.mascotTopPad
         panel.setFrameOrigin(NSPoint(x: round(x), y: round(windowTop - h)))
     }
 
@@ -391,7 +391,7 @@ final class PromptController: NSObject, NSWindowDelegate {
         let visibleRows = listOpen ? min(rows.count, 9) : 0
         let listH = visibleRows > 0 ? CGFloat(visibleRows) * Style.rowHeight + Style.listPadV * 2 : 0
         let cardH = inputH + (listH > 0 ? listH + 1 : 0) + 1 + Style.hintHeight
-        let total = cardH + (Style.mascotH - Style.mascotFootInset - Style.mascotOverlap) + Style.mascotTopPad
+        let total = cardH + (mascot.boxSize.height - mascot.footInset - mascot.overlap) + Style.mascotTopPad
 
         var f = panel.frame
         let top = f.maxY
@@ -405,9 +405,10 @@ final class PromptController: NSObject, NSWindowDelegate {
                                             cornerWidth: Style.corner, cornerHeight: Style.corner,
                                             transform: nil)
         card.frame = cardHost.bounds
-        mascot.frame = NSRect(x: (W - Style.mascotW) / 2,
-                              y: cardH - Style.mascotOverlap - Style.mascotFootInset,
-                              width: Style.mascotW, height: Style.mascotH)
+        let box = mascot.boxSize
+        mascot.frame = NSRect(x: (W - box.width) / 2,
+                              y: cardH - mascot.overlap - mascot.footInset,
+                              width: box.width, height: box.height)
         // The glow lines up with the sprite, not the view — the view is larger (that is the jump room)
         let sr = mascot.spriteRect
         let side = sr.width + Style.glowInset * 2
