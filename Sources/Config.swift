@@ -8,7 +8,9 @@ final class Config {
     var yFraction: CGFloat = 0.30      // where the panel top sits, as a fraction of screen height
     var width: CGFloat = 720
     var hotKey = "option+space"
-    /// The hotkey only fires while this app is frontmost. Empty string means global.
+    /// The hotkey only fires while one of these apps is frontmost. Comma-separated bundle
+    /// ids; empty string means global. More than one matters now that tmux lets Claude Code
+    /// run under any terminal — an iTerm2-only scope would leave those users without a key.
     /// Done in-app rather than handed to a hotkey utility: registering globally takes ⌥Space away
     /// from every other app, while registering per-frontmost leaves them exactly as they were.
     var scopeApp = "com.googlecode.iterm2"
@@ -16,6 +18,9 @@ final class Config {
     var language = "auto"
     /// Which mascot pack to draw. Files live in ~/.config/clawdline/mascots/<name>.json
     var mascot = "clawd"
+    /// Where tmux lives. Apps do not inherit a login shell, so PATH almost never has it.
+    /// Empty means "look in the usual places".
+    var tmuxPath = ""
     var lastTargetID: String?
     var history: [String] = []
 
@@ -34,6 +39,7 @@ final class Config {
         if let v = obj["scope_app"] as? String { scopeApp = v }
         if let v = obj["language"] as? String, !v.isEmpty { language = v }
         if let v = obj["mascot"] as? String, !v.isEmpty { mascot = v }
+        if let v = obj["tmux_path"] as? String { tmuxPath = v }
         if let v = obj["last_target_id"] as? String { lastTargetID = v }
         if let v = obj["history"] as? [String] { history = v }
     }
@@ -46,6 +52,7 @@ final class Config {
             "scope_app": scopeApp,
             "language": language,
             "mascot": mascot,
+            "tmux_path": tmuxPath,
             "last_target_id": lastTargetID as Any,
             "history": Array(history.suffix(60)),
         ]

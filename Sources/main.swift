@@ -59,7 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         let mine = Bundle.main.bundleIdentifier ?? ""
-        let want = front == scope || front == mine || PromptController.shared.isVisible
+        let allowed = scope.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        let want = allowed.contains(front) || front == mine || PromptController.shared.isVisible
 
         if want, !hotKeyActive {
             applyHotKey()
@@ -129,7 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "send":
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let text = items.first(where: { $0.name == "text" })?.value ?? ""
-            PromptController.shared.sendDirect(text)
+            PromptController.shared.sendDirect(text, target: items.first(where: { $0.name == "target" })?.value)
         case "snapshot":
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let path = items.first(where: { $0.name == "path" })?.value ?? ""

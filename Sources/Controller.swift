@@ -460,12 +460,12 @@ final class PromptController: NSObject, NSWindowDelegate {
         scanning = targets.isEmpty
         updateTargetLabel()
         DispatchQueue.global(qos: .userInitiated).async {
-            let snap = ITerm.snapshot()
+            let snap = Targets.snapshot()
             DispatchQueue.main.async { self.apply(snap) }
         }
     }
 
-    private func apply(_ snap: ITerm.Snapshot) {
+    private func apply(_ snap: Targets.Snapshot) {
         scanning = false
         lastKnownCurrentID = snap.currentID
         var list = snap.claudeSessions
@@ -667,7 +667,7 @@ final class PromptController: NSObject, NSWindowDelegate {
         mascot.play("cheer")
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let err = ITerm.send(text, to: target.id)
+            let err = Targets.send(text, to: target)
             guard let err else { return }
             DispatchQueue.main.async { self.restoreAfterFailure(text: text, error: err) }
         }
@@ -687,21 +687,24 @@ final class PromptController: NSObject, NSWindowDelegate {
     /// Send a string to the current target without opening the panel.
     /// Used by clawdline://send?text=… so external tools (Shortcuts, Stream Deck, scripts) can push
     /// text in — and so "does the whole path work" can be verified with nobody at the keyboard.
-    func sendDirect(_ text: String) {
+    func sendDirect(_ text: String, target wanted: String? = nil) {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return }
         DispatchQueue.global(qos: .userInitiated).async {
-            let snap = ITerm.snapshot()
+            let snap = Targets.snapshot()
             var list = snap.claudeSessions
             if list.isEmpty { list = snap.sessions }
-            let target = list.first(where: { $0.id == snap.currentID })
+            // An explicit target is searched across every session, not just the Claude ones:
+            // naming one means you know what you are doing.
+            let target = snap.sessions.first(where: { $0.id == wanted })
+                ?? list.first(where: { $0.id == snap.currentID })
                 ?? list.first(where: { $0.id == Config.shared.lastTargetID })
                 ?? list.first
             guard let target else {
                 Log.write("sendDirect: no target (\(snap.error ?? "the list was empty"))")
                 return
             }
-            let err = ITerm.send(body, to: target.id)
+            let err = Targets.send(body, to: target)
             Log.write("sendDirect → \(target.label): \(err ?? "ok")")
         }
     }
@@ -917,6 +920,6 @@ final class PromptController: NSObject, NSWindowDelegate {
 
     func revealCurrentTarget() {
         guard let t = currentTarget else { return }
-        ITerm.reveal(t.id)
+        Targets.reveal(t)
     }
 }
