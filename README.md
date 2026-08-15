@@ -61,6 +61,7 @@ Press <kbd>⌥</kbd><kbd>Space</kbd> in iTerm2, type, press <kbd>Enter</kbd>.
 | <kbd>⌘</kbd><kbd>K</kbd> | open the session list |
 | <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>9</kbd> | jump straight to a session |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | history, when the field is empty |
+| <kbd>⌘</kbd><kbd>M</kbd> | browse / switch mascots |
 | <kbd>⌘</kbd><kbd>D</kbd> | make the mascot dance |
 | <kbd>Esc</kbd> | close |
 
@@ -80,10 +81,6 @@ that will not tell you where the text goes is worse than no prompt box.
 
 ## Bring your own mascot
 
-<div align="center">
-<img src="docs/assets/dance.gif" width="520" alt="The mascot dancing on the prompt bar">
-</div>
-
 The character on top of the bar is **data, not code**. One JSON file holds the pixel grid, the
 palette, every pose and every animation, so replacing it never means forking this repo.
 
@@ -93,15 +90,35 @@ palette, every pose and every animation, so replacing it never means forking thi
 
 Edit it, press <kbd>⌥</kbd><kbd>Space</kbd>, and the change is on screen. No rebuild.
 
-The intended way to make one is to let Claude Code do it. Save a reference image, then:
+### Browse and switch
 
-> Here is a reference image: `~/Downloads/chiikawa.gif`
+<div align="center">
+<img src="docs/assets/picker.png" width="620" alt="The mascot picker, listing clawd and mochi">
+</div>
+
+<kbd>⌘</kbd><kbd>M</kbd> lists every pack you have. Arrow keys **preview as you move** — the
+character on the bar changes while the list is still open, so you pick by looking rather than
+by reading names. <kbd>⌘</kbd><kbd>1</kbd>–<kbd>⌘</kbd><kbd>9</kbd> jumps straight to one, and
+the menu bar ✳ has the same list.
+
+Two ship with the app. [**docs/gallery.md**](docs/gallery.md) is where more get posted:
+
+<div align="center">
+<img src="docs/assets/dance.gif" width="420" alt="clawd">
+<img src="docs/assets/mochi-dance.gif" width="420" alt="mochi">
+</div>
+
+### Make one
+
+The intended way is to let Claude Code do it. Save a reference image, then:
+
+> Here is a reference image: `~/Downloads/my-character.gif`
 >
 > Make it into a Clawdline mascot pack. The format is in `docs/mascots.md`, and
 > `~/.config/clawdline/mascots/clawd.json` is a working example. Grid no larger than 20×16.
 > Put the feet on the bottom row so it stands on the bar. Write the five routines: `pop`,
 > `idle`, `typing`, `dance`, `cheer`. Save it as
-> `~/.config/clawdline/mascots/chiikawa.json` and point the config at it.
+> `~/.config/clawdline/mascots/my-character.json` and point the config at it.
 >
 > Then check your work: run
 > `open "clawdline://snapshot?path=/tmp/m.png&routine=dance&t=0.3"`, look at the PNG, and fix
@@ -112,7 +129,9 @@ routine to a PNG **without needing Screen Recording permission**, so the agent c
 drew and iterate. Pixel art written blind comes out as a blob.
 
 Full format reference, the five routine triggers, and notes on what reads well at this size:
-**[docs/mascots.md](docs/mascots.md)**.
+**[docs/mascots.md](docs/mascots.md)**. Packs are pure data — a grid of characters, colours and
+numbers — so one cannot execute anything; the worst a bad one does is refuse to load and say
+why. `tools/validate-pack.py` checks a pack, and CI runs it on every pull request.
 
 ## How it works
 

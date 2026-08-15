@@ -16,6 +16,7 @@ protocol Copy {
     var hintNewline: String { get }
     var hintSwitch: String { get }
     var hintList: String { get }
+    var hintMascot: String { get }
 
     // Target state
     var scanning: String { get }
@@ -29,6 +30,7 @@ protocol Copy {
     // Menu bar
     var menuOpen: String { get }
     var menuReveal: String { get }
+    var menuMascot: String { get }
     var menuLogin: String { get }
     var menuEditConfig: String { get }
     var menuReload: String { get }
@@ -48,6 +50,7 @@ struct English: Copy {
     let hintNewline = "new line"
     let hintSwitch = "switch"
     let hintList = "list"
+    let hintMascot = "mascot"
 
     let scanning = "Scanning…"
     let noSession = "No Claude Code session found"
@@ -59,6 +62,7 @@ struct English: Copy {
 
     let menuOpen = "Open prompt bar"
     let menuReveal = "Jump to target tab"
+    let menuMascot = "Mascot"
     let menuLogin = "Launch at login"
     let menuEditConfig = "Edit config…"
     let menuReload = "Reload config"
@@ -87,6 +91,7 @@ struct TraditionalChinese: Copy {
     let hintNewline = "換行"
     let hintSwitch = "換分頁"
     let hintList = "清單"
+    let hintMascot = "換角色"
 
     let scanning = "掃描中⋯"
     let noSession = "找不到在跑 Claude Code 的分頁"
@@ -98,6 +103,7 @@ struct TraditionalChinese: Copy {
 
     let menuOpen = "打開輸入框"
     let menuReveal = "跳到目標分頁"
+    let menuMascot = "吉祥物"
     let menuLogin = "開機時啟動"
     let menuEditConfig = "編輯設定⋯"
     let menuReload = "重新載入設定"

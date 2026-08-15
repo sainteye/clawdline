@@ -90,6 +90,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         reveal.target = self
         menu.addItem(reveal)
 
+        // Browsing beats editing a config file: the submenu is how you find out what you have.
+        let mascot = NSMenuItem(title: L.t.menuMascot, action: nil, keyEquivalent: "")
+        mascot.tag = 200
+        mascot.submenu = buildMascotMenu()
+        menu.addItem(mascot)
+
         menu.addItem(.separator())
 
         let login = NSMenuItem(title: L.t.menuLogin, action: #selector(toggleLogin), keyEquivalent: "")
@@ -129,7 +135,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let path = items.first(where: { $0.name == "path" })?.value ?? ""
             let routine = items.first(where: { $0.name == "routine" })?.value
             let t = items.first(where: { $0.name == "t" })?.value.flatMap(Double.init)
-            if !path.isEmpty { PromptController.shared.snapshot(to: path, routine: routine, at: t) }
+            let list = items.first(where: { $0.name == "list" })?.value
+            if !path.isEmpty { PromptController.shared.snapshot(to: path, routine: routine, at: t, list: list) }
         case "filmstrip":
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             func q(_ n: String) -> String? { items.first(where: { $0.name == n })?.value }
@@ -143,6 +150,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         default:
             PromptController.shared.show()
         }
+    }
+
+    private func buildMascotMenu() -> NSMenu {
+        let sub = NSMenu()
+        for name in PromptController.shared.mascotNamesForMenu {
+            let item = NSMenuItem(title: name, action: #selector(chooseMascot(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = name
+            item.state = (name == Config.shared.mascot) ? .on : .off
+            sub.addItem(item)
+        }
+        if sub.items.isEmpty {
+            sub.addItem(NSMenuItem(title: MascotPack.userDirectory.path, action: nil, keyEquivalent: ""))
+        }
+        return sub
+    }
+
+    @objc private func chooseMascot(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        PromptController.shared.selectMascot(named: name)
+        statusItem.menu = buildMenu()
     }
 
     @objc private func openPanel() { PromptController.shared.show() }
@@ -185,6 +213,7 @@ extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         menu.item(at: 0)?.title = "\(L.t.menuOpen)   \(HotKey.display(Config.shared.hotKey))"
         menu.item(at: 1)?.title = "\(L.t.menuReveal)   \(PromptController.shared.targetSummary)"
+        menu.item(withTag: 200)?.submenu = buildMascotMenu()
         menu.item(withTag: 100)?.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
     }
 }

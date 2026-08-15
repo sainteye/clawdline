@@ -58,6 +58,7 @@ app bundle。需要 Xcode command line tools。
 | <kbd>⌘</kbd><kbd>K</kbd> | 展開 session 清單 |
 | <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>9</kbd> | 直接跳到第 N 個 |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | 輸入框空的時候翻歷史 |
+| <kbd>⌘</kbd><kbd>M</kbd> | 瀏覽／切換吉祥物 |
 | <kbd>⌘</kbd><kbd>D</kbd> | 叫吉祥物跳舞 |
 | <kbd>Esc</kbd> | 關掉 |
 
@@ -76,10 +77,6 @@ Clawdline 列出所有 iTerm2 session，用 `ps` 比對每個的 TTY，留下真
 
 ## 換上你自己的吉祥物
 
-<div align="center">
-<img src="docs/assets/dance.gif" width="520" alt="吉祥物在輸入條上跳舞">
-</div>
-
 輸入條上那隻是**資料，不是程式**。一份 JSON 檔裝著像素網格、色盤、每一個姿勢與每一段動畫，
 所以換一隻完全不必 fork。
 
@@ -89,14 +86,33 @@ Clawdline 列出所有 iTerm2 session，用 `ps` 比對每個的 TTY，留下真
 
 改完按 <kbd>⌥</kbd><kbd>Space</kbd> 就看得到，不用重新編譯。
 
-設計上，做這件事的方式是交給 Claude Code。存一張參考圖，然後說：
+### 瀏覽與快速切換
 
-> 這是參考圖：`~/Downloads/chiikawa.gif`
+<div align="center">
+<img src="docs/assets/picker.png" width="620" alt="吉祥物挑選器，列出 clawd 與 mochi">
+</div>
+
+<kbd>⌘</kbd><kbd>M</kbd> 列出你有的每一份 pack，上下鍵**邊移動邊預覽**——清單還開著，
+輸入條上那隻就已經換了，所以你是用看的挑，不是用讀名字挑。
+<kbd>⌘</kbd><kbd>1</kbd>–<kbd>⌘</kbd><kbd>9</kbd> 直接跳，選單列的 ✳ 也有同一份清單。
+
+內建兩隻，更多在 [**docs/gallery.md**](docs/gallery.md)：
+
+<div align="center">
+<img src="docs/assets/dance.gif" width="420" alt="clawd">
+<img src="docs/assets/mochi-dance.gif" width="420" alt="mochi">
+</div>
+
+### 自己做一隻
+
+做這件事的方式是交給 Claude Code。存一張參考圖，然後說：
+
+> 這是參考圖：`~/Downloads/my-character.gif`
 >
 > 幫我做成 Clawdline 的 mascot pack。格式看 `docs/mascots.md`，
 > `~/.config/clawdline/mascots/clawd.json` 是可以照抄的範例。網格不要超過 20×16，
 > 腳要放在最下面那一列才站得住。五段動畫都要寫：`pop`、`idle`、`typing`、`dance`、`cheer`。
-> 存成 `~/.config/clawdline/mascots/chiikawa.json`，並把設定檔指過去。
+> 存成 `~/.config/clawdline/mascots/my-character.json`，並把設定檔指過去。
 >
 > 然後驗收你自己的成果：跑
 > `open "clawdline://snapshot?path=/tmp/m.png&routine=dance&t=0.3"`，看那張 PNG，
@@ -107,6 +123,8 @@ Clawdline 列出所有 iTerm2 session，用 `ps` 比對每個的 TTY，留下真
 沒看過就寫的像素圖，出來會是一團。
 
 完整格式、五段動畫的觸發時機、以及這個尺寸下什麼畫得出來：**[docs/mascots.md](docs/mascots.md)**。
+pack 是純資料——一堆字元、顏色與數字——執行不了任何東西，最壞就是載入失敗並說明原因。
+`tools/validate-pack.py` 可以驗，CI 在每個 PR 上都會跑。
 
 ## 它是怎麼把字送進去的
 
