@@ -120,8 +120,8 @@ There is no separate "closed eye" picture. Wherever an `eyeChars` character appe
 - `blink` hides the **top** row of the eyes, leaving the bottom — a half-lidded look.
 - `happy` hides the **bottom** row, leaving the top — a squint.
 
-Both fill in with whatever colour is mapped to `accent`, so the eye disappears into the body.
-This means one drawing covers all three expressions.
+Both fill in with the `skin` character, so the eye disappears into the face. One drawing
+covers all three expressions.
 
 ### Routine names
 
