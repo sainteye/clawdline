@@ -1,0 +1,15 @@
+name: Mascot packs
+
+on:
+  pull_request:
+    paths: ["Resources/mascots/**", "tools/validate-pack.py"]
+  push:
+    paths: ["Resources/mascots/**", "tools/validate-pack.py"]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate every pack
+        run: python3 tools/validate-pack.py Resources/mascots/*.json

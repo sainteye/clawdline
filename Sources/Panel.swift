@@ -166,6 +166,7 @@ final class PromptTextView: NSTextView {
     var onCancel: (() -> Void)?
     var onCycleTarget: ((Bool) -> Void)?
     var onToggleList: (() -> Void)?
+    var onToggleMascots: (() -> Void)?
     var onPickIndex: ((Int) -> Void)?
     var onToggleDance: (() -> Void)?
     var onArrow: ((Int) -> Bool)?      // return true if the key was consumed
@@ -190,6 +191,7 @@ final class PromptTextView: NSTextView {
             case "x": cut(nil); return true
             case "z": undoManager?.undo(); return true
             case "k": onToggleList?(); return true
+            case "m": onToggleMascots?(); return true
             case "d": onToggleDance?(); return true
             case "w": onCancel?(); return true
             case "\r": onSubmit?(); return true
@@ -253,14 +255,17 @@ final class PromptTextView: NSTextView {
 
 // MARK: - One row of the session list
 
+/// One row of whichever list is open — a session, or a mascot pack.
+/// Both lists look and behave the same, so they share the row rather than the row
+/// knowing what a session is.
 final class TargetRow: NSView {
-    let session: TargetSession
+    let title: String
     let index: Int
     var isSelected = false { didSet { needsDisplay = true } }
     var onClick: (() -> Void)?
 
-    init(session: TargetSession, index: Int) {
-        self.session = session
+    init(title: String, index: Int) {
+        self.title = title
         self.index = index
         super.init(frame: .zero)
     }
@@ -286,11 +291,11 @@ final class TargetRow: NSView {
             .foregroundColor: isSelected ? Style.accent : NSColor.tertiaryLabelColor,
         ])
 
-        let title = NSMutableAttributedString(string: session.label, attributes: [
+        let text = NSMutableAttributedString(string: title, attributes: [
             .font: NSFont.systemFont(ofSize: Style.listSize, weight: isSelected ? .medium : .regular),
             .foregroundColor: isSelected ? NSColor.labelColor : NSColor.secondaryLabelColor,
         ])
         let x = Style.padH + 40
-        title.draw(in: NSRect(x: x, y: bounds.midY - 9, width: bounds.width - x - Style.padH, height: 18))
+        text.draw(in: NSRect(x: x, y: bounds.midY - 9, width: bounds.width - x - Style.padH, height: 18))
     }
 }

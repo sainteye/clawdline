@@ -134,6 +134,19 @@ struct MascotPack: Decodable {
         }
     }
 
+    /// Every pack the user can pick from: their own directory plus anything bundled.
+    /// Sorted, de-duplicated, and a user copy shadows a bundled one of the same name.
+    static func available() -> [String] {
+        let fm = FileManager.default
+        var names = Set<String>()
+        for dir in [userDirectory, Bundle.main.resourceURL?.appendingPathComponent("mascots")].compactMap({ $0 }) {
+            for file in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] where file.hasSuffix(".json") {
+                names.insert(String(file.dropLast(5)))
+            }
+        }
+        return names.sorted()
+    }
+
     static func modificationDate(named name: String) -> Date? {
         let url = userDirectory.appendingPathComponent("\(name).json")
         return (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date

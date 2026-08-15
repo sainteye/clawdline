@@ -164,7 +164,7 @@ run these and then read the PNG back to check its work.
 
 Save a reference image somewhere, then say something like this to Claude Code:
 
-> Here is a reference image: `~/Downloads/chiikawa.gif`
+> Here is a reference image: `~/Downloads/my-character.gif`
 >
 > Make it into a Clawdline mascot pack. Read the format in
 > `~/code/clawdline/docs/mascots.md`, and use `~/.config/clawdline/mascots/clawd.json` as a
@@ -175,7 +175,7 @@ Save a reference image somewhere, then say something like this to Claude Code:
 > - Draw poses for: standing, both arms up, two dance poses (one arm up + the opposite
 >   foot lifted, then mirrored), and left/right stepping.
 > - Write the five routines: `pop`, `idle`, `typing`, `dance`, `cheer`.
-> - Save it as `~/.config/clawdline/mascots/chiikawa.json` and set `"mascot": "chiikawa"` in
+> - Save it as `~/.config/clawdline/mascots/my-character.json` and set `"mascot": "my-character"` in
 >   `~/.config/clawdline/config.json`.
 >
 > Then check your work: run

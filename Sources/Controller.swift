@@ -22,7 +22,11 @@ final class PromptController: NSObject, NSWindowDelegate {
     private var targets: [TargetSession] = []
     private var rows: [TargetRow] = []
     private var targetIndex = 0
-    private var listOpen = false
+    /// Which list the panel is showing, if any. Sessions and mascots share the UI.
+    private enum ListMode { case none, sessions, mascots }
+    private var listMode: ListMode = .none
+    private var mascotNames: [String] = []
+    private var mascotIndex = 0
     private var scanning = false
 
     /// The target the user picked by hand, plus which session iTerm was on at that moment.
@@ -157,6 +161,7 @@ final class PromptController: NSObject, NSWindowDelegate {
             .init(key: "⇧↵", label: L.t.hintNewline),
             .init(key: "⇥", label: L.t.hintSwitch),
             .init(key: "⌘K", label: L.t.hintList),
+            .init(key: "⌘M", label: L.t.hintMascot),
             .init(key: "esc", label: ""),
         ]
         card.addSubview(hints)
@@ -185,15 +190,11 @@ final class PromptController: NSObject, NSWindowDelegate {
         textView.onSubmit = { [weak self] in self?.submit() }
         textView.onCancel = { [weak self] in
             guard let self else { return }
-            if self.listOpen { self.listOpen = false; self.relayout() } else { self.hide() }
+            if self.listMode != .none { self.listMode = .none; self.relayout() } else { self.hide() }
         }
         textView.onCycleTarget = { [weak self] forward in self?.cycle(forward: forward) }
-        textView.onToggleList = { [weak self] in
-            guard let self else { return }
-            self.listOpen.toggle()
-            self.rebuildRows()
-            self.relayout()
-        }
+        textView.onToggleList = { [weak self] in self?.showList(.sessions) }
+        textView.onToggleMascots = { [weak self] in self?.showList(.mascots) }
         textView.onPickIndex = { [weak self] i in self?.pick(i) }
         textView.onToggleDance = { [weak self] in self?.toggleDance() }
         textView.onTextChanged = { [weak self] in
@@ -217,7 +218,7 @@ final class PromptController: NSObject, NSWindowDelegate {
         dismissing = false
         previousApp = NSWorkspace.shared.frontmostApplication
         historyCursor = -1
-        listOpen = false
+        listMode = .none
         resetHint()
         reloadMascot()
         refreshTargets()
@@ -243,7 +244,7 @@ final class PromptController: NSObject, NSWindowDelegate {
             guard let self, token == self.showToken else { return }
             self.panel.orderOut(nil)
             self.mascot.stop()          // once hidden, stop burning a 60fps timer
-            self.listOpen = false
+            self.listMode = .none
             self.dismissing = false
             if let prev = self.previousApp,
                prev.processIdentifier != NSRunningApplication.current.processIdentifier {
@@ -388,7 +389,7 @@ final class PromptController: NSObject, NSWindowDelegate {
     private func relayout() {
         let W = Config.shared.width
         let inputH = max(Style.inputMinHeight, textHeight() + Style.inputPadV * 2)
-        let visibleRows = listOpen ? min(rows.count, 9) : 0
+        let visibleRows = listMode != .none ? min(rows.count, 9) : 0
         let listH = visibleRows > 0 ? CGFloat(visibleRows) * Style.rowHeight + Style.listPadV * 2 : 0
         let cardH = inputH + (listH > 0 ? listH + 1 : 0) + 1 + Style.hintHeight
         let total = cardH + (mascot.boxSize.height - mascot.footInset - mascot.overlap) + Style.mascotTopPad
@@ -492,13 +493,54 @@ final class PromptController: NSObject, NSWindowDelegate {
 
     private func rebuildRows() {
         rows.forEach { $0.removeFromSuperview() }
-        rows = targets.prefix(9).enumerated().map { i, s in
-            let row = TargetRow(session: s, index: i)
-            row.isSelected = (i == targetIndex)
-            row.onClick = { [weak self] in self?.pick(i) }
+        let titles: [String]
+        let selected: Int
+        switch listMode {
+        case .mascots:
+            titles = mascotNames
+            selected = mascotIndex
+        default:
+            titles = targets.map { $0.label }
+            selected = targetIndex
+        }
+        rows = titles.prefix(9).enumerated().map { i, t in
+            let row = TargetRow(title: t, index: i)
+            row.isSelected = (i == selected)
+            row.onClick = { [weak self] in self?.choose(i) }
             listBox.addSubview(row)
             return row
         }
+    }
+
+    /// Open (or close) one of the lists.
+    private func showList(_ mode: ListMode) {
+        if listMode == mode { listMode = .none; rebuildRows(); relayout(); return }
+        listMode = mode
+        if mode == .mascots {
+            mascotNames = MascotPack.available()
+            mascotIndex = max(0, mascotNames.firstIndex(of: Config.shared.mascot) ?? 0)
+        }
+        rebuildRows()
+        relayout()
+    }
+
+    /// Route a selection to whichever list is open.
+    private func choose(_ i: Int) {
+        if listMode == .mascots { pickMascot(i) } else { pick(i) }
+    }
+
+    /// Switching previews immediately — you pick a character by looking at it, not by
+    /// reading its name, so the change has to happen while the list is still open.
+    private func pickMascot(_ i: Int, closeList: Bool = true) {
+        guard mascotNames.indices.contains(i) else { return }
+        mascotIndex = i
+        Config.shared.mascot = mascotNames[i]
+        Config.shared.save()
+        if let why = mascot.reload() { setHint(why, warn: true) }
+        mascot.play("pop")
+        for (n, row) in rows.enumerated() { row.isSelected = (n == i) }
+        if closeList { listMode = .none }
+        relayout()
     }
 
     private func cycle(forward: Bool) {
@@ -516,7 +558,7 @@ final class PromptController: NSObject, NSWindowDelegate {
         Config.shared.save()
         for (n, row) in rows.enumerated() { row.isSelected = (n == i) }
         updateTargetLabel()
-        if closeList && listOpen { listOpen = false; relayout() }
+        if closeList && listMode != .none { listMode = .none; relayout() }
     }
 
     private func updateTargetLabel() {
@@ -578,9 +620,12 @@ final class PromptController: NSObject, NSWindowDelegate {
     // MARK: - Keyboard
 
     private func handleArrow(_ delta: Int) -> Bool {
-        if listOpen {
-            let next = max(0, min(rows.count - 1, targetIndex + delta))
-            pick(next, closeList: false)
+        if listMode == .mascots {
+            pickMascot(max(0, min(rows.count - 1, mascotIndex + delta)), closeList: false)
+            return true
+        }
+        if listMode == .sessions {
+            pick(max(0, min(rows.count - 1, targetIndex + delta)), closeList: false)
             return true
         }
         let hist = Config.shared.history
@@ -665,10 +710,12 @@ final class PromptController: NSObject, NSWindowDelegate {
     /// The reason is practical: `screencapture` needs Screen Recording permission, and without it
     /// the result is the wallpaper with every window stripped out — which leaves you blind while
     /// tuning layout. This path only paints our own layers, so it needs no permission at all.
-    func snapshot(to path: String, routine: String? = nil, at time: Double? = nil) {
+    func snapshot(to path: String, routine: String? = nil, at time: Double? = nil, list: String? = nil) {
         let render = { [weak self] in
             guard let self else { return }
             // Naming a routine and a time draws one specific frame of the animation — otherwise animation can only be eyeballed, never tuned
+            if list == "mascots" { self.showList(.mascots) }
+            else if list == "sessions" { self.showList(.sessions) }
             if let r = routine, !r.isEmpty {
                 self.mascot.play(r, then: r)
                 self.mascot.frozenTime = time ?? 0.25
@@ -858,6 +905,15 @@ final class PromptController: NSObject, NSWindowDelegate {
     // MARK: - Used by the menu bar
 
     var targetSummary: String { currentTarget?.label ?? L.t.menuNoTarget }
+
+    /// Used by the menu bar's mascot submenu.
+    var mascotNamesForMenu: [String] { MascotPack.available() }
+    func selectMascot(named name: String) {
+        Config.shared.mascot = name
+        Config.shared.save()
+        if let why = mascot.reload() { Log.write("mascot: \(why)") }
+        if panel.isVisible { mascot.play("pop"); relayout() }
+    }
 
     func revealCurrentTarget() {
         guard let t = currentTarget else { return }
