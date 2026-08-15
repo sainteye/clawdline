@@ -2,7 +2,8 @@ import Foundation
 
 /// Somewhere text can be sent.
 struct TargetSession: Equatable, Identifiable {
-    let id: String          // iTerm2's session UUID
+    let backend: Backend
+    let id: String          // iTerm2 session UUID, or tmux pane id
     let name: String        // tab title (Claude Code sets it to the current task)
     let tty: String         // /dev/ttysNNN
     let windowIndex: Int
@@ -77,16 +78,8 @@ enum ITerm {
 
     // MARK: - API
 
-    struct Snapshot {
-        var sessions: [TargetSession] = []
-        var currentID: String?
-        var error: String?
-
-        var claudeSessions: [TargetSession] { sessions.filter { $0.isClaude } }
-    }
-
-    static func snapshot() -> Snapshot {
-        var snap = Snapshot()
+    static func snapshot() -> Targets.Snapshot {
+        var snap = Targets.Snapshot()
 
         let listed = osa(["list"])
         guard listed["ok"] as? Bool == true, let rows = listed["sessions"] as? [[String: Any]] else {
@@ -99,6 +92,7 @@ enum ITerm {
             let tty = row["tty"] as? String ?? ""
             let bare = tty.replacingOccurrences(of: "/dev/", with: "")
             return TargetSession(
+                backend: .iterm,
                 id: (row["id"] as? String ?? "").uppercased(),
                 name: row["name"] as? String ?? "",
                 tty: tty,

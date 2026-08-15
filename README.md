@@ -5,7 +5,8 @@
 **Your Claude Code prompt line, at eye level.**
 
 A Spotlight-style bar that floats in the middle of your screen and sends what you type
-straight into a Claude Code session in iTerm2 — without ever looking at the terminal.
+straight into a Claude Code session — without ever looking at the terminal.
+Works with iTerm2 directly, and with every other terminal through tmux.
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13%2B-black.svg)](#install)
@@ -154,11 +155,12 @@ is that **the terminal never has to come to the front** — which is the entire 
 ```jsonc
 {
   "hotkey": "option+space",              // cmd / option / control / shift + one key
-  "scope_app": "com.googlecode.iterm2",  // "" makes the hotkey global
+  "scope_app": "com.googlecode.iterm2",  // comma-separated; "" makes the hotkey global
   "y_fraction": 0.30,                    // where the bar's top edge sits, 0 = top of screen
   "width": 720,
   "language": "auto",                    // auto | en | zh-Hant
-  "mascot": "clawd"
+  "mascot": "clawd",
+  "tmux_path": ""                        // empty = look in the usual places
 }
 ```
 
@@ -180,13 +182,47 @@ business being able to read every key you press.
 Clawdline talks to nothing but iTerm2 on your own machine. Your prompt history lives in
 `~/.config/clawdline/config.json` and goes nowhere.
 
+## Other terminals: run Claude Code in tmux
+
+iTerm2 is supported directly. Everything else — Terminal.app, Warp, Tabby, Ghostty,
+Alacritty, Kitty — works if Claude Code is running inside **tmux**:
+
+```bash
+tmux new -s work
+claude
+```
+
+That is the whole setup. Clawdline lists tmux panes alongside iTerm2 sessions, spots the ones
+running `claude` the same way, and sends through `load-buffer` + `paste-buffer` with the same
+bracketed-paste wrapper. Nothing else to configure, and **tmux needs no macOS permission at
+all** — it is an ordinary subprocess, not cross-app automation.
+
+If your terminal is not iTerm2, widen the hotkey scope so ⌥Space fires there too:
+
+```jsonc
+{ "scope_app": "com.apple.Terminal,com.googlecode.iterm2" }
+```
+
+<details>
+<summary>Why not support those terminals directly?</summary>
+
+Because they cannot receive text. Terminal.app has `do script`, which sounds like it would
+work — it does not. A program blocked on `read` in one of its tabs never sees a byte of what
+`do script` sends; the call returns success and nothing arrives. Warp and Tabby have no
+equivalent interface at all.
+
+The only remaining route is synthetic keystrokes, which needs the accessibility permission —
+the right to observe every key you press, for a tool whose whole job is opening a text box —
+and needs the terminal in front, which is the thing this exists to avoid. tmux gives the same
+result for neither cost.
+
+</details>
+
 ## Limitations
 
-- **iTerm2 only.** Terminal.app, Warp and Tabby have no equivalent "write into this session"
-  interface. Supporting them means synthetic keystrokes, which means the accessibility
-  permission, which is not a trade worth making for this.
 - **One direction.** Claude's replies still live in the terminal. That half scrolls upward
   anyway; this fixes the half that was nailed to the bottom-left corner.
+- **tmux is required for non-iTerm2 terminals**, per the section above.
 
 ## Troubleshooting
 

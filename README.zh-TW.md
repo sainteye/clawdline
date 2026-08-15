@@ -4,8 +4,8 @@
 
 **把 Claude Code 的輸入行，放到眼睛的高度。**
 
-一條浮在螢幕中上方、Spotlight 風格的輸入條。打完字按 Enter，內容直接進到 iTerm2 裡的
-Claude Code session——全程不必把視線移到終端機。
+一條浮在螢幕中上方、Spotlight 風格的輸入條。打完字按 Enter，內容直接進到 Claude Code
+session——全程不必把視線移到終端機。iTerm2 直接支援，其餘終端機透過 tmux。
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13%2B-black.svg)](#安裝)
@@ -146,11 +146,12 @@ CR                                     ← 再單獨送一個 Return 才送出
 ```jsonc
 {
   "hotkey": "option+space",              // cmd / option / control / shift ＋ 一個鍵
-  "scope_app": "com.googlecode.iterm2",  // "" ＝ 全域生效
+  "scope_app": "com.googlecode.iterm2",  // 逗號分隔多個；"" ＝ 全域生效
   "y_fraction": 0.30,                    // 輸入條上緣落在螢幕高度的幾成，0 ＝ 最上面
   "width": 720,
   "language": "auto",                    // auto | en | zh-Hant
-  "mascot": "clawd"
+  "mascot": "clawd",
+  "tmux_path": ""                        // 空的 ＝ 去常見位置找
 }
 ```
 
@@ -170,12 +171,45 @@ CR                                     ← 再單獨送一個 Return 才送出
 Clawdline 只跟你自己機器上的 iTerm2 說話。歷史紀錄存在
 `~/.config/clawdline/config.json`，不會去任何地方。
 
+## 其他終端機：把 Claude Code 跑在 tmux 裡
+
+iTerm2 直接支援。其餘全部——Terminal.app、Warp、Tabby、Ghostty、Alacritty、Kitty——
+只要 Claude Code 跑在 **tmux** 裡就能用：
+
+```bash
+tmux new -s work
+claude
+```
+
+設定就這樣。Clawdline 會把 tmux 的 pane 跟 iTerm2 的 session 列在同一份清單，
+用同樣的方式認出哪些在跑 `claude`，並透過 `load-buffer` ＋ `paste-buffer`
+套同一層括號貼上送進去。而且 **tmux 完全不需要任何 macOS 權限**——
+它是普通的子行程，不是跨 app 自動化。
+
+如果你的終端機不是 iTerm2，記得把熱鍵範圍放寬：
+
+```jsonc
+{ "scope_app": "com.apple.Terminal,com.googlecode.iterm2" }
+```
+
+<details>
+<summary>為什麼不直接支援那些終端機？</summary>
+
+因為它們收不到文字。Terminal.app 有 `do script`，聽起來應該可以——實測不行：
+一個在它的分頁裡卡在 `read` 的程式，從頭到尾一個位元組都沒收到，而那個呼叫回報成功。
+Warp 與 Tabby 連等價的介面都沒有。
+
+剩下的路只有模擬鍵盤，那需要輔助使用權限——一個工作只是開一個輸入框的工具，
+去要「看見你每一次按鍵」的能力——而且必須把終端機叫到前景，那正是這個工具要避開的事。
+tmux 兩個代價都不必付，結果一樣。
+
+</details>
+
 ## 限制
 
-- **只支援 iTerm2。** Terminal.app、Warp、Tabby 沒有等價的「寫進這個 session」介面。
-  要支援就得走模擬鍵盤，那需要輔助使用權限，為了這件事付那個代價不划算。
 - **單向。** Claude 的回覆還是在終端機裡。不過那半本來就是往上捲的；
   這個工具修的是被釘在左下角的那一半。
+- **非 iTerm2 的終端機需要 tmux**，見上一節。
 
 ## 出事的時候
 
