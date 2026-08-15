@@ -67,6 +67,7 @@ if [ "$WAS_RUNNING" = "1" ]; then
   open "$APP"
   echo "✓ done (relaunched, since it was running before)"
 else
+  echo "✓ done"
 fi
 echo "  run:    open \"$APP\""
 echo "  config: ~/.config/clawdline/config.json"
