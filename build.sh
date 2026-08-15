@@ -1,0 +1,64 @@
+#!/bin/bash
+# Builds Clawdline.app. No Xcode project, no package manager: a few .swift files and one .js,
+# compiled straight by swiftc — one less layer of "what does the build config actually say".
+set -euo pipefail
+cd "$(dirname "$0")"
+
+APP="${CLAWDLINE_APP:-$HOME/Applications/Clawdline.app}"
+BIN="$APP/Contents/MacOS/Clawdline"
+RES="$APP/Contents/Resources"
+
+echo "→ building into $APP"
+
+# Stop a running copy first, or overwriting the executable fails
+pkill -x Clawdline 2>/dev/null || true
+
+rm -rf "$APP"
+mkdir -p "$(dirname "$BIN")" "$RES"
+
+swiftc \
+  -swift-version 5 \
+  -target arm64-apple-macos13.0 \
+  -O \
+  -o "$BIN" \
+  Sources/*.swift \
+  -framework AppKit -framework Carbon -framework ServiceManagement
+
+cp Resources/iterm.js "$RES/"
+cp -R Resources/mascots "$RES/"
+
+cat > "$APP/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Clawdline</string>
+  <key>CFBundleDisplayName</key><string>Clawdline</string>
+  <key>CFBundleIdentifier</key><string>dev.sainteye.clawdline</string>
+  <key>CFBundleExecutable</key><string>Clawdline</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <!-- Menu bar resident, no Dock icon -->
+  <key>LSUIElement</key><true/>
+  <!-- Without this line macOS kills the app the first time it talks to iTerm2 -->
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Clawdline needs to control iTerm2 so it can put what you type into Claude Code.</string>
+  <!-- clawdline://open so any tool can summon it, not just the built-in hotkey -->
+  <key>CFBundleURLTypes</key>
+  <array><dict>
+    <key>CFBundleURLName</key><string>dev.sainteye.clawdline</string>
+    <key>CFBundleURLSchemes</key><array><string>clawdline</string></array>
+  </dict></array>
+</dict>
+</plist>
+PLIST
+
+# Ad-hoc signature. Unsigned, TCC forgets "may control iTerm2" on every rebuild.
+codesign --force --sign - --identifier dev.sainteye.clawdline "$APP" >/dev/null 2>&1 \
+  || echo "  (codesign failed; harmless, but you may be re-asked to authorise iTerm2 after each rebuild)"
+
+echo "✓ done"
+echo "  run:    open \"$APP\""
+echo "  config: ~/.config/clawdline/config.json"

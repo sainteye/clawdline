@@ -1,0 +1,201 @@
+<div align="center">
+
+# Clawdline
+
+**Your Claude Code prompt line, at eye level.**
+
+A Spotlight-style bar that floats in the middle of your screen and sends what you type
+straight into a Claude Code session in iTerm2 — without ever looking at the terminal.
+
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/macOS-13%2B-black.svg)](#install)
+[![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](Sources)
+[![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#install)
+
+English · [繁體中文](README.zh-TW.md)
+
+<img src="docs/assets/demo.gif" width="760" alt="Press Option-Space, type, press Enter. The message lands in Claude Code.">
+
+</div>
+
+---
+
+## Why
+
+Claude Code draws its input box at the bottom of the terminal, and terminals are usually
+full-screen. So the thing you look at a few hundred times a day sits in the bottom-left corner
+of the display — the furthest point from where your eyes rest.
+
+There is no setting for this. The input box is pinned to the bottom of the viewport, and a
+plugin cannot move it: plugins add commands, agents, hooks, MCP servers and skills, not TUI
+layout.
+
+So Clawdline goes the other way. It leaves the terminal alone and gives you a second place to
+type — one that appears where you tell it to, takes your text, and puts it in the session you
+were last working in. Focus returns to whatever app you were in. Your eyes never travel.
+
+## Install
+
+```bash
+git clone https://github.com/sainteye/clawdline.git
+cd clawdline && ./build.sh
+open ~/Applications/Clawdline.app
+```
+
+No package manager, no dependencies — a handful of Swift files and one JavaScript file,
+compiled by `swiftc` straight into an app bundle. Requires the Xcode command line tools.
+
+The first time you send something, macOS asks whether Clawdline may control iTerm2. Say yes;
+it cannot send anything without that. Menu bar ✳ → **Launch at login** makes it stick around.
+
+## Use it
+
+Press <kbd>⌥</kbd><kbd>Space</kbd> in iTerm2, type, press <kbd>Enter</kbd>.
+
+| key | what it does |
+|---|---|
+| <kbd>⌥</kbd><kbd>Space</kbd> | show / hide the bar |
+| <kbd>Enter</kbd> | send to the current target tab |
+| <kbd>⇧</kbd><kbd>Enter</kbd> | new line (the bar grows) |
+| <kbd>Tab</kbd> / <kbd>⇧</kbd><kbd>Tab</kbd> | next / previous Claude Code tab |
+| <kbd>⌘</kbd><kbd>K</kbd> | open the session list |
+| <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>9</kbd> | jump straight to a session |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | history, when the field is empty |
+| <kbd>⌘</kbd><kbd>D</kbd> | make the mascot dance |
+| <kbd>Esc</kbd> | close |
+
+<kbd>⌘</kbd><kbd>A</kbd> <kbd>⌘</kbd><kbd>C</kbd> <kbd>⌘</kbd><kbd>V</kbd> <kbd>⌘</kbd><kbd>X</kbd>
+<kbd>⌘</kbd><kbd>Z</kbd> work as you expect.
+
+**The hotkey only fires while iTerm2 is in front.** Everywhere else <kbd>⌥</kbd><kbd>Space</kbd>
+is still whatever it was before you installed this. Set `"scope_app": ""` to make it global.
+
+### Which tab does it send to?
+
+Clawdline lists every iTerm2 session, checks each one's TTY against `ps`, and keeps the ones
+actually running `claude`. It defaults to the session you were last looking at.
+
+The bar always names its target along the bottom edge. **It never sends blind** — a prompt box
+that will not tell you where the text goes is worse than no prompt box.
+
+## Bring your own mascot
+
+<div align="center">
+<img src="docs/assets/dance.gif" width="520" alt="The mascot dancing on the prompt bar">
+</div>
+
+The character on top of the bar is **data, not code**. One JSON file holds the pixel grid, the
+palette, every pose and every animation, so replacing it never means forking this repo.
+
+```
+~/.config/clawdline/mascots/clawd.json
+```
+
+Edit it, press <kbd>⌥</kbd><kbd>Space</kbd>, and the change is on screen. No rebuild.
+
+The intended way to make one is to let Claude Code do it. Save a reference image, then:
+
+> Here is a reference image: `~/Downloads/chiikawa.gif`
+>
+> Make it into a Clawdline mascot pack. The format is in `docs/mascots.md`, and
+> `~/.config/clawdline/mascots/clawd.json` is a working example. Grid no larger than 20×16.
+> Put the feet on the bottom row so it stands on the bar. Write the five routines: `pop`,
+> `idle`, `typing`, `dance`, `cheer`. Save it as
+> `~/.config/clawdline/mascots/chiikawa.json` and point the config at it.
+>
+> Then check your work: run
+> `open "clawdline://snapshot?path=/tmp/m.png&routine=dance&t=0.3"`, look at the PNG, and fix
+> whatever is wrong. Repeat until it reads like the reference.
+
+That last instruction is the one that matters. `clawdline://snapshot` renders a frame of any
+routine to a PNG **without needing Screen Recording permission**, so the agent can see what it
+drew and iterate. Pixel art written blind comes out as a blob.
+
+Full format reference, the five routine triggers, and notes on what reads well at this size:
+**[docs/mascots.md](docs/mascots.md)**.
+
+## How it works
+
+Text does not go in as synthetic keystrokes, and it is not written to the terminal's pty —
+you cannot write to another process's TTY on modern macOS. It goes through iTerm2's scripting
+interface, wrapped in a bracketed paste:
+
+```
+ESC[200~ your text, newlines and all ESC[201~     ← one paste, not a row of Enters
+CR                                                ← then a single Return to submit
+```
+
+Without that wrapper a two-line prompt submits itself after the first line. The other benefit
+is that **the terminal never has to come to the front** — which is the entire point.
+
+## Config
+
+`~/.config/clawdline/config.json`. Menu bar ✳ → **Reload config** applies changes.
+
+```jsonc
+{
+  "hotkey": "option+space",              // cmd / option / control / shift + one key
+  "scope_app": "com.googlecode.iterm2",  // "" makes the hotkey global
+  "y_fraction": 0.30,                    // where the bar's top edge sits, 0 = top of screen
+  "width": 720,
+  "language": "auto",                    // auto | en | zh-Hant
+  "mascot": "clawd"
+}
+```
+
+Adding a language means writing one struct in [`Sources/Strings.swift`](Sources/Strings.swift)
+and one line in the catalog. The compiler refuses to build a language that is missing a string,
+so a translation cannot silently ship half-done. Pull requests welcome.
+
+## Permissions and privacy
+
+| what | why |
+|---|---|
+| **Automation → iTerm2** | the only way to put text into a session. Asked once, on first send. |
+| *(nothing else)* | no accessibility, no screen recording, no network. |
+
+The global hotkey uses Carbon's `RegisterEventHotKey` rather than an `NSEvent` monitor
+specifically to **avoid** the accessibility permission — a tool that opens a text box has no
+business being able to read every key you press.
+
+Clawdline talks to nothing but iTerm2 on your own machine. Your prompt history lives in
+`~/.config/clawdline/config.json` and goes nowhere.
+
+## Limitations
+
+- **iTerm2 only.** Terminal.app, Warp and Tabby have no equivalent "write into this session"
+  interface. Supporting them means synthetic keystrokes, which means the accessibility
+  permission, which is not a trade worth making for this.
+- **One direction.** Claude's replies still live in the terminal. That half scrolls upward
+  anyway; this fixes the half that was nailed to the bottom-left corner.
+
+## Troubleshooting
+
+Everything the app does is logged to `~/Library/Logs/Clawdline.log`: whether the hotkey
+registered, whether the panel opened, what happened to every send.
+
+- **Nothing happens on ⌥Space** — check the log for `hotkey registered`. If it is missing,
+  another app owns that combination; pick a different one in the config.
+- **"No Claude Code session found"** — the automation permission was probably declined. Run
+  `tccutil reset AppleEvents dev.sainteye.clawdline`, then reopen the bar to be asked again.
+- **A send fails** — the bar comes back with your text still in it and the reason along the
+  bottom. It never eats what you typed.
+
+## Contributing
+
+Plain AppKit, no frameworks, no build system beyond `swiftc`. Comments explain *why* a thing is
+the way it is, especially where the obvious approach was tried first and failed — those notes
+are the useful part, so please keep the habit.
+
+## Credits
+
+The mascot is fan art of the pixel character that appears in Claude Code, known in the
+community as **Clawd**. This project is not affiliated with, endorsed by, or connected to
+Anthropic. Claude and Claude Code are trademarks of Anthropic.
+
+The mascot lives in a swappable JSON file precisely so you can replace it with something of
+your own — see [docs/mascots.md](docs/mascots.md).
+
+## License
+
+[MIT](LICENSE)
