@@ -36,6 +36,17 @@ instead of the shortcut keys.
   // characters. Smaller grids read better — 16×11 is plenty, 40×40 turns to mush at 100pt.
   "grid": { "cols": 16, "rows": 11 },
 
+  // How big to draw it, in points — kept separate from the grid on purpose. Without this,
+  // a finer grid would simply render smaller, and resolution would decide scale.
+  // Everything here is optional; the defaults reproduce the stock Clawd geometry.
+  "display": {
+    "height": 77,      // intended sprite height; the cell size follows from height / rows
+    "overlap": 3,      // how far the feet sink into the card, so it stands rather than floats
+    "jumpRoom": 41,    // headroom for jumps and the pop overshoot (a view clips its own drawing)
+    "sideRoom": 12,    // slack each side for sway and horizontal squash
+    "footInset": 6     // gap between the feet and the bottom of the view
+  },
+
   // One character per colour.
   //   "accent"      → follows the app tint (the Claude terracotta)
   //   "#RRGGBB"     → literal colour, also #RGB and #RRGGBBAA
@@ -44,6 +55,10 @@ instead of the shortcut keys.
 
   // Which characters are eyes. Used by the blink and happy expressions (see below).
   "eyeChars": ["o"],
+
+  // What a closed eye fills in with. Defaults to whatever is mapped to "accent", which is
+  // wrong for any character that is not accent-coloured — a white one would blink orange.
+  "skin": "#",
 
   // Named pictures. Name them however you like; routines refer to them by name.
   "poses": {

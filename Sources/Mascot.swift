@@ -37,6 +37,17 @@ struct MascotPack: Decodable {
         var ease: String?       // linear (default) | inout | out
     }
 
+    /// How big to draw it, independent of how fine the grid is.
+    /// Without this, a 32x24 pack would render half the size of a 16x11 one for no
+    /// reason other than having more cells — resolution would decide scale.
+    struct Display: Decodable {
+        var height: Double?     // intended sprite height in points
+        var overlap: Double?    // how far the feet sink into the card
+        var jumpRoom: Double?   // headroom for jumps and the pop overshoot
+        var sideRoom: Double?   // slack each side for sway and horizontal scale
+        var footInset: Double?  // gap between the sprite feet and the bottom of the view
+    }
+
     struct Blink: Decodable {
         var everyMin: Double
         var everyMax: Double
@@ -57,8 +68,31 @@ struct MascotPack: Decodable {
     let palette: [String: String]
     /// Which characters are eyes. Blink hides the top row of them, happy hides the bottom row.
     var eyeChars: [String]?
+    /// The character a closed eye turns into — whatever the face is made of.
+    /// Without it a white character would blink in the app's accent colour.
+    var skin: String?
+    var display: Display?
     let poses: [String: [String]]
     let routines: [String: Routine]
+
+    // Defaults chosen to reproduce the original hand-tuned Clawd geometry exactly.
+    var spriteHeight: CGFloat { CGFloat(display?.height ?? 77) }
+    var overlap: CGFloat { CGFloat(display?.overlap ?? 3) }
+    var jumpRoom: CGFloat { CGFloat(display?.jumpRoom ?? 41) }
+    var sideRoom: CGFloat { CGFloat(display?.sideRoom ?? 12) }
+    var footInset: CGFloat { CGFloat(display?.footInset ?? 6) }
+
+    /// One cell, in points. Rounded so pixel edges land on whole points and stay crisp.
+    var cellSize: CGFloat { max(1, (spriteHeight / CGFloat(grid.rows)).rounded()) }
+    var spriteSize: NSSize {
+        NSSize(width: cellSize * CGFloat(grid.cols), height: cellSize * CGFloat(grid.rows))
+    }
+    /// The view is bigger than the sprite: jumps, the pop overshoot and the sway all
+    /// happen inside it, and a view clips its own drawing.
+    var boxSize: NSSize {
+        NSSize(width: spriteSize.width + sideRoom * 2,
+               height: spriteSize.height + jumpRoom + footInset)
+    }
 
     // MARK: Loading
 
@@ -308,14 +342,18 @@ final class MascotView: NSView {
 
     // MARK: Geometry
 
-    /// Where the sprite sits in view coordinates. Feet on the bottom edge, the rest is jump room.
+    /// Where the sprite sits in view coordinates. Feet near the bottom edge, the rest is jump room.
     var spriteRect: NSRect {
         guard let pack else { return .zero }
-        let cell = floor(min((bounds.width - 20) / CGFloat(pack.grid.cols),
-                             (bounds.height - 40) / CGFloat(pack.grid.rows)))
-        let w = cell * CGFloat(pack.grid.cols), h = cell * CGFloat(pack.grid.rows)
-        return NSRect(x: (bounds.width - w) / 2, y: Style.mascotFootInset, width: w, height: h)
+        let s = pack.spriteSize
+        return NSRect(x: (bounds.width - s.width) / 2, y: pack.footInset,
+                      width: s.width, height: s.height)
     }
+
+    /// Layout asks the pack how big it wants to be, rather than the other way round.
+    var boxSize: NSSize { pack?.boxSize ?? NSSize(width: 136, height: 124) }
+    var footInset: CGFloat { pack?.footInset ?? 6 }
+    var overlap: CGFloat { pack?.overlap ?? 3 }
 
     // MARK: Painting
 
@@ -380,8 +418,9 @@ final class MascotView: NSView {
 }
 
 extension MascotPack {
-    /// The character an eye turns into when it closes — whatever the body is made of.
+    /// The character an eye turns into when it closes.
     var skinCharacter: Character {
+        if let s = skin, let ch = s.first { return ch }
         for (ch, spec) in palette where spec.lowercased() == "accent" { return Character(ch) }
         return palette.keys.sorted().first.map { Character($0) } ?? "#"
     }
