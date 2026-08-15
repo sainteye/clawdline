@@ -1,0 +1,195 @@
+import AppKit
+import ServiceManagement
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let hotKey = HotKey()
+    private var statusItem: NSStatusItem!
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // No Dock icon, no menu bar: this is a prompt you summon, not an application you visit.
+        NSApp.setActivationPolicy(.accessory)
+
+        Log.write("launch: hotkey=\(Config.shared.hotKey) width=\(Config.shared.width) y=\(Config.shared.yFraction)")
+        MascotPack.installBundledPacks()
+        buildStatusItem()
+
+        hotKey.onFire = {
+            Log.write("hotkey fired")
+            PromptController.shared.toggle()
+        }
+        // Recompute whether the hotkey should be attached whenever the frontmost app changes
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.updateHotKeyScope() }
+
+        if applyHotKey() {
+            Log.write("hotkey registered: \(HotKey.display(Config.shared.hotKey))"
+                + (Config.shared.scopeApp.isEmpty ? " (global)" : " (only in \(Config.shared.scopeApp))"))
+            updateHotKeyScope()
+        } else {
+            Log.write("hotkey registration failed: \(Config.shared.hotKey)")
+            // A failed registration almost always means something else owns the combination. Say so —
+            // otherwise the user presses it for a while and concludes the app never started.
+            let a = NSAlert()
+            a.messageText = L.t.hotkeyFailedTitle(HotKey.display(Config.shared.hotKey))
+            a.informativeText = L.t.hotkeyFailedBody(Config.shared.fileURL.path)
+            a.alertStyle = .warning
+            a.runModal()
+        }
+    }
+
+    // MARK: - Where the hotkey applies
+
+    private var hotKeyActive = false
+
+    @discardableResult
+    private func applyHotKey() -> Bool {
+        hotKeyActive = hotKey.register(Config.shared.hotKey)
+        return hotKeyActive
+    }
+
+    /// Carbon hotkeys are global; there is no "only in this app" option.
+    /// So attach it when iTerm2 is frontmost (or the panel is open) and detach it when it is not.
+    /// Same result, and ⌥Space stays itself in every other app instead of being swallowed here.
+    private func updateHotKeyScope() {
+        let scope = Config.shared.scopeApp
+        guard !scope.isEmpty else {
+            if !hotKeyActive { applyHotKey() }
+            return
+        }
+        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+        let mine = Bundle.main.bundleIdentifier ?? ""
+        let want = front == scope || front == mine || PromptController.shared.isVisible
+
+        if want, !hotKeyActive {
+            applyHotKey()
+            Log.write("hotkey attached (frontmost: \(front))")
+        } else if !want, hotKeyActive {
+            hotKey.unregister()
+            hotKeyActive = false
+            Log.write("hotkey detached (frontmost: \(front))")
+        }
+    }
+
+    private func buildStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.button?.title = "✳"
+        statusItem.button?.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        statusItem.menu = buildMenu()
+    }
+
+    private func buildMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.delegate = self
+
+        let open = NSMenuItem(title: L.t.menuOpen, action: #selector(openPanel), keyEquivalent: "")
+        open.target = self
+        menu.addItem(open)
+
+        let reveal = NSMenuItem(title: L.t.menuReveal, action: #selector(revealTarget), keyEquivalent: "")
+        reveal.target = self
+        menu.addItem(reveal)
+
+        menu.addItem(.separator())
+
+        let login = NSMenuItem(title: L.t.menuLogin, action: #selector(toggleLogin), keyEquivalent: "")
+        login.target = self
+        login.tag = 100
+        menu.addItem(login)
+
+        let edit = NSMenuItem(title: L.t.menuEditConfig, action: #selector(editConfig), keyEquivalent: "")
+        edit.target = self
+        menu.addItem(edit)
+
+        let reload = NSMenuItem(title: L.t.menuReload, action: #selector(reloadConfig), keyEquivalent: "")
+        reload.target = self
+        menu.addItem(reload)
+
+        menu.addItem(.separator())
+
+        let quit = NSMenuItem(title: L.t.menuQuit, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(quit)
+        return menu
+    }
+
+    /// clawdline://open — so any tool (a hotkey utility, Stream Deck, Shortcuts, a shell script)
+    /// can summon it, instead of being locked to the one built-in combination.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        Log.write("url: \(urls.map { $0.absoluteString }.joined(separator: " "))")
+        guard let url = urls.first else { return }
+        switch url.host ?? "" {
+        case "toggle":
+            PromptController.shared.toggle()
+        case "send":
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let text = items.first(where: { $0.name == "text" })?.value ?? ""
+            PromptController.shared.sendDirect(text)
+        case "snapshot":
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let path = items.first(where: { $0.name == "path" })?.value ?? ""
+            let routine = items.first(where: { $0.name == "routine" })?.value
+            let t = items.first(where: { $0.name == "t" })?.value.flatMap(Double.init)
+            if !path.isEmpty { PromptController.shared.snapshot(to: path, routine: routine, at: t) }
+        case "filmstrip":
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            func q(_ n: String) -> String? { items.first(where: { $0.name == n })?.value }
+            guard let dir = q("dir"), !dir.isEmpty else { return }
+            PromptController.shared.filmstrip(
+                dir: dir,
+                fps: q("fps").flatMap(Double.init) ?? 24,
+                seconds: q("seconds").flatMap(Double.init) ?? 4.4,
+                script: q("script") ?? "demo",
+                text: q("text") ?? "add retry with backoff to the upload handler")
+        default:
+            PromptController.shared.show()
+        }
+    }
+
+    @objc private func openPanel() { PromptController.shared.show() }
+    @objc private func revealTarget() { PromptController.shared.revealCurrentTarget() }
+
+    @objc private func toggleLogin() {
+        let svc = SMAppService.mainApp
+        do {
+            if svc.status == .enabled { try svc.unregister() } else { try svc.register() }
+        } catch {
+            let a = NSAlert()
+            a.messageText = L.t.loginFailed
+            a.informativeText = error.localizedDescription
+            a.runModal()
+        }
+    }
+
+    @objc private func editConfig() {
+        let url = Config.shared.fileURL
+        if !FileManager.default.fileExists(atPath: url.path) { Config.shared.save() }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func reloadConfig() {
+        Config.shared.load()
+        L.reload()
+        PromptController.shared.reloadMascot()
+        if !applyHotKey() {
+            let a = NSAlert()
+            a.messageText = L.t.hotkeyFailedTitle(HotKey.display(Config.shared.hotKey))
+            a.informativeText = L.t.hotkeyFailedBody(Config.shared.fileURL.path)
+            a.runModal()
+        }
+        updateHotKeyScope()
+        statusItem.menu = buildMenu()
+    }
+}
+
+extension AppDelegate: NSMenuDelegate {
+    func menuWillOpen(_ menu: NSMenu) {
+        menu.item(at: 0)?.title = "\(L.t.menuOpen)   \(HotKey.display(Config.shared.hotKey))"
+        menu.item(at: 1)?.title = "\(L.t.menuReveal)   \(PromptController.shared.targetSummary)"
+        menu.item(withTag: 100)?.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
+    }
+}
+
+let app = NSApplication.shared
+let delegate = AppDelegate()
+app.delegate = delegate
+app.run()

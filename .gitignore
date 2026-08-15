@@ -1,0 +1,5 @@
+.DS_Store
+*.app/
+build/
+docs/assets/*.mp4
+docs/assets/frames/
