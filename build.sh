@@ -10,7 +10,11 @@ RES="$APP/Contents/Resources"
 
 echo "→ building into $APP"
 
-# Stop a running copy first, or overwriting the executable fails
+# Stop a running copy first, or overwriting the executable fails. Remember whether it was
+# running so it can be put back: a build that silently leaves you without the app is a
+# footgun everyone steps on exactly once, usually while wondering why the hotkey died.
+WAS_RUNNING=0
+pgrep -x Clawdline >/dev/null 2>&1 && WAS_RUNNING=1
 pkill -x Clawdline 2>/dev/null || true
 
 rm -rf "$APP"
@@ -59,6 +63,10 @@ PLIST
 codesign --force --sign - --identifier dev.sainteye.clawdline "$APP" >/dev/null 2>&1 \
   || echo "  (codesign failed; harmless, but you may be re-asked to authorise iTerm2 after each rebuild)"
 
-echo "✓ done"
+if [ "$WAS_RUNNING" = "1" ]; then
+  open "$APP"
+  echo "✓ done (relaunched, since it was running before)"
+else
+fi
 echo "  run:    open \"$APP\""
 echo "  config: ~/.config/clawdline/config.json"
