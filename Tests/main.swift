@@ -654,6 +654,39 @@ group("folding runs of tool calls") {
            Transcript.distinct(["Bash", "Read", "Bash", "Bash"]), ["Bash", "Read"])
 }
 
+group("which project a session is in") {
+    // git's --porcelain=v2 is the documented, stable shape. The human one changes with git's
+    // mood and with the user's language, which is exactly what a parser must not depend on.
+    let real = """
+    /Users/me/code/atrium
+    # branch.oid 3f2c158e
+    # branch.head main
+    # branch.ab +4 -0
+    1 .M N... 100644 100644 100644 abc abc Sources/App.swift
+    1 M. N... 100644 100644 100644 def def README.md
+    ? notes.txt
+    """
+    let info = Project.parse(real, fallbackPath: "/Users/me/code/atrium/frontend")
+    expect("the repository names it, not the subfolder you happen to be in", info.name, "atrium")
+    expect("the branch is read", info.branch, "main")
+    expect("tracked changes and untracked both count as work not committed", info.dirty, 3)
+
+    // Without a repository there is no output at all; the folder is still worth naming.
+    let bare = Project.parse("", fallbackPath: "/Users/me/scratch/thing")
+    expect("the path names it", bare.name, "thing")
+    expect("no branch", bare.branch, "")
+    expect("nothing dirty", bare.dirty, 0)
+
+    let detached = Project.parse("/r\n# branch.head (detached)\n", fallbackPath: "/r")
+    expect("detached is not a branch name", detached.branch, "")
+
+    // Header lines are not files, and a path that happens to start with a digit is not a status
+    // line either — the format puts a space after the code.
+    let headersOnly = Project.parse("/r\n# branch.head main\n# branch.ab +0 -0\n", fallbackPath: "/r")
+    expect("headers are not counted", headersOnly.dirty, 0)
+    expect("conflicts count", Project.parse("/r\nu UU N... x\n", fallbackPath: "/r").dirty, 1)
+}
+
 group("the line that says what it is doing") {
     // Real captures, spinner glyphs and all.
     let busy = """

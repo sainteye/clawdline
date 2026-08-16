@@ -46,6 +46,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var stickyID: String?
     private var stickyBase: String?
     private var lastKnownCurrentID: String?
+    /// Which repository each session is in, by session id. Cleared on every summon: the branch
+    /// and the count of uncommitted files both move while you work.
+    private var projectCache: [String: ProjectInfo] = [:]
 
     /// A full-screen blur behind everything, shown only while the output pane is open.
     /// Reading a transcript is a different mode from firing off one line, and the rest of
@@ -300,6 +303,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         listMode = .none
         resetHint()
         reloadMascot()
+        // Summoning aims at the tab you are looking at. A pick made with Tab is an override for
+        // as long as the panel is up, not a new home: coming back to a different tab and finding
+        // the text still pointed at the old one is how a message lands in the wrong session.
+        stickyID = nil
+        stickyBase = nil
+        projectCache.removeAll()
         refreshTargets()
         relayout()
         position()
@@ -314,6 +323,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         if outputOpen {
             jumpToNewestOnFill = true
             startOutput()
+            // Torn down by hide() along with everything else. Same shape of bug as the refresh
+            // loop: the pane came back and the blur behind it did not, so the screen behind
+            // stayed sharp and the pane looked like it was floating on nothing.
+            showBackdrop()
         }
 
         panel.alphaValue = 0
@@ -1043,6 +1056,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
         rebuildRows()
         updateTargetLabel()
+        refreshProjectInfo()
         // The session scan is async, so an output pane opened before it landed had no target
         // to read and gave up. Nothing retried it, and it stayed blank for good.
         if outputOpen { refreshOutput() }
@@ -1120,8 +1134,26 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         Config.shared.save()
         for (n, row) in rows.enumerated() { row.isSelected = (n == i) }
         updateTargetLabel()
+        refreshProjectInfo()
         refreshOutput()
         if closeList && listMode != .none { listMode = .none; relayout() }
+    }
+
+    /// Ask git which project the selected session is in, once per session per summon.
+    ///
+    /// The tab title is the task, and two projects can be working on tasks that read the same
+    /// at a glance. The repository name is what tells them apart — and a message sent to the
+    /// wrong one cannot be taken back by reading it.
+    private func refreshProjectInfo() {
+        guard let target = currentTarget, projectCache[target.id] == nil else { return }
+        DispatchQueue.global(qos: .utility).async {
+            guard let cwd = Targets.workingDirectory(of: target),
+                  let info = Project.info(cwd: cwd) else { return }
+            DispatchQueue.main.async {
+                self.projectCache[target.id] = info
+                if self.currentTarget?.id == target.id { self.updateTargetLabel() }
+            }
+        }
     }
 
     private func updateTargetLabel() {
@@ -1135,14 +1167,30 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 .foregroundColor: t.isClaude ? Style.accent : NSColor.tertiaryLabelColor,
                 .font: NSFont.systemFont(ofSize: 10),
             ]))
+            let project = projectCache[t.id]
+            if let p = project, !p.name.isEmpty {
+                s.append(NSAttributedString(string: p.name + "  ", attributes: [
+                    .foregroundColor: NSColor.labelColor,
+                    .font: NSFont.systemFont(ofSize: Style.hintSize, weight: .semibold),
+                ]))
+            }
             var name = t.label
-            if name.count > 40 { name = String(name.prefix(40)) + "…" }
+            let room = project == nil ? 40 : 28
+            if name.count > room { name = String(name.prefix(room)) + "…" }
             // Full strength: this is the one thing on the card that says which conversation
             // everything else belongs to, and at secondary it read as a caption.
             s.append(NSAttributedString(string: name, attributes: [
                 .foregroundColor: NSColor.labelColor,
                 .font: NSFont.systemFont(ofSize: Style.hintSize),
             ]))
+            if let p = project, !p.branch.isEmpty {
+                var git = "  ⎇ " + p.branch
+                if p.dirty > 0 { git += " *\(p.dirty)" }
+                s.append(NSAttributedString(string: git, attributes: [
+                    .foregroundColor: NSColor.tertiaryLabelColor,
+                    .font: NSFont.systemFont(ofSize: Style.hintSize - 0.5),
+                ]))
+            }
             if targets.count > 1 {
                 s.append(NSAttributedString(string: "  \(targetIndex + 1)/\(targets.count)", attributes: [
                     .foregroundColor: NSColor.secondaryLabelColor,
