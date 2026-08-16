@@ -155,6 +155,11 @@ whichever end the newest message is at — auto-scrolling to the top rather than
 and it is remembered. Only the transcript flips: a terminal capture is a picture of a grid,
 and reversing its lines would have a wrapped sentence reading upwards.
 
+While the session is working, the pane carries a line saying what it is doing —
+`Finagling… (5m 52s · ↓ 18.6k tokens)`. That one is scraped from the terminal even when
+everything else comes from the file, because it is never written to the file: the transcript
+records messages once they exist, and this is a spinner painted on the screen and erased again.
+
 Runs of tool calls fold. A single answer can sit under thirty lines of paths and shell, and
 the shell is not what you came back to read — so each finished run collapses to one line saying
 how many steps it took and which tools ran, and clicking it opens the run back up. The run still

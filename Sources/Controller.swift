@@ -19,6 +19,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var outputHost: NSScrollView!
     private var outputView: NSTextView!
     private var outputLine: NSView!
+    /// What the session is doing right now. Hidden when it is not doing anything.
+    private var activityLabel: NSTextField!
     private var targetLabel: NSTextField!
     private var hints: KeyHintsView!
 
@@ -65,6 +67,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// loop stands down: it runs a beat later than the fill and would otherwise put the live
     /// session back, which looks like the file never loaded.
     private var cannedTranscript: String?
+    /// Set when the pane comes back on screen: wherever the reader had scrolled to belongs to
+    /// the last time they looked, and what they want now is what has happened since.
+    private var jumpToNewestOnFill = false
     /// While set, the target label keeps its stand-in. The session scan lands a beat after the
     /// fill and would otherwise write a real tab title into a picture bound for the README.
     private var usingStandInLabel = false
@@ -176,6 +181,15 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         outputView = PromptController.makeOutputView()
         outputView.delegate = self
 
+        // Sits at the top of the pane rather than in the text: it changes every second, and
+        // rewriting the transcript that often would throw away the reader's scroll position.
+        activityLabel = NSTextField(labelWithString: "")
+        activityLabel.font = NSFont.monospacedSystemFont(ofSize: Style.hintSize, weight: .regular)
+        activityLabel.textColor = Style.accent
+        activityLabel.lineBreakMode = .byTruncatingTail
+        activityLabel.isHidden = true
+        card.addSubview(activityLabel)
+
         outputHost = NSScrollView()
         outputHost.drawsBackground = false
         outputHost.borderType = .noBorder
@@ -279,7 +293,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         usingStandInLabel = false
         // The pane keeps its state across a hide, so its refresh loop has to be picked back up
         // here. Without this the first Esc freezes it until you press ⌘J twice.
-        if outputOpen { startOutput() }
+        if outputOpen {
+            jumpToNewestOnFill = true
+            startOutput()
+        }
 
         panel.alphaValue = 0
         NSApp.activate(ignoringOtherApps: true)
@@ -561,8 +578,14 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
         outputHost.isHidden = outputH == 0
         outputLine.isHidden = outputH == 0
+        activityLabel.isHidden = outputH == 0 || activityLabel.stringValue.isEmpty
         if outputH > 0 {
-            outputHost.frame = NSRect(x: 0, y: y, width: W, height: outputH)
+            let strip: CGFloat = activityLabel.isHidden ? 0 : Style.hintHeight
+            outputHost.frame = NSRect(x: 0, y: y, width: W, height: outputH - strip)
+            if strip > 0 {
+                activityLabel.frame = NSRect(x: Style.padH, y: y + outputH - strip,
+                                             width: W - Style.padH * 2, height: strip)
+            }
             // The document view starts at zero width, and with widthTracksTextView that makes
             // the text container zero wide too — the text is there and simply has nowhere to
             // go. Give it the clip view's width by hand.
@@ -796,7 +819,17 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         outputTimer = t
     }
 
+    /// Show or clear the "what is it doing right now" strip.
+    private func setActivity(_ text: String?) {
+        let next = text ?? ""
+        guard next != activityLabel.stringValue else { return }
+        activityLabel.stringValue = next
+        // Appearing and disappearing changes the pane's height, so the card has to be told.
+        relayout()
+    }
+
     private func stopOutput() {
+        setActivity(nil)
         if outputTimer != nil { Log.write("output: stopped following") }
         outputTimer?.invalidate()
         outputTimer = nil
@@ -815,7 +848,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                     self.lastOutput = rendered.signature
                     // Which edge is "keeping up" depends on the order: newest-first puts the
                     // arriving message at the top, so following it means staying at the top.
-                    let following = self.outputView.string.isEmpty || self.outputIsAtNewestEdge
+                    let following = self.jumpToNewestOnFill
+                        || self.outputView.string.isEmpty
+                        || self.outputIsAtNewestEdge
+                    self.jumpToNewestOnFill = false
                     let clip = self.outputHost.contentView
                     let saved = clip.bounds.origin
                     self.outputView.textStorage?.setAttributedString(rendered.text)
@@ -829,6 +865,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                         self.outputHost.reflectScrolledClipView(clip)
                     }
                 }
+                // The status line is painted on the terminal and never written to the file, so
+                // reading the conversation from disk still leaves this one thing to scrape.
+                let running = Activity.parse(Targets.capture(target) ?? "")
+                DispatchQueue.main.async { self.setActivity(running) }
                 return
             }
             guard Config.shared.outputMode != "transcript" else { return }
@@ -851,7 +891,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 // "already at the bottom" test is false and it would sit at the top of a
                 // terminal screen — which is the oldest and usually emptiest part of it.
                 let clip = self.outputHost.contentView
-                let atBottom = self.outputView.string.isEmpty || self.outputIsScrolledToBottom
+                let atBottom = self.jumpToNewestOnFill
+                    || self.outputView.string.isEmpty
+                    || self.outputIsScrolledToBottom
+                self.jumpToNewestOnFill = false
                 let saved = clip.bounds.origin
                 let body = text.isEmpty ? L.t.noOutput : text
                 if Ansi.hasEscapes(body) {

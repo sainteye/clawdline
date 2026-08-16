@@ -654,6 +654,51 @@ group("folding runs of tool calls") {
            Transcript.distinct(["Bash", "Read", "Bash", "Bash"]), ["Bash", "Read"])
 }
 
+group("the line that says what it is doing") {
+    // Real captures, spinner glyphs and all.
+    let busy = """
+    ⎿  $ swift build 2>&1 | tail -3 (3s)
+    ────────────────────────────────
+    ✢ Generating… (18s · still thinking with xhigh effort)
+    ────────────────────────────────
+    ❯
+    """
+    expect("the live line is read", Activity.parse(busy),
+           "Generating… (18s · still thinking with xhigh effort)")
+
+    for glyph in ["✳", "✻", "✽", "✢", "✶", "·", "*"] {
+        check("\(glyph) is a spinner", Activity.parse("\(glyph) Catapulting… (21s)") != nil)
+    }
+    expect("the glyph is not part of the message", Activity.parse("✻ Herding… (4s)"), "Herding… (4s)")
+
+    // Real, and the reason the first version of this was wrong: past a minute the counter
+    // changes shape, so the strip disappeared exactly when the wait was long enough to matter.
+    expect("minutes are still a clock", Activity.parse("✢ Finagling… (5m 52s · ↓ 15.3k tokens)"),
+           "Finagling… (5m 52s · ↓ 15.3k tokens)")
+    check("hours too", Activity.parse("✻ Waiting… (1h 4m 9s)") != nil)
+    check("a count of things is not a clock", Activity.parse("✳ Reading… (3 stages)") == nil)
+
+    // A terminal is full of other lines that end in a duration. The glyph is what tells them
+    // apart, and getting this wrong reports a session as busy when it has gone quiet.
+    check("a tool result is not activity", Activity.parse("⎿  $ which swiftc (3s)") == nil)
+    check("an echoed command is not activity", Activity.parse("print('target:… (3s)") == nil)
+    check("a bullet with no counter is not activity", Activity.parse("· just a list item…") == nil)
+    check("a counter with no ellipsis is not activity", Activity.parse("✳ done (3s)") == nil)
+    check("an idle screen says nothing", Activity.parse("❯\n────\n  atrium  main") == nil)
+    check("empty says nothing", Activity.parse("") == nil)
+
+    // A tall window can still be holding spinner lines that scrolled past instead of being
+    // erased. Reading one of those keeps a finished session looking busy forever.
+    let stale = (["✢ Generating… (9s)"] + Array(repeating: "some output", count: 40) + ["❯"])
+        .joined(separator: "\n")
+    check("a line scrolled far above is not the live one", Activity.parse(stale) == nil)
+
+    // The newest one wins when several are on screen at once.
+    let several = ["✢ Generating… (9s)", "✻ Generating… (10s)", "✽ Generating… (11s)", "❯"]
+        .joined(separator: "\n")
+    expect("the last one is the live one", Activity.parse(several), "Generating… (11s)")
+}
+
 group("the transcript behind the README pictures") {
     // The screenshots are shot from this file through the real parse and render. If it stops
     // yielding what the pictures show, they go quietly blank or quietly wrong — and a picture
