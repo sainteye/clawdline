@@ -18,6 +18,7 @@ protocol Copy {
     var hintList: String { get }
     var hintMascot: String { get }
     var hintOutput: String { get }
+    var hintFullscreen: String { get }
 
     // Target state
     var scanning: String { get }
@@ -29,6 +30,7 @@ protocol Copy {
     var cannotList: String { get }
     var noOutput: String { get }
     func outputSize(_ pt: Int) -> String
+    func foldedTools(_ count: Int) -> String
 
     // Menu bar
     var menuOpen: String { get }
@@ -55,6 +57,7 @@ struct English: Copy {
     let hintList = "list"
     let hintMascot = "mascot"
     let hintOutput = "output"
+    let hintFullscreen = "full screen"
 
     let scanning = "Scanning…"
     let noSession = "No Claude Code session found"
@@ -65,6 +68,7 @@ struct English: Copy {
     let cannotList = "Could not read iTerm2 sessions"
     let noOutput = "Nothing to read from this session yet."
     func outputSize(_ pt: Int) -> String { "Output text \(pt)pt — ⌘J to see it" }
+    func foldedTools(_ count: Int) -> String { "\(count) steps" }
 
     let menuOpen = "Open prompt bar"
     let menuReveal = "Jump to target tab"
@@ -99,6 +103,7 @@ struct TraditionalChinese: Copy {
     let hintList = "清單"
     let hintMascot = "換角色"
     let hintOutput = "看輸出"
+    let hintFullscreen = "全螢幕"
 
     let scanning = "掃描中⋯"
     let noSession = "找不到在跑 Claude Code 的分頁"
@@ -109,6 +114,7 @@ struct TraditionalChinese: Copy {
     let cannotList = "讀不到 iTerm2 的 session"
     let noOutput = "還讀不到這個分頁的內容。"
     func outputSize(_ pt: Int) -> String { "輸出字級 \(pt)pt——按 ⌘J 看" }
+    func foldedTools(_ count: Int) -> String { "\(count) 個動作" }
 
     let menuOpen = "打開輸入框"
     let menuReveal = "跳到目標分頁"

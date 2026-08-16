@@ -18,6 +18,10 @@ enum Markdown {
         var text: NSColor
         var dim: NSColor
         var accent: NSColor
+        /// Inline code is coloured rather than given a ground, which is what the terminal does
+        /// and what a chip cannot do safely: a background attribute is painted across a line's
+        /// trailing whitespace to the margin, so a chip that breaks at a space leaves a bar.
+        var code: NSColor
         var codeBackground: NSColor
         var ruleColor: NSColor
     }
@@ -228,84 +232,68 @@ enum Markdown {
                                        indent: 12, firstIndent: 12, lineSpacing: 2)
             out.append(NSAttributedString(string: line + "\n", attributes: [
                 .font: theme.mono,
-                .foregroundColor: theme.text,
+                .foregroundColor: theme.code,
                 .backgroundColor: theme.codeBackground,
                 .paragraphStyle: style,
             ]))
         }
     }
 
-    /// Tables are measured and laid out on tab stops.
+    /// Tables are drawn as real tables, with borders.
     ///
-    /// The obvious alternative — set the whole table in monospace and let the pipes line up —
-    /// does not work on this content. The source is not padded, and a CJK glyph comes from a
-    /// fallback face whose advance is not reliably twice the monospace one, so the pipes land
-    /// somewhere different on every row. Measuring each cell and placing a tab stop is exact,
-    /// and it frees the table to use the body face instead of forcing everything into mono.
+    /// Two simpler things were tried first and both fail on this content. Leaving the pipes in
+    /// and setting the whole table in monospace does not align: the source is not padded, and a
+    /// CJK glyph comes from a fallback face whose advance is not reliably twice the monospace
+    /// one, so the pipes land somewhere different on every row. Measured tab stops do align,
+    /// but a table with no rules reads as three loose columns of text.
+    ///
+    /// `NSTextTable` needs TextKit 1 — see the note where the pane's text view is built.
     private static func appendTable(_ rows: [String], to out: NSMutableAttributedString, theme: Theme) {
         let grid = rows.filter { !isTableSeparator($0) }.map { cells($0) }
         guard let columns = grid.map(\.count).max(), columns > 0 else { return }
 
-        let plain = NSParagraphStyle.default
-        var widths = [CGFloat](repeating: 0, count: columns)
-        for (r, row) in grid.enumerated() {
-            for (c, cell) in row.enumerated() {
-                let measured = inline(cell, theme: theme, style: plain, bold: r == 0).size().width
-                widths[c] = max(widths[c], ceil(measured))
-            }
-        }
-
-        let indent: CGFloat = 12, gap: CGFloat = 18
-        var stops: [NSTextTab] = []
-        var x = indent
-        for w in widths.dropLast() {
-            x += w + gap
-            stops.append(NSTextTab(textAlignment: .left, location: x))
-        }
-        let total = widths.reduce(0, +) + gap * CGFloat(columns - 1)
-
-        func style(first: Bool, last: Bool) -> NSMutableParagraphStyle {
-            let p = paragraphStyle(spacingBefore: first ? 10 : 0, spacing: last ? 12 : 0,
-                                   indent: indent, firstIndent: indent, lineSpacing: 3)
-            p.tabStops = stops
-            p.defaultTabInterval = 60
-            return p
-        }
+        let table = NSTextTable()
+        table.numberOfColumns = columns
+        table.layoutAlgorithm = .automaticLayoutAlgorithm
+        table.collapsesBorders = true
+        table.hidesEmptyCells = false
 
         for (r, row) in grid.enumerated() {
-            let rowStyle = style(first: r == 0, last: r == grid.count - 1)
-            for (c, cell) in row.enumerated() {
-                if c > 0 {
-                    out.append(NSAttributedString(string: "\t", attributes: [
-                        .font: theme.body, .paragraphStyle: rowStyle,
-                    ]))
-                }
+            for c in 0..<columns {
+                let block = NSTextTableBlock(table: table, startingRow: r, rowSpan: 1,
+                                             startingColumn: c, columnSpan: 1)
+                block.setBorderColor(theme.ruleColor.withAlphaComponent(0.45))
+                block.setWidth(1, type: .absoluteValueType, for: .border)
+                block.setWidth(7, type: .absoluteValueType, for: .padding)
+                if r == 0 { block.backgroundColor = theme.codeBackground.withAlphaComponent(0.12) }
+
+                let style = NSMutableParagraphStyle()
+                style.textBlocks = [block]
+                style.lineSpacing = 2
+                // Spacing here would push the rows apart inside their own borders.
+                style.paragraphSpacing = 0
+                style.paragraphSpacingBefore = 0
+
+                let cell = c < row.count ? row[c] : ""
                 let run = NSMutableAttributedString(
-                    attributedString: inline(cell, theme: theme, style: rowStyle, bold: r == 0))
+                    attributedString: inline(cell, theme: theme, style: style, bold: r == 0))
+                run.addAttribute(.paragraphStyle, value: style,
+                                 range: NSRange(location: 0, length: run.length))
                 if r == 0 {
                     run.addAttribute(.foregroundColor, value: theme.dim,
                                      range: NSRange(location: 0, length: run.length))
                 }
                 out.append(run)
-            }
-            out.append(NSAttributedString(string: "\n", attributes: [.paragraphStyle: rowStyle]))
-
-            // The header keeps its rule; the source's own dashes were markup, not content.
-            if r == 0, grid.count > 1 {
-                let ruleFont = NSFont.monospacedSystemFont(ofSize: theme.body.pointSize * 0.7,
-                                                           weight: .regular)
-                let unit = ("─" as NSString).size(withAttributes: [.font: ruleFont]).width
-                let count = unit > 0 ? max(1, Int(total / unit)) : 1
-                let ruleStyle = paragraphStyle(spacing: 4, indent: indent, firstIndent: indent,
-                                               lineSpacing: 0)
-                out.append(NSAttributedString(string: String(repeating: "─", count: count) + "\n",
-                                              attributes: [
-                    .font: ruleFont,
-                    .foregroundColor: theme.ruleColor,
-                    .paragraphStyle: ruleStyle,
-                ]))
+                out.append(NSAttributedString(string: "\n", attributes: [.paragraphStyle: style]))
             }
         }
+
+        // A table block swallows the paragraph spacing of its own rows, so the air after the
+        // table has to come from a paragraph that is outside it.
+        out.append(NSAttributedString(string: "\n", attributes: [
+            .font: NSFont.systemFont(ofSize: 4),
+            .paragraphStyle: paragraphStyle(spacing: 6),
+        ]))
     }
 
     private static func appendRule(to out: NSMutableAttributedString, theme: Theme) {
@@ -360,21 +348,9 @@ enum Markdown {
 
             if c == "`" , let close = find(["`"], from: i + 1) {
                 flush()
-                // Narrow spaces inside the run, because a background attribute has no padding and
-                // a chip that touches its own letters reads as a highlighter, not as code.
-                //
-                // They have to be the no-break kind, and so does any space inside the code: a
-                // background is painted across a line's trailing whitespace all the way to the
-                // margin, so a chip that breaks at a space leaves a black bar half a line wide.
-                // Nothing can break inside a chip now; TextKit still breaks one by character when
-                // it is too long to fit, and that break lands on a letter rather than a space.
-                let body = String(chars[(i + 1)..<close])
-                    .replacingOccurrences(of: " ", with: "\u{00A0}")
-                let code = "\u{202F}" + body + "\u{202F}"
-                out.append(NSAttributedString(string: code, attributes: [
+                out.append(NSAttributedString(string: String(chars[(i + 1)..<close]), attributes: [
                     .font: theme.mono,
-                    .foregroundColor: theme.text,
-                    .backgroundColor: theme.codeBackground,
+                    .foregroundColor: theme.code,
                     .paragraphStyle: style,
                 ]))
                 i = close + 1
@@ -425,9 +401,12 @@ enum Markdown {
                 flush()
                 let label = String(chars[(i + 1)..<closeBracket])
                 let url = String(chars[(closeBracket + 2)..<closeParen])
+                // Underlined here rather than by the text view: it styles every link the same
+                // way, and the pane has other things that are links without being hyperlinks.
                 out.append(NSAttributedString(string: label, attributes: [
                     .font: face(),
                     .foregroundColor: theme.accent,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
                     .link: url,
                     .paragraphStyle: style,
                 ]))

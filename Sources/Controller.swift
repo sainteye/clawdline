@@ -1,6 +1,6 @@
 import AppKit
 
-final class PromptController: NSObject, NSWindowDelegate {
+final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     static let shared = PromptController()
 
     private var panel: PromptPanel!
@@ -51,8 +51,15 @@ final class PromptController: NSObject, NSWindowDelegate {
     private var hintResetWork: DispatchWorkItem?
     private var idleWork: DispatchWorkItem?
     private var outputOpen = false
+    /// Filling the screen is a size, not macOS's fullscreen: the native one moves the window to
+    /// its own Space, which for a panel you summon over whatever you were doing is the opposite
+    /// of what it is for. This just makes the frame the size of the screen.
+    private var fullscreen = false
     private var outputTimer: Timer?
     private var lastOutput: String?
+    /// Which folded runs of tool calls the reader has opened. Cleared when the pane closes:
+    /// it is a reading position, not a setting, and it should not outlive the session on screen.
+    private var expandedFolds: Set<String> = []
     private var danceWork: DispatchWorkItem?
 
     private var currentTarget: TargetSession? {
@@ -155,44 +162,8 @@ final class PromptController: NSObject, NSWindowDelegate {
         card.addSubview(listBox)
         card.addSubview(listTopLine)
 
-        // The output pane. Read-only but selectable — being able to copy an error out of it
-        // is most of the point of being able to see it at all.
-        outputView = NSTextView()
-        outputView.isEditable = false
-        outputView.isSelectable = true
-        outputView.drawsBackground = false
-        outputView.font = Style.outputFont
-        outputView.defaultParagraphStyle = {
-            let p = NSMutableParagraphStyle()
-            p.lineSpacing = 1.5
-            return p
-        }()
-        // secondaryLabelColor at 11pt over a blurred card was not readable. This pane is
-        // something you read, not a caption, so it gets full-strength text and a ground of
-        // its own — the contrast comes from the surface as much as the ink.
-        outputView.textColor = .labelColor
-        // The text view styles links itself and overrides whatever the renderer set, so system
-        // blue would land on an orange card unless it is told otherwise here.
-        outputView.linkTextAttributes = [
-            .foregroundColor: Style.accent,
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
-            .cursor: NSCursor.pointingHand,
-        ]
-        outputView.drawsBackground = true
-        outputView.backgroundColor = Style.outputBg
-        outputView.textContainerInset = NSSize(width: Style.padH, height: 10)
-        // A text view inside a scroll view needs all of this or its frame stays at zero and
-        // it draws nothing — no warning, no error, just an empty pane.
-        outputView.minSize = NSSize(width: 0, height: 0)
-        outputView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
-                                    height: CGFloat.greatestFiniteMagnitude)
-        outputView.isVerticallyResizable = true
-        outputView.isHorizontallyResizable = false
-        outputView.autoresizingMask = [.width]
-        outputView.textContainer?.containerSize = NSSize(width: 0,
-                                                         height: CGFloat.greatestFiniteMagnitude)
-        outputView.textContainer?.widthTracksTextView = true
-        outputView.textContainer?.lineFragmentPadding = 0
+        outputView = PromptController.makeOutputView()
+        outputView.delegate = self
 
         outputHost = NSScrollView()
         outputHost.drawsBackground = false
@@ -222,6 +193,7 @@ final class PromptController: NSObject, NSWindowDelegate {
             .init(key: "⌘K", label: L.t.hintList),
             .init(key: "⌘M", label: L.t.hintMascot),
             .init(key: "⌘J", label: L.t.hintOutput),
+            .init(key: "⌘F", label: L.t.hintFullscreen),
             .init(key: "esc", label: ""),
         ]
         card.addSubview(hints)
@@ -258,6 +230,7 @@ final class PromptController: NSObject, NSWindowDelegate {
         textView.onPickIndex = { [weak self] i in self?.pick(i) }
         textView.onToggleDance = { [weak self] in self?.toggleDance() }
         textView.onToggleOutput = { [weak self] in self?.toggleOutput() }
+        textView.onToggleFullscreen = { [weak self] in self?.toggleFullscreen() }
         textView.onZoomOutput = { [weak self] step in self?.zoomOutput(step) }
         textView.onTextChanged = { [weak self] in
             self?.relayout()
@@ -333,6 +306,11 @@ final class PromptController: NSObject, NSWindowDelegate {
 
     private func position() {
         let screen = screenUnderMouse()
+        if fullscreen {
+            let v = screen.visibleFrame
+            panel.setFrameOrigin(NSPoint(x: round(v.minX), y: round(v.minY)))
+            return
+        }
         let f = screen.frame
         let h = panel.frame.height
         let x = f.midX - panelWidth / 2
@@ -457,6 +435,7 @@ final class PromptController: NSObject, NSWindowDelegate {
     /// Terminal lines are long, and 720pt wraps most of them. Widen while the pane is open,
     /// then hand the width back so the bar is a bar again when it closes.
     private var panelWidth: CGFloat {
+        if fullscreen { return screenUnderMouse().visibleFrame.width }
         guard outputOpen else { return Config.shared.width }
         return min(Config.shared.width * 1.45, screenUnderMouse().frame.width * 0.88).rounded()
     }
@@ -466,10 +445,21 @@ final class PromptController: NSObject, NSWindowDelegate {
         let inputH = max(Style.inputMinHeight, textHeight() + Style.inputPadV * 2)
         let visibleRows = listMode != .none ? min(rows.count, 9) : 0
         let listH = visibleRows > 0 ? CGFloat(visibleRows) * Style.rowHeight + Style.listPadV * 2 : 0
-        let outputH = outputOpen ? Style.outputHeight : 0
-        let cardH = inputH + (listH > 0 ? listH + 1 : 0) + (outputH > 0 ? outputH + 1 : 0)
-            + 1 + Style.hintHeight
-        let total = cardH + (mascot.boxSize.height - mascot.footInset - mascot.overlap) + Style.mascotTopPad
+        // Full screen gives the rest of the height to the pane rather than growing everything:
+        // the input line and the footer are the same size whatever the window is.
+        let fixed = inputH + (listH > 0 ? listH + 1 : 0) + 1 + Style.hintHeight
+        let outputH: CGFloat = !outputOpen ? 0
+            : (fullscreen ? max(80, screenUnderMouse().visibleFrame.height - fixed - 1)
+                          : Style.outputHeight)
+        let cardH = fixed + (outputH > 0 ? outputH + 1 : 0)
+        // The mascot stands above the card, and at full screen there is no above. Hiding it is
+        // the honest answer — squeezing it inside would put it somewhere it never belongs.
+        mascot.isHidden = fullscreen
+        glow.isHidden = fullscreen
+        let headroom = fullscreen
+            ? 0
+            : (mascot.boxSize.height - mascot.footInset - mascot.overlap) + Style.mascotTopPad
+        let total = cardH + headroom
 
         var f = panel.frame
         let top = f.maxY
@@ -479,6 +469,9 @@ final class PromptController: NSObject, NSWindowDelegate {
 
         container.frame = NSRect(origin: .zero, size: f.size)
         cardHost.frame = NSRect(x: 0, y: 0, width: W, height: cardH)
+        // Square corners at full screen: a rounded card floating flush to every edge reads as a
+        // window that failed to fit, not as one filling the screen.
+        card.layer?.cornerRadius = fullscreen ? 0 : Style.corner
         cardHost.layer?.shadowPath = CGPath(roundedRect: cardHost.bounds,
                                             cornerWidth: Style.corner, cornerHeight: Style.corner,
                                             transform: nil)
@@ -631,7 +624,27 @@ final class PromptController: NSObject, NSWindowDelegate {
         } else {
             stopOutput()
             lastOutput = nil
+            // Which runs were open is where the reader had got to, not a preference.
+            expandedFolds.removeAll()
+            // Full screen exists to read in. Closing the pane and leaving a screen-sized card
+            // with one input line in it would be a state nobody asked for.
+            if fullscreen {
+                fullscreen = false
+                relayout()
+                position()
+            }
         }
+    }
+
+    /// ⌘F. Reading is the only reason to want the whole screen, so it brings the pane with it —
+    /// a full-screen window with one input line in it would be a worse version of the bar.
+    private func toggleFullscreen() {
+        if !fullscreen && !outputOpen {
+            toggleOutput()
+        }
+        fullscreen.toggle()
+        relayout()
+        position()
     }
 
     /// ⌘+ / ⌘- / ⌘0. The size is persisted, because a size you have to set again every
@@ -732,12 +745,31 @@ final class PromptController: NSObject, NSWindowDelegate {
         guard target.isClaude,
               let cwd = Targets.workingDirectory(of: target),
               let file = Transcript.locate(cwd: cwd, tabTitle: target.name),
-              let text = Transcript.tail(of: file, bytes: 400_000)
+              // Eight megabytes, because the limit that bites is bytes and not entries: at the
+              // 400KB this used to read, a busy session yielded sixteen records and the reader
+              // hit the top of the pane almost immediately.
+              let text = Transcript.tail(of: file, bytes: 8_000_000)
         else { return nil }
         let entries = Transcript.parse(text)
         guard !entries.isEmpty else { return nil }
-        return (Transcript.render(entries, size: Config.shared.outputSize, mono: Style.outputFont),
-                Transcript.signature(of: file) + "-\(Config.shared.outputSize)")
+        let folds = expandedFolds
+        return (Transcript.render(entries, size: Config.shared.outputSize,
+                                  mono: Style.outputFont, expanded: folds),
+                Transcript.signature(of: file)
+                    + "-\(Config.shared.outputSize)-\(folds.sorted().joined(separator: ","))")
+    }
+
+    /// A folded run of tool calls was clicked. The pane is read-only, so a link is the only
+    /// thing in it that can be clicked at all — which is why folds are links rather than, say,
+    /// a disclosure triangle drawn into the text.
+    func textView(_ view: NSTextView, clickedOnLink link: Any, at index: Int) -> Bool {
+        guard let url = (link as? URL)?.absoluteString ?? link as? String else { return false }
+        guard url.hasPrefix("clawdline://fold/") else { return false }   // real links open normally
+        let key = String(url.dropFirst("clawdline://fold/".count))
+        if expandedFolds.contains(key) { expandedFolds.remove(key) } else { expandedFolds.insert(key) }
+        // The signature carries the fold set, so this re-renders rather than being skipped.
+        refreshOutput()
+        return true
     }
 
     /// Only auto-scroll when the reader was already at the bottom — yanking the view down
@@ -848,6 +880,9 @@ final class PromptController: NSObject, NSWindowDelegate {
 
     private func pick(_ i: Int, closeList: Bool = true) {
         guard targets.indices.contains(i) else { return }
+        // Fold keys are derived from content, so they would not collide across sessions — but
+        // carrying them over means arriving in a new transcript with something already open.
+        if targetIndex != i { expandedFolds.removeAll() }
         targetIndex = i
         stickyID = targets[i].id
         stickyBase = lastKnownCurrentID
@@ -1023,12 +1058,20 @@ final class PromptController: NSObject, NSWindowDelegate {
     /// The reason is practical: `screencapture` needs Screen Recording permission, and without it
     /// the result is the wallpaper with every window stripped out — which leaves you blind while
     /// tuning layout. This path only paints our own layers, so it needs no permission at all.
-    func snapshot(to path: String, routine: String? = nil, at time: Double? = nil, list: String? = nil, output: Bool = false) {
+    func snapshot(to path: String, routine: String? = nil, at time: Double? = nil, list: String? = nil,
+                  output: Bool = false, session: String? = nil, full: Bool = false) {
         // Opening the pane has to happen before the wait, not inside the render: the transcript
         // arrives asynchronously, so a pane opened at draw time is always drawn empty.
         let arrange = { [weak self] in
             guard let self else { return }
+            // Naming a session makes a particular transcript reproducible to look at, which is
+            // the only way to check how something rare — a table, a long code block — comes out.
+            if let want = session, !want.isEmpty,
+               let i = self.targets.firstIndex(where: { $0.label.localizedCaseInsensitiveContains(want) }) {
+                self.pick(i, closeList: false)
+            }
             if output, !self.outputOpen { self.toggleOutput() }
+            if full, !self.fullscreen { self.toggleFullscreen() }
             if list == "mascots" { self.showList(.mascots) }
             else if list == "sessions" { self.showList(.sessions) }
         }
@@ -1065,11 +1108,15 @@ final class PromptController: NSObject, NSWindowDelegate {
 
         let wasVisible = panel.isVisible
         if !wasVisible { show() }
-        arrange()
-        // Reading a session back costs an osascript round trip, so give it room.
-        DispatchQueue.main.asyncAfter(deadline: .now() + (output ? 2.2 : 0.55)) {
-            render()
-            if !wasVisible { self.hide() }
+        // The session list arrives from an async scan, so picking one has to wait for it —
+        // arranging immediately picks from an empty list and silently keeps the current target.
+        DispatchQueue.main.asyncAfter(deadline: .now() + (session == nil ? 0 : 1.4)) {
+            arrange()
+            // Reading a session back costs an osascript round trip, so give it room.
+            DispatchQueue.main.asyncAfter(deadline: .now() + (output ? 2.2 : 0.55)) {
+                render()
+                if !wasVisible { self.hide() }
+            }
         }
     }
 
@@ -1237,5 +1284,54 @@ final class PromptController: NSObject, NSWindowDelegate {
     func revealCurrentTarget() {
         guard let t = currentTarget else { return }
         Targets.reveal(t)
+    }
+}
+
+extension PromptController {
+
+    /// The transcript pane's text view.
+    ///
+    /// Its own function so a test can hold one: two of the settings below fail silently rather
+    /// than loudly, and a silent failure with no carrier comes back.
+    static func makeOutputView() -> NSTextView {
+        // Read-only but selectable — being able to copy an error out of it is most of the point
+        // of being able to see it at all.
+        let view = NSTextView()
+        view.isEditable = false
+        view.isSelectable = true
+        view.font = Style.outputFont
+        view.defaultParagraphStyle = {
+            let p = NSMutableParagraphStyle()
+            p.lineSpacing = 1.5
+            return p
+        }()
+        // secondaryLabelColor at 11pt over a blurred card was not readable. This pane is
+        // something you read, not a caption, so it gets full-strength text and a ground of
+        // its own — the contrast comes from the surface as much as the ink.
+        view.textColor = .labelColor
+        // A fresh text view is TextKit 2, and NSTextTable — which draws the borders on a
+        // Markdown table — does not exist there. Touching layoutManager pins it to TextKit 1.
+        // Skip this and the cells lay out as ordinary paragraphs: no warning, no error, the
+        // table just quietly loses its rules.
+        _ = view.layoutManager
+        // Only the cursor. Whatever else goes in here wins over the renderer's own attributes
+        // for every link equally — which would paint the fold controls to look like hyperlinks,
+        // when the whole point is that one of them opens a browser and the other does not.
+        view.linkTextAttributes = [.cursor: NSCursor.pointingHand]
+        view.drawsBackground = true
+        view.backgroundColor = Style.outputBg
+        view.textContainerInset = NSSize(width: Style.padH, height: 10)
+        // A text view inside a scroll view needs all of this or its frame stays at zero and it
+        // draws nothing — no warning, no error, just an empty pane.
+        view.minSize = NSSize(width: 0, height: 0)
+        view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                              height: CGFloat.greatestFiniteMagnitude)
+        view.isVerticallyResizable = true
+        view.isHorizontallyResizable = false
+        view.autoresizingMask = [.width]
+        view.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        view.textContainer?.widthTracksTextView = true
+        view.textContainer?.lineFragmentPadding = 0
+        return view
     }
 }

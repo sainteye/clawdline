@@ -437,6 +437,7 @@ let mdTheme = Markdown.Theme(
     body: NSFont.systemFont(ofSize: 12),
     mono: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
     text: .labelColor, dim: .secondaryLabelColor, accent: .systemOrange,
+    code: .systemBlue,
     codeBackground: NSColor(white: 0, alpha: 0.2), ruleColor: .tertiaryLabelColor)
 
 func md(_ s: String) -> NSAttributedString { Markdown.render(s, theme: mdTheme) }
@@ -497,7 +498,7 @@ group("markdown: no syntax reaches the screen") {
                  "first", "second", "quoted aside", "let x = 1", "done"] {
         check("kept: \(word)", out.contains(word))
     }
-    check("table cells survive as columns", out.contains("a\tb"))
+    check("table cells survive", out.contains("a") && out.contains("b"))
 }
 
 group("markdown: headings") {
@@ -528,14 +529,14 @@ group("markdown: emphasis") {
 
 group("markdown: code") {
     let inlineCode = md("run `ls -l` now")
-    expect("backticks removed", mdPlain("run `ls -l` now"), "run ls -l now\n")
-    check("the chip is padded", inlineCode.string.contains("\u{202F}ls\u{00A0}-l\u{202F}"))
-    // A chip that breaks at a space paints its background to the margin, so it must not break.
-    check("no breakable space survives inside a chip",
-          !inlineCode.string.contains("ls -l"))
-    expect("code is monospace", (attr(inlineCode, .font, near: "ls\u{00A0}-l") as? NSFont)?.fontName,
+    expect("backticks removed", inlineCode.string, "run ls -l now\n")
+    // Colour rather than a ground: a background attribute is painted across a line's trailing
+    // whitespace to the margin, so code that broke at a space left a bar half a line wide.
+    expect("code is coloured", attr(inlineCode, .foregroundColor, near: "ls -l") as? NSColor,
+           NSColor.systemBlue)
+    check("code has no ground", attr(inlineCode, .backgroundColor, near: "ls -l") == nil)
+    expect("code is monospace", (attr(inlineCode, .font, near: "ls -l") as? NSFont)?.fontName,
            mdTheme.mono.fontName)
-    check("code has a ground", attr(inlineCode, .backgroundColor, near: "ls\u{00A0}-l") != nil)
 
     let fenced = md("```bash\nmake verify\n```")
     expect("the language tag is not content", fenced.string.contains("bash"), false)
@@ -548,21 +549,30 @@ group("markdown: tables and code blocks") {
     // Monospace alone does not align a table whose cells are CJK, so the columns are placed
     // on measured tab stops. What the test can see is that the structure is there.
     let table = md("| 承載體 | 擋什麼 |\n|---|---|\n| 測試 | 復發 |\n| 介面 | 看不見的狀態 |")
-    check("cells are separated by a tab", table.string.contains("承載體\t擋什麼"))
     check("the separator row is not content", !table.string.contains("|---|"))
     check("no pipes survive", !table.string.contains("|"))
     check("every cell is there", table.string.contains("看不見的狀態"))
+
+    // Borders come from NSTextTable, which needs TextKit 1. Without it the cells lay out as
+    // plain paragraphs and the table silently loses its rules.
     let header = attr(table, .paragraphStyle, near: "承載體") as? NSParagraphStyle
-    check("tab stops are set", (header?.tabStops.count ?? 0) >= 1)
-    check("a header rule is drawn", table.string.contains("─"))
+    let block = header?.textBlocks.first as? NSTextTableBlock
+    check("cells are table blocks", block != nil)
+    check("the table has a border", (block?.width(for: .border, edge: .minY) ?? 0) > 0)
+    check("cells are padded", (block?.width(for: .padding, edge: .minX) ?? 0) > 0)
+    expect("the table knows its width", block?.table.numberOfColumns, 2)
+    expect("the header is row zero", block?.startingRow, 0)
+    let second = (attr(table, .paragraphStyle, near: "看不見的狀態") as? NSParagraphStyle)?
+        .textBlocks.first as? NSTextTableBlock
+    expect("a body cell lands in a later row", second?.startingRow, 2)
 
     expect("cells drop the border pipes", Markdown.cells("| a | b |"), ["a", "b"])
     expect("cells survive without borders", Markdown.cells("a | b"), ["a", "b"])
 
     // Every newline is a paragraph, so block spacing on all of them pushes a snippet apart.
-    let block = md("```\nmake verify\ncd backend\nmake test\n```")
-    let middle = attr(block, .paragraphStyle, near: "cd backend") as? NSParagraphStyle
-    let last = attr(block, .paragraphStyle, near: "make test") as? NSParagraphStyle
+    let fenced = md("```\nmake verify\ncd backend\nmake test\n```")
+    let middle = attr(fenced, .paragraphStyle, near: "cd backend") as? NSParagraphStyle
+    let last = attr(fenced, .paragraphStyle, near: "make test") as? NSParagraphStyle
     expect("interior lines are not pushed apart", middle?.paragraphSpacing, 0)
     expect("interior lines have no space before", middle?.paragraphSpacingBefore, 0)
     check("the block still ends with space", (last?.paragraphSpacing ?? 0) > 0)
@@ -588,6 +598,9 @@ group("markdown: links") {
     expect("only the label is shown", a.string, "see the docs here\n")
     expect("the url is attached", attr(a, .link, near: "the docs") as? String,
            "https://example.com/x")
+    check("a link is underlined by the renderer", attr(a, .underlineStyle, near: "the docs") != nil)
+    expect("a link takes the accent", attr(a, .foregroundColor, near: "the docs") as? NSColor,
+           NSColor.systemOrange)
 }
 
 group("markdown: quotes and rules") {
@@ -600,6 +613,59 @@ group("markdown: quotes and rules") {
     let r = mdText("a\n\n---\n\nb")
     check("a rule becomes a line, not hyphens", !r.contains("---"))
     check("text either side survives", r.contains("a") && r.contains("b"))
+}
+
+group("folding runs of tool calls") {
+    func tool(_ name: String, _ text: String = "") -> Transcript.Entry {
+        .init(kind: .tool, text: text, tool: name, time: nil)
+    }
+    func result(_ text: String) -> Transcript.Entry {
+        .init(kind: .toolResult, text: text, tool: nil, time: nil)
+    }
+    let said = Transcript.Entry(kind: .assistant, text: "done", tool: nil, time: nil)
+    let mono = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+
+    let run = [tool("Read", "a.swift"), result("ok"), tool("Bash", "make"), result("ok")]
+    let folded = Transcript.render(run + [said], size: 11, mono: mono).string
+    check("a finished run collapses to one line", !folded.contains("a.swift"))
+    check("the count is shown", folded.contains("2"))
+    check("the tools are named", folded.contains("Read") && folded.contains("Bash"))
+    check("what came after is still there", folded.contains("done"))
+
+    // The run still going is the one worth watching; folding it hides the changing part.
+    let tail = Transcript.render([said] + run, size: 11, mono: mono).string
+    check("the last run stays open", tail.contains("a.swift"))
+
+    let key = Transcript.foldKey(run)
+    let opened = Transcript.render(run + [said], size: 11, mono: mono, expanded: [key]).string
+    check("an opened run shows its detail", opened.contains("a.swift"))
+
+    // One call is not worth a fold — the summary line would be as tall as the thing it hides.
+    let single = Transcript.render([tool("Read", "b.swift"), result("ok"), said],
+                                   size: 11, mono: mono).string
+    check("a single call is not folded", single.contains("b.swift"))
+
+    // Keyed by content, not position: the pane re-renders from the tail of a growing file, so
+    // an index would slide and open a different run than the one that was clicked.
+    expect("the same run keys the same", Transcript.foldKey(run), key)
+    check("a different run keys differently",
+          Transcript.foldKey([tool("Read", "other.swift"), result("ok")]) != key)
+    expect("repeated tools are named once",
+           Transcript.distinct(["Bash", "Read", "Bash", "Bash"]), ["Bash", "Read"])
+}
+
+group("the transcript pane's text view") {
+    let view = PromptController.makeOutputView()
+    // A fresh NSTextView is TextKit 2, where NSTextTable does not exist and a table silently
+    // loses its borders. Both of these fail without saying anything, which is why they are here.
+    check("it is pinned to TextKit 1", view.textLayoutManager == nil)
+    check("it has a TextKit 1 layout manager", view.layoutManager != nil)
+    check("it grows vertically", view.isVerticallyResizable)
+    check("its container tracks the width", view.textContainer?.widthTracksTextView == true)
+    // Anything but the cursor in here wins over the renderer for every link equally, and the
+    // pane has fold controls that are links without being hyperlinks.
+    check("link styling is left to the renderer",
+          view.linkTextAttributes?[.foregroundColor] == nil)
 }
 
 // MARK: - Result

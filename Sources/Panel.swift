@@ -51,6 +51,9 @@ enum Style {
     static let chipEdge = NSColor(white: 1, alpha: 0.09)
     /// Darkens whatever is behind it, so it reads as an inset surface in either appearance.
     static let outputBg = NSColor(white: 0, alpha: 0.17)
+    /// Inline code in the transcript. Blue rather than the accent, so a `path` and a link stay
+    /// distinguishable — both are set apart from prose, but they do different things.
+    static let code = NSColor(srgbRed: 0.55, green: 0.73, blue: 0.98, alpha: 1)
 }
 
 // MARK: - Window
@@ -186,6 +189,7 @@ final class PromptTextView: NSTextView {
     var onToggleDance: (() -> Void)?
     var onArrow: ((Int) -> Bool)?      // return true if the key was consumed
     var onTextChanged: (() -> Void)?
+    var onToggleFullscreen: (() -> Void)?
 
     /// ⌘A / ⌘C / ⌘V / ⌘X / ⌘Z have to be wired by hand. This app is an accessory (no Dock icon,
     /// no menu bar), and macOS routes the standard edit commands through the main menu's key
@@ -208,6 +212,7 @@ final class PromptTextView: NSTextView {
             case "k": onToggleList?(); return true
             case "m": onToggleMascots?(); return true
             case "j": onToggleOutput?(); return true
+            case "f": onToggleFullscreen?(); return true
             // "+" arrives as "=" without shift and "+" with it; both mean the same thing here.
             case "=", "+": onZoomOutput?(1); return true
             case "-", "_": onZoomOutput?(-1); return true

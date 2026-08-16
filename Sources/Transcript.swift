@@ -124,7 +124,7 @@ enum Transcript {
     }()
 
     /// Turn JSONL into entries. Anything unrecognised is skipped rather than guessed at.
-    static func parse(_ jsonl: String, limit: Int = 60) -> [Entry] {
+    static func parse(_ jsonl: String, limit: Int = 400) -> [Entry] {
         var entries: [Entry] = []
 
         for line in jsonl.split(separator: "\n") {
@@ -208,7 +208,11 @@ extension Transcript {
     /// boundaries the type can do the work that colour was doing badly. Speakers get a label,
     /// bodies get a proportional face and room to breathe, and the machinery — tool calls and
     /// their results — recedes into monospace at the edge of the page.
-    static func render(_ entries: [Entry], size: CGFloat, mono: NSFont) -> NSAttributedString {
+    /// `expanded` holds the fold keys the reader has opened. Everything else that is a run of
+    /// tool calls comes back as one line, because the machinery is what makes the pane
+    /// unreadable: a single answer can sit under thirty lines of paths and shell.
+    static func render(_ entries: [Entry], size: CGFloat, mono: NSFont,
+                       expanded: Set<String> = []) -> NSAttributedString {
         let body = NSFont.systemFont(ofSize: size + 1)
         let header = NSFont.systemFont(ofSize: max(8.5, size - 1.5), weight: .semibold)
         let toolFont = NSFont(descriptor: mono.fontDescriptor, size: max(8.5, size - 0.5)) ?? mono
@@ -239,7 +243,44 @@ extension Transcript {
             out.append(NSAttributedString(string: string, attributes: attrs))
         }
 
-        for entry in entries {
+        let foldStyle = NSMutableParagraphStyle()
+        foldStyle.firstLineHeadIndent = 14
+        foldStyle.headIndent = 30
+        foldStyle.paragraphSpacing = 3
+        foldStyle.paragraphSpacingBefore = 6
+
+        func renderTool(_ entry: Entry) {
+            // A dot rather than a bullet: this is a thing that happened, not an item in
+            // a list, and the eye should be able to skip the whole column.
+            add("⏺ ", [.font: toolFont, .foregroundColor: Style.accent,
+                       .paragraphStyle: toolStyle])
+            add(entry.tool ?? "tool", [
+                .font: NSFont(descriptor: toolFont.fontDescriptor.withSymbolicTraits(.bold),
+                              size: toolFont.pointSize) ?? toolFont,
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .paragraphStyle: toolStyle,
+            ])
+            if !entry.text.isEmpty {
+                add("  " + entry.text, [.font: toolFont,
+                                        .foregroundColor: NSColor.tertiaryLabelColor,
+                                        .paragraphStyle: toolStyle])
+            }
+            add("\n", [.font: toolFont, .paragraphStyle: toolStyle])
+        }
+
+        func renderResult(_ entry: Entry) {
+            // Results are usually long and usually unread; one line is enough to know it
+            // came back, and the pane is for the conversation.
+            add("→ " + entry.text + "\n", [
+                .font: toolFont,
+                .foregroundColor: NSColor.tertiaryLabelColor,
+                .paragraphStyle: resultStyle,
+            ])
+        }
+
+        var i = 0
+        while i < entries.count {
+            let entry = entries[i]
             switch entry.kind {
             case .user, .assistant:
                 let isUser = entry.kind == .user
@@ -254,36 +295,60 @@ extension Transcript {
                 // No trailing newline here: every Markdown block ends with one already, and
                 // the next entry's paragraphSpacingBefore is what sets the distance.
                 out.append(prose(entry.text, body: body, mono: mono))
+                i += 1
 
-            case .tool:
-                // A dot rather than a bullet: this is a thing that happened, not an item in
-                // a list, and the eye should be able to skip the whole column.
-                add("⏺ ", [.font: toolFont, .foregroundColor: Style.accent,
-                           .paragraphStyle: toolStyle])
-                add(entry.tool ?? "tool", [
-                    .font: NSFont(descriptor: toolFont.fontDescriptor.withSymbolicTraits(.bold),
-                                  size: toolFont.pointSize) ?? toolFont,
-                    .foregroundColor: NSColor.secondaryLabelColor,
-                    .paragraphStyle: toolStyle,
-                ])
-                if !entry.text.isEmpty {
-                    add("  " + entry.text, [.font: toolFont,
-                                            .foregroundColor: NSColor.tertiaryLabelColor,
-                                            .paragraphStyle: toolStyle])
+            case .tool, .toolResult:
+                var run: [Entry] = []
+                while i < entries.count, entries[i].kind == .tool || entries[i].kind == .toolResult {
+                    run.append(entries[i]); i += 1
                 }
-                add("\n", [.font: toolFont, .paragraphStyle: toolStyle])
-
-            case .toolResult:
-                // Results are usually long and usually unread; one line is enough to know it
-                // came back, and the pane is for the conversation.
-                add("→ " + entry.text + "\n", [
-                    .font: toolFont,
-                    .foregroundColor: NSColor.tertiaryLabelColor,
-                    .paragraphStyle: resultStyle,
-                ])
+                let names = run.compactMap { $0.kind == .tool ? ($0.tool ?? "tool") : nil }
+                let key = foldKey(run)
+                // The run still going is the one worth watching, so the tail never folds —
+                // folding it would hide exactly the part that is changing.
+                let isTail = i >= entries.count
+                if isTail || names.count < 2 || expanded.contains(key) {
+                    for e in run { e.kind == .tool ? renderTool(e) : renderResult(e) }
+                } else {
+                    add("⏵ ", [.font: toolFont, .foregroundColor: Style.accent,
+                               .paragraphStyle: foldStyle, .link: "clawdline://fold/" + key])
+                    add(L.t.foldedTools(names.count), [
+                        .font: toolFont,
+                        .foregroundColor: NSColor.secondaryLabelColor,
+                        .paragraphStyle: foldStyle,
+                        .link: "clawdline://fold/" + key,
+                    ])
+                    add("  " + distinct(names).joined(separator: " · ") + "\n", [
+                        .font: toolFont,
+                        .foregroundColor: NSColor.tertiaryLabelColor,
+                        .paragraphStyle: foldStyle,
+                        .link: "clawdline://fold/" + key,
+                    ])
+                }
             }
         }
         return out
+    }
+
+    /// Identifies a folded run so the reader's choice to open it survives a refresh.
+    ///
+    /// Content-derived rather than positional: the pane re-renders from the tail of a file that
+    /// is still being written, so an index would slide under the reader and open a different run
+    /// than the one they clicked. FNV-1a rather than `hashValue`, which is seeded per process.
+    static func foldKey(_ run: [Entry]) -> String {
+        var hash: UInt64 = 0xcbf29ce484222325
+        for entry in run {
+            for byte in Array(((entry.tool ?? "") + "\u{1}" + entry.text).utf8) {
+                hash = (hash ^ UInt64(byte)) &* 0x100000001b3
+            }
+        }
+        return String(hash, radix: 36)
+    }
+
+    /// Tool names in the order they first ran, without repeats — five greps read as one thing.
+    static func distinct(_ names: [String]) -> [String] {
+        var seen = Set<String>()
+        return names.filter { seen.insert($0).inserted }
     }
 
     /// Body text goes through the Markdown renderer, because what Claude Code writes is
@@ -296,6 +361,7 @@ extension Transcript {
             text: .labelColor,
             dim: .secondaryLabelColor,
             accent: Style.accent,
+            code: Style.code,
             codeBackground: NSColor(white: 0, alpha: 0.20),
             ruleColor: .tertiaryLabelColor))
     }

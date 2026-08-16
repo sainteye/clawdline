@@ -100,6 +100,7 @@ Press <kbd>⌥</kbd><kbd>Space</kbd> in iTerm2, type, press <kbd>Enter</kbd>.
 | <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>9</kbd> | jump straight to a session |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | history, when the field is empty |
 | <kbd>⌘</kbd><kbd>J</kbd> | show what that session is saying |
+| <kbd>⌘</kbd><kbd>F</kbd> | fill the screen with it |
 | <kbd>⌘</kbd><kbd>+</kbd> / <kbd>⌘</kbd><kbd>−</kbd> / <kbd>⌘</kbd><kbd>0</kbd> | text size in that pane, remembered |
 | <kbd>⌘</kbd><kbd>M</kbd> | browse / switch mascots |
 | <kbd>⌘</kbd><kbd>D</kbd> | make the mascot dance |
@@ -137,10 +138,15 @@ means real message boundaries, full history rather than one viewport, and typogr
 of a screenshot — speakers get a label, prose gets a proportional face, tool calls recede into
 monospace at the edge of the page.
 
-What Claude writes is Markdown, so the pane renders it: headings, lists, tables, quotes,
-emphasis, and code. Tables are measured and laid out on tab stops rather than left in
-monospace — a CJK glyph comes from a fallback face whose advance is not reliably twice the
-monospace one, so pipes that look aligned in the source land somewhere different on every row.
+Runs of tool calls fold. A single answer can sit under thirty lines of paths and shell, and
+the shell is not what you came back to read — so each finished run collapses to one line saying
+how many steps it took and which tools ran, and clicking it opens the run back up. The run still
+going never folds: that one is the part that is changing.
+
+What Claude writes is Markdown, so the pane renders it: headings, lists, tables with real
+borders, quotes, emphasis, and code. Leaving a table's pipes in and setting it in monospace
+does not work — a CJK glyph comes from a fallback face whose advance is not reliably twice the
+monospace one, so pipes that line up in the source land somewhere different on every row.
 Anything unrecognised falls through as plain text, which is the one failure mode that matters:
 a stray asterisk on screen is a blemish, a sentence swallowed by a parser is a bug.
 
