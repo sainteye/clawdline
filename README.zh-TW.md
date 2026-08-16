@@ -33,14 +33,49 @@ agent、hook、MCP server 與 skill，不是 TUI 版面。
 
 ## 安裝
 
+四種擇一，結果都是同一個 app，挑你最信得過的那條。
+
+**Homebrew**
+
+```bash
+brew install --cask sainteye/tap/clawdline
+xattr -dr com.apple.quarantine /Applications/Clawdline.app
+```
+
+**用腳本抓最新版**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh -o install.sh
+less install.sh          # 四十行，值得花十秒看一遍
+bash install.sh          # 或 bash install.sh ~/Applications
+```
+
+**手動** —— 從 [Releases](https://github.com/sainteye/clawdline/releases/latest) 下載 `.zip`，
+解開丟進 `/Applications`，然後：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Clawdline.app
+```
+
+**自己編** —— 沒有套件管理器、沒有相依套件，幾秒鐘：
+
 ```bash
 git clone https://github.com/sainteye/clawdline.git
 cd clawdline && ./build.sh
 open ~/Applications/Clawdline.app
 ```
 
-沒有套件管理器、沒有相依套件——幾個 Swift 檔加一個 JavaScript 檔，`swiftc` 直接編成
-app bundle。需要 Xcode command line tools。
+<details>
+<summary>那行 <code>xattr</code> 是幹嘛的，以及為什麼自己編就不用</summary>
+
+release 的 build 有 ad-hoc 簽章但**沒有公證**——公證需要付費的 Apple Developer 帳號。
+macOS 會把從網路下載的東西加上隔離屬性，並拒絕開啟沒公證的副本，所以那個屬性得拿掉，
+不然就要走系統設定 › 隱私權與安全性 › 強制打開。
+
+自己編出來的 app 從來沒被下載過，所以不會被隔離。如果你不想憑信任執行陌生人給的二進位檔，
+那就是該選的那條：整個 build 就是 `swiftc` 跑過幾個你讀得完的檔案。
+
+</details>
 
 第一次送出時，macOS 會問要不要讓 Clawdline 控制 iTerm2，按**好**；沒有這個權限它什麼都送不出去。
 選單列的 ✳ → **開機時啟動** 可以讓它常駐。
@@ -223,8 +258,19 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`：熱鍵有沒有
 
 ## 參與開發
 
-純 AppKit、沒有框架、除了 `swiftc` 沒有 build 系統。註解寫的是**為什麼是這樣**，
-特別是那些「先試了顯而易見的做法然後失敗」的地方——那些才是有價值的部分，請保持這個習慣。
+純 AppKit、沒有框架、除了 `swiftc` 沒有 build 系統。
+
+```bash
+./test.sh     # 84 個檢查，約兩秒
+./build.sh    # 編譯，原本有在跑的話會自己接回來
+```
+
+測試涵蓋的是「改動會安靜弄壞」的那幾塊：pack 解碼與驗證、keyframe 取樣、顏色解析、
+熱鍵字串，以及決定「字會送去哪」的兩個解析器（`ps` 輸出與 `tmux list-panes`）。
+需要畫面上有視窗才能測的東西刻意沒寫——**跑不了 CI 的測試就是沒有人會跑的測試**。
+
+註解寫的是**為什麼是這樣**，特別是那些「先試了顯而易見的做法然後失敗」的地方，
+那些才是有價值的部分，請保持這個習慣。
 
 ## 出處說明
 

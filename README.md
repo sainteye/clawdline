@@ -37,14 +37,51 @@ were last working in. Focus returns to whatever app you were in. Your eyes never
 
 ## Install
 
+Pick whichever you trust most — they all end up with the same app.
+
+**Homebrew**
+
+```bash
+brew install --cask sainteye/tap/clawdline
+xattr -dr com.apple.quarantine /Applications/Clawdline.app
+```
+
+**A script that fetches the latest release**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh -o install.sh
+less install.sh          # 40 lines; worth the ten seconds
+bash install.sh          # or: bash install.sh ~/Applications
+```
+
+**By hand** — grab the `.zip` from [Releases](https://github.com/sainteye/clawdline/releases/latest),
+unzip it into `/Applications`, then:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Clawdline.app
+```
+
+**From source** — no package manager, no dependencies, a few seconds:
+
 ```bash
 git clone https://github.com/sainteye/clawdline.git
 cd clawdline && ./build.sh
 open ~/Applications/Clawdline.app
 ```
 
-No package manager, no dependencies — a handful of Swift files and one JavaScript file,
-compiled by `swiftc` straight into an app bundle. Requires the Xcode command line tools.
+<details>
+<summary>Why the <code>xattr</code> line, and why building from source skips it</summary>
+
+The release build is ad-hoc signed but **not notarized** — notarizing needs a paid Apple
+Developer account. macOS quarantines anything downloaded from the internet and refuses to
+open an unnotarized copy, so the flag has to come off, either with that command or by way of
+System Settings → Privacy & Security → Open Anyway.
+
+An app you compiled yourself was never downloaded, so it is never quarantined. If you would
+rather not take a stranger's binary on faith, that is the option to use: the whole build is
+`swiftc` over a handful of files you can read.
+
+</details>
 
 The first time you send something, macOS asks whether Clawdline may control iTerm2. Say yes;
 it cannot send anything without that. Menu bar ✳ → **Launch at login** makes it stick around.
@@ -238,9 +275,20 @@ registered, whether the panel opened, what happened to every send.
 
 ## Contributing
 
-Plain AppKit, no frameworks, no build system beyond `swiftc`. Comments explain *why* a thing is
-the way it is, especially where the obvious approach was tried first and failed — those notes
-are the useful part, so please keep the habit.
+Plain AppKit, no frameworks, no build system beyond `swiftc`.
+
+```bash
+./test.sh     # 84 checks, about two seconds
+./build.sh    # builds and relaunches if it was running
+```
+
+The tests cover the parts a change can quietly break: pack decoding and validation, keyframe
+sampling, colour parsing, hotkey specs, and the two parsers that decide where text gets sent
+(`ps` output and `tmux list-panes`). Anything needing a window on screen is deliberately
+absent — a test that cannot run in CI is a test nobody runs.
+
+Comments explain *why* a thing is the way it is, especially where the obvious approach was
+tried first and failed. Those notes are the useful part, so please keep the habit.
 
 ## Credits
 

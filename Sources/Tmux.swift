@@ -60,8 +60,13 @@ enum Tmux {
             + "#{session_name}\u{1}#{window_index}\u{1}#{pane_index}\u{1}#{pane_title}"
         let (out, ok) = run(["list-panes", "-a", "-F", fmt])
         guard ok else { return [] }
+        return parsePanes(out)
+    }
 
-        return out.split(separator: "\n").compactMap { line in
+    /// Split out from `panes()` so it can be tested without a tmux server running.
+    /// The parsing is where the bugs live; running the binary is not.
+    static func parsePanes(_ output: String) -> [TargetSession] {
+        output.split(separator: "\n").compactMap { line in
             let f = line.components(separatedBy: "\u{1}")
             guard f.count >= 7 else { return nil }
             let command = f[2]

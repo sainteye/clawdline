@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  packs:
+    name: Mascot packs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/validate-pack.py Resources/mascots/*.json
+
+  tests:
+    name: Swift tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift --version
+      - run: ./test.sh
+
+  build:
+    name: App builds
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: CLAWDLINE_APP="$RUNNER_TEMP/Clawdline.app" ./build.sh
+      - name: The bundle carries what it needs
+        run: |
+          APP="$RUNNER_TEMP/Clawdline.app"
+          test -x "$APP/Contents/MacOS/Clawdline"
+          test -f "$APP/Contents/Resources/iterm.js"
+          test -f "$APP/Contents/Resources/mascots/clawd.json"
+          test -f "$APP/Contents/Info.plist"

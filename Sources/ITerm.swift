@@ -63,8 +63,14 @@ enum ITerm {
     /// Pull the TTYs whose process name is exactly `claude`.
     /// Matching the whole command line also catches statusline scripts and Claude.app, so only the first token counts.
     private static func claudeTTYs() -> Set<String> {
+        parseClaudeTTYs(shell("/bin/ps", ["-ax", "-o", "tty=,command="]))
+    }
+
+    /// Split out so it can be tested against fixed `ps` output rather than whatever
+    /// happens to be running on the machine at the time.
+    static func parseClaudeTTYs(_ psOutput: String) -> Set<String> {
         var set = Set<String>()
-        for line in shell("/bin/ps", ["-ax", "-o", "tty=,command="]).split(separator: "\n") {
+        for line in psOutput.split(separator: "\n") {
             let parts = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
             guard parts.count == 2 else { continue }
             let tty = String(parts[0])
