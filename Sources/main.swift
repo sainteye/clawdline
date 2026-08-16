@@ -207,6 +207,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Config.shared.load()
         L.reload()
         PromptController.shared.reloadMascot()
+        PromptController.shared.applyCardOpacity()
         if !applyHotKey() {
             let a = NSAlert()
             a.messageText = L.t.hotkeyFailedTitle(HotKey.display(Config.shared.hotKey))

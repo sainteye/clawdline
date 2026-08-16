@@ -34,6 +34,12 @@ final class Config {
     /// Only the transcript reads this way: a terminal capture is a picture of a grid, and
     /// flipping its lines would have a wrapped sentence reading upwards.
     var outputNewestFirst = false
+    /// How solid the card is, from 0 (pure frosted glass) to 1 (opaque).
+    ///
+    /// The material samples whatever is behind the window, so a screen of green diff or a
+    /// bright page tints the whole card and drags the text with it. This is a dark layer
+    /// between the two: the blur still reads as glass, but the colour behind stops arriving.
+    var cardOpacity: Double = 0.55
     /// How far the ⌘J backdrop goes, from 0 (none) to 1 (fully obscured).
     /// Below 1 the blur is partly transparent, so what is behind stays legible.
     var backdropStrength: Double = 0.5
@@ -63,6 +69,7 @@ final class Config {
         if let v = obj["output_mode"] as? String, !v.isEmpty { outputMode = v }
         if let v = obj["output_size"] as? Double, v >= 8, v <= 28 { outputSize = CGFloat(v) }
         if let v = obj["output_newest_first"] as? Bool { outputNewestFirst = v }
+        if let v = obj["card_opacity"] as? Double, v >= 0, v <= 1 { cardOpacity = v }
         if let v = obj["last_target_id"] as? String { lastTargetID = v }
         if let v = obj["history"] as? [String] { history = v }
     }
@@ -82,6 +89,7 @@ final class Config {
             "output_mode": outputMode,
             "output_size": Double(outputSize),
             "output_newest_first": outputNewestFirst,
+            "card_opacity": cardOpacity,
             "last_target_id": lastTargetID as Any,
             "history": Array(history.suffix(60)),
         ]

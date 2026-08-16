@@ -164,6 +164,11 @@ Claude 寫出來的是 Markdown，所以那塊會把它渲染出來：標題、�
 iTerm2 只交得出**目前可見的畫面**，它的 scripting 沒有 scrollback；tmux 則是可見畫面加 200 行歷史。
 把 `output_mode` 設成 `terminal` 或 `transcript` 可以固定用哪一種。
 
+**卡片是霧面玻璃，而玻璃會吸背後的顏色。** 底下是一整片綠色的 diff 或一個亮色頁面時，
+整張卡片會跟著偏色、連字一起被拖走，所以材質與所有內容之間墊了一層暗色。
+`card_opacity` 決定那層有多厚：0 ＝ 純玻璃，1 ＝ 完全不透明。
+常在亮色或重彩的視窗上工作就把它調高。
+
 **在那條退路上，顏色只有走 tmux 才有。** `capture-pane -e` 會保留跳脫序列，那些會被解析成
 真的顏色。iTerm2 的 scripting 回傳的是純字串——它告訴得了你「ANSI 紅是哪個紅」，
 但告訴不了你「哪幾個字是紅的」，所以那條路拿到的是無色的文字。
@@ -254,6 +259,7 @@ CR                                     ← 再單獨送一個 Return 才送出
   "output_mode": "auto",                 // auto | transcript | terminal
   "output_size": 11.5,                   // ⌘+ / ⌘− 會直接改這個值
   "output_newest_first": false,          // ⌘R：最新的在最上面
+  "card_opacity": 0.55,                  // 0 ＝ 純玻璃，1 ＝ 完全不透明
   "backdrop": 0.5,                       // ⌘J 的背景模糊，0 ＝ 不要
 }
 ```

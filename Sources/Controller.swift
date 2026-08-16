@@ -7,6 +7,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var container: NSView!         // the animation scales this layer: mascot and card together
     private var cardHost: NSView!          // exists only to cast the shadow (the card clips its corners, and clipping kills a shadow)
     private var card: NSVisualEffectView!
+    /// A dark layer between the frosted material and everything drawn on it, so what is behind
+    /// the window stops deciding what colour the card is.
+    private var scrim: NSView!
     private var chrome: CardChrome!
     private var mascot: MascotView!
     private var glow: GlowView!
@@ -139,6 +142,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         card.layer?.masksToBounds = true
         card.autoresizesSubviews = false
         cardHost.addSubview(card)
+
+        scrim = NSView()
+        scrim.wantsLayer = true
+        scrim.autoresizingMask = [.width, .height]
+        card.addSubview(scrim)
+        applyCardOpacity()
 
         chevron = NSTextField(labelWithString: "❯")
         chevron.font = NSFont.monospacedSystemFont(ofSize: 17, weight: .bold)
@@ -564,8 +573,14 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         lastOutputH = outputH
     }
 
+    func applyCardOpacity() {
+        scrim?.layer?.backgroundColor = Style.ink
+            .withAlphaComponent(CGFloat(Config.shared.cardOpacity)).cgColor
+    }
+
     private func layoutCard(size: NSSize, inputH: CGFloat, listH: CGFloat, outputH: CGFloat) {
         let W = size.width, H = size.height
+        scrim.frame = NSRect(origin: .zero, size: size)
         chrome.frame = NSRect(origin: .zero, size: size)
 
         chevron.frame = NSRect(x: Style.padH, y: H - Style.inputPadV - 25, width: Style.chevronW, height: 24)

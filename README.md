@@ -182,6 +182,11 @@ terminal. iTerm2 hands over the **visible screen** and no more, since its script
 scrollback; tmux gives the visible pane plus 200 lines of history. Set `output_mode` to
 `terminal` or `transcript` to pin it either way.
 
+**The card is frosted glass, and glass takes the colour of what is behind it.** A screen of
+green diff or a bright page tints the whole thing and drags the text with it, so a dark layer
+sits between the material and everything drawn on it. `card_opacity` is how much of it: 0 is
+pure glass, 1 is opaque. Raise it if you work over bright or strongly coloured windows.
+
 **On that fallback path, colour only survives through tmux.** `capture-pane -e` keeps the
 escape sequences, which get parsed into real colour. iTerm2's scripting returns a plain string:
 it will tell you which red it uses for ANSI red, but not which characters are red, so that path
@@ -278,6 +283,7 @@ is that **the terminal never has to come to the front** — which is the entire 
   "output_mode": "auto",                 // auto | transcript | terminal
   "output_size": 11.5,                   // ⌘+ / ⌘- change this live
   "output_newest_first": false,          // ⌘R: newest at the top
+  "card_opacity": 0.55,                  // 0 = pure glass, 1 = opaque
   "backdrop": 0.5,                       // ⌘J background blur, 0 = none
 }
 ```
