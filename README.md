@@ -131,8 +131,8 @@ refreshed about once a second and following <kbd>Tab</kbd> as you switch. The re
 screen blurs behind it, because reading a transcript is a different mode from firing off one
 line. The text is selectable — copying an error out of it is most of the point.
 
-It only auto-scrolls when you were already at the bottom; being yanked back down while reading
-something further up is worse than not following at all. And an unchanged terminal produces an
+It only auto-scrolls when you were already parked at the end where new lines land; being
+yanked away while reading something further up is worse than not following at all. And an unchanged terminal produces an
 identical capture, which is skipped entirely rather than relaid out under your eyes.
 
 Where it can, the pane shows the **conversation** rather than the screen. Claude Code writes
@@ -142,13 +142,13 @@ means real message boundaries, full history rather than one viewport, and typogr
 of a screenshot — speakers get a label, prose gets a proportional face, tool calls recede into
 monospace at the edge of the page.
 
-<div align="center">
-<img src="docs/assets/fullscreen.png" width="860" alt="⌘F: the same pane filling the screen, with finished runs of tool calls folded to one line each.">
-</div>
-
 <kbd>⌘</kbd><kbd>F</kbd> makes it the size of the screen — not macOS's full screen, which moves
 the window to a Space of its own and is the opposite of what a panel you summon over your work
 is for. It is a resize, animated, and the mascot has a routine for it.
+
+<div align="center">
+<img src="docs/assets/fullscreen.png" width="860" alt="⌘F: the same pane filling the screen, with finished runs of tool calls folded to one line each.">
+</div>
 
 <kbd>⌘</kbd><kbd>R</kbd> turns the whole thing round, newest message at the top. It follows
 whichever end the newest message is at — auto-scrolling to the top rather than the bottom —
@@ -177,9 +177,11 @@ terminal. iTerm2 hands over the **visible screen** and no more, since its script
 scrollback; tmux gives the visible pane plus 200 lines of history. Set `output_mode` to
 `terminal` or `transcript` to pin it either way.
 
-**Colour only survives through tmux.** `capture-pane -e` keeps the escape sequences, which get
-parsed into real colour. iTerm2's scripting returns a plain string: it will tell you which red
-it uses for ANSI red, but not which characters are red, so that path arrives as plain text.
+**On that fallback path, colour only survives through tmux.** `capture-pane -e` keeps the
+escape sequences, which get parsed into real colour. iTerm2's scripting returns a plain string:
+it will tell you which red it uses for ANSI red, but not which characters are red, so that path
+arrives as plain text. None of this touches the transcript, which is coloured by what the text
+means rather than by what the terminal drew.
 
 Set `output_font` to whatever your terminal uses. The default is Menlo; a status line built out
 of box-drawing characters comes out at the wrong widths in anything with different metrics,
