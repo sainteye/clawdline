@@ -217,10 +217,6 @@ extension Transcript {
         headerStyle.paragraphSpacingBefore = 18
         headerStyle.paragraphSpacing = 5
 
-        let bodyStyle = NSMutableParagraphStyle()
-        bodyStyle.lineSpacing = 3.5
-        bodyStyle.paragraphSpacing = 9
-
         let toolStyle = NSMutableParagraphStyle()
         toolStyle.firstLineHeadIndent = 14
         toolStyle.headIndent = 30
@@ -234,17 +230,10 @@ extension Transcript {
         resultStyle.paragraphSpacing = 3
         resultStyle.lineBreakMode = .byTruncatingTail
 
-        let codeStyle = NSMutableParagraphStyle()
-        codeStyle.firstLineHeadIndent = 12
-        codeStyle.headIndent = 12
-        codeStyle.lineSpacing = 2
-        codeStyle.paragraphSpacing = 10
-
         let clock = DateFormatter()
         clock.dateFormat = "HH:mm"
 
         let out = NSMutableAttributedString()
-        var lastKind: Entry.Kind?
 
         func add(_ string: String, _ attrs: [NSAttributedString.Key: Any]) {
             out.append(NSAttributedString(string: string, attributes: attrs))
@@ -262,9 +251,9 @@ extension Transcript {
                     .kern: 1.1,
                     .paragraphStyle: headerStyle,
                 ])
-                out.append(prose(entry.text, body: body, mono: mono,
-                                 bodyStyle: bodyStyle, codeStyle: codeStyle))
-                add("\n", [.font: body, .paragraphStyle: bodyStyle])
+                // No trailing newline here: every Markdown block ends with one already, and
+                // the next entry's paragraphSpacingBefore is what sets the distance.
+                out.append(prose(entry.text, body: body, mono: mono))
 
             case .tool:
                 // A dot rather than a bullet: this is a thing that happened, not an item in
@@ -293,59 +282,22 @@ extension Transcript {
                     .paragraphStyle: resultStyle,
                 ])
             }
-            lastKind = entry.kind
-        }
-        _ = lastKind
-        return out
-    }
-
-    /// Body text with fenced blocks and inline spans set in monospace, because a path or a
-    /// command inside a sentence stops being readable the moment it is set in the same face
-    /// as the sentence.
-    private static func prose(_ text: String, body: NSFont, mono: NSFont,
-                              bodyStyle: NSParagraphStyle, codeStyle: NSParagraphStyle) -> NSAttributedString {
-        let out = NSMutableAttributedString()
-        let codeBackground = NSColor(white: 0, alpha: 0.20)
-
-        for (index, chunk) in text.components(separatedBy: "```").enumerated() {
-            if index % 2 == 1 {
-                // Inside a fence. The first line is the language tag, not content.
-                var lines = chunk.split(separator: "\n", omittingEmptySubsequences: false)
-                if let first = lines.first, !first.contains(" "), first.count < 16 { lines.removeFirst() }
-                let code = lines.joined(separator: "\n").trimmingCharacters(in: .newlines)
-                guard !code.isEmpty else { continue }
-                out.append(NSAttributedString(string: code + "\n", attributes: [
-                    .font: mono,
-                    .foregroundColor: NSColor.labelColor,
-                    .backgroundColor: codeBackground,
-                    .paragraphStyle: codeStyle,
-                ]))
-            } else {
-                out.append(inlineCode(chunk, body: body, mono: mono, style: bodyStyle,
-                                      background: codeBackground))
-            }
         }
         return out
     }
 
-    private static func inlineCode(_ text: String, body: NSFont, mono: NSFont,
-                                   style: NSParagraphStyle, background: NSColor) -> NSAttributedString {
-        let out = NSMutableAttributedString()
-        var isCode = false
-        for part in text.components(separatedBy: "`") {
-            defer { isCode.toggle() }
-            guard !part.isEmpty else { continue }
-            out.append(NSAttributedString(string: part, attributes: isCode ? [
-                .font: mono,
-                .foregroundColor: NSColor.labelColor,
-                .backgroundColor: background,
-                .paragraphStyle: style,
-            ] : [
-                .font: body,
-                .foregroundColor: NSColor.labelColor,
-                .paragraphStyle: style,
-            ]))
-        }
-        return out
+    /// Body text goes through the Markdown renderer, because what Claude Code writes is
+    /// Markdown — headings, lists, tables, emphasis — and showing it raw means showing
+    /// punctuation where structure was meant.
+    private static func prose(_ text: String, body: NSFont, mono: NSFont) -> NSAttributedString {
+        Markdown.render(text, theme: Markdown.Theme(
+            body: body,
+            mono: mono,
+            text: .labelColor,
+            dim: .secondaryLabelColor,
+            accent: Style.accent,
+            codeBackground: NSColor(white: 0, alpha: 0.20),
+            ruleColor: .tertiaryLabelColor))
     }
+
 }

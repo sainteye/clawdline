@@ -137,6 +137,13 @@ means real message boundaries, full history rather than one viewport, and typogr
 of a screenshot — speakers get a label, prose gets a proportional face, tool calls recede into
 monospace at the edge of the page.
 
+What Claude writes is Markdown, so the pane renders it: headings, lists, tables, quotes,
+emphasis, and code. Tables are measured and laid out on tab stops rather than left in
+monospace — a CJK glyph comes from a fallback face whose advance is not reliably twice the
+monospace one, so pipes that look aligned in the source land somewhere different on every row.
+Anything unrecognised falls through as plain text, which is the one failure mode that matters:
+a stray asterisk on screen is a blemish, a sentence swallowed by a parser is a bug.
+
 Finding the right file takes three steps, because no record carries a tty: the session's
 working directory gives the project folder, the tab title matches the `aiTitle` the transcript
 recorded, and the most recent file breaks any tie. **The format is undocumented and can

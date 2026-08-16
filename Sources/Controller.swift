@@ -171,6 +171,13 @@ final class PromptController: NSObject, NSWindowDelegate {
         // something you read, not a caption, so it gets full-strength text and a ground of
         // its own — the contrast comes from the surface as much as the ink.
         outputView.textColor = .labelColor
+        // The text view styles links itself and overrides whatever the renderer set, so system
+        // blue would land on an orange card unless it is told otherwise here.
+        outputView.linkTextAttributes = [
+            .foregroundColor: Style.accent,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .cursor: NSCursor.pointingHand,
+        ]
         outputView.drawsBackground = true
         outputView.backgroundColor = Style.outputBg
         outputView.textContainerInset = NSSize(width: Style.padH, height: 10)
@@ -1017,12 +1024,18 @@ final class PromptController: NSObject, NSWindowDelegate {
     /// the result is the wallpaper with every window stripped out — which leaves you blind while
     /// tuning layout. This path only paints our own layers, so it needs no permission at all.
     func snapshot(to path: String, routine: String? = nil, at time: Double? = nil, list: String? = nil, output: Bool = false) {
-        let render = { [weak self] in
+        // Opening the pane has to happen before the wait, not inside the render: the transcript
+        // arrives asynchronously, so a pane opened at draw time is always drawn empty.
+        let arrange = { [weak self] in
             guard let self else { return }
-            // Naming a routine and a time draws one specific frame of the animation — otherwise animation can only be eyeballed, never tuned
             if output, !self.outputOpen { self.toggleOutput() }
             if list == "mascots" { self.showList(.mascots) }
             else if list == "sessions" { self.showList(.sessions) }
+        }
+
+        let render = { [weak self] in
+            guard let self else { return }
+            // Naming a routine and a time draws one specific frame of the animation — otherwise animation can only be eyeballed, never tuned
             if let r = routine, !r.isEmpty {
                 self.mascot.play(r, then: r)
                 self.mascot.frozenTime = time ?? 0.25
@@ -1050,15 +1063,13 @@ final class PromptController: NSObject, NSWindowDelegate {
             Log.write("snapshot → \(path) (\(Int(size.width))×\(Int(size.height)))")
         }
 
-        if panel.isVisible {
+        let wasVisible = panel.isVisible
+        if !wasVisible { show() }
+        arrange()
+        // Reading a session back costs an osascript round trip, so give it room.
+        DispatchQueue.main.asyncAfter(deadline: .now() + (output ? 2.2 : 0.55)) {
             render()
-        } else {
-            show()
-            // Reading a session back costs an osascript round trip, so give it room.
-            DispatchQueue.main.asyncAfter(deadline: .now() + (output ? 2.2 : 0.55)) {
-                render()
-                self.hide()
-            }
+            if !wasVisible { self.hide() }
         }
     }
 

@@ -431,6 +431,177 @@ group("transcript rendering") {
     }
 }
 
+// MARK: - Markdown
+
+let mdTheme = Markdown.Theme(
+    body: NSFont.systemFont(ofSize: 12),
+    mono: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
+    text: .labelColor, dim: .secondaryLabelColor, accent: .systemOrange,
+    codeBackground: NSColor(white: 0, alpha: 0.2), ruleColor: .tertiaryLabelColor)
+
+func md(_ s: String) -> NSAttributedString { Markdown.render(s, theme: mdTheme) }
+func mdText(_ s: String) -> String { md(s).string }
+/// Inline code carries narrow no-break spaces for padding and turns its own spaces no-break;
+/// both are drawing details, not content.
+func mdPlain(_ s: String) -> String {
+    mdText(s)
+        .replacingOccurrences(of: "\u{202F}", with: "")
+        .replacingOccurrences(of: "\u{00A0}", with: " ")
+}
+func attr(_ a: NSAttributedString, _ key: NSAttributedString.Key, near needle: String) -> Any? {
+    guard let r = a.string.range(of: needle) else { return nil }
+    return a.attribute(key, at: a.string.distance(from: a.string.startIndex, to: r.lowerBound),
+                       effectiveRange: nil)
+}
+
+group("markdown: no syntax reaches the screen") {
+    // The bug this whole renderer exists for: punctuation showing where structure was meant.
+    let doc = #"""
+    ## Three guards
+
+    - **undocumented**, so every field is optional
+    - *emphasis* and `code` and ~~struck~~
+    - a [link](https://example.com)
+
+    1. first
+    2. second
+
+    > a quoted aside
+
+    ```swift
+    let x = 1
+    ```
+
+    | a | b |
+    |---|---|
+    | 1 | 2 |
+
+    ---
+    done
+    """#
+    let out = mdText(doc)
+    check("no heading hashes", !out.contains("## "))
+    check("no bold markers", !out.contains("**"))
+    check("no code fences", !out.contains("```"))
+    check("no backticks", !out.contains("`"))
+    check("no strikethrough markers", !out.contains("~~"))
+    check("no link brackets", !out.contains("]("))
+    check("no leading dash bullets", !out.contains("- **"))
+    // A table's separator row legitimately contains dashes and is kept, dimmed, as the
+    // table's own rule. What must not survive is a line that was only ever a horizontal rule.
+    check("a standalone rule is not left as hyphens",
+          !out.split(separator: "\n").contains { $0.trimmingCharacters(in: .whitespaces) == "---" })
+
+    // Losing text is far worse than leaving a marker, so check the words survived.
+    for word in ["Three guards", "undocumented", "emphasis", "code", "struck", "link",
+                 "first", "second", "quoted aside", "let x = 1", "done"] {
+        check("kept: \(word)", out.contains(word))
+    }
+    check("table cells survive as columns", out.contains("a\tb"))
+}
+
+group("markdown: headings") {
+    let a = md("# Big\n\nbody")
+    let f = attr(a, .font, near: "Big") as? NSFont
+    check("a heading is larger than the body", (f?.pointSize ?? 0) > mdTheme.body.pointSize)
+    expect("the text is clean", mdText("### Small"), "Small\n")
+    expect("a hash without a space is not a heading", mdText("#nothash"), "#nothash\n")
+    expect("seven hashes is not a heading", mdText("####### x").contains("#"), true)
+}
+
+group("markdown: emphasis") {
+    let bold = md("a **strong** b")
+    let bf = attr(bold, .font, near: "strong") as? NSFont
+    let plain = attr(bold, .font, near: "a ") as? NSFont
+    check("bold uses a different face", bf != plain)
+    expect("markers are gone", bold.string, "a strong b\n")
+
+    let it = md("a *soft* b")
+    check("italic uses a different face", (attr(it, .font, near: "soft") as? NSFont) != plain)
+
+    // snake_case is far more common than emphasis in this content.
+    expect("underscores inside a word are left alone", mdText("call some_var_name now"),
+           "call some_var_name now\n")
+    expect("an unmatched marker survives as text", mdText("2 * 3 = 6"), "2 * 3 = 6\n")
+    expect("an unclosed bold survives", mdText("a **b"), "a **b\n")
+}
+
+group("markdown: code") {
+    let inlineCode = md("run `ls -l` now")
+    expect("backticks removed", mdPlain("run `ls -l` now"), "run ls -l now\n")
+    check("the chip is padded", inlineCode.string.contains("\u{202F}ls\u{00A0}-l\u{202F}"))
+    // A chip that breaks at a space paints its background to the margin, so it must not break.
+    check("no breakable space survives inside a chip",
+          !inlineCode.string.contains("ls -l"))
+    expect("code is monospace", (attr(inlineCode, .font, near: "ls\u{00A0}-l") as? NSFont)?.fontName,
+           mdTheme.mono.fontName)
+    check("code has a ground", attr(inlineCode, .backgroundColor, near: "ls\u{00A0}-l") != nil)
+
+    let fenced = md("```bash\nmake verify\n```")
+    expect("the language tag is not content", fenced.string.contains("bash"), false)
+    check("the code is there", fenced.string.contains("make verify"))
+    expect("fenced code is monospace", (attr(fenced, .font, near: "make verify") as? NSFont)?.fontName,
+           mdTheme.mono.fontName)
+}
+
+group("markdown: tables and code blocks") {
+    // Monospace alone does not align a table whose cells are CJK, so the columns are placed
+    // on measured tab stops. What the test can see is that the structure is there.
+    let table = md("| 承載體 | 擋什麼 |\n|---|---|\n| 測試 | 復發 |\n| 介面 | 看不見的狀態 |")
+    check("cells are separated by a tab", table.string.contains("承載體\t擋什麼"))
+    check("the separator row is not content", !table.string.contains("|---|"))
+    check("no pipes survive", !table.string.contains("|"))
+    check("every cell is there", table.string.contains("看不見的狀態"))
+    let header = attr(table, .paragraphStyle, near: "承載體") as? NSParagraphStyle
+    check("tab stops are set", (header?.tabStops.count ?? 0) >= 1)
+    check("a header rule is drawn", table.string.contains("─"))
+
+    expect("cells drop the border pipes", Markdown.cells("| a | b |"), ["a", "b"])
+    expect("cells survive without borders", Markdown.cells("a | b"), ["a", "b"])
+
+    // Every newline is a paragraph, so block spacing on all of them pushes a snippet apart.
+    let block = md("```\nmake verify\ncd backend\nmake test\n```")
+    let middle = attr(block, .paragraphStyle, near: "cd backend") as? NSParagraphStyle
+    let last = attr(block, .paragraphStyle, near: "make test") as? NSParagraphStyle
+    expect("interior lines are not pushed apart", middle?.paragraphSpacing, 0)
+    expect("interior lines have no space before", middle?.paragraphSpacingBefore, 0)
+    check("the block still ends with space", (last?.paragraphSpacing ?? 0) > 0)
+}
+
+group("markdown: lists") {
+    let bullets = md("- one\n- two")
+    check("a bullet glyph is used", bullets.string.contains("•"))
+    check("the dash is gone", !bullets.string.contains("- one"))
+    check("both items survive", bullets.string.contains("one") && bullets.string.contains("two"))
+
+    let numbers = md("1. first\n2. second")
+    check("numbers are kept as markers", numbers.string.contains("1."))
+    check("both items survive", numbers.string.contains("first") && numbers.string.contains("second"))
+
+    // Hanging indent is what makes a wrapped list item readable.
+    let style = attr(bullets, .paragraphStyle, near: "one") as? NSParagraphStyle
+    check("list items hang", (style?.headIndent ?? 0) > 0)
+}
+
+group("markdown: links") {
+    let a = md("see [the docs](https://example.com/x) here")
+    expect("only the label is shown", a.string, "see the docs here\n")
+    expect("the url is attached", attr(a, .link, near: "the docs") as? String,
+           "https://example.com/x")
+}
+
+group("markdown: quotes and rules") {
+    let q = md("> think about it")
+    check("the marker is gone", !q.string.contains(">"))
+    check("the text survives", q.string.contains("think about it"))
+    let style = attr(q, .paragraphStyle, near: "think") as? NSParagraphStyle
+    check("quotes are indented", (style?.headIndent ?? 0) > 0)
+
+    let r = mdText("a\n\n---\n\nb")
+    check("a rule becomes a line, not hyphens", !r.contains("---"))
+    check("text either side survives", r.contains("a") && r.contains("b"))
+}
+
 // MARK: - Result
 
 print("")
