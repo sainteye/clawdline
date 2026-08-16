@@ -21,6 +21,12 @@ enum Style {
     /// peek, because the pane exists to be read.
     static var outputHeight: CGFloat { Config.shared.outputHeight }
     static let outputSize: CGFloat = 11.5
+    /// Falls back rather than failing: a font name that is not installed would otherwise
+    /// leave the pane rendering in the system default at a different width.
+    static var outputFont: NSFont {
+        NSFont(name: Config.shared.outputFont, size: outputSize)
+            ?? NSFont.monospacedSystemFont(ofSize: outputSize, weight: .regular)
+    }
 
     static let rowHeight: CGFloat = 34
     static let listPadV: CGFloat = 8

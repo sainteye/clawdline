@@ -132,6 +132,14 @@ identical capture, which is skipped entirely rather than relaid out under your e
 iTerm2 hands over the **visible screen** and no more — its scripting has no scrollback. tmux
 gives the visible pane plus 200 lines of history.
 
+**Colour only survives through tmux.** `capture-pane -e` keeps the escape sequences, which get
+parsed into real colour. iTerm2's scripting returns a plain string: it will tell you which red
+it uses for ANSI red, but not which characters are red, so that path arrives as plain text.
+
+Set `output_font` to whatever your terminal uses. The default is Menlo; a status line built out
+of box-drawing characters comes out at the wrong widths in anything with different metrics,
+which is what makes it look broken.
+
 ## Bring your own mascot
 
 The character on top of the bar is **data, not code**. One JSON file holds the pixel grid, the
@@ -214,6 +222,8 @@ is that **the terminal never has to come to the front** — which is the entire 
   "mascot": "clawd",
   "tmux_path": ""                        // empty = look in the usual places,
   "output_height": 340                    // ⌘J pane height, 80–900
+  "output_font": "Menlo",                // match your terminal, or box-drawing breaks
+  "backdrop": 0.5,                       // ⌘J background blur, 0 = none
 }
 ```
 

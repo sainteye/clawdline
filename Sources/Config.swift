@@ -22,6 +22,12 @@ final class Config {
     /// Empty means "look in the usual places".
     /// How tall the output pane is, in points.
     var outputHeight: CGFloat = 340
+    /// The font the ⌘J pane draws with. Match it to your terminal's, or the box-drawing
+    /// characters a status line is made of come out at the wrong widths.
+    var outputFont = "Menlo"
+    /// How far the ⌘J backdrop goes, from 0 (none) to 1 (fully obscured).
+    /// Below 1 the blur is partly transparent, so what is behind stays legible.
+    var backdropStrength: Double = 0.5
     var tmuxPath = ""
     var lastTargetID: String?
     var history: [String] = []
@@ -43,6 +49,8 @@ final class Config {
         if let v = obj["mascot"] as? String, !v.isEmpty { mascot = v }
         if let v = obj["tmux_path"] as? String { tmuxPath = v }
         if let v = obj["output_height"] as? Double, v >= 80, v <= 900 { outputHeight = CGFloat(v) }
+        if let v = obj["backdrop"] as? Double, v >= 0, v <= 1 { backdropStrength = v }
+        if let v = obj["output_font"] as? String, !v.isEmpty { outputFont = v }
         if let v = obj["last_target_id"] as? String { lastTargetID = v }
         if let v = obj["history"] as? [String] { history = v }
     }
@@ -57,6 +65,8 @@ final class Config {
             "mascot": mascot,
             "tmux_path": tmuxPath,
             "output_height": Double(outputHeight),
+            "backdrop": backdropStrength,
+            "output_font": outputFont,
             "last_target_id": lastTargetID as Any,
             "history": Array(history.suffix(60)),
         ]

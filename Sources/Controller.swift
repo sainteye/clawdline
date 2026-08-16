@@ -161,7 +161,7 @@ final class PromptController: NSObject, NSWindowDelegate {
         outputView.isEditable = false
         outputView.isSelectable = true
         outputView.drawsBackground = false
-        outputView.font = NSFont.monospacedSystemFont(ofSize: Style.outputSize, weight: .regular)
+        outputView.font = Style.outputFont
         outputView.defaultParagraphStyle = {
             let p = NSMutableParagraphStyle()
             p.lineSpacing = 1.5
@@ -558,14 +558,16 @@ final class PromptController: NSObject, NSWindowDelegate {
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
         let blur = NSVisualEffectView()
-        blur.material = .fullScreenUI
+        // hudWindow rather than fullScreenUI: the heavier material erased everything behind
+        // it, and the point is to push the background back, not to delete it.
+        blur.material = .hudWindow
         blur.blendingMode = .behindWindow
         blur.state = .active
         blur.autoresizingMask = [.width, .height]
 
         let tint = NSView()
         tint.wantsLayer = true
-        tint.layer?.backgroundColor = NSColor(white: 0, alpha: 0.22).cgColor
+        tint.layer?.backgroundColor = NSColor(white: 0, alpha: 0.14).cgColor
         tint.autoresizingMask = [.width, .height]
         blur.addSubview(tint)
 
@@ -574,6 +576,10 @@ final class PromptController: NSObject, NSWindowDelegate {
     }
 
     private func showBackdrop() {
+        // A blur at less than full opacity composites over the sharp original, which reads as
+        // softened rather than blanked out. That is the knob, not the material.
+        let strength = Config.shared.backdropStrength
+        guard strength > 0.01 else { return }
         let p = backdrop ?? makeBackdrop()
         backdrop = p
         p.setFrame(screenUnderMouse().frame, display: false)
@@ -584,7 +590,7 @@ final class PromptController: NSObject, NSWindowDelegate {
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.22
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            p.animator().alphaValue = 1
+            p.animator().alphaValue = CGFloat(strength)
         }
     }
 
@@ -649,7 +655,13 @@ final class PromptController: NSObject, NSWindowDelegate {
                 let clip = self.outputHost.contentView
                 let atBottom = self.outputView.string.isEmpty || self.outputIsScrolledToBottom
                 let saved = clip.bounds.origin
-                self.outputView.string = text.isEmpty ? L.t.noOutput : text
+                let body = text.isEmpty ? L.t.noOutput : text
+                if Ansi.hasEscapes(body) {
+                    self.outputView.textStorage?.setAttributedString(
+                        Ansi.attributed(body, font: Style.outputFont, defaultColor: .labelColor))
+                } else {
+                    self.outputView.string = body
+                }
                 if let tc = self.outputView.textContainer {
                     self.outputView.layoutManager?.ensureLayout(for: tc)
                 }

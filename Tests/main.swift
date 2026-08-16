@@ -286,6 +286,61 @@ group("tmux pane listing parses") {
     expect("empty input yields nothing", Tmux.parsePanes("").count, 0)
 }
 
+// MARK: - Terminal escapes
+
+group("ansi: plain text is left alone") {
+    check("no escapes detected", !Ansi.hasEscapes("just words"))
+    check("escapes detected", Ansi.hasEscapes("a \u{1b}[31mb"))
+
+    let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    let a = Ansi.attributed("hello", font: font, defaultColor: .red)
+    expect("text survives", a.string, "hello")
+    expect("one run", a.length, 5)
+}
+
+group("ansi: colours") {
+    let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    func colour(_ s: String, at i: Int) -> NSColor? {
+        let a = Ansi.attributed(s, font: font, defaultColor: .white)
+        guard i < a.length else { return nil }
+        return a.attribute(.foregroundColor, at: i, effectiveRange: nil) as? NSColor
+    }
+
+    let basic = Ansi.attributed("\u{1b}[31mred\u{1b}[0m plain", font: font, defaultColor: .white)
+    expect("escapes are removed from the text", basic.string, "red plain")
+    check("the coloured run is not the default", colour("\u{1b}[31mred\u{1b}[0m plain", at: 0) != NSColor.white)
+    expect("reset returns to the default", colour("\u{1b}[31mred\u{1b}[0m plain", at: 5), NSColor.white)
+
+    check("bright colours differ from their base",
+          colour("\u{1b}[31ma", at: 0) != colour("\u{1b}[91ma", at: 0))
+    check("256-colour is parsed", colour("\u{1b}[38;5;196ma", at: 0) != NSColor.white)
+    check("truecolour is parsed", colour("\u{1b}[38;2;10;200;30ma", at: 0) != NSColor.white)
+    expect("39 goes back to the default", colour("\u{1b}[31ma\u{1b}[39mb", at: 1), NSColor.white)
+    expect("bare [m resets", colour("\u{1b}[31ma\u{1b}[mb", at: 1), NSColor.white)
+}
+
+group("ansi: everything that is not colour is dropped") {
+    let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    func text(_ s: String) -> String { Ansi.attributed(s, font: font, defaultColor: .white).string }
+
+    expect("clear screen", text("\u{1b}[2Jhello"), "hello")
+    expect("cursor move", text("\u{1b}[10;20Hhello"), "hello")
+    expect("erase line", text("a\u{1b}[Kb"), "ab")
+    expect("OSC title ending in BEL", text("\u{1b}]0;my title\u{07}hello"), "hello")
+    expect("OSC title ending in ST", text("\u{1b}]0;my title\u{1b}\\hello"), "hello")
+    expect("a lone escape is not printed", text("a\u{1b}Mb"), "ab")
+    expect("newlines survive", text("a\u{1b}[31m\nb"), "a\nb")
+}
+
+group("ansi: bold") {
+    let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    let a = Ansi.attributed("\u{1b}[1mbold\u{1b}[22mplain", font: font, defaultColor: .white)
+    let boldFont = a.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+    let plainFont = a.attribute(.font, at: 5, effectiveRange: nil) as? NSFont
+    check("bold run uses a different face", boldFont != plainFont)
+    expect("22 turns it off again", plainFont, font)
+}
+
 // MARK: - Result
 
 print("")

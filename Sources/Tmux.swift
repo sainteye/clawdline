@@ -123,7 +123,8 @@ enum Tmux {
     /// AppleScript will not hand over, so this path can offer more than the visible screen.
     static func capture(_ paneID: String, scrollback: Int = 200) -> String? {
         guard binary != nil else { return nil }
-        let (out, ok) = run(["capture-pane", "-p", "-J", "-S", "-\(scrollback)", "-t", paneID])
+        // -e keeps the escape sequences, which is the only way any of this arrives with colour.
+        let (out, ok) = run(["capture-pane", "-p", "-e", "-J", "-S", "-\(scrollback)", "-t", paneID])
         return ok ? out : nil
     }
 
