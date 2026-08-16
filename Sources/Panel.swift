@@ -190,6 +190,7 @@ final class PromptTextView: NSTextView {
     var onArrow: ((Int) -> Bool)?      // return true if the key was consumed
     var onTextChanged: (() -> Void)?
     var onToggleFullscreen: (() -> Void)?
+    var onToggleOrder: (() -> Void)?
 
     /// ⌘A / ⌘C / ⌘V / ⌘X / ⌘Z have to be wired by hand. This app is an accessory (no Dock icon,
     /// no menu bar), and macOS routes the standard edit commands through the main menu's key
@@ -213,6 +214,7 @@ final class PromptTextView: NSTextView {
             case "m": onToggleMascots?(); return true
             case "j": onToggleOutput?(); return true
             case "f": onToggleFullscreen?(); return true
+            case "r": onToggleOrder?(); return true
             // "+" arrives as "=" without shift and "+" with it; both mean the same thing here.
             case "=", "+": onZoomOutput?(1); return true
             case "-", "_": onZoomOutput?(-1); return true

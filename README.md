@@ -101,6 +101,7 @@ Press <kbd>⌥</kbd><kbd>Space</kbd> in iTerm2, type, press <kbd>Enter</kbd>.
 | <kbd>↑</kbd> / <kbd>↓</kbd> | history, when the field is empty |
 | <kbd>⌘</kbd><kbd>J</kbd> | show what that session is saying |
 | <kbd>⌘</kbd><kbd>F</kbd> | fill the screen with it |
+| <kbd>⌘</kbd><kbd>R</kbd> | newest message at the top instead of the bottom |
 | <kbd>⌘</kbd><kbd>+</kbd> / <kbd>⌘</kbd><kbd>−</kbd> / <kbd>⌘</kbd><kbd>0</kbd> | text size in that pane, remembered |
 | <kbd>⌘</kbd><kbd>M</kbd> | browse / switch mascots |
 | <kbd>⌘</kbd><kbd>D</kbd> | make the mascot dance |
@@ -137,6 +138,11 @@ the structure the screen only implies: who spoke, what they said, which tools ra
 means real message boundaries, full history rather than one viewport, and typography instead
 of a screenshot — speakers get a label, prose gets a proportional face, tool calls recede into
 monospace at the edge of the page.
+
+<kbd>⌘</kbd><kbd>R</kbd> turns the whole thing round, newest message at the top. It follows
+whichever end the newest message is at — auto-scrolling to the top rather than the bottom —
+and it is remembered. Only the transcript flips: a terminal capture is a picture of a grid,
+and reversing its lines would have a wrapped sentence reading upwards.
 
 Runs of tool calls fold. A single answer can sit under thirty lines of paths and shell, and
 the shell is not what you came back to read — so each finished run collapses to one line saying
@@ -253,6 +259,7 @@ is that **the terminal never has to come to the front** — which is the entire 
   "output_font": "Menlo",                // match your terminal, or box-drawing breaks
   "output_mode": "auto",                 // auto | transcript | terminal
   "output_size": 11.5,                   // ⌘+ / ⌘- change this live
+  "output_newest_first": false,          // ⌘R: newest at the top
   "backdrop": 0.5,                       // ⌘J background blur, 0 = none
 }
 ```

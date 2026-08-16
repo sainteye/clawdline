@@ -31,6 +31,7 @@ protocol Copy {
     var noOutput: String { get }
     func outputSize(_ pt: Int) -> String
     func foldedTools(_ count: Int) -> String
+    func outputOrder(newestFirst: Bool) -> String
 
     // Menu bar
     var menuOpen: String { get }
@@ -69,6 +70,9 @@ struct English: Copy {
     let noOutput = "Nothing to read from this session yet."
     func outputSize(_ pt: Int) -> String { "Output text \(pt)pt — ⌘J to see it" }
     func foldedTools(_ count: Int) -> String { "\(count) steps" }
+    func outputOrder(newestFirst: Bool) -> String {
+        newestFirst ? "Newest first" : "Oldest first"
+    }
 
     let menuOpen = "Open prompt bar"
     let menuReveal = "Jump to target tab"
@@ -115,6 +119,9 @@ struct TraditionalChinese: Copy {
     let noOutput = "還讀不到這個分頁的內容。"
     func outputSize(_ pt: Int) -> String { "輸出字級 \(pt)pt——按 ⌘J 看" }
     func foldedTools(_ count: Int) -> String { "\(count) 個動作" }
+    func outputOrder(newestFirst: Bool) -> String {
+        newestFirst ? "最新的在最上面" : "最舊的在最上面"
+    }
 
     let menuOpen = "打開輸入框"
     let menuReveal = "跳到目標分頁"

@@ -235,6 +235,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         textView.onToggleDance = { [weak self] in self?.toggleDance() }
         textView.onToggleOutput = { [weak self] in self?.toggleOutput() }
         textView.onToggleFullscreen = { [weak self] in self?.toggleFullscreen() }
+        textView.onToggleOrder = { [weak self] in self?.toggleOutputOrder() }
         textView.onZoomOutput = { [weak self] step in self?.zoomOutput(step) }
         textView.onTextChanged = { [weak self] in
             self?.relayout()
@@ -752,6 +753,22 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         if outputOpen { refreshOutput() } else { setHint(L.t.outputSize(Int(after)), warn: false) }
     }
 
+    /// ⌘R. Persisted, because which way round a transcript reads is a preference and not a
+    /// per-session mood. Only the transcript flips: a terminal capture is a picture of a grid,
+    /// and reversing its lines would have a wrapped sentence reading upwards.
+    private func toggleOutputOrder() {
+        Config.shared.outputNewestFirst.toggle()
+        Config.shared.save()
+        lastOutput = nil
+        setHint(L.t.outputOrder(newestFirst: Config.shared.outputNewestFirst), warn: false)
+        if outputOpen {
+            refreshOutput()
+            // The reader asked for the newest end; put them at it rather than leaving them
+            // wherever the old order had them scrolled to.
+            DispatchQueue.main.async { self.scrollOutputToNewest() }
+        }
+    }
+
     private func stopOutput() {
         outputTimer?.invalidate()
         outputTimer = nil
@@ -767,15 +784,17 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 DispatchQueue.main.async {
                     guard self.outputOpen, rendered.signature != self.lastOutput else { return }
                     self.lastOutput = rendered.signature
-                    let atBottom = self.outputView.string.isEmpty || self.outputIsScrolledToBottom
+                    // Which edge is "keeping up" depends on the order: newest-first puts the
+                    // arriving message at the top, so following it means staying at the top.
+                    let following = self.outputView.string.isEmpty || self.outputIsAtNewestEdge
                     let clip = self.outputHost.contentView
                     let saved = clip.bounds.origin
                     self.outputView.textStorage?.setAttributedString(rendered.text)
                     if let tc = self.outputView.textContainer {
                         self.outputView.layoutManager?.ensureLayout(for: tc)
                     }
-                    if atBottom {
-                        self.outputView.scrollToEndOfDocument(nil)
+                    if following {
+                        self.scrollOutputToNewest()
                     } else {
                         clip.setBoundsOrigin(saved)
                         self.outputHost.reflectScrolledClipView(clip)
@@ -843,10 +862,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let entries = Transcript.parse(text)
         guard !entries.isEmpty else { return nil }
         let folds = expandedFolds
+        let newestFirst = Config.shared.outputNewestFirst
         return (Transcript.render(entries, size: Config.shared.outputSize,
-                                  mono: Style.outputFont, expanded: folds),
+                                  mono: Style.outputFont, expanded: folds, newestFirst: newestFirst),
                 Transcript.signature(of: file)
-                    + "-\(Config.shared.outputSize)-\(folds.sorted().joined(separator: ","))")
+                    + "-\(Config.shared.outputSize)-\(newestFirst)"
+                    + "-\(folds.sorted().joined(separator: ","))")
     }
 
     /// A folded run of tool calls was clicked. The pane is read-only, so a link is the only
@@ -862,8 +883,22 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         return true
     }
 
-    /// Only auto-scroll when the reader was already at the bottom — yanking the view down
-    /// while somebody is reading further up is worse than not following at all.
+    /// Whether the reader is parked where new messages land. Only auto-scroll from there —
+    /// yanking the view while somebody is reading elsewhere is worse than not following at all.
+    private var outputIsAtNewestEdge: Bool {
+        Config.shared.outputNewestFirst
+            ? outputHost.contentView.bounds.minY <= 24
+            : outputIsScrolledToBottom
+    }
+
+    private func scrollOutputToNewest() {
+        if Config.shared.outputNewestFirst {
+            outputView.scrollToBeginningOfDocument(nil)
+        } else {
+            outputView.scrollToEndOfDocument(nil)
+        }
+    }
+
     private var outputIsScrolledToBottom: Bool {
         guard let doc = outputHost.documentView else { return true }
         let visible = outputHost.contentView.bounds

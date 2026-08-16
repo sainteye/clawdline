@@ -30,6 +30,10 @@ final class Config {
     var outputFont = "Menlo"
     /// Point size of the ⌘J pane, adjustable live with ⌘+ / ⌘-.
     var outputSize: CGFloat = 11.5
+    /// Newest message at the top instead of the bottom, toggled live with ⌘R.
+    /// Only the transcript reads this way: a terminal capture is a picture of a grid, and
+    /// flipping its lines would have a wrapped sentence reading upwards.
+    var outputNewestFirst = false
     /// How far the ⌘J backdrop goes, from 0 (none) to 1 (fully obscured).
     /// Below 1 the blur is partly transparent, so what is behind stays legible.
     var backdropStrength: Double = 0.5
@@ -58,6 +62,7 @@ final class Config {
         if let v = obj["output_font"] as? String, !v.isEmpty { outputFont = v }
         if let v = obj["output_mode"] as? String, !v.isEmpty { outputMode = v }
         if let v = obj["output_size"] as? Double, v >= 8, v <= 28 { outputSize = CGFloat(v) }
+        if let v = obj["output_newest_first"] as? Bool { outputNewestFirst = v }
         if let v = obj["last_target_id"] as? String { lastTargetID = v }
         if let v = obj["history"] as? [String] { history = v }
     }
@@ -76,6 +81,7 @@ final class Config {
             "output_font": outputFont,
             "output_mode": outputMode,
             "output_size": Double(outputSize),
+            "output_newest_first": outputNewestFirst,
             "last_target_id": lastTargetID as Any,
             "history": Array(history.suffix(60)),
         ]

@@ -212,7 +212,7 @@ extension Transcript {
     /// tool calls comes back as one line, because the machinery is what makes the pane
     /// unreadable: a single answer can sit under thirty lines of paths and shell.
     static func render(_ entries: [Entry], size: CGFloat, mono: NSFont,
-                       expanded: Set<String> = []) -> NSAttributedString {
+                       expanded: Set<String> = [], newestFirst: Bool = false) -> NSAttributedString {
         let body = NSFont.systemFont(ofSize: size + 1)
         let header = NSFont.systemFont(ofSize: max(8.5, size - 1.5), weight: .semibold)
         let toolFont = NSFont(descriptor: mono.fontDescriptor, size: max(8.5, size - 0.5)) ?? mono
@@ -237,10 +237,21 @@ extension Transcript {
         let clock = DateFormatter()
         clock.dateFormat = "HH:mm"
 
-        let out = NSMutableAttributedString()
+        // Built one block at a time rather than into a single run, so reversing is a matter of
+        // the order the blocks go out in. Reversing lines or entries instead would turn one
+        // answer inside out; what wants flipping is the conversation, not what was said.
+        var blocks: [NSMutableAttributedString] = []
+        var block = NSMutableAttributedString()
 
         func add(_ string: String, _ attrs: [NSAttributedString.Key: Any]) {
-            out.append(NSAttributedString(string: string, attributes: attrs))
+            block.append(NSAttributedString(string: string, attributes: attrs))
+        }
+
+        /// Starts a new block. Every case below opens with this and the loop closes with it,
+        /// which is the whole rule: one message or one run of tool calls per block.
+        func endBlock() {
+            if block.length > 0 { blocks.append(block) }
+            block = NSMutableAttributedString()
         }
 
         let foldStyle = NSMutableParagraphStyle()
@@ -283,6 +294,7 @@ extension Transcript {
             let entry = entries[i]
             switch entry.kind {
             case .user, .assistant:
+                endBlock()
                 let isUser = entry.kind == .user
                 var label = isUser ? "YOU" : "CLAUDE"
                 if let t = entry.time { label += "   \(clock.string(from: t))" }
@@ -294,10 +306,11 @@ extension Transcript {
                 ])
                 // No trailing newline here: every Markdown block ends with one already, and
                 // the next entry's paragraphSpacingBefore is what sets the distance.
-                out.append(prose(entry.text, body: body, mono: mono))
+                block.append(prose(entry.text, body: body, mono: mono))
                 i += 1
 
             case .tool, .toolResult:
+                endBlock()
                 var run: [Entry] = []
                 while i < entries.count, entries[i].kind == .tool || entries[i].kind == .toolResult {
                     run.append(entries[i]); i += 1
@@ -327,6 +340,10 @@ extension Transcript {
                 }
             }
         }
+        endBlock()
+
+        let out = NSMutableAttributedString()
+        for b in (newestFirst ? blocks.reversed() : blocks) { out.append(b) }
         return out
     }
 

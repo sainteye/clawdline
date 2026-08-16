@@ -654,6 +654,52 @@ group("folding runs of tool calls") {
            Transcript.distinct(["Bash", "Read", "Bash", "Bash"]), ["Bash", "Read"])
 }
 
+group("newest first") {
+    let mono = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    let entries: [Transcript.Entry] = [
+        .init(kind: .assistant, text: "alpha one\n\nalpha two", tool: nil, time: nil),
+        .init(kind: .user, text: "bravo", tool: nil, time: nil),
+        .init(kind: .tool, text: "x.swift", tool: "Read", time: nil),
+        .init(kind: .toolResult, text: "ok", tool: nil, time: nil),
+        .init(kind: .tool, text: "make", tool: "Bash", time: nil),
+        .init(kind: .toolResult, text: "ok", tool: nil, time: nil),
+        .init(kind: .assistant, text: "charlie", tool: nil, time: nil),
+    ]
+    func at(_ text: String, in s: String) -> Int {
+        guard let r = s.range(of: text) else { return -1 }
+        return s.distance(from: s.startIndex, to: r.lowerBound)
+    }
+
+    let down = Transcript.render(entries, size: 11, mono: mono).string
+    let up = Transcript.render(entries, size: 11, mono: mono, newestFirst: true).string
+
+    check("oldest first reads downwards",
+          at("alpha one", in: down) < at("bravo", in: down),
+          )
+    check("the run sits between them going down",
+          at("bravo", in: down) < at("2", in: down) && at("2", in: down) < at("charlie", in: down))
+    check("newest first reads upwards",
+          at("charlie", in: up) < at("bravo", in: up) && at("bravo", in: up) < at("alpha one", in: up))
+
+    // What flips is the conversation, not what was said: reversing entries or lines instead
+    // would turn a single answer inside out.
+    check("a message keeps its own order", at("alpha one", in: up) < at("alpha two", in: up))
+    check("a message keeps its label", up.contains("CLAUDE\ncharlie"))
+    check("the label leads in either order", down.contains("CLAUDE\ncharlie"))
+
+    // The tail run is the one still going, which is about the conversation and not the screen.
+    let tailRun: [Transcript.Entry] = [
+        .init(kind: .assistant, text: "said", tool: nil, time: nil),
+        .init(kind: .tool, text: "x.swift", tool: "Read", time: nil),
+        .init(kind: .toolResult, text: "ok", tool: nil, time: nil),
+        .init(kind: .tool, text: "make", tool: "Bash", time: nil),
+        .init(kind: .toolResult, text: "ok", tool: nil, time: nil),
+    ]
+    let flipped = Transcript.render(tailRun, size: 11, mono: mono, newestFirst: true).string
+    check("the last run stays open whichever way up", flipped.contains("x.swift"))
+    check("and it is drawn first", at("x.swift", in: flipped) < at("said", in: flipped))
+}
+
 group("the transcript pane's text view") {
     let view = PromptController.makeOutputView()
     // A fresh NSTextView is TextKit 2, where NSTextTable does not exist and a table silently
