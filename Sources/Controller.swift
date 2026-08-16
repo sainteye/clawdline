@@ -605,15 +605,19 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         activityLabel.isHidden = outputH == 0 || activityLabel.stringValue.isEmpty
         paneHeader.isHidden = activityLabel.isHidden
         if outputH > 0 {
-            // Taller than the label so the gap lands between the divider and the text.
-            // Sharing the footer's height put it hard against the line above.
-            let strip: CGFloat = activityLabel.isHidden ? 0 : Style.hintHeight + 10
+            // Sized to the text, not to the footer's row height. Borrowing that 38pt put the
+            // label in the middle of a box twice its height, and the leftover showed up as a
+            // hole between this line and the first line of the transcript.
+            let labelH: CGFloat = 18
+            let strip: CGFloat = activityLabel.isHidden ? 0 : labelH + 18
             outputHost.frame = NSRect(x: 0, y: y, width: W, height: outputH - strip)
             if strip > 0 {
                 let headerY = y + outputH - strip
                 paneHeader.frame = NSRect(x: 0, y: headerY, width: W, height: strip)
-                activityLabel.frame = NSRect(x: Style.padH, y: headerY,
-                                             width: W - Style.padH * 2, height: Style.hintHeight)
+                // Air on both sides, and a little more below: this line is a header, and a
+                // header that touches the first line of what it heads reads as part of it.
+                activityLabel.frame = NSRect(x: Style.padH, y: headerY + 7,
+                                             width: W - Style.padH * 2, height: labelH)
             }
             // The document view starts at zero width, and with widthTracksTextView that makes
             // the text container zero wide too — the text is there and simply has nowhere to
