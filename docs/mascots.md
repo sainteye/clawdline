@@ -135,6 +135,11 @@ one that is required.
 | `typing` | you are typing |
 | `dance`  | idle for ~7 seconds, or you press ⌘D |
 | `cheer`  | you press Enter and the message goes out |
+| `stretch`| the window changes size (⌘F) |
+
+A pack written before a routine existed is not broken: `stretch` is asked for by name and
+falls back to `cheer` when the pack has none, so an older pack keeps working and simply does
+something else at that moment.
 
 You can define extra routines and trigger them yourself with
 `open "clawdline://snapshot?routine=yourname&t=0.3&path=/tmp/x.png"`, which is mostly useful
@@ -174,7 +179,7 @@ Save a reference image somewhere, then say something like this to Claude Code:
 > - Put the feet on the bottom row so it stands on the bar instead of floating.
 > - Draw poses for: standing, both arms up, two dance poses (one arm up + the opposite
 >   foot lifted, then mirrored), and left/right stepping.
-> - Write the five routines: `pop`, `idle`, `typing`, `dance`, `cheer`.
+> - Write the six routines: `pop`, `idle`, `typing`, `dance`, `cheer`, `stretch`.
 > - Save it as `~/.config/clawdline/mascots/my-character.json` and set `"mascot": "my-character"` in
 >   `~/.config/clawdline/config.json`.
 >

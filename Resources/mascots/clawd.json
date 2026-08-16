@@ -156,6 +156,19 @@
         { "t": 0.88, "pose": "stand", "dy": 0, "sx": 1.18, "sy": 0.80 },
         { "t": 1.00, "sx": 1.00, "sy": 1.00, "ease": "out" }
       ]
+    },
+
+    "stretch": {
+      "duration": 0.54,
+      "loop": false,
+      "keys": [
+        { "t": 0.00, "pose": "stand", "eyes": "open", "dy": 0, "sx": 1.00, "sy": 1.00 },
+        { "t": 0.16, "pose": "stand", "dy": -3, "sx": 1.26, "sy": 0.74, "ease": "out" },
+        { "t": 0.42, "pose": "armsUp", "eyes": "happy", "dy": 11, "sx": 0.76, "sy": 1.34, "ease": "out" },
+        { "t": 0.66, "dy": 3, "sx": 1.13, "sy": 0.91, "ease": "inout" },
+        { "t": 0.84, "pose": "stand", "dy": 0, "sx": 0.95, "sy": 1.06, "ease": "inout" },
+        { "t": 1.00, "sx": 1.00, "sy": 1.00, "ease": "out" }
+      ]
     }
   }
 }

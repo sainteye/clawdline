@@ -188,7 +188,7 @@ iTerm2 的 scripting 回傳的是純字串——它告訴得了你「ANSI 紅是
 >
 > 幫我做成 Clawdline 的 mascot pack。格式看 `docs/mascots.md`，
 > `~/.config/clawdline/mascots/clawd.json` 是可以照抄的範例。網格不要超過 20×16，
-> 腳要放在最下面那一列才站得住。五段動畫都要寫：`pop`、`idle`、`typing`、`dance`、`cheer`。
+> 腳要放在最下面那一列才站得住。六段動畫都要寫：`pop`、`idle`、`typing`、`dance`、`cheer`、`stretch`。
 > 存成 `~/.config/clawdline/mascots/my-character.json`，並把設定檔指過去。
 >
 > 然後驗收你自己的成果：跑
@@ -199,7 +199,7 @@ iTerm2 的 scripting 回傳的是純字串——它告訴得了你「ANSI 紅是
 而且**不需要螢幕錄製權限**，所以 agent 看得到自己畫了什麼、可以自己迭代。
 沒看過就寫的像素圖，出來會是一團。
 
-完整格式、五段動畫的觸發時機、以及這個尺寸下什麼畫得出來：**[docs/mascots.md](docs/mascots.md)**。
+完整格式、六段動畫的觸發時機、以及這個尺寸下什麼畫得出來：**[docs/mascots.md](docs/mascots.md)**。
 pack 是純資料——一堆字元、顏色與數字——執行不了任何東西，最壞就是載入失敗並說明原因。
 `tools/validate-pack.py` 可以驗，CI 在每個 PR 上都會跑。
 

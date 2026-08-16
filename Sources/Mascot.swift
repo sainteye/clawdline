@@ -320,6 +320,11 @@ final class MascotView: NSView {
 
     // MARK: Playback
 
+    /// Whether this pack defines a routine. A pack that does not is not broken — playing a
+    /// missing routine falls back to `idle`, which reads as nothing happening — so callers ask
+    /// first and pick something the pack does have.
+    func has(_ routine: String) -> Bool { pack?.routines[routine] != nil }
+
     func play(_ r: String, then back: String = "idle") {
         routine = r
         fallback = back

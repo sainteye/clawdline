@@ -205,8 +205,8 @@ The intended way is to let Claude Code do it. Save a reference image, then:
 >
 > Make it into a Clawdline mascot pack. The format is in `docs/mascots.md`, and
 > `~/.config/clawdline/mascots/clawd.json` is a working example. Grid no larger than 20×16.
-> Put the feet on the bottom row so it stands on the bar. Write the five routines: `pop`,
-> `idle`, `typing`, `dance`, `cheer`. Save it as
+> Put the feet on the bottom row so it stands on the bar. Write the six routines: `pop`,
+> `idle`, `typing`, `dance`, `cheer`, `stretch`. Save it as
 > `~/.config/clawdline/mascots/my-character.json` and point the config at it.
 >
 > Then check your work: run
@@ -217,7 +217,7 @@ That last instruction is the one that matters. `clawdline://snapshot` renders a 
 routine to a PNG **without needing Screen Recording permission**, so the agent can see what it
 drew and iterate. Pixel art written blind comes out as a blob.
 
-Full format reference, the five routine triggers, and notes on what reads well at this size:
+Full format reference, the six routine triggers, and notes on what reads well at this size:
 **[docs/mascots.md](docs/mascots.md)**. Packs are pure data — a grid of characters, colours and
 numbers — so one cannot execute anything; the worst a bad one does is refuse to load and say
 why. `tools/validate-pack.py` checks a pack, and CI runs it on every pull request.

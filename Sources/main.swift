@@ -139,7 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let list = items.first(where: { $0.name == "list" })?.value
             let out = items.first(where: { $0.name == "output" })?.value == "1"
             let session = items.first(where: { $0.name == "session" })?.value
-            let full = items.first(where: { $0.name == "full" })?.value == "1"
+            let full = items.first(where: { $0.name == "full" })?.value.map { $0 == "1" }
             if !path.isEmpty {
                 PromptController.shared.snapshot(to: path, routine: routine, at: t, list: list,
                                                  output: out, session: session, full: full)

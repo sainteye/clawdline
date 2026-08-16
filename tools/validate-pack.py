@@ -14,7 +14,7 @@ import re
 import sys
 
 REQUIRED_ROUTINES = {"idle"}
-KNOWN_ROUTINES = {"pop", "idle", "typing", "dance", "cheer"}
+KNOWN_ROUTINES = {"pop", "idle", "typing", "dance", "cheer", "stretch"}
 HEX = re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
 
 
@@ -59,6 +59,11 @@ def check(path):
     for name, routine in pack["routines"].items():
         if name not in KNOWN_ROUTINES:
             problems.append(f'routine "{name}" is never triggered by the app (harmless, but nothing plays it)')
+        if not isinstance(routine, dict):
+            # A stray key here is not a comment: the app decodes this map into routines and
+            # a string value makes the whole pack fail to load.
+            problems.append(f"routine {name!r} is not an object")
+            continue
         if routine.get("duration", 0) <= 0:
             problems.append(f'routine "{name}" needs a positive duration')
         keys = routine.get("keys") or []

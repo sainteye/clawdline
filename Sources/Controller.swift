@@ -55,6 +55,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// its own Space, which for a panel you summon over whatever you were doing is the opposite
     /// of what it is for. This just makes the frame the size of the screen.
     private var fullscreen = false
+    /// Owns the window frame while a size change is walking to its target.
+    private var resizeTimer: Timer?
+    /// The pane height the last layout actually used, which is where an animation starts from.
+    private var lastOutputH: CGFloat = 0
     private var outputTimer: Timer?
     private var lastOutput: String?
     /// Which folded runs of tool calls the reader has opened. Cleared when the pane closes:
@@ -272,6 +276,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     func hide() {
         guard panel.isVisible, !dismissing else { return }
         dismissing = true
+        resizeTimer?.invalidate()
+        resizeTimer = nil
         hideBackdrop()
         idleWork?.cancel()
         danceWork?.cancel()
@@ -305,23 +311,28 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     }
 
     private func position() {
+        guard resizeTimer == nil else { return }   // the animation owns the frame while it runs
+        panel.setFrameOrigin(originFor(width: panelWidth, total: panel.frame.height))
+    }
+
+    /// Where a window of this size belongs. Split out from `position()` so a size change can
+    /// walk the origin at the same rate as the size — moving one without the other is what
+    /// makes a resize look like two separate things happening.
+    private func originFor(width W: CGFloat, total: CGFloat) -> NSPoint {
         let screen = screenUnderMouse()
         if fullscreen {
             let v = screen.visibleFrame
-            panel.setFrameOrigin(NSPoint(x: round(v.minX), y: round(v.minY)))
-            return
+            return NSPoint(x: round(v.minX), y: round(v.minY))
         }
         let f = screen.frame
-        let h = panel.frame.height
-        let x = f.midX - panelWidth / 2
+        let x = f.midX - W / 2
         // y_fraction refers to the top of the *card*, not the top of the window, so changing the
         // mascot's height never pushes the input line somewhere else.
         // With the pane open the card is nearly twice as tall; leaving the top pinned would
         // hang all of that below the eye line. Lift it by part of what it grew.
         let lift = outputOpen ? Style.outputHeight * 0.34 : 0
         let cardTop = f.maxY - f.height * Config.shared.yFraction + lift
-        let windowTop = cardTop + (mascot.boxSize.height - mascot.footInset - mascot.overlap) + Style.mascotTopPad
-        panel.setFrameOrigin(NSPoint(x: round(x), y: round(windowTop - h)))
+        return NSPoint(x: round(x), y: round(cardTop + mascotHeadroom - total))
     }
 
     private func screenUnderMouse() -> NSScreen {
@@ -440,39 +451,65 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         return min(Config.shared.width * 1.45, screenUnderMouse().frame.width * 0.88).rounded()
     }
 
-    private func relayout() {
-        let W = panelWidth
+    /// What a layout comes out to, for a given outer width and pane height.
+    ///
+    /// Separate from applying it so the resize animation can walk the two values it changes —
+    /// the width and the pane — and get every frame in between for free.
+    private func geometry(width W: CGFloat, outputH: CGFloat)
+        -> (inputH: CGFloat, listH: CGFloat, cardH: CGFloat, total: CGFloat) {
         let inputH = max(Style.inputMinHeight, textHeight() + Style.inputPadV * 2)
         let visibleRows = listMode != .none ? min(rows.count, 9) : 0
         let listH = visibleRows > 0 ? CGFloat(visibleRows) * Style.rowHeight + Style.listPadV * 2 : 0
+        let fixed = inputH + (listH > 0 ? listH + 1 : 0) + 1 + Style.hintHeight
+        let cardH = fixed + (outputH > 0 ? outputH + 1 : 0)
         // The mascot stands on the top edge of the card, so its room comes off the top at every
         // size — full screen included. The card takes what is left rather than the whole screen.
-        let headroom = (mascot.boxSize.height - mascot.footInset - mascot.overlap) + Style.mascotTopPad
-        // Full screen gives the rest of the height to the pane rather than growing everything:
-        // the input line and the footer are the same size whatever the window is.
+        return (inputH, listH, cardH, cardH + mascotHeadroom)
+    }
+
+    private var mascotHeadroom: CGFloat {
+        (mascot.boxSize.height - mascot.footInset - mascot.overlap) + Style.mascotTopPad
+    }
+
+    /// The pane's height for the current state. Full screen gives it whatever is left rather
+    /// than growing everything: the input line and the footer are the same size at any size.
+    private var targetOutputHeight: CGFloat {
+        guard outputOpen else { return 0 }
+        guard fullscreen else { return Style.outputHeight }
+        let inputH = max(Style.inputMinHeight, textHeight() + Style.inputPadV * 2)
+        let visibleRows = listMode != .none ? min(rows.count, 9) : 0
+        let listH = visibleRows > 0 ? CGFloat(visibleRows) * Style.rowHeight + Style.listPadV * 2 : 0
         let fixed = inputH + (listH > 0 ? listH + 1 : 0) + 1 + Style.hintHeight
-        let outputH: CGFloat = !outputOpen ? 0
-            : (fullscreen
-                ? max(80, screenUnderMouse().visibleFrame.height - headroom - fixed - 1)
-                : Style.outputHeight)
-        let cardH = fixed + (outputH > 0 ? outputH + 1 : 0)
-        let total = cardH + headroom
+        return max(80, screenUnderMouse().visibleFrame.height - mascotHeadroom - fixed - 1)
+    }
+
+    private func relayout() {
+        guard resizeTimer == nil else { return }   // the animation owns the frame while it runs
+        let W = panelWidth
+        let outputH = targetOutputHeight
+        let g = geometry(width: W, outputH: outputH)
 
         var f = panel.frame
         let top = f.maxY
-        f.size = NSSize(width: W, height: total)
-        f.origin.y = top - total
+        f.size = NSSize(width: W, height: g.total)
+        f.origin.y = top - g.total
         panel.setFrame(f, display: true)
+        applyLayout(width: W, outputH: outputH, geometry: g)
+    }
 
-        container.frame = NSRect(origin: .zero, size: f.size)
-        cardHost.frame = NSRect(x: 0, y: 0, width: W, height: cardH)
+    /// Everything inside the window, for an already-decided outer size.
+    private func applyLayout(width W: CGFloat, outputH: CGFloat,
+                             geometry g: (inputH: CGFloat, listH: CGFloat,
+                                          cardH: CGFloat, total: CGFloat)) {
+        container.frame = NSRect(origin: .zero, size: NSSize(width: W, height: g.total))
+        cardHost.frame = NSRect(x: 0, y: 0, width: W, height: g.cardH)
         cardHost.layer?.shadowPath = CGPath(roundedRect: cardHost.bounds,
                                             cornerWidth: Style.corner, cornerHeight: Style.corner,
                                             transform: nil)
         card.frame = cardHost.bounds
         let box = mascot.boxSize
         mascot.frame = NSRect(x: (W - box.width) / 2,
-                              y: cardH - mascot.overlap - mascot.footInset,
+                              y: g.cardH - mascot.overlap - mascot.footInset,
                               width: box.width, height: box.height)
         // The glow lines up with the sprite, not the view — the view is larger (that is the jump room)
         let sr = mascot.spriteRect
@@ -481,7 +518,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                             y: mascot.frame.minY + sr.midY - side / 2,
                             width: side, height: side)
 
-        layoutCard(size: card.bounds.size, inputH: inputH, listH: listH, outputH: outputH)
+        layoutCard(size: card.bounds.size, inputH: g.inputH, listH: g.listH, outputH: outputH)
+        lastOutputH = outputH
     }
 
     private func layoutCard(size: NSSize, inputH: CGFloat, listH: CGFloat, outputH: CGFloat) {
@@ -604,11 +642,22 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     // The bar can already switch between sessions; being able to see what one of them says
     // is what makes that switch a decision rather than a guess.
 
-    private func toggleOutput() {
+    private func toggleOutput(layout: Bool = true) {
+        let from = currentFrameState()
+        // Full screen exists to read in. Closing the pane and leaving a screen-sized card with
+        // one input line in it would be a state nobody asked for — so ⌘J on a full-screen pane
+        // leaves both, and the two changes travel together rather than one snapping first.
+        let leavingFullscreen = outputOpen && fullscreen
         outputOpen.toggle()
         lastOutput = nil
-        relayout()
-        position()          // width changed, so re-centre
+        if leavingFullscreen {
+            fullscreen = false
+            mascot.play(mascot.has("stretch") ? "stretch" : "cheer", then: "idle")
+            animateLayout(from: from)
+        } else if layout {
+            relayout()
+            position()      // width changed, so re-centre
+        }
         if outputOpen { showBackdrop() } else { hideBackdrop() }
         if outputOpen {
             refreshOutput()
@@ -620,25 +669,72 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             lastOutput = nil
             // Which runs were open is where the reader had got to, not a preference.
             expandedFolds.removeAll()
-            // Full screen exists to read in. Closing the pane and leaving a screen-sized card
-            // with one input line in it would be a state nobody asked for.
-            if fullscreen {
-                fullscreen = false
-                relayout()
-                position()
-            }
         }
     }
 
     /// ⌘F. Reading is the only reason to want the whole screen, so it brings the pane with it —
     /// a full-screen window with one input line in it would be a worse version of the bar.
     private func toggleFullscreen() {
-        if !fullscreen && !outputOpen {
-            toggleOutput()
-        }
+        let from = currentFrameState()
+        // Opened without its own layout pass: the resize below covers the same distance, and
+        // doing both makes the pane pop to one size and then travel to another.
+        if !fullscreen && !outputOpen { toggleOutput(layout: false) }
         fullscreen.toggle()
-        relayout()
-        position()
+        mascot.play(mascot.has("stretch") ? "stretch" : "cheer", then: "idle")
+        animateLayout(from: from)
+    }
+
+    private func currentFrameState() -> (w: CGFloat, output: CGFloat, origin: NSPoint) {
+        (panel.frame.width, lastOutputH, panel.frame.origin)
+    }
+
+    /// Walk the window to whatever the state now says it should be.
+    ///
+    /// Every frame is laid out for real rather than the window being scaled: the input line and
+    /// the footer are fixed-height at any size, so a scaled window would show them stretching
+    /// and settling back, which is the thing that reads as cheap.
+    private func animateLayout(from: (w: CGFloat, output: CGFloat, origin: NSPoint),
+                               duration: Double = 0.30) {
+        resizeTimer?.invalidate()
+        let toW = panelWidth
+        let toOutput = targetOutputHeight
+        let toOrigin = originFor(width: toW, total: geometry(width: toW, outputH: toOutput).total)
+        let start = CACurrentMediaTime()
+
+        let tick: (Timer) -> Void = { [weak self] timer in
+            // Clearing the handle matters as much as stopping the timer: relayout and position
+            // stand down while it is set, so a timer that dies without clearing it freezes the
+            // window's geometry for the rest of the session.
+            guard let self else { timer.invalidate(); return }
+            guard self.panel.isVisible else {
+                timer.invalidate()
+                self.resizeTimer = nil
+                return
+            }
+            let raw = min(1, (CACurrentMediaTime() - start) / duration)
+            // Ease out: a window that decelerates into its size feels like it arrived, and one
+            // that stops dead feels like it was cut off.
+            let e = CGFloat(1 - pow(1 - raw, 3))
+            let w = from.w + (toW - from.w) * e
+            let output = from.output + (toOutput - from.output) * e
+            let g = self.geometry(width: w, outputH: output)
+            let origin = NSPoint(x: from.origin.x + (toOrigin.x - from.origin.x) * e,
+                                 y: from.origin.y + (toOrigin.y - from.origin.y) * e)
+            if raw >= 1 {
+                timer.invalidate()
+                self.resizeTimer = nil
+                self.relayout()      // land on the exact numbers, not on an interpolation
+                self.position()
+                return
+            }
+            self.panel.setFrame(NSRect(origin: origin,
+                                       size: NSSize(width: w, height: g.total)), display: true)
+            self.applyLayout(width: w, outputH: output, geometry: g)
+        }
+
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true, block: tick)
+        RunLoop.main.add(timer, forMode: .common)
+        resizeTimer = timer
     }
 
     /// ⌘+ / ⌘- / ⌘0. The size is persisted, because a size you have to set again every
@@ -1053,7 +1149,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// the result is the wallpaper with every window stripped out — which leaves you blind while
     /// tuning layout. This path only paints our own layers, so it needs no permission at all.
     func snapshot(to path: String, routine: String? = nil, at time: Double? = nil, list: String? = nil,
-                  output: Bool = false, session: String? = nil, full: Bool = false) {
+                  output: Bool = false, session: String? = nil, full: Bool? = nil) {
         // Opening the pane has to happen before the wait, not inside the render: the transcript
         // arrives asynchronously, so a pane opened at draw time is always drawn empty.
         let arrange = { [weak self] in
@@ -1065,7 +1161,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 self.pick(i, closeList: false)
             }
             if output, !self.outputOpen { self.toggleOutput() }
-            if full, !self.fullscreen { self.toggleFullscreen() }
+            if let want = full, want != self.fullscreen { self.toggleFullscreen() }
             if list == "mascots" { self.showList(.mascots) }
             else if list == "sessions" { self.showList(.sessions) }
         }
