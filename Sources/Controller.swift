@@ -61,6 +61,13 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var lastOutputH: CGFloat = 0
     private var outputTimer: Timer?
     private var lastOutput: String?
+    /// Set while the pane is showing a transcript from a file for a screenshot. The refresh
+    /// loop stands down: it runs a beat later than the fill and would otherwise put the live
+    /// session back, which looks like the file never loaded.
+    private var cannedTranscript: String?
+    /// While set, the target label keeps its stand-in. The session scan lands a beat after the
+    /// fill and would otherwise write a real tab title into a picture bound for the README.
+    private var usingStandInLabel = false
     /// Which folded runs of tool calls the reader has opened. Cleared when the pane closes:
     /// it is a reading position, not a setting, and it should not outlive the session on screen.
     private var expandedFolds: Set<String> = []
@@ -775,6 +782,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     }
 
     private func refreshOutput() {
+        guard cannedTranscript == nil else { return }
         guard outputOpen, panel.isVisible, let target = currentTarget else { return }
         DispatchQueue.global(qos: .utility).async {
             // The transcript is the better source when there is one: it has the message
@@ -1020,6 +1028,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     }
 
     private func updateTargetLabel() {
+        guard !usingStandInLabel else {
+            targetLabel.attributedStringValue = Self.standInTarget()
+            return
+        }
         let s = NSMutableAttributedString()
         if let t = currentTarget {
             s.append(NSAttributedString(string: "● ", attributes: [
@@ -1184,7 +1196,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// the result is the wallpaper with every window stripped out — which leaves you blind while
     /// tuning layout. This path only paints our own layers, so it needs no permission at all.
     func snapshot(to path: String, routine: String? = nil, at time: Double? = nil, list: String? = nil,
-                  output: Bool = false, session: String? = nil, full: Bool? = nil) {
+                  output: Bool = false, session: String? = nil, full: Bool? = nil,
+                  transcript: String? = nil) {
         // Opening the pane has to happen before the wait, not inside the render: the transcript
         // arrives asynchronously, so a pane opened at draw time is always drawn empty.
         let arrange = { [weak self] in
@@ -1196,6 +1209,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 self.pick(i, closeList: false)
             }
             if output, !self.outputOpen { self.toggleOutput() }
+            // A canned transcript, for the pictures on the README. Shooting a real session
+            // would publish whatever the machine happened to be working on that afternoon.
+            if let file = transcript, !file.isEmpty { self.showCannedTranscript(at: file) }
             if let want = full, want != self.fullscreen { self.toggleFullscreen() }
             if list == "mascots" { self.showList(.mascots) }
             else if list == "sessions" { self.showList(.sessions) }
@@ -1245,6 +1261,27 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
     }
 
+    /// Fill the pane from a transcript file on disk and stop it being refreshed away.
+    ///
+    /// The file goes through the same parse and render as a live session — a picture made any
+    /// other way would be a picture of a mock-up, and would stop matching the day it drifted.
+    private func showCannedTranscript(at path: String) {
+        stopOutput()
+        cannedTranscript = path
+        usingStandInLabel = true
+        guard let text = Transcript.tail(of: URL(fileURLWithPath: path), bytes: 8_000_000)
+        else { return }
+        let entries = Transcript.parse(text)
+        guard !entries.isEmpty else { return }
+        outputView.textStorage?.setAttributedString(
+            Transcript.render(entries, size: Config.shared.outputSize, mono: Style.outputFont,
+                              expanded: expandedFolds,
+                              newestFirst: Config.shared.outputNewestFirst))
+        if let tc = outputView.textContainer { outputView.layoutManager?.ensureLayout(for: tc) }
+        scrollOutputToNewest()
+        targetLabel.attributedStringValue = Self.standInTarget()
+    }
+
     /// Render a whole demo, frame by frame, into PNGs for ffmpeg to turn into a GIF.
     ///
     /// Why not a screen recording: it needs Screen Recording permission, and it would capture real
@@ -1261,16 +1298,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private func renderFilmstrip(dir: String, fps: Double, seconds: Double, script: String, text: String) {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
 
-        // A stand-in target. Real tab titles would publish what the user happens to be working on.
-        let fake = NSMutableAttributedString()
-        fake.append(NSAttributedString(string: "● ", attributes: [
-            .foregroundColor: Style.accent, .font: NSFont.systemFont(ofSize: 10)]))
-        fake.append(NSAttributedString(string: "✳ my-project", attributes: [
-            .foregroundColor: NSColor.secondaryLabelColor,
-            .font: NSFont.systemFont(ofSize: Style.hintSize)]))
-        fake.append(NSAttributedString(string: "  2/3", attributes: [
-            .foregroundColor: NSColor.tertiaryLabelColor,
-            .font: NSFont.monospacedDigitSystemFont(ofSize: Style.hintSize - 0.5, weight: .regular)]))
+        let fake = Self.standInTarget()
 
         let margin: CGFloat = 64
         textView.string = ""
@@ -1334,11 +1362,28 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     }
 
     /// The demo storyboard. The timings are fixed on purpose: the README image has to be reproducible.
+    /// A stand-in for the target label. Real tab titles would publish what the machine happens
+    /// to be working on, and every picture in this repo is meant to be safe to publish.
+    static func standInTarget() -> NSAttributedString {
+        let out = NSMutableAttributedString()
+        out.append(NSAttributedString(string: "● ", attributes: [
+            .foregroundColor: Style.accent, .font: NSFont.systemFont(ofSize: 10)]))
+        out.append(NSAttributedString(string: "✳ my-project", attributes: [
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .font: NSFont.systemFont(ofSize: Style.hintSize)]))
+        out.append(NSAttributedString(string: "  2/3", attributes: [
+            .foregroundColor: NSColor.tertiaryLabelColor,
+            .font: NSFont.monospacedDigitSystemFont(ofSize: Style.hintSize - 0.5, weight: .regular)]))
+        return out
+    }
+
     private static func timeline(script: String, t: Double, seconds: Double, text: String) -> Step {
         var s = Step()
 
-        if script == "dance" {
-            s.routine = "dance"
+        // Any routine name plays that routine straight through, which is how the pack
+        // gallery and the per-routine clips are shot.
+        if !script.isEmpty, script != "demo" {
+            s.routine = script
             s.mascotTime = t
             s.text = text
             return s

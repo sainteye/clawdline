@@ -5,7 +5,8 @@
 **把 Claude Code 的輸入行，放到眼睛的高度。**
 
 一條浮在螢幕中上方、Spotlight 風格的輸入條。打完字按 Enter，內容直接進到 Claude Code
-session——全程不必把視線移到終端機。iTerm2 直接支援，其餘終端機透過 tmux。
+session；按 <kbd>⌘</kbd><kbd>J</kbd>，那個 session 就在同一個地方讀得回來——是**排版過的**，
+不是刮畫面。從此不必再盯著終端機的角落。iTerm2 直接支援，其餘終端機透過 tmux。
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13%2B-black.svg)](#安裝)
@@ -15,6 +16,8 @@ session——全程不必把視線移到終端機。iTerm2 直接支援，其餘
 [English](README.md) · 繁體中文
 
 <img src="docs/assets/demo.gif" width="760" alt="按 ⌥Space、打字、按 Enter，訊息就進到 Claude Code">
+
+<img src="docs/assets/transcript.png" width="760" alt="同一條輸入條展開逐字稿：標題、有框線的表格、程式碼區塊，是排版過的而不是刮畫面">
 
 </div>
 
@@ -127,6 +130,13 @@ Clawdline 列出所有 iTerm2 session，用 `ps` 比對每個的 TTY，留下真
 `~/.claude/projects/<專案>/<session>.jsonl`，那份檔案有畫面只能暗示的結構：誰說的、
 說了什麼、跑了哪些工具。讀它的好處是有真正的訊息邊界、看得到完整歷史而不只是一屏，
 而且可以用**排版**而不是截圖來呈現——說話者有標籤、內文用比例字、工具呼叫退到頁邊的等寬字裡。
+
+<div align="center">
+<img src="docs/assets/fullscreen.png" width="860" alt="⌘F：同一塊撐滿螢幕，跑完的工具呼叫各收成一行">
+</div>
+
+<kbd>⌘</kbd><kbd>F</kbd> 把它變成螢幕的大小——不是 macOS 的全螢幕（那個會把視窗丟到自己的
+Space，對一個蓋在工作上的面板來說正好相反）。它就是一次縮放，有動畫，吉祥物也有一段對應的動作。
 
 <kbd>⌘</kbd><kbd>R</kbd> 把整份倒過來，最新的訊息在最上面。自動跟隨也跟著換邊
 （往上捲到頂而不是往下到底），而且會記住。**只有逐字稿會翻**：終端機畫面是一格一格的

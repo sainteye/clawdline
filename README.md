@@ -4,8 +4,9 @@
 
 **Your Claude Code prompt line, at eye level.**
 
-A Spotlight-style bar that floats in the middle of your screen and sends what you type
-straight into a Claude Code session — without ever looking at the terminal.
+A Spotlight-style bar that floats in the middle of your screen. Type into it and the message
+lands in Claude Code; press <kbd>⌘</kbd><kbd>J</kbd> and the session reads back in the same
+place — laid out, not scraped. You never look at the corner of the terminal again.
 Works with iTerm2 directly, and with every other terminal through tmux.
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -16,6 +17,8 @@ Works with iTerm2 directly, and with every other terminal through tmux.
 English · [繁體中文](README.zh-TW.md)
 
 <img src="docs/assets/demo.gif" width="760" alt="Press Option-Space, type, press Enter. The message lands in Claude Code.">
+
+<img src="docs/assets/transcript.png" width="760" alt="The same bar with the transcript pane open: a heading, a bordered table and a code block, laid out rather than scraped.">
 
 </div>
 
@@ -138,6 +141,14 @@ the structure the screen only implies: who spoke, what they said, which tools ra
 means real message boundaries, full history rather than one viewport, and typography instead
 of a screenshot — speakers get a label, prose gets a proportional face, tool calls recede into
 monospace at the edge of the page.
+
+<div align="center">
+<img src="docs/assets/fullscreen.png" width="860" alt="⌘F: the same pane filling the screen, with finished runs of tool calls folded to one line each.">
+</div>
+
+<kbd>⌘</kbd><kbd>F</kbd> makes it the size of the screen — not macOS's full screen, which moves
+the window to a Space of its own and is the opposite of what a panel you summon over your work
+is for. It is a resize, animated, and the mascot has a routine for it.
 
 <kbd>⌘</kbd><kbd>R</kbd> turns the whole thing round, newest message at the top. It follows
 whichever end the newest message is at — auto-scrolling to the top rather than the bottom —

@@ -137,6 +137,10 @@ one that is required.
 | `cheer`  | you press Enter and the message goes out |
 | `stretch`| the window changes size (⌘F) |
 
+<div align="center">
+<img src="assets/stretch.gif" width="420" alt="The stretch routine: squash wide, spring tall, settle back.">
+</div>
+
 A pack written before a routine existed is not broken: `stretch` is asked for by name and
 falls back to `cheer` when the pack has none, so an older pack keeps working and simply does
 something else at that moment.
@@ -162,6 +166,24 @@ ffmpeg -framerate 24 -i /tmp/dance/f%04d.png -vf "fps=24,scale=480:-2:flags=lanc
 
 Both draw the app's own layers, so neither needs Screen Recording permission. Claude Code can
 run these and then read the PNG back to check its work.
+
+### The pictures in the README
+
+Those are shot the same way, from a **made-up transcript** kept in the repo. Shooting a real
+session would publish whatever the machine happened to be working on that afternoon, so the
+target label is a stand-in too. The file goes through the same parse and render as a live
+session — a picture made any other way would be a picture of a mock-up, and would stop
+matching the app the day it drifted.
+
+```bash
+T="$PWD/docs/assets/demo-transcript.jsonl"
+open "clawdline://snapshot?path=/tmp/pane.png&output=1&full=0&transcript=$T"   # the pane
+open "clawdline://snapshot?path=/tmp/full.png&output=1&full=1&transcript=$T"   # ⌘F
+```
+
+Set `"language": "en"` in the config first, or the chrome comes out in whatever language you
+run in. Quit the app before editing that file — it owns it, and it writes the whole thing back
+from memory when anything else changes.
 
 ---
 

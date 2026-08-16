@@ -141,8 +141,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let session = items.first(where: { $0.name == "session" })?.value
             let full = items.first(where: { $0.name == "full" })?.value.map { $0 == "1" }
             if !path.isEmpty {
-                PromptController.shared.snapshot(to: path, routine: routine, at: t, list: list,
-                                                 output: out, session: session, full: full)
+                PromptController.shared.snapshot(
+                    to: path, routine: routine, at: t, list: list, output: out,
+                    session: session, full: full,
+                    transcript: items.first(where: { $0.name == "transcript" })?.value)
             }
         case "filmstrip":
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []

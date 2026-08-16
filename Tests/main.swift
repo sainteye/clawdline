@@ -654,6 +654,29 @@ group("folding runs of tool calls") {
            Transcript.distinct(["Bash", "Read", "Bash", "Bash"]), ["Bash", "Read"])
 }
 
+group("the transcript behind the README pictures") {
+    // The screenshots are shot from this file through the real parse and render. If it stops
+    // yielding what the pictures show, they go quietly blank or quietly wrong — and a picture
+    // that no longer matches the app is worse than no picture.
+    let path = "docs/assets/demo-transcript.jsonl"
+    let raw = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+    check("the file is there", !raw.isEmpty)
+    let entries = Transcript.parse(raw)
+    check("it parses to a conversation", entries.count > 15)
+    check("somebody asks something", entries.contains { $0.kind == .user })
+    check("tools run", entries.contains { $0.kind == .tool })
+
+    let mono = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    let shown = Transcript.render(entries, size: 12.5, mono: mono).string
+    // Each of these is a feature the pictures are there to show.
+    check("a heading is rendered, not printed", shown.contains("Where the 40 seconds go")
+          && !shown.contains("## Where"))
+    check("a table is laid out", shown.contains("reads disk") && !shown.contains("|---|"))
+    check("code survives", shown.contains("cache.tree(for: url)"))
+    check("a run of tools is folded", shown.contains("steps"))
+    check("nothing real leaks in", !shown.contains("/Users/"))
+}
+
 group("newest first") {
     let mono = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
     let entries: [Transcript.Entry] = [
