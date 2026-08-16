@@ -273,6 +273,14 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         position()
         shownAt = Date()
 
+        // Both of these only ever live for the length of one debug snapshot. Left set, they
+        // switch the refresh loop off and pin a stand-in label — for the rest of the process.
+        cannedTranscript = nil
+        usingStandInLabel = false
+        // The pane keeps its state across a hide, so its refresh loop has to be picked back up
+        // here. Without this the first Esc freezes it until you press ⌘J twice.
+        if outputOpen { startOutput() }
+
         panel.alphaValue = 0
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
@@ -668,10 +676,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
         if outputOpen { showBackdrop() } else { hideBackdrop() }
         if outputOpen {
-            refreshOutput()
-            let t = Timer(timeInterval: 1.2, repeats: true) { [weak self] _ in self?.refreshOutput() }
-            RunLoop.main.add(t, forMode: .common)
-            outputTimer = t
+            startOutput()
         } else {
             stopOutput()
             lastOutput = nil
@@ -776,7 +781,23 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
     }
 
+    /// The pane's refresh loop, with one owner.
+    ///
+    /// It is stopped every time the panel goes away, and for a while nothing put it back: the
+    /// pane stayed on screen showing whatever it last said, for as long as you kept summoning
+    /// the panel. Frozen text looks exactly like a session that has gone quiet.
+    private func startOutput() {
+        stopOutput()
+        guard outputOpen else { return }
+        Log.write("output: following \(currentTarget?.name ?? "-")")
+        refreshOutput()
+        let t = Timer(timeInterval: 1.2, repeats: true) { [weak self] _ in self?.refreshOutput() }
+        RunLoop.main.add(t, forMode: .common)
+        outputTimer = t
+    }
+
     private func stopOutput() {
+        if outputTimer != nil { Log.write("output: stopped following") }
         outputTimer?.invalidate()
         outputTimer = nil
     }
