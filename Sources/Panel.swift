@@ -20,7 +20,7 @@ enum Style {
     /// The output pane. Config can change it; the default is a reading height rather than a
     /// peek, because the pane exists to be read.
     static var outputHeight: CGFloat { Config.shared.outputHeight }
-    static let outputSize: CGFloat = 11.5
+    static var outputSize: CGFloat { Config.shared.outputSize }
     /// Falls back rather than failing: a font name that is not installed would otherwise
     /// leave the pane rendering in the system default at a different width.
     static var outputFont: NSFont {
@@ -181,6 +181,7 @@ final class PromptTextView: NSTextView {
     var onToggleList: (() -> Void)?
     var onToggleMascots: (() -> Void)?
     var onToggleOutput: (() -> Void)?
+    var onZoomOutput: ((Int) -> Void)?   // +1 bigger, -1 smaller, 0 reset
     var onPickIndex: ((Int) -> Void)?
     var onToggleDance: (() -> Void)?
     var onArrow: ((Int) -> Bool)?      // return true if the key was consumed
@@ -207,6 +208,10 @@ final class PromptTextView: NSTextView {
             case "k": onToggleList?(); return true
             case "m": onToggleMascots?(); return true
             case "j": onToggleOutput?(); return true
+            // "+" arrives as "=" without shift and "+" with it; both mean the same thing here.
+            case "=", "+": onZoomOutput?(1); return true
+            case "-", "_": onZoomOutput?(-1); return true
+            case "0": onZoomOutput?(0); return true
             case "d": onToggleDance?(); return true
             case "w": onCancel?(); return true
             case "\r": onSubmit?(); return true

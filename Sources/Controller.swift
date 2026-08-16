@@ -251,6 +251,7 @@ final class PromptController: NSObject, NSWindowDelegate {
         textView.onPickIndex = { [weak self] i in self?.pick(i) }
         textView.onToggleDance = { [weak self] in self?.toggleDance() }
         textView.onToggleOutput = { [weak self] in self?.toggleOutput() }
+        textView.onZoomOutput = { [weak self] step in self?.zoomOutput(step) }
         textView.onTextChanged = { [weak self] in
             self?.relayout()
             self?.noteTyping()
@@ -626,6 +627,21 @@ final class PromptController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// ⌘+ / ⌘- / ⌘0. The size is persisted, because a size you have to set again every
+    /// launch is not really a setting.
+    private func zoomOutput(_ step: Int) {
+        let before = Config.shared.outputSize
+        let after: CGFloat = step == 0 ? 11.5 : min(28, max(8, before + CGFloat(step)))
+        guard after != before else { return }
+        Config.shared.outputSize = after
+        Config.shared.save()
+        outputView.font = Style.outputFont
+        // ANSI runs carry their own font attribute, so the new size only reaches them by
+        // rebuilding the text — which means asking for the capture again.
+        lastOutput = nil
+        if outputOpen { refreshOutput() } else { setHint(L.t.outputSize(Int(after)), warn: false) }
+    }
+
     private func stopOutput() {
         outputTimer?.invalidate()
         outputTimer = nil
@@ -835,7 +851,19 @@ final class PromptController: NSObject, NSWindowDelegate {
 
     private func setHint(_ text: String, warn: Bool) {
         hintResetWork?.cancel()
-        guard warn else { resetHint(); return }
+        guard warn else {
+            hints.isHidden = true
+            targetLabel.attributedStringValue = NSAttributedString(string: text, attributes: [
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .font: NSFont.systemFont(ofSize: Style.hintSize, weight: .medium),
+            ])
+            let back = DispatchWorkItem { [weak self] in
+                self?.resetHint(); self?.updateTargetLabel(); self?.relayout()
+            }
+            hintResetWork = back
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: back)
+            return
+        }
         // When something breaks, the whole keycap row gives way to the reason. That is what the user needs then, not shortcuts.
         hints.isHidden = true
         targetLabel.attributedStringValue = NSAttributedString(string: "⚠ " + text, attributes: [

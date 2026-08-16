@@ -94,6 +94,7 @@ macOS 會把從網路下載的東西加上隔離屬性，並拒絕開啟沒公�
 | <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>9</kbd> | 直接跳到第 N 個 |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | 輸入框空的時候翻歷史 |
 | <kbd>⌘</kbd><kbd>J</kbd> | 看那個分頁現在說了什麼 |
+| <kbd>⌘</kbd><kbd>+</kbd> / <kbd>⌘</kbd><kbd>−</kbd> / <kbd>⌘</kbd><kbd>0</kbd> | 那塊的字級，會記住 |
 | <kbd>⌘</kbd><kbd>M</kbd> | 瀏覽／切換吉祥物 |
 | <kbd>⌘</kbd><kbd>D</kbd> | 叫吉祥物跳舞 |
 | <kbd>Esc</kbd> | 關掉 |
@@ -208,6 +209,7 @@ CR                                     ← 再單獨送一個 Return 才送出
   "tmux_path": ""                        // 空的 ＝ 去常見位置找,
   "output_height": 340                    // ⌘J 那塊的高度，80–900
   "output_font": "Menlo",                // 配合你的終端機，不然方框字元會跑掉
+  "output_size": 11.5,                   // ⌘+ / ⌘− 會直接改這個值
   "backdrop": 0.5,                       // ⌘J 的背景模糊，0 ＝ 不要
 }
 ```

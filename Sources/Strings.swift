@@ -28,6 +28,7 @@ protocol Copy {
     var scriptMissing: String { get }
     var cannotList: String { get }
     var noOutput: String { get }
+    func outputSize(_ pt: Int) -> String
 
     // Menu bar
     var menuOpen: String { get }
@@ -63,6 +64,7 @@ struct English: Copy {
     let scriptMissing = "iterm.js is missing — broken app bundle?"
     let cannotList = "Could not read iTerm2 sessions"
     let noOutput = "Nothing to read from this session yet."
+    func outputSize(_ pt: Int) -> String { "Output text \(pt)pt — ⌘J to see it" }
 
     let menuOpen = "Open prompt bar"
     let menuReveal = "Jump to target tab"
@@ -106,6 +108,7 @@ struct TraditionalChinese: Copy {
     let scriptMissing = "找不到 iterm.js——app bundle 壞了？"
     let cannotList = "讀不到 iTerm2 的 session"
     let noOutput = "還讀不到這個分頁的內容。"
+    func outputSize(_ pt: Int) -> String { "輸出字級 \(pt)pt——按 ⌘J 看" }
 
     let menuOpen = "打開輸入框"
     let menuReveal = "跳到目標分頁"

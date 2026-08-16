@@ -100,6 +100,7 @@ Press <kbd>⌥</kbd><kbd>Space</kbd> in iTerm2, type, press <kbd>Enter</kbd>.
 | <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>9</kbd> | jump straight to a session |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | history, when the field is empty |
 | <kbd>⌘</kbd><kbd>J</kbd> | show what that session is saying |
+| <kbd>⌘</kbd><kbd>+</kbd> / <kbd>⌘</kbd><kbd>−</kbd> / <kbd>⌘</kbd><kbd>0</kbd> | text size in that pane, remembered |
 | <kbd>⌘</kbd><kbd>M</kbd> | browse / switch mascots |
 | <kbd>⌘</kbd><kbd>D</kbd> | make the mascot dance |
 | <kbd>Esc</kbd> | close |
@@ -223,6 +224,7 @@ is that **the terminal never has to come to the front** — which is the entire 
   "tmux_path": ""                        // empty = look in the usual places,
   "output_height": 340                    // ⌘J pane height, 80–900
   "output_font": "Menlo",                // match your terminal, or box-drawing breaks
+  "output_size": 11.5,                   // ⌘+ / ⌘- change this live
   "backdrop": 0.5,                       // ⌘J background blur, 0 = none
 }
 ```
