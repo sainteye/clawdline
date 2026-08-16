@@ -7,6 +7,20 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Trailing commas in an argument list are Swift 6.1 syntax. The toolchain here is usually
+# newer than CI's, so code that compiles locally can fail to parse on the runner — and the
+# error arrives ten minutes later, in a log, attached to a push that is already public.
+offenders=$(awk '
+  $0 ~ /,[[:space:]]*\)/            { print FILENAME ":" FNR ": " $0 }
+  prev ~ /,[[:space:]]*$/ && $0 ~ /^[[:space:]]*\)/ { print FILENAME ":" FNR-1 ": " prev }
+  { prev = $0 }
+' Sources/*.swift Tests/*.swift)
+if [ -n "$offenders" ]; then
+  echo "trailing comma before ) — Swift 6.1 syntax, and CI runs something older:"
+  echo "$offenders"
+  exit 1
+fi
+
 BIN="${TMPDIR:-/tmp}/clawdline-tests"
 
 swiftc \

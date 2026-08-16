@@ -700,8 +700,7 @@ group("newest first") {
     let up = Transcript.render(entries, size: 11, mono: mono, newestFirst: true).string
 
     check("oldest first reads downwards",
-          at("alpha one", in: down) < at("bravo", in: down),
-          )
+          at("alpha one", in: down) < at("bravo", in: down))
     check("the run sits between them going down",
           at("bravo", in: down) < at("2", in: down) && at("2", in: down) < at("charlie", in: down))
     check("newest first reads upwards",
