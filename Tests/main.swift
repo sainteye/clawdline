@@ -673,7 +673,10 @@ group("the transcript behind the README pictures") {
           && !shown.contains("## Where"))
     check("a table is laid out", shown.contains("reads disk") && !shown.contains("|---|"))
     check("code survives", shown.contains("cache.tree(for: url)"))
-    check("a run of tools is folded", shown.contains("steps"))
+    // The marker, not the wording: "3 steps" is "3 個動作" in the other language, and a test
+    // that reads the label passes or fails on whatever language the machine happens to be set to.
+    check("a run of tools is folded", shown.contains("⏵"))
+    check("the folded run hides its detail", !shown.contains("Package.swift"))
     check("nothing real leaks in", !shown.contains("/Users/"))
 }
 
