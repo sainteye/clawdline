@@ -445,20 +445,17 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let inputH = max(Style.inputMinHeight, textHeight() + Style.inputPadV * 2)
         let visibleRows = listMode != .none ? min(rows.count, 9) : 0
         let listH = visibleRows > 0 ? CGFloat(visibleRows) * Style.rowHeight + Style.listPadV * 2 : 0
+        // The mascot stands on the top edge of the card, so its room comes off the top at every
+        // size — full screen included. The card takes what is left rather than the whole screen.
+        let headroom = (mascot.boxSize.height - mascot.footInset - mascot.overlap) + Style.mascotTopPad
         // Full screen gives the rest of the height to the pane rather than growing everything:
         // the input line and the footer are the same size whatever the window is.
         let fixed = inputH + (listH > 0 ? listH + 1 : 0) + 1 + Style.hintHeight
         let outputH: CGFloat = !outputOpen ? 0
-            : (fullscreen ? max(80, screenUnderMouse().visibleFrame.height - fixed - 1)
-                          : Style.outputHeight)
+            : (fullscreen
+                ? max(80, screenUnderMouse().visibleFrame.height - headroom - fixed - 1)
+                : Style.outputHeight)
         let cardH = fixed + (outputH > 0 ? outputH + 1 : 0)
-        // The mascot stands above the card, and at full screen there is no above. Hiding it is
-        // the honest answer — squeezing it inside would put it somewhere it never belongs.
-        mascot.isHidden = fullscreen
-        glow.isHidden = fullscreen
-        let headroom = fullscreen
-            ? 0
-            : (mascot.boxSize.height - mascot.footInset - mascot.overlap) + Style.mascotTopPad
         let total = cardH + headroom
 
         var f = panel.frame
@@ -469,9 +466,6 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
         container.frame = NSRect(origin: .zero, size: f.size)
         cardHost.frame = NSRect(x: 0, y: 0, width: W, height: cardH)
-        // Square corners at full screen: a rounded card floating flush to every edge reads as a
-        // window that failed to fit, not as one filling the screen.
-        card.layer?.cornerRadius = fullscreen ? 0 : Style.corner
         cardHost.layer?.shadowPath = CGPath(roundedRect: cardHost.bounds,
                                             cornerWidth: Style.corner, cornerHeight: Style.corner,
                                             transform: nil)
