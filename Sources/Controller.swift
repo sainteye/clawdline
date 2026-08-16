@@ -21,10 +21,6 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var outputLine: NSView!
     /// What the session is doing right now. Hidden when it is not doing anything.
     private var activityLabel: NSTextField!
-    /// Whose conversation this is, shown as the pane's own heading. The footer keeps the same
-    /// name while the pane is shut, where it answers a different question — not "what am I
-    /// reading" but "where does this text go".
-    private var paneTitle: NSTextField!
     /// The heading's own ground, so it reads as the top of the pane rather than as the bottom
     /// of the input row — which is what it looked like sitting on the card's own colour.
     private var paneHeader: NSView!
@@ -201,13 +197,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         activityLabel.textColor = Style.accent
         activityLabel.lineBreakMode = .byTruncatingTail
         activityLabel.isHidden = true
-        activityLabel.alignment = .right
         card.addSubview(activityLabel)
-
-        paneTitle = NSTextField(labelWithString: "")
-        paneTitle.lineBreakMode = .byTruncatingTail
-        paneTitle.isHidden = true
-        card.addSubview(paneTitle)
 
         outputHost = NSScrollView()
         outputHost.drawsBackground = false
@@ -597,26 +587,18 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
         outputHost.isHidden = outputH == 0
         outputLine.isHidden = outputH == 0
-        // The pane gets a heading of its own: what you are reading on the left, what it is
-        // doing on the right. Reading order — the name of the thing before the thing.
-        paneTitle.isHidden = outputH == 0
-        paneHeader.isHidden = outputH == 0
         activityLabel.isHidden = outputH == 0 || activityLabel.stringValue.isEmpty
+        paneHeader.isHidden = activityLabel.isHidden
         if outputH > 0 {
-            // Taller than the labels so the gap lands between the divider and the heading.
-            // Sharing the footer's height put the text hard against the line above it.
-            let strip = Style.hintHeight + 10
+            // Taller than the label so the gap lands between the divider and the text.
+            // Sharing the footer's height put it hard against the line above.
+            let strip: CGFloat = activityLabel.isHidden ? 0 : Style.hintHeight + 10
             outputHost.frame = NSRect(x: 0, y: y, width: W, height: outputH - strip)
-            let headerY = y + outputH - strip
-            paneHeader.frame = NSRect(x: 0, y: headerY, width: W, height: strip)
-            let activityW = activityLabel.isHidden ? 0
-                : min(activityLabel.intrinsicContentSize.width + 8, (W - Style.padH * 2) * 0.5)
-            paneTitle.frame = NSRect(x: Style.padH, y: headerY,
-                                     width: max(40, W - Style.padH * 2 - activityW),
-                                     height: Style.hintHeight)
-            if activityW > 0 {
-                activityLabel.frame = NSRect(x: W - Style.padH - activityW, y: headerY,
-                                             width: activityW, height: Style.hintHeight)
+            if strip > 0 {
+                let headerY = y + outputH - strip
+                paneHeader.frame = NSRect(x: 0, y: headerY, width: W, height: strip)
+                activityLabel.frame = NSRect(x: Style.padH, y: headerY,
+                                             width: W - Style.padH * 2, height: Style.hintHeight)
             }
             // The document view starts at zero width, and with widthTracksTextView that makes
             // the text container zero wide too — the text is there and simply has nowhere to
@@ -729,7 +711,6 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             relayout()
             position()      // width changed, so re-centre
         }
-        updateTargetLabel()          // the name changes home when the pane does
         if outputOpen { showBackdrop() } else { hideBackdrop() }
         if outputOpen {
             startOutput()
@@ -1126,7 +1107,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     private func updateTargetLabel() {
         guard !usingStandInLabel else {
-            place(Self.standInTarget())
+            targetLabel.attributedStringValue = Self.standInTarget()
             return
         }
         let s = NSMutableAttributedString()
@@ -1137,13 +1118,15 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             ]))
             var name = t.label
             if name.count > 40 { name = String(name.prefix(40)) + "…" }
+            // Full strength: this is the one thing on the card that says which conversation
+            // everything else belongs to, and at secondary it read as a caption.
             s.append(NSAttributedString(string: name, attributes: [
-                .foregroundColor: NSColor.secondaryLabelColor,
+                .foregroundColor: NSColor.labelColor,
                 .font: NSFont.systemFont(ofSize: Style.hintSize),
             ]))
             if targets.count > 1 {
                 s.append(NSAttributedString(string: "  \(targetIndex + 1)/\(targets.count)", attributes: [
-                    .foregroundColor: NSColor.tertiaryLabelColor,
+                    .foregroundColor: NSColor.secondaryLabelColor,
                     .font: NSFont.monospacedDigitSystemFont(ofSize: Style.hintSize - 0.5, weight: .regular),
                 ]))
             }
@@ -1153,20 +1136,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 .font: NSFont.systemFont(ofSize: Style.hintSize),
             ]))
         }
-        place(s)
-    }
-
-    /// The name goes wherever it is currently answering a question. With the pane open it is
-    /// the heading of what you are reading; with the pane shut it is the footer's answer to
-    /// "where does this go". Never both — the same string twice reads as two different things.
-    private func place(_ name: NSAttributedString) {
-        if outputOpen {
-            paneTitle.attributedStringValue = name
-            targetLabel.attributedStringValue = NSAttributedString(string: "")
-        } else {
-            targetLabel.attributedStringValue = name
-            paneTitle.attributedStringValue = NSAttributedString(string: "")
-        }
+        targetLabel.attributedStringValue = s
     }
 
     // MARK: - Hint row
