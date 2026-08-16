@@ -119,6 +119,14 @@ enum Tmux {
         return nil
     }
 
+    /// What that pane shows, plus some scrollback. tmux keeps history that iTerm2's
+    /// AppleScript will not hand over, so this path can offer more than the visible screen.
+    static func capture(_ paneID: String, scrollback: Int = 200) -> String? {
+        guard binary != nil else { return nil }
+        let (out, ok) = run(["capture-pane", "-p", "-J", "-S", "-\(scrollback)", "-t", paneID])
+        return ok ? out : nil
+    }
+
     /// Bring a pane to the front within tmux. Whether the terminal window itself comes
     /// forward is up to whichever emulator is drawing it, and not something to chase.
     static func reveal(_ paneID: String) {

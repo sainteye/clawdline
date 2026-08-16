@@ -55,6 +55,13 @@ enum Targets {
         }
     }
 
+    static func capture(_ session: TargetSession) -> String? {
+        switch session.backend {
+        case .iterm: return ITerm.capture(session.id)
+        case .tmux:  return Tmux.capture(session.id)
+        }
+    }
+
     static func reveal(_ session: TargetSession) {
         switch session.backend {
         case .iterm: ITerm.reveal(session.id)

@@ -17,6 +17,11 @@ enum Style {
     static let hintHeight: CGFloat = 38
     static let hintSize: CGFloat = 11
 
+    /// The output pane. Config can change it; the default is a reading height rather than a
+    /// peek, because the pane exists to be read.
+    static var outputHeight: CGFloat { Config.shared.outputHeight }
+    static let outputSize: CGFloat = 11.5
+
     static let rowHeight: CGFloat = 34
     static let listPadV: CGFloat = 8
     static let listSize: CGFloat = 13
@@ -38,6 +43,8 @@ enum Style {
     static let topGloss = NSColor(white: 1, alpha: 0.10)
     static let chipFill = NSColor(white: 1, alpha: 0.07)
     static let chipEdge = NSColor(white: 1, alpha: 0.09)
+    /// Darkens whatever is behind it, so it reads as an inset surface in either appearance.
+    static let outputBg = NSColor(white: 0, alpha: 0.17)
 }
 
 // MARK: - Window
@@ -167,6 +174,7 @@ final class PromptTextView: NSTextView {
     var onCycleTarget: ((Bool) -> Void)?
     var onToggleList: (() -> Void)?
     var onToggleMascots: (() -> Void)?
+    var onToggleOutput: (() -> Void)?
     var onPickIndex: ((Int) -> Void)?
     var onToggleDance: (() -> Void)?
     var onArrow: ((Int) -> Bool)?      // return true if the key was consumed
@@ -192,6 +200,7 @@ final class PromptTextView: NSTextView {
             case "z": undoManager?.undo(); return true
             case "k": onToggleList?(); return true
             case "m": onToggleMascots?(); return true
+            case "j": onToggleOutput?(); return true
             case "d": onToggleDance?(); return true
             case "w": onCancel?(); return true
             case "\r": onSubmit?(); return true

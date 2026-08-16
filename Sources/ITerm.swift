@@ -121,6 +121,14 @@ enum ITerm {
         return res["error"] as? String ?? L.t.sendFailed
     }
 
+    /// What that session currently shows. iTerm2 exposes the visible screen and no more,
+    /// so this is a snapshot of the window rather than a transcript.
+    static func capture(_ sessionID: String) -> String? {
+        let res = osa(["capture", sessionID])
+        guard res["ok"] as? Bool == true else { return nil }
+        return res["text"] as? String
+    }
+
     /// Bring a session to the front (used by the menu bar).
     static func reveal(_ sessionID: String) {
         _ = osa(["reveal", sessionID])

@@ -20,6 +20,8 @@ final class Config {
     var mascot = "clawd"
     /// Where tmux lives. Apps do not inherit a login shell, so PATH almost never has it.
     /// Empty means "look in the usual places".
+    /// How tall the output pane is, in points.
+    var outputHeight: CGFloat = 340
     var tmuxPath = ""
     var lastTargetID: String?
     var history: [String] = []
@@ -40,6 +42,7 @@ final class Config {
         if let v = obj["language"] as? String, !v.isEmpty { language = v }
         if let v = obj["mascot"] as? String, !v.isEmpty { mascot = v }
         if let v = obj["tmux_path"] as? String { tmuxPath = v }
+        if let v = obj["output_height"] as? Double, v >= 80, v <= 900 { outputHeight = CGFloat(v) }
         if let v = obj["last_target_id"] as? String { lastTargetID = v }
         if let v = obj["history"] as? [String] { history = v }
     }
@@ -53,6 +56,7 @@ final class Config {
             "language": language,
             "mascot": mascot,
             "tmux_path": tmuxPath,
+            "output_height": Double(outputHeight),
             "last_target_id": lastTargetID as Any,
             "history": Array(history.suffix(60)),
         ]

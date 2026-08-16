@@ -16,6 +16,9 @@ final class PromptController: NSObject, NSWindowDelegate {
     private var hintLine: NSView!
     private var listTopLine: NSView!
     private var listBox: NSView!
+    private var outputHost: NSScrollView!
+    private var outputView: NSTextView!
+    private var outputLine: NSView!
     private var targetLabel: NSTextField!
     private var hints: KeyHintsView!
 
@@ -36,6 +39,10 @@ final class PromptController: NSObject, NSWindowDelegate {
     private var stickyBase: String?
     private var lastKnownCurrentID: String?
 
+    /// A full-screen blur behind everything, shown only while the output pane is open.
+    /// Reading a transcript is a different mode from firing off one line, and the rest of
+    /// the screen should stop competing for attention while you are in it.
+    private var backdrop: NSPanel?
     private var previousApp: NSRunningApplication?
     private var shownAt = Date.distantPast
     private var dismissing = false
@@ -43,6 +50,9 @@ final class PromptController: NSObject, NSWindowDelegate {
     private var historyCursor = -1
     private var hintResetWork: DispatchWorkItem?
     private var idleWork: DispatchWorkItem?
+    private var outputOpen = false
+    private var outputTimer: Timer?
+    private var lastOutput: String?
     private var danceWork: DispatchWorkItem?
 
     private var currentTarget: TargetSession? {
@@ -145,6 +155,48 @@ final class PromptController: NSObject, NSWindowDelegate {
         card.addSubview(listBox)
         card.addSubview(listTopLine)
 
+        // The output pane. Read-only but selectable — being able to copy an error out of it
+        // is most of the point of being able to see it at all.
+        outputView = NSTextView()
+        outputView.isEditable = false
+        outputView.isSelectable = true
+        outputView.drawsBackground = false
+        outputView.font = NSFont.monospacedSystemFont(ofSize: Style.outputSize, weight: .regular)
+        outputView.defaultParagraphStyle = {
+            let p = NSMutableParagraphStyle()
+            p.lineSpacing = 1.5
+            return p
+        }()
+        // secondaryLabelColor at 11pt over a blurred card was not readable. This pane is
+        // something you read, not a caption, so it gets full-strength text and a ground of
+        // its own — the contrast comes from the surface as much as the ink.
+        outputView.textColor = .labelColor
+        outputView.drawsBackground = true
+        outputView.backgroundColor = Style.outputBg
+        outputView.textContainerInset = NSSize(width: Style.padH, height: 10)
+        // A text view inside a scroll view needs all of this or its frame stays at zero and
+        // it draws nothing — no warning, no error, just an empty pane.
+        outputView.minSize = NSSize(width: 0, height: 0)
+        outputView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                                    height: CGFloat.greatestFiniteMagnitude)
+        outputView.isVerticallyResizable = true
+        outputView.isHorizontallyResizable = false
+        outputView.autoresizingMask = [.width]
+        outputView.textContainer?.containerSize = NSSize(width: 0,
+                                                         height: CGFloat.greatestFiniteMagnitude)
+        outputView.textContainer?.widthTracksTextView = true
+        outputView.textContainer?.lineFragmentPadding = 0
+
+        outputHost = NSScrollView()
+        outputHost.drawsBackground = false
+        outputHost.borderType = .noBorder
+        outputHost.hasVerticalScroller = true
+        outputHost.autohidesScrollers = true
+        outputHost.documentView = outputView
+        card.addSubview(outputHost)
+        outputLine = line()
+        card.addSubview(outputLine)
+
         hintLine = line()
         card.addSubview(hintLine)
 
@@ -162,6 +214,7 @@ final class PromptController: NSObject, NSWindowDelegate {
             .init(key: "⇥", label: L.t.hintSwitch),
             .init(key: "⌘K", label: L.t.hintList),
             .init(key: "⌘M", label: L.t.hintMascot),
+            .init(key: "⌘J", label: L.t.hintOutput),
             .init(key: "esc", label: ""),
         ]
         card.addSubview(hints)
@@ -197,6 +250,7 @@ final class PromptController: NSObject, NSWindowDelegate {
         textView.onToggleMascots = { [weak self] in self?.showList(.mascots) }
         textView.onPickIndex = { [weak self] i in self?.pick(i) }
         textView.onToggleDance = { [weak self] in self?.toggleDance() }
+        textView.onToggleOutput = { [weak self] in self?.toggleOutput() }
         textView.onTextChanged = { [weak self] in
             self?.relayout()
             self?.noteTyping()
@@ -237,6 +291,7 @@ final class PromptController: NSObject, NSWindowDelegate {
     func hide() {
         guard panel.isVisible, !dismissing else { return }
         dismissing = true
+        hideBackdrop()
         idleWork?.cancel()
         danceWork?.cancel()
         let token = showToken
@@ -244,6 +299,8 @@ final class PromptController: NSObject, NSWindowDelegate {
             guard let self, token == self.showToken else { return }
             self.panel.orderOut(nil)
             self.mascot.stop()          // once hidden, stop burning a 60fps timer
+            self.stopOutput()
+            self.hideBackdrop(animated: false)
             self.listMode = .none
             self.dismissing = false
             if let prev = self.previousApp,
@@ -270,10 +327,13 @@ final class PromptController: NSObject, NSWindowDelegate {
         let screen = screenUnderMouse()
         let f = screen.frame
         let h = panel.frame.height
-        let x = f.midX - Config.shared.width / 2
+        let x = f.midX - panelWidth / 2
         // y_fraction refers to the top of the *card*, not the top of the window, so changing the
         // mascot's height never pushes the input line somewhere else.
-        let cardTop = f.maxY - f.height * Config.shared.yFraction
+        // With the pane open the card is nearly twice as tall; leaving the top pinned would
+        // hang all of that below the eye line. Lift it by part of what it grew.
+        let lift = outputOpen ? Style.outputHeight * 0.34 : 0
+        let cardTop = f.maxY - f.height * Config.shared.yFraction + lift
         let windowTop = cardTop + (mascot.boxSize.height - mascot.footInset - mascot.overlap) + Style.mascotTopPad
         panel.setFrameOrigin(NSPoint(x: round(x), y: round(windowTop - h)))
     }
@@ -386,12 +446,21 @@ final class PromptController: NSObject, NSWindowDelegate {
         return min(Style.maxTextHeight, max(oneLine, used))
     }
 
+    /// Terminal lines are long, and 720pt wraps most of them. Widen while the pane is open,
+    /// then hand the width back so the bar is a bar again when it closes.
+    private var panelWidth: CGFloat {
+        guard outputOpen else { return Config.shared.width }
+        return min(Config.shared.width * 1.45, screenUnderMouse().frame.width * 0.88).rounded()
+    }
+
     private func relayout() {
-        let W = Config.shared.width
+        let W = panelWidth
         let inputH = max(Style.inputMinHeight, textHeight() + Style.inputPadV * 2)
         let visibleRows = listMode != .none ? min(rows.count, 9) : 0
         let listH = visibleRows > 0 ? CGFloat(visibleRows) * Style.rowHeight + Style.listPadV * 2 : 0
-        let cardH = inputH + (listH > 0 ? listH + 1 : 0) + 1 + Style.hintHeight
+        let outputH = outputOpen ? Style.outputHeight : 0
+        let cardH = inputH + (listH > 0 ? listH + 1 : 0) + (outputH > 0 ? outputH + 1 : 0)
+            + 1 + Style.hintHeight
         let total = cardH + (mascot.boxSize.height - mascot.footInset - mascot.overlap) + Style.mascotTopPad
 
         var f = panel.frame
@@ -417,10 +486,10 @@ final class PromptController: NSObject, NSWindowDelegate {
                             y: mascot.frame.minY + sr.midY - side / 2,
                             width: side, height: side)
 
-        layoutCard(size: card.bounds.size, inputH: inputH, listH: listH)
+        layoutCard(size: card.bounds.size, inputH: inputH, listH: listH, outputH: outputH)
     }
 
-    private func layoutCard(size: NSSize, inputH: CGFloat, listH: CGFloat) {
+    private func layoutCard(size: NSSize, inputH: CGFloat, listH: CGFloat, outputH: CGFloat) {
         let W = size.width, H = size.height
         chrome.frame = NSRect(origin: .zero, size: size)
 
@@ -438,20 +507,171 @@ final class PromptController: NSObject, NSWindowDelegate {
         targetLabel.frame = NSRect(x: Style.padH, y: (Style.hintHeight - 15) / 2,
                                    width: max(60, hintsX - Style.padH - 16), height: 15)
 
+        // Stacked upward from the hint row, so the footer stays the footer.
+        var y = Style.hintHeight + 1
+
+        outputHost.isHidden = outputH == 0
+        outputLine.isHidden = outputH == 0
+        if outputH > 0 {
+            outputHost.frame = NSRect(x: 0, y: y, width: W, height: outputH)
+            // The document view starts at zero width, and with widthTracksTextView that makes
+            // the text container zero wide too — the text is there and simply has nowhere to
+            // go. Give it the clip view's width by hand.
+            let docWidth = outputHost.contentSize.width
+            if abs(outputView.frame.width - docWidth) > 0.5 {
+                outputView.setFrameSize(NSSize(width: docWidth,
+                                               height: max(outputH, outputView.frame.height)))
+            }
+            y += outputH
+            outputLine.frame = NSRect(x: 0, y: y, width: W, height: 1)
+            y += 1
+        }
+
+        listBox.isHidden = listH == 0
+        listTopLine.isHidden = listH == 0
         if listH > 0 {
-            listBox.isHidden = false
-            listTopLine.isHidden = false
-            listBox.frame = NSRect(x: 0, y: Style.hintHeight + 1, width: W, height: listH)
-            listTopLine.frame = NSRect(x: 0, y: listBox.frame.maxY, width: W, height: 1)
+            listBox.frame = NSRect(x: 0, y: y, width: W, height: listH)
+            y += listH
+            listTopLine.frame = NSRect(x: 0, y: y, width: W, height: 1)
             for (i, row) in rows.prefix(9).enumerated() {
                 row.frame = NSRect(x: 0,
                                    y: listH - Style.listPadV - CGFloat(i + 1) * Style.rowHeight,
                                    width: W, height: Style.rowHeight)
             }
-        } else {
-            listBox.isHidden = true
-            listTopLine.isHidden = true
         }
+    }
+
+    // MARK: - Backdrop
+
+    private func makeBackdrop() -> NSPanel {
+        let p = NSPanel(contentRect: .zero,
+                        styleMask: [.borderless, .nonactivatingPanel],
+                        backing: .buffered, defer: false)
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = false
+        // One step below the bar, so it covers the screen without covering the bar.
+        p.level = NSWindow.Level(rawValue: panel.level.rawValue - 1)
+        p.ignoresMouseEvents = true
+        p.hidesOnDeactivate = false
+        p.animationBehavior = .none
+        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+
+        let blur = NSVisualEffectView()
+        blur.material = .fullScreenUI
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        blur.autoresizingMask = [.width, .height]
+
+        let tint = NSView()
+        tint.wantsLayer = true
+        tint.layer?.backgroundColor = NSColor(white: 0, alpha: 0.22).cgColor
+        tint.autoresizingMask = [.width, .height]
+        blur.addSubview(tint)
+
+        p.contentView = blur
+        return p
+    }
+
+    private func showBackdrop() {
+        let p = backdrop ?? makeBackdrop()
+        backdrop = p
+        p.setFrame(screenUnderMouse().frame, display: false)
+        p.contentView?.frame = NSRect(origin: .zero, size: p.frame.size)
+        p.contentView?.subviews.forEach { $0.frame = p.contentView!.bounds }
+        p.alphaValue = 0
+        p.order(.below, relativeTo: panel.windowNumber)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            p.animator().alphaValue = 1
+        }
+    }
+
+    private func hideBackdrop(animated: Bool = true) {
+        guard let p = backdrop, p.isVisible else { return }
+        guard animated else { p.orderOut(nil); return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.14
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            p.animator().alphaValue = 0
+        }, completionHandler: { p.orderOut(nil) })
+    }
+
+    // MARK: - Reading the session back
+    //
+    // The bar can already switch between sessions; being able to see what one of them says
+    // is what makes that switch a decision rather than a guess.
+
+    private func toggleOutput() {
+        outputOpen.toggle()
+        lastOutput = nil
+        relayout()
+        position()          // width changed, so re-centre
+        if outputOpen { showBackdrop() } else { hideBackdrop() }
+        if outputOpen {
+            refreshOutput()
+            let t = Timer(timeInterval: 1.2, repeats: true) { [weak self] _ in self?.refreshOutput() }
+            RunLoop.main.add(t, forMode: .common)
+            outputTimer = t
+        } else {
+            stopOutput()
+            lastOutput = nil
+        }
+    }
+
+    private func stopOutput() {
+        outputTimer?.invalidate()
+        outputTimer = nil
+    }
+
+    private func refreshOutput() {
+        guard outputOpen, panel.isVisible, let target = currentTarget else { return }
+        DispatchQueue.global(qos: .utility).async {
+            let raw = Targets.capture(target)
+            // Trailing blank lines are most of what a terminal screen is; dropping them puts
+            // the last real line at the bottom, which is where the eye goes.
+            var lines = (raw ?? "").split(separator: "\n", omittingEmptySubsequences: false)
+            let blank: (Substring) -> Bool = { $0.trimmingCharacters(in: .whitespaces).isEmpty }
+            while lines.first.map(blank) == true { lines.removeFirst() }
+            while lines.last.map(blank) == true { lines.removeLast() }
+            let text = lines.joined(separator: "\n")
+            DispatchQueue.main.async {
+                guard self.outputOpen else { return }
+                // A terminal that is not changing produces an identical capture. Rewriting
+                // the text storage anyway relaid out 3000pt of glyphs and threw the scroll
+                // position around while somebody was reading it.
+                guard text != self.lastOutput else { return }
+                self.lastOutput = text
+                // On the first fill the document has just grown from nothing, so the
+                // "already at the bottom" test is false and it would sit at the top of a
+                // terminal screen — which is the oldest and usually emptiest part of it.
+                let clip = self.outputHost.contentView
+                let atBottom = self.outputView.string.isEmpty || self.outputIsScrolledToBottom
+                let saved = clip.bounds.origin
+                self.outputView.string = text.isEmpty ? L.t.noOutput : text
+                if let tc = self.outputView.textContainer {
+                    self.outputView.layoutManager?.ensureLayout(for: tc)
+                }
+                if atBottom {
+                    self.outputView.scrollToEndOfDocument(nil)
+                } else {
+                    // Put the reader back exactly where they were, rather than wherever
+                    // relayout happened to leave them.
+                    clip.setBoundsOrigin(saved)
+                    self.outputHost.reflectScrolledClipView(clip)
+                }
+
+            }
+        }
+    }
+
+    /// Only auto-scroll when the reader was already at the bottom — yanking the view down
+    /// while somebody is reading further up is worse than not following at all.
+    private var outputIsScrolledToBottom: Bool {
+        guard let doc = outputHost.documentView else { return true }
+        let visible = outputHost.contentView.bounds
+        return visible.maxY >= doc.frame.height - 24
     }
 
     // MARK: - Targets
@@ -487,6 +707,9 @@ final class PromptController: NSObject, NSWindowDelegate {
 
         rebuildRows()
         updateTargetLabel()
+        // The session scan is async, so an output pane opened before it landed had no target
+        // to read and gave up. Nothing retried it, and it stayed blank for good.
+        if outputOpen { refreshOutput() }
         if let e = snap.error { setHint(e, warn: true) }
         relayout()
     }
@@ -558,6 +781,7 @@ final class PromptController: NSObject, NSWindowDelegate {
         Config.shared.save()
         for (n, row) in rows.enumerated() { row.isSelected = (n == i) }
         updateTargetLabel()
+        refreshOutput()
         if closeList && listMode != .none { listMode = .none; relayout() }
     }
 
@@ -713,10 +937,11 @@ final class PromptController: NSObject, NSWindowDelegate {
     /// The reason is practical: `screencapture` needs Screen Recording permission, and without it
     /// the result is the wallpaper with every window stripped out — which leaves you blind while
     /// tuning layout. This path only paints our own layers, so it needs no permission at all.
-    func snapshot(to path: String, routine: String? = nil, at time: Double? = nil, list: String? = nil) {
+    func snapshot(to path: String, routine: String? = nil, at time: Double? = nil, list: String? = nil, output: Bool = false) {
         let render = { [weak self] in
             guard let self else { return }
             // Naming a routine and a time draws one specific frame of the animation — otherwise animation can only be eyeballed, never tuned
+            if output, !self.outputOpen { self.toggleOutput() }
             if list == "mascots" { self.showList(.mascots) }
             else if list == "sessions" { self.showList(.sessions) }
             if let r = routine, !r.isEmpty {
@@ -750,7 +975,8 @@ final class PromptController: NSObject, NSWindowDelegate {
             render()
         } else {
             show()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+            // Reading a session back costs an osascript round trip, so give it room.
+            DispatchQueue.main.asyncAfter(deadline: .now() + (output ? 2.2 : 0.55)) {
                 render()
                 self.hide()
             }

@@ -17,6 +17,7 @@ protocol Copy {
     var hintSwitch: String { get }
     var hintList: String { get }
     var hintMascot: String { get }
+    var hintOutput: String { get }
 
     // Target state
     var scanning: String { get }
@@ -26,6 +27,7 @@ protocol Copy {
     var itermSilent: String { get }
     var scriptMissing: String { get }
     var cannotList: String { get }
+    var noOutput: String { get }
 
     // Menu bar
     var menuOpen: String { get }
@@ -51,6 +53,7 @@ struct English: Copy {
     let hintSwitch = "switch"
     let hintList = "list"
     let hintMascot = "mascot"
+    let hintOutput = "output"
 
     let scanning = "Scanning…"
     let noSession = "No Claude Code session found"
@@ -59,6 +62,7 @@ struct English: Copy {
     let itermSilent = "iTerm2 did not respond"
     let scriptMissing = "iterm.js is missing — broken app bundle?"
     let cannotList = "Could not read iTerm2 sessions"
+    let noOutput = "Nothing to read from this session yet."
 
     let menuOpen = "Open prompt bar"
     let menuReveal = "Jump to target tab"
@@ -92,6 +96,7 @@ struct TraditionalChinese: Copy {
     let hintSwitch = "換分頁"
     let hintList = "清單"
     let hintMascot = "換角色"
+    let hintOutput = "看輸出"
 
     let scanning = "掃描中⋯"
     let noSession = "找不到在跑 Claude Code 的分頁"
@@ -100,6 +105,7 @@ struct TraditionalChinese: Copy {
     let itermSilent = "iTerm2 沒有回應"
     let scriptMissing = "找不到 iterm.js——app bundle 壞了？"
     let cannotList = "讀不到 iTerm2 的 session"
+    let noOutput = "還讀不到這個分頁的內容。"
 
     let menuOpen = "打開輸入框"
     let menuReveal = "跳到目標分頁"

@@ -4,7 +4,7 @@
 // TTY on modern macOS (TIOCSTI is gone). iTerm2's `write text` is supported, stable, and
 // does not require bringing the window forward — which is the entire point of this tool.
 //
-// Usage: osascript -l JavaScript iterm.js <list|current|send|reveal> [args...]
+// Usage: osascript -l JavaScript iterm.js <list|current|send|capture|reveal> [args...]
 
 function run(argv) {
   const cmd = argv[0] || "list";
@@ -82,6 +82,19 @@ function run(argv) {
       return true;
     });
     return JSON.stringify(hit ? { ok: true } : { ok: false, error: "That session is gone" });
+  }
+
+  if (cmd === "capture") {
+    // `text` is the *visible* screen only — iTerm2's AppleScript has no scrollback.
+    // tmux can go further back, which is why that path passes -S.
+    const want = String(argv[1] || "").toUpperCase();
+    const hit = eachSession(function (s) {
+      if (safe(function () { return s.id(); }, "").toUpperCase() !== want) return undefined;
+      return safe(function () { return s.text(); }, "");
+    });
+    return JSON.stringify(hit === undefined
+      ? { ok: false, error: "That session is gone" }
+      : { ok: true, text: hit });
   }
 
   if (cmd === "reveal") {

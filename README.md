@@ -99,6 +99,7 @@ Press <kbd>⌥</kbd><kbd>Space</kbd> in iTerm2, type, press <kbd>Enter</kbd>.
 | <kbd>⌘</kbd><kbd>K</kbd> | open the session list |
 | <kbd>⌘</kbd><kbd>1</kbd>…<kbd>⌘</kbd><kbd>9</kbd> | jump straight to a session |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | history, when the field is empty |
+| <kbd>⌘</kbd><kbd>J</kbd> | show what that session is saying |
 | <kbd>⌘</kbd><kbd>M</kbd> | browse / switch mascots |
 | <kbd>⌘</kbd><kbd>D</kbd> | make the mascot dance |
 | <kbd>Esc</kbd> | close |
@@ -116,6 +117,20 @@ actually running `claude`. It defaults to the session you were last looking at.
 
 The bar always names its target along the bottom edge. **It never sends blind** — a prompt box
 that will not tell you where the text goes is worse than no prompt box.
+
+### Reading a session back
+
+<kbd>⌘</kbd><kbd>J</kbd> opens a pane below the input showing what that session currently says,
+refreshed about once a second and following <kbd>Tab</kbd> as you switch. The rest of the
+screen blurs behind it, because reading a transcript is a different mode from firing off one
+line. The text is selectable — copying an error out of it is most of the point.
+
+It only auto-scrolls when you were already at the bottom; being yanked back down while reading
+something further up is worse than not following at all. And an unchanged terminal produces an
+identical capture, which is skipped entirely rather than relaid out under your eyes.
+
+iTerm2 hands over the **visible screen** and no more — its scripting has no scrollback. tmux
+gives the visible pane plus 200 lines of history.
 
 ## Bring your own mascot
 
@@ -197,7 +212,8 @@ is that **the terminal never has to come to the front** — which is the entire 
   "width": 720,
   "language": "auto",                    // auto | en | zh-Hant
   "mascot": "clawd",
-  "tmux_path": ""                        // empty = look in the usual places
+  "tmux_path": ""                        // empty = look in the usual places,
+  "output_height": 340                    // ⌘J pane height, 80–900
 }
 ```
 

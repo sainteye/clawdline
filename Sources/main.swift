@@ -137,7 +137,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let routine = items.first(where: { $0.name == "routine" })?.value
             let t = items.first(where: { $0.name == "t" })?.value.flatMap(Double.init)
             let list = items.first(where: { $0.name == "list" })?.value
-            if !path.isEmpty { PromptController.shared.snapshot(to: path, routine: routine, at: t, list: list) }
+            let out = items.first(where: { $0.name == "output" })?.value == "1"
+            if !path.isEmpty { PromptController.shared.snapshot(to: path, routine: routine, at: t, list: list, output: out) }
         case "filmstrip":
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             func q(_ n: String) -> String? { items.first(where: { $0.name == n })?.value }
