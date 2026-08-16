@@ -341,6 +341,96 @@ group("ansi: bold") {
     expect("22 turns it off again", plainFont, font)
 }
 
+// MARK: - Claude Code transcripts
+
+let sampleTranscript = #"""
+{"type":"summary","summary":"ignored"}
+{"type":"user","timestamp":"2026-08-16T04:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"add a retry"}]}}
+{"type":"assistant","timestamp":"2026-08-16T04:00:05.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Looking at `upload.rb` now."},{"type":"tool_use","name":"Bash","input":{"command":"rg retry upload.rb","description":"search"}}]}}
+{"type":"user","timestamp":"2026-08-16T04:00:07.000Z","message":{"role":"user","content":[{"type":"tool_result","content":"upload.rb:42: no retry\nupload.rb:99: none"}]}}
+{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"subagent chatter"}]}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"bookkeeping"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"Done."}]}}
+{"type":"user","message":{"role":"user","content":"plain string content"}}
+not json at all
+"""#
+
+group("transcript parsing") {
+    let entries = Transcript.parse(sampleTranscript)
+    expect("blocks become entries", entries.count, 6)
+
+    expect("first is the user", entries[0].kind, Transcript.Entry.Kind.user)
+    expect("user text survives", entries[0].text, "add a retry")
+    check("timestamps are read", entries[0].time != nil)
+
+    expect("assistant prose", entries[1].kind, Transcript.Entry.Kind.assistant)
+    expect("tool call is its own entry", entries[2].kind, Transcript.Entry.Kind.tool)
+    expect("tool name is kept", entries[2].tool, "Bash")
+    expect("the command is the summary, not the description", entries[2].text, "rg retry upload.rb")
+
+    expect("tool result", entries[3].kind, Transcript.Entry.Kind.toolResult)
+    expect("only the first line of a result", entries[3].text, "upload.rb:42: no retry")
+
+    check("sidechains are skipped", !entries.contains { $0.text == "subagent chatter" })
+    check("meta records are skipped", !entries.contains { $0.text == "bookkeeping" })
+    check("thinking blocks are skipped", !entries.contains { $0.text == "hidden" })
+    check("a string content still parses", entries.contains { $0.text == "plain string content" })
+    check("unparseable lines are ignored rather than fatal", true)
+
+    expect("the limit keeps the tail", Transcript.parse(sampleTranscript, limit: 2).count, 2)
+}
+
+group("transcript tool summaries") {
+    expect("command wins", Transcript.summarise(input: ["description": "d", "command": "ls -l"]), "ls -l")
+    expect("then a path", Transcript.summarise(input: ["description": "d", "file_path": "/tmp/a"]), "/tmp/a")
+    expect("then a pattern", Transcript.summarise(input: ["pattern": "TODO"]), "TODO")
+    expect("only the first line", Transcript.summarise(input: ["command": "one\ntwo"]), "one")
+    expect("nothing usable is empty", Transcript.summarise(input: ["weird": 3]), "")
+    expect("not a dictionary is empty", Transcript.summarise(input: "string"), "")
+}
+
+group("transcript titles") {
+    expect("status glyph is stripped", Transcript.cleanTitle("✳ fix the thing"), "fix the thing")
+    expect("job name is stripped", Transcript.cleanTitle("✳ fix the thing (python)"), "fix the thing")
+    expect("a plain title is untouched", Transcript.cleanTitle("fix the thing"), "fix the thing")
+    expect("works on CJK", Transcript.cleanTitle("◑ 將輸入框移到中上方 (node)"), "將輸入框移到中上方")
+    expect("empty stays empty", Transcript.cleanTitle("   "), "")
+}
+
+group("transcript project directory") {
+    let dir = Transcript.projectDirectory(forCwd: "/Users/me/code/atrium")
+    expect("separators become dashes", dir.lastPathComponent, "-Users-me-code-atrium")
+    check("under ~/.claude/projects", dir.path.contains("/.claude/projects/"))
+}
+
+group("transcript rendering") {
+    let mono = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    let text = Transcript.render(Transcript.parse(sampleTranscript), size: 11.5, mono: mono).string
+    check("the speaker is named", text.contains("YOU"))
+    check("so is the other one", text.contains("CLAUDE"))
+    check("the prose is there", text.contains("add a retry"))
+    check("tool calls are marked", text.contains("⏺"))
+    check("the tool is named", text.contains("Bash"))
+    check("results are marked", text.contains("→"))
+
+    // A fenced block should lose its fence and keep its contents.
+    let fenced = [Transcript.Entry(kind: .assistant, text: "run:\n```bash\nls -l\n```\ndone",
+                                  tool: nil, time: nil)]
+    let out = Transcript.render(fenced, size: 11.5, mono: mono)
+    check("fences are removed", !out.string.contains("```"))
+    check("the code survives", out.string.contains("ls -l"))
+    check("the language tag is not printed as content", !out.string.contains("bash\n"))
+
+    // The code should actually be set in the mono face, which is the point of the exercise.
+    if let range = out.string.range(of: "ls -l") {
+        let i = out.string.distance(from: out.string.startIndex, to: range.lowerBound)
+        let f = out.attribute(.font, at: i, effectiveRange: nil) as? NSFont
+        expect("code is monospace", f?.fontName, mono.fontName)
+    } else {
+        check("found the code run", false)
+    }
+}
+
 // MARK: - Result
 
 print("")

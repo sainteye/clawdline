@@ -58,6 +58,7 @@ enum Tmux {
         guard binary != nil else { return [] }
         let fmt = "#{pane_id}\u{1}#{pane_tty}\u{1}#{pane_current_command}\u{1}"
             + "#{session_name}\u{1}#{window_index}\u{1}#{pane_index}\u{1}#{pane_title}"
+            + "\u{1}#{pane_current_path}"
         let (out, ok) = run(["list-panes", "-a", "-F", fmt])
         guard ok else { return [] }
         return parsePanes(out)
@@ -82,7 +83,8 @@ enum Tmux {
                 tty: f[1],
                 windowIndex: Int(f[4]) ?? 0,
                 tabIndex: Int(f[5]) ?? 0,
-                isClaude: command == "claude" || command.hasSuffix("/claude")
+                isClaude: command == "claude" || command.hasSuffix("/claude"),
+                cwd: f.count > 7 ? f[7] : nil
             )
         }
     }

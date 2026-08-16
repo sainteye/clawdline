@@ -62,6 +62,15 @@ enum Targets {
         }
     }
 
+    /// Where that session is working. tmux hands it over with the pane list; for iTerm2 it
+    /// has to be asked of the process, so it is only looked up when something needs it.
+    static func workingDirectory(of session: TargetSession) -> String? {
+        if let cwd = session.cwd, !cwd.isEmpty { return cwd }
+        let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
+        guard let pid = ITerm.claudePIDs()[bare] else { return nil }
+        return ITerm.workingDirectory(ofPID: pid)
+    }
+
     static func reveal(_ session: TargetSession) {
         switch session.backend {
         case .iterm: ITerm.reveal(session.id)

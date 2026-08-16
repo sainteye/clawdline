@@ -121,7 +121,18 @@ Clawdline 列出所有 iTerm2 session，用 `ps` 比對每個的 TTY，留下真
 **只有你原本就在最底部時才自動跟著捲**：往上翻在讀東西的時候被拉回底部，比不跟還糟。
 而且終端機沒有變動時 capture 出來的字串一模一樣，那一輪會整個跳過，不會在你眼前重排。
 
+能讀到的時候，那塊顯示的是**對話**而不是畫面。Claude Code 會邊跑邊把每個 session 寫進
+`~/.claude/projects/<專案>/<session>.jsonl`，那份檔案有畫面只能暗示的結構：誰說的、
+說了什麼、跑了哪些工具。讀它的好處是有真正的訊息邊界、看得到完整歷史而不只是一屏，
+而且可以用**排版**而不是截圖來呈現——說話者有標籤、內文用比例字、工具呼叫退到頁邊的等寬字裡。
+
+要找到對的那一份要三步，因為沒有任何一筆紀錄帶著 tty：用工作目錄找到專案資料夾、
+用分頁標題比對 transcript 記下的 `aiTitle`、平手時取最近寫入的那個。
+**那個格式沒有文件而且會變**，所以每個欄位進來時都是可有可無，認不得的一律跳過。
+
+沒有 transcript 的時候（純 shell、非 Claude 的 pane）就退回刮終端機畫面。
 iTerm2 只交得出**目前可見的畫面**，它的 scripting 沒有 scrollback；tmux 則是可見畫面加 200 行歷史。
+把 `output_mode` 設成 `terminal` 或 `transcript` 可以固定用哪一種。
 
 **顏色只有走 tmux 才有。** `capture-pane -e` 會保留跳脫序列，那些會被解析成真的顏色。
 iTerm2 的 scripting 回傳的是純字串——它告訴得了你「ANSI 紅是哪個紅」，
@@ -209,6 +220,7 @@ CR                                     ← 再單獨送一個 Return 才送出
   "tmux_path": ""                        // 空的 ＝ 去常見位置找,
   "output_height": 340                    // ⌘J 那塊的高度，80–900
   "output_font": "Menlo",                // 配合你的終端機，不然方框字元會跑掉
+  "output_mode": "auto",                 // auto | transcript | terminal
   "output_size": 11.5,                   // ⌘+ / ⌘− 會直接改這個值
   "backdrop": 0.5,                       // ⌘J 的背景模糊，0 ＝ 不要
 }

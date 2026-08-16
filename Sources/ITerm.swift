@@ -9,6 +9,7 @@ struct TargetSession: Equatable, Identifiable {
     let windowIndex: Int
     let tabIndex: Int
     let isClaude: Bool
+    var cwd: String?
 
     /// A short label for display. Claude Code prefixes its title with ✳, which is a useful marker,
     /// so keep it; iTerm appends " (job name)", which helps nobody pick a tab, so drop it.
@@ -80,6 +81,30 @@ enum ITerm {
             if head == "claude" || head.hasSuffix("/claude") { set.insert(tty) }
         }
         return set
+    }
+
+    /// tty → pid for the claude processes. Needed because the working directory is the only
+    /// way into the transcript, and only the process knows it.
+    static func claudePIDs() -> [String: Int32] {
+        var map: [String: Int32] = [:]
+        let out = shell("/bin/ps", ["-ax", "-o", "tty=,pid=,command="])
+        for line in out.split(separator: "\n") {
+            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+            guard parts.count >= 3, parts[0].hasPrefix("ttys"), let pid = Int32(parts[1]) else { continue }
+            let head = String(parts[2])
+            if head == "claude" || head.hasSuffix("/claude") { map[String(parts[0])] = pid }
+        }
+        return map
+    }
+
+    /// `lsof` rather than the PWD in the environment: an environment variable is whatever it
+    /// was at launch, and it splits on spaces, which paths are allowed to contain.
+    static func workingDirectory(ofPID pid: Int32) -> String? {
+        let out = shell("/usr/sbin/lsof", ["-a", "-p", "\(pid)", "-d", "cwd", "-Fn"])
+        for line in out.split(separator: "\n") where line.hasPrefix("n/") {
+            return String(line.dropFirst())
+        }
+        return nil
     }
 
     // MARK: - API

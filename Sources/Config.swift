@@ -24,6 +24,9 @@ final class Config {
     var outputHeight: CGFloat = 340
     /// The font the ⌘J pane draws with. Match it to your terminal's, or the box-drawing
     /// characters a status line is made of come out at the wrong widths.
+    /// What ⌘J shows: "auto" prefers the transcript and falls back to the terminal,
+    /// "transcript" or "terminal" pin it.
+    var outputMode = "auto"
     var outputFont = "Menlo"
     /// Point size of the ⌘J pane, adjustable live with ⌘+ / ⌘-.
     var outputSize: CGFloat = 11.5
@@ -53,6 +56,7 @@ final class Config {
         if let v = obj["output_height"] as? Double, v >= 80, v <= 900 { outputHeight = CGFloat(v) }
         if let v = obj["backdrop"] as? Double, v >= 0, v <= 1 { backdropStrength = v }
         if let v = obj["output_font"] as? String, !v.isEmpty { outputFont = v }
+        if let v = obj["output_mode"] as? String, !v.isEmpty { outputMode = v }
         if let v = obj["output_size"] as? Double, v >= 8, v <= 28 { outputSize = CGFloat(v) }
         if let v = obj["last_target_id"] as? String { lastTargetID = v }
         if let v = obj["history"] as? [String] { history = v }
@@ -70,6 +74,7 @@ final class Config {
             "output_height": Double(outputHeight),
             "backdrop": backdropStrength,
             "output_font": outputFont,
+            "output_mode": outputMode,
             "output_size": Double(outputSize),
             "last_target_id": lastTargetID as Any,
             "history": Array(history.suffix(60)),

@@ -650,6 +650,30 @@ final class PromptController: NSObject, NSWindowDelegate {
     private func refreshOutput() {
         guard outputOpen, panel.isVisible, let target = currentTarget else { return }
         DispatchQueue.global(qos: .utility).async {
+            // The transcript is the better source when there is one: it has the message
+            // boundaries the screen only implies, and it is not truncated to a viewport.
+            if Config.shared.outputMode != "terminal",
+               let rendered = self.renderTranscript(for: target) {
+                DispatchQueue.main.async {
+                    guard self.outputOpen, rendered.signature != self.lastOutput else { return }
+                    self.lastOutput = rendered.signature
+                    let atBottom = self.outputView.string.isEmpty || self.outputIsScrolledToBottom
+                    let clip = self.outputHost.contentView
+                    let saved = clip.bounds.origin
+                    self.outputView.textStorage?.setAttributedString(rendered.text)
+                    if let tc = self.outputView.textContainer {
+                        self.outputView.layoutManager?.ensureLayout(for: tc)
+                    }
+                    if atBottom {
+                        self.outputView.scrollToEndOfDocument(nil)
+                    } else {
+                        clip.setBoundsOrigin(saved)
+                        self.outputHost.reflectScrolledClipView(clip)
+                    }
+                }
+                return
+            }
+            guard Config.shared.outputMode != "transcript" else { return }
             let raw = Targets.capture(target)
             // Trailing blank lines are most of what a terminal screen is; dropping them puts
             // the last real line at the bottom, which is where the eye goes.
@@ -692,6 +716,21 @@ final class PromptController: NSObject, NSWindowDelegate {
 
             }
         }
+    }
+
+    /// The transcript for a session, already laid out. Nil when there is none to be found,
+    /// which is the signal to fall back to scraping the terminal.
+    private func renderTranscript(for target: TargetSession)
+        -> (text: NSAttributedString, signature: String)? {
+        guard target.isClaude,
+              let cwd = Targets.workingDirectory(of: target),
+              let file = Transcript.locate(cwd: cwd, tabTitle: target.name),
+              let text = Transcript.tail(of: file, bytes: 400_000)
+        else { return nil }
+        let entries = Transcript.parse(text)
+        guard !entries.isEmpty else { return nil }
+        return (Transcript.render(entries, size: Config.shared.outputSize, mono: Style.outputFont),
+                Transcript.signature(of: file) + "-\(Config.shared.outputSize)")
     }
 
     /// Only auto-scroll when the reader was already at the bottom — yanking the view down

@@ -130,8 +130,22 @@ It only auto-scrolls when you were already at the bottom; being yanked back down
 something further up is worse than not following at all. And an unchanged terminal produces an
 identical capture, which is skipped entirely rather than relaid out under your eyes.
 
-iTerm2 hands over the **visible screen** and no more — its scripting has no scrollback. tmux
-gives the visible pane plus 200 lines of history.
+Where it can, the pane shows the **conversation** rather than the screen. Claude Code writes
+each session to `~/.claude/projects/<project>/<session>.jsonl` as it goes, and that file has
+the structure the screen only implies: who spoke, what they said, which tools ran. Reading it
+means real message boundaries, full history rather than one viewport, and typography instead
+of a screenshot — speakers get a label, prose gets a proportional face, tool calls recede into
+monospace at the edge of the page.
+
+Finding the right file takes three steps, because no record carries a tty: the session's
+working directory gives the project folder, the tab title matches the `aiTitle` the transcript
+recorded, and the most recent file breaks any tie. **The format is undocumented and can
+change**, so every field is optional on the way in and anything unrecognised is skipped.
+
+When there is no transcript — a plain shell, a non-Claude pane — it falls back to scraping the
+terminal. iTerm2 hands over the **visible screen** and no more, since its scripting has no
+scrollback; tmux gives the visible pane plus 200 lines of history. Set `output_mode` to
+`terminal` or `transcript` to pin it either way.
 
 **Colour only survives through tmux.** `capture-pane -e` keeps the escape sequences, which get
 parsed into real colour. iTerm2's scripting returns a plain string: it will tell you which red
@@ -224,6 +238,7 @@ is that **the terminal never has to come to the front** — which is the entire 
   "tmux_path": ""                        // empty = look in the usual places,
   "output_height": 340                    // ⌘J pane height, 80–900
   "output_font": "Menlo",                // match your terminal, or box-drawing breaks
+  "output_mode": "auto",                 // auto | transcript | terminal
   "output_size": 11.5,                   // ⌘+ / ⌘- change this live
   "backdrop": 0.5,                       // ⌘J background blur, 0 = none
 }
