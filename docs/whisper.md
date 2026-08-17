@@ -72,9 +72,14 @@ largest `ggml-*.bin` in `~/.cache/whisper`, `~/Library/Application Support/Clawd
 
 | file | size | when |
 |---|---|---|
-| `ggml-large-v3-turbo-q5_0.bin` | ~570 MB | the default choice; fast enough on Apple silicon |
+| `ggml-large-v3-turbo-q5_0.bin` | 547 MB | the default choice; fast enough on Apple silicon |
 | `ggml-medium-q5_0.bin` | ~540 MB | a Mac with less memory to spare |
 | `ggml-small.bin` | ~490 MB | slower machines; noticeably weaker on names |
+
+Measured on an M4 with the turbo model: **1.6 s** to read back three seconds of speech, and
+**12 s** the first time after a reboot — that one is the model being read off disk, not the
+transcription. So the first sentence you dictate in a session is slow and the rest are not, which
+is worth knowing before you conclude it is broken.
 
 Bigger is not automatically better for a given sentence, and the difference between them is
 mostly proper nouns. Whichever you pick, Clawdline passes it the same list of words it gives
