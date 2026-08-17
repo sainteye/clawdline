@@ -73,9 +73,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// The keycap row costs most of the footer's width to say things you learn once. Collapsed
     /// to a single ⌘/ until asked for.
     private var keysShown = false
-    /// Set when the panel goes away because the user switched apps while it filled the screen.
-    /// Only what was hidden this way comes back: reappearing over an app you deliberately left
-    /// it for would make the whole screen unusable.
+    /// Set when the panel goes away because the user switched apps rather than dismissed it.
+    /// Only what was hidden this way comes back — Esc and sending mean closed, and something
+    /// you shut on purpose reappearing on its own is the app arguing with you.
     private var hiddenByAppSwitch = false
     /// Filling the screen is a size, not macOS's fullscreen: the native one moves the window to
     /// its own Space, which for a panel you summon over whatever you were doing is the opposite
@@ -386,16 +386,16 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         Log.write("show: frame=\(panel.frame) prev=\(previousApp?.localizedName ?? "-")")
     }
 
-    /// Another app came forward.
+    /// The terminal came forward again.
     ///
-    /// Full screen is the one mode where leaving and coming back is worth automating: the panel
-    /// covers the screen, so switching away is not "I am done with it", it is "I need to see
-    /// something else for a moment". At bar size it stays manual — a bar that reappears every
-    /// time you focus the terminal is in the way, not helpful.
+    /// Leaving a panel you had open is "I need to see something for a moment", not "I am done" —
+    /// Esc is how you say the second one. So what a switch put away, coming back takes out again,
+    /// at whatever size it was.
     func appBecameFrontmost(_ bundleID: String?) {
+        guard Config.shared.reopenOnReturn else { return }
         let scope = Config.shared.scopeApp
         let isTerminal = !scope.isEmpty && bundleID.map { scope.contains($0) } == true
-        guard isTerminal, hiddenByAppSwitch, !panel.isVisible, fullscreen else { return }
+        guard isTerminal, hiddenByAppSwitch, !panel.isVisible else { return }
         hiddenByAppSwitch = false
         show()
     }
@@ -441,7 +441,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
         // Losing focus is the app-switch path; Esc and sending come through hide() directly and
         // must not arm the return, or dismissing it would only postpone it.
-        hiddenByAppSwitch = fullscreen
+        hiddenByAppSwitch = true
         // Whoever took focus keeps it. This is the path where the user chose to be elsewhere.
         hide(returnFocus: false)
     }

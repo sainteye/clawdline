@@ -34,6 +34,13 @@ final class Config {
     /// Only the transcript reads this way: a terminal capture is a picture of a grid, and
     /// flipping its lines would have a wrapped sentence reading upwards.
     var outputNewestFirst = false
+    /// Come back when the terminal does.
+    ///
+    /// Switching away from a panel you left open is "I need to see something for a moment", not
+    /// "I am done with it" — that is what Esc is for. So what an app switch put away, coming
+    /// back takes out again. Turn it off if you would rather every appearance be one you asked
+    /// for by hand.
+    var reopenOnReturn = true
     /// How solid the card is, from 0 (pure frosted glass) to 1 (opaque).
     ///
     /// The material samples whatever is behind the window, so a screen of green diff or a
@@ -70,6 +77,7 @@ final class Config {
         if let v = obj["output_size"] as? Double, v >= 8, v <= 28 { outputSize = CGFloat(v) }
         if let v = obj["output_newest_first"] as? Bool { outputNewestFirst = v }
         if let v = obj["card_opacity"] as? Double, v >= 0, v <= 1 { cardOpacity = v }
+        if let v = obj["reopen_on_return"] as? Bool { reopenOnReturn = v }
         if let v = obj["last_target_id"] as? String { lastTargetID = v }
         if let v = obj["history"] as? [String] { history = v }
     }
@@ -90,6 +98,7 @@ final class Config {
             "output_size": Double(outputSize),
             "output_newest_first": outputNewestFirst,
             "card_opacity": cardOpacity,
+            "reopen_on_return": reopenOnReturn,
             "last_target_id": lastTargetID as Any,
             "history": Array(history.suffix(60)),
         ]

@@ -188,10 +188,11 @@ monospace at the edge of the page.
 the window to a Space of its own and is the opposite of what a panel you summon over your work
 is for. It is a resize, animated, and the mascot has a routine for it.
 
-At that size, switching to another app puts it away and coming back to the terminal brings it
-back. Only at that size: covering the screen means leaving is "I need to see something for a
-moment", not "I am done" — whereas a bar that reappeared every time you focused the terminal
-would be in the way. Dismissing it by hand still means what it says.
+Switching to another app puts the panel away, and coming back to the terminal takes it out
+again — at whatever size it was. Leaving a panel you had open is "I need to see something for a
+moment"; <kbd>Esc</kbd> is how you say "I am done", and something you closed on purpose stays
+closed. Set `"reopen_on_return": false` if you would rather every appearance be one you asked
+for.
 
 <div align="center">
 <img src="docs/assets/fullscreen.png" width="860" alt="⌘F: the same pane filling the screen, with finished runs of tool calls folded to one line each.">
@@ -331,6 +332,7 @@ is that **the terminal never has to come to the front** — which is the entire 
   "output_size": 11.5,                   // ⌘+ / ⌘- change this live
   "output_newest_first": false,          // ⌘R: newest at the top
   "card_opacity": 0.55,                  // 0 = pure glass, 1 = opaque
+  "reopen_on_return": true,              // come back when the terminal does
   "backdrop": 0.5,                       // ⌘J background blur, 0 = none
 }
 ```
