@@ -193,8 +193,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         textView.allowsUndo = true
         textView.font = NSFont.systemFont(ofSize: Style.textSize, weight: .regular)
         textView.textColor = .labelColor
-        // Pinned, because rich text otherwise lets a paste bring its own font in with it.
-        textView.typingAttributes = [
+        // Pinned, because rich text otherwise lets a paste bring its own font in with it —
+        // and because replacing the text at all would otherwise lose the look.
+        textView.baseAttributes = [
             .font: NSFont.systemFont(ofSize: Style.textSize, weight: .regular),
             .foregroundColor: NSColor.labelColor,
         ]
@@ -1434,11 +1435,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         if delta < 0 {
             guard textView.string.isEmpty || historyCursor >= 0 else { return false }
             historyCursor = min(hist.count - 1, historyCursor + 1)
-            textView.string = hist[hist.count - 1 - historyCursor]
+            textView.setPlainText(hist[hist.count - 1 - historyCursor])
         } else {
             guard historyCursor >= 0 else { return false }
             historyCursor -= 1
-            textView.string = historyCursor < 0 ? "" : hist[hist.count - 1 - historyCursor]
+            textView.setPlainText(historyCursor < 0 ? "" : hist[hist.count - 1 - historyCursor])
         }
         textView.setSelectedRange(NSRange(location: textView.string.count, length: 0))
         relayout()
@@ -1479,7 +1480,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// Give the text back when the send fails. Someone typed two hundred characters; an iTerm hiccup must not swallow them.
     private func restoreAfterFailure(text: String, error: String) {
         show()
-        textView.string = text
+        textView.setPlainText(text)
         textView.setSelectedRange(NSRange(location: text.count, length: 0))
         relayout()
         setHint(error, warn: true)
@@ -1630,7 +1631,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             let t = Double(i) / fps
             let step = Self.timeline(script: script, t: t, seconds: seconds, text: text)
 
-            textView.string = step.text
+            textView.setPlainText(step.text)
             mascot.play(step.routine, then: step.routine)
             mascot.frozenTime = step.mascotTime
             relayout()

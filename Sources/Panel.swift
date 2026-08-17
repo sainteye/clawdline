@@ -263,17 +263,18 @@ final class PromptTextView: NSTextView {
         if let last = string.last, !last.isWhitespace {
             insertText(" ", replacementRange: selectedRange())
         }
+        let run = NSMutableAttributedString()
         for path in paths {
             let attachment = NSTextAttachment()
             attachment.image = Drop.thumbnail(for: path, height: 30)
             droppedPaths[ObjectIdentifier(attachment)] = path
-            let run = NSMutableAttributedString(attachment: attachment)
-            run.append(NSAttributedString(string: " "))
-            run.addAttributes(typingAttributes, range: NSRange(location: run.length - 1, length: 1))
-            textStorage?.replaceCharacters(in: selectedRange(), with: run)
-            setSelectedRange(NSRange(location: selectedRange().location + run.length, length: 0))
+            run.append(NSAttributedString(attachment: attachment))
+            run.append(NSAttributedString(string: " ", attributes: baseAttributes))
         }
-        didChangeText()
+        // Through insertText, not into the storage directly. Writing to the storage skips undo
+        // registration, so ⌘Z undid whatever came *before* the drop: the box changed, the
+        // attachment stayed, and the file went out with a message it had been taken out of.
+        insertText(run, replacementRange: selectedRange())
         onDropped?(paths.count)
     }
 
@@ -296,11 +297,27 @@ final class PromptTextView: NSTextView {
         return out as String
     }
 
+    /// How typed text should look. Held here because rich text forgets: assigning `string`
+    /// replaces the storage with an unattributed copy, and the view then falls back to a small
+    /// black system font — which is what the box looked like the first time a thumbnail could
+    /// go in it.
+    var baseAttributes: [NSAttributedString.Key: Any] = [:] {
+        didSet { typingAttributes = baseAttributes }
+    }
+
+    /// Replace everything in the box, keeping the way it looks. Use this rather than `string =`.
+    func setPlainText(_ text: String) {
+        textStorage?.setAttributedString(NSAttributedString(string: text,
+                                                            attributes: baseAttributes))
+        typingAttributes = baseAttributes
+        didChangeText()
+    }
+
     /// Clearing the box has to clear these too, or a dropped file would follow the next message
     /// it was never part of.
     func clearText() {
         droppedPaths.removeAll()
-        string = ""
+        setPlainText("")
     }
 
     var onSubmit: (() -> Void)?

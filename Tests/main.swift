@@ -706,8 +706,8 @@ group("files and images dropped on the bar") {
 
 group("a dropped file is a picture on screen and a path on the wire") {
     let view = PromptTextView()
-    view.typingAttributes = [.font: NSFont.systemFont(ofSize: 13)]
-    view.string = "look at"
+    view.baseAttributes = [.font: NSFont.systemFont(ofSize: 13)]
+    view.setPlainText("look at")
     view.setSelectedRange(NSRange(location: view.string.count, length: 0))
     view.insertPaths(["/tmp/shot one.png"])
 
@@ -722,8 +722,42 @@ group("a dropped file is a picture on screen and a path on the wire") {
     // Clearing has to clear the mapping too, or a dropped file follows the next message it was
     // never part of.
     view.clearText()
-    view.string = "next message"
+    view.setPlainText("next message")
     expect("a cleared box sends only what is in it", view.resolvedText(), "next message")
+
+    // Taking it back out has to work by every route, because the file goes with the message and
+    // a message cannot be recalled. A text view only has an undo manager once it is in a window
+    // — without one, undo does nothing and that looks exactly like undo failing to remove it.
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 60),
+                          styleMask: [.titled], backing: .buffered, defer: false)
+    func dropped() -> PromptTextView {
+        let v = PromptTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 40))
+        v.baseAttributes = [.font: NSFont.systemFont(ofSize: 13)]
+        v.allowsUndo = true
+        window.contentView?.subviews.forEach { $0.removeFromSuperview() }
+        window.contentView?.addSubview(v)
+        window.makeFirstResponder(v)
+        v.setPlainText("look at")
+        v.setSelectedRange(NSRange(location: v.string.count, length: 0))
+        v.insertPaths(["/tmp/a.png"])
+        return v
+    }
+
+    let undone = dropped()
+    check("undo is even possible", undone.undoManager?.canUndo == true)
+    undone.undoManager?.undo()
+    check("⌘Z takes the file back out", !undone.resolvedText().contains("/tmp/a.png"))
+    check("and takes the picture with it", !undone.string.contains("\u{FFFC}"))
+
+    let cleared = dropped()
+    cleared.selectAll(nil)
+    cleared.delete(nil)
+    expect("select-all and delete leaves nothing to send", cleared.resolvedText(), "")
+
+    let overtyped = dropped()
+    overtyped.setSelectedRange(NSRange(location: 8, length: 1))
+    overtyped.insertText("hi", replacementRange: overtyped.selectedRange())
+    check("typing over it replaces it", !overtyped.resolvedText().contains("/tmp/a.png"))
 }
 
 group("the documented example files") {
