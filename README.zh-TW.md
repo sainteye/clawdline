@@ -59,7 +59,7 @@ session；按 <kbd>⌘</kbd><kbd>J</kbd>，那個 session 就在同一個地方�
 
 <div align="center">
 
-<img src="docs/assets/voice.gif" width="760" alt="對著輸入條說話：字邊講邊出現，停下來之後 Whisper 讀同一段錄音把它換掉">
+<img src="docs/assets/voice.zh.gif" width="760" alt="對著輸入條說話：字邊講邊出現，停下來之後 Whisper 讀同一段錄音把它換掉">
 
 <img src="docs/assets/transcript.png" width="760" alt="逐字稿面板：標題、有框線的表格、程式碼區塊，是排版過的而不是刮畫面">
 

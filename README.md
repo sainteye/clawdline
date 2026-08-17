@@ -36,9 +36,10 @@ bar has to tell you what the terminal would have.**
 ## What it does that a prompt box does not
 
 - **Takes dictation in two languages at once.** Words appear as you speak them; when you stop,
-  Whisper reads the same audio back and replaces them. "把那個 webhook 的 retry 改成 exponential
-  backoff" is one sentence no live recogniser will hear, and the pauses in your speech are where
-  it settles — so earlier sentences stop moving while you carry on.
+  Whisper reads the same audio back and replaces them. *"cambia el retry a exponential backoff"*
+  is one sentence, and no live recogniser will hear it — Apple's changes language between
+  sessions, never inside one. The pauses in your speech are where it settles, so earlier
+  sentences stop moving while you carry on.
   → [Dictation](#talk-instead-of-type) · [Whisper setup](docs/whisper.md)
 
 - **Reads the session back, laid out.** Not a screenshot of a terminal: headings, tables with

@@ -5,7 +5,7 @@ the words appear as you say them — but it hears **one language at a time**. Th
 the API, not a setting: neither `SFSpeechRecognizer` nor its replacement changes language
 mid-sentence. So this is a sentence it cannot be asked to hear:
 
-> 把那個 webhook 的 retry 改成 exponential backoff
+> cambia el retry a exponential backoff
 
 Whisper transcribes that as a matter of course. Installing it is optional, and worth it only if
 you actually speak that way.
@@ -91,10 +91,11 @@ changing only the prompt:
 
 | prompt | transcript |
 |---|---|
-| a short punctuated sentence | 更有結構化。我們需要有目錄…在哪裡。 |
-| that sentence plus twenty terms | 更有結構化我們需要有目錄…在哪裡 |
+| a short punctuated sentence | …更有結構化**。**我們需要有目錄…在哪裡**。** |
+| that sentence plus twenty terms | …更有結構化我們需要有目錄…在哪裡 |
 
-Every punctuation mark, gone. Punctuation is worth more here than a nudge towards spellings the
+(A Chinese clip, because that is where the loss is easiest to see: the same words, and in the
+second row every full stop has gone.) Every punctuation mark, gone. Punctuation is worth more here than a nudge towards spellings the
 model is already good at, so the prompt is two ordinary sentences and nothing else.
 
 ### Config
