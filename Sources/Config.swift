@@ -100,9 +100,9 @@ final class Config {
     var tmuxPath = ""
     /// Where the project status files are read from, and where the icon registry lives.
     ///
-    /// Both default to what claude-tools writes, because that is what most people reading this
+    /// Both default to what claude-bestiary writes, because that is what most people reading this
     /// already have — but the format is documented (docs/project-status.md) so that anything can
-    /// produce them, and a producer that is not claude-tools should not have to impersonate it
+    /// produce them, and a producer that is not claude-bestiary should not have to impersonate it
     /// to be found. Blank means the default; `~` is expanded.
     var statusDir = ""
     var iconsFile = ""

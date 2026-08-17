@@ -89,7 +89,7 @@ enum Compat {
         Release(clawdline: "0.1.0", claudeCode: "not recorded", notes: "First release."),
     ]
 
-    /// The status-file format Clawdline reads, which claude-tools also writes.
+    /// The status-file format Clawdline reads, which claude-bestiary also writes.
     ///
     /// Its own version is deliberately not named here. It is one producer of these files and the
     /// contract is the files — `docs/project-status.md` — so pinning a version of it would say

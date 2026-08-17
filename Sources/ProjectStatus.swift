@@ -3,12 +3,12 @@ import Foundation
 /// What is happening to a project right now: a deploy in flight, a backlog, a health check.
 ///
 /// None of it is computed here. These are files that
-/// [claude-tools](https://github.com/sainteye/claude-tools) already writes for the terminal
+/// [claude-bestiary](https://github.com/sainteye/claude-bestiary) already writes for the terminal
 /// status line, under `~/.claude/statusline-cache/`. Reading them is what keeps the two agreeing,
 /// and it means the expensive part — polling GitHub, parsing a backlog, pinging a health
 /// endpoint — happens once for both rather than twice.
 ///
-/// Read only, and absent is normal: without claude-tools none of these files exist, and the
+/// Read only, and absent is normal: without claude-bestiary none of these files exist, and the
 /// footer simply has less to say.
 enum ProjectStatus {
 
@@ -49,10 +49,10 @@ enum ProjectStatus {
 
     /// Where the status files live. `status_dir` in the config overrides it.
     ///
-    /// The default is where claude-tools puts them, because that is what most people reading
+    /// The default is where claude-bestiary puts them, because that is what most people reading
     /// this will already have. It is a default and not the location: the format is documented
     /// in docs/project-status.md precisely so that anything can write these — a cron job, a git
-    /// hook, a script of your own — and a producer that is not claude-tools should not have to
+    /// hook, a script of your own — and a producer that is not claude-bestiary should not have to
     /// pretend to be it just to be found.
     static var cacheDirectory: URL {
         Paths.resolve(Config.shared.statusDir)
@@ -60,7 +60,7 @@ enum ProjectStatus {
                 .appendingPathComponent(".claude/statusline-cache")
     }
 
-    /// claude-tools keys the per-project files by path with the separators turned into dashes,
+    /// claude-bestiary keys the per-project files by path with the separators turned into dashes,
     /// the same shape Claude Code uses for its own project folders.
     static func key(forPath path: String) -> String {
         path.replacingOccurrences(of: "/", with: "-")

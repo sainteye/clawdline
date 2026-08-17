@@ -132,11 +132,11 @@ def render():
 
     lines += [
         "",
-        "## claude-tools",
+        "## claude-bestiary",
         "",
         "No version of it is pinned, on purpose. Clawdline reads the **files**, and",
         "[docs/project-status.md](project-status.md) is the contract for them —",
-        "[claude-tools](https://github.com/sainteye/claude-tools) is one producer, and a cron job",
+        "[claude-bestiary](https://github.com/sainteye/claude-bestiary) is one producer, and a cron job",
         "or a git hook that writes the same shapes is another. Naming a version of it here would",
         "say something untrue about everything else that writes them.",
         "",

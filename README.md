@@ -169,6 +169,7 @@ Press <kbd>⌥</kbd><kbd>Space</kbd> in iTerm2, type, press <kbd>Enter</kbd>.
 | <kbd>⌘</kbd><kbd>F</kbd> | fill the screen with it |
 | <kbd>⌘</kbd><kbd>R</kbd> | newest message at the top instead of the bottom |
 | <kbd>⌘</kbd><kbd>+</kbd> / <kbd>⌘</kbd><kbd>−</kbd> / <kbd>⌘</kbd><kbd>0</kbd> | text size in that pane, remembered |
+| <kbd>⌘</kbd><kbd>S</kbd> | the servers each project runs — start, restart, see what broke |
 | <kbd>⌘</kbd><kbd>M</kbd> | browse / switch mascots |
 | <kbd>⌘</kbd><kbd>D</kbd> | make the mascot dance |
 | <kbd>⌘</kbd><kbd>/</kbd> | show the rest of the keys |
@@ -276,7 +277,7 @@ repository, its branch, and how much is uncommitted:
 
     ▣ atrium  investigate the webhook  ⎇ main *3   9/10
 
-If you use [claude-tools](https://github.com/sainteye/claude-tools) for your terminal status
+If you use [claude-bestiary](https://github.com/sainteye/claude-bestiary) for your terminal status
 line, the mark and the colour come from its registry — `~/.claude/project-icons.json` — so the
 icon in the bar and the icon in the terminal are the same icon because they are the same row,
 not because two programs were kept in step by hand. Clawdline only ever reads that file: it is
@@ -290,7 +291,7 @@ None of that is computed by Clawdline: they are small JSON files, by default und
 `~/.claude/statusline-cache/` — `status_dir` and `icons_file` point it somewhere else.
 **[docs/project-status.md](docs/project-status.md) is the format**,
 with working examples the test suite parses, so the page cannot quietly stop being true. Anything
-can write them — a cron job, a git hook, or claude-tools, which already does for its own status
+can write them — a cron job, a git hook, or claude-bestiary, which already does for its own status
 line. Without them the footer simply has less to say.
 
 Without a registry the colour is derived from the path instead, which is stable from one launch
@@ -470,8 +471,8 @@ of the file — including settings from a version that knew about more of them �
   "voice_stop_seconds": 4.0,             // how long a silence ends the session, 0 = off
   "voice_vocabulary": [],                // names a transcriber cannot be expected to know
   "send_images_as_paste": true,          // images arrive as [Image #3], not as a path
-  "status_dir": "",                      // project status files; "" = claude-tools' own
-  "icons_file": "",                      // icon registry;        "" = claude-tools' own
+  "status_dir": "",                      // project status files; "" = claude-bestiary' own
+  "icons_file": "",                      // icon registry;        "" = claude-bestiary' own
 }
 ```
 
@@ -572,7 +573,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 761 checks, a couple of seconds
+./test.sh     # 806 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code — see Package.swift
 ```

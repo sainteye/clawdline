@@ -6,7 +6,7 @@ a mark and a colour, a deploy in flight, a backlog, a health check — comes fro
 
 Clawdline **only reads** them. Something else has to keep them current, and that something can be
 a cron job, a git hook, a shell one-liner, or
-[claude-tools](https://github.com/sainteye/claude-tools), which is the implementation these
+[claude-bestiary](https://github.com/sainteye/claude-bestiary), which is the implementation these
 formats came from. This page is the contract; anything that writes these files works.
 
 Working examples of every file are in [`examples/`](examples/), and the test suite parses them,
@@ -126,6 +126,6 @@ shows nothing for one refresh, which is harmless — but only because the file i
 one or the new one, never half of each.
 
 If you would rather not write any of this yourself,
-[claude-tools](https://github.com/sainteye/claude-tools) already does: it keeps these files
+[claude-bestiary](https://github.com/sainteye/claude-bestiary) already does: it keeps these files
 current for its own terminal status line, and Clawdline reads the same ones. Installing it turns
 all of the above on at once.

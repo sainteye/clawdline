@@ -3,14 +3,14 @@ import AppKit
 /// The little pixel mark and colour that belong to a project.
 ///
 /// The registry is `~/.claude/project-icons.json`, written by
-/// [claude-tools](https://github.com/sainteye/claude-tools) for the terminal status line. Reading
+/// [claude-bestiary](https://github.com/sainteye/claude-bestiary) for the terminal status line. Reading
 /// the same file is what makes the two agree: the icon in the bar and the icon in the terminal
 /// are the same icon because they came from the same row, not because two programs were kept in
 /// step by hand.
 ///
 /// **Read only.** That file is usually a symlink into a checkout, and writing it through the link
 /// replaces it with a plain copy — after which the repository's version is no longer the one
-/// running. claude-tools has its own note about that; this side simply never writes.
+/// running. claude-bestiary has its own note about that; this side simply never writes.
 ///
 /// With no registry, a colour is derived from the path instead, so the feature still does
 /// something for everyone else.
@@ -77,6 +77,16 @@ enum ProjectIcon {
     /// The whole row for a directory — the icon is only part of what a project registers.
     static func row(forCwd cwd: String) -> [String: Any]? {
         entry(forCwd: cwd, in: projects())
+    }
+
+    /// Every directory the registry knows about.
+    ///
+    /// Sessions only tell you about projects something is open in, and the one whose servers
+    /// have quietly fallen over is exactly the one you have no session in. The registry is the
+    /// closest thing to a list of "projects I work on" that already exists on the machine, so
+    /// the stack panel reads it rather than asking for a second list to keep current.
+    static func knownPaths() -> [String] {
+        Array(projects().keys)
     }
 
     static func grid(forCwd cwd: String) -> Grid? {

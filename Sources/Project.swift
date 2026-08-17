@@ -10,7 +10,7 @@ struct ProjectInfo: Equatable {
     var name: String       // the repository's own folder name, not the session's subfolder
     var branch: String     // empty when detached or not a repository
     var dirty: Int         // files not committed, counting untracked
-    /// "owner/repo" on GitHub, which is how claude-tools names its workflow-status file.
+    /// "owner/repo" on GitHub, which is how claude-bestiary names its workflow-status file.
     var remote: String?
 }
 

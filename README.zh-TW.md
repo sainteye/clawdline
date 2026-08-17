@@ -155,6 +155,7 @@ macOS 會把從網路下載的東西加上隔離屬性，並拒絕開啟沒公�
 | <kbd>⌘</kbd><kbd>F</kbd> | 把它撐滿整個螢幕 |
 | <kbd>⌘</kbd><kbd>R</kbd> | 最新的訊息放最上面，而不是最下面 |
 | <kbd>⌘</kbd><kbd>+</kbd> / <kbd>⌘</kbd><kbd>−</kbd> / <kbd>⌘</kbd><kbd>0</kbd> | 那塊的字級，會記住 |
+| <kbd>⌘</kbd><kbd>S</kbd> | 每個專案的伺服器——啟動、重啟、看是哪個掛了 |
 | <kbd>⌘</kbd><kbd>M</kbd> | 瀏覽／切換吉祥物 |
 | <kbd>⌘</kbd><kbd>D</kbd> | 叫吉祥物跳舞 |
 | <kbd>⌘</kbd><kbd>/</kbd> | 展開其餘的快速鍵 |
@@ -238,7 +239,7 @@ Clawdline 列出所有 iTerm2 session，用 `ps` 比對每個的 TTY，留下真
 
     ▣ atrium  查一下 webhook  ⎇ main *3   9/10
 
-如果你的終端機狀態列用的是 [claude-tools](https://github.com/sainteye/claude-tools)，
+如果你的終端機狀態列用的是 [claude-bestiary](https://github.com/sainteye/claude-bestiary)，
 那個圖示與顏色直接來自它的 registry（`~/.claude/project-icons.json`）——所以輸入條上的圖示
 與終端機裡的圖示會一樣，是因為**它們是同一筆資料**，不是因為有人把兩個程式手動對齊。
 Clawdline 對那個檔案只讀不寫：它通常是指向 checkout 的 symlink，透過 symlink 寫入會把它
@@ -249,7 +250,7 @@ Clawdline 對那個檔案只讀不寫：它通常是指向 checkout 的 symlink�
 
 這些都不是 Clawdline 算的，是 `~/.claude/statusline-cache/` 底下幾個小 JSON 檔。
 **格式寫在 [docs/project-status.md](docs/project-status.md)**，旁邊附的範例檔會被測試實際解析，
-所以那一頁不會安靜地變成不實。誰都可以寫它們——一個 cron、一個 git hook，或是 claude-tools
+所以那一頁不會安靜地變成不實。誰都可以寫它們——一個 cron、一個 git hook，或是 claude-bestiary
 （它為了自己的終端機狀態列本來就在寫）。沒有那些檔案，底部那行就只是少講幾件事。
 
 沒有 registry 時顏色由路徑推導，每次啟動都一樣。分支與數量走一次
@@ -498,7 +499,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`：熱鍵有沒有
 純 AppKit、沒有框架、除了 `swiftc` 沒有 build 系統。
 
 ```bash
-./test.sh     # 84 個檢查，約兩秒
+./test.sh     # 806 個檢查，約兩秒
 ./build.sh    # 編譯，原本有在跑的話會自己接回來
 ```
 
