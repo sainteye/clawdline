@@ -23,30 +23,45 @@ enum Compat {
         /// What you would see if it changed. This is the useful column: these failures are all
         /// quiet, and every one of them looks like a bug in this app.
         let symptom: String
+        /// The oldest Claude Code this is known to work with.
+        ///
+        /// "not known to have a floor" is the honest answer for most of them and it is not a
+        /// shrug: these have been the same for a long time, nobody has gone back to find the
+        /// version they started in, and inventing one would make the column mean "probably".
+        /// The number that matters is the highest real floor in the list, which is where
+        /// `minimum` comes from.
+        let since: String
     }
 
     static let dependencies: [Dependency] = [
         Dependency(
             what: "The session transcript: one JSONL file per session, under ~/.claude/projects/",
             where_: "Transcript.swift",
-            symptom: "⌘J shows nothing, or stops partway through a conversation"),
+            symptom: "⌘J shows nothing, or stops partway through a conversation",
+            since: "not known to have a floor"),
         Dependency(
             what: "The spinner line Claude Code draws while it works, scraped off the screen",
             where_: "Activity.swift",
-            symptom: "The bar never says what a session is doing, even while it is doing it"),
+            symptom: "The bar never says what a session is doing, even while it is doing it",
+            since: "not known to have a floor"),
         Dependency(
             what: "The process being called `claude`",
             where_: "ITerm.swift, Tmux.swift",
-            symptom: "No sessions found at all, and nowhere to send a prompt"),
+            symptom: "No sessions found at all, and nowhere to send a prompt",
+            since: "not known to have a floor"),
         Dependency(
             what: "The tab title, and the status glyph Claude Code puts in front of it",
             where_: "Transcript.swift",
-            symptom: "The wrong conversation in ⌘J, or a stray glyph in the name"),
+            symptom: "The wrong conversation in ⌘J, or a stray glyph in the name",
+            since: "not known to have a floor"),
         Dependency(
             what: "Reading an image off the system pasteboard on Ctrl-V, as [Image #N]",
             where_: "Targets.swift",
             symptom: "A dropped image arrives as nothing, and the prompt points at a picture "
-                   + "that is not there"),
+                   + "that is not there",
+            // Claude Code added Alt-V for Windows in 1.0.93, which puts the macOS Ctrl-V it was
+            // added alongside at or before that. The only real floor in this list.
+            since: "1.0.93"),
     ]
 
     /// A Clawdline release and what it was actually run against.
@@ -81,6 +96,17 @@ enum Compat {
     /// something untrue about everything else that writes them. A missing or unreadable file is a
     /// normal state, so there is no symptom to warn about: the footer simply has less to say.
     static let statusFormat = "1"
+
+    /// The oldest Claude Code any of this is known to work with: the highest floor in
+    /// `dependencies`, since one broken dependency is a broken feature.
+    ///
+    /// Everything below that line still works — this is not a version check that refuses to run,
+    /// and there is no reason for one. What an older Claude Code costs you is the feature whose
+    /// floor you are under, and the table says which.
+    static var minimum: String {
+        dependencies.map(\.since).filter { $0.first?.isNumber == true }
+            .max { compare($0, $1) == .orderedAscending } ?? "not known to have a floor"
+    }
 
     // MARK: - What is actually installed
 

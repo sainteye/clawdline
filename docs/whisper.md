@@ -1,5 +1,21 @@
 # Dictating in more than one language
 
+**Claude Code has its own dictation.** `/voice`, hold space, and it is good — so the honest
+question is not whether this exists but when you would want another one. Two answers, and they
+are the reason this page exists:
+
+| | Claude Code `/voice` | Clawdline |
+|---|---|---|
+| where your voice is transcribed | Anthropic's servers, always — its docs say "audio is not processed locally" | this Mac: Whisper never leaves it, Apple only for languages you have not downloaded |
+| account | a Claude.ai account; not an API key, Bedrock, Vertex or Foundry | any, or none |
+| two languages in one sentence | no — one `language` setting, and anything outside its list falls back to English | yes, and it is the point |
+| organisation policy | unavailable where HIPAA compliance is enabled | not affected |
+
+Nearly everything else it does as well or better, and it is one keystroke closer. Use it. This is
+for the sentence it cannot hear and the machine it is not allowed to run on.
+
+---
+
 Clawdline's microphone uses Apple's speech recogniser by default. It needs nothing installed and
 the words appear as you say them — but it hears **one language at a time**. That is a property of
 the API, not a setting: neither `SFSpeechRecognizer` nor its replacement changes language

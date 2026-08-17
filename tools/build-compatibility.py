@@ -39,6 +39,9 @@ def structs(kind):
                     break
             i += 1
         inner = body[match.end():i]
+        # Line comments first. They are allowed inside these literals and they contain colons,
+        # which is enough to make the field split below read a whole comment as a field name.
+        inner = "\n".join(re.sub(r"//.*$", "", line) for line in inner.splitlines())
         fields, current, label = {}, [], None
         for piece in re.split(r",(?=\s*\w+:)", inner):
             name, _, value = piece.partition(":")
@@ -52,6 +55,8 @@ def render():
     releases = structs("Release")
     deps = structs("Dependency")
     built = next((r["claudeCode"] for r in releases if r["claudeCode"][:1].isdigit()), "?")
+    floors = [d["since"] for d in deps if d["since"][:1].isdigit()]
+    minimum = max(floors, key=lambda v: [int(n) for n in v.split(".")]) if floors else None
 
     lines = [
         "# Versions",
@@ -63,6 +68,15 @@ def render():
         "way to build this and an unreasonable thing to leave unwritten, because **each of those",
         "changing looks exactly like Clawdline being broken.** This page is what it was run",
         "against, and what you would see if that stopped being true.",
+        "",
+        "## The short version",
+        "",
+        f"- Built and used against Claude Code **{built}**.",
+        (f"- The oldest that everything here works with is **{minimum}**, and only one feature "
+         "cares." if minimum else "- No feature here has a known floor."),
+        "- Nothing refuses to run on an older one. What you lose is the one feature whose floor",
+        "  you are under, and the second table below says which.",
+        "- A **newer** Claude Code is the normal state of the world and is not warned about.",
         "",
         "## Tested against",
         "",
@@ -84,11 +98,28 @@ def render():
         "",
         "## What it depends on, and how you would know",
         "",
-        "| What | Where | If it changes |",
-        "|---|---|---|",
+        "| What | Where | Works since | If it changes |",
+        "|---|---|---|---|",
     ]
     for d in deps:
-        lines.append(f"| {d['what']} | `{d['where_']}` | {d['symptom']} |")
+        lines.append(f"| {d['what']} | `{d['where_']}` | {d['since']} | {d['symptom']} |")
+
+    lines += [
+        "",
+        '"Not known to have a floor" is not a shrug. These have looked the same for a long time,',
+        "nobody has gone back to find the version they started in, and putting a number there",
+        'that nobody checked would make the whole column mean "probably".',
+        "",
+        "## Claude Code has its own dictation now",
+        "",
+        "`/voice` — hold space, and it is good. It is worth knowing where it differs, because",
+        "that is the whole reason to reach for this one instead: it **streams your audio to",
+        "Anthropic's servers** (its docs: \"audio is not processed locally\"), it needs a Claude.ai",
+        "account rather than an API key or Bedrock or Vertex, it is unavailable under an",
+        "organisation's HIPAA compliance setting, and it transcribes **one language at a time**.",
+        "Clawdline's second pass never leaves the machine and is built for the sentence with two",
+        "languages in it. See [whisper.md](whisper.md).",
+    ]
 
     lines += [
         "",

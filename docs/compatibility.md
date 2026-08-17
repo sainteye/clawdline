@@ -8,6 +8,14 @@ way to build this and an unreasonable thing to leave unwritten, because **each o
 changing looks exactly like Clawdline being broken.** This page is what it was run
 against, and what you would see if that stopped being true.
 
+## The short version
+
+- Built and used against Claude Code **2.1.233**.
+- The oldest that everything here works with is **1.0.93**, and only one feature cares.
+- Nothing refuses to run on an older one. What you lose is the one feature whose floor
+  you are under, and the second table below says which.
+- A **newer** Claude Code is the normal state of the world and is not warned about.
+
 ## Tested against
 
 | Clawdline | Claude Code | |
@@ -27,13 +35,27 @@ then a missing feature really is missing rather than broken here.
 
 ## What it depends on, and how you would know
 
-| What | Where | If it changes |
-|---|---|---|
-| The session transcript: one JSONL file per session, under ~/.claude/projects/ | `Transcript.swift` | ⌘J shows nothing, or stops partway through a conversation |
-| The spinner line Claude Code draws while it works, scraped off the screen | `Activity.swift` | The bar never says what a session is doing, even while it is doing it |
-| The process being called `claude` | `ITerm.swift, Tmux.swift` | No sessions found at all, and nowhere to send a prompt |
-| The tab title, and the status glyph Claude Code puts in front of it | `Transcript.swift` | The wrong conversation in ⌘J, or a stray glyph in the name |
-| Reading an image off the system pasteboard on Ctrl-V, as [Image #N] | `Targets.swift` | A dropped image arrives as nothing, and the prompt points at a picture that is not there |
+| What | Where | Works since | If it changes |
+|---|---|---|---|
+| The session transcript: one JSONL file per session, under ~/.claude/projects/ | `Transcript.swift` | not known to have a floor | ⌘J shows nothing, or stops partway through a conversation |
+| The spinner line Claude Code draws while it works, scraped off the screen | `Activity.swift` | not known to have a floor | The bar never says what a session is doing, even while it is doing it |
+| The process being called `claude` | `ITerm.swift, Tmux.swift` | not known to have a floor | No sessions found at all, and nowhere to send a prompt |
+| The tab title, and the status glyph Claude Code puts in front of it | `Transcript.swift` | not known to have a floor | The wrong conversation in ⌘J, or a stray glyph in the name |
+| Reading an image off the system pasteboard on Ctrl-V, as [Image #N] | `Targets.swift` | 1.0.93 | A dropped image arrives as nothing, and the prompt points at a picture that is not there |
+
+"Not known to have a floor" is not a shrug. These have looked the same for a long time,
+nobody has gone back to find the version they started in, and putting a number there
+that nobody checked would make the whole column mean "probably".
+
+## Claude Code has its own dictation now
+
+`/voice` — hold space, and it is good. It is worth knowing where it differs, because
+that is the whole reason to reach for this one instead: it **streams your audio to
+Anthropic's servers** (its docs: "audio is not processed locally"), it needs a Claude.ai
+account rather than an API key or Bedrock or Vertex, it is unavailable under an
+organisation's HIPAA compliance setting, and it transcribes **one language at a time**.
+Clawdline's second pass never leaves the machine and is built for the sentence with two
+languages in it. See [whisper.md](whisper.md).
 
 ## claude-tools
 

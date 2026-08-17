@@ -35,11 +35,12 @@ bar has to tell you what the terminal would have.**
 
 ## What it does that a prompt box does not
 
-- **Takes dictation in two languages at once.** Words appear as you speak them; when you stop,
-  Whisper reads the same audio back and replaces them. *"cambia el retry a exponential backoff"*
-  is one sentence, and no live recogniser will hear it — Apple's changes language between
-  sessions, never inside one. The pauses in your speech are where it settles, so earlier
-  sentences stop moving while you carry on.
+- **Takes dictation in two languages at once, without your voice leaving the Mac.** Words
+  appear as you speak them; when you stop, Whisper reads the same audio back and replaces them.
+  *"cambia el retry a exponential backoff"* is one sentence, and no live recogniser will hear it
+  — Apple's changes language between sessions, never inside one. Claude Code's own `/voice` is
+  good and closer to hand, but it sends your audio to Anthropic's servers and transcribes one
+  language at a time; this is for the sentence it cannot hear.
   → [Dictation](#talk-instead-of-type) · [Whisper setup](docs/whisper.md)
 
 - **Reads the session back, laid out.** Not a screenshot of a terminal: headings, tables with
@@ -82,7 +83,7 @@ bar has to tell you what the terminal would have.**
 - **Writing** — [dictation](#talk-instead-of-type) · [files and images](#dropping-in-a-file-or-an-image) · [which tab it sends to](#which-tab-does-it-send-to)
 - **Making it yours** — [mascots](#bring-your-own-mascot) · [config](#config) · [other terminals](#other-terminals-run-claude-code-in-tmux)
 - **Under it** — [how it works](#how-it-works) · [permissions and privacy](#permissions-and-privacy) · [limitations](#limitations) · [troubleshooting](#troubleshooting)
-- **Going further** — [Whisper for mixed languages](docs/whisper.md) · [project status files](docs/project-status.md) · [mascot format](docs/mascots.md) · [versions](docs/compatibility.md)
+- **Going further** — [Whisper for mixed languages](docs/whisper.md) · [which Claude Code versions](docs/compatibility.md) · [project status files](docs/project-status.md) · [mascot format](docs/mascots.md)
 
 ## Why
 
@@ -212,6 +213,11 @@ An image off the clipboard has no path yet, so one is written under
 only thing this leaves behind, so the most recent few are kept and the rest are removed.
 
 ### Talk instead of type
+
+**Claude Code has its own dictation** — `/voice`, hold space — and it is good. What it does not
+do is transcribe on your machine (its docs: "audio is not processed locally"), work without a
+Claude.ai account, or hear two languages in one sentence. Those three are what this is for; the
+whole comparison is in [docs/whisper.md](docs/whisper.md).
 
 <kbd>⌘</kbd><kbd>L</kbd>, or the microphone at the right of the box, turns your voice into text
 in it. **It stops on its own when you are done talking** — a pause of a couple of seconds fixes
