@@ -16,9 +16,6 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var chevron: NSTextField!
     private var micButton: MicButton!
     private let voice = Voice()
-    /// What was in the box when dictation started. Each partial result replaces the dictated
-    /// tail rather than being appended, or "hello" becomes "hellohello world".
-    private var voiceBaseText = ""
     private var scroll: NSScrollView!
     private var textView: PromptTextView!
     private var hintLine: NSView!
@@ -1089,7 +1086,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         -> (text: NSAttributedString, signature: String)? {
         guard target.isClaude,
               let cwd = Targets.workingDirectory(of: target),
-              let file = Transcript.locate(cwd: cwd, tabTitle: target.name),
+              let file = Transcript.locate(cwd: cwd, tabTitle: target.name,
+                                           startedAt: Targets.processStart(of: target)),
               // Eight megabytes, because the limit that bites is bytes and not entries: at the
               // 400KB this used to read, a busy session yielded sixteen records and the reader
               // hit the top of the pane almost immediately.
@@ -1350,13 +1348,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// Talk instead of type. Wired here rather than in the text view because the state it puts
     /// the bar into — listening, and on which machine — belongs to the whole card.
     private func toggleVoice() {
-        voiceBaseText = textView.resolvedText()
         voice.onText = { [weak self] text in
             guard let self else { return }
-            let joiner = self.voiceBaseText.isEmpty
-                || self.voiceBaseText.hasSuffix(" ") ? "" : " "
-            self.textView.setPlainText(self.voiceBaseText + joiner + text)
-            self.textView.setSelectedRange(NSRange(location: self.textView.string.count, length: 0))
+            self.textView.updateDictation(text)
             self.relayout()
         }
         voice.onState = { [weak self] state in
@@ -1364,11 +1358,13 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             switch state {
             case .idle:
                 self.micButton.isListening = false
+                self.textView.endDictation()
             case .listening(let onDevice):
                 self.micButton.isListening = true
                 self.setHint(L.t.voiceListening(onDevice: onDevice), warn: false)
             case .failed(let why):
                 self.micButton.isListening = false
+                self.textView.endDictation()
                 self.setHint(why, warn: true)
             }
             self.relayout()
@@ -1380,6 +1376,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             extras: Voice.alwaysExpected
                 + [currentTarget.flatMap { projectCache[$0.id]?.name },
                    currentTarget.flatMap { projectCache[$0.id]?.branch }].compactMap { $0 })
+        if case .listening = voice.state {} else { textView.beginDictation() }
         voice.toggle(locale: Self.voiceLocales())
     }
 

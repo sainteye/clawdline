@@ -431,10 +431,44 @@ final class PromptTextView: NSTextView {
         didChangeText()
     }
 
+    // MARK: - Dictation
+
+    /// Where speech is currently writing. Nil when nothing is being dictated.
+    private var dictationRange: NSRange?
+
+    /// Start writing at the end, keeping everything already in the box.
+    ///
+    /// Only this range is rewritten as the words arrive. Rebuilding the whole box from a string
+    /// was simpler and wrong: the string form of a dropped image is its path, so dictating after
+    /// dropping a screenshot turned the thumbnail into forty characters of directory.
+    func beginDictation() {
+        guard let storage = textStorage else { return }
+        if storage.length > 0, !(string.last?.isWhitespace ?? true) {
+            insertText(" ", replacementRange: NSRange(location: storage.length, length: 0))
+        }
+        dictationRange = NSRange(location: textStorage?.length ?? 0, length: 0)
+    }
+
+    /// Replace what has been dictated so far with the latest version of it.
+    func updateDictation(_ text: String) {
+        guard let storage = textStorage, let range = dictationRange else { return }
+        let safe = NSRange(location: min(range.location, storage.length),
+                           length: min(range.length, max(0, storage.length - range.location)))
+        let run = NSAttributedString(string: text, attributes: baseAttributes)
+        guard shouldChangeText(in: safe, replacementString: text) else { return }
+        storage.replaceCharacters(in: safe, with: run)
+        didChangeText()
+        dictationRange = NSRange(location: safe.location, length: run.length)
+        setSelectedRange(NSRange(location: safe.location + run.length, length: 0))
+    }
+
+    func endDictation() { dictationRange = nil }
+
     /// Clearing the box has to clear these too, or a dropped file would follow the next message
     /// it was never part of.
     func clearText() {
         droppedPaths.removeAll()
+        dictationRange = nil
         setPlainText("")
     }
 

@@ -690,6 +690,47 @@ group("the words dictation is told to expect") {
     check("the oldest is not", !capped.contains("term1"))
 }
 
+group("how long a process has been running") {
+    // Used to tell a session's own transcript from every other transcript in the project.
+    // etime rather than lstart: lstart is a localised date, and parsing one of those to find a
+    // file is how something works on the machine it was written on and nowhere else.
+    expect("seconds", ITerm.parseElapsed("       12\n"), 12)
+    expect("minutes and seconds", ITerm.parseElapsed("05:30"), 330)
+    expect("hours", ITerm.parseElapsed("02:05:30"), 7530)
+    expect("days", ITerm.parseElapsed("3-02:05:30"), 3 * 86400 + 7530)
+    check("empty is not zero, it is unknown", ITerm.parseElapsed("   ") == nil)
+    check("nonsense is unknown", ITerm.parseElapsed("1:2:3:4") == nil)
+}
+
+group("dictating next to a dropped image") {
+    // Rebuilding the box from a string was the simple version, and it destroyed the thumbnail:
+    // the string form of an attachment is its path. Speech writes into its own range instead.
+    let v = PromptTextView()
+    v.baseAttributes = [.font: NSFont.systemFont(ofSize: 13)]
+    v.setPlainText("")
+    v.insertPaths(["/tmp/shot.png"])
+    v.beginDictation()
+    v.updateDictation("這張圖")
+    v.updateDictation("這張圖裡的表格")
+
+    check("the picture is still a picture", v.string.contains("\u{FFFC}"))
+    check("the path is not sitting in the box", !v.string.contains("/tmp/shot.png"))
+    check("only the newest version of the speech is there",
+          v.string.contains("這張圖裡的表格") && !v.string.contains("這張圖這張圖"))
+    let sent = v.resolvedText()
+    check("both go out together",
+          sent.contains("/tmp/shot.png") && sent.contains("這張圖裡的表格"))
+
+    // Typing, then dictating, keeps the typing.
+    let typed = PromptTextView()
+    typed.baseAttributes = [.font: NSFont.systemFont(ofSize: 13)]
+    typed.setPlainText("看一下")
+    typed.setSelectedRange(NSRange(location: typed.string.count, length: 0))
+    typed.beginDictation()
+    typed.updateDictation("這個錯誤")
+    expect("what was already typed survives", typed.resolvedText(), "看一下 這個錯誤")
+}
+
 group("dictation across a pause") {
     // The recogniser settles a sentence at a pause and starts the next from nothing, so the
     // text it hands back is only ever the sentence in progress. Sticking them together is this

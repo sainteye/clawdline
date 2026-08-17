@@ -115,6 +115,32 @@ enum ITerm {
         return map
     }
 
+    /// When a process started, from how long it has been running.
+    ///
+    /// `etime` rather than `lstart`: the latter is a formatted date that changes with the
+    /// machine's locale, and parsing a localised date to find a file is a way to work on your
+    /// machine and nowhere else.
+    static func processStart(ofPID pid: Int32) -> Date? {
+        let out = shell("/bin/ps", ["-o", "etime=", "-p", "\(pid)"])
+        guard let seconds = parseElapsed(out) else { return nil }
+        return Date(timeIntervalSinceNow: -seconds)
+    }
+
+    /// `[[dd-]hh:]mm:ss` → seconds.
+    static func parseElapsed(_ text: String) -> TimeInterval? {
+        var body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return nil }
+        var days = 0.0
+        if let dash = body.firstIndex(of: "-") {
+            days = Double(body[body.startIndex..<dash]) ?? 0
+            body = String(body[body.index(after: dash)...])
+        }
+        let parts = body.split(separator: ":").map { Double($0) ?? 0 }
+        guard !parts.isEmpty, parts.count <= 3 else { return nil }
+        let padded = Array(repeating: 0.0, count: 3 - parts.count) + parts
+        return days * 86_400 + padded[0] * 3_600 + padded[1] * 60 + padded[2]
+    }
+
     /// `lsof` rather than the PWD in the environment: an environment variable is whatever it
     /// was at launch, and it splits on spaces, which paths are allowed to contain.
     static func workingDirectory(ofPID pid: Int32) -> String? {

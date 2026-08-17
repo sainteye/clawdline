@@ -53,7 +53,7 @@ enum Transcript {
 
     /// Match a session on screen to its transcript: narrow by project, then by title, then
     /// fall back to whichever was written most recently.
-    static func locate(cwd: String, tabTitle: String) -> URL? {
+    static func locate(cwd: String, tabTitle: String, startedAt: Date? = nil) -> URL? {
         let dir = projectDirectory(forCwd: cwd)
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: dir.path) else { return nil }
@@ -70,7 +70,26 @@ enum Transcript {
                 return file
             }
         }
+        // No title match. Falling back to "whichever was written most recently" is how a
+        // brand-new tab — which has no title yet — ended up showing somebody else's
+        // conversation, confidently and with their project's name on it.
+        //
+        // A session's own transcript is created when the session starts, so the process start
+        // time tells them apart. Slack either way for the gap between the two.
+        if let startedAt {
+            let mine = files.filter { abs(created($0).timeIntervalSince(startedAt)) < 120
+                                        || created($0) > startedAt }
+            // Nothing of its own yet is the honest answer for a tab that has not spoken.
+            return mine.min { abs(created($0).timeIntervalSince(startedAt))
+                                < abs(created($1).timeIntervalSince(startedAt)) }
+        }
         return files.first
+    }
+
+    /// When a transcript was created — the session's own birthday, unlike its modification date.
+    static func created(_ url: URL) -> Date {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return (attrs?[.creationDate] as? Date) ?? .distantPast
     }
 
     /// Claude Code prefixes the tab title with a status glyph and iTerm appends the job name.

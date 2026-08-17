@@ -90,6 +90,14 @@ enum Targets {
         return path
     }
 
+    /// When the Claude Code process in this session started. Used to tell its transcript from
+    /// the transcripts of every other session in the same project.
+    static func processStart(of session: TargetSession) -> Date? {
+        let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
+        guard let pid = ITerm.claudePIDs()[bare] else { return nil }
+        return ITerm.processStart(ofPID: pid)
+    }
+
     static func reveal(_ session: TargetSession) {
         switch session.backend {
         case .iterm: ITerm.reveal(session.id)
