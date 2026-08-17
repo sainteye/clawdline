@@ -16,7 +16,6 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var chevron: NSTextField!
     private var micButton: MicButton!
     private let voice = Voice()
-    private let whisper = Whisper()
     private var scroll: NSScrollView!
     private var textView: PromptTextView!
     private var hintLine: NSView!
@@ -1376,23 +1375,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 + [currentTarget.flatMap { projectCache[$0.id]?.name },
                    currentTarget.flatMap { projectCache[$0.id]?.branch }].compactMap { $0 })
 
-        if useWhisper {
-            textView.onDictationDisplaced = { [weak self] in self?.whisper.forgetAccumulated() }
-            whisper.onText = { [weak self] text in
-                self?.textView.updateDictation(text)
-                self?.relayout()
-            }
-            whisper.onLevel = { [weak self] level in self?.micButton.level = level }
-            whisper.onState = { [weak self] state in self?.showVoice(state, whisper: true) }
-            whisper.vocabulary = words
-            if !whisper.isListening { textView.beginDictation() }
-            whisper.toggle(locale: Self.voiceLocales())
-            return
-        }
-
         textView.onDictationDisplaced = { [weak self] in self?.voice.forgetAccumulated() }
-        voice.onState = { [weak self] state in self?.showVoice(state, whisper: false) }
+        voice.onState = { [weak self] state in self?.showVoice(state, whisper: self?.useWhisper == true) }
         voice.vocabulary = words
+        voice.refineWithWhisper = useWhisper
         if !voice.isListening { textView.beginDictation() }
         voice.toggle(locale: Self.voiceLocales())
     }

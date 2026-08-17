@@ -13,22 +13,10 @@ import Foundation
 /// **Optional on purpose.** Nothing here runs unless a binary and a model are both present, and
 /// the app ships neither: a default that needs a download is not a default. See docs/whisper.md.
 ///
-/// Recording and transcription are separate, because whisper.cpp is not a streaming transcriber.
-/// Audio is captured while you hold the session open and handed over in one piece at the end —
-/// which is also why there are no partial results to show.
-final class Whisper {
-
-    private(set) var state: Voice.State = .idle
-    var onState: ((Voice.State) -> Void)?
-    var onText: ((String) -> Void)?
-    var onLevel: ((Float) -> Void)?
-    var vocabulary: [String] = []
-
-    private let engine = AVAudioEngine()
-    private var samples = Data()
-    private let sampleRate: Double = 16_000     // what the model was trained on
-
-    var isListening: Bool { if case .listening = state { return true }; return false }
+/// This is only the transcriber. The microphone, the conversion and the recording live in
+/// `Voice`, which needs them anyway — running two audio engines against one microphone to have
+/// two opinions about it would be a strange way to get one sentence.
+enum Whisper {
 
     // MARK: - Finding the pieces
 
@@ -78,85 +66,9 @@ final class Whisper {
         Self.binary(configured: configuredBinary) != nil && Self.model(configured: configuredModel) != nil
     }
 
-    // MARK: - Listening
-
-    func toggle(locale candidates: [String]) {
-        isListening ? stop() : start()
-    }
-
-    private func start() {
-        guard Self.binary(configured: Config.shared.whisperBinary) != nil,
-              Self.model(configured: Config.shared.whisperModel) != nil else {
-            fail(L.t.whisperMissing)
-            return
-        }
-        samples = Data()
-
-        let input = engine.inputNode
-        let source = input.outputFormat(forBus: 0)
-        guard let target = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate,
-                                         channels: 1, interleaved: true),
-              let converter = AVAudioConverter(from: source, to: target) else {
-            fail(L.t.voiceUnavailable)
-            return
-        }
-
-        input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 2048, format: source) { [weak self] buffer, _ in
-            guard let self else { return }
-            self.report(level: buffer)
-            // The model wants 16 kHz mono; the microphone gives whatever it gives.
-            let ratio = self.sampleRate / source.sampleRate
-            let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1024
-            guard let out = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return }
-            var supplied = false
-            var error: NSError?
-            converter.convert(to: out, error: &error) { _, status in
-                if supplied { status.pointee = .noDataNow; return nil }
-                supplied = true
-                status.pointee = .haveData
-                return buffer
-            }
-            guard error == nil, let channel = out.int16ChannelData?[0] else { return }
-            self.samples.append(UnsafeBufferPointer(start: channel, count: Int(out.frameLength)))
-        }
-
-        engine.prepare()
-        do { try engine.start() } catch {
-            fail(error.localizedDescription)
-            return
-        }
-        set(.listening(onDevice: true))     // it never leaves the machine, that is the point
-    }
-
-    func stop() {
-        guard isListening else { return }
-        engine.inputNode.removeTap(onBus: 0)
-        if engine.isRunning { engine.stop() }
-        set(.transcribing)
-
-        let audio = samples
-        samples = Data()
-        let terms = vocabulary
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let text = Self.transcribe(audio, rate: self?.sampleRate ?? 16_000, vocabulary: terms)
-            DispatchQueue.main.async {
-                guard let self else { return }
-                if let text, !text.isEmpty {
-                    self.onText?(text)
-                    self.set(.idle)
-                } else {
-                    self.fail(L.t.whisperNothingHeard)
-                }
-            }
-        }
-    }
-
-    func forgetAccumulated() {}   // nothing is accumulated: one recording, one result
-
     // MARK: - Transcribing
 
-    private static func transcribe(_ samples: Data, rate: Double, vocabulary: [String]) -> String? {
+    static func transcribe(_ samples: Data, rate: Double, vocabulary: [String]) -> String? {
         guard samples.count > Int(rate) / 4,          // under a quarter second is a stray click
               let bin = binary(configured: Config.shared.whisperBinary),
               let model = model(configured: Config.shared.whisperModel) else { return nil }
@@ -203,27 +115,6 @@ final class Whisper {
     }
 
     // MARK: - Plumbing
-
-    private func report(level buffer: AVAudioPCMBuffer) {
-        guard let channel = buffer.floatChannelData?[0] else { return }
-        var sum: Float = 0
-        for i in 0..<Int(buffer.frameLength) { sum += channel[i] * channel[i] }
-        let rms = sqrt(sum / Float(max(1, buffer.frameLength)))
-        let level = min(1, max(0, (20 * log10(max(rms, 1e-7)) + 50) / 50))
-        DispatchQueue.main.async { self.onLevel?(level) }
-    }
-
-    private func fail(_ message: String) {
-        set(.failed(message))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-            if case .failed = self?.state { self?.set(.idle) }
-        }
-    }
-
-    private func set(_ next: Voice.State) {
-        state = next
-        onState?(next)
-    }
 
     private static func run(_ launch: String, _ args: [String]) -> String? {
         let task = Process()

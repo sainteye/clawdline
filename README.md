@@ -177,10 +177,12 @@ Recognition runs on this Mac for the dictation languages you have downloaded, an
 for the ones you have not. The bar says which, for as long as it is listening. See
 [Permissions and privacy](#permissions-and-privacy).
 
-If you do speak two languages in one sentence, **[Whisper](docs/whisper.md) is an optional
-engine that handles it** — a `brew install` and a model file, after which Clawdline uses it
-without being told to. The trade is that the text arrives when you stop talking instead of as
-you go. That page has a prompt you can paste into Claude Code to have it done for you.
+If you do speak two languages in one sentence, **[Whisper](docs/whisper.md) is an optional second
+pass that handles it** — a `brew install` and a model file, after which Clawdline uses it without
+being told to. It does not replace the live text: Apple's recogniser keeps writing as you speak,
+and when you stop, Whisper reads the same recording and replaces the run with its version. The
+feedback of one, the sentence of the other. That page has a prompt you can paste into Claude Code
+to have it installed for you.
 
 ### Which project, not just which task
 

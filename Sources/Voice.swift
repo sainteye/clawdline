@@ -37,6 +37,10 @@ final class Voice {
     var onLevel: ((Float) -> Void)?
     /// Words to bias recognition towards. See `vocabulary(from:extras:)`.
     var vocabulary: [String] = []
+    /// Also record, and replace the whole dictated run with Whisper's reading of it when you
+    /// stop. Live text while you talk, a better sentence when you finish — the two engines are
+    /// good at opposite halves of the same job, so neither has to be chosen over the other.
+    var refineWithWhisper = false
 
     private let engine = AVAudioEngine()
     private var recogniser: SFSpeechRecognizer?
@@ -49,6 +53,10 @@ final class Voice {
     /// second thing you said delete the first.
     private var settled = ""
     private var latest = ""
+    /// 16 kHz mono, kept only while refining is on.
+    private var recording = Data()
+    private var recorder: AVAudioConverter?
+    private let recordingRate: Double = 16_000
 
     /// The locale to listen in, and whether it can be done without leaving the machine.
     ///
@@ -144,6 +152,14 @@ final class Voice {
         self.request = request
 
         let input = engine.inputNode
+        let source = input.outputFormat(forBus: 0)
+        recording = Data()
+        recorder = nil
+        if refineWithWhisper,
+           let target = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: recordingRate,
+                                      channels: 1, interleaved: true) {
+            recorder = AVAudioConverter(from: source, to: target)
+        }
         input.removeTap(onBus: 0)
         // Appends to whichever request is current, not the one captured here: a pause swaps in
         // a new one and the audio has to follow it.
@@ -156,6 +172,7 @@ final class Voice {
             // Loudness is logarithmic; a linear meter sits near zero and then jumps.
             let level = min(1, max(0, (20 * log10(max(rms, 1e-7)) + 50) / 50))
             DispatchQueue.main.async { self?.onLevel?(level) }
+            self?.record(buffer)
         }
         engine.prepare()
         do {
@@ -226,6 +243,28 @@ final class Voice {
     func forgetAccumulated() {
         settled = ""
         latest = ""
+        // The audio recorded so far belongs to text the user has already taken ownership of.
+        // Handing it to Whisper afterwards would write that sentence a second time.
+        recording = Data()
+    }
+
+    /// Convert a buffer to what the model wants and keep it. Same audio, second purpose.
+    private func record(_ buffer: AVAudioPCMBuffer) {
+        guard let recorder else { return }
+        let ratio = recordingRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1024
+        guard let out = AVAudioPCMBuffer(pcmFormat: recorder.outputFormat,
+                                         frameCapacity: capacity) else { return }
+        var supplied = false
+        var error: NSError?
+        recorder.convert(to: out, error: &error) { _, status in
+            if supplied { status.pointee = .noDataNow; return nil }
+            supplied = true
+            status.pointee = .haveData
+            return buffer
+        }
+        guard error == nil, let channel = out.int16ChannelData?[0] else { return }
+        recording.append(UnsafeBufferPointer(start: channel, count: Int(out.frameLength)))
     }
 
     func stop() {
@@ -235,7 +274,29 @@ final class Voice {
         task?.cancel()
         task = nil
         request = nil
-        if case .listening = state { set(.idle) }
+        guard case .listening = state else { return }
+
+        // Nothing to improve on, or nothing installed to improve it with.
+        let audio = recording
+        recording = Data()
+        guard refineWithWhisper, audio.count > Int(recordingRate) / 4 else {
+            set(.idle)
+            return
+        }
+
+        set(.transcribing)
+        let terms = vocabulary
+        let rate = recordingRate
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let better = Whisper.transcribe(audio, rate: rate, vocabulary: terms)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                // Only replace it if there is something to replace it with. A failed run should
+                // leave the live text alone, not empty the box you were about to send.
+                if let better, !better.isEmpty { self.onText?(better) }
+                self.set(.idle)
+            }
+        }
     }
 
     private func fail(_ message: String) {

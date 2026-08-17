@@ -82,10 +82,10 @@ struct English: Copy {
     }
     let voiceNoPermission = "Dictation needs microphone and speech access"
     let voiceUnavailable = "Dictation is not available right now"
-    let voiceTranscribing = "Transcribing…"
+    let voiceTranscribing = "Reading it back…"
     let whisperMissing = "Whisper is not installed — see docs/whisper.md"
     let whisperNothingHeard = "Heard nothing"
-    func voiceListeningWhisper() -> String { "Recording on this Mac — press again to transcribe" }
+    func voiceListeningWhisper() -> String { "Listening — Whisper takes another look when you stop" }
 
     let scanning = "Scanning…"
     let noSession = "No Claude Code session found"
@@ -149,10 +149,10 @@ struct TraditionalChinese: Copy {
     }
     let voiceNoPermission = "語音輸入需要麥克風與語音辨識權限"
     let voiceUnavailable = "現在無法使用語音輸入"
-    let voiceTranscribing = "轉成文字中⋯"
+    let voiceTranscribing = "重讀一次⋯"
     let whisperMissing = "沒有裝 Whisper——見 docs/whisper.md"
     let whisperNothingHeard = "沒聽到東西"
-    func voiceListeningWhisper() -> String { "在這台 Mac 上錄音——再按一次轉成文字" }
+    func voiceListeningWhisper() -> String { "聽著——停下來時 Whisper 會再看一遍" }
 
     let scanning = "掃描中⋯"
     let noSession = "找不到在跑 Claude Code 的分頁"

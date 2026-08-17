@@ -10,12 +10,18 @@ mid-sentence. So this is a sentence it cannot be asked to hear:
 Whisper transcribes that as a matter of course. Installing it is optional, and worth it only if
 you actually speak that way.
 
-| | Apple (default) | Whisper (optional) |
+**It does not replace the live one, it finishes what it started.** Apple's recogniser keeps
+writing as you speak, so the box fills in while you are talking. When you stop, Whisper reads the
+same recording and replaces the whole run with its version. You get the feedback of one and the
+sentence of the other, and the two engines are good at opposite halves of the same job.
+
+| | Apple alone | with Whisper |
 |---|---|---|
 | install | nothing | a binary and a model, ~600 MB |
-| when the text appears | as you speak | when you stop |
+| while you speak | text appears | text appears |
+| when you stop | that was it | the run is replaced with a better reading |
 | more than one language in a sentence | no | yes |
-| leaves the machine | only for languages you have not downloaded | never |
+| leaves the machine | only for languages you have not downloaded | the second pass never does |
 
 ---
 
@@ -40,8 +46,9 @@ Open Clawdline, press <kbd>⌘</kbd><kbd>J</kbd> if you want to watch, and send 
 >
 > Do not change `~/.config/clawdline/config.json` unless step 4 shows it is needed.
 
-Then press <kbd>⌘</kbd><kbd>L</kbd> in Clawdline. The bar will say **recording** rather than
-*listening*, and the text arrives when you press it again.
+Then press <kbd>⌘</kbd><kbd>L</kbd> in Clawdline. It will say Whisper is going to take another
+look when you stop — and when you do, the words you watched appear get replaced by its reading of
+the same audio.
 
 ---
 
@@ -94,12 +101,16 @@ transcription even with whisper present.
 
 ## What changes when it is on
 
-**The text arrives at the end, not as you speak.** whisper.cpp is not a streaming transcriber:
-Clawdline records while the microphone is open and hands the whole recording over when you stop.
-The bar says *recording*, then *transcribing*, so the difference is visible rather than something
-you wait through wondering.
+**The words you watched appear get replaced when you stop.** whisper.cpp is not a streaming
+transcriber, so it can only read a finished recording — which is why the live text is still
+Apple's. There is a beat at the end where the bar says it is reading it back.
 
-**Nothing leaves the machine, ever** — including for languages macOS would have sent to Apple.
+**If the second pass fails, the first one stands.** A missing model or a binary that will not run
+leaves the live text exactly where it was; it does not empty the box you were about to send.
 
-**Silence costs nothing.** The recording is dropped if it is shorter than a quarter of a second,
-so a mis-click does not spin up a model.
+**Editing what was dictated stops the replacement**, for the part you edited. Those words are
+yours now, and the recording behind them is dropped rather than being transcribed over the top of
+your correction.
+
+**Silence costs nothing.** Under a quarter of a second is dropped, so a mis-click does not spin
+up a model.
