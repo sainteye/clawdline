@@ -1626,7 +1626,7 @@ group("the documented example files") {
 }
 
 group("the project's mark and colour") {
-    // The real shape of an entry claude-tools writes, atrium's arch.
+    // The real shape of an entry claude-bestiary writes, atrium's arch.
     let art: [String: Any] = [
         "accent": "#5CBBA1",
         "bg": "#2F6B5E",
@@ -1841,6 +1841,149 @@ group("the transcript pane's text view") {
     // pane has fold controls that are links without being hyperlinks.
     check("link styling is left to the renderer",
           view.linkTextAttributes?[.foregroundColor] == nil)
+}
+
+// MARK: - Dev stacks
+
+group("devstack: a project describes its stack") {
+    let json = """
+    {"version": 1, "name": "cairn",
+     "status": "make stack-status",
+     "restart": "make stack-restart P={process}",
+     "logs": "make stack-logs P={process} N={lines}"}
+    """
+    let spec = DevStack.parse(Data(json.utf8), root: "/tmp/cairn")
+    check("it parses", spec != nil)
+    expect("name", spec?.name, "cairn")
+    expect("root", spec?.root, "/tmp/cairn")
+    expect("status command", spec?.status, "make stack-status")
+    check("absent commands stay absent", spec?.up == nil)
+}
+
+group("devstack: a file with nothing but a name still works") {
+    // The contract's floor. Everything but `name` is optional, and a reader that refused this
+    // would be telling adopters to write more before they can see anything at all.
+    let spec = DevStack.parse(Data("{}".utf8), root: "/tmp/whatever")
+    check("it parses", spec != nil)
+    expect("name falls back to the directory", spec?.name, "whatever")
+    check("nothing is declared", spec?.declared.isEmpty == true)
+    check("no commands", spec?.status == nil && spec?.up == nil)
+}
+
+group("devstack: tier 0 declares ports and nothing else") {
+    let json = """
+    {"name": "app", "up": "make dev",
+     "processes": [{"name": "api", "port": 8002}, {"name": "web", "port": 3001}]}
+    """
+    let spec = DevStack.parse(Data(json.utf8), root: "/tmp/app")
+    expect("two processes declared", spec?.declared.count, 2)
+    expect("first port", spec?.declared.first?.port, 8002)
+    check("no status command is fine", spec?.status == nil)
+}
+
+group("devstack: garbage is refused, not guessed at") {
+    check("not JSON", DevStack.parse(Data("nope".utf8), root: "/tmp/x") == nil)
+    check("JSON but not an object", DevStack.parse(Data("[1,2]".utf8), root: "/tmp/x") == nil)
+}
+
+group("devstack: the fingerprint follows the bytes") {
+    let a = DevStack.fingerprint(Data("{\"name\":\"a\"}".utf8))
+    let b = DevStack.fingerprint(Data("{\"name\":\"a\"}".utf8))
+    let c = DevStack.fingerprint(Data("{\"name\":\"b\"}".utf8))
+    check("same bytes, same fingerprint", a == b)
+    // Trust is tied to this. If an edit did not change it, adding a command to a trusted file
+    // would run without ever being agreed to.
+    check("different bytes, different fingerprint", a != c)
+}
+
+group("devstack: the state document") {
+    let json = """
+    {"state": "partial", "updated_at": 1786949616,
+     "processes": [
+       {"name": "api", "state": "healthy", "port": 8002, "pid": 7970},
+       {"name": "build-web", "state": "exited", "exit_code": 1,
+        "error": "Cannot find module next/font/google"},
+       {"name": "web", "state": "healthy", "pid": 8243}]}
+    """
+    let s = DevStack.parseState(Data(json.utf8))
+    check("it parses", s != nil)
+    expect("verdict", s?.state, "partial")
+    expect("three processes", s?.processes.count, 3)
+    expect("two are up", s?.upCount, 2)
+    expect("the broken one is named", s?.brokenNames, ["build-web"])
+    expect("its error travels with it", s?.processes[1].error,
+           "Cannot find module next/font/google")
+    // `completed` is a one-shot that finished on purpose. Drawing it as a failure would put a
+    // red dot on every successful build, which trains people to ignore red dots.
+    let done = DevStack.parseState(Data("""
+    {"processes": [{"name": "build", "state": "completed"}]}
+    """.utf8))
+    expect("completed counts as up", done?.upCount, 1)
+    expect("and the verdict is derived", done?.state, "running")
+}
+
+group("devstack: a state document missing its verdict still lights the dot") {
+    // These files are written by shell scripts. One that forgot a key should degrade, not vanish.
+    let s = DevStack.parseState(Data("""
+    {"processes": [{"name": "api", "state": "exited", "exit_code": 1}]}
+    """.utf8))
+    expect("derived from the processes", s?.state, "partial")
+}
+
+group("devstack: commands substitute rather than concatenate") {
+    // Where the process name goes is the project's decision: `make stack-restart P=api` and
+    // `overmind restart api` do not put it in the same place.
+    expect("make style", DevStack.expand("make stack-restart P={process}", process: "api"),
+           "make stack-restart P='api'")
+    expect("bare argument", DevStack.expand("overmind restart {process}", process: "web"),
+           "overmind restart 'web'")
+    expect("line counts too",
+           DevStack.expand("make logs P={process} N={lines}", process: "api", lines: 50),
+           "make logs P='api' N=50")
+    // "Restart everything" drops the whole word, so no `P=` is left dangling to be read as an
+    // empty process name.
+    expect("no process drops the word",
+           DevStack.expand("make stack-restart P={process}", process: nil),
+           "make stack-restart")
+    expect("quoting survives a hostile name",
+           DevStack.expand("x {process}", process: "a'b"), "x 'a'\\''b'")
+}
+
+group("devstack: the documented example files") {
+    // docs/devstack.md tells other people how to write these. The examples beside it are parsed
+    // here with the same code the app uses, so the page cannot quietly stop being true.
+    func load(_ name: String) -> Data? {
+        try? Data(contentsOf: URL(fileURLWithPath: "docs/examples/" + name))
+    }
+    let tier1 = load("devstack.json").flatMap { DevStack.parse($0, root: "/Users/you/code/atrium") }
+    check("the tier 1 example is there", tier1 != nil)
+    expect("it names itself", tier1?.name, "atrium")
+    check("it can be asked for state", tier1?.status != nil)
+    check("and restarted per process", tier1?.restart?.contains("{process}") == true)
+
+    let tier0 = load("devstack-tier0.json").flatMap { DevStack.parse($0, root: "/tmp/myapp") }
+    check("the tier 0 example is there", tier0 != nil)
+    expect("it declares its ports", tier0?.declared.count, 2)
+    check("without a status command", tier0?.status == nil)
+    // The rung that makes this a format rather than an integration: no supervisor, still visible.
+    expect("so it is read by probing", DevStack.probeDeclared(tier0!).processes.count, 2)
+
+    let state = load("devstack-state.json").flatMap { DevStack.parseState($0) }
+    check("the state example is there", state != nil)
+    expect("its verdict", state?.state, "partial")
+    expect("four of five up", state?.upCount, 4)
+    expect("and it names what broke", state?.brokenNames, ["build-web"])
+    // The one thing in a stack that is a place rather than a number. The row turns it into a
+    // link, so confirming a site is really up is a click and not a retyped address.
+    expect("the tunnel carries the address it serves",
+           state?.processes.first { $0.name == "tunnel" }?.url, "https://dev.example.com")
+}
+
+group("devstack: port probing") {
+    // Port 1 needs root to bind, so nothing on a normal machine is listening there.
+    check("nothing answers on port 1", !DevStack.isListening(port: 1))
+    check("out of range is not listening", !DevStack.isListening(port: 0))
+    check("also out of range", !DevStack.isListening(port: 70000))
 }
 
 // MARK: - Result
