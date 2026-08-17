@@ -52,6 +52,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// and the count of uncommitted files both move while you work.
     private var projectCache: [String: ProjectInfo] = [:]
     private var iconCache: [String: ProjectIcon.Grid] = [:]
+    /// When each session was last looked up, so a summon repaints from what is known and asks
+    /// again in the background rather than showing nothing while it waits.
+    private var projectSeen: [String: CFAbsoluteTime] = [:]
 
     /// A full-screen blur behind everything, shown only while the output pane is open.
     /// Reading a transcript is a different mode from firing off one line, and the rest of
@@ -314,8 +317,6 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // the text still pointed at the old one is how a message lands in the wrong session.
         stickyID = nil
         stickyBase = nil
-        projectCache.removeAll()
-        iconCache.removeAll()
         refreshTargets()
         relayout()
         position()
@@ -1159,7 +1160,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// at a glance. The repository name is what tells them apart — and a message sent to the
     /// wrong one cannot be taken back by reading it.
     private func refreshProjectInfo() {
-        guard let target = currentTarget, projectCache[target.id] == nil else { return }
+        guard let target = currentTarget else { return }
+        // Kept between summons and refreshed behind the last answer. Clearing it first meant the
+        // footer opened blank and filled in a beat later, every time — and the branch and the
+        // count are worth being a second stale to have the name there the moment you look.
+        if let seen = projectSeen[target.id], CFAbsoluteTimeGetCurrent() - seen < 5 { return }
+        projectSeen[target.id] = CFAbsoluteTimeGetCurrent()
         DispatchQueue.global(qos: .utility).async {
             guard let cwd = Targets.workingDirectory(of: target),
                   let info = Project.info(cwd: cwd) else { return }

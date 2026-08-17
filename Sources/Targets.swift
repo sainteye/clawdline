@@ -64,11 +64,30 @@ enum Targets {
 
     /// Where that session is working. tmux hands it over with the pane list; for iTerm2 it
     /// has to be asked of the process, so it is only looked up when something needs it.
+    private static let cwdLock = NSLock()
+    private static var cwdCache: [String: (at: CFAbsoluteTime, path: String)] = [:]
+
+    /// Where a session is working.
+    ///
+    /// Remembered for a while, because a Claude Code session does not move: it is started in a
+    /// directory and stays there. Asking again every second cost a process listing and an
+    /// `lsof` for an answer that had not changed since the session began.
     static func workingDirectory(of session: TargetSession) -> String? {
         if let cwd = session.cwd, !cwd.isEmpty { return cwd }
+        cwdLock.lock()
+        if let hit = cwdCache[session.id], CFAbsoluteTimeGetCurrent() - hit.at < 20 {
+            defer { cwdLock.unlock() }
+            return hit.path
+        }
+        cwdLock.unlock()
+
         let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
-        guard let pid = ITerm.claudePIDs()[bare] else { return nil }
-        return ITerm.workingDirectory(ofPID: pid)
+        guard let pid = ITerm.claudePIDs()[bare],
+              let path = ITerm.workingDirectory(ofPID: pid) else { return nil }
+        cwdLock.lock()
+        cwdCache[session.id] = (CFAbsoluteTimeGetCurrent(), path)
+        cwdLock.unlock()
+        return path
     }
 
     static func reveal(_ session: TargetSession) {

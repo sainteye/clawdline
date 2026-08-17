@@ -83,9 +83,24 @@ enum ITerm {
         return set
     }
 
+    private static let pidLock = NSLock()
+    private static var pidCache: (at: CFAbsoluteTime, map: [String: Int32])?
+
     /// tty → pid for the claude processes. Needed because the working directory is the only
     /// way into the transcript, and only the process knows it.
+    ///
+    /// Held for a couple of seconds. The scan is a full `ps` — 104 ms measured, by far the most
+    /// expensive thing on this path — and the pane asks for it once a second while it is open,
+    /// which put a tenth of a second of process listing behind every refresh. A session that
+    /// starts or dies is picked up on the next expiry, which is what a status display needs.
     static func claudePIDs() -> [String: Int32] {
+        pidLock.lock()
+        if let c = pidCache, CFAbsoluteTimeGetCurrent() - c.at < 2 {
+            defer { pidLock.unlock() }
+            return c.map
+        }
+        pidLock.unlock()
+
         var map: [String: Int32] = [:]
         let out = shell("/bin/ps", ["-ax", "-o", "tty=,pid=,command="])
         for line in out.split(separator: "\n") {
@@ -94,6 +109,9 @@ enum ITerm {
             let head = String(parts[2])
             if head == "claude" || head.hasSuffix("/claude") { map[String(parts[0])] = pid }
         }
+        pidLock.lock()
+        pidCache = (CFAbsoluteTimeGetCurrent(), map)
+        pidLock.unlock()
         return map
     }
 
