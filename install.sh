@@ -18,14 +18,34 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 echo "→ looking up the latest release of $REPO"
-URL=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | /usr/bin/python3 -c '
+# The body is fetched rather than piped, so that a failure can be explained rather than just
+# ending the script. GitHub allows 60 unauthenticated API calls an hour per address, which a
+# shared office, a VPN or a CI runner can exhaust without anybody here doing anything — and the
+# first step of an installer is the worst possible place to exit with no reason given.
+STATUS=$(curl -sSL -o "$TMP/release.json" -w '%{http_code}' \
+  "https://api.github.com/repos/$REPO/releases/latest" || echo 000)
+if [ "$STATUS" != "200" ]; then
+  echo "  GitHub answered $STATUS."
+  if grep -q "rate limit" "$TMP/release.json" 2>/dev/null; then
+    echo "  That is its hourly limit for unauthenticated requests from your address, not you."
+    echo "  Wait an hour, or download the .zip by hand:"
+  else
+    echo "  Could not read the release list. Download the .zip by hand:"
+  fi
+  echo "    https://github.com/$REPO/releases/latest"
+  echo "  Or build it yourself, which needs no network at all after the clone:"
+  echo "    git clone https://github.com/$REPO && cd clawdline && ./build.sh"
+  exit 1
+fi
+
+URL=$(/usr/bin/python3 -c '
 import json, sys
-release = json.load(sys.stdin)
+release = json.load(open(sys.argv[1]))
 assets = [a for a in release.get("assets", []) if a["name"].endswith(".zip")]
 if not assets:
     sys.exit("no .zip asset on the latest release")
 print(assets[0]["browser_download_url"])
-')
+' "$TMP/release.json")
 VERSION=$(basename "$(dirname "$URL")")
 echo "  $VERSION"
 
