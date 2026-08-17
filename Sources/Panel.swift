@@ -189,11 +189,16 @@ final class KeyHintsView: NSView {
 
 /// The microphone, and what it does while it is listening.
 ///
-/// Rings that answer your voice rather than a spinner that runs on its own: a spinner says the
+/// A halo that answers your voice rather than a spinner that runs on its own: a spinner says the
 /// app is busy, and what you actually want to know is whether it can hear you. The level comes
-/// from the same audio buffers being transcribed, so a ring that does not move means the
+/// from the same audio buffers being transcribed, so a halo that will not move means the
 /// microphone is picking up nothing — which is the failure you would otherwise discover by
 /// reading an empty box afterwards.
+///
+/// Slow on purpose. The first version ran at 60fps with a ring leaving every third of a second,
+/// which read as an alarm going off next to the thing you were trying to talk into. This one
+/// breathes on a four-second cycle and follows your voice over about half a second: at a glance
+/// it is a soft glow, and it is only when you watch it that it is obviously listening.
 final class MicButton: NSView {
     var onClick: (() -> Void)?
     var isListening = false {
@@ -228,10 +233,14 @@ final class MicButton: NSView {
 
     private func start() {
         guard timer == nil else { return }
-        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+        // 30fps, because nothing here moves fast enough to need more — and this sits in the
+        // corner of a window that is open while you think.
+        let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             guard let self else { return }
-            self.shown += (CGFloat(self.level) - self.shown) * 0.25
-            self.phase += 0.045
+            // A slow follow: loud syllables should swell it, not make it flicker.
+            self.shown += (CGFloat(self.level) - self.shown) * 0.06
+            self.phase += 1.0 / (30.0 * 4.0)      // one breath every four seconds
+            if self.phase > 1 { self.phase -= 1 }
             self.needsDisplay = true
         }
         RunLoop.main.add(t, forMode: .common)
@@ -249,22 +258,27 @@ final class MicButton: NSView {
         let centre = NSPoint(x: bounds.midX, y: bounds.midY)
 
         if isListening {
-            // Two rings a half-cycle apart, so there is always one on its way out.
-            for i in 0..<2 {
-                let p = (phase + CGFloat(i) * 0.5).truncatingRemainder(dividingBy: 1)
-                let reach = 7 + (7 + shown * 9) * p
-                let alpha = (1 - p) * (0.16 + shown * 0.5)
-                Style.accent.withAlphaComponent(alpha).setStroke()
-                let ring = NSBezierPath(ovalIn: NSRect(x: centre.x - reach, y: centre.y - reach,
-                                                       width: reach * 2, height: reach * 2))
-                ring.lineWidth = 1.5
-                ring.stroke()
-            }
-            // A disc that swells with your voice, so silence is visible as stillness.
-            let r = 6 + shown * 3.5
-            Style.accent.withAlphaComponent(0.16 + shown * 0.24).setFill()
-            NSBezierPath(ovalIn: NSRect(x: centre.x - r, y: centre.y - r,
-                                        width: r * 2, height: r * 2)).fill()
+            // One breath, sine rather than sawtooth: a ring that restarts has an edge, and an
+            // edge is what the eye keeps going back to.
+            let breath = (sin(phase * 2 * .pi) + 1) / 2
+
+            // The halo. Mostly your voice, a little the breath, so silence is not motionless
+            // — it is just quiet.
+            let r = 8 + shown * 4 + breath * 1.2
+            let glow = NSGradient(colors: [
+                Style.accent.withAlphaComponent(0.10 + shown * 0.22),
+                Style.accent.withAlphaComponent(0),
+            ])
+            glow?.draw(in: NSRect(x: centre.x - r, y: centre.y - r, width: r * 2, height: r * 2),
+                       relativeCenterPosition: .zero)
+
+            // A single outer ring, faint enough to notice only when you look for it.
+            let reach = r + 2 + breath * 2
+            Style.accent.withAlphaComponent(0.05 + shown * 0.14).setStroke()
+            let ring = NSBezierPath(ovalIn: NSRect(x: centre.x - reach, y: centre.y - reach,
+                                                   width: reach * 2, height: reach * 2))
+            ring.lineWidth = 1
+            ring.stroke()
         }
 
         let name = isListening ? "mic.fill" : "mic"
@@ -438,6 +452,7 @@ final class PromptTextView: NSTextView {
     var onToggleFullscreen: (() -> Void)?
     var onToggleOrder: (() -> Void)?
     var onToggleKeys: (() -> Void)?
+    var onToggleVoice: (() -> Void)?
 
     /// ⌘A / ⌘C / ⌘V / ⌘X / ⌘Z have to be wired by hand. This app is an accessory (no Dock icon,
     /// no menu bar), and macOS routes the standard edit commands through the main menu's key
@@ -463,6 +478,7 @@ final class PromptTextView: NSTextView {
             case "f": onToggleFullscreen?(); return true
             case "r": onToggleOrder?(); return true
             case "/": onToggleKeys?(); return true
+            case "l": onToggleVoice?(); return true
             // "+" arrives as "=" without shift and "+" with it; both mean the same thing here.
             case "=", "+": onZoomOutput?(1); return true
             case "-", "_": onZoomOutput?(-1); return true

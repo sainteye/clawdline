@@ -38,6 +38,13 @@ final class Voice {
     private var recogniser: SFSpeechRecognizer?
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
+    /// Utterances the recogniser has finished with this session.
+    ///
+    /// It settles a sentence at a pause and starts the next one from nothing, so
+    /// `bestTranscription` is only ever the sentence in progress. Emitting that alone made the
+    /// second thing you said delete the first.
+    private var settled = ""
+    private var latest = ""
 
     /// The locale to listen in, and whether it can be done without leaving the machine.
     ///
@@ -128,8 +135,10 @@ final class Voice {
 
         let input = engine.inputNode
         input.removeTap(onBus: 0)
+        // Appends to whichever request is current, not the one captured here: a pause swaps in
+        // a new one and the audio has to follow it.
         input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { [weak self] buffer, _ in
-            request.append(buffer)
+            self?.request?.append(buffer)
             guard let channel = buffer.floatChannelData?[0] else { return }
             var sum: Float = 0
             for i in 0..<Int(buffer.frameLength) { sum += channel[i] * channel[i] }
@@ -146,16 +155,58 @@ final class Voice {
             return
         }
 
+        settled = ""
+        latest = ""
+        listen(on: request, with: recogniser, onDevice: onDevice)
+        set(.listening(onDevice: onDevice))
+    }
+
+    /// Attach a task to a request, and keep the session going across the pauses.
+    private func listen(on request: SFSpeechAudioBufferRecognitionRequest,
+                        with recogniser: SFSpeechRecognizer, onDevice: Bool) {
         task = recogniser.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
             if let result {
-                self.onText?(result.bestTranscription.formattedString)
+                let text = result.bestTranscription.formattedString
+                if result.isFinal {
+                    // Sentence done. Keep it, and open a new one — the microphone is still on,
+                    // and the user said nothing about being finished.
+                    self.settled = Self.join(self.settled, text)
+                    self.latest = ""
+                    self.onText?(self.settled)
+                    if case .listening = self.state { self.restart(onDevice: onDevice) }
+                    return
+                }
+                // A partial normally grows. One that collapses is the recogniser having moved on
+                // to a new utterance without saying so, and the old one is worth keeping.
+                if !self.latest.isEmpty, text.count * 2 < self.latest.count {
+                    self.settled = Self.join(self.settled, self.latest)
+                }
+                self.latest = text
+                self.onText?(Self.join(self.settled, text))
             }
-            if error != nil || result?.isFinal == true {
-                self.stop()
-            }
+            if error != nil { self.stop() }
         }
-        set(.listening(onDevice: onDevice))
+    }
+
+    private func restart(onDevice: Bool) {
+        guard let recogniser else { return }
+        task?.cancel()
+        let next = SFSpeechAudioBufferRecognitionRequest()
+        next.shouldReportPartialResults = true
+        next.requiresOnDeviceRecognition = onDevice
+        next.contextualStrings = vocabulary
+        next.addsPunctuation = true
+        request = next
+        listen(on: next, with: recogniser, onDevice: onDevice)
+    }
+
+    /// Sentences need a space between them; a language that does not use spaces does not.
+    static func join(_ first: String, _ second: String) -> String {
+        guard !first.isEmpty else { return second }
+        guard !second.isEmpty else { return first }
+        let needsSpace = first.last?.isASCII == true && second.first?.isASCII == true
+        return first + (needsSpace ? " " : "") + second
     }
 
     func stop() {

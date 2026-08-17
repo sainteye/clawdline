@@ -281,6 +281,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             .init(key: "⌘M", label: L.t.hintMascot),
             .init(key: "⌘J", label: L.t.hintOutput),
             .init(key: "⌘F", label: L.t.hintFullscreen),
+            .init(key: "⌘L", label: L.t.hintVoice),
             .init(key: "⌘R", label: L.t.hintOrder),
             .init(key: "⌘+", label: L.t.hintTextSize),
         ]
@@ -328,6 +329,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         textView.onToggleFullscreen = { [weak self] in self?.toggleFullscreen() }
         textView.onToggleOrder = { [weak self] in self?.toggleOutputOrder() }
         textView.onToggleKeys = { [weak self] in self?.toggleKeys() }
+        textView.onToggleVoice = { [weak self] in self?.toggleVoice() }
         textView.acceptDrops()
         container.onDrop = { [weak self] paths in self?.textView.insertPaths(paths) }
         container.onDragActive = { [weak self] on in self?.chrome?.highlighted = on }

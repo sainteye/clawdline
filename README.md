@@ -122,7 +122,7 @@ Press <kbd>⌥</kbd><kbd>Space</kbd> in iTerm2, type, press <kbd>Enter</kbd>.
 | <kbd>⌘</kbd><kbd>M</kbd> | browse / switch mascots |
 | <kbd>⌘</kbd><kbd>D</kbd> | make the mascot dance |
 | <kbd>⌘</kbd><kbd>/</kbd> | show the rest of the keys |
-| click the microphone | dictate instead of typing |
+| <kbd>⌘</kbd><kbd>L</kbd> or click the microphone | dictate instead of typing |
 | drag / <kbd>⌘</kbd><kbd>V</kbd> | drop a file or paste an image anywhere on the window |
 | <kbd>Esc</kbd> | close |
 
@@ -155,8 +155,10 @@ only thing this leaves behind, so the most recent few are kept and the rest are 
 
 ### Talk instead of type
 
-The microphone at the right of the box turns your voice into text in it. Press it again to stop;
-closing the panel stops it too. The rings around it follow the same audio being transcribed, so
+<kbd>⌘</kbd><kbd>L</kbd>, or the microphone at the right of the box, turns your voice into text
+in it. Press it again to stop; closing the panel stops it too. Pausing does not stop it — the
+recogniser settles a sentence at every pause and starts the next from nothing, so the sentences
+are stitched back together on this side rather than the second one replacing the first. The rings around it follow the same audio being transcribed, so
 a ring that will not move means the microphone is hearing nothing — a failure you would otherwise
 find out about by reading an empty box afterwards.
 

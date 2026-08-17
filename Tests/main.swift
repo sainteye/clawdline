@@ -683,6 +683,20 @@ group("the words dictation is told to expect") {
     check("the oldest is not", !capped.contains("term1"))
 }
 
+group("dictation across a pause") {
+    // The recogniser settles a sentence at a pause and starts the next from nothing, so the
+    // text it hands back is only ever the sentence in progress. Sticking them together is this
+    // side's job — get it wrong and the second thing you say deletes the first.
+    expect("sentences are kept in order",
+           Voice.join("先做 A", "再做 B"), "先做 A再做 B")
+    expect("latin gets the space it needs",
+           Voice.join("run make verify", "then commit"), "run make verify then commit")
+    expect("nothing before means nothing to join", Voice.join("", "第一句"), "第一句")
+    expect("nothing after leaves it alone", Voice.join("第一句", ""), "第一句")
+    expect("a boundary between scripts takes no space",
+           Voice.join("先跑 verify", "然後 commit"), "先跑 verify然後 commit")
+}
+
 group("files and images dropped on the bar") {
     // What gets sent is a path, because that is the whole handoff: Claude Code reads files
     // itself. So the one thing that must be right is that the path survives being written out.
