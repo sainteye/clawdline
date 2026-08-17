@@ -135,7 +135,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         panel.isMovableByWindowBackground = false
         panel.animationBehavior = .none
         // Follow the user across Spaces. Their windows are spread over several desktops; a prompt bar pinned to one is half-useless.
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        //
+        // Not .stationary, whatever the name suggests it would help with: that flag means "stay
+        // put during Exposé", and Show Desktop is Exposé. With it set, everything on screen slid
+        // away and the panel stayed behind, sitting on the wallpaper.
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.delegate = self
 
         container = DropTargetView(frame: NSRect(x: 0, y: 0, width: W, height: 140))
@@ -787,7 +791,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         p.ignoresMouseEvents = true
         p.hidesOnDeactivate = false
         p.animationBehavior = .none
-        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         let blur = NSVisualEffectView()
         // hudWindow rather than fullScreenUI: the heavier material erased everything behind
@@ -1373,8 +1377,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // The words you have typed at Claude Code are the words you would say to it.
         voice.vocabulary = Voice.vocabulary(
             from: Config.shared.history,
-            extras: [currentTarget.flatMap { projectCache[$0.id]?.name },
-                     currentTarget.flatMap { projectCache[$0.id]?.branch }].compactMap { $0 })
+            extras: Voice.alwaysExpected
+                + [currentTarget.flatMap { projectCache[$0.id]?.name },
+                   currentTarget.flatMap { projectCache[$0.id]?.branch }].compactMap { $0 })
         voice.toggle(locale: Self.voiceLocales())
     }
 

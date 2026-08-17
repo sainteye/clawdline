@@ -665,6 +665,13 @@ group("the words dictation is told to expect") {
     check("technical terms are kept", words.contains("webhook") && words.contains("commit"))
     check("long identifiers survive", words.contains("SFSpeechRecognizer"))
     check("what the caller supplied leads", words.first == "clawdline")
+
+    // The bar's own name is not a word in anybody's language model, and it is the likeliest
+    // thing to be said to it.
+    let always = Voice.vocabulary(from: [], extras: Voice.alwaysExpected)
+    check("the app's name is always expected", always.contains("Clawdline"))
+    check("so is what you are talking to", always.contains("Claude Code"))
+    check("a phrase survives as a phrase", always.contains { $0.contains(" ") })
     check("CJK is left out — the recogniser already has it",
           !words.contains { $0.contains("幫") })
     check("one-and-two letter noise is dropped", !words.contains("的"))

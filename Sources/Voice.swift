@@ -62,6 +62,12 @@ final class Voice {
         return nil
     }
 
+    /// Names this app cannot be expected to guess and you will certainly say.
+    ///
+    /// "Clawdline" is not a word in any language model's vocabulary, and it is the single most
+    /// likely thing to be said to a bar called Clawdline. The rest are what you are talking to.
+    static let alwaysExpected = ["Clawdline", "Claude", "Claude Code", "Clawd"]
+
     /// Words to tip the scales with, out of what you have already typed.
     ///
     /// Neither of Apple's speech APIs switches language mid-sentence — one recogniser, one
