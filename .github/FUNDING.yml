@@ -1,0 +1,13 @@
+# The Sponsor button on this repository.
+#
+# Nothing here is live yet: both lines are commented out on purpose, because a funding link
+# that points at an account which does not exist gives you a button that 404s, which is worse
+# than no button. Uncomment a line once that account is actually open.
+#
+# GitHub Sponsors — github.com/sponsors, needs identity and payout verification (Stripe).
+#   Takes a few days to approve. No platform fee.
+# github: [sainteye]
+#
+# Buy Me a Coffee — buymeacoffee.com, sign up and pick a page name. 5% fee.
+#   Change the name below if the page ends up called something else.
+# buy_me_a_coffee: sainteye

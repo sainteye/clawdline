@@ -14,6 +14,13 @@ Works with iTerm2 directly, and with every other terminal through tmux.
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](Sources)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#install)
 
+<!-- Sponsor badges. Left commented until the accounts exist: a badge that links to a page
+     which is not there is worse than no badge. See .github/FUNDING.yml for the same note.
+
+[![Sponsor](https://img.shields.io/badge/sponsor-%E2%99%A5-db61a2.svg)](https://github.com/sponsors/sainteye)
+[![Buy me a coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-ffdd00.svg?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sainteye)
+-->
+
 English · [繁體中文](README.zh-TW.md)
 
 <img src="docs/assets/demo.gif" width="760" alt="Press Option-Space, type, press Enter. The message lands in Claude Code.">
