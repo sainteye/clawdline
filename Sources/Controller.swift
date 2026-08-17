@@ -14,7 +14,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var mascot: MascotView!
     private var glow: GlowView!
     private var chevron: NSTextField!
-    private var micButton: NSButton!
+    private var micButton: MicButton!
     private let voice = Voice()
     /// What was in the box when dictation started. Each partial result replaces the dictated
     /// tail rather than being appended, or "hello" becomes "hellohello world".
@@ -179,15 +179,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         chevron.alignment = .center
         card.addSubview(chevron)
 
-        micButton = NSButton()
-        micButton.isBordered = false
-        micButton.bezelStyle = .regularSquare
-        micButton.imagePosition = .imageOnly
-        micButton.image = NSImage(systemSymbolName: "mic", accessibilityDescription: L.t.hintVoice)
-        micButton.contentTintColor = .tertiaryLabelColor
+        micButton = MicButton()
         micButton.toolTip = L.t.hintVoice
-        micButton.target = self
-        micButton.action = #selector(toggleVoice)
+        micButton.onClick = { [weak self] in self?.toggleVoice() }
         card.addSubview(micButton)
 
         textView = PromptTextView()
@@ -707,8 +701,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
         let tx = Style.padH + Style.chevronW + Style.chevronGap
         let micW: CGFloat = 26
-        micButton.frame = NSRect(x: W - Style.padH - micW, y: H - Style.inputPadV - 26,
-                                 width: micW, height: 26)
+        micButton.frame = NSRect(x: W - Style.padH - micW, y: H - Style.inputPadV - 28,
+                                 width: micW, height: 28)
         scroll.frame = NSRect(x: tx, y: H - inputH + Style.inputPadV,
                               width: W - tx - Style.padH - micW - 6,
                               height: inputH - Style.inputPadV * 2)
@@ -1349,7 +1343,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     /// Talk instead of type. Wired here rather than in the text view because the state it puts
     /// the bar into — listening, and on which machine — belongs to the whole card.
-    @objc private func toggleVoice() {
+    private func toggleVoice() {
         voiceBaseText = textView.resolvedText()
         voice.onText = { [weak self] text in
             guard let self else { return }
@@ -1363,22 +1357,22 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             guard let self else { return }
             switch state {
             case .idle:
-                self.micButton.image = NSImage(systemSymbolName: "mic",
-                                               accessibilityDescription: L.t.hintVoice)
-                self.micButton.contentTintColor = .tertiaryLabelColor
+                self.micButton.isListening = false
             case .listening(let onDevice):
-                self.micButton.image = NSImage(systemSymbolName: "mic.fill",
-                                               accessibilityDescription: L.t.hintVoice)
-                self.micButton.contentTintColor = Style.accent
+                self.micButton.isListening = true
                 self.setHint(L.t.voiceListening(onDevice: onDevice), warn: false)
             case .failed(let why):
-                self.micButton.image = NSImage(systemSymbolName: "mic.slash",
-                                               accessibilityDescription: L.t.hintVoice)
-                self.micButton.contentTintColor = .systemRed
+                self.micButton.isListening = false
                 self.setHint(why, warn: true)
             }
             self.relayout()
         }
+        voice.onLevel = { [weak self] level in self?.micButton.level = level }
+        // The words you have typed at Claude Code are the words you would say to it.
+        voice.vocabulary = Voice.vocabulary(
+            from: Config.shared.history,
+            extras: [currentTarget.flatMap { projectCache[$0.id]?.name },
+                     currentTarget.flatMap { projectCache[$0.id]?.branch }].compactMap { $0 })
         voice.toggle(locale: Self.voiceLocales())
     }
 

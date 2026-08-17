@@ -654,6 +654,35 @@ group("folding runs of tool calls") {
            Transcript.distinct(["Bash", "Read", "Bash", "Bash"]), ["Bash", "Read"])
 }
 
+group("the words dictation is told to expect") {
+    // Neither Apple speech API switches language mid-sentence, so mixed speech cannot be fixed
+    // by picking a better mode. What is available is a hundred phrases of bias — and the ones
+    // worth spending it on are the Latin words a Chinese recogniser has to guess at.
+    let history = ["幫我把 webhook 那條改掉", "run make verify then commit",
+                   "看一下 SFSpeechRecognizer 的 contextualStrings"]
+    let words = Voice.vocabulary(from: history, extras: ["clawdline", "main"])
+
+    check("technical terms are kept", words.contains("webhook") && words.contains("commit"))
+    check("long identifiers survive", words.contains("SFSpeechRecognizer"))
+    check("what the caller supplied leads", words.first == "clawdline")
+    check("CJK is left out — the recogniser already has it",
+          !words.contains { $0.contains("幫") })
+    check("one-and-two letter noise is dropped", !words.contains("的"))
+    expect("nothing repeats", words.count, Set(words.map { $0.lowercased() }).count)
+
+    // Backticks and commas come off, or the model is told to expect a word with punctuation in it.
+    expect("punctuation is trimmed",
+           Voice.vocabulary(from: ["use `git rebase`, then push."]).sorted(),
+           ["git", "push", "rebase", "then", "use"].sorted())
+
+    // A hundred is the documented ceiling, and newest wins because it is what you are doing now.
+    let many = (1...200).map { "term\($0)" }
+    let capped = Voice.vocabulary(from: many)
+    expect("the budget is respected", capped.count, 100)
+    check("the newest line is in it", capped.contains("term200"))
+    check("the oldest is not", !capped.contains("term1"))
+}
+
 group("files and images dropped on the bar") {
     // What gets sent is a path, because that is the whole handoff: Claude Code reads files
     // itself. So the one thing that must be right is that the path survives being written out.

@@ -187,6 +187,104 @@ final class KeyHintsView: NSView {
 
 // MARK: - Input field
 
+/// The microphone, and what it does while it is listening.
+///
+/// Rings that answer your voice rather than a spinner that runs on its own: a spinner says the
+/// app is busy, and what you actually want to know is whether it can hear you. The level comes
+/// from the same audio buffers being transcribed, so a ring that does not move means the
+/// microphone is picking up nothing — which is the failure you would otherwise discover by
+/// reading an empty box afterwards.
+final class MicButton: NSView {
+    var onClick: (() -> Void)?
+    var isListening = false {
+        didSet {
+            guard oldValue != isListening else { return }
+            isListening ? start() : stop()
+            needsDisplay = true
+        }
+    }
+
+    /// Newest reading. Smoothed towards on each frame, so the rings breathe instead of flicker.
+    var level: Float = 0
+    private var shown: CGFloat = 0
+    private var phase: CGFloat = 0
+    private var timer: Timer?
+    private var hovering = false
+    private var tracking: NSTrackingArea?
+
+    override func mouseDown(with event: NSEvent) { onClick?() }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = tracking { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways],
+                               owner: self, userInfo: nil)
+        addTrackingArea(t)
+        tracking = t
+    }
+    override func mouseEntered(with event: NSEvent) { hovering = true; needsDisplay = true }
+    override func mouseExited(with event: NSEvent) { hovering = false; needsDisplay = true }
+
+    private func start() {
+        guard timer == nil else { return }
+        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.shown += (CGFloat(self.level) - self.shown) * 0.25
+            self.phase += 0.045
+            self.needsDisplay = true
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
+
+    private func stop() {
+        timer?.invalidate()
+        timer = nil
+        shown = 0
+        phase = 0
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let centre = NSPoint(x: bounds.midX, y: bounds.midY)
+
+        if isListening {
+            // Two rings a half-cycle apart, so there is always one on its way out.
+            for i in 0..<2 {
+                let p = (phase + CGFloat(i) * 0.5).truncatingRemainder(dividingBy: 1)
+                let reach = 7 + (7 + shown * 9) * p
+                let alpha = (1 - p) * (0.16 + shown * 0.5)
+                Style.accent.withAlphaComponent(alpha).setStroke()
+                let ring = NSBezierPath(ovalIn: NSRect(x: centre.x - reach, y: centre.y - reach,
+                                                       width: reach * 2, height: reach * 2))
+                ring.lineWidth = 1.5
+                ring.stroke()
+            }
+            // A disc that swells with your voice, so silence is visible as stillness.
+            let r = 6 + shown * 3.5
+            Style.accent.withAlphaComponent(0.16 + shown * 0.24).setFill()
+            NSBezierPath(ovalIn: NSRect(x: centre.x - r, y: centre.y - r,
+                                        width: r * 2, height: r * 2)).fill()
+        }
+
+        let name = isListening ? "mic.fill" : "mic"
+        guard let glyph = NSImage(systemSymbolName: name, accessibilityDescription: L.t.hintVoice)
+        else { return }
+        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+        let tinted = glyph.withSymbolConfiguration(config) ?? glyph
+        let size = tinted.size
+        let box = NSRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2,
+                         width: size.width, height: size.height)
+        let colour: NSColor = isListening ? Style.accent
+            : (hovering ? .secondaryLabelColor : .tertiaryLabelColor)
+        colour.set()
+        tinted.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1)
+        // SF Symbols are template images; drawing them plain ignores the colour, so tint on top.
+        colour.setFill()
+        box.fill(using: .sourceAtop)
+    }
+}
+
 /// The whole window as a drop target.
 ///
 /// Dropping only onto the input box means aiming at a line of text, and by the time the pane is

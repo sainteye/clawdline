@@ -29,6 +29,10 @@ final class Voice {
     var onState: ((State) -> Void)?
     /// Called with the text so far, replacing whatever the last call said.
     var onText: ((String) -> Void)?
+    /// Loudness, 0…1, roughly once per audio buffer. For showing that it is hearing you.
+    var onLevel: ((Float) -> Void)?
+    /// Words to bias recognition towards. See `vocabulary(from:extras:)`.
+    var vocabulary: [String] = []
 
     private let engine = AVAudioEngine()
     private var recogniser: SFSpeechRecognizer?
@@ -49,6 +53,40 @@ final class Voice {
             return (locale, r.supportsOnDeviceRecognition)
         }
         return nil
+    }
+
+    /// Words to tip the scales with, out of what you have already typed.
+    ///
+    /// Neither of Apple's speech APIs switches language mid-sentence — one recogniser, one
+    /// locale — so "說一句中文然後 commit 一下" is not a mode you can turn on. What is available
+    /// is `contextualStrings`: a hundred phrases the model is told to expect. Latin words are
+    /// exactly the ones a Chinese recogniser guesses at, so those are what get sent.
+    ///
+    /// Drawn from your own prompt history, because the words you type at Claude Code are the
+    /// words you would say to it. It gets better the more you use it, and it needs no list to
+    /// maintain — a vocabulary you have to curate is one that goes stale the week you write it.
+    static func vocabulary(from history: [String], extras: [String] = [], limit: Int = 100) -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+
+        func add(_ word: String) {
+            let w = word.trimmingCharacters(in: CharacterSet(charactersIn: "`'\"(),.:;!?[]{}"))
+            guard w.count > 2, w.count < 40, !seen.contains(w.lowercased()) else { return }
+            // Latin only. A Chinese term the recogniser already knows gains nothing from being
+            // listed, and the budget is a hundred.
+            guard w.unicodeScalars.allSatisfy({ $0.isASCII }) else { return }
+            guard w.rangeOfCharacter(from: .letters) != nil else { return }
+            seen.insert(w.lowercased())
+            out.append(w)
+        }
+
+        extras.forEach(add)
+        // Newest first: what you said an hour ago beats what you said last month.
+        for line in history.reversed() {
+            for word in line.split(whereSeparator: { $0.isWhitespace }) { add(String(word)) }
+            if out.count >= limit { break }
+        }
+        return Array(out.prefix(limit))
     }
 
     func toggle(locale candidates: [String]) {
@@ -84,12 +122,21 @@ final class Voice {
         // Ask for local when local exists. Left false, the framework decides for itself, and
         // an installed language would still sometimes go out over the network.
         request.requiresOnDeviceRecognition = onDevice
+        request.contextualStrings = vocabulary
+        request.addsPunctuation = true
         self.request = request
 
         let input = engine.inputNode
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { buffer, _ in
+        input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { [weak self] buffer, _ in
             request.append(buffer)
+            guard let channel = buffer.floatChannelData?[0] else { return }
+            var sum: Float = 0
+            for i in 0..<Int(buffer.frameLength) { sum += channel[i] * channel[i] }
+            let rms = sqrt(sum / Float(max(1, buffer.frameLength)))
+            // Loudness is logarithmic; a linear meter sits near zero and then jumps.
+            let level = min(1, max(0, (20 * log10(max(rms, 1e-7)) + 50) / 50))
+            DispatchQueue.main.async { self?.onLevel?(level) }
         }
         engine.prepare()
         do {
