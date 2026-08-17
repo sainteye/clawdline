@@ -4,6 +4,9 @@ build/
 docs/assets/*.mp4
 docs/assets/frames/
 
+# serena's index and its notes about this checkout, written by whichever agent is working here
+.serena/
+
 # swift build, which is only ever run to give an editor something to index
 .build/
 .swiftpm/
