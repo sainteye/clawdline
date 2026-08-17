@@ -479,6 +479,9 @@ tmux 兩個代價都不必付，結果一樣。
 - **單向。** Claude 的回覆還是在終端機裡。不過那半本來就是往上捲的；
   這個工具修的是被釘在左下角的那一半。
 - **非 iTerm2 的終端機需要 tmux**，見上一節。
+- **Apple silicon、macOS 13 以上。** build 只出 arm64，所以下載回來的 release
+  在 Intel Mac 上起不來。在那種機器上自己 build 只要改 `build.sh` 的 target 一個字，
+  但沒測過——這裡沒有 Intel Mac 可以拿來測錯。
 
 ## 出事的時候
 

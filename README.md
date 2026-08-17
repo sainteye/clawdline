@@ -551,6 +551,9 @@ result for neither cost.
 - **One direction.** Claude's replies still live in the terminal. That half scrolls upward
   anyway; this fixes the half that was nailed to the bottom-left corner.
 - **tmux is required for non-iTerm2 terminals**, per the section above.
+- **Apple silicon, macOS 13 or newer.** The build is arm64 only, so a downloaded release will
+  not start on an Intel Mac. Building from source on one is a one-word change to `build.sh`'s
+  target, and untested — nobody here has an Intel Mac to be wrong about it on.
 
 ## Troubleshooting
 
