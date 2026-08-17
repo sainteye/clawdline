@@ -20,22 +20,66 @@ English · [繁體中文](README.zh-TW.md)
 
 <img src="docs/assets/demo.gif" width="760" alt="Press Option-Space, type, press Enter. The message lands in Claude Code.">
 
-<img src="docs/assets/transcript.png" width="760" alt="The same bar with the transcript pane open: a heading, a bordered table and a code block, laid out rather than scraped.">
-
 </div>
 
 ---
 
-## What it does
+## What it is for
 
-- **Type where you are looking.** A bar at eye level, not in the corner of a full-screen terminal.
-- **Read the session back** with <kbd>⌘</kbd><kbd>J</kbd> — the conversation, laid out, with runs
-  of tool calls folded away and a line saying what it is doing right now.
-- **Say which project**, not just which task: the repository, its branch, what is uncommitted, a
-  deploy in flight, a backlog — and its own icon and colour.
-- **Drop in files and images.** They appear as thumbnails; what gets sent is the path.
-- **Talk instead of typing**, on this Mac when the language is installed.
-- **Swap the mascot** for one you drew, without forking anything.
+**Claude Code asks you to look at the bottom-left corner of a full-screen terminal a few hundred
+times a day.** Clawdline is the second place to type — one that appears where your eyes already
+are, sends into the session you were last in, and gives focus straight back. Everything else here
+follows from that one idea: if you are not going to look at the terminal, the bar has to tell you
+what the terminal would have.
+
+<table>
+<tr><td width="50%">
+
+**Read the session back** — <kbd>⌘</kbd><kbd>J</kbd>
+
+The conversation, laid out: headings, tables with borders, code. Runs of tool calls fold to one
+line. A live line says what it is doing right now.
+
+</td><td width="50%">
+
+**Say it instead of typing it** — <kbd>⌘</kbd><kbd>L</kbd>
+
+Words appear as you speak. Stop, and Whisper reads the same audio back and replaces them — one
+sentence in two languages, which no live recogniser will do.
+
+</td></tr>
+<tr><td>
+
+**Know which project you are in**
+
+Not just which task: the repository, its branch, what is uncommitted, a deploy in flight, a
+backlog — with the project's own icon and colour.
+
+</td><td>
+
+**Drop in files and images**
+
+They land as thumbnails. What gets sent is the path, because that is what Claude Code can read.
+
+</td></tr>
+</table>
+
+<div align="center">
+
+<img src="docs/assets/voice.gif" width="760" alt="Speaking into the bar: the words appear live, then Whisper reads the recording back and replaces them.">
+
+<img src="docs/assets/transcript.png" width="760" alt="The transcript pane: a heading, a bordered table and a code block, laid out rather than scraped.">
+
+</div>
+
+## Contents
+
+- [Install](#install) · [Use it](#use-it)
+- **Reading** — [the transcript pane](#reading-a-session-back) · [which project](#which-project-not-just-which-task)
+- **Writing** — [dictation](#talk-instead-of-type) · [files and images](#dropping-in-a-file-or-an-image) · [which tab it sends to](#which-tab-does-it-send-to)
+- **Making it yours** — [mascots](#bring-your-own-mascot) · [config](#config) · [other terminals](#other-terminals-run-claude-code-in-tmux)
+- **Under it** — [how it works](#how-it-works) · [permissions and privacy](#permissions-and-privacy) · [limitations](#limitations) · [troubleshooting](#troubleshooting)
+- **Going further** — [Whisper for mixed languages](docs/whisper.md) · [project status files](docs/project-status.md) · [mascot format](docs/mascots.md)
 
 ## Why
 
