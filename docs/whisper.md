@@ -82,9 +82,20 @@ transcription. So the first sentence you dictate in a session is slow and the re
 is worth knowing before you conclude it is broken.
 
 Bigger is not automatically better for a given sentence, and the difference between them is
-mostly proper nouns. Whichever you pick, Clawdline passes it the same list of words it gives
-Apple's recogniser — your own prompt history — so the terms you use survive being said inside
-another language.
+mostly proper nouns.
+
+**Clawdline does not send Whisper a word list.** Apple's recogniser gets one — `contextualStrings`
+is a list field, and it costs nothing there. Whisper's `--prompt` is not a list field: it is a
+sample of the text that came before, and the transcript imitates it. Measured on one clip,
+changing only the prompt:
+
+| prompt | transcript |
+|---|---|
+| a short punctuated sentence | 更有結構化。我們需要有目錄…在哪裡。 |
+| that sentence plus twenty terms | 更有結構化我們需要有目錄…在哪裡 |
+
+Every punctuation mark, gone. Punctuation is worth more here than a nudge towards spellings the
+model is already good at, so the prompt is two ordinary sentences and nothing else.
 
 ### Config
 

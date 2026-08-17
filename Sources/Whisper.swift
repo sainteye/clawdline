@@ -103,8 +103,8 @@ enum Whisper {
             // Punctuated on purpose: the initial prompt is a sample of what the output should
             // look like, so a seed with commas and full stops in it produces them.
             return ("zh", traditional
-                ? "以下是繁體中文的內容，句子之間會有標點符號：逗號、句號。問號呢？也會有。"
-                : "以下是简体中文的内容，句子之间会有标点符号：逗号、句号。问号呢？也会有。")
+                ? "好的，我知道了。那就先這樣，等一下再說。"
+                : "好的，我知道了。那就先这样，等一下再说。")
         }
         return (String(lower.prefix(2)), nil)
     }
@@ -134,12 +134,19 @@ enum Whisper {
         // whisper takes a "previous context" string, which is the same lever as Apple's
         // contextual strings — the words to expect, in a sentence it can read. The script seed
         // rides along in front of it.
-        // Fewer words, and never as a bare comma-separated list: the prompt is a sample of the
-        // text that came before, so a list of terms teaches it to produce a list of terms.
-        let terms = vocabulary.prefix(20).joined(separator: " ")
-        let prompt = [language.seed, terms.isEmpty ? nil : terms]
-            .compactMap { $0 }.joined(separator: " ")
-        if !prompt.isEmpty { args += ["--prompt", prompt] }
+        // The seed, and nothing else. **No vocabulary.**
+        //
+        // Measured on one clip, changing only the prompt:
+        //   seed alone                     → 更有結構化。我們需要有目錄…在哪裡。   punctuated
+        //   seed + twenty bare words       → 更有結構化我們需要有目錄…在哪裡       none at all
+        //   seed + those words in a sentence → still none, once the list got long
+        //
+        // The prompt is a sample of the text that came before, so a prompt that is mostly a word
+        // list produces a transcript with no punctuation in it — and punctuation is worth more
+        // here than a nudge towards spellings the model is already good at. Apple's recogniser
+        // keeps the vocabulary: `contextualStrings` is a proper list field, not a writing sample,
+        // so there it costs nothing.
+        if let seed = language.seed { args += ["--prompt", seed] }
         guard let out = run(bin, args) else { return nil }
         let text = out
             .split(separator: "\n")

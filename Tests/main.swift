@@ -801,12 +801,17 @@ group("whisper as an optional engine") {
 
     // Naming a language and naming a script are two different jobs. `-l zh` does the first;
     // Whisper writes Simplified regardless unless the initial prompt is in the script you want.
-    expect("Traditional is asked for by seeding the prompt",
-           Whisper.language(for: "zh-TW").seed?.contains("繁體"), true)
-    expect("and Hong Kong counts as Traditional",
-           Whisper.language(for: "zh-HK").seed?.contains("繁體"), true)
-    expect("Simplified gets its own seed",
-           Whisper.language(for: "zh-CN").seed?.contains("简体"), true)
+    // What matters about the seed is not what it says, it is what shape it is. Measured: a
+    // prompt that does not end in punctuated prose produces a transcript with no punctuation.
+    let tw = Whisper.language(for: "zh-TW").seed
+    let cn = Whisper.language(for: "zh-CN").seed
+    check("the seed ends in a full stop", tw?.hasSuffix("。") == true)
+    check("it has commas in it too", tw?.contains("，") == true)
+    check("the two scripts get different seeds", tw != cn)
+    expect("and they are the same sentence in two scripts",
+           cn.map(Whisper.toTraditional), tw)
+    check("Hong Kong gets the Traditional one",
+          Whisper.language(for: "zh-HK").seed == tw)
     expect("both are still the same language to whisper",
            Whisper.language(for: "zh-TW").code, "zh")
     expect("a plain language needs no seed", Whisper.language(for: "en-US").seed, nil)
