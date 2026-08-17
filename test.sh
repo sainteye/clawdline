@@ -21,6 +21,11 @@ if [ -n "$offenders" ]; then
   exit 1
 fi
 
+# The compatibility page is generated from the table the app uses, so the two cannot disagree
+# — but only if something checks. A release added to Compat.swift and not regenerated here is a
+# page claiming support for a version that was never tried.
+tools/build-compatibility.py --check
+
 BIN="${TMPDIR:-/tmp}/clawdline-tests"
 
 swiftc \

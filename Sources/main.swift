@@ -106,6 +106,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if case .ready = status {} else { dictation.target = self }
         menu.addItem(dictation)
 
+        // Only when the Claude Code in front of us is older than the one this was built against.
+        // Newer is the normal state — it updates itself and this does not — and a line that is
+        // there every week is one nobody reads on the week it matters. See Sources/Compat.swift.
+        if let note = Compat.note(installed: Compat.installedClaudeVersion()) {
+            let item = NSMenuItem(title: note, action: #selector(openCompatibility),
+                                  keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+
         // Browsing beats editing a config file: the submenu is how you find out what you have.
         let mascot = NSMenuItem(title: L.t.menuMascot, action: nil, keyEquivalent: "")
         mascot.tag = 200
@@ -220,6 +230,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openWhisperDocs() {
         NSWorkspace.shared.open(URL(string: "https://github.com/sainteye/clawdline/blob/main/docs/whisper.md")!)
+    }
+
+    @objc private func openCompatibility() {
+        NSWorkspace.shared.open(URL(string: "https://github.com/sainteye/clawdline/blob/main/docs/compatibility.md")!)
     }
 
     @objc private func reloadConfig() {

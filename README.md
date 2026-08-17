@@ -82,7 +82,7 @@ bar has to tell you what the terminal would have.**
 - **Writing** — [dictation](#talk-instead-of-type) · [files and images](#dropping-in-a-file-or-an-image) · [which tab it sends to](#which-tab-does-it-send-to)
 - **Making it yours** — [mascots](#bring-your-own-mascot) · [config](#config) · [other terminals](#other-terminals-run-claude-code-in-tmux)
 - **Under it** — [how it works](#how-it-works) · [permissions and privacy](#permissions-and-privacy) · [limitations](#limitations) · [troubleshooting](#troubleshooting)
-- **Going further** — [Whisper for mixed languages](docs/whisper.md) · [project status files](docs/project-status.md) · [mascot format](docs/mascots.md)
+- **Going further** — [Whisper for mixed languages](docs/whisper.md) · [project status files](docs/project-status.md) · [mascot format](docs/mascots.md) · [versions](docs/compatibility.md)
 
 ## Why
 
@@ -559,7 +559,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 744 checks, a couple of seconds
+./test.sh     # 761 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code — see Package.swift
 ```

@@ -35,6 +35,19 @@ func group(_ title: String, _ body: () -> Void) {
     print("  \(mark) \(title)")
 }
 
+/// What build.sh stamps into the bundle, read out of build.sh itself — the tests have no bundle
+/// to ask, and a version that lives in two places is a version that disagrees with itself.
+func appVersion() -> String {
+    let script = (try? String(contentsOfFile: "build.sh", encoding: .utf8)) ?? ""
+    guard let line = script.split(separator: "\n").first(where: {
+        $0.contains("CFBundleShortVersionString")
+    }) else { return "" }
+    guard let open = line.range(of: "<string>"),
+          let close = line.range(of: "</string>", range: open.upperBound..<line.endIndex)
+    else { return "" }
+    return String(line[open.upperBound..<close.lowerBound])
+}
+
 func decodePack(_ json: String) -> MascotPack? {
     try? JSONDecoder().decode(MascotPack.self, from: Data(json.utf8))
 }
@@ -1158,6 +1171,42 @@ group("words that are not settled yet are not fully there") {
     check("it is the same colour, only thinner",
           abs(thin.redComponent - solidRGB.redComponent) < 0.01
           && abs(thin.blueComponent - solidRGB.blueComponent) < 0.01)
+}
+
+group("which versions this was run against") {
+    expect("the version comes out of what claude prints",
+           Compat.version(from: "2.1.233 (Claude Code)\n"), "2.1.233")
+    expect("with no trimming needed", Compat.version(from: "2.1.233"), "2.1.233")
+    check("and nothing comes out of something that is not one",
+          Compat.version(from: "claude: command not found") == nil)
+    check("or of nothing at all", Compat.version(from: "") == nil)
+
+    expect("a patch behind is behind", Compat.compare("2.1.232", "2.1.233"), .orderedAscending)
+    expect("a minor ahead is ahead", Compat.compare("2.2.0", "2.1.233"), .orderedDescending)
+    expect("equal is equal", Compat.compare("2.1.233", "2.1.233"), .orderedSame)
+    // "2.1" against "2.1.1" the wrong way round is the classic: string comparison says 2.1.9
+    // is newer than 2.1.10, and every number after the first would be read as one digit.
+    expect("a missing part counts as zero", Compat.compare("2.1", "2.1.0"), .orderedSame)
+    expect("and ten is after nine", Compat.compare("2.1.9", "2.1.10"), .orderedAscending)
+
+    // Only older gets a word. Newer is the normal state of the world — Claude Code updates
+    // itself and this does not — and a warning that fires every week is one nobody is reading
+    // by the time it means something.
+    check("older says so", Compat.note(installed: "2.0.1", builtAgainst: "2.1.233") != nil)
+    check("newer says nothing", Compat.note(installed: "2.9.0", builtAgainst: "2.1.233") == nil)
+    check("the same says nothing", Compat.note(installed: "2.1.233", builtAgainst: "2.1.233") == nil)
+    check("not knowing says nothing", Compat.note(installed: nil, builtAgainst: "2.1.233") == nil)
+    // Every release before this was written has "not recorded" in that column rather than a
+    // guess, and a table with no real version in it must not start warning about everything.
+    check("and neither does a table with nothing recorded in it",
+          Compat.note(installed: "2.0.0", builtAgainst: "") == nil)
+
+    check("the table names a version somebody checked", !Compat.builtAgainst.isEmpty)
+    check("every dependency says what you would see if it broke",
+          Compat.dependencies.allSatisfy { !$0.symptom.isEmpty && !$0.where_.isEmpty })
+    check("and there is a release for the version being built",
+          Compat.releases.contains { $0.clawdline == appVersion() },
+          "Info.plist says \(appVersion()), the table's newest is \(Compat.releases[0].clawdline)")
 }
 
 group("an image goes over as an image, not as a path") {
