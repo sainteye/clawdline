@@ -1,9 +1,10 @@
 # The Sponsor button on this repository.
 #
-# GitHub Sponsors is not available here, so Buy Me a Coffee is the one link.
+# Ko-fi, because the two obvious alternatives cannot pay a maintainer in Taiwan: GitHub Sponsors
+# and Buy Me a Coffee both settle through Stripe Connect, and Stripe does not do payouts there.
+# Ko-fi can use PayPal instead, which does reach Taiwan for cross-border payments.
 #
-# Still commented out: as of writing, https://buymeacoffee.com/threath answers 404 to a plain
-# request, which means the page is not public yet. A funding button that leads nowhere is worse
-# than no button — it looks like someone is collecting, and nothing happens when you press it.
-# Uncomment once the page loads for a logged-out visitor.
-# buy_me_a_coffee: threath
+# Still commented out until the page exists and loads for a logged-out visitor. A funding button
+# that leads nowhere is worse than no button — it looks like someone is collecting, and nothing
+# happens when you press it.
+# ko_fi: threath

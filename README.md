@@ -14,10 +14,9 @@ Works with iTerm2 directly, and with every other terminal through tmux.
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](Sources)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#install)
 
-<!-- Uncomment once buymeacoffee.com/threath is public — it 404s to a logged-out request
-     today, and a badge that leads nowhere is worse than no badge.
+<!-- Uncomment once ko-fi.com/threath is live. A badge that leads nowhere is worse than none.
 
-[![Buy me a coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-ffdd00.svg?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/threath)
+[![Ko-fi](https://img.shields.io/badge/ko--fi-support-ff5e5b.svg?logo=ko-fi&logoColor=white)](https://ko-fi.com/threath)
 -->
 
 English · [繁體中文](README.zh-TW.md)
