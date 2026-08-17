@@ -1101,6 +1101,50 @@ group("words that are not settled yet are not fully there") {
           && abs(thin.blueComponent - solidRGB.blueComponent) < 0.01)
 }
 
+group("editing the config while the app is running") {
+    // The app rewrites this file whenever anything moves, and it used to write everything it
+    // held in memory — so an edit made while it was running disappeared at an unpredictable
+    // later moment. Nothing about that looks like a bug from the outside: the file is simply
+    // the way it was.
+    let known: [String: Any] = ["width": 720.0, "mascot": "clawd", "hotkey": "option+space"]
+
+    // They edited width; we did not touch it.
+    var out = Config.merged(mine: ["width": 720.0, "mascot": "clawd", "hotkey": "option+space"],
+                            known: known,
+                            onDisk: ["width": 900.0, "mascot": "clawd", "hotkey": "option+space"])
+    expect("a key only they changed keeps their value", out["width"] as? Double, 900.0)
+
+    // We changed the mascot (⌘M); they edited width in the meantime. Both survive.
+    out = Config.merged(mine: ["width": 720.0, "mascot": "mochi", "hotkey": "option+space"],
+                        known: known,
+                        onDisk: ["width": 900.0, "mascot": "clawd", "hotkey": "option+space"])
+    expect("a key only we changed keeps ours", out["mascot"] as? String, "mochi")
+    expect("and theirs is still there too", out["width"] as? Double, 900.0)
+
+    // Both changed the same key. Ours wins, because somebody pressed something.
+    out = Config.merged(mine: ["mascot": "mochi"], known: ["mascot": "clawd"],
+                        onDisk: ["mascot": "pixel"])
+    expect("both changed it, the app wins", out["mascot"] as? String, "mochi")
+
+    // A setting a newer version wrote must survive being opened by an older one, or downgrading
+    // once quietly deletes it.
+    out = Config.merged(mine: ["width": 720.0], known: ["width": 720.0],
+                        onDisk: ["width": 720.0, "something_new": "keep me"])
+    expect("a key we have never heard of is left alone", out["something_new"] as? String, "keep me")
+
+    // A file that is not there yet is not an edit.
+    out = Config.merged(mine: ["width": 720.0, "mascot": "clawd"], known: [:], onDisk: [:])
+    expect("with no file, everything we hold is written", out.count, 2)
+
+    // Booleans and arrays have to compare as themselves, not as "some object".
+    out = Config.merged(mine: ["reopen_on_return": false, "history": ["a", "b"]],
+                        known: ["reopen_on_return": true, "history": ["a"]],
+                        onDisk: ["reopen_on_return": true, "history": ["a"]])
+    expect("a flag we turned off stays off", out["reopen_on_return"] as? Bool, false)
+    expect("a list we appended to keeps the new entry",
+           (out["history"] as? [String])?.count, 2)
+}
+
 group("paths somebody wrote in a config file") {
     // A blank means "use your own default", not "the root directory" — and the difference only
     // shows up as nothing being found, which is a normal state for every one of these files.

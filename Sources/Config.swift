@@ -124,10 +124,13 @@ final class Config {
         if let v = obj["whisper_model"] as? String { whisperModel = v }
         if let v = obj["last_target_id"] as? String { lastTargetID = v }
         if let v = obj["history"] as? [String] { history = v }
+        // What the file said, so a later save can tell an edit of ours from an edit of theirs.
+        known = obj
     }
 
-    func save() {
-        let obj: [String: Any] = [
+    /// Everything this object holds, as it would be written.
+    private var serialised: [String: Any] {
+        var obj: [String: Any] = [
             "y_fraction": Double(yFraction),
             "width": Double(width),
             "hotkey": hotKey,
@@ -151,12 +154,70 @@ final class Config {
             "voice_language": voiceLanguage,
             "whisper_binary": whisperBinary,
             "whisper_model": whisperModel,
-            "last_target_id": lastTargetID as Any,
             "history": Array(history.suffix(60)),
         ]
+        // Only when there is one. A Swift Optional in this dictionary is not a JSON value, and
+        // JSONSerialization throws on it — which `try?` then swallowed, so on a fresh install
+        // nothing was saved at all until a target had been picked.
+        if let id = lastTargetID { obj["last_target_id"] = id }
+        return obj
+    }
+
+    /// What was on disk when we last read or wrote it. The reference point for "did we change
+    /// this, or did they?"
+    private var known: [String: Any] = [:]
+
+    /// Keep what somebody edited by hand, keep what the app changed, and do not make them race.
+    ///
+    /// The app rewrites this file whenever anything moves — a prompt goes into the history, ⌘+
+    /// changes the text size — and it used to write everything it held in memory. So editing
+    /// the file while the app was running lost the edit, silently and at an unpredictable
+    /// moment. "Quit first" was the documented answer, which is another way of saying the
+    /// feature did not work.
+    ///
+    /// A key the app has not touched since it read the file is the file's to answer. A key the
+    /// app has changed is the app's. Keys it does not know about are passed through untouched,
+    /// so a setting from a newer version survives being opened by an older one.
+    ///
+    /// Both changed the same key: the app wins. It changed it because somebody pressed
+    /// something, and that is the more recent of the two intentions we can see.
+    static func merged(mine: [String: Any], known: [String: Any],
+                       onDisk: [String: Any]) -> [String: Any] {
+        var out = onDisk
+        for (key, value) in mine where !equal(value, known[key]) { out[key] = value }
+        for (key, value) in mine where out[key] == nil { out[key] = value }
+        return out
+    }
+
+    private static func equal(_ a: Any?, _ b: Any?) -> Bool {
+        switch (a, b) {
+        case (nil, nil): return true
+        case (nil, _), (_, nil): return false
+        default: return (a as? NSObject)?.isEqual(b as? NSObject) ?? false
+        }
+    }
+
+    func save() {
+        let mine = serialised
+        let onDisk = (try? Data(contentsOf: file))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        let obj = Self.merged(mine: mine, known: known, onDisk: onDisk)
+
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]) else { return }
-        try? data.write(to: file)
+        guard let data = try? JSONSerialization.data(withJSONObject: obj,
+                                                     options: [.prettyPrinted, .sortedKeys])
+        else {
+            Log.write("config: could not serialise, nothing written")
+            return
+        }
+        do {
+            try data.write(to: file)
+            known = obj
+        } catch {
+            // Worth a line: everything above this is best-effort, and a config that silently
+            // stops persisting looks exactly like one that is being ignored.
+            Log.write("config: could not write — \(error.localizedDescription)")
+        }
     }
 
     var fileURL: URL { file }

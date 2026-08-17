@@ -423,7 +423,9 @@ is that **the terminal never has to come to the front** — which is the entire 
 
 ## Config
 
-`~/.config/clawdline/config.json`. Menu bar ✳ → **Reload config** applies changes.
+`~/.config/clawdline/config.json`. Menu bar ✳ → **Reload config** applies changes. Editing it
+while the app is running is fine: it writes back only what it changed itself, and leaves the rest
+of the file — including settings from a version that knew about more of them — alone.
 
 ```jsonc
 {
@@ -543,7 +545,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 698 checks, a couple of seconds
+./test.sh     # 706 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code — see Package.swift
 ```

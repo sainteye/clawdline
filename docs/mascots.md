@@ -182,8 +182,9 @@ open "clawdline://snapshot?path=/tmp/full.png&output=1&full=1&transcript=$T"   #
 ```
 
 Set `"language": "en"` in the config first, or the chrome comes out in whatever language you
-run in. Quit the app before editing that file — it owns it, and it writes the whole thing back
-from memory when anything else changes.
+run in. You can edit that file while the app is running — it keeps what it did not change — but
+choose **Reload config** from the menu bar afterwards, or it will go on drawing with what it read
+at launch.
 
 ---
 
