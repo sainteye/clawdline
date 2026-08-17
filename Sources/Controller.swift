@@ -14,6 +14,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var mascot: MascotView!
     private var glow: GlowView!
     private var chevron: NSTextField!
+    private var micButton: NSButton!
+    private let voice = Voice()
+    /// What was in the box when dictation started. Each partial result replaces the dictated
+    /// tail rather than being appended, or "hello" becomes "hellohello world".
+    private var voiceBaseText = ""
     private var scroll: NSScrollView!
     private var textView: PromptTextView!
     private var hintLine: NSView!
@@ -173,6 +178,17 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         chevron.textColor = Style.accent
         chevron.alignment = .center
         card.addSubview(chevron)
+
+        micButton = NSButton()
+        micButton.isBordered = false
+        micButton.bezelStyle = .regularSquare
+        micButton.imagePosition = .imageOnly
+        micButton.image = NSImage(systemSymbolName: "mic", accessibilityDescription: L.t.hintVoice)
+        micButton.contentTintColor = .tertiaryLabelColor
+        micButton.toolTip = L.t.hintVoice
+        micButton.target = self
+        micButton.action = #selector(toggleVoice)
+        card.addSubview(micButton)
 
         textView = PromptTextView()
         textView.minSize = NSSize(width: 0, height: 0)
@@ -426,6 +442,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // the panel by hand it would let itself back in.
         if returnFocus { hiddenByAppSwitch = false }
         dismissing = true
+        voice.stop()        // a microphone left open behind a hidden window is not acceptable
         resizeTimer?.invalidate()
         resizeTimer = nil
         hideBackdrop()
@@ -689,8 +706,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         chevron.frame = NSRect(x: Style.padH, y: H - Style.inputPadV - 25, width: Style.chevronW, height: 24)
 
         let tx = Style.padH + Style.chevronW + Style.chevronGap
+        let micW: CGFloat = 26
+        micButton.frame = NSRect(x: W - Style.padH - micW, y: H - Style.inputPadV - 26,
+                                 width: micW, height: 26)
         scroll.frame = NSRect(x: tx, y: H - inputH + Style.inputPadV,
-                              width: W - tx - Style.padH, height: inputH - Style.inputPadV * 2)
+                              width: W - tx - Style.padH - micW - 6,
+                              height: inputH - Style.inputPadV * 2)
 
         hintLine.frame = NSRect(x: 0, y: Style.hintHeight, width: W, height: 1)
 
@@ -1323,6 +1344,50 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
             }
             s.append(NSAttributedString(string: h.label, attributes: attrs))
+        }
+    }
+
+    /// Talk instead of type. Wired here rather than in the text view because the state it puts
+    /// the bar into — listening, and on which machine — belongs to the whole card.
+    @objc private func toggleVoice() {
+        voiceBaseText = textView.resolvedText()
+        voice.onText = { [weak self] text in
+            guard let self else { return }
+            let joiner = self.voiceBaseText.isEmpty
+                || self.voiceBaseText.hasSuffix(" ") ? "" : " "
+            self.textView.setPlainText(self.voiceBaseText + joiner + text)
+            self.textView.setSelectedRange(NSRange(location: self.textView.string.count, length: 0))
+            self.relayout()
+        }
+        voice.onState = { [weak self] state in
+            guard let self else { return }
+            switch state {
+            case .idle:
+                self.micButton.image = NSImage(systemSymbolName: "mic",
+                                               accessibilityDescription: L.t.hintVoice)
+                self.micButton.contentTintColor = .tertiaryLabelColor
+            case .listening(let onDevice):
+                self.micButton.image = NSImage(systemSymbolName: "mic.fill",
+                                               accessibilityDescription: L.t.hintVoice)
+                self.micButton.contentTintColor = Style.accent
+                self.setHint(L.t.voiceListening(onDevice: onDevice), warn: false)
+            case .failed(let why):
+                self.micButton.image = NSImage(systemSymbolName: "mic.slash",
+                                               accessibilityDescription: L.t.hintVoice)
+                self.micButton.contentTintColor = .systemRed
+                self.setHint(why, warn: true)
+            }
+            self.relayout()
+        }
+        voice.toggle(locale: Self.voiceLocales())
+    }
+
+    /// What to listen in: what the bar is set to, then whatever the Mac is set to.
+    static func voiceLocales() -> [String] {
+        switch Config.shared.language {
+        case "zh-Hant": return ["zh-TW"]
+        case "en": return ["en-US"]
+        default: return []
         }
     }
 

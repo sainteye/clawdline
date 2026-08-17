@@ -29,6 +29,6 @@ swiftc \
   -o "$BIN" \
   $(ls Sources/*.swift | grep -v 'Sources/main.swift') \
   Tests/main.swift \
-  -framework AppKit -framework Carbon -framework ServiceManagement
+  -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation
 
 "$BIN" Resources/mascots

@@ -26,7 +26,7 @@ swiftc \
   -O \
   -o "$BIN" \
   Sources/*.swift \
-  -framework AppKit -framework Carbon -framework ServiceManagement
+  -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation
 
 cp Resources/iterm.js "$RES/"
 cp -R Resources/mascots "$RES/"
@@ -49,6 +49,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <!-- Without this line macOS kills the app the first time it talks to iTerm2 -->
   <key>NSAppleEventsUsageDescription</key>
   <string>Clawdline needs to control iTerm2 so it can put what you type into Claude Code.</string>
+  <!-- Asked for only when the microphone button is pressed. Recognition runs on this Mac when
+       the dictation language is installed, and goes to Apple when it is not — the bar says
+       which, while it is listening. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Clawdline uses the microphone only while you hold a dictation session open, so you can talk into the prompt instead of typing.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Clawdline turns your speech into text. It uses this Mac when the dictation language is installed, and Apple's service when it is not.</string>
   <!-- clawdline://open so any tool can summon it, not just the built-in hotkey -->
   <key>CFBundleURLTypes</key>
   <array><dict>

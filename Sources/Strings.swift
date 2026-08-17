@@ -22,6 +22,10 @@ protocol Copy {
     var hintKeys: String { get }
     var hintTextSize: String { get }
     var hintOrder: String { get }
+    var hintVoice: String { get }
+    func voiceListening(onDevice: Bool) -> String
+    var voiceNoPermission: String { get }
+    var voiceUnavailable: String { get }
 
     // Target state
     var scanning: String { get }
@@ -67,6 +71,13 @@ struct English: Copy {
     let hintKeys = "keys"
     let hintTextSize = "text size"
     let hintOrder = "reverse"
+    let hintVoice = "dictate"
+    func voiceListening(onDevice: Bool) -> String {
+        onDevice ? "Listening on this Mac — press again to stop"
+                 : "Listening — this language is transcribed by Apple, not on this Mac"
+    }
+    let voiceNoPermission = "Dictation needs microphone and speech access"
+    let voiceUnavailable = "Dictation is not available right now"
 
     let scanning = "Scanning…"
     let noSession = "No Claude Code session found"
@@ -123,6 +134,13 @@ struct TraditionalChinese: Copy {
     let hintKeys = "快速鍵"
     let hintTextSize = "字級"
     let hintOrder = "反序"
+    let hintVoice = "語音"
+    func voiceListening(onDevice: Bool) -> String {
+        onDevice ? "在這台 Mac 上聽——再按一次結束"
+                 : "聽著——這個語言由 Apple 辨識，不在這台機器上"
+    }
+    let voiceNoPermission = "語音輸入需要麥克風與語音辨識權限"
+    let voiceUnavailable = "現在無法使用語音輸入"
 
     let scanning = "掃描中⋯"
     let noSession = "找不到在跑 Claude Code 的分頁"

@@ -345,16 +345,24 @@ so a translation cannot silently ship half-done. Pull requests welcome.
 
 ## Permissions and privacy
 
-| what | why |
-|---|---|
-| **Automation → iTerm2** | the only way to put text into a session. Asked once, on first send. |
-| *(nothing else)* | no accessibility, no screen recording, no network. |
+| what | why | when |
+|---|---|---|
+| **Automation → iTerm2** | the only way to put text into a session | once, on your first send |
+| **Microphone + speech recognition** | dictation | only if you press the microphone |
+| *(nothing else)* | no accessibility, no screen recording | — |
 
 The global hotkey uses Carbon's `RegisterEventHotKey` rather than an `NSEvent` monitor
 specifically to **avoid** the accessibility permission — a tool that opens a text box has no
 business being able to read every key you press.
 
-Clawdline talks to nothing but iTerm2 on your own machine. Your prompt history lives in
+**Dictation is the one thing here that can use the network, and it says so while it does.**
+macOS recognises speech on the Mac for the dictation languages you have downloaded, and sends
+audio to Apple for the ones you have not. Which of the two is happening is written across the
+bottom of the bar the whole time it is listening — the microphone is never open without that
+line being on screen, and closing the panel stops it. If you would rather it never left the
+machine, install the language in System Settings › Keyboard › Dictation.
+
+Nothing else here talks to the network. Your prompt history lives in
 `~/.config/clawdline/config.json` and goes nowhere.
 
 ## Other terminals: run Claude Code in tmux
