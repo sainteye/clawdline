@@ -79,6 +79,14 @@ final class Config {
     /// Below 1 the blur is partly transparent, so what is behind stays legible.
     var backdropStrength: Double = 0.5
     var tmuxPath = ""
+    /// Where the project status files are read from, and where the icon registry lives.
+    ///
+    /// Both default to what claude-tools writes, because that is what most people reading this
+    /// already have — but the format is documented (docs/project-status.md) so that anything can
+    /// produce them, and a producer that is not claude-tools should not have to impersonate it
+    /// to be found. Blank means the default; `~` is expanded.
+    var statusDir = ""
+    var iconsFile = ""
     var lastTargetID: String?
     var history: [String] = []
 
@@ -98,6 +106,8 @@ final class Config {
         if let v = obj["language"] as? String, !v.isEmpty { language = v }
         if let v = obj["mascot"] as? String, !v.isEmpty { mascot = v }
         if let v = obj["tmux_path"] as? String { tmuxPath = v }
+        if let v = obj["status_dir"] as? String { statusDir = v }
+        if let v = obj["icons_file"] as? String { iconsFile = v }
         if let v = obj["output_height"] as? Double, v >= 80, v <= 900 { outputHeight = CGFloat(v) }
         if let v = obj["backdrop"] as? Double, v >= 0, v <= 1 { backdropStrength = v }
         if let v = obj["output_font"] as? String, !v.isEmpty { outputFont = v }
@@ -125,6 +135,8 @@ final class Config {
             "language": language,
             "mascot": mascot,
             "tmux_path": tmuxPath,
+            "status_dir": statusDir,
+            "icons_file": iconsFile,
             "output_height": Double(outputHeight),
             "backdrop": backdropStrength,
             "output_font": outputFont,

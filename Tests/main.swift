@@ -1101,6 +1101,23 @@ group("words that are not settled yet are not fully there") {
           && abs(thin.blueComponent - solidRGB.blueComponent) < 0.01)
 }
 
+group("paths somebody wrote in a config file") {
+    // A blank means "use your own default", not "the root directory" — and the difference only
+    // shows up as nothing being found, which is a normal state for every one of these files.
+    check("blank means no opinion", Paths.resolve("") == nil)
+    check("whitespace is blank", Paths.resolve("   \n") == nil)
+
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    expect("a tilde is expanded", Paths.expand("~/notes"), home + "/notes")
+    expect("on its own too", Paths.expand("~"), home)
+    // ~someone is a shell convention nobody types into a config file, and NSString's expansion
+    // handles it badly. An absolute path is left exactly as written.
+    expect("another user's home is left alone", Paths.expand("~bob/notes"), "~bob/notes")
+    expect("an absolute path is untouched", Paths.expand("/opt/x"), "/opt/x")
+    expect("so is a relative one", Paths.expand("cache/x"), "cache/x")
+    expect("and it survives the round trip", Paths.resolve("~/notes")?.path, home + "/notes")
+}
+
 group("the languages the interface speaks") {
     // The protocol makes the compiler refuse a language that is missing a string. What it cannot
     // refuse is a language that is present and still in English — copy the reference file,

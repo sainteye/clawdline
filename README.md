@@ -264,8 +264,9 @@ It can show more than the name. A deploy in flight draws its progress, a backlog
 that is asking for attention, a health check shows a dot — and the first two are links, so the run
 or the page opens where you would have gone looking for it anyway.
 
-None of that is computed by Clawdline: they are small JSON files under
-`~/.claude/statusline-cache/`. **[docs/project-status.md](docs/project-status.md) is the format**,
+None of that is computed by Clawdline: they are small JSON files, by default under
+`~/.claude/statusline-cache/` — `status_dir` and `icons_file` point it somewhere else.
+**[docs/project-status.md](docs/project-status.md) is the format**,
 with working examples the test suite parses, so the page cannot quietly stop being true. Anything
 can write them — a cron job, a git hook, or claude-tools, which already does for its own status
 line. Without them the footer simply has less to say.
@@ -441,6 +442,10 @@ is that **the terminal never has to come to the front** — which is the entire 
   "card_opacity": 0.55,                  // 0 = pure glass, 1 = opaque
   "reopen_on_return": true,              // come back when the terminal does
   "backdrop": 0.5,                       // ⌘J background blur, 0 = none
+  "voice_settle_seconds": 1.8,           // how long a pause ends a sentence, 0 = off
+  "voice_stop_seconds": 4.0,             // how long a silence ends the session, 0 = off
+  "status_dir": "",                      // project status files; "" = claude-tools' own
+  "icons_file": "",                      // icon registry;        "" = claude-tools' own
 }
 ```
 
@@ -535,20 +540,16 @@ registered, whether the panel opened, what happened to every send.
 
 ## Contributing
 
-Plain AppKit, no frameworks, no build system beyond `swiftc`.
+Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 690 checks, a couple of seconds
+./test.sh     # 698 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
+swift build   # only so your editor can index the code — see Package.swift
 ```
 
-The tests cover the parts a change can quietly break: pack decoding and validation, keyframe
-sampling, colour parsing, hotkey specs, and the two parsers that decide where text gets sent
-(`ps` output and `tmux list-panes`). Anything needing a window on screen is deliberately
-absent — a test that cannot run in CI is a test nobody runs.
-
-Comments explain *why* a thing is the way it is, especially where the obvious approach was
-tried first and failed. Those notes are the useful part, so please keep the habit.
+**[CONTRIBUTING.md](CONTRIBUTING.md)** has the rest: where things are, how to add a language or
+a mascot, and what a third way of sending text would look like.
 
 ## Credits
 

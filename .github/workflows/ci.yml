@@ -26,6 +26,10 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+      # Package.swift is only there so editors can index the code, which means nothing ever
+      # exercises it — and a stale one gives a new contributor a broken editor and no clue why.
+      - name: The package an editor indexes still resolves
+        run: swift build
       - run: CLAWDLINE_APP="$RUNNER_TEMP/Clawdline.app" ./build.sh
       - name: The bundle carries what it needs
         run: |

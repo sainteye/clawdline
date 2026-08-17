@@ -47,9 +47,17 @@ enum ProjectStatus {
         var isEmpty: Bool { deploy == nil && backlog == nil && health == nil }
     }
 
+    /// Where the status files live. `status_dir` in the config overrides it.
+    ///
+    /// The default is where claude-tools puts them, because that is what most people reading
+    /// this will already have. It is a default and not the location: the format is documented
+    /// in docs/project-status.md precisely so that anything can write these — a cron job, a git
+    /// hook, a script of your own — and a producer that is not claude-tools should not have to
+    /// pretend to be it just to be found.
     static var cacheDirectory: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/statusline-cache")
+        Paths.resolve(Config.shared.statusDir)
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".claude/statusline-cache")
     }
 
     /// claude-tools keys the per-project files by path with the separators turned into dashes,

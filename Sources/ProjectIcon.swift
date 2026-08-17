@@ -34,9 +34,11 @@ enum ProjectIcon {
 
     private static var cache: (stamp: String, projects: [String: [String: Any]])?
 
+    /// Where the registry lives. `icons_file` in the config overrides it.
     static var registryURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/project-icons.json")
+        Paths.resolve(Config.shared.iconsFile)
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".claude/project-icons.json")
     }
 
     private static func projects() -> [String: [String: Any]] {

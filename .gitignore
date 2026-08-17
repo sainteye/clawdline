@@ -3,3 +3,8 @@
 build/
 docs/assets/*.mp4
 docs/assets/frames/
+
+# swift build, which is only ever run to give an editor something to index
+.build/
+.swiftpm/
+Package.resolved
