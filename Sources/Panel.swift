@@ -327,11 +327,17 @@ final class MicButton: NSView {
             NSBezierPath(ovalIn: NSRect(x: box.maxX - d / 2, y: box.maxY - d,
                                         width: d, height: d)).fill()
         }
-        colour.set()
-        tinted.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1)
-        // SF Symbols are template images; drawing them plain ignores the colour, so tint on top.
-        colour.setFill()
-        box.fill(using: .sourceAtop)
+        // Tinted by asking for the colour, not by painting over the glyph afterwards.
+        //
+        // It used to draw the symbol and then `box.fill(using: .sourceAtop)`. That trick needs
+        // the destination to be transparent everywhere the glyph is not — true on screen, where
+        // each view has its own layer, and false in `clawdline://snapshot`, which renders the
+        // whole tree into one bitmap that already has the card painted on it. So every frame of
+        // every demo GIF had a solid orange square where the microphone should be, and nothing
+        // about the running app ever showed it.
+        let painted = glyph.withSymbolConfiguration(config.applying(
+            NSImage.SymbolConfiguration(paletteColors: [colour]))) ?? tinted
+        painted.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1)
     }
 }
 
