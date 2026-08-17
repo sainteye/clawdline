@@ -1160,6 +1160,69 @@ group("words that are not settled yet are not fully there") {
           && abs(thin.blueComponent - solidRGB.blueComponent) < 0.01)
 }
 
+group("an image goes over as an image, not as a path") {
+    // Claude Code shows a pasted image as [Image #3] — in the message, numbered, and something
+    // you can point at in the sentence you are writing. A path is forty characters of directory
+    // and one tool call away from the thing it is a picture of.
+    check("a png is one", Drop.isImage("/tmp/shot.png"))
+    check("so is a jpeg", Drop.isImage("/tmp/a.JPEG"))
+    check("and a heic", Drop.isImage("/tmp/a.heic"))
+    check("a pdf is not — it is a document, and a path is right for it",
+          !Drop.isImage("/tmp/spec.pdf"))
+    check("nor is a directory", !Drop.isImage("/tmp"))
+    check("nor a swift file", !Drop.isImage("/tmp/main.swift"))
+
+    // The split. Text either side of an image stays text, and adjacent runs are joined so a
+    // prompt with no images in it is still exactly one paste.
+    expect("no images means one piece",
+           Drop.pieces(text: "look at this", imagePaths: []), [.text("look at this")])
+    expect("nothing at all means nothing", Drop.pieces(text: "", imagePaths: []), [])
+    expect("text, image, text",
+           Drop.pieces(text: "before /tmp/a.png after", imagePaths: ["/tmp/a.png"]),
+           [.text("before "), .image("/tmp/a.png"), .text(" after")])
+    expect("an image at the very start",
+           Drop.pieces(text: "/tmp/a.png explain", imagePaths: ["/tmp/a.png"]),
+           [.image("/tmp/a.png"), .text(" explain")])
+    expect("two of them keep their order",
+           Drop.pieces(text: "/tmp/a.png and /tmp/b.png", imagePaths: ["/tmp/a.png", "/tmp/b.png"]),
+           [.image("/tmp/a.png"), .text(" and "), .image("/tmp/b.png")])
+    // A path with a space in it is quoted in the text, so that is what has to be found.
+    expect("a quoted path is matched as it was written",
+           Drop.pieces(text: "see '/tmp/my shot.png' here", imagePaths: ["/tmp/my shot.png"]),
+           [.text("see "), .image("/tmp/my shot.png"), .text(" here")])
+    // A path that is not actually in the text is not invented into the prompt.
+    expect("an image the text never mentions is skipped",
+           Drop.pieces(text: "just words", imagePaths: ["/tmp/gone.png"]), [.text("just words")])
+}
+
+group("giving the pasteboard back") {
+    // Borrowing the pasteboard and not returning it costs somebody whatever they copied five
+    // minutes ago, for a feature they never asked for.
+    let pb = NSPasteboard(name: NSPasteboard.Name("dev.sainteye.clawdline.tests"))
+    pb.clearContents()
+    pb.setString("something the user copied", forType: .string)
+
+    let saved = Drop.contents(of: pb)
+    check("the snapshot has the item in it", saved.count == 1)
+    check("and it holds the bytes, not a reference to a cleared item",
+          saved.first?[.string] != nil)
+
+    pb.clearContents()
+    pb.setString("borrowed", forType: .string)
+    expect("which is genuinely gone once cleared", pb.string(forType: .string), "borrowed")
+
+    Drop.put(saved, on: pb)
+    expect("and comes back exactly", pb.string(forType: .string), "something the user copied")
+
+    // An empty pasteboard is a state worth restoring too, rather than leaving the borrowed
+    // thing behind because there was nothing to put back.
+    pb.clearContents()
+    let nothing = Drop.contents(of: pb)
+    pb.setString("borrowed again", forType: .string)
+    Drop.put(nothing, on: pb)
+    check("an empty one is restored as empty", pb.string(forType: .string) == nil)
+}
+
 group("editing the config while the app is running") {
     // The app rewrites this file whenever anything moves, and it used to write everything it
     // held in memory — so an edit made while it was running disappeared at an unpredictable

@@ -98,7 +98,8 @@ enum Tmux {
     /// not silently turns every newline back into a Return — which was measurable: two lines
     /// pasted into a shell ran as two commands. Sending the bytes outright makes tmux behave
     /// exactly like the iTerm2 path instead of almost like it.
-    static func send(_ text: String, to paneID: String) -> String? {
+    static func send(_ text: String, to paneID: String,
+                     submit shouldSubmit: Bool = true) -> String? {
         guard binary != nil else { return "tmux not found — set \"tmux_path\" in the config" }
         let buffer = "clawdline"
         let pasteStart = ["1b", "5b", "32", "30", "30", "7e"]   // ESC [ 2 0 0 ~
@@ -115,10 +116,24 @@ enum Tmux {
         }
         run(["send-keys", "-t", paneID, "-H"] + pasteEnd)
         usleep(60_000)
-        guard run(["send-keys", "-t", paneID, "Enter"]).ok else {
-            return "pasted, but Enter did not land"
-        }
-        return nil
+        guard shouldSubmit else { return nil }
+        return submit(paneID)
+    }
+
+    /// One byte, as a keypress rather than as text.
+    ///
+    /// Outside the bracketed paste on purpose: inside one, a control byte is a character being
+    /// handed to the program, not a key it is being asked about — and the whole point of sending
+    /// 0x16 is that the far side treats it as Ctrl-V. `-H` takes hex, which says the byte
+    /// without tmux looking for a key name.
+    static func keystroke(_ byte: UInt8, to paneID: String) -> String? {
+        guard binary != nil else { return "tmux not found — set \"tmux_path\" in the config" }
+        let hex = String(format: "%02x", byte)
+        return run(["send-keys", "-t", paneID, "-H", hex]).ok ? nil : "that tmux pane is gone"
+    }
+
+    static func submit(_ paneID: String) -> String? {
+        run(["send-keys", "-t", paneID, "Enter"]).ok ? nil : "pasted, but Enter did not land"
     }
 
     /// What that pane shows, plus some scrollback. tmux keeps history that iTerm2's

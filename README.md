@@ -53,8 +53,9 @@ bar has to tell you what the terminal would have.**
   → [Which project](#which-project-not-just-which-task)
 
 - **Takes a screenshot straight from your clipboard.** Drop a file anywhere on the window or
-  paste an image; it appears as a thumbnail. What gets sent is the path, because that is what
-  Claude Code can read.
+  paste an image; it appears as a thumbnail, and arrives in Claude Code as `[Image #3]` —
+  in the message, numbered, the way a paste does. Anything that is not an image goes as a path,
+  because that is what Claude Code can do something with.
   → [Files and images](#dropping-in-a-file-or-an-image)
 
 - **Remembers what you sent.** <kbd>↑</kbd> and <kbd>↓</kbd> walk back through your own prompts,
@@ -189,11 +190,22 @@ that will not tell you where the text goes is worse than no prompt box.
 ### Dropping in a file or an image
 
 Drag a file anywhere onto the window, or paste an image, and it appears in the box as a
-thumbnail — the picture you dropped, not forty characters of directory. What gets **sent** is
-the path. That is the whole handoff: Claude Code reads files itself, images included, so a path
-is the same thing you would have typed and needs nothing at the other end that is not already
-there. What is on screen is for you; what goes down the wire is for Claude Code, and the moment
-those are the same string one of them is being made worse to suit the other.
+thumbnail — the picture you dropped, not forty characters of directory.
+
+**An image arrives as `[Image #3]`**, the same as if you had pasted it into Claude Code
+yourself: in the message, numbered, and something you can point at in the sentence you are
+writing. That is not a string anything can type — Claude Code produces it when it reads an image
+off the system pasteboard on a Ctrl-V — so the send is split around the images, each one is lent
+to the pasteboard for the keystroke, and the pasteboard is handed back exactly as it was.
+
+Only into a Claude Code session, because Ctrl-V in a shell means something else entirely; and
+only when the image loads, otherwise it falls back to the path. Anything that is **not** an
+image — a PDF, a folder — goes as a path on purpose: Claude Code reads files itself, so a path
+is the whole handoff and is the same thing you would have typed. `send_images_as_paste: false`
+sends everything the old way.
+
+What is on screen is for you; what goes down the wire is for Claude Code, and the moment those
+are the same string one of them is being made worse to suit the other.
 
 An image off the clipboard has no path yet, so one is written under
 `~/Library/Caches/dev.sainteye.clawdline/drops/` and that path is inserted. Those files are the
@@ -447,6 +459,7 @@ of the file — including settings from a version that knew about more of them �
   "voice_settle_seconds": 1.8,           // how long a pause ends a sentence, 0 = off
   "voice_stop_seconds": 4.0,             // how long a silence ends the session, 0 = off
   "voice_vocabulary": [],                // names a transcriber cannot be expected to know
+  "send_images_as_paste": true,          // images arrive as [Image #3], not as a path
   "status_dir": "",                      // project status files; "" = claude-tools' own
   "icons_file": "",                      // icon registry;        "" = claude-tools' own
 }
@@ -546,7 +559,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 726 checks, a couple of seconds
+./test.sh     # 744 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code — see Package.swift
 ```

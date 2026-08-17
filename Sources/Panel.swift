@@ -438,17 +438,40 @@ final class PromptTextView: NSTextView {
     /// returns is for Claude Code, and the moment those two are the same string one of them is
     /// being made worse to suit the other.
     func resolvedText() -> String {
-        guard let storage = textStorage else { return string }
-        let out = NSMutableString()
+        resolvedPieces().map { piece in
+            switch piece {
+            case .text(let t): return t
+            case .image(let path): return Drop.quoted(path)
+            }
+        }.joined()
+    }
+
+    /// The same thing, with the images still identifiable.
+    ///
+    /// `resolvedText()` flattens an attachment into its path, which is all a path-based send
+    /// needs and everything a pasted one has to know. Built here rather than by searching the
+    /// finished string for path-shaped substrings: the attachment already knows what it is, and
+    /// a prompt that happens to mention a filename should not turn into a picture.
+    func resolvedPieces() -> [Drop.Piece] {
+        guard let storage = textStorage else { return string.isEmpty ? [] : [.text(string)] }
+        var out: [Drop.Piece] = []
+        func append(_ text: String) {
+            guard !text.isEmpty else { return }
+            if case .text(let last)? = out.last {
+                out[out.count - 1] = .text(last + text)
+            } else {
+                out.append(.text(text))
+            }
+        }
         storage.enumerateAttributes(in: NSRange(location: 0, length: storage.length)) { attrs, range, _ in
             if let a = attrs[.attachment] as? NSTextAttachment,
                let path = droppedPaths[ObjectIdentifier(a)] {
-                out.append(Drop.quoted(path))
+                if Drop.isImage(path) { out.append(.image(path)) } else { append(Drop.quoted(path)) }
                 return
             }
-            out.append(storage.attributedSubstring(from: range).string)
+            append(storage.attributedSubstring(from: range).string)
         }
-        return out as String
+        return out
     }
 
     /// How typed text should look. Held here because rich text forgets: assigning `string`
@@ -499,17 +522,40 @@ final class PromptTextView: NSTextView {
     /// system between light and dark.
     static func provisional(_ colour: NSColor) -> NSColor { colour.withAlphaComponent(0.45) }
 
+    /// Marks the faded stretches as ours, so settling can find them by what they are rather than
+    /// by where they were. The range is not enough on its own: text typed beside a provisional
+    /// run inherits its colour and lands outside the range, which is how hand-typed words ended
+    /// up half-erased with no way back.
+    private static let provisionalKey = NSAttributedString.Key("clawdline.provisional")
+
     private var pendingAttributes: [NSAttributedString.Key: Any] {
         var attrs = baseAttributes
         attrs[.foregroundColor] = Self.provisional(settledColour)
+        attrs[Self.provisionalKey] = true
         return attrs
     }
 
-    /// Bring a stretch up to full: those words are final now.
-    private func settle(_ range: NSRange) {
-        guard let storage = textStorage, range.length > 0,
-              range.location + range.length <= storage.length else { return }
-        storage.addAttribute(.foregroundColor, value: settledColour, range: range)
+    /// Bring everything faded up to full: those words are final now.
+    ///
+    /// Sweeps by mark rather than by range. Typing after dictation came out faded and stayed
+    /// faded for the rest of the message: AppKit refreshes `typingAttributes` from the text
+    /// beside the caret whenever the selection moves, so parking the caret at the end of a
+    /// provisional run makes the next thing typed provisional too — outside the dictated range,
+    /// where settling by range never reached it. The words looked half-erased and the microphone
+    /// was not even on.
+    private func settle() {
+        guard let storage = textStorage, storage.length > 0 else {
+            typingAttributes = baseAttributes
+            return
+        }
+        storage.enumerateAttribute(Self.provisionalKey,
+                                   in: NSRange(location: 0, length: storage.length)) { value, found, _ in
+            guard value != nil else { return }
+            storage.removeAttribute(Self.provisionalKey, range: found)
+            storage.addAttribute(.foregroundColor, value: settledColour, range: found)
+        }
+        // Or the next keystroke is provisional again, and we are back where we started.
+        typingAttributes = baseAttributes
     }
 
     /// Start writing at the caret, keeping everything already in the box.
@@ -560,8 +606,7 @@ final class PromptTextView: NSTextView {
                            length: min(range.length, max(0, storage.length - range.location)))
         if storage.string != lastBox || storage.attributedSubstring(from: safe).string != lastDictated {
             // Edited by hand: those words are the user's now, so they stop being provisional.
-            settle(NSRange(location: safe.location,
-                           length: min(safe.length, max(0, storage.length - safe.location))))
+            settle()
             safe = NSRange(location: min(selectedRange().location, storage.length), length: 0)
             lastDictated = ""
             onDictationDisplaced?()
@@ -593,8 +638,7 @@ final class PromptTextView: NSTextView {
             && storage.attributedSubstring(from: range).string == lastDictated
             && storage.string == lastBox
         if !stillOurs {
-            settle(NSRange(location: min(range.location, storage.length),
-                           length: min(range.length, max(0, storage.length - range.location))))
+            settle()
             dictationRange = NSRange(location: min(selectedRange().location, storage.length),
                                      length: 0)
             lastDictated = ""
@@ -605,7 +649,7 @@ final class PromptTextView: NSTextView {
     }
 
     func endDictation() {
-        if let range = dictationRange { settle(range) }
+        settle()
         dictationRange = nil
         lastDictated = ""
         lastBox = ""

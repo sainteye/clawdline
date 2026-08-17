@@ -190,6 +190,15 @@ enum ITerm {
         return res["error"] as? String ?? L.t.sendFailed
     }
 
+    /// One byte, as a keypress rather than as text — see the `key` command in iterm.js.
+    static func keystroke(_ byte: UInt8, to sessionID: String) -> String? {
+        let res = osa(["key", sessionID, String(byte)])
+        if res["ok"] as? Bool == true { return nil }
+        return res["error"] as? String ?? L.t.sendFailed
+    }
+
+    static func submit(_ sessionID: String) -> String? { keystroke(13, to: sessionID) }
+
     /// What that session currently shows. iTerm2 exposes the visible screen and no more,
     /// so this is a snapshot of the window rather than a transcript.
     static func capture(_ sessionID: String) -> String? {

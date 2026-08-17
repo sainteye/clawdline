@@ -83,6 +83,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// Only what was hidden this way comes back — Esc and sending mean closed, and something
     /// you shut on purpose reappearing on its own is the app arguing with you.
     private var hiddenByAppSwitch = false
+    /// True while a system permission sheet is up, so losing the key window is not read as the
+    /// user going elsewhere. Set from `Voice.onPermissionPrompt`.
+    private var awaitingPermission = false
     /// Filling the screen is a size, not macOS's fullscreen: the native one moves the window to
     /// its own Space, which for a panel you summon over whatever you were doing is the opposite
     /// of what it is for. This just makes the frame the size of the screen.
@@ -477,6 +480,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     func windowDidResignKey(_ notification: Notification) {
         guard panel.isVisible, !dismissing else { return }
+        // A permission sheet takes the key window away exactly like an app switch does, and the
+        // grace period below is far too short to cover one — nobody answers in 0.4 seconds.
+        // Treating it as a switch hid the panel the first time anyone dictated, and took the
+        // microphone with it, so granting the permission bought nothing.
+        guard !awaitingPermission else { return }
         // In the instant after it opens, the previous app may still be grabbing focus back.
         // Without this grace period the panel closes before you ever see it.
         if Date().timeIntervalSince(shownAt) < 0.4 {
@@ -1406,6 +1414,18 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             self?.textView.endDictation()
             self?.textView.beginDictation()
         }
+        voice.onPermissionPrompt = { [weak self] asking in
+            guard let self else { return }
+            self.awaitingPermission = asking
+            // Take focus back once the sheet is gone. Answering it leaves the panel visible but
+            // no longer key, and a box you cannot type into looks broken in exactly the same way
+            // as one that closed itself.
+            if !asking, self.panel.isVisible {
+                NSApp.activate(ignoringOtherApps: true)
+                self.panel.makeKeyAndOrderFront(nil)
+                self.panel.makeFirstResponder(self.textView)
+            }
+        }
         if !voice.isListening { textView.beginDictation() }
         voice.toggle(locale: Self.voiceLocales())
     }
@@ -1649,6 +1669,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             voice.stop()
             return
         }
+        let pieces = textView.resolvedPieces()
         let text = textView.resolvedText().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { hide(); return }
         guard let target = currentTarget else {
@@ -1669,7 +1690,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         mascot.play("cheer")
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let err = Targets.send(text, to: target)
+            // The pieces rather than the flattened string, so an image can go over as an image.
+            // With none in it this is one bracketed paste, exactly as it always was.
+            let err = Targets.send(pieces, to: target)
             guard let err else { return }
             DispatchQueue.main.async { self.restoreAfterFailure(text: text, error: err) }
         }

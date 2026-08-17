@@ -70,6 +70,17 @@ final class Config {
     /// costs all the punctuation. So they are repaired in the text instead, which is
     /// deterministic and cannot make the sentence worse.
     var voiceVocabulary: [String] = []
+    /// Hand images over as images rather than as paths.
+    ///
+    /// Claude Code turns an image on the system pasteboard into `[Image #3]` when it receives a
+    /// Ctrl-V, which is a keystroke rather than text — so the send is split around it and the
+    /// pasteboard is borrowed and handed back. What you get is the picture in the message and a
+    /// number you can point at, instead of forty characters of directory.
+    ///
+    /// Set false to go back to sending the path, which is never wrong, only plainer. It also
+    /// falls back on its own for anything that is not a Claude Code session, because Ctrl-V in a
+    /// shell means something else entirely.
+    var sendImagesAsPaste = true
     /// Come back when the terminal does.
     ///
     /// Switching away from a panel you left open is "I need to see something for a moment", not
@@ -128,6 +139,7 @@ final class Config {
         if let v = obj["voice_settle_seconds"] as? Double, v >= 0, v <= 30 { voiceSettleSeconds = v }
         if let v = obj["voice_stop_seconds"] as? Double, v >= 0, v <= 300 { voiceStopSeconds = v }
         if let v = obj["voice_vocabulary"] as? [String] { voiceVocabulary = v }
+        if let v = obj["send_images_as_paste"] as? Bool { sendImagesAsPaste = v }
         if let v = obj["voice_language"] as? String, !v.isEmpty { voiceLanguage = v }
         if let v = obj["whisper_binary"] as? String { whisperBinary = v }
         if let v = obj["whisper_model"] as? String { whisperModel = v }
@@ -161,6 +173,7 @@ final class Config {
             "voice_settle_seconds": voiceSettleSeconds,
             "voice_stop_seconds": voiceStopSeconds,
             "voice_vocabulary": voiceVocabulary,
+            "send_images_as_paste": sendImagesAsPaste,
             "voice_language": voiceLanguage,
             "whisper_binary": whisperBinary,
             "whisper_model": whisperModel,

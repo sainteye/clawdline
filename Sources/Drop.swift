@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 /// Files and images dropped or pasted onto the bar.
 ///
@@ -58,6 +59,87 @@ enum Drop {
     /// One line to add to the prompt.
     static func insertion(for paths: [String]) -> String {
         paths.map(quoted).joined(separator: " ")
+    }
+
+    // MARK: - Handing an image over the way Claude Code expects one
+
+    /// What a prompt is made of on the way out.
+    ///
+    /// A path is a perfectly good way to give Claude Code a file — it reads them — but an image
+    /// sent that way arrives as forty characters of directory in the input line, and the thing
+    /// it is a picture of is one tool call away. Pasted, it arrives as `[Image #3]`: in the
+    /// message itself, numbered, and something you can point at in the sentence you are writing.
+    enum Piece: Equatable {
+        case text(String)
+        case image(String)   // a path, to be handed over as bytes rather than as characters
+    }
+
+    /// Whether this is something Claude Code would show as an image.
+    ///
+    /// By type rather than by extension: a screenshot saved with no extension at all is still a
+    /// PNG, and a `.txt` that somebody renamed is not an image however much it looks like one.
+    static func isImage(_ path: String) -> Bool {
+        guard let type = UTType(filenameExtension: (path as NSString).pathExtension.lowercased())
+        else { return NSImage(contentsOfFile: path) != nil }
+        return type.conforms(to: .image)
+    }
+
+    /// Split a prompt into what can be typed and what has to be pasted.
+    ///
+    /// Adjacent text is joined so the common case — no images — stays a single paste, exactly as
+    /// it was. Only images are split out; a PDF or a folder is still a path, because a path is
+    /// what Claude Code can do something with.
+    static func pieces(text: String, imagePaths: [String]) -> [Piece] {
+        guard !imagePaths.isEmpty else { return text.isEmpty ? [] : [.text(text)] }
+        var out: [Piece] = []
+        var rest = Substring(text)
+        for path in imagePaths {
+            let needle = quoted(path)
+            guard let hit = rest.range(of: needle) else { continue }
+            let before = String(rest[rest.startIndex..<hit.lowerBound])
+            if !before.isEmpty { out.append(.text(before)) }
+            out.append(.image(path))
+            rest = rest[hit.upperBound...]
+        }
+        if !rest.isEmpty { out.append(.text(String(rest))) }
+        return out
+    }
+
+    /// Put an image on the pasteboard. Whoever calls this owes the pasteboard back.
+    ///
+    /// It is one shared thing, and borrowing it without returning it means somebody loses what
+    /// they copied five minutes ago to a feature they never asked for — so `contents(of:)` and
+    /// `put(_:on:)` are the other half, and they belong together.
+    static func offer(_ path: String, on pasteboard: NSPasteboard = .general) -> Bool {
+        guard let image = NSImage(contentsOfFile: path) else { return false }
+        pasteboard.clearContents()
+        return pasteboard.writeObjects([image])
+    }
+
+    /// A copy of what is on the pasteboard, by value.
+    ///
+    /// The bytes rather than the items: `clearContents()` invalidates every `NSPasteboardItem`
+    /// that was on it, so a snapshot holding references would restore nothing at all — and
+    /// would look exactly like one that worked.
+    static func contents(of pasteboard: NSPasteboard) -> [[NSPasteboard.PasteboardType: Data]] {
+        (pasteboard.pasteboardItems ?? []).map { item in
+            var copy: [NSPasteboard.PasteboardType: Data] = [:]
+            for type in item.types {
+                if let data = item.data(forType: type) { copy[type] = data }
+            }
+            return copy
+        }
+    }
+
+    static func put(_ saved: [[NSPasteboard.PasteboardType: Data]], on pasteboard: NSPasteboard) {
+        pasteboard.clearContents()
+        guard !saved.isEmpty else { return }
+        let items = saved.map { fields -> NSPasteboardItem in
+            let item = NSPasteboardItem()
+            for (type, data) in fields { item.setData(data, forType: type) }
+            return item
+        }
+        pasteboard.writeObjects(items)
     }
 
     /// Quoted only when it has to be. A path in quotes that did not need them still reads fine,

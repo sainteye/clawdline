@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Where a session lives, and therefore how text gets into it.
@@ -52,6 +53,91 @@ enum Targets {
         switch session.backend {
         case .iterm: return ITerm.send(text, to: session.id)
         case .tmux:  return Tmux.send(text, to: session.id)
+        }
+    }
+
+    /// Send a prompt whose images go over as images rather than as paths.
+    ///
+    /// Claude Code turns an image on the system pasteboard into `[Image #3]` when it receives a
+    /// Ctrl-V — the byte 0x16, as a keystroke. So each image is lent to the pasteboard, the byte
+    /// is sent **outside** the bracketed paste (inside one it is just a character), and the
+    /// pasteboard is handed back.
+    ///
+    /// Two conditions, both of them about not making things worse:
+    ///
+    /// - **Only into a Claude Code session.** In a shell, Ctrl-V is readline's quoted-insert and
+    ///   would put a control character in the command line. `isClaude` already knows.
+    /// - **Only when the image loads.** Anything that fails falls back to its path, which is
+    ///   what this did before and is never wrong, only plainer.
+    ///
+    /// A pause between pieces because the other end is a program reading a tty: the paste and
+    /// the keystroke arrive as bytes in order, but the clipboard is read on the far side when
+    /// the keystroke is handled, and that is not the same instant it arrives.
+    static func send(_ pieces: [Drop.Piece], to session: TargetSession) -> String? {
+        let asPath = pieces.map { piece -> String in
+            if case .image(let path) = piece { return Drop.quoted(path) }
+            if case .text(let text) = piece { return text }
+            return ""
+        }.joined()
+
+        let images = pieces.contains { if case .image = $0 { return true }; return false }
+        guard images, session.isClaude, Config.shared.sendImagesAsPaste else {
+            return send(asPath, to: session)
+        }
+
+        // Borrowed once for the whole send and handed back at the end, rather than around each
+        // image: the pasteboard is one shared thing, and putting it back between two images only
+        // to take it again is churn nobody benefits from.
+        let pasteboard = NSPasteboard.general
+        let saved = Drop.contents(of: pasteboard)
+        var failed: [String] = []
+        var problem: String?
+
+        for piece in pieces {
+            switch piece {
+            case .text(let text):
+                guard !text.isEmpty else { continue }
+                problem = paste(text, to: session, submit: false)
+            case .image(let path) where Drop.offer(path, on: pasteboard):
+                problem = keystroke(0x16, to: session)
+                // The bytes and the keystroke arrive in order, but the far side reads the
+                // clipboard when it handles the key, and that is not the instant it arrives.
+                usleep(250_000)
+            case .image(let path):
+                // Its bytes could not be read. The path still works and is only plainer, which
+                // beats a sentence pointing at nothing.
+                failed.append(path)
+                problem = paste(Drop.quoted(path), to: session, submit: false)
+            }
+            if let problem { Drop.put(saved, on: pasteboard); return problem }
+        }
+
+        let err = submit(to: session)
+        // After the Enter, not before: the last image is still being read on the other side.
+        usleep(200_000)
+        Drop.put(saved, on: pasteboard)
+        if !failed.isEmpty { Log.write("send: \(failed.count) image(s) went as paths") }
+        return err
+    }
+
+    private static func paste(_ text: String, to session: TargetSession, submit: Bool) -> String? {
+        switch session.backend {
+        case .iterm: return ITerm.send(text, to: session.id, submit: submit)
+        case .tmux:  return Tmux.send(text, to: session.id, submit: submit)
+        }
+    }
+
+    private static func keystroke(_ byte: UInt8, to session: TargetSession) -> String? {
+        switch session.backend {
+        case .iterm: return ITerm.keystroke(byte, to: session.id)
+        case .tmux:  return Tmux.keystroke(byte, to: session.id)
+        }
+    }
+
+    private static func submit(to session: TargetSession) -> String? {
+        switch session.backend {
+        case .iterm: return ITerm.submit(session.id)
+        case .tmux:  return Tmux.submit(session.id)
         }
     }
 
