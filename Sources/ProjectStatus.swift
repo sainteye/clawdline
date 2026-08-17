@@ -35,6 +35,9 @@ enum ProjectStatus {
     struct Health {
         var label: String
         var state: String        // ok | fail | …
+        /// Where the check points. It lives in the registry rather than the cache file: the
+        /// endpoint is a fact about the project, the result is a fact about this minute.
+        var url: String?
     }
 
     struct Snapshot {
@@ -55,7 +58,7 @@ enum ProjectStatus {
         path.replacingOccurrences(of: "/", with: "-")
     }
 
-    static func read(cwd: String, remote: String?) -> Snapshot {
+    static func read(cwd: String, remote: String?, registry: [String: Any]? = nil) -> Snapshot {
         var out = Snapshot()
         let dir = cacheDirectory
         if let repo = remote {
@@ -63,7 +66,8 @@ enum ProjectStatus {
         }
         let stem = key(forPath: cwd)
         out.backlog = backlog(json(dir.appendingPathComponent("backlog-\(stem).json")))
-        out.health = health(json(dir.appendingPathComponent("health-\(stem).json")))
+        out.health = health(json(dir.appendingPathComponent("health-\(stem).json")),
+                            registry: registry?["health"] as? [String: Any])
         return out
     }
 
@@ -95,9 +99,12 @@ enum ProjectStatus {
                        artifact: row["artifact"] as? String)
     }
 
-    static func health(_ row: [String: Any]?) -> Health? {
+    static func health(_ row: [String: Any]?, registry: [String: Any]? = nil) -> Health? {
         guard let row, let state = row["state"] as? String else { return nil }
-        return Health(label: row["label"] as? String ?? "health", state: state)
+        return Health(label: row["label"] as? String
+                        ?? registry?["label"] as? String ?? "health",
+                      state: state,
+                      url: registry?["url"] as? String)
     }
 
     // MARK: - Display

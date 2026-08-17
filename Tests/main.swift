@@ -654,6 +654,56 @@ group("folding runs of tool calls") {
            Transcript.distinct(["Bash", "Read", "Bash", "Bash"]), ["Bash", "Read"])
 }
 
+group("files and images dropped on the bar") {
+    // What gets sent is a path, because that is the whole handoff: Claude Code reads files
+    // itself. So the one thing that must be right is that the path survives being written out.
+    expect("an ordinary path needs no quoting",
+           Drop.quoted("/Users/me/code/a_file-1.png"), "/Users/me/code/a_file-1.png")
+    expect("a space earns quotes",
+           Drop.quoted("/Users/me/My Files/a.png"), "'/Users/me/My Files/a.png'")
+    expect("so does anything a shell would read",
+           Drop.quoted("/tmp/a;rm -rf b"), "'/tmp/a;rm -rf b'")
+    expect("a quote in the name does not end the quoting",
+           Drop.quoted("/tmp/it's.png"), "'/tmp/it'\\''s.png'")
+    expect("several are separated",
+           Drop.insertion(for: ["/a.png", "/b c.png"]), "/a.png '/b c.png'")
+    expect("nothing dropped, nothing added", Drop.insertion(for: []), "")
+
+    // Written names sort by time, which is what makes pruning by name the oldest-first order.
+    let early = Drop.filename(extension: "png", now: Date(timeIntervalSince1970: 1_000_000))
+    let later = Drop.filename(extension: "png", now: Date(timeIntervalSince1970: 2_000_000))
+    check("names sort oldest first", early < later)
+    check("the extension is kept", later.hasSuffix(".png"))
+
+    // A dragged file offers its bytes as well as its path; taking the path avoids a second copy.
+    let board = NSPasteboard(name: NSPasteboard.Name("clawdline-tests-drop"))
+    board.clearContents()
+    board.writeObjects([URL(fileURLWithPath: "/tmp/dropped.png") as NSURL])
+    expect("a dragged file gives its own path",
+           Drop.paths(from: board), ["/tmp/dropped.png"])
+
+    board.clearContents()
+    board.setString("just text", forType: .string)
+    expect("dragged text is not a file", Drop.paths(from: board), [])
+
+    // An image off the clipboard has no path, so one has to be written — that file is the only
+    // thing this feature leaves behind, so it is worth proving it lands and is readable.
+    let image = NSImage(size: NSSize(width: 2, height: 2))
+    image.lockFocus()
+    NSColor.systemPink.setFill()
+    NSRect(x: 0, y: 0, width: 2, height: 2).fill()
+    image.unlockFocus()
+    board.clearContents()
+    board.setData(image.tiffRepresentation, forType: .tiff)
+    let written = Drop.paths(from: board)
+    expect("a pasted image becomes exactly one path", written.count, 1)
+    check("and the file is really there",
+          written.first.map { FileManager.default.fileExists(atPath: $0) } == true)
+    check("and it can be read back",
+          written.first.flatMap { NSImage(contentsOfFile: $0) } != nil)
+    written.forEach { try? FileManager.default.removeItem(atPath: $0) }
+}
+
 group("the documented example files") {
     // docs/project-status.md tells other people how to write these. The examples beside it are
     // parsed here with the same code the app uses, so the page cannot quietly stop being true.

@@ -36,6 +36,7 @@ protocol Copy {
     func foldedTools(_ count: Int) -> String
     func outputOrder(newestFirst: Bool) -> String
     func backlogNow(_ count: Int) -> String
+    func dropped(_ count: Int) -> String
 
     // Menu bar
     var menuOpen: String { get }
@@ -81,6 +82,9 @@ struct English: Copy {
         newestFirst ? "Newest first" : "Oldest first"
     }
     func backlogNow(_ count: Int) -> String { "now \(count)" }
+    func dropped(_ count: Int) -> String {
+        count == 1 ? "Added the path — Claude Code reads it" : "Added \(count) paths"
+    }
 
     let menuOpen = "Open prompt bar"
     let menuReveal = "Jump to target tab"
@@ -134,6 +138,9 @@ struct TraditionalChinese: Copy {
         newestFirst ? "最新的在最上面" : "最舊的在最上面"
     }
     func backlogNow(_ count: Int) -> String { "現在\(count)" }
+    func dropped(_ count: Int) -> String {
+        count == 1 ? "路徑加進去了——Claude Code 會自己讀" : "加了 \(count) 個路徑"
+    }
 
     let menuOpen = "打開輸入框"
     let menuReveal = "跳到目標分頁"

@@ -303,6 +303,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         textView.onToggleFullscreen = { [weak self] in self?.toggleFullscreen() }
         textView.onToggleOrder = { [weak self] in self?.toggleOutputOrder() }
         textView.onToggleKeys = { [weak self] in self?.toggleKeys() }
+        textView.acceptDrops()
+        textView.onDropped = { [weak self] n in
+            self?.setHint(L.t.dropped(n), warn: false)
+            self?.relayout()
+        }
         textView.onZoomOutput = { [weak self] step in self?.zoomOutput(step) }
         textView.onTextChanged = { [weak self] in
             self?.relayout()
@@ -1191,7 +1196,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             guard let cwd = Targets.workingDirectory(of: target),
                   let info = Project.info(cwd: cwd) else { return }
             let icon = ProjectIcon.grid(forCwd: cwd)
-            let status = ProjectStatus.read(cwd: cwd, remote: info.remote)
+            let status = ProjectStatus.read(cwd: cwd, remote: info.remote,
+                                            registry: ProjectIcon.row(forCwd: cwd))
             DispatchQueue.main.async {
                 self.projectCache[target.id] = info
                 self.iconCache[target.id] = icon
@@ -1242,8 +1248,20 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             }
         }
         if let h = status.health {
-            chip("   ● ", h.state == "ok" ? .systemGreen : .systemRed, link: nil)
-            chip(h.label, .tertiaryLabelColor, link: nil)
+            let live = h.state == "ok"
+            chip("   ● ", live ? .systemGreen : .systemRed, link: h.url)
+            // Coloured and underlined when there is somewhere to go, the way the terminal's own
+            // status line marks it — a link that does not look like one is a link nobody presses.
+            var attrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: h.url == nil ? NSColor.tertiaryLabelColor
+                                               : (live ? NSColor.systemGreen : NSColor.systemRed),
+            ]
+            if let url = h.url {
+                attrs[.link] = url
+                attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+            }
+            s.append(NSAttributedString(string: h.label, attributes: attrs))
         }
     }
 

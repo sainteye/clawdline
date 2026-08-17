@@ -125,6 +125,16 @@ actually running `claude`. It defaults to the session you were last looking at.
 The bar always names its target along the bottom edge. **It never sends blind** — a prompt box
 that will not tell you where the text goes is worse than no prompt box.
 
+### Dropping in a file or an image
+
+Drag a file onto the bar, or paste an image, and its **path** goes into the box. That is the
+whole handoff: Claude Code reads files itself, images included, so a path is the same thing you
+would have typed and it needs nothing at the other end that is not already there.
+
+An image off the clipboard has no path yet, so one is written under
+`~/Library/Caches/dev.sainteye.clawdline/drops/` and that path is inserted. Those files are the
+only thing this leaves behind, so the most recent few are kept and the rest are removed.
+
 ### Which project, not just which task
 
 The bar names its target along the bottom edge, and a tab title is the *task* — "investigate the

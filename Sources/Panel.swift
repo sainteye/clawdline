@@ -185,6 +185,47 @@ final class KeyHintsView: NSView {
 
 final class PromptTextView: NSTextView {
     var placeholder = L.t.placeholder
+    /// Files landed in the box. The controller uses it to say what happened.
+    var onDropped: ((Int) -> Void)?
+
+    // MARK: - Files and images
+
+    override func awakeFromNib() { super.awakeFromNib(); registerForDraggedTypes(Drop.acceptedTypes) }
+
+    /// Registering has to happen once the view exists; this is the path the app actually takes,
+    /// since the view is built in code rather than loaded from a nib.
+    func acceptDrops() { registerForDraggedTypes(Drop.acceptedTypes) }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        Drop.paths(from: sender.draggingPasteboard).isEmpty
+            ? super.draggingEntered(sender) : .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let paths = Drop.paths(from: sender.draggingPasteboard)
+        guard !paths.isEmpty else { return super.performDragOperation(sender) }
+        insertPaths(paths)
+        return true
+    }
+
+    /// An image on the clipboard has no path, so pasting one writes a file and inserts that.
+    /// Text on the clipboard is left entirely alone.
+    override func paste(_ sender: Any?) {
+        let paths = Drop.paths(from: .general)
+        guard !paths.isEmpty, NSPasteboard.general.string(forType: .string) == nil else {
+            super.paste(sender)
+            return
+        }
+        insertPaths(paths)
+    }
+
+    private func insertPaths(_ paths: [String]) {
+        var text = Drop.insertion(for: paths)
+        // Room either side, so it does not weld itself to whatever was already typed.
+        if let last = string.last, !last.isWhitespace { text = " " + text }
+        insertText(text + " ", replacementRange: selectedRange())
+        onDropped?(paths.count)
+    }
 
     var onSubmit: (() -> Void)?
     var onCancel: (() -> Void)?

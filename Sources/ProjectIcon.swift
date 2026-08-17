@@ -72,6 +72,11 @@ enum ProjectIcon {
         return best?.row
     }
 
+    /// The whole row for a directory — the icon is only part of what a project registers.
+    static func row(forCwd cwd: String) -> [String: Any]? {
+        entry(forCwd: cwd, in: projects())
+    }
+
     static func grid(forCwd cwd: String) -> Grid? {
         if let row = entry(forCwd: cwd, in: projects()) { return grid(for: row) }
         // No registry, or a project it has never seen. The path still decides the colour, so it
