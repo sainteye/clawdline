@@ -721,6 +721,47 @@ group("whisper as an optional engine") {
     check("the brew test fixture is not a model",
           Whisper.model(configured: "") .map { !$0.contains("for-tests") } ?? true)
 
+    // Real output, and the reason this check exists: the decoder with nothing to go on keeps
+    // choosing the same continuation. Rejecting it leaves the live text standing, which is at
+    // least something that was heard.
+    check("a repeated phrase is a groove, not a sentence",
+          Whisper.looksLikeLoop("和音，和音，和音，和音，和音，和音，"))
+    check("so is a repeated character", Whisper.looksLikeLoop("好好好好好好好好好"))
+    check("and a repeated clause", Whisper.looksLikeLoop("請問號,請問號,請問號,請問號"))
+    // Measured: what the model says to four seconds of room tone, with a plain prompt.
+    check("three of the same clause counts", Whisper.looksLikeLoop("好,好,好。"))
+    check("a real sentence is not", !Whisper.looksLikeLoop("把那個 webhook 的 retry 改成 backoff"))
+    check("two clauses that happen to match are not",
+          !Whisper.looksLikeLoop("好的，好的"))
+    check("a sentence that repeats one word is not",
+          !Whisper.looksLikeLoop("測試測試環境的設定有沒有問題"))
+    check("something short is never a loop", !Whisper.looksLikeLoop("好的"))
+    check("empty is not a loop", !Whisper.looksLikeLoop(""))
+
+    // Silence is what it hallucinates on, so silence is what must not reach it.
+    func tone(_ samples: [Int16]) -> Data {
+        var d = Data()
+        for s in samples { withUnsafeBytes(of: s.littleEndian) { d.append(contentsOf: $0) } }
+        return d
+    }
+    let rate = 16_000.0
+    let quiet = [Int16](repeating: 5, count: Int(rate))          // one second of nothing
+    let loud = [Int16](repeating: 8000, count: Int(rate / 2))    // half a second of something
+    let trimmed = Whisper.trimSilence(tone(quiet + loud + quiet), rate: rate)
+    check("the quiet ends are cut", trimmed.count < tone(quiet + loud + quiet).count)
+    check("the speech survives", trimmed.count >= loud.count * 2)
+    // Trimming is relative, so a recording that is quiet all the way through has nothing to
+    // trim — and should not be guessed at. Whether anything was said at all is the pause
+    // detector's question, and it is asked before this is ever called.
+    expect("a flat recording is left alone",
+           Whisper.trimSilence(tone(quiet), rate: rate).count, tone(quiet).count)
+    check("something too short to slice is left alone",
+          Whisper.trimSilence(tone([Int16](repeating: 100, count: 100)), rate: rate).count == 200)
+    // Quiet at the front only: the front goes, the rest stays.
+    let tail = Whisper.trimSilence(tone(quiet + loud), rate: rate)
+    check("leading quiet is dropped", tail.count < tone(quiet + loud).count)
+    check("and the speech is still all there", tail.count >= loud.count * 2)
+
     // Whisper writes 那個webhook的retry with no air in it, and reaches for a half-width comma
     // in the middle of a Chinese sentence. Neither can be asked away; both are mechanical.
     expect("a space appears between the scripts",

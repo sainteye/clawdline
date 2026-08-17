@@ -115,9 +115,13 @@ enum Whisper {
               let bin = binary(configured: Config.shared.whisperBinary),
               let model = model(configured: Config.shared.whisperModel) else { return nil }
 
+        // Hand over the part with speech in it, and nothing else.
+        let speech = trimSilence(samples, rate: rate)
+        guard speech.count > Int(rate) / 4 else { return nil }
+
         let wav = FileManager.default.temporaryDirectory
             .appendingPathComponent("clawdline-\(UUID().uuidString).wav")
-        guard (try? wavData(samples, rate: rate).write(to: wav)) != nil else { return nil }
+        guard (try? wavData(speech, rate: rate).write(to: wav)) != nil else { return nil }
         defer { try? FileManager.default.removeItem(at: wav) }
 
         let language = Self.language(for: tag)
@@ -130,8 +134,10 @@ enum Whisper {
         // whisper takes a "previous context" string, which is the same lever as Apple's
         // contextual strings — the words to expect, in a sentence it can read. The script seed
         // rides along in front of it.
-        let prompt = [language.seed, vocabulary.isEmpty ? nil
-                                        : vocabulary.prefix(60).joined(separator: ", ")]
+        // Fewer words, and never as a bare comma-separated list: the prompt is a sample of the
+        // text that came before, so a list of terms teaches it to produce a list of terms.
+        let terms = vocabulary.prefix(20).joined(separator: " ")
+        let prompt = [language.seed, terms.isEmpty ? nil : terms]
             .compactMap { $0 }.joined(separator: " ")
         if !prompt.isEmpty { args += ["--prompt", prompt] }
         guard let out = run(bin, args) else { return nil }
@@ -141,6 +147,9 @@ enum Whisper {
             .filter { !$0.isEmpty && !$0.hasPrefix("[") }
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        // A groove is not a sentence. Returning nothing leaves the live text standing, which is
+        // the right outcome: it was at least something the recogniser heard.
+        guard !looksLikeLoop(text) else { return nil }
         return tidy(wantsTraditional(tag) ? toTraditional(text) : text)
     }
 
@@ -216,6 +225,76 @@ enum Whisper {
         guard lower.hasPrefix("zh") else { return false }
         return lower.contains("tw") || lower.contains("hk") || lower.contains("hant")
             || lower.contains("mo")
+    }
+
+    /// Cut the quiet off both ends.
+    ///
+    /// Whisper does not answer "there was nothing there". Given silence it continues whatever
+    /// context it has — which means it recites the initial prompt back at you, or falls into
+    /// repeating one phrase for as long as the silence lasts. Neither is fixable by asking; the
+    /// fix is to not hand it silence in the first place.
+    ///
+    /// The threshold is relative, for the same reason the pause detector's is: a room is not a
+    /// number. Anything within a factor of the loudest part is kept.
+    static func trimSilence(_ samples: Data, rate: Double, keep: Double = 0.25) -> Data {
+        let count = samples.count / 2
+        guard count > Int(rate * 0.2) else { return samples }
+        let window = max(1, Int(rate * 0.05))          // 50 ms
+        var energies: [Float] = []
+        samples.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            let pcm = raw.bindMemory(to: Int16.self)
+            var i = 0
+            while i < count {
+                let end = min(i + window, count)
+                var sum: Float = 0
+                for j in i..<end { sum += abs(Float(pcm[j])) }
+                energies.append(sum / Float(end - i))
+                i = end
+            }
+        }
+        guard let loudest = energies.max(), loudest > 0 else { return Data() }
+        let floor = loudest * Float(keep)
+        guard let first = energies.firstIndex(where: { $0 > floor }),
+              let last = energies.lastIndex(where: { $0 > floor }) else { return Data() }
+        // A breath of room either side, so words are not clipped at their edges.
+        let pad = 3
+        let from = max(0, first - pad) * window
+        let to = min(count, (last + 1 + pad) * window)
+        guard to > from else { return Data() }
+        return samples.subdata(in: (from * 2)..<(to * 2))
+    }
+
+    /// Whether a transcript is the model stuck in a groove.
+    ///
+    /// "和音，和音，和音，和音，" is not a sentence anybody said; it is what happens when the
+    /// decoder has nothing to go on and keeps choosing the same continuation. Cheaper to spot
+    /// afterwards than to prevent, and the answer when it happens is to keep the live text.
+    static func looksLikeLoop(_ text: String) -> Bool {
+        let cleaned = text.replacingOccurrences(of: " ", with: "")
+
+        // The clause check first, and with no length floor: the shortest real example measured
+        // is "好,好,好。" — six characters, and unmistakably not a sentence.
+        let parts = cleaned.split(whereSeparator: { "，,。.、;；！!？?".contains($0) })
+            .map(String.init).filter { !$0.isEmpty }
+        // Three, not four. A person saying one clause three times, punctuated, is not something
+        // worth protecting from.
+        if parts.count >= 3, Set(parts).count == 1 { return true }
+
+        guard cleaned.count >= 8 else { return false }
+        // Or one phrase repeated until it fills most of the output.
+        for unit in 1...6 where cleaned.count >= unit * 4 {
+            let chars = Array(cleaned)
+            let piece = String(chars[0..<unit])
+            var repeats = 0
+            var i = 0
+            while i + unit <= chars.count, String(chars[i..<(i + unit)]) == piece {
+                repeats += 1
+                i += unit
+            }
+            if repeats >= 4, Double(repeats * unit) / Double(chars.count) > 0.7 { return true }
+        }
+        // Or the same clause over and over, separated by punctuation.
+        return false
     }
 
     /// A 44-byte PCM header in front of the samples. Writing it by hand rather than reaching for
