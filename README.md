@@ -26,6 +26,17 @@ English · [繁體中文](README.zh-TW.md)
 
 ---
 
+## What it does
+
+- **Type where you are looking.** A bar at eye level, not in the corner of a full-screen terminal.
+- **Read the session back** with <kbd>⌘</kbd><kbd>J</kbd> — the conversation, laid out, with runs
+  of tool calls folded away and a line saying what it is doing right now.
+- **Say which project**, not just which task: the repository, its branch, what is uncommitted, a
+  deploy in flight, a backlog — and its own icon and colour.
+- **Drop in files and images.** They appear as thumbnails; what gets sent is the path.
+- **Talk instead of typing**, on this Mac when the language is installed.
+- **Swap the mascot** for one you drew, without forking anything.
+
 ## Why
 
 Claude Code draws its input box at the bottom of the terminal, and terminals are usually
@@ -111,6 +122,7 @@ Press <kbd>⌥</kbd><kbd>Space</kbd> in iTerm2, type, press <kbd>Enter</kbd>.
 | <kbd>⌘</kbd><kbd>M</kbd> | browse / switch mascots |
 | <kbd>⌘</kbd><kbd>D</kbd> | make the mascot dance |
 | <kbd>⌘</kbd><kbd>/</kbd> | show the rest of the keys |
+| click the microphone | dictate instead of typing |
 | drag / <kbd>⌘</kbd><kbd>V</kbd> | drop a file or paste an image anywhere on the window |
 | <kbd>Esc</kbd> | close |
 
@@ -140,6 +152,24 @@ those are the same string one of them is being made worse to suit the other.
 An image off the clipboard has no path yet, so one is written under
 `~/Library/Caches/dev.sainteye.clawdline/drops/` and that path is inserted. Those files are the
 only thing this leaves behind, so the most recent few are kept and the rest are removed.
+
+### Talk instead of type
+
+The microphone at the right of the box turns your voice into text in it. Press it again to stop;
+closing the panel stops it too. The rings around it follow the same audio being transcribed, so
+a ring that will not move means the microphone is hearing nothing — a failure you would otherwise
+find out about by reading an empty box afterwards.
+
+**Mixed-language speech is not a switch anyone can offer you.** Neither of Apple's speech APIs
+changes language mid-sentence: one recogniser, one locale. What is available is a hundred phrases
+of bias, and Clawdline spends them on your own prompt history — the words you have typed at
+Claude Code are the words you would say to it, so `webhook`, `rebase` and the name of your repo
+survive being said inside a Chinese sentence. It needs no word list to maintain, and a list you
+have to curate is one that goes stale the week you write it.
+
+Recognition runs on this Mac for the dictation languages you have downloaded, and goes to Apple
+for the ones you have not. The bar says which, for as long as it is listening. See
+[Permissions and privacy](#permissions-and-privacy).
 
 ### Which project, not just which task
 
