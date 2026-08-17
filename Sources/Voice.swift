@@ -204,6 +204,11 @@ final class Voice {
                         with recogniser: SFSpeechRecognizer, onDevice: Bool) {
         task = recogniser.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
+            // Once we have stopped, Apple's task can still deliver — cancelling one is a request,
+            // not an instruction. Its parting result was landing after the microphone closed and
+            // emptying the box, which is why the words vanished for a second before Whisper's
+            // version appeared.
+            guard case .listening = self.state else { return }
             if let result {
                 let text = result.bestTranscription.formattedString
                 if result.isFinal {

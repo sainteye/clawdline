@@ -1407,6 +1407,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         case .idle:
             micButton.isListening = false
             textView.endDictation()
+            if sendWhenVoiceFinishes {
+                sendWhenVoiceFinishes = false
+                submit()
+            }
         case .listening(let onDevice):
             micButton.isListening = true
             setHint(whisper ? L.t.voiceListeningWhisper() : L.t.voiceListening(onDevice: onDevice),
@@ -1418,6 +1422,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             micButton.isListening = false
             textView.endDictation()
             setHint(why, warn: true)
+            // The words on screen are still the live ones, and they are what was asked for.
+            if sendWhenVoiceFinishes {
+                sendWhenVoiceFinishes = false
+                submit()
+            }
         }
         relayout()
     }
@@ -1571,7 +1580,17 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     // MARK: - Sending
 
+    /// Set when Enter arrived mid-sentence: send as soon as the words are final.
+    private var sendWhenVoiceFinishes = false
+
     private func submit() {
+        // Pressing Enter while still talking means "that was the end of it", not "send what you
+        // have managed to write down so far". Stop, let the second pass finish, then send.
+        if voice.isListening {
+            sendWhenVoiceFinishes = true
+            voice.stop()
+            return
+        }
         let text = textView.resolvedText().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { hide(); return }
         guard let target = currentTarget else {

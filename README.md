@@ -170,7 +170,9 @@ survive being said inside a Chinese sentence. It needs no word list to maintain,
 have to curate is one that goes stale the week you write it.
 
 Every pause of about two seconds fixes what you have said so far, so earlier sentences stop
-moving while you carry on. You can stop, fix a word by hand, and carry on talking: an edit anywhere in the box ends the
+moving while you carry on. Pressing <kbd>Enter</kbd> while still talking means "that was the
+end of it": the microphone closes, the last stretch is read back, and then it sends — you do not
+have to stop it first. You can also stop, fix a word by hand, and carry on talking: an edit anywhere in the box ends the
 current run, and the next thing you say starts after the caret rather than being written into
 the middle of the sentence you were correcting.
 
