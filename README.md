@@ -109,6 +109,7 @@ Press <kbd>⌥</kbd><kbd>Space</kbd> in iTerm2, type, press <kbd>Enter</kbd>.
 | <kbd>⌘</kbd><kbd>M</kbd> | browse / switch mascots |
 | <kbd>⌘</kbd><kbd>D</kbd> | make the mascot dance |
 | <kbd>⌘</kbd><kbd>/</kbd> | show the rest of the keys |
+| drag / <kbd>⌘</kbd><kbd>V</kbd> | drop a file or paste an image anywhere on the window |
 | <kbd>Esc</kbd> | close |
 
 <kbd>⌘</kbd><kbd>A</kbd> <kbd>⌘</kbd><kbd>C</kbd> <kbd>⌘</kbd><kbd>V</kbd> <kbd>⌘</kbd><kbd>X</kbd>
@@ -127,9 +128,12 @@ that will not tell you where the text goes is worse than no prompt box.
 
 ### Dropping in a file or an image
 
-Drag a file onto the bar, or paste an image, and its **path** goes into the box. That is the
-whole handoff: Claude Code reads files itself, images included, so a path is the same thing you
-would have typed and it needs nothing at the other end that is not already there.
+Drag a file anywhere onto the window, or paste an image, and it appears in the box as a
+thumbnail — the picture you dropped, not forty characters of directory. What gets **sent** is
+the path. That is the whole handoff: Claude Code reads files itself, images included, so a path
+is the same thing you would have typed and needs nothing at the other end that is not already
+there. What is on screen is for you; what goes down the wire is for Claude Code, and the moment
+those are the same string one of them is being made worse to suit the other.
 
 An image off the clipboard has no path yet, so one is written under
 `~/Library/Caches/dev.sainteye.clawdline/drops/` and that path is inserted. Those files are the
@@ -183,6 +187,11 @@ monospace at the edge of the page.
 <kbd>⌘</kbd><kbd>F</kbd> makes it the size of the screen — not macOS's full screen, which moves
 the window to a Space of its own and is the opposite of what a panel you summon over your work
 is for. It is a resize, animated, and the mascot has a routine for it.
+
+At that size, switching to another app puts it away and coming back to the terminal brings it
+back. Only at that size: covering the screen means leaving is "I need to see something for a
+moment", not "I am done" — whereas a bar that reappeared every time you focused the terminal
+would be in the way. Dismissing it by hand still means what it says.
 
 <div align="center">
 <img src="docs/assets/fullscreen.png" width="860" alt="⌘F: the same pane filling the screen, with finished runs of tool calls folded to one line each.">

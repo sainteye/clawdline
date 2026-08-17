@@ -20,7 +20,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Recompute whether the hotkey should be attached whenever the frontmost app changes
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.updateHotKeyScope() }
+        ) { [weak self] note in
+            self?.updateHotKeyScope()
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            PromptController.shared.appBecameFrontmost(app?.bundleIdentifier)
+        }
 
         if applyHotKey() {
             Log.write("hotkey registered: \(HotKey.display(Config.shared.hotKey))"

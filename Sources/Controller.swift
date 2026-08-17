@@ -4,7 +4,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     static let shared = PromptController()
 
     private var panel: PromptPanel!
-    private var container: NSView!         // the animation scales this layer: mascot and card together
+    private var container: DropTargetView!         // the animation scales this layer: mascot and card together
     private var cardHost: NSView!          // exists only to cast the shadow (the card clips its corners, and clipping kills a shadow)
     private var card: NSVisualEffectView!
     /// A dark layer between the frosted material and everything drawn on it, so what is behind
@@ -73,6 +73,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// The keycap row costs most of the footer's width to say things you learn once. Collapsed
     /// to a single ⌘/ until asked for.
     private var keysShown = false
+    /// Set when the panel goes away because the user switched apps while it filled the screen.
+    /// Only what was hidden this way comes back: reappearing over an app you deliberately left
+    /// it for would make the whole screen unusable.
+    private var hiddenByAppSwitch = false
     /// Filling the screen is a size, not macOS's fullscreen: the native one moves the window to
     /// its own Space, which for a panel you summon over whatever you were doing is the opposite
     /// of what it is for. This just makes the frame the size of the screen.
@@ -129,7 +133,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.delegate = self
 
-        container = NSView(frame: NSRect(x: 0, y: 0, width: W, height: 140))
+        container = DropTargetView(frame: NSRect(x: 0, y: 0, width: W, height: 140))
+        container.acceptDrops()
         container.wantsLayer = true
         container.layer?.masksToBounds = false
         container.autoresizesSubviews = false
@@ -180,10 +185,19 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainerInset = .zero
         textView.drawsBackground = false
-        textView.isRichText = false
+        // Rich text so a dropped file can be a thumbnail rather than forty characters of path.
+        // Typing attributes are pinned below, so what you type still looks like what you typed.
+        textView.isRichText = true
+        textView.isAutomaticLinkDetectionEnabled = false
+        textView.importsGraphics = false
         textView.allowsUndo = true
         textView.font = NSFont.systemFont(ofSize: Style.textSize, weight: .regular)
         textView.textColor = .labelColor
+        // Pinned, because rich text otherwise lets a paste bring its own font in with it.
+        textView.typingAttributes = [
+            .font: NSFont.systemFont(ofSize: Style.textSize, weight: .regular),
+            .foregroundColor: NSColor.labelColor,
+        ]
         textView.insertionPointColor = Style.accent
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -304,6 +318,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         textView.onToggleOrder = { [weak self] in self?.toggleOutputOrder() }
         textView.onToggleKeys = { [weak self] in self?.toggleKeys() }
         textView.acceptDrops()
+        container.onDrop = { [weak self] paths in self?.textView.insertPaths(paths) }
+        container.onDragActive = { [weak self] on in self?.chrome?.highlighted = on }
+        // The transcript takes drags by default and would swallow one over half the window,
+        // trying to insert text into a view that is not editable.
+        outputView.unregisterDraggedTypes()
         textView.onDropped = { [weak self] n in
             self?.setHint(L.t.dropped(n), warn: false)
             self?.relayout()
@@ -366,6 +385,20 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         Log.write("show: frame=\(panel.frame) prev=\(previousApp?.localizedName ?? "-")")
     }
 
+    /// Another app came forward.
+    ///
+    /// Full screen is the one mode where leaving and coming back is worth automating: the panel
+    /// covers the screen, so switching away is not "I am done with it", it is "I need to see
+    /// something else for a moment". At bar size it stays manual — a bar that reappears every
+    /// time you focus the terminal is in the way, not helpful.
+    func appBecameFrontmost(_ bundleID: String?) {
+        let scope = Config.shared.scopeApp
+        let isTerminal = !scope.isEmpty && bundleID.map { scope.contains($0) } == true
+        guard isTerminal, hiddenByAppSwitch, !panel.isVisible, fullscreen else { return }
+        hiddenByAppSwitch = false
+        show()
+    }
+
     func hide() {
         guard panel.isVisible, !dismissing else { return }
         dismissing = true
@@ -400,6 +433,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             panel.makeFirstResponder(textView)
             return
         }
+        // Losing focus is the app-switch path; Esc and sending come through hide() directly and
+        // must not arm the return, or dismissing it would only postpone it.
+        hiddenByAppSwitch = fullscreen
         hide()
     }
 
@@ -1406,7 +1442,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     // MARK: - Sending
 
     private func submit() {
-        let text = textView.string.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = textView.resolvedText().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { hide(); return }
         guard let target = currentTarget else {
             setHint(L.t.nothingToSend, warn: true)
@@ -1419,7 +1455,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         Config.shared.history = Array(hist.suffix(60))
         Config.shared.save()
 
-        textView.string = ""
+        textView.clearText()
         historyCursor = -1
         idleWork?.cancel()
         danceWork?.cancel()
@@ -1578,7 +1614,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let fake = Self.standInTarget()
 
         let margin: CGFloat = 64
-        textView.string = ""
+        textView.clearText()
         relayout()
         let panelSize = container.bounds.size
         let canvas = NSSize(width: panelSize.width + margin * 2, height: panelSize.height + margin * 2)
@@ -1626,7 +1662,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             }
         }
         mascot.frozenTime = nil
-        textView.string = ""
+        textView.clearText()
         Log.write("filmstrip → \(dir) (\(total) frames @ \(Int(fps))fps)")
     }
 

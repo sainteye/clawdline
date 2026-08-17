@@ -67,6 +67,10 @@ final class PromptPanel: NSPanel {
 /// The card's hairline border plus the highlight along its top edge. Frosted glass has no
 /// edge of its own, and without these two strokes it dissolves into a light wallpaper.
 final class CardChrome: NSView {
+    /// Lit while a file is being dragged over the window, because a drop with no answer until
+    /// you let go is a guess.
+    var highlighted = false { didSet { if oldValue != highlighted { needsDisplay = true } } }
+
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -80,8 +84,8 @@ final class CardChrome: NSView {
         gloss?.draw(in: NSRect(x: 0, y: bounds.height - 26, width: bounds.width, height: 26), angle: -90)
         NSGraphicsContext.restoreGraphicsState()
 
-        Style.border.setStroke()
-        path.lineWidth = 1
+        (highlighted ? Style.accent : Style.border).setStroke()
+        path.lineWidth = highlighted ? 2 : 1
         path.stroke()
     }
 }
@@ -183,8 +187,39 @@ final class KeyHintsView: NSView {
 
 // MARK: - Input field
 
+/// The whole window as a drop target.
+///
+/// Dropping only onto the input box means aiming at a line of text, and by the time the pane is
+/// open that line is a small part of what is on screen. Anywhere on the card is the same
+/// intention, so it is the same result.
+final class DropTargetView: NSView {
+    var onDrop: (([String]) -> Void)?
+    var onDragActive: ((Bool) -> Void)?
+
+    func acceptDrops() { registerForDraggedTypes(Drop.acceptedTypes) }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard !Drop.paths(from: sender.draggingPasteboard).isEmpty else { return [] }
+        onDragActive?(true)
+        return .copy
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) { onDragActive?(false) }
+    override func draggingEnded(_ sender: NSDraggingInfo) { onDragActive?(false) }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        onDragActive?(false)
+        let paths = Drop.paths(from: sender.draggingPasteboard)
+        guard !paths.isEmpty else { return false }
+        onDrop?(paths)
+        return true
+    }
+}
+
 final class PromptTextView: NSTextView {
     var placeholder = L.t.placeholder
+    private var droppedPaths: [ObjectIdentifier: String] = [:]
+
     /// Files landed in the box. The controller uses it to say what happened.
     var onDropped: ((Int) -> Void)?
 
@@ -219,12 +254,53 @@ final class PromptTextView: NSTextView {
         insertPaths(paths)
     }
 
-    private func insertPaths(_ paths: [String]) {
-        var text = Drop.insertion(for: paths)
-        // Room either side, so it does not weld itself to whatever was already typed.
-        if let last = string.last, !last.isWhitespace { text = " " + text }
-        insertText(text + " ", replacementRange: selectedRange())
+    /// What a file looks like in the box: a thumbnail, or the icon its type gets in Finder.
+    ///
+    /// The path is what will be **sent** — see `resolvedText()` — but a path is not what a person
+    /// dropped. They dropped a picture, and forty characters of directory is a worse description
+    /// of it than the picture is.
+    func insertPaths(_ paths: [String]) {
+        if let last = string.last, !last.isWhitespace {
+            insertText(" ", replacementRange: selectedRange())
+        }
+        for path in paths {
+            let attachment = NSTextAttachment()
+            attachment.image = Drop.thumbnail(for: path, height: 30)
+            droppedPaths[ObjectIdentifier(attachment)] = path
+            let run = NSMutableAttributedString(attachment: attachment)
+            run.append(NSAttributedString(string: " "))
+            run.addAttributes(typingAttributes, range: NSRange(location: run.length - 1, length: 1))
+            textStorage?.replaceCharacters(in: selectedRange(), with: run)
+            setSelectedRange(NSRange(location: selectedRange().location + run.length, length: 0))
+        }
+        didChangeText()
         onDropped?(paths.count)
+    }
+
+    /// The text to send: every thumbnail turns back into the path it stands for.
+    ///
+    /// Kept apart from `string` on purpose. What is on screen is for the person, what this
+    /// returns is for Claude Code, and the moment those two are the same string one of them is
+    /// being made worse to suit the other.
+    func resolvedText() -> String {
+        guard let storage = textStorage else { return string }
+        let out = NSMutableString()
+        storage.enumerateAttributes(in: NSRange(location: 0, length: storage.length)) { attrs, range, _ in
+            if let a = attrs[.attachment] as? NSTextAttachment,
+               let path = droppedPaths[ObjectIdentifier(a)] {
+                out.append(Drop.quoted(path))
+                return
+            }
+            out.append(storage.attributedSubstring(from: range).string)
+        }
+        return out as String
+    }
+
+    /// Clearing the box has to clear these too, or a dropped file would follow the next message
+    /// it was never part of.
+    func clearText() {
+        droppedPaths.removeAll()
+        string = ""
     }
 
     var onSubmit: (() -> Void)?

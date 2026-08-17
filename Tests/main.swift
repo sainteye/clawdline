@@ -704,6 +704,28 @@ group("files and images dropped on the bar") {
     written.forEach { try? FileManager.default.removeItem(atPath: $0) }
 }
 
+group("a dropped file is a picture on screen and a path on the wire") {
+    let view = PromptTextView()
+    view.typingAttributes = [.font: NSFont.systemFont(ofSize: 13)]
+    view.string = "look at"
+    view.setSelectedRange(NSRange(location: view.string.count, length: 0))
+    view.insertPaths(["/tmp/shot one.png"])
+
+    // What is shown is for the person; what is sent is for Claude Code. The moment those are
+    // the same string, one of them is being made worse to suit the other.
+    check("the path is not sitting in the box", !view.string.contains("/tmp/shot"))
+    check("something stands in its place", view.string.contains("\u{FFFC}"))
+    expect("and the wire gets the path, quoted",
+           view.resolvedText(), "look at '/tmp/shot one.png' ")
+    check("what was already typed survives", view.resolvedText().hasPrefix("look at "))
+
+    // Clearing has to clear the mapping too, or a dropped file follows the next message it was
+    // never part of.
+    view.clearText()
+    view.string = "next message"
+    expect("a cleared box sends only what is in it", view.resolvedText(), "next message")
+}
+
 group("the documented example files") {
     // docs/project-status.md tells other people how to write these. The examples beside it are
     // parsed here with the same code the app uses, so the page cannot quietly stop being true.

@@ -38,6 +38,23 @@ enum Drop {
         return []
     }
 
+    /// A picture of a file, at the size a line of text can hold.
+    ///
+    /// An image gets scaled down; anything else gets the icon its type already has in Finder,
+    /// which says "a PDF" or "a folder" faster than the extension does.
+    static func thumbnail(for path: String, height: CGFloat) -> NSImage {
+        let source = NSImage(contentsOfFile: path) ?? NSWorkspace.shared.icon(forFile: path)
+        let size = source.size
+        guard size.height > 0 else { return source }
+        let scaled = NSSize(width: max(1, (size.width / size.height * height).rounded()),
+                            height: height)
+        let out = NSImage(size: scaled)
+        out.lockFocus()
+        source.draw(in: NSRect(origin: .zero, size: scaled))
+        out.unlockFocus()
+        return out
+    }
+
     /// One line to add to the prompt.
     static func insertion(for paths: [String]) -> String {
         paths.map(quoted).joined(separator: " ")
