@@ -453,6 +453,24 @@ final class PromptTextView: NSTextView {
     /// words it has already handed over.
     var onDictationDisplaced: (() -> Void)?
 
+    /// How speech-in-progress is drawn: underlined, the way macOS marks text that is not
+    /// settled yet. Borrowed rather than invented — an input method has been saying "these
+    /// characters may still change" with this exact line for decades, so it needs no legend.
+    private var pendingAttributes: [NSAttributedString.Key: Any] {
+        var attrs = baseAttributes
+        attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+        attrs[.underlineColor] = NSColor.tertiaryLabelColor
+        return attrs
+    }
+
+    /// Take the line off a stretch: those words are final now.
+    private func settle(_ range: NSRange) {
+        guard let storage = textStorage, range.length > 0,
+              range.location + range.length <= storage.length else { return }
+        storage.removeAttribute(.underlineStyle, range: range)
+        storage.removeAttribute(.underlineColor, range: range)
+    }
+
     /// Start writing at the end, keeping everything already in the box.
     ///
     /// Only this range is rewritten as the words arrive. Rebuilding the whole box from a string
@@ -478,11 +496,14 @@ final class PromptTextView: NSTextView {
         var safe = NSRange(location: min(range.location, storage.length),
                            length: min(range.length, max(0, storage.length - range.location)))
         if storage.string != lastBox || storage.attributedSubstring(from: safe).string != lastDictated {
+            // Edited by hand: those words are the user's now, so they stop being provisional.
+            settle(NSRange(location: safe.location,
+                           length: min(safe.length, max(0, storage.length - safe.location))))
             safe = NSRange(location: min(selectedRange().location, storage.length), length: 0)
             lastDictated = ""
             onDictationDisplaced?()
         }
-        let run = NSAttributedString(string: text, attributes: baseAttributes)
+        let run = NSAttributedString(string: text, attributes: pendingAttributes)
         guard shouldChangeText(in: safe, replacementString: text) else { return }
         storage.replaceCharacters(in: safe, with: run)
         didChangeText()
@@ -493,6 +514,7 @@ final class PromptTextView: NSTextView {
     }
 
     func endDictation() {
+        if let range = dictationRange { settle(range) }
         dictationRange = nil
         lastDictated = ""
         lastBox = ""

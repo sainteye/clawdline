@@ -791,6 +791,40 @@ group("dictating next to a dropped image") {
     expect("what was already typed survives", typed.resolvedText(), "看一下 這個錯誤")
 }
 
+group("the line under words that are not settled yet") {
+    // macOS has marked provisional text this way since input methods existed. Borrowing it
+    // means the state needs no explanation — but only if the line actually comes off again.
+    let v = PromptTextView()
+    v.baseAttributes = [.font: NSFont.systemFont(ofSize: 13)]
+    v.setPlainText("")
+    v.beginDictation()
+    v.updateDictation("還沒定案的字")
+
+    func underlined(at i: Int) -> Bool {
+        v.textStorage?.attribute(.underlineStyle, at: i, effectiveRange: nil) != nil
+    }
+    check("speech in progress is underlined", underlined(at: 0))
+
+    v.endDictation()
+    check("settling takes the line off", !underlined(at: 0))
+    expect("and leaves the words alone", v.string, "還沒定案的字")
+
+    // A pause settles one stretch and opens the next: the old one is plain, the new one is not.
+    let two = PromptTextView()
+    two.baseAttributes = [.font: NSFont.systemFont(ofSize: 13)]
+    two.setPlainText("")
+    two.beginDictation()
+    two.updateDictation("第一段")
+    two.endDictation()          // what a settle does
+    two.beginDictation()
+    two.updateDictation("第二段")
+    let storage = two.textStorage!
+    check("the settled stretch has no line",
+          storage.attribute(.underlineStyle, at: 0, effectiveRange: nil) == nil)
+    check("the live one does",
+          storage.attribute(.underlineStyle, at: storage.length - 1, effectiveRange: nil) != nil)
+}
+
 group("dictation across a pause") {
     // The recogniser settles a sentence at a pause and starts the next from nothing, so the
     // text it hands back is only ever the sentence in progress. Sticking them together is this
