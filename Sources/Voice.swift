@@ -41,6 +41,8 @@ final class Voice {
     /// stop. Live text while you talk, a better sentence when you finish — the two engines are
     /// good at opposite halves of the same job, so neither has to be chosen over the other.
     var refineWithWhisper = false
+    /// Called when a stretch of speech has been fixed and the next one should start after it.
+    var onSettled: (() -> Void)?
 
     private let engine = AVAudioEngine()
     private var recogniser: SFSpeechRecognizer?
@@ -57,6 +59,9 @@ final class Voice {
     private var recording = Data()
     private var recorder: AVAudioConverter?
     private let recordingRate: Double = 16_000
+    /// When something was last loud enough to be speech, for spotting the gap between sentences.
+    private var lastLoud = CFAbsoluteTimeGetCurrent()
+    private var settling = false
 
     /// The locale to listen in, and whether it can be done without leaving the machine.
     ///
@@ -171,7 +176,10 @@ final class Voice {
             let rms = sqrt(sum / Float(max(1, buffer.frameLength)))
             // Loudness is logarithmic; a linear meter sits near zero and then jumps.
             let level = min(1, max(0, (20 * log10(max(rms, 1e-7)) + 50) / 50))
-            DispatchQueue.main.async { self?.onLevel?(level) }
+            DispatchQueue.main.async {
+                self?.onLevel?(level)
+                self?.noteLevel(level)
+            }
             self?.record(buffer)
         }
         engine.prepare()
@@ -184,7 +192,10 @@ final class Voice {
 
         settled = ""
         latest = ""
+        lastLoud = CFAbsoluteTimeGetCurrent()
+        settling = false
         listen(on: request, with: recogniser, onDevice: onDevice)
+        refinedOnDevice = onDevice
         set(.listening(onDevice: onDevice))
     }
 
@@ -247,6 +258,59 @@ final class Voice {
         // Handing it to Whisper afterwards would write that sentence a second time.
         recording = Data()
     }
+
+    /// Watch for the gap between sentences.
+    ///
+    /// Speech sits well above this; a quiet room sits well below. The threshold does not have to
+    /// be clever because the thing being detected is a person stopping, not a signal ending.
+    private func noteLevel(_ level: Float) {
+        guard case .listening = state, Config.shared.voiceSettleSeconds > 0 else { return }
+        if level > 0.12 {
+            lastLoud = CFAbsoluteTimeGetCurrent()
+            return
+        }
+        guard !settling,
+              CFAbsoluteTimeGetCurrent() - lastLoud > Config.shared.voiceSettleSeconds,
+              !recording.isEmpty || !latest.isEmpty else { return }
+        settle()
+    }
+
+    /// Fix everything said so far and start again after it.
+    ///
+    /// Whisper reads only this stretch rather than the whole session, which is both faster and
+    /// the reason the text you already read stops moving.
+    private func settle() {
+        settling = true
+        let audio = recording
+        recording = Data()
+        forgetAccumulated()
+
+        func done() {
+            self.onSettled?()
+            self.settling = false
+            self.lastLoud = CFAbsoluteTimeGetCurrent()
+            if case .transcribing = self.state { self.set(.listening(onDevice: refinedOnDevice)) }
+        }
+
+        guard refineWithWhisper, audio.count > Int(recordingRate) / 4 else {
+            done()
+            return
+        }
+        set(.transcribing)
+        let terms = vocabulary
+        let rate = recordingRate
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let better = Whisper.transcribe(audio, rate: rate, vocabulary: terms)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let better, !better.isEmpty { self.onText?(better) }
+                done()
+            }
+        }
+    }
+
+    /// Remembered so a settle can put the listening state back the way it found it.
+    private var refinedOnDevice = true
 
     /// Convert a buffer to what the model wants and keep it. Same audio, second purpose.
     private func record(_ buffer: AVAudioPCMBuffer) {

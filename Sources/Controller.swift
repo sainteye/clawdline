@@ -1382,6 +1382,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         voice.onState = { [weak self] state in self?.showVoice(state, whisper: self?.useWhisper == true) }
         voice.vocabulary = words
         voice.refineWithWhisper = useWhisper
+        // A settled stretch stops being speech's to rewrite: end the run and open the next one
+        // after it, exactly as if the user had paused and started a new thought — which they did.
+        voice.onSettled = { [weak self] in
+            self?.textView.endDictation()
+            self?.textView.beginDictation()
+        }
         if !voice.isListening { textView.beginDictation() }
         voice.toggle(locale: Self.voiceLocales())
     }

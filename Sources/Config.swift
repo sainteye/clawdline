@@ -42,6 +42,12 @@ final class Config {
     var voiceEngine = "auto"
     var whisperBinary = ""
     var whisperModel = ""
+    /// How long a pause ends a sentence, in seconds. 0 turns it off.
+    ///
+    /// At a pause the words so far are fixed: Whisper reads that stretch and replaces it, and
+    /// nothing after that point rewrites it. Without this, a two-minute dictation is one lump
+    /// that gets re-transcribed at the end — slower, and everything you already read moves.
+    var voiceSettleSeconds: Double = 1.8
     /// Come back when the terminal does.
     ///
     /// Switching away from a panel you left open is "I need to see something for a moment", not
@@ -87,6 +93,7 @@ final class Config {
         if let v = obj["card_opacity"] as? Double, v >= 0, v <= 1 { cardOpacity = v }
         if let v = obj["reopen_on_return"] as? Bool { reopenOnReturn = v }
         if let v = obj["voice_engine"] as? String, !v.isEmpty { voiceEngine = v }
+        if let v = obj["voice_settle_seconds"] as? Double, v >= 0, v <= 30 { voiceSettleSeconds = v }
         if let v = obj["whisper_binary"] as? String { whisperBinary = v }
         if let v = obj["whisper_model"] as? String { whisperModel = v }
         if let v = obj["last_target_id"] as? String { lastTargetID = v }
@@ -111,6 +118,7 @@ final class Config {
             "card_opacity": cardOpacity,
             "reopen_on_return": reopenOnReturn,
             "voice_engine": voiceEngine,
+            "voice_settle_seconds": voiceSettleSeconds,
             "whisper_binary": whisperBinary,
             "whisper_model": whisperModel,
             "last_target_id": lastTargetID as Any,
