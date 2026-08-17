@@ -14,10 +14,7 @@ Works with iTerm2 directly, and with every other terminal through tmux.
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](Sources)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#install)
 
-<!-- Uncomment once ko-fi.com/threath is live. A badge that leads nowhere is worse than none.
-
-[![Ko-fi](https://img.shields.io/badge/ko--fi-support-ff5e5b.svg?logo=ko-fi&logoColor=white)](https://ko-fi.com/threath)
--->
+[![Ko-fi](https://img.shields.io/badge/ko--fi-support-ff5e5b.svg?logo=ko-fi&logoColor=white)](https://ko-fi.com/sainteye)
 
 English · [繁體中文](README.zh-TW.md)
 

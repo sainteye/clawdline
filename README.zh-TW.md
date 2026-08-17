@@ -13,10 +13,7 @@ session；按 <kbd>⌘</kbd><kbd>J</kbd>，那個 session 就在同一個地方�
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](Sources)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#安裝)
 
-<!-- ko-fi.com/threath 開好之後把下面這行的註解拿掉。一個連過去是空的 badge 比沒有 badge 更糟。
-
-[![Ko-fi](https://img.shields.io/badge/ko--fi-support-ff5e5b.svg?logo=ko-fi&logoColor=white)](https://ko-fi.com/threath)
--->
+[![Ko-fi](https://img.shields.io/badge/ko--fi-support-ff5e5b.svg?logo=ko-fi&logoColor=white)](https://ko-fi.com/sainteye)
 
 [English](README.md) · 繁體中文
 

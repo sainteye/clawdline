@@ -3,8 +3,4 @@
 # Ko-fi, because the two obvious alternatives cannot pay a maintainer in Taiwan: GitHub Sponsors
 # and Buy Me a Coffee both settle through Stripe Connect, and Stripe does not do payouts there.
 # Ko-fi can use PayPal instead, which does reach Taiwan for cross-border payments.
-#
-# Still commented out until the page exists and loads for a logged-out visitor. A funding button
-# that leads nowhere is worse than no button — it looks like someone is collecting, and nothing
-# happens when you press it.
-# ko_fi: threath
+ko_fi: sainteye
