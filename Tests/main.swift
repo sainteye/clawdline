@@ -814,8 +814,20 @@ group("whisper as an optional engine") {
           Whisper.language(for: "zh-HK").seed == tw)
     expect("both are still the same language to whisper",
            Whisper.language(for: "zh-TW").code, "zh")
-    expect("a plain language needs no seed", Whisper.language(for: "en-US").seed, nil)
     expect("and gets a two-letter code", Whisper.language(for: "en-US").code, "en")
+    // The punctuation fix was found by measuring a Chinese clip. Shipping it for Chinese only
+    // would have meant everybody else keeps the bug it fixed.
+    check("English gets a seed too", Whisper.language(for: "en-US").seed != nil)
+    check("so does Japanese", Whisper.language(for: "ja").seed != nil)
+    for (tag, seed) in Whisper.seeds {
+        check("the \(tag) seed shows what punctuation looks like",
+              seed.contains(where: { ".!?。！？".contains($0) }))
+        check("the \(tag) seed is a sentence, not a word list",
+              seed.count > 12 && seed.count < 90)
+    }
+    expect("a language with no seed still transcribes",
+           Whisper.language(for: "sv-SE").code, "sv")
+    expect("and asks for nothing in particular", Whisper.language(for: "sv-SE").seed, nil)
     expect("auto stays auto", Whisper.language(for: "auto").code, "auto")
     expect("empty is auto", Whisper.language(for: "").code, "auto")
 

@@ -94,19 +94,45 @@ enum Whisper {
     /// Whisper's Chinese comes out Simplified by default. The initial prompt does that: a few
     /// words in the script you want, and the rest follows them. Undocumented, widely used, and
     /// the only lever there is short of converting afterwards.
+    /// One punctuated sentence per language, used as the prompt.
+    ///
+    /// The prompt is a writing sample and the transcript imitates it, so a sample with commas
+    /// and full stops in it produces them — measured, see `transcribe`. It says nothing in
+    /// particular on purpose: what is being shown is the punctuation, not the subject.
+    ///
+    /// This started out Chinese-only, which meant a fix found by measuring a Chinese clip
+    /// reached nobody else's language: everyone dictating in English got whatever punctuation
+    /// the model felt like. Adding a language here is one line, and the only qualification
+    /// needed is speaking it.
+    ///
+    /// Verified by measurement in `zh`. The rest are ordinary sentences that a native speaker
+    /// is very welcome to improve — a wrong-sounding sample is a worse sample, not a broken one.
+    static let seeds: [String: String] = [
+        "zh-Hant": "好的，我知道了。那就先這樣，等一下再說。",
+        "zh-Hans": "好的，我知道了。那就先这样，等一下再说。",
+        "en": "Okay, got it. Let's leave it there for now, and pick it up later.",
+        "ja": "はい、わかりました。ひとまずこれで、あとでまた話しましょう。",
+        "ko": "네, 알겠습니다. 일단 여기까지 하고, 나중에 다시 이야기하죠.",
+        "es": "De acuerdo, entendido. Lo dejamos aquí por ahora y seguimos luego.",
+        "pt": "Certo, entendi. Vamos parar por aqui e continuamos depois.",
+        "fr": "D'accord, c'est noté. On en reste là pour l'instant, on reprendra plus tard.",
+        "de": "Alles klar, verstanden. Wir lassen es vorerst so und machen später weiter.",
+        "it": "Va bene, capito. Per ora ci fermiamo qui e riprendiamo dopo.",
+        "ru": "Хорошо, понял. Пока остановимся на этом, продолжим позже.",
+    ]
+
     static func language(for tag: String) -> (code: String, seed: String?) {
         let lower = tag.lowercased()
         guard lower != "auto", !lower.isEmpty else { return ("auto", nil) }
         if lower.hasPrefix("zh") {
+            // Which script, not which country: the seed is the only lever on that, short of
+            // converting afterwards.
             let traditional = lower.contains("tw") || lower.contains("hk")
                 || lower.contains("hant") || lower.contains("mo")
-            // Punctuated on purpose: the initial prompt is a sample of what the output should
-            // look like, so a seed with commas and full stops in it produces them.
-            return ("zh", traditional
-                ? "好的，我知道了。那就先這樣，等一下再說。"
-                : "好的，我知道了。那就先这样，等一下再说。")
+            return ("zh", seeds[traditional ? "zh-Hant" : "zh-Hans"])
         }
-        return (String(lower.prefix(2)), nil)
+        let code = String(lower.prefix(2))
+        return (code, seeds[code])
     }
 
     static func transcribe(_ samples: Data, rate: Double, vocabulary: [String],

@@ -31,4 +31,17 @@ swiftc \
   Tests/main.swift \
   -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation
 
-"$BIN" Resources/mascots
+out=$("$BIN" Resources/mascots); status=$?
+echo "$out"
+[ $status -eq 0 ] || exit $status
+
+# The README quotes this number, and a quoted number is a claim like any other: it goes stale
+# silently, and a contributor reading "392 checks" next to a run of 473 learns that the page is
+# not maintained before they learn anything else.
+count=$(printf '%s' "$out" | sed -n 's/^\([0-9][0-9]*\) checks passed$/\1/p' | tail -1)
+claimed=$(sed -n 's|^\./test\.sh.*# *\([0-9][0-9]*\) checks.*|\1|p' README.md)
+if [ -n "$count" ] && [ -n "$claimed" ] && [ "$count" != "$claimed" ]; then
+  echo
+  echo "README says $claimed checks, this run had $count — update the Contributing section."
+  exit 1
+fi

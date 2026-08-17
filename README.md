@@ -526,7 +526,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no frameworks, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 392 checks, a couple of seconds
+./test.sh     # 473 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 ```
 

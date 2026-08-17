@@ -1925,9 +1925,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             // text=<what was heard>|<what the second pass makes of it>, so the same storyboard
             // can be shot in whatever language the page it is going on is written in.
             let halves = text.split(separator: "|", maxSplits: 1).map(String.init)
-            let live = halves.first ?? "把那個 webhook 的 retry 改成 exponential backoff"
+            let live = halves.first ?? "cambia el retry a exponential backoff"
             let better = halves.count > 1 ? halves[1]
-                : "把那個 webhook 的 retry 改成 exponential backoff，然後跑一次測試。"
+                : "cambia el retry a exponential backoff, y después corre los tests."
             let speakEnd = seconds * 0.52
             let thinkEnd = seconds * 0.74
             s.routine = "typing"
