@@ -1376,6 +1376,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             extras: Voice.alwaysExpected
                 + [currentTarget.flatMap { projectCache[$0.id]?.name },
                    currentTarget.flatMap { projectCache[$0.id]?.branch }].compactMap { $0 })
+        textView.onDictationDisplaced = { [weak self] in self?.voice.forgetAccumulated() }
         if case .listening = voice.state {} else { textView.beginDictation() }
         voice.toggle(locale: Self.voiceLocales())
     }

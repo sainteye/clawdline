@@ -721,6 +721,26 @@ group("dictating next to a dropped image") {
     check("both go out together",
           sent.contains("/tmp/shot.png") && sent.contains("這張圖裡的表格"))
 
+    // Speak, fix a word by hand, speak again. The fix has to survive, and the next words have
+    // to land after it — not inside the sentence they were correcting.
+    let edited = PromptTextView()
+    edited.baseAttributes = [.font: NSFont.systemFont(ofSize: 13)]
+    edited.setPlainText("")
+    edited.beginDictation()
+    var displaced = 0
+    edited.onDictationDisplaced = { displaced += 1 }
+    edited.updateDictation("修好那個 webhook")
+    // The user corrects it, exactly as they would: select all, retype.
+    edited.setPlainText("修好那個 webhook 的錯字")
+    edited.setSelectedRange(NSRange(location: edited.string.count, length: 0))
+    edited.updateDictation("然後跑測試")
+
+    expect("the edit is noticed once", displaced, 1)
+    expect("the correction stands and the new words follow it",
+           edited.resolvedText(), "修好那個 webhook 的錯字然後跑測試")
+    check("nothing was written into the middle of it",
+          !edited.string.contains("然後跑測試 的錯字"))
+
     // Typing, then dictating, keeps the typing.
     let typed = PromptTextView()
     typed.baseAttributes = [.font: NSFont.systemFont(ofSize: 13)]

@@ -435,6 +435,14 @@ final class PromptTextView: NSTextView {
 
     /// Where speech is currently writing. Nil when nothing is being dictated.
     private var dictationRange: NSRange?
+    /// The exact text last written there, and the whole box as it stood afterwards. Both are
+    /// needed: comparing only the dictated span misses an edit made anywhere else, and typing
+    /// at the end is the commonest edit of all.
+    private var lastDictated = ""
+    private var lastBox = ""
+    /// Called when the user edited what was dictated, so the speech side can stop counting the
+    /// words it has already handed over.
+    var onDictationDisplaced: (() -> Void)?
 
     /// Start writing at the end, keeping everything already in the box.
     ///
@@ -447,22 +455,39 @@ final class PromptTextView: NSTextView {
             insertText(" ", replacementRange: NSRange(location: storage.length, length: 0))
         }
         dictationRange = NSRange(location: textStorage?.length ?? 0, length: 0)
+        lastDictated = ""
+        lastBox = string
     }
 
     /// Replace what has been dictated so far with the latest version of it.
+    ///
+    /// Unless you have edited it in the meantime. Then what is there is yours, speech starts a
+    /// fresh run at the caret, and the words already said stop being re-sent — otherwise fixing
+    /// a typo mid-sentence made the next few words land in the middle of the old ones.
     func updateDictation(_ text: String) {
         guard let storage = textStorage, let range = dictationRange else { return }
-        let safe = NSRange(location: min(range.location, storage.length),
+        var safe = NSRange(location: min(range.location, storage.length),
                            length: min(range.length, max(0, storage.length - range.location)))
+        if storage.string != lastBox || storage.attributedSubstring(from: safe).string != lastDictated {
+            safe = NSRange(location: min(selectedRange().location, storage.length), length: 0)
+            lastDictated = ""
+            onDictationDisplaced?()
+        }
         let run = NSAttributedString(string: text, attributes: baseAttributes)
         guard shouldChangeText(in: safe, replacementString: text) else { return }
         storage.replaceCharacters(in: safe, with: run)
         didChangeText()
         dictationRange = NSRange(location: safe.location, length: run.length)
+        lastDictated = text
+        lastBox = storage.string
         setSelectedRange(NSRange(location: safe.location + run.length, length: 0))
     }
 
-    func endDictation() { dictationRange = nil }
+    func endDictation() {
+        dictationRange = nil
+        lastDictated = ""
+        lastBox = ""
+    }
 
     /// Clearing the box has to clear these too, or a dropped file would follow the next message
     /// it was never part of.

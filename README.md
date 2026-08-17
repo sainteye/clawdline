@@ -169,6 +169,10 @@ Claude Code are the words you would say to it, so `webhook`, `rebase` and the na
 survive being said inside a Chinese sentence. It needs no word list to maintain, and a list you
 have to curate is one that goes stale the week you write it.
 
+You can stop, fix a word by hand, and carry on talking: an edit anywhere in the box ends the
+current run, and the next thing you say starts after the caret rather than being written into
+the middle of the sentence you were correcting.
+
 Recognition runs on this Mac for the dictation languages you have downloaded, and goes to Apple
 for the ones you have not. The bar says which, for as long as it is listening. See
 [Permissions and privacy](#permissions-and-privacy).

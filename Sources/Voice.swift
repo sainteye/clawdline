@@ -215,6 +215,15 @@ final class Voice {
         return first + (needsSpace ? " " : "") + second
     }
 
+    /// Forget the words already handed over.
+    ///
+    /// Called when the user has edited what was dictated: those words are theirs now, and
+    /// sending them again would insert a second copy next to the version they just fixed.
+    func forgetAccumulated() {
+        settled = ""
+        latest = ""
+    }
+
     func stop() {
         engine.inputNode.removeTap(onBus: 0)
         if engine.isRunning { engine.stop() }
