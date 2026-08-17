@@ -27,42 +27,43 @@ English · [繁體中文](README.zh-TW.md)
 ## What it is for
 
 **Claude Code asks you to look at the bottom-left corner of a full-screen terminal a few hundred
-times a day.** Clawdline is the second place to type — one that appears where your eyes already
-are, sends into the session you were last in, and gives focus straight back. Everything else here
-follows from that one idea: if you are not going to look at the terminal, the bar has to tell you
-what the terminal would have.
+times a day.** Clawdline is a second place to type — one that appears where your eyes already
+are, sends into the session you were last in, and hands focus straight back.
 
-<table>
-<tr><td width="50%">
+Everything else follows from one consequence: **if you are not going to look at the terminal, the
+bar has to tell you what the terminal would have.**
 
-**Read the session back** — <kbd>⌘</kbd><kbd>J</kbd>
+## What it does that a prompt box does not
 
-The conversation, laid out: headings, tables with borders, code. Runs of tool calls fold to one
-line. A live line says what it is doing right now.
+- **Takes dictation in two languages at once.** Words appear as you speak them; when you stop,
+  Whisper reads the same audio back and replaces them. "把那個 webhook 的 retry 改成 exponential
+  backoff" is one sentence no live recogniser will hear, and the pauses in your speech are where
+  it settles — so earlier sentences stop moving while you carry on.
+  → [Dictation](#talk-instead-of-type) · [Whisper setup](docs/whisper.md)
 
-</td><td width="50%">
+- **Reads the session back, laid out.** Not a screenshot of a terminal: headings, tables with
+  borders, code — and runs of tool calls folded to one line each, because thirty lines of paths
+  is not what you came back to read. A live line says what it is doing right now.
+  → [The transcript pane](#reading-a-session-back)
 
-**Say it instead of typing it** — <kbd>⌘</kbd><kbd>L</kbd>
+- **Tells you which project, not just which task.** Two tabs can be working on tasks that read
+  the same. The bar names the repository, its branch, what is uncommitted, a deploy in flight and
+  a backlog — with the project's own pixel icon and colour.
+  → [Which project](#which-project-not-just-which-task)
 
-Words appear as you speak. Stop, and Whisper reads the same audio back and replaces them — one
-sentence in two languages, which no live recogniser will do.
+- **Takes a screenshot straight from your clipboard.** Drop a file anywhere on the window or
+  paste an image; it appears as a thumbnail. What gets sent is the path, because that is what
+  Claude Code can read.
+  → [Files and images](#dropping-in-a-file-or-an-image)
 
-</td></tr>
-<tr><td>
+- **Remembers what you sent.** <kbd>↑</kbd> and <kbd>↓</kbd> walk back through your own prompts,
+  and those same words are what dictation is told to expect — so the terms you actually use are
+  the ones it gets right.
+  → [Use it](#use-it)
 
-**Know which project you are in**
-
-Not just which task: the repository, its branch, what is uncommitted, a deploy in flight, a
-backlog — with the project's own icon and colour.
-
-</td><td>
-
-**Drop in files and images**
-
-They land as thumbnails. What gets sent is the path, because that is what Claude Code can read.
-
-</td></tr>
-</table>
+- **Wears a mascot you drew.** The character on the bar is a JSON file: a pixel grid, a palette
+  and five animations. Swap it without forking anything.
+  → [Mascots](#bring-your-own-mascot)
 
 <div align="center">
 
