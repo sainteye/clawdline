@@ -49,11 +49,19 @@ that nobody checked would make the whole column mean "probably".
 
 ## Claude Code has its own dictation now
 
-`/voice` — hold space, and it is good. It is worth knowing where it differs, because
-that is the whole reason to reach for this one instead: it **streams your audio to
-Anthropic's servers** (its docs: "audio is not processed locally"), it needs a Claude.ai
-account rather than an API key or Bedrock or Vertex, it is unavailable under an
-organisation's HIPAA compliance setting, and it transcribes **one language at a time**.
+`/voice` — hold space, and it is good. Where it differs is the whole reason to reach for
+this one instead:
+
+- It **streams your audio to Anthropic's servers**; its docs say "audio is not processed
+  locally".
+- It needs a **Claude.ai account** — not an API key, Bedrock, Vertex or Foundry — and is
+  unavailable under an organisation's HIPAA compliance setting.
+- It transcribes **one language at a time**.
+- It does **not support Chinese at all**. Twenty languages, Japanese and Korean among
+  them, and no variety of Chinese in the list; no `language` value changes that. Checked
+  against 2.1.233, which answers `"Chinese" is not a supported dictation language;
+  using English`.
+
 Clawdline's second pass never leaves the machine and is built for the sentence with two
 languages in it. See [whisper.md](whisper.md).
 

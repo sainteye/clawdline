@@ -185,10 +185,12 @@ Clawdline 列出所有 iTerm2 session，用 `ps` 比對每個的 TTY，留下真
 
 ### 用說的代替打字
 
-**Claude Code 自己有聽寫**——`/voice`，按住空白鍵，而且做得很好。它做不到的有三件：
-在你自己的機器上轉譯（它的文件寫「audio is not processed locally」）、
-不需要 Claude.ai 帳號、以及**一句話裡聽得懂兩種語言**。這裡就是為那三件事存在的，
-完整對照在 [docs/whisper.md](docs/whisper.md)。
+**Claude Code 自己有聽寫**——`/voice`，按住空白鍵，而且做得很好。但它**完全不支援中文**：
+支援清單二十種語言，日文韓文都在，中文一種都沒有，而且沒有任何 `language` 值改得掉——
+填 `zh`、`zh-TW`、`Chinese` 都會警告一次然後用英文聽。
+另外三件它也做不到：在你自己的機器上轉譯（它的文件寫「audio is not processed locally」）、
+不需要 Claude.ai 帳號、一句話裡聽得懂兩種語言。
+這裡就是為那幾件事存在的，完整對照在 [docs/whisper.md](docs/whisper.md)。
 
 <kbd>⌘</kbd><kbd>L</kbd>（或點輸入框右邊那顆麥克風）把你說的話變成框裡的字。
 **講完它會自己停**——兩秒左右的停頓把一句話定下來，更長的安靜結束整段，

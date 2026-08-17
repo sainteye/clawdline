@@ -216,8 +216,9 @@ only thing this leaves behind, so the most recent few are kept and the rest are 
 
 **Claude Code has its own dictation** — `/voice`, hold space — and it is good. What it does not
 do is transcribe on your machine (its docs: "audio is not processed locally"), work without a
-Claude.ai account, or hear two languages in one sentence. Those three are what this is for; the
-whole comparison is in [docs/whisper.md](docs/whisper.md).
+Claude.ai account, hear two languages in one sentence, or **understand Chinese at all** — its
+list runs to twenty languages, Japanese and Korean among them, and Chinese is not one. Those are
+what this is for; the whole comparison is in [docs/whisper.md](docs/whisper.md).
 
 <kbd>⌘</kbd><kbd>L</kbd>, or the microphone at the right of the box, turns your voice into text
 in it. **It stops on its own when you are done talking** — a pause of a couple of seconds fixes
