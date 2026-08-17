@@ -901,6 +901,54 @@ group("dictating next to a dropped image") {
     expect("what was already typed survives", typed.resolvedText(), "看一下 這個錯誤")
 }
 
+group("nothing you typed yourself stays faded") {
+    // Fading marks words speech has not finished with. It leaked onto typing: AppKit takes the
+    // typing attributes from the text beside the caret, so the first characters typed after a
+    // provisional run came out half-erased — outside the dictated range, where settling by
+    // range never reached them. What the user saw was their own words looking unfinished with
+    // the microphone off, and no way to fix it short of deleting the sentence.
+    let base: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.labelColor,
+    ]
+
+    func fadedCount(_ v: PromptTextView) -> Int {
+        guard let storage = v.textStorage, storage.length > 0 else { return 0 }
+        let settled = (base[.foregroundColor] as? NSColor) ?? .labelColor
+        var faded = 0
+        storage.enumerateAttribute(.foregroundColor,
+                                   in: NSRange(location: 0, length: storage.length)) { value, r, _ in
+            guard let c = value as? NSColor else { return }
+            if c.alphaComponent < settled.alphaComponent { faded += r.length }
+        }
+        return faded
+    }
+
+    let v = PromptTextView()
+    v.baseAttributes = base
+    v.setPlainText("")
+    v.beginDictation()
+    v.updateDictation("開啟")
+    check("while speech is still going, its words are faded", fadedCount(v) > 0)
+
+    // Type at the caret, which is where dictation left it. This is the reported bug.
+    v.insertText("。另外", replacementRange: v.selectedRange())
+    expect("typing settles everything, including what was just typed", fadedCount(v), 0)
+
+    v.insertText("再打一些", replacementRange: v.selectedRange())
+    expect("and it stays settled as you keep going", fadedCount(v), 0)
+
+    // Ending a run leaves nothing faded either, whatever the range was.
+    let ended = PromptTextView()
+    ended.baseAttributes = base
+    ended.setPlainText("")
+    ended.beginDictation()
+    ended.updateDictation("跑一下測試")
+    ended.endDictation()
+    expect("stopping brings the dictated words up to full", fadedCount(ended), 0)
+    ended.insertText("，然後回報", replacementRange: ended.selectedRange())
+    expect("typing after it is not faded either", fadedCount(ended), 0)
+}
+
 group("knowing when somebody has stopped talking") {
     // The numbers are real: a quiet room here measures around 0.28, speech peaks past 0.7. A
     // fixed threshold of 0.12 — the first version — never fired once in that room.
@@ -1051,6 +1099,90 @@ group("words that are not settled yet are not fully there") {
     check("it is the same colour, only thinner",
           abs(thin.redComponent - solidRGB.redComponent) < 0.01
           && abs(thin.blueComponent - solidRGB.blueComponent) < 0.01)
+}
+
+group("the languages the interface speaks") {
+    // The protocol makes the compiler refuse a language that is missing a string. What it cannot
+    // refuse is a language that is present and still in English — copy the reference file,
+    // translate half of it, and everything builds.
+    func resolve(_ tag: String) -> Copy? {
+        L.catalog.first(where: { tag.hasPrefix($0.tag) })?.copy
+    }
+    func name(_ copy: Copy?) -> String { copy.map { "\(type(of: $0))" } ?? "none" }
+
+    // Matched by prefix, so a broad tag above a narrow one swallows it. The symptom is somebody's
+    // interface quietly coming up in the wrong script, which nothing else here would notice.
+    for (tag, copy) in L.catalog {
+        expect("\(tag) is not shadowed by an earlier entry", name(resolve(tag)), name(copy))
+    }
+
+    // The tags macOS actually hands over are longer than the ones in the catalog.
+    expect("Taiwan gets Traditional", name(resolve("zh-Hant-TW")), "TraditionalChinese")
+    expect("Hong Kong too", name(resolve("zh-HK")), "TraditionalChinese")
+    expect("the mainland gets Simplified", name(resolve("zh-Hans-CN")), "SimplifiedChinese")
+    expect("and so does zh-CN", name(resolve("zh-CN")), "SimplifiedChinese")
+    expect("Brazil and Portugal share one", name(resolve("pt-BR")), "Portuguese")
+    expect("en-GB is English", name(resolve("en-GB")), "English")
+    expect("ja-JP is Japanese", name(resolve("ja-JP")), "Japanese")
+    check("a language nobody has written yet falls through", resolve("sv-SE") == nil)
+
+    let en = English()
+    let sample: [(String, (Copy) -> String)] = [
+        ("placeholder", { $0.placeholder }),
+        ("noSession", { $0.noSession }),
+        ("nothingToSend", { $0.nothingToSend }),
+        ("sendFailed", { $0.sendFailed }),
+        ("voiceNoPermission", { $0.voiceNoPermission }),
+        ("voiceUnavailable", { $0.voiceUnavailable }),
+        ("whisperNothingHeard", { $0.whisperNothingHeard }),
+        ("noOutput", { $0.noOutput }),
+        ("menuOpen", { $0.menuOpen }),
+        ("menuReveal", { $0.menuReveal }),
+        ("menuLogin", { $0.menuLogin }),
+        ("menuReload", { $0.menuReload }),
+        ("loginFailed", { $0.loginFailed }),
+        ("hintSend", { $0.hintSend }),
+        ("hintNewline", { $0.hintNewline }),
+    ]
+    for (tag, copy) in L.catalog where tag != "en" {
+        let same = sample.filter { $0.1(copy) == $0.1(en) }
+        check("\(tag) is translated, not copied",
+              same.count <= 2, "\(same.count) of \(sample.count) still English: "
+              + same.map(\.0).joined(separator: ", "))
+    }
+
+    // The hint words share one row along the bottom. A long one there does not wrap, it pushes
+    // the next word off the end — and the word that goes missing is in somebody else's language,
+    // so nobody working on the layout ever sees it happen.
+    for (tag, c) in L.catalog {
+        let hints = [c.hintSend, c.hintNewline, c.hintSwitch, c.hintList, c.hintMascot,
+                     c.hintOutput, c.hintFullscreen, c.hintKeys, c.hintTextSize, c.hintOrder,
+                     c.hintVoice]
+        let long = hints.filter { $0.count > 20 }
+        check("\(tag) keeps its hint words short", long.isEmpty, long.joined(separator: ", "))
+        check("\(tag) has no empty hint", hints.allSatisfy { !$0.isEmpty })
+    }
+
+    // Every translation has to survive being asked the questions with arguments in them.
+    for (tag, c) in L.catalog {
+        check("\(tag) fills in the model name",
+              c.dictationStatus(.ready(model: "ggml-x.bin")).contains("ggml-x.bin"))
+        check("\(tag) fills in the config path",
+              c.hotkeyFailedBody("/tmp/config.json").contains("/tmp/config.json"))
+        check("\(tag) fills in the key combination",
+              c.hotkeyFailedTitle("⌥Space").contains("⌥Space"))
+        check("\(tag) distinguishes the two reading orders",
+              c.outputOrder(newestFirst: true) != c.outputOrder(newestFirst: false))
+        check("\(tag) distinguishes on-device from not",
+              c.voiceListening(onDevice: true) != c.voiceListening(onDevice: false))
+    }
+
+    // No interface string names a terminal that the reader may not be running. The errors that
+    // do name iTerm2 come from the iTerm2 path itself, where naming it is the point.
+    for (tag, c) in L.catalog {
+        check("\(tag) does not assume which terminal you use",
+              !c.nothingToSend.contains("iTerm") && !c.noSession.contains("iTerm"))
+    }
 }
 
 group("dictation starts where the caret is") {

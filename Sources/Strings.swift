@@ -2,11 +2,21 @@ import Foundation
 
 /// Every piece of UI copy, one implementation per language.
 ///
-/// Why a protocol instead of a `.strings` catalog: the compiler refuses to build a
-/// language that is missing a string. With `.strings` files a missing key is a blank
-/// label at runtime, and nobody notices until a user in that language complains.
+/// Why a protocol instead of a `.strings` catalog: the compiler refuses to build a language that
+/// is missing a string. With `.strings` files a missing key is a blank label at runtime, and
+/// nobody notices until somebody who reads that language complains — which is to say, after it
+/// has already shipped.
 ///
-/// **Adding a language:** write one struct below, add one line to `catalog`. That is all.
+/// **Adding a language:** copy `Copy+English.swift` to `Copy+<Language>.swift`, translate the
+/// values, and add one line to `L.catalog`. Nothing else, and the build tells you if you missed
+/// a string.
+///
+/// Two rules for the copy itself:
+///
+/// - **Say what happened, not what went wrong internally.** "Could not send" is for a person;
+///   "AppleScript returned -1728" is for a log.
+/// - **Keep the hint words short.** They sit in one row along the bottom of the card, and a long
+///   word there pushes another one off the end rather than wrapping.
 protocol Copy {
     // Input field
     var placeholder: String { get }
@@ -63,156 +73,6 @@ protocol Copy {
     var loginFailed: String { get }
 }
 
-struct English: Copy {
-    let placeholder = "Message Claude Code…"
-
-    let hintSend = "send"
-    let hintNewline = "new line"
-    let hintSwitch = "switch"
-    let hintList = "list"
-    let hintMascot = "mascot"
-    let hintOutput = "output"
-    let hintFullscreen = "full screen"
-    let hintKeys = "keys"
-    let hintTextSize = "text size"
-    let hintOrder = "reverse"
-    let hintVoice = "dictate"
-    func voiceListening(onDevice: Bool) -> String {
-        onDevice ? "Listening on this Mac — press again to stop"
-                 : "Listening — this language is transcribed by Apple, not on this Mac"
-    }
-    let voiceNoPermission = "Dictation needs microphone and speech access"
-    let voiceUnavailable = "Dictation is not available right now"
-    func voiceTranscribing(seconds: Double) -> String {
-        String(format: "Whisper is reading it back… %.1fs", seconds)
-    }
-    let whisperMissing = "Whisper is not installed — see docs/whisper.md"
-    let whisperNothingHeard = "Heard nothing"
-    func dictationStatus(_ status: Whisper.Status) -> String {
-        switch status {
-        case .ready(let model): return "Dictation: Apple, then Whisper (\(model))"
-        case .noBinary: return "Dictation: Apple only — no whisper-cli"
-        case .noModel: return "Dictation: Apple only — whisper-cli is there, no model"
-        }
-    }
-    func voiceListeningWhisper() -> String { "Listening — Whisper takes another look when you stop" }
-
-    let scanning = "Scanning…"
-    let noSession = "No Claude Code session found"
-    let nothingToSend = "Nothing to send to — start Claude Code in iTerm2 first"
-    let sendFailed = "Could not send"
-    let itermSilent = "iTerm2 did not respond"
-    let scriptMissing = "iterm.js is missing — broken app bundle?"
-    let cannotList = "Could not read iTerm2 sessions"
-    let noOutput = "Nothing to read from this session yet."
-    func outputSize(_ pt: Int) -> String { "Output text \(pt)pt — ⌘J to see it" }
-    func foldedTools(_ count: Int) -> String { "\(count) steps" }
-    func outputOrder(newestFirst: Bool) -> String {
-        newestFirst ? "Newest first" : "Oldest first"
-    }
-    func backlogNow(_ count: Int) -> String { "now \(count)" }
-    func dropped(_ count: Int) -> String {
-        count == 1 ? "Added the path — Claude Code reads it" : "Added \(count) paths"
-    }
-
-    let menuOpen = "Open prompt bar"
-    let menuReveal = "Jump to target tab"
-    let menuMascot = "Mascot"
-    let menuLogin = "Launch at login"
-    let menuEditConfig = "Edit config…"
-    let menuReload = "Reload config"
-    let menuQuit = "Quit Clawdline"
-    let menuNoTarget = "(not detected yet)"
-
-    func hotkeyFailedTitle(_ combo: String) -> String { "Could not register \(combo)" }
-    func hotkeyFailedBody(_ configPath: String) -> String {
-        """
-        Another app has probably taken it — Spotlight, an input-method switcher, \
-        BetterTouchTool, and so on.
-
-        Pick a different one: edit "hotkey" in \(configPath), then choose \
-        "Reload config" from the menu bar.
-
-        Until then, the ✳ in the menu bar still opens the prompt bar.
-        """
-    }
-    let loginFailed = "Could not set launch at login"
-}
-
-struct TraditionalChinese: Copy {
-    let placeholder = "跟 Claude 說⋯⋯"
-
-    let hintSend = "送出"
-    let hintNewline = "換行"
-    let hintSwitch = "換分頁"
-    let hintList = "清單"
-    let hintMascot = "換角色"
-    let hintOutput = "看輸出"
-    let hintFullscreen = "全螢幕"
-    let hintKeys = "快速鍵"
-    let hintTextSize = "字級"
-    let hintOrder = "反序"
-    let hintVoice = "語音"
-    func voiceListening(onDevice: Bool) -> String {
-        onDevice ? "在這台 Mac 上聽——再按一次結束"
-                 : "聽著——這個語言由 Apple 辨識，不在這台機器上"
-    }
-    let voiceNoPermission = "語音輸入需要麥克風與語音辨識權限"
-    let voiceUnavailable = "現在無法使用語音輸入"
-    func voiceTranscribing(seconds: Double) -> String {
-        String(format: "Whisper 重讀中⋯ %.1f 秒", seconds)
-    }
-    let whisperMissing = "沒有裝 Whisper——見 docs/whisper.md"
-    let whisperNothingHeard = "沒聽到東西"
-    func dictationStatus(_ status: Whisper.Status) -> String {
-        switch status {
-        case .ready(let model): return "語音：Apple，之後 Whisper（\(model)）"
-        case .noBinary: return "語音：只有 Apple——沒有 whisper-cli"
-        case .noModel: return "語音：只有 Apple——whisper-cli 有了，缺模型"
-        }
-    }
-    func voiceListeningWhisper() -> String { "聽著——停下來時 Whisper 會再看一遍" }
-
-    let scanning = "掃描中⋯"
-    let noSession = "找不到在跑 Claude Code 的分頁"
-    let nothingToSend = "沒有可以送的分頁——先在 iTerm2 裡開一個 Claude Code"
-    let sendFailed = "送不出去"
-    let itermSilent = "iTerm2 沒有回應"
-    let scriptMissing = "找不到 iterm.js——app bundle 壞了？"
-    let cannotList = "讀不到 iTerm2 的 session"
-    let noOutput = "還讀不到這個分頁的內容。"
-    func outputSize(_ pt: Int) -> String { "輸出字級 \(pt)pt——按 ⌘J 看" }
-    func foldedTools(_ count: Int) -> String { "\(count) 個動作" }
-    func outputOrder(newestFirst: Bool) -> String {
-        newestFirst ? "最新的在最上面" : "最舊的在最上面"
-    }
-    func backlogNow(_ count: Int) -> String { "現在\(count)" }
-    func dropped(_ count: Int) -> String {
-        count == 1 ? "路徑加進去了——Claude Code 會自己讀" : "加了 \(count) 個路徑"
-    }
-
-    let menuOpen = "打開輸入框"
-    let menuReveal = "跳到目標分頁"
-    let menuMascot = "吉祥物"
-    let menuLogin = "開機時啟動"
-    let menuEditConfig = "編輯設定⋯"
-    let menuReload = "重新載入設定"
-    let menuQuit = "結束 Clawdline"
-    let menuNoTarget = "（尚未偵測）"
-
-    func hotkeyFailedTitle(_ combo: String) -> String { "\(combo) 註冊不起來" }
-    func hotkeyFailedBody(_ configPath: String) -> String {
-        """
-        多半是被別的軟體佔走了——Spotlight、輸入法切換、BetterTouchTool 之類。
-
-        換一個：編輯 \(configPath) 裡的 hotkey，然後從選單列選「重新載入設定」。
-
-        在那之前，選單列的 ✳ 一樣打得開輸入框。
-        """
-    }
-    let loginFailed = "設定開機啟動失敗"
-}
-
 enum L {
     /// The active language. Cached because it is read on every redraw.
     private(set) static var t: Copy = pick()
@@ -220,13 +80,34 @@ enum L {
     /// Call this after the config changes.
     static func reload() { t = pick() }
 
-    /// More specific tags first — `zh-Hans` must not fall into the Traditional bucket.
-    private static let catalog: [(tag: String, copy: Copy)] = [
+    /// Matched by prefix, so **more specific tags come first** — `zh-Hans` must not fall into the
+    /// Traditional bucket, and it would, because `"zh-Hans-CN".hasPrefix("zh-Hant")` is false but
+    /// a bare `"zh"` entry ahead of it would swallow both.
+    ///
+    /// One entry per script or region only where the words actually differ. Portuguese is one
+    /// entry because the interface words are the same on both sides of the Atlantic; Chinese is
+    /// two because they are not written in the same characters.
+    static let catalog: [(tag: String, copy: Copy)] = [
         ("en", English()),
         ("zh-Hant", TraditionalChinese()),
         ("zh-TW", TraditionalChinese()),
         ("zh-HK", TraditionalChinese()),
         ("zh-MO", TraditionalChinese()),
+        ("zh-Hans", SimplifiedChinese()),
+        ("zh-CN", SimplifiedChinese()),
+        ("zh-SG", SimplifiedChinese()),
+        ("zh", SimplifiedChinese()),
+        ("ja", Japanese()),
+        ("ko", Korean()),
+        ("es", Spanish()),
+        ("pt", Portuguese()),
+        ("fr", French()),
+        ("de", German()),
+        ("ru", Russian()),
+        ("it", Italian()),
+        ("hi", Hindi()),
+        ("id", Indonesian()),
+        ("tr", Turkish()),
     ]
 
     private static func pick() -> Copy {

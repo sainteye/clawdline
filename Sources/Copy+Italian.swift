@@ -1,0 +1,79 @@
+import Foundation
+
+struct Italian: Copy {
+    let placeholder = "Scrivi a Claude Code…"
+
+    let hintSend = "invia"
+    let hintNewline = "a capo"
+    let hintSwitch = "cambia"
+    let hintList = "elenco"
+    let hintMascot = "mascotte"
+    let hintOutput = "output"
+    let hintFullscreen = "schermo intero"
+    let hintKeys = "tasti"
+    let hintTextSize = "dimensione"
+    let hintOrder = "inverti"
+    let hintVoice = "detta"
+    func voiceListening(onDevice: Bool) -> String {
+        onDevice ? "In ascolto su questo Mac — premi di nuovo per fermare"
+                 : "In ascolto — questa lingua la trascrive Apple, non questo Mac"
+    }
+    let voiceNoPermission = "La dettatura ha bisogno di microfono e riconoscimento vocale"
+    let voiceUnavailable = "La dettatura non è disponibile in questo momento"
+    func voiceTranscribing(seconds: Double) -> String {
+        String(format: "Whisper sta rileggendo… %.1f s", seconds)
+    }
+    let whisperMissing = "Whisper non è installato — vedi docs/whisper.md"
+    let whisperNothingHeard = "Non ho sentito nulla"
+    func dictationStatus(_ status: Whisper.Status) -> String {
+        switch status {
+        case .ready(let model): return "Dettatura: Apple, poi Whisper (\(model))"
+        case .noBinary: return "Dettatura: solo Apple — manca whisper-cli"
+        case .noModel: return "Dettatura: solo Apple — whisper-cli c'è, manca il modello"
+        }
+    }
+    func voiceListeningWhisper() -> String {
+        "In ascolto — quando ti fermi Whisper dà un'altra letta"
+    }
+
+    let scanning = "Ricerca…"
+    let noSession = "Nessuna sessione di Claude Code trovata"
+    let nothingToSend = "Nessuna destinazione — avvia prima Claude Code in un terminale"
+    let sendFailed = "Invio non riuscito"
+    let itermSilent = "iTerm2 non ha risposto"
+    let scriptMissing = "Manca iterm.js — bundle dell'app danneggiato?"
+    let cannotList = "Non è stato possibile leggere le sessioni di iTerm2"
+    let noOutput = "In questa sessione non c'è ancora nulla da leggere."
+    func outputSize(_ pt: Int) -> String { "Testo dell'output \(pt) pt — ⌘J per vederlo" }
+    func foldedTools(_ count: Int) -> String { "\(count) passaggi" }
+    func outputOrder(newestFirst: Bool) -> String {
+        newestFirst ? "Prima i più recenti" : "Prima i più vecchi"
+    }
+    func backlogNow(_ count: Int) -> String { "ora \(count)" }
+    func dropped(_ count: Int) -> String {
+        count == 1 ? "Percorso aggiunto — Claude Code lo legge" : "Aggiunti \(count) percorsi"
+    }
+
+    let menuOpen = "Apri la barra"
+    let menuReveal = "Vai alla scheda di destinazione"
+    let menuMascot = "Mascotte"
+    let menuLogin = "Apri all'accesso"
+    let menuEditConfig = "Modifica configurazione…"
+    let menuReload = "Ricarica configurazione"
+    let menuQuit = "Esci da Clawdline"
+    let menuNoTarget = "(non ancora rilevato)"
+
+    func hotkeyFailedTitle(_ combo: String) -> String { "Non è stato possibile registrare \(combo)" }
+    func hotkeyFailedBody(_ configPath: String) -> String {
+        """
+        Con ogni probabilità la usa già un'altra app — Spotlight, un commutatore di \
+        tastiera, BetterTouchTool e simili.
+
+        Scegline un'altra: modifica "hotkey" in \(configPath), poi scegli \
+        "Ricarica configurazione" dalla barra dei menu.
+
+        Fino ad allora, il ✳ nella barra dei menu apre comunque la barra.
+        """
+    }
+    let loginFailed = "Non è stato possibile impostare l'apertura all'accesso"
+}

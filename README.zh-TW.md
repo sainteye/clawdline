@@ -382,7 +382,7 @@ CR                                     ← 再單獨送一個 Return 才送出
   "scope_app": "com.googlecode.iterm2",  // 逗號分隔多個；"" ＝ 全域生效
   "y_fraction": 0.30,                    // 輸入條上緣落在螢幕高度的幾成，0 ＝ 最上面
   "width": 720,
-  "language": "auto",                    // auto | en | zh-Hant
+  "language": "auto",                    // auto，或下面清單裡的任一個標籤
   "mascot": "clawd",
   "tmux_path": ""                        // 空的 ＝ 去常見位置找,
   "output_height": 340                    // ⌘J 那塊的高度，80–900
@@ -399,8 +399,16 @@ CR                                     ← 再單獨送一個 Return 才送出
 }
 ```
 
-加一個語言＝在 [`Sources/Strings.swift`](Sources/Strings.swift) 寫一個 struct、
-在 catalog 加一行。編譯器會拒絕編譯少了字串的語言，所以翻譯不可能安靜地只做一半。歡迎 PR。
+### 語言
+
+介面支援英文、中文（繁體與簡體）、日文、韓文、西班牙文、葡萄牙文、法文、德文、俄文、
+義大利文、印地文、印尼文、土耳其文。`auto` 跟著系統；填一個標籤（`ja`、`pt`、`zh-Hant`）就釘住。
+
+加一個語言＝複製 [`Sources/Copy+English.swift`](Sources/Copy+English.swift)、
+在 `L.catalog` 加一行。之後有兩道東西撐著它：**編譯器**拒絕少了字串的語言，
+**測試**拒絕還停在英文的語言——前者是 protocol 買到的，後者是它買不到的，
+因為複製過去的檔案編得過。任何一種語言的修正都歡迎，
+其中沒有人以母語在用的那幾種最需要。
 
 ## 權限與隱私
 

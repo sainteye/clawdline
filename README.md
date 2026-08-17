@@ -430,7 +430,7 @@ is that **the terminal never has to come to the front** — which is the entire 
   "scope_app": "com.googlecode.iterm2",  // comma-separated; "" makes the hotkey global
   "y_fraction": 0.30,                    // where the bar's top edge sits, 0 = top of screen
   "width": 720,
-  "language": "auto",                    // auto | en | zh-Hant
+  "language": "auto",                    // auto, or any tag from the list below
   "mascot": "clawd",
   "tmux_path": ""                        // empty = look in the usual places,
   "output_height": 340                    // ⌘J pane height, 80–900
@@ -444,9 +444,18 @@ is that **the terminal never has to come to the front** — which is the entire 
 }
 ```
 
-Adding a language means writing one struct in [`Sources/Strings.swift`](Sources/Strings.swift)
-and one line in the catalog. The compiler refuses to build a language that is missing a string,
-so a translation cannot silently ship half-done. Pull requests welcome.
+### Languages
+
+The interface speaks English, Chinese (Traditional and Simplified), Japanese, Korean, Spanish,
+Portuguese, French, German, Russian, Italian, Hindi, Indonesian and Turkish. `auto` follows the
+system; naming a tag (`ja`, `pt`, `zh-Hant`) pins it.
+
+Adding one is a copy of [`Sources/Copy+English.swift`](Sources/Copy+English.swift) and a line in
+`L.catalog`. Two things hold it up afterwards: the compiler refuses to build a language that is
+missing a string, and the test suite refuses one that is still in English — the first is what a
+protocol buys you, and the second is what it cannot, because a copied file compiles perfectly.
+Corrections to any of these are welcome; the ones nobody here speaks natively are the ones most
+likely to need them.
 
 ## Permissions and privacy
 
@@ -529,7 +538,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no frameworks, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 478 checks, a couple of seconds
+./test.sh     # 690 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 ```
 
