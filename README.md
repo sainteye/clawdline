@@ -172,7 +172,10 @@ have to curate is one that goes stale the week you write it.
 Words still being worked on are underlined, and the line comes off when they are settled —
 the same mark macOS has used for provisional text since input methods existed, so it needs no
 legend. Every pause of about two seconds fixes what you have said so far, so earlier sentences
-stop moving while you carry on. Pressing <kbd>Enter</kbd> while still talking means "that was the
+stop moving while you carry on — `voice_settle_seconds` sets the pause, 0 turns it off. A pause
+means quiet *compared to the last few seconds*, not quiet compared to a number: an ordinary room
+here measures a third of the way up the scale, so a fixed threshold would be this room and
+nobody else's. Pressing <kbd>Enter</kbd> while still talking means "that was the
 end of it": the microphone closes, the last stretch is read back, and then it sends — you do not
 have to stop it first. You can also stop, fix a word by hand, and carry on talking: an edit anywhere in the box ends the
 current run, and the next thing you say starts after the caret rather than being written into
@@ -472,7 +475,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no frameworks, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 84 checks, about two seconds
+./test.sh     # 392 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 ```
 
