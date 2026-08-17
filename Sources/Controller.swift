@@ -416,6 +416,15 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// yank lands on the terminal and opens the panel again. You could not leave.
     func hide(returnFocus: Bool = true) {
         guard panel.isVisible, !dismissing else { return }
+        // Returning focus is what every deliberate dismissal does — Esc, sending, the hotkey —
+        // and a deliberate dismissal means closed. Only the app-switch path (returnFocus: false)
+        // leaves the return armed.
+        //
+        // Clearing it here rather than when the panel comes back: a return that gets skipped —
+        // the commonest being coming back while the last dismissal is still animating out —
+        // used to leave the flag set for the rest of the session, and the next time you closed
+        // the panel by hand it would let itself back in.
+        if returnFocus { hiddenByAppSwitch = false }
         dismissing = true
         resizeTimer?.invalidate()
         resizeTimer = nil
