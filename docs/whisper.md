@@ -8,24 +8,26 @@ are the reason this page exists:
 |---|---|---|
 | where your voice is transcribed | Anthropic's servers, always — its docs say "audio is not processed locally" | this Mac: Whisper never leaves it, Apple only for languages you have not downloaded |
 | account | a Claude.ai account; not an API key, Bedrock, Vertex or Foundry | any, or none |
-| **Chinese** | **not supported at all** — 20 languages, and Chinese is not one of them | yes |
+| **Chinese** | **not supported at all** as of 2026-08-17 — 20 languages, and Chinese is not one | yes |
 | two languages in one sentence | no — one `language` setting, and anything outside its list falls back to English | yes, and it is the point |
 | organisation policy | unavailable where HIPAA compliance is enabled | not affected |
 
 Nearly everything else it does as well or better, and it is one keystroke closer. Use it. This is
 for the sentence it cannot hear and the machine it is not allowed to run on.
 
-**The Chinese row is not a nuance.** `/voice` supports Czech, Danish, Dutch, English, French,
+**The Chinese row is not a nuance**, and it is dated rather than hedged — if it changes, this
+sentence becomes history instead of becoming wrong. Checked **2026-08-17 against Claude Code
+2.1.233**: `/voice` supports Czech, Danish, Dutch, English, French,
 German, Greek, Hindi, Indonesian, Italian, Japanese, Korean, Norwegian, Polish, Portuguese,
 Russian, Spanish, Swedish, Turkish and Ukrainian. Japanese and Korean are there; Chinese is not,
-in any variety. There is no `language` value that changes this — `zh`, `zh-TW` and `Chinese` all
-produce `"Chinese" is not a supported dictation language; using English` and then listen in
-English. Setting it back to English gains nothing either, since the fallback has already
+in any variety. There was no `language` value that changed this — `zh`, `zh-TW` and `Chinese` all
+produced `"Chinese" is not a supported dictation language; using English`, and then it listened
+in English. Setting it back to English gains nothing either, since the fallback has already
 happened and `language` still decides what Claude answers in.
 
 (One line elsewhere on that page reads "Japanese, Chinese, and Thai transcripts count individual
 words". That is about counting words in scripts written without spaces, not a statement of
-support — measured against 2.1.233, which says the above.)
+support — the binary itself said the above.)
 
 ---
 

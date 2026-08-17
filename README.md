@@ -35,12 +35,14 @@ bar has to tell you what the terminal would have.**
 
 ## What it does that a prompt box does not
 
-- **Takes dictation in two languages at once, without your voice leaving the Mac.** Words
-  appear as you speak them; when you stop, Whisper reads the same audio back and replaces them.
-  *"cambia el retry a exponential backoff"* is one sentence, and no live recogniser will hear it
-  — Apple's changes language between sessions, never inside one. Claude Code's own `/voice` is
-  good and closer to hand, but it sends your audio to Anthropic's servers and transcribes one
-  language at a time; this is for the sentence it cannot hear.
+- **Dictation in Chinese, and in two languages at once, without your voice leaving the Mac.**
+  Words appear as you speak them; when you stop, Whisper reads the same audio back and replaces
+  them. *"cambia el retry a exponential backoff"* is one sentence, and no live recogniser will
+  hear it — Apple's changes language between sessions, never inside one. Claude Code's own
+  `/voice` is good and closer to hand, but it streams your audio to Anthropic's servers, needs a
+  Claude.ai account, and **as of 2026-08-17 (Claude Code 2.1.233) its twenty dictation languages
+  [do not include Chinese](docs/compatibility.md)** — Japanese and Korean are there, no variety
+  of Chinese is. Whisper here runs on your machine and needs no account at all.
   → [Dictation](#talk-instead-of-type) · [Whisper setup](docs/whisper.md)
 
 - **Reads the session back, laid out.** Not a screenshot of a terminal: headings, tables with
@@ -216,9 +218,10 @@ only thing this leaves behind, so the most recent few are kept and the rest are 
 
 **Claude Code has its own dictation** — `/voice`, hold space — and it is good. What it does not
 do is transcribe on your machine (its docs: "audio is not processed locally"), work without a
-Claude.ai account, hear two languages in one sentence, or **understand Chinese at all** — its
-list runs to twenty languages, Japanese and Korean among them, and Chinese is not one. Those are
-what this is for; the whole comparison is in [docs/whisper.md](docs/whisper.md).
+Claude.ai account, hear two languages in one sentence, or — **as of 2026-08-17, Claude Code
+2.1.233** — understand Chinese at all: its list runs to twenty languages, Japanese and Korean
+among them, and no variety of Chinese. Those are what this is for; the whole comparison, with
+the date it was checked, is in [docs/whisper.md](docs/whisper.md).
 
 <kbd>⌘</kbd><kbd>L</kbd>, or the microphone at the right of the box, turns your voice into text
 in it. **It stops on its own when you are done talking** — a pause of a couple of seconds fixes

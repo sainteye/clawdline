@@ -32,10 +32,13 @@ session；按 <kbd>⌘</kbd><kbd>J</kbd>，那個 session 就在同一個地方�
 
 ## 它做得到、而一般輸入框做不到的事
 
-- **一句話裡兩種語言的語音輸入。** 講的時候字就出現；停下來，Whisper 讀同一段錄音把它換掉。
-  「把那個 webhook 的 retry 改成 exponential backoff」是任何即時辨識器都聽不出來的句子。
+- **可以用中文對 Claude Code 講話，一句話裡中英夾雜也可以。** Claude Code 內建的 `/voice`
+  支援二十種語言，日文韓文都在——**截至 2026-08-17（Claude Code 2.1.233），
+  [中文一種都沒有](docs/compatibility.md)**。這裡有。
+  講的時候字就出現；停下來，Whisper 讀同一段錄音把它換掉，
+  「把那個 webhook 的 retry 改成 exponential backoff」這種句子任何即時辨識器都聽不出來。
   而你講話的停頓就是它定案的地方——前面的句子不會在你繼續講的時候還在動。
-  **而且你的聲音不會離開這台 Mac。**
+  **而且你的聲音不會離開這台 Mac**：Whisper 完全在本機跑，不需要任何帳號。
   → [語音輸入](#用說的代替打字) · [Whisper 安裝](docs/whisper.md)
 
 - **把 session 讀回來，而且是排版過的。** 不是終端機的截圖：標題、有框線的表格、程式碼，
@@ -185,7 +188,8 @@ Clawdline 列出所有 iTerm2 session，用 `ps` 比對每個的 TTY，留下真
 
 ### 用說的代替打字
 
-**Claude Code 自己有聽寫**——`/voice`，按住空白鍵，而且做得很好。但它**完全不支援中文**：
+**Claude Code 自己有聽寫**——`/voice`，按住空白鍵，而且做得很好。
+但**截至 2026-08-17（實測 Claude Code 2.1.233）它完全不支援中文**：
 支援清單二十種語言，日文韓文都在，中文一種都沒有，而且沒有任何 `language` 值改得掉——
 填 `zh`、`zh-TW`、`Chinese` 都會警告一次然後用英文聽。
 另外三件它也做不到：在你自己的機器上轉譯（它的文件寫「audio is not processed locally」）、

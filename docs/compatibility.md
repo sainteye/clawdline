@@ -57,10 +57,11 @@ this one instead:
 - It needs a **Claude.ai account** — not an API key, Bedrock, Vertex or Foundry — and is
   unavailable under an organisation's HIPAA compliance setting.
 - It transcribes **one language at a time**.
-- It does **not support Chinese at all**. Twenty languages, Japanese and Korean among
-  them, and no variety of Chinese in the list; no `language` value changes that. Checked
-  against 2.1.233, which answers `"Chinese" is not a supported dictation language;
-  using English`.
+- **As of 2026-08-17 it does not support Chinese at all.** Twenty languages, Japanese
+  and Korean among them, and no variety of Chinese in the list; no `language` value
+  changed that. Checked against 2.1.233, which answered `"Chinese" is not a supported
+  dictation language; using English`. Dated rather than hedged: if it changes, this
+  line becomes history instead of becoming wrong.
 
 Clawdline's second pass never leaves the machine and is built for the sentence with two
 languages in it. See [whisper.md](whisper.md).
