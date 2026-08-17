@@ -86,6 +86,10 @@ final class Voice {
         /// A settle ends a stretch of speech. Without speech first there is no stretch to end,
         /// so silence on its own fires once at most, not once per gap forever.
         private var armed = false
+        /// Whether anything above the floor has happened since the last settle. A stretch of
+        /// pure room tone has nothing in it to transcribe, and handing one to Whisper is how
+        /// you get a confident short sentence out of an empty room.
+        private(set) var heardSpeech = false
 
         private let sliceSeconds = 0.5
         private let sliceCount = 6             // three seconds of history
@@ -109,6 +113,7 @@ final class Voice {
             if level > floor + margin {
                 lastLoud = now
                 armed = true
+                heardSpeech = true
                 return false
             }
             guard gap > 0, armed, now - lastLoud > gap else { return false }
@@ -122,6 +127,14 @@ final class Voice {
             sliceEnds = 0
             lastLoud = now
             armed = false
+            heardSpeech = false
+        }
+
+        /// Called once a stretch has been handed over.
+        mutating func startNewStretch(now: Double) {
+            lastLoud = now
+            armed = false
+            heardSpeech = false
         }
     }
 
@@ -278,7 +291,7 @@ final class Voice {
                     // and the user said nothing about being finished.
                     self.settled = Self.join(self.settled, text)
                     self.latest = ""
-                    self.onText?(self.settled)
+                    self.emit(self.settled)
                     if case .listening = self.state { self.restart(onDevice: onDevice) }
                     return
                 }
@@ -288,7 +301,7 @@ final class Voice {
                     self.settled = Self.join(self.settled, self.latest)
                 }
                 self.latest = text
-                self.onText?(Self.join(self.settled, text))
+                self.emit(Self.join(self.settled, text))
             }
             if error != nil { self.stop() }
         }
@@ -304,6 +317,13 @@ final class Voice {
         next.addsPunctuation = true
         request = next
         listen(on: next, with: recogniser, onDevice: onDevice)
+    }
+
+    /// Everything on its way to the box goes through here, so "no Simplified" is one rule in
+    /// one place rather than a promise each path has to remember to keep.
+    private func emit(_ text: String) {
+        onText?(Whisper.wantsTraditional(Config.shared.voiceLanguage)
+                ? Whisper.toTraditional(text) : text)
     }
 
     /// Sentences need a space between them; a language that does not use spaces does not.
@@ -356,6 +376,8 @@ final class Voice {
     /// the reason the text you already read stops moving.
     private func settle() {
         settling = true
+        let spoken = silence.heardSpeech
+        silence.startNewStretch(now: CFAbsoluteTimeGetCurrent())
         let audio = takeRecording()
         forgetAccumulated()
 
@@ -365,7 +387,9 @@ final class Voice {
             if case .transcribing = self.state { self.set(.listening(onDevice: refinedOnDevice)) }
         }
 
-        guard refineWithWhisper, audio.count > Int(recordingRate) / 4 else {
+        // Nothing was said in that stretch. Sending room tone to a model that always answers
+        // is how you get "Thank you." appearing in an empty box.
+        guard spoken, refineWithWhisper, audio.count > Int(recordingRate) / 4 else {
             done()
             return
         }
@@ -373,10 +397,11 @@ final class Voice {
         let terms = vocabulary
         let rate = recordingRate
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let better = Whisper.transcribe(audio, rate: rate, vocabulary: terms)
+            let better = Whisper.transcribe(audio, rate: rate, vocabulary: terms,
+                                            language: Config.shared.voiceLanguage)
             DispatchQueue.main.async {
                 guard let self else { return }
-                if let better, !better.isEmpty { self.onText?(better) }
+                if let better, !better.isEmpty { self.emit(better) }
                 done()
             }
         }
@@ -416,8 +441,9 @@ final class Voice {
         guard case .listening = state else { return }
 
         // Nothing to improve on, or nothing installed to improve it with.
+        let spoken = silence.heardSpeech
         let audio = takeRecording()
-        guard refineWithWhisper, audio.count > Int(recordingRate) / 4 else {
+        guard spoken, refineWithWhisper, audio.count > Int(recordingRate) / 4 else {
             set(.idle)
             return
         }
@@ -426,12 +452,13 @@ final class Voice {
         let terms = vocabulary
         let rate = recordingRate
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let better = Whisper.transcribe(audio, rate: rate, vocabulary: terms)
+            let better = Whisper.transcribe(audio, rate: rate, vocabulary: terms,
+                                            language: Config.shared.voiceLanguage)
             DispatchQueue.main.async {
                 guard let self else { return }
                 // Only replace it if there is something to replace it with. A failed run should
                 // leave the live text alone, not empty the box you were about to send.
-                if let better, !better.isEmpty { self.onText?(better) }
+                if let better, !better.isEmpty { self.emit(better) }
                 self.set(.idle)
             }
         }

@@ -476,6 +476,8 @@ final class PromptTextView: NSTextView {
     /// at the end is the commonest edit of all.
     private var lastDictated = ""
     private var lastBox = ""
+    /// True while we are the ones writing, so our own edits are not mistaken for the user's.
+    private var applyingDictation = false
     /// Called when the user edited what was dictated, so the speech side can stop counting the
     /// words it has already handed over.
     var onDictationDisplaced: (() -> Void)?
@@ -532,12 +534,40 @@ final class PromptTextView: NSTextView {
         }
         let run = NSAttributedString(string: text, attributes: pendingAttributes)
         guard shouldChangeText(in: safe, replacementString: text) else { return }
+        applyingDictation = true
         storage.replaceCharacters(in: safe, with: run)
         didChangeText()
+        applyingDictation = false
         dictationRange = NSRange(location: safe.location, length: run.length)
         lastDictated = text
         lastBox = storage.string
         setSelectedRange(NSRange(location: safe.location + run.length, length: 0))
+    }
+
+    /// Notice an edit the moment it happens, not the next time speech arrives.
+    ///
+    /// Waiting cost the user the thing they had just deleted: they cleared the box, stopped, and
+    /// the audio behind those words was still queued — so it came back, transcribed, into a box
+    /// they had emptied on purpose.
+    override func didChangeText() {
+        super.didChangeText()
+        guard !applyingDictation, let range = dictationRange, let storage = textStorage else {
+            onTextChanged?()
+            return
+        }
+        let stillOurs = range.location + range.length <= storage.length
+            && storage.attributedSubstring(from: range).string == lastDictated
+            && storage.string == lastBox
+        if !stillOurs {
+            settle(NSRange(location: min(range.location, storage.length),
+                           length: min(range.length, max(0, storage.length - range.location))))
+            dictationRange = NSRange(location: min(selectedRange().location, storage.length),
+                                     length: 0)
+            lastDictated = ""
+            lastBox = storage.string
+            onDictationDisplaced?()
+        }
+        onTextChanged?()
     }
 
     func endDictation() {
@@ -641,11 +671,6 @@ final class PromptTextView: NSTextView {
         }
 
         super.keyDown(with: event)
-        onTextChanged?()
-    }
-
-    override func didChangeText() {
-        super.didChangeText()
         onTextChanged?()
     }
 

@@ -721,6 +721,38 @@ group("whisper as an optional engine") {
     check("the brew test fixture is not a model",
           Whisper.model(configured: "") .map { !$0.contains("for-tests") } ?? true)
 
+    // The prompt only biases the script; asking for Traditional and getting Simplified back
+    // happens. This is the part that does not depend on the model's mood.
+    expect("Simplified becomes Traditional",
+           Whisper.toTraditional("这个电脑的网络设置有问题"), "這個電腦的網絡設置有問題")
+    expect("English in the middle is untouched",
+           Whisper.toTraditional("把那个 webhook 的 retry 改成 exponential backoff"),
+           "把那個 webhook 的 retry 改成 exponential backoff")
+    expect("text with no Chinese in it comes back identical",
+           Whisper.toTraditional("run make verify then commit"), "run make verify then commit")
+    expect("already Traditional stays put",
+           Whisper.toTraditional("這個電腦的網路設定有問題"), "這個電腦的網路設定有問題")
+    check("zh-TW wants it", Whisper.wantsTraditional("zh-TW"))
+    check("zh-Hant wants it", Whisper.wantsTraditional("zh-Hant"))
+    check("zh-CN does not", !Whisper.wantsTraditional("zh-CN"))
+    check("English does not", !Whisper.wantsTraditional("en-US"))
+    check("auto does not", !Whisper.wantsTraditional("auto"))
+
+    // Naming a language and naming a script are two different jobs. `-l zh` does the first;
+    // Whisper writes Simplified regardless unless the initial prompt is in the script you want.
+    expect("Traditional is asked for by seeding the prompt",
+           Whisper.language(for: "zh-TW").seed?.contains("繁體"), true)
+    expect("and Hong Kong counts as Traditional",
+           Whisper.language(for: "zh-HK").seed?.contains("繁體"), true)
+    expect("Simplified gets its own seed",
+           Whisper.language(for: "zh-CN").seed?.contains("简体"), true)
+    expect("both are still the same language to whisper",
+           Whisper.language(for: "zh-TW").code, "zh")
+    expect("a plain language needs no seed", Whisper.language(for: "en-US").seed, nil)
+    expect("and gets a two-letter code", Whisper.language(for: "en-US").code, "en")
+    expect("auto stays auto", Whisper.language(for: "auto").code, "auto")
+    expect("empty is auto", Whisper.language(for: "").code, "auto")
+
     // Nothing installed has to read as "not available", not as a crash or an empty transcript.
     check("a path that is not there is not a binary",
           Whisper.binary(configured: "/nope/whisper-cli") == nil
@@ -839,6 +871,20 @@ group("knowing when somebody has stopped talking") {
            feed((0..<180).map { $0 % 5 < 3 ? Float(0.2) : Float(0.02) }).hits, 0)
 
     expect("zero turns it off", feed(speech(seconds: 2) + room(seconds: 6), gap: 0).hits, 0)
+
+    // A stretch with nothing in it must be known to have nothing in it: a model asked to
+    // transcribe an empty room answers anyway, usually with a short confident English sentence.
+    var quietOnly = Voice.SilenceDetector()
+    var t = 0.0
+    quietOnly.reset(now: t)
+    for level in room(seconds: 5) { t += 1.0 / 30; _ = quietOnly.feed(level, now: t, gap: 1.8) }
+    check("an empty room reports no speech", !quietOnly.heardSpeech)
+
+    var spoken = Voice.SilenceDetector()
+    t = 0
+    spoken.reset(now: t)
+    for level in speech(seconds: 1) { t += 1.0 / 30; _ = spoken.feed(level, now: t, gap: 1.8) }
+    check("a sentence reports speech", spoken.heardSpeech)
 }
 
 group("the line under words that are not settled yet") {

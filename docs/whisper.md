@@ -93,10 +93,29 @@ Nothing here is required; set it only to override what was found.
 ```jsonc
 {
   "voice_engine": "auto",        // auto | apple | whisper
+  "voice_language": "auto",      // "zh-TW", "en", … — auto lets Whisper decide
+  "voice_settle_seconds": 1.8,   // how long a pause ends a sentence; 0 turns it off
   "whisper_binary": "",          // a specific whisper-cli
   "whisper_model": ""            // a specific .bin
 }
 ```
+
+### Language and script
+
+`voice_language` does two things that sound like one.
+
+It **names the language**, which stops the model guessing. Guessing is right when you genuinely
+switch languages and wrong in a quiet room, because a model asked what silence says will answer
+anyway — usually with a short, confident English sentence.
+
+It also **fixes the script**. Whisper writes Chinese in Simplified whichever way you ask, so
+`zh-TW` seeds the prompt with a Traditional sentence — and then converts what comes back, using
+the transliterator macOS already ships. The seed is a preference; the conversion is the
+guarantee. English inside a Chinese sentence passes through untouched, which is the whole point
+of using Whisper here.
+
+One limit worth knowing: it converts characters, not vocabulary. 网络 becomes 網絡, not 網路.
+Wording is a regional choice, and a character table is not the layer that can make it.
 
 `auto` means "whisper if it is installed". Installing it was the deliberate act; being asked
 again in a config file would be a second hoop for no reason. Set `"apple"` to keep the live

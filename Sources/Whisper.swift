@@ -88,7 +88,25 @@ enum Whisper {
 
     // MARK: - Transcribing
 
-    static func transcribe(_ samples: Data, rate: Double, vocabulary: [String]) -> String? {
+    /// What to pass whisper for a locale, and what to seed it with.
+    ///
+    /// Two separate jobs. `-l zh` picks the language; it does **not** pick the script, and
+    /// Whisper's Chinese comes out Simplified by default. The initial prompt does that: a few
+    /// words in the script you want, and the rest follows them. Undocumented, widely used, and
+    /// the only lever there is short of converting afterwards.
+    static func language(for tag: String) -> (code: String, seed: String?) {
+        let lower = tag.lowercased()
+        guard lower != "auto", !lower.isEmpty else { return ("auto", nil) }
+        if lower.hasPrefix("zh") {
+            let traditional = lower.contains("tw") || lower.contains("hk")
+                || lower.contains("hant") || lower.contains("mo")
+            return ("zh", traditional ? "以下是繁體中文的內容。" : "以下是简体中文的内容。")
+        }
+        return (String(lower.prefix(2)), nil)
+    }
+
+    static func transcribe(_ samples: Data, rate: Double, vocabulary: [String],
+                           language tag: String) -> String? {
         guard samples.count > Int(rate) / 4,          // under a quarter second is a stray click
               let bin = binary(configured: Config.shared.whisperBinary),
               let model = model(configured: Config.shared.whisperModel) else { return nil }
@@ -98,22 +116,54 @@ enum Whisper {
         guard (try? wavData(samples, rate: rate).write(to: wav)) != nil else { return nil }
         defer { try? FileManager.default.removeItem(at: wav) }
 
+        let language = Self.language(for: tag)
         var args = ["-m", model, "-f", wav.path,
-                    "-l", "auto",        // it decides, and it is allowed to change its mind
+                    "-l", language.code,
                     "-nt",               // no timestamps: this is a prompt, not a subtitle file
-                    "-np"]               // no progress bar in the output we are about to parse
+                    "-np",               // no progress bar in the output we are about to parse
+                    "-sns",              // drop non-speech tokens rather than writing them down
+                    "-nth", "0.8"]       // and be harder to convince that room tone was a word
         // whisper takes a "previous context" string, which is the same lever as Apple's
-        // contextual strings — the words to expect, in a sentence it can read.
-        if !vocabulary.isEmpty {
-            args += ["--prompt", vocabulary.prefix(60).joined(separator: ", ")]
-        }
+        // contextual strings — the words to expect, in a sentence it can read. The script seed
+        // rides along in front of it.
+        let prompt = [language.seed, vocabulary.isEmpty ? nil
+                                        : vocabulary.prefix(60).joined(separator: ", ")]
+            .compactMap { $0 }.joined(separator: " ")
+        if !prompt.isEmpty { args += ["--prompt", prompt] }
         guard let out = run(bin, args) else { return nil }
-        return out
+        let text = out
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && !$0.hasPrefix("[") }
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        return wantsTraditional(tag) ? toTraditional(text) : text
+    }
+
+    /// Turn any Simplified characters into Traditional ones, leaving everything else alone.
+    ///
+    /// The initial prompt only *biases* the script; asking for Traditional and getting a
+    /// sentence of Simplified back is a thing that happens. This is the guarantee — macOS ships
+    /// ICU's transliterator, so it is a table lookup rather than a model's opinion, and English
+    /// in the middle of a sentence passes through untouched.
+    ///
+    /// It converts characters, not vocabulary: 网络 becomes 網絡 and not 網路. Wording is a
+    /// regional choice and this is not the layer that can make it.
+    static func toTraditional(_ text: String) -> String {
+        guard text.unicodeScalars.contains(where: { $0.value >= 0x4E00 && $0.value <= 0x9FFF })
+        else { return text }
+        let out = NSMutableString(string: text)
+        guard CFStringTransform(out as CFMutableString, nil,
+                                "Simplified-Traditional" as CFString, false) else { return text }
+        return out as String
+    }
+
+    /// Whether this language tag asks for Traditional characters.
+    static func wantsTraditional(_ tag: String) -> Bool {
+        let lower = tag.lowercased()
+        guard lower.hasPrefix("zh") else { return false }
+        return lower.contains("tw") || lower.contains("hk") || lower.contains("hant")
+            || lower.contains("mo")
     }
 
     /// A 44-byte PCM header in front of the samples. Writing it by hand rather than reaching for

@@ -42,6 +42,13 @@ final class Config {
     var voiceEngine = "auto"
     var whisperBinary = ""
     var whisperModel = ""
+    /// What language to transcribe in: a BCP-47 tag like "zh-TW" or "en", or "auto".
+    ///
+    /// "auto" lets Whisper decide, which is what you want when you really do switch languages —
+    /// and what you do not want in a quiet room, because a model asked to identify silence will
+    /// pick something. Naming a language also fixes the script: Whisper writes Simplified for
+    /// Chinese unless told otherwise.
+    var voiceLanguage = "auto"
     /// How long a pause ends a sentence, in seconds. 0 turns it off.
     ///
     /// At a pause the words so far are fixed: Whisper reads that stretch and replaces it, and
@@ -94,6 +101,7 @@ final class Config {
         if let v = obj["reopen_on_return"] as? Bool { reopenOnReturn = v }
         if let v = obj["voice_engine"] as? String, !v.isEmpty { voiceEngine = v }
         if let v = obj["voice_settle_seconds"] as? Double, v >= 0, v <= 30 { voiceSettleSeconds = v }
+        if let v = obj["voice_language"] as? String, !v.isEmpty { voiceLanguage = v }
         if let v = obj["whisper_binary"] as? String { whisperBinary = v }
         if let v = obj["whisper_model"] as? String { whisperModel = v }
         if let v = obj["last_target_id"] as? String { lastTargetID = v }
@@ -119,6 +127,7 @@ final class Config {
             "reopen_on_return": reopenOnReturn,
             "voice_engine": voiceEngine,
             "voice_settle_seconds": voiceSettleSeconds,
+            "voice_language": voiceLanguage,
             "whisper_binary": whisperBinary,
             "whisper_model": whisperModel,
             "last_target_id": lastTargetID as Any,
