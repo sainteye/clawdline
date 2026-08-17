@@ -1831,7 +1831,18 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             let t = Double(i) / fps
             let step = Self.timeline(script: script, t: t, seconds: seconds, text: text)
 
-            textView.setPlainText(step.text)
+            if step.provisional {
+                textView.setPlainText("")
+                textView.beginDictation()
+                textView.updateDictation(step.text)
+            } else {
+                textView.setPlainText(step.text)
+            }
+            micButton.isListening = step.listening
+            micButton.isThinking = step.thinking
+            micButton.level = step.level
+            micButton.hasSecondPass = true
+            setVoiceStatus(step.status, colour: Style.accent)
             mascot.play(step.routine, then: step.routine)
             mascot.frozenTime = step.mascotTime
             relayout()
@@ -1879,6 +1890,13 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         var mascotTime: Double = 0
         var alpha: CGFloat = 1
         var scale: CGFloat = 1
+        /// The dictation half of the storyboard.
+        var listening = false
+        var thinking = false
+        var level: Float = 0
+        var status = ""
+        /// Draw the text as speech in progress: underlined, the way it really looks.
+        var provisional = false
     }
 
     /// The demo storyboard. The timings are fixed on purpose: the README image has to be reproducible.
@@ -1899,6 +1917,38 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     private static func timeline(script: String, t: Double, seconds: Double, text: String) -> Step {
         var s = Step()
+
+        // Dictation, end to end: listen, hear it come out live, then watch the second pass
+        // replace it. Shot rather than described, because "it gets better when you stop" is the
+        // one thing about this feature that a screenshot cannot show.
+        if script == "voice" {
+            let live = "把那個 webhook 的 retry 改成 exponential backoff"
+            let better = "把那個 webhook 的 retry 改成 exponential backoff，然後跑一次測試。"
+            let speakEnd = seconds * 0.52
+            let thinkEnd = seconds * 0.74
+            s.routine = "typing"
+            s.mascotTime = t
+            if t < speakEnd {
+                // The words arrive as they are heard, underlined, and the halo answers a voice.
+                let p = t / speakEnd
+                s.text = String(live.prefix(Int(Double(live.count) * min(1, p * 1.15))))
+                s.provisional = true
+                s.listening = true
+                s.level = Float(0.35 + 0.35 * abs(sin(t * 7)))
+                s.status = L.t.voiceListeningWhisper()
+            } else if t < thinkEnd {
+                s.text = live
+                s.provisional = true
+                s.thinking = true
+                s.status = L.t.voiceTranscribing(seconds: t - speakEnd)
+            } else {
+                // Settled: the better sentence, and the line gone from under it.
+                s.text = better
+                s.routine = "idle"
+                s.mascotTime = t - thinkEnd
+            }
+            return s
+        }
 
         // Any routine name plays that routine straight through, which is how the pack
         // gallery and the per-routine clips are shot.
