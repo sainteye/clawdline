@@ -108,6 +108,7 @@ Press <kbd>⌥</kbd><kbd>Space</kbd> in iTerm2, type, press <kbd>Enter</kbd>.
 | <kbd>⌘</kbd><kbd>+</kbd> / <kbd>⌘</kbd><kbd>−</kbd> / <kbd>⌘</kbd><kbd>0</kbd> | text size in that pane, remembered |
 | <kbd>⌘</kbd><kbd>M</kbd> | browse / switch mascots |
 | <kbd>⌘</kbd><kbd>D</kbd> | make the mascot dance |
+| <kbd>⌘</kbd><kbd>/</kbd> | show the rest of the keys |
 | <kbd>Esc</kbd> | close |
 
 <kbd>⌘</kbd><kbd>A</kbd> <kbd>⌘</kbd><kbd>C</kbd> <kbd>⌘</kbd><kbd>V</kbd> <kbd>⌘</kbd><kbd>X</kbd>
@@ -138,8 +139,18 @@ icon in the bar and the icon in the terminal are the same icon because they are 
 not because two programs were kept in step by hand. Clawdline only ever reads that file: it is
 usually a symlink into a checkout, and writing through the link would replace it with a copy.
 
-Without that registry the colour is derived from the path instead, which is stable from one
-launch to the next. The branch and the count come from one `git status --porcelain=v2 --branch`.
+It can show more than the name. A deploy in flight draws its progress, a backlog shows the lane
+that is asking for attention, a health check shows a dot — and the first two are links, so the run
+or the page opens where you would have gone looking for it anyway.
+
+None of that is computed by Clawdline: they are small JSON files under
+`~/.claude/statusline-cache/`. **[docs/project-status.md](docs/project-status.md) is the format**,
+with working examples the test suite parses, so the page cannot quietly stop being true. Anything
+can write them — a cron job, a git hook, or claude-tools, which already does for its own status
+line. Without them the footer simply has less to say.
+
+Without a registry the colour is derived from the path instead, which is stable from one launch
+to the next. The branch and the count come from one `git status --porcelain=v2 --branch`.
 
 ### Reading a session back
 

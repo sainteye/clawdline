@@ -27,10 +27,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// The heading's own ground, so it reads as the top of the pane rather than as the bottom
     /// of the input row — which is what it looked like sitting on the card's own colour.
     private var paneHeader: NSView!
-    private var targetLabel: NSTextField!
+    private var targetLabel: NSTextView!
     /// The project's pixel mark, drawn to the left of its name.
     private var iconView: ProjectIconView!
     private var hints: KeyHintsView!
+    private var hintsAll: [KeyHintsView.Hint] = []
 
     private var targets: [TargetSession] = []
     private var rows: [TargetRow] = []
@@ -52,6 +53,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// and the count of uncommitted files both move while you work.
     private var projectCache: [String: ProjectInfo] = [:]
     private var iconCache: [String: ProjectIcon.Grid] = [:]
+    private var statusCache: [String: ProjectStatus.Snapshot] = [:]
     /// When each session was last looked up, so a summon repaints from what is known and asks
     /// again in the background rather than showing nothing while it waits.
     private var projectSeen: [String: CFAbsoluteTime] = [:]
@@ -68,6 +70,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var hintResetWork: DispatchWorkItem?
     private var idleWork: DispatchWorkItem?
     private var outputOpen = false
+    /// The keycap row costs most of the footer's width to say things you learn once. Collapsed
+    /// to a single ⌘/ until asked for.
+    private var keysShown = false
     /// Filling the screen is a size, not macOS's fullscreen: the native one moves the window to
     /// its own Space, which for a panel you summon over whatever you were doing is the opposite
     /// of what it is for. This just makes the frame the size of the screen.
@@ -230,27 +235,37 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         hintLine = line()
         card.addSubview(hintLine)
 
-        targetLabel = NSTextField(labelWithString: "")
+        // A text view rather than a label: the deploy and backlog chips are links, and a label
+        // cannot make part of itself clickable. Selectable is what makes a link take a click.
+        targetLabel = NSTextView()
+        targetLabel.isEditable = false
+        targetLabel.isSelectable = true
+        targetLabel.drawsBackground = false
+        targetLabel.textContainerInset = .zero
+        targetLabel.textContainer?.lineFragmentPadding = 0
+        targetLabel.textContainer?.maximumNumberOfLines = 1
+        targetLabel.textContainer?.lineBreakMode = .byTruncatingTail
         targetLabel.font = NSFont.systemFont(ofSize: Style.hintSize)
-        targetLabel.textColor = .tertiaryLabelColor
-        targetLabel.lineBreakMode = .byTruncatingTail
-        targetLabel.maximumNumberOfLines = 1
+        targetLabel.linkTextAttributes = [.cursor: NSCursor.pointingHand]
+        targetLabel.delegate = self
         card.addSubview(targetLabel)
 
-        iconView = ProjectIconView()
-        card.addSubview(iconView)
-
-        hints = KeyHintsView()
-        hints.hints = [
-            .init(key: "↵", label: L.t.hintSend),
-            .init(key: "⇧↵", label: L.t.hintNewline),
+        hintsAll = [
             .init(key: "⇥", label: L.t.hintSwitch),
             .init(key: "⌘K", label: L.t.hintList),
             .init(key: "⌘M", label: L.t.hintMascot),
             .init(key: "⌘J", label: L.t.hintOutput),
             .init(key: "⌘F", label: L.t.hintFullscreen),
-            .init(key: "esc", label: ""),
+            .init(key: "⌘R", label: L.t.hintOrder),
+            .init(key: "⌘+", label: L.t.hintTextSize),
         ]
+
+        iconView = ProjectIconView()
+        card.addSubview(iconView)
+
+        hints = KeyHintsView()
+        hints.onClick = { [weak self] in self?.toggleKeys() }
+        applyHints()
         card.addSubview(hints)
 
         chrome = CardChrome()
@@ -287,6 +302,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         textView.onToggleOutput = { [weak self] in self?.toggleOutput() }
         textView.onToggleFullscreen = { [weak self] in self?.toggleFullscreen() }
         textView.onToggleOrder = { [weak self] in self?.toggleOutputOrder() }
+        textView.onToggleKeys = { [weak self] in self?.toggleKeys() }
         textView.onZoomOutput = { [weak self] step in self?.zoomOutput(step) }
         textView.onTextChanged = { [weak self] in
             self?.relayout()
@@ -1008,7 +1024,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// a disclosure triangle drawn into the text.
     func textView(_ view: NSTextView, clickedOnLink link: Any, at index: Int) -> Bool {
         guard let url = (link as? URL)?.absoluteString ?? link as? String else { return false }
-        guard url.hasPrefix("clawdline://fold/") else { return false }   // real links open normally
+        guard url.hasPrefix("clawdline://fold/") else {
+            // A deploy run, or the backlog page. Opening it is the whole point of showing it.
+            if let real = URL(string: url) { NSWorkspace.shared.open(real) }
+            hide()
+            return true
+        }
         let key = String(url.dropFirst("clawdline://fold/".count))
         if expandedFolds.contains(key) { expandedFolds.remove(key) } else { expandedFolds.insert(key) }
         // The signature carries the fold set, so this re-renders rather than being skipped.
@@ -1170,18 +1191,83 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             guard let cwd = Targets.workingDirectory(of: target),
                   let info = Project.info(cwd: cwd) else { return }
             let icon = ProjectIcon.grid(forCwd: cwd)
+            let status = ProjectStatus.read(cwd: cwd, remote: info.remote)
             DispatchQueue.main.async {
                 self.projectCache[target.id] = info
                 self.iconCache[target.id] = icon
+                self.statusCache[target.id] = status
                 if self.currentTarget?.id == target.id { self.updateTargetLabel() }
             }
         }
     }
 
+    /// The deploy, the backlog and the health check, as things you can click.
+    ///
+    /// The terminal status line makes these hyperlinks with OSC 8; a window has real links, so
+    /// the same rows become the same destinations. A run you cannot open is a number you have to
+    /// go and look up somewhere else, which is most of the reason nobody looks.
+    private func appendStatusChips(_ status: ProjectStatus.Snapshot?,
+                                   to s: NSMutableAttributedString) {
+        guard let status, !status.isEmpty else { return }
+        let font = NSFont.systemFont(ofSize: Style.hintSize - 0.5)
+        let mono = NSFont.monospacedSystemFont(ofSize: Style.hintSize - 1.5, weight: .regular)
+
+        func chip(_ text: String, _ colour: NSColor, link: String?, font: NSFont = font) {
+            var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: colour]
+            if let link, !link.isEmpty { attrs[.link] = link }
+            s.append(NSAttributedString(string: text, attributes: attrs))
+        }
+
+        if let d = status.deploy {
+            let now = Date().timeIntervalSince1970
+            chip("   " + d.label + " ", d.state == "fail" ? .systemRed : NSColor.secondaryLabelColor,
+                 link: d.url)
+            if d.state == "running" {
+                chip(ProjectStatus.bar(d.progress(now: now)), Style.accent, link: d.url, font: mono)
+                chip(" " + ProjectStatus.duration(d.elapsed(now: now))
+                     + "/" + ProjectStatus.duration(Int(d.typicalSeconds)),
+                     .tertiaryLabelColor, link: d.url)
+            } else {
+                chip(d.state == "ok" ? "✓" : "✗",
+                     d.state == "ok" ? .systemGreen : .systemRed, link: d.url)
+            }
+        }
+        if let b = status.backlog {
+            // The lane asking for attention leads; the total is context for it.
+            chip("   ≡\(b.total)", .tertiaryLabelColor,
+                 link: b.artifact.map { "file://" + $0 })
+            if b.now > 0 {
+                chip(" " + L.t.backlogNow(b.now), Style.accent,
+                     link: b.artifact.map { "file://" + $0 })
+            }
+        }
+        if let h = status.health {
+            chip("   ● ", h.state == "ok" ? .systemGreen : .systemRed, link: nil)
+            chip(h.label, .tertiaryLabelColor, link: nil)
+        }
+    }
+
+    /// ⌘/ — the key this is behind almost everywhere else.
+    private func toggleKeys() {
+        keysShown.toggle()
+        applyHints()
+        relayout()
+    }
+
+    private func applyHints() {
+        // Enter sends and Esc closes in every box like this one; the rest are worth showing,
+        // but not worth the width all the time.
+        hints.hints = keysShown ? hintsAll : [.init(key: "⌘/", label: L.t.hintKeys)]
+    }
+
+    private func setFooter(_ text: NSAttributedString) {
+        targetLabel.textStorage?.setAttributedString(text)
+    }
+
     private func updateTargetLabel() {
         iconView?.grid = currentTarget.flatMap { iconCache[$0.id] }
         guard !usingStandInLabel else {
-            targetLabel.attributedStringValue = Self.standInTarget()
+            setFooter(Self.standInTarget())
             return
         }
         let s = NSMutableAttributedString()
@@ -1216,6 +1302,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                     .font: NSFont.systemFont(ofSize: Style.hintSize - 0.5),
                 ]))
             }
+            appendStatusChips(statusCache[t.id], to: s)
             if targets.count > 1 {
                 s.append(NSAttributedString(string: "  \(targetIndex + 1)/\(targets.count)", attributes: [
                     .foregroundColor: NSColor.secondaryLabelColor,
@@ -1228,7 +1315,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 .font: NSFont.systemFont(ofSize: Style.hintSize),
             ]))
         }
-        targetLabel.attributedStringValue = s
+        setFooter(s)
     }
 
     // MARK: - Hint row
@@ -1243,10 +1330,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         hintResetWork?.cancel()
         guard warn else {
             hints.isHidden = true
-            targetLabel.attributedStringValue = NSAttributedString(string: text, attributes: [
+            setFooter(NSAttributedString(string: text, attributes: [
                 .foregroundColor: NSColor.secondaryLabelColor,
                 .font: NSFont.systemFont(ofSize: Style.hintSize, weight: .medium),
-            ])
+            ]))
             let back = DispatchWorkItem { [weak self] in
                 self?.resetHint(); self?.updateTargetLabel(); self?.relayout()
             }
@@ -1256,10 +1343,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
         // When something breaks, the whole keycap row gives way to the reason. That is what the user needs then, not shortcuts.
         hints.isHidden = true
-        targetLabel.attributedStringValue = NSAttributedString(string: "⚠ " + text, attributes: [
+        setFooter(NSAttributedString(string: "⚠ " + text, attributes: [
             .foregroundColor: Style.accent,
             .font: NSFont.systemFont(ofSize: Style.hintSize, weight: .medium),
-        ])
+        ]))
         targetLabel.frame = NSRect(x: Style.padH, y: (Style.hintHeight - 15) / 2,
                                    width: card.bounds.width - Style.padH * 2, height: 15)
         let work = DispatchWorkItem { [weak self] in
@@ -1451,7 +1538,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                               newestFirst: Config.shared.outputNewestFirst))
         if let tc = outputView.textContainer { outputView.layoutManager?.ensureLayout(for: tc) }
         scrollOutputToNewest()
-        targetLabel.attributedStringValue = Self.standInTarget()
+        setFooter(Self.standInTarget())
     }
 
     /// Render a whole demo, frame by frame, into PNGs for ffmpeg to turn into a GIF.
@@ -1487,7 +1574,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             mascot.play(step.routine, then: step.routine)
             mascot.frozenTime = step.mascotTime
             relayout()
-            targetLabel.attributedStringValue = fake
+            setFooter(fake)
 
             guard let rep = container.bitmapImageRepForCachingDisplay(in: container.bounds) else { continue }
             container.cacheDisplay(in: container.bounds, to: rep)

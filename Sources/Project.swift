@@ -10,6 +10,8 @@ struct ProjectInfo: Equatable {
     var name: String       // the repository's own folder name, not the session's subfolder
     var branch: String     // empty when detached or not a repository
     var dirty: Int         // files not committed, counting untracked
+    /// "owner/repo" on GitHub, which is how claude-tools names its workflow-status file.
+    var remote: String?
 }
 
 enum Project {
@@ -19,7 +21,8 @@ enum Project {
     static func info(cwd: String) -> ProjectInfo? {
         guard !cwd.isEmpty else { return nil }
         let script = "git -C \(shellQuoted(cwd)) rev-parse --show-toplevel"
-            + " && git -C \(shellQuoted(cwd)) status --porcelain=v2 --branch"
+            + " && git -C \(shellQuoted(cwd)) remote get-url origin"
+            + " ; git -C \(shellQuoted(cwd)) status --porcelain=v2 --branch"
         guard let out = run("/bin/sh", ["-c", script]) else { return nil }
         return parse(out, fallbackPath: cwd)
     }
@@ -32,6 +35,7 @@ enum Project {
         var name = URL(fileURLWithPath: fallbackPath).lastPathComponent
         var branch = ""
         var dirty = 0
+        var remote: String?
         var sawToplevel = false
 
         for line in output.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -41,6 +45,7 @@ enum Project {
                 sawToplevel = true
                 continue
             }
+            if let repo = githubRepo(text) { remote = repo; continue }
             if text.hasPrefix("# branch.head ") {
                 let head = String(text.dropFirst("# branch.head ".count))
                 branch = head == "(detached)" ? "" : head
@@ -54,7 +59,19 @@ enum Project {
                 dirty += 1
             }
         }
-        return ProjectInfo(name: name, branch: branch, dirty: dirty)
+        return ProjectInfo(name: name, branch: branch, dirty: dirty, remote: remote)
+    }
+
+    /// "owner/repo" out of a remote URL, in either of the two forms git hands back.
+    static func githubRepo(_ url: String) -> String? {
+        guard url.contains("github.com") else { return nil }
+        var tail = url
+        if let r = tail.range(of: "github.com") { tail = String(tail[r.upperBound...]) }
+        tail = tail.trimmingCharacters(in: CharacterSet(charactersIn: ":/"))
+        if tail.hasSuffix(".git") { tail = String(tail.dropLast(4)) }
+        let parts = tail.split(separator: "/")
+        guard parts.count >= 2 else { return nil }
+        return "\(parts[0])-\(parts[1])"
     }
 
     // MARK: - Plumbing

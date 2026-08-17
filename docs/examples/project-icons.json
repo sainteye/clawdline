@@ -1,0 +1,26 @@
+{
+  "projects": {
+    "/Users/you/code/atrium": {
+      "label": "atrium",
+      "art": {
+        "accent": "#5CBBA1",
+        "bg": "#2F6B5E",
+        "palette": {
+          "W": "#EEF6F4"
+        },
+        "rows": [
+          ".WWWWW.",
+          ".W...W.",
+          ".W.W.W.",
+          ".W...W."
+        ]
+      }
+    },
+    "/Users/you/code/cairn": {
+      "label": "cairn",
+      "hue": 3,
+      "tone": 1,
+      "shape": 35
+    }
+  }
+}

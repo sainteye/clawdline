@@ -19,6 +19,9 @@ protocol Copy {
     var hintMascot: String { get }
     var hintOutput: String { get }
     var hintFullscreen: String { get }
+    var hintKeys: String { get }
+    var hintTextSize: String { get }
+    var hintOrder: String { get }
 
     // Target state
     var scanning: String { get }
@@ -32,6 +35,7 @@ protocol Copy {
     func outputSize(_ pt: Int) -> String
     func foldedTools(_ count: Int) -> String
     func outputOrder(newestFirst: Bool) -> String
+    func backlogNow(_ count: Int) -> String
 
     // Menu bar
     var menuOpen: String { get }
@@ -59,6 +63,9 @@ struct English: Copy {
     let hintMascot = "mascot"
     let hintOutput = "output"
     let hintFullscreen = "full screen"
+    let hintKeys = "keys"
+    let hintTextSize = "text size"
+    let hintOrder = "reverse"
 
     let scanning = "Scanning…"
     let noSession = "No Claude Code session found"
@@ -73,6 +80,7 @@ struct English: Copy {
     func outputOrder(newestFirst: Bool) -> String {
         newestFirst ? "Newest first" : "Oldest first"
     }
+    func backlogNow(_ count: Int) -> String { "now \(count)" }
 
     let menuOpen = "Open prompt bar"
     let menuReveal = "Jump to target tab"
@@ -108,6 +116,9 @@ struct TraditionalChinese: Copy {
     let hintMascot = "換角色"
     let hintOutput = "看輸出"
     let hintFullscreen = "全螢幕"
+    let hintKeys = "快速鍵"
+    let hintTextSize = "字級"
+    let hintOrder = "反序"
 
     let scanning = "掃描中⋯"
     let noSession = "找不到在跑 Claude Code 的分頁"
@@ -122,6 +133,7 @@ struct TraditionalChinese: Copy {
     func outputOrder(newestFirst: Bool) -> String {
         newestFirst ? "最新的在最上面" : "最舊的在最上面"
     }
+    func backlogNow(_ count: Int) -> String { "現在\(count)" }
 
     let menuOpen = "打開輸入框"
     let menuReveal = "跳到目標分頁"

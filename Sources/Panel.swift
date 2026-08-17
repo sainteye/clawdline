@@ -114,6 +114,14 @@ final class KeyHintsView: NSView {
     }
 
     var hints: [Hint] = [] { didSet { needsDisplay = true } }
+    /// Clicking the row is the other way to open it, for people who do not know the key yet —
+    /// which is everyone, the first time.
+    var onClick: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) { onClick?() }
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: onClick == nil ? .arrow : .pointingHand)
+    }
 
     private let keyFont = NSFont.systemFont(ofSize: Style.hintSize, weight: .medium)
     private let labelFont = NSFont.systemFont(ofSize: Style.hintSize, weight: .regular)
@@ -191,6 +199,7 @@ final class PromptTextView: NSTextView {
     var onTextChanged: (() -> Void)?
     var onToggleFullscreen: (() -> Void)?
     var onToggleOrder: (() -> Void)?
+    var onToggleKeys: (() -> Void)?
 
     /// ⌘A / ⌘C / ⌘V / ⌘X / ⌘Z have to be wired by hand. This app is an accessory (no Dock icon,
     /// no menu bar), and macOS routes the standard edit commands through the main menu's key
@@ -215,6 +224,7 @@ final class PromptTextView: NSTextView {
             case "j": onToggleOutput?(); return true
             case "f": onToggleFullscreen?(); return true
             case "r": onToggleOrder?(); return true
+            case "/": onToggleKeys?(); return true
             // "+" arrives as "=" without shift and "+" with it; both mean the same thing here.
             case "=", "+": onZoomOutput?(1); return true
             case "-", "_": onZoomOutput?(-1); return true

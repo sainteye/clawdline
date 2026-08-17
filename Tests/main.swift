@@ -654,6 +654,52 @@ group("folding runs of tool calls") {
            Transcript.distinct(["Bash", "Read", "Bash", "Bash"]), ["Bash", "Read"])
 }
 
+group("the documented example files") {
+    // docs/project-status.md tells other people how to write these. The examples beside it are
+    // parsed here with the same code the app uses, so the page cannot quietly stop being true.
+    func load(_ name: String) -> [String: Any]? {
+        ProjectStatus.json(URL(fileURLWithPath: "docs/examples/" + name))
+    }
+
+    let icons = load("project-icons.json")?["projects"] as? [String: Any]
+    check("the registry example is there", icons != nil)
+    var rows: [String: [String: Any]] = [:]
+    for (k, v) in icons ?? [:] { if let r = v as? [String: Any] { rows[k] = r } }
+    let drawn = ProjectIcon.entry(forCwd: "/Users/you/code/atrium/frontend", in: rows)
+        .flatMap { ProjectIcon.grid(for: $0) }
+    expect("the hand-drawn example draws", drawn?.cells.count, 4)
+    expect("and carries its accent", drawn?.accent, ProjectIcon.color(hex: "#5CBBA1"))
+    let generated = ProjectIcon.entry(forCwd: "/Users/you/code/cairn", in: rows)
+        .flatMap { ProjectIcon.grid(for: $0) }
+    expect("the generated example draws too", generated?.cells.count, 4)
+
+    let deploy = ProjectStatus.deploy(load("ghrun-you-atrium.json"))
+    expect("the deploy example is running", deploy?.state, "running")
+    expect("with somewhere to click", deploy?.url?.hasPrefix("https://github.com/"), true)
+    expect("and a bar to draw", ProjectStatus.bar(0.5, width: 8), "▰▰▰▰▱▱▱▱")
+
+    let backlog = ProjectStatus.backlog(load("backlog--Users-you-code-atrium.json"))
+    expect("the backlog example totals", backlog?.total, 44)
+    expect("and names the lane that is asking", backlog?.now, 2)
+    check("and has something to open", backlog?.artifact != nil)
+
+    expect("the health example is ok", ProjectStatus.health(load("health--Users-you-code-atrium.json"))?.state, "ok")
+
+    // The file names in the page have to be the names the app looks for.
+    expect("a path becomes a file name the documented way",
+           ProjectStatus.key(forPath: "/Users/you/code/atrium"), "-Users-you-code-atrium")
+    expect("a remote becomes the documented file name",
+           Project.githubRepo("git@github.com:you/atrium.git"), "you-atrium")
+    expect("https remotes too", Project.githubRepo("https://github.com/you/atrium"), "you-atrium")
+    check("a non-GitHub remote has no run file",
+          Project.githubRepo("git@gitlab.com:you/atrium.git") == nil)
+
+    // Missing files are the normal case, not an error: most people will have none of them.
+    check("nothing at all is fine", ProjectStatus.read(cwd: "/nowhere", remote: nil).isEmpty)
+    expect("durations read the way a wait is said", ProjectStatus.duration(740), "12m 20s")
+    expect("under a minute stays seconds", ProjectStatus.duration(45), "45s")
+}
+
 group("the project's mark and colour") {
     // The real shape of an entry claude-tools writes, atrium's arch.
     let art: [String: Any] = [

@@ -102,6 +102,7 @@ macOS 會把從網路下載的東西加上隔離屬性，並拒絕開啟沒公�
 | <kbd>⌘</kbd><kbd>+</kbd> / <kbd>⌘</kbd><kbd>−</kbd> / <kbd>⌘</kbd><kbd>0</kbd> | 那塊的字級，會記住 |
 | <kbd>⌘</kbd><kbd>M</kbd> | 瀏覽／切換吉祥物 |
 | <kbd>⌘</kbd><kbd>D</kbd> | 叫吉祥物跳舞 |
+| <kbd>⌘</kbd><kbd>/</kbd> | 展開其餘的快速鍵 |
 | <kbd>Esc</kbd> | 關掉 |
 
 <kbd>⌘</kbd><kbd>A</kbd> <kbd>⌘</kbd><kbd>C</kbd> <kbd>⌘</kbd><kbd>V</kbd> <kbd>⌘</kbd><kbd>X</kbd>
@@ -130,7 +131,15 @@ Clawdline 列出所有 iTerm2 session，用 `ps` 比對每個的 TTY，留下真
 Clawdline 對那個檔案只讀不寫：它通常是指向 checkout 的 symlink，透過 symlink 寫入會把它
 換成一份實體檔。
 
-沒有那份 registry 時，顏色由路徑推導，每次啟動都一樣。分支與數量走一次
+它能顯示的不只名字。**進行中的部署會畫進度、backlog 會標出「現在該做」那一欄、健康檢查是一顆
+燈**——而且前兩者是連結，點下去就開到你本來要自己去找的那一頁。
+
+這些都不是 Clawdline 算的，是 `~/.claude/statusline-cache/` 底下幾個小 JSON 檔。
+**格式寫在 [docs/project-status.md](docs/project-status.md)**，旁邊附的範例檔會被測試實際解析，
+所以那一頁不會安靜地變成不實。誰都可以寫它們——一個 cron、一個 git hook，或是 claude-tools
+（它為了自己的終端機狀態列本來就在寫）。沒有那些檔案，底部那行就只是少講幾件事。
+
+沒有 registry 時顏色由路徑推導，每次啟動都一樣。分支與數量走一次
 `git status --porcelain=v2 --branch`。
 
 ### 看那個分頁在說什麼
