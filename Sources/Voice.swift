@@ -56,7 +56,12 @@ final class Voice {
     private var settled = ""
     private var latest = ""
     /// 16 kHz mono, kept only while refining is on.
+    ///
+    /// Written from the audio thread and taken from the main one, so every touch goes through
+    /// the lock. It did not, and the two threads mutating one `Data` crashed the app inside
+    /// `append` — a race, so it happened when a pause happened to land mid-buffer.
     private var recording = Data()
+    private let recordingLock = NSLock()
     private var recorder: AVAudioConverter?
     private let recordingRate: Double = 16_000
     private var silence = SilenceDetector()
@@ -215,7 +220,7 @@ final class Voice {
 
         let input = engine.inputNode
         let source = input.outputFormat(forBus: 0)
-        recording = Data()
+        _ = takeRecording()
         recorder = nil
         if refineWithWhisper,
            let target = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: recordingRate,
@@ -313,12 +318,21 @@ final class Voice {
     ///
     /// Called when the user has edited what was dictated: those words are theirs now, and
     /// sending them again would insert a second copy next to the version they just fixed.
+    /// Hand the recording over and start a new one, without either thread seeing a half state.
+    private func takeRecording() -> Data {
+        recordingLock.lock()
+        defer { recordingLock.unlock() }
+        let out = recording
+        recording = Data()
+        return out
+    }
+
     func forgetAccumulated() {
         settled = ""
         latest = ""
         // The audio recorded so far belongs to text the user has already taken ownership of.
         // Handing it to Whisper afterwards would write that sentence a second time.
-        recording = Data()
+        _ = takeRecording()
     }
 
     /// Watch for the gap between sentences.
@@ -329,7 +343,10 @@ final class Voice {
         guard case .listening = state else { return }
         let hit = silence.feed(level, now: CFAbsoluteTimeGetCurrent(),
                                gap: Config.shared.voiceSettleSeconds)
-        guard hit, !settling, !recording.isEmpty || !latest.isEmpty else { return }
+        recordingLock.lock()
+        let recorded = !recording.isEmpty
+        recordingLock.unlock()
+        guard hit, !settling, recorded || !latest.isEmpty else { return }
         settle()
     }
 
@@ -339,8 +356,7 @@ final class Voice {
     /// the reason the text you already read stops moving.
     private func settle() {
         settling = true
-        let audio = recording
-        recording = Data()
+        let audio = takeRecording()
         forgetAccumulated()
 
         func done() {
@@ -385,7 +401,9 @@ final class Voice {
             return buffer
         }
         guard error == nil, let channel = out.int16ChannelData?[0] else { return }
+        recordingLock.lock()
         recording.append(UnsafeBufferPointer(start: channel, count: Int(out.frameLength)))
+        recordingLock.unlock()
     }
 
     func stop() {
@@ -398,8 +416,7 @@ final class Voice {
         guard case .listening = state else { return }
 
         // Nothing to improve on, or nothing installed to improve it with.
-        let audio = recording
-        recording = Data()
+        let audio = takeRecording()
         guard refineWithWhisper, audio.count > Int(recordingRate) / 4 else {
             set(.idle)
             return
