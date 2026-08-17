@@ -182,6 +182,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
         micButton = MicButton()
         micButton.toolTip = L.t.hintVoice
+        // Updated on every show, because installing whisper does not restart this app.
+        refreshVoiceTooltip()
         micButton.onClick = { [weak self] in self?.toggleVoice() }
         card.addSubview(micButton)
 
@@ -382,6 +384,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         usingStandInLabel = false
         // The pane keeps its state across a hide, so its refresh loop has to be picked back up
         // here. Without this the first Esc freezes it until you press ⌘J twice.
+        refreshVoiceTooltip()
         if outputOpen {
             jumpToNewestOnFill = true
             startOutput()
@@ -1381,6 +1384,15 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         voice.refineWithWhisper = useWhisper
         if !voice.isListening { textView.beginDictation() }
         voice.toggle(locale: Self.voiceLocales())
+    }
+
+    /// Say which recogniser the microphone will use, before it is pressed rather than after.
+    private func refreshVoiceTooltip() {
+        let status = Whisper.status(binary: Config.shared.whisperBinary,
+                                    model: Config.shared.whisperModel)
+        micButton.toolTip = L.t.hintVoice + " · " + L.t.dictationStatus(status)
+        if case .ready = status { micButton.hasSecondPass = true }
+        else { micButton.hasSecondPass = false }
     }
 
     /// One place that turns a voice state into what the card shows.

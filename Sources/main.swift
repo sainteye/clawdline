@@ -95,6 +95,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         reveal.target = self
         menu.addItem(reveal)
 
+        // Half-installed is the state worth naming, and it is invisible everywhere else: the
+        // microphone works either way, so "it seems not to be on" is all you can tell from
+        // using it. Clicking opens the page that says what to do about it.
+        let status = Whisper.status(binary: Config.shared.whisperBinary,
+                                    model: Config.shared.whisperModel)
+        let dictation = NSMenuItem(title: L.t.dictationStatus(status),
+                                   action: status == .ready(model: "") ? nil : #selector(openWhisperDocs),
+                                   keyEquivalent: "")
+        if case .ready = status {} else { dictation.target = self }
+        menu.addItem(dictation)
+
         // Browsing beats editing a config file: the submenu is how you find out what you have.
         let mascot = NSMenuItem(title: L.t.menuMascot, action: nil, keyEquivalent: "")
         mascot.tag = 200
@@ -205,6 +216,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let url = Config.shared.fileURL
         if !FileManager.default.fileExists(atPath: url.path) { Config.shared.save() }
         NSWorkspace.shared.open(url)
+    }
+
+    @objc private func openWhisperDocs() {
+        NSWorkspace.shared.open(URL(string: "https://github.com/sainteye/clawdline/blob/main/docs/whisper.md")!)
     }
 
     @objc private func reloadConfig() {

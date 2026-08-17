@@ -29,6 +29,7 @@ protocol Copy {
     var voiceTranscribing: String { get }
     var whisperMissing: String { get }
     var whisperNothingHeard: String { get }
+    func dictationStatus(_ status: Whisper.Status) -> String
     func voiceListeningWhisper() -> String
 
     // Target state
@@ -85,6 +86,13 @@ struct English: Copy {
     let voiceTranscribing = "Reading it back…"
     let whisperMissing = "Whisper is not installed — see docs/whisper.md"
     let whisperNothingHeard = "Heard nothing"
+    func dictationStatus(_ status: Whisper.Status) -> String {
+        switch status {
+        case .ready(let model): return "Dictation: Apple, then Whisper (\(model))"
+        case .noBinary: return "Dictation: Apple only — no whisper-cli"
+        case .noModel: return "Dictation: Apple only — whisper-cli is there, no model"
+        }
+    }
     func voiceListeningWhisper() -> String { "Listening — Whisper takes another look when you stop" }
 
     let scanning = "Scanning…"
@@ -152,6 +160,13 @@ struct TraditionalChinese: Copy {
     let voiceTranscribing = "重讀一次⋯"
     let whisperMissing = "沒有裝 Whisper——見 docs/whisper.md"
     let whisperNothingHeard = "沒聽到東西"
+    func dictationStatus(_ status: Whisper.Status) -> String {
+        switch status {
+        case .ready(let model): return "語音：Apple，之後 Whisper（\(model)）"
+        case .noBinary: return "語音：只有 Apple——沒有 whisper-cli"
+        case .noModel: return "語音：只有 Apple——whisper-cli 有了，缺模型"
+        }
+    }
     func voiceListeningWhisper() -> String { "聽著——停下來時 Whisper 會再看一遍" }
 
     let scanning = "掃描中⋯"

@@ -53,7 +53,8 @@ enum Whisper {
         var best: (path: String, size: Int)?
         for dir in places {
             let names = (try? fm.contentsOfDirectory(atPath: dir.path)) ?? []
-            for name in names where name.hasPrefix("ggml-") && name.hasSuffix(".bin") {
+            for name in names where name.hasPrefix("ggml-") && name.hasSuffix(".bin")
+                                    && !name.contains("for-tests") {
                 let path = dir.appendingPathComponent(name).path
                 let size = ((try? fm.attributesOfItem(atPath: path))?[.size] as? Int) ?? 0
                 if best == nil || size > best!.size { best = (path, size) }
@@ -63,7 +64,26 @@ enum Whisper {
     }
 
     static func isAvailable(binary configuredBinary: String, model configuredModel: String) -> Bool {
-        Self.binary(configured: configuredBinary) != nil && Self.model(configured: configuredModel) != nil
+        if case .ready = status(binary: configuredBinary, model: configuredModel) { return true }
+        return false
+    }
+
+    /// Why the second pass is or is not going to happen.
+    ///
+    /// Separate from a yes/no because the interesting case is neither: `brew install whisper-cpp`
+    /// gives you the binary and no model — it ships one called `for-tests-ggml-tiny.bin`, which
+    /// is a fixture, not a model — so the commonest state is half-installed. Told "off", you go
+    /// and check the thing you already did.
+    enum Status: Equatable {
+        case ready(model: String)
+        case noBinary
+        case noModel
+    }
+
+    static func status(binary configuredBinary: String, model configuredModel: String) -> Status {
+        guard Self.binary(configured: configuredBinary) != nil else { return .noBinary }
+        guard let model = Self.model(configured: configuredModel) else { return .noModel }
+        return .ready(model: (model as NSString).lastPathComponent)
     }
 
     // MARK: - Transcribing

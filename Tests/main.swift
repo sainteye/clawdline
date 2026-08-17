@@ -709,6 +709,18 @@ group("whisper as an optional engine") {
     expect("byte rate is rate × channels × width", u32(28), 32_000)
     expect("data size", u32(40), UInt32(samples.count))
 
+    // Half-installed is the state worth naming: brew gives you the binary and no model, so
+    // "off" would send you to check the thing you already did.
+    let status = Whisper.status(binary: "/nope/whisper-cli", model: "/nope/ggml.bin")
+    check("a status is always available", [Whisper.Status.noBinary, .noModel].contains(status)
+            || { if case .ready = status { return true }; return false }())
+    check("noBinary and noModel are different answers", Whisper.Status.noBinary != .noModel)
+
+    // Homebrew ships for-tests-ggml-tiny.bin. Treating a fixture as a model would report ready
+    // and then transcribe everything into nonsense.
+    check("the brew test fixture is not a model",
+          Whisper.model(configured: "") .map { !$0.contains("for-tests") } ?? true)
+
     // Nothing installed has to read as "not available", not as a crash or an empty transcript.
     check("a path that is not there is not a binary",
           Whisper.binary(configured: "/nope/whisper-cli") == nil

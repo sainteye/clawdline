@@ -211,6 +211,9 @@ final class MicButton: NSView {
 
     /// Newest reading. Smoothed towards on each frame, so the rings breathe instead of flicker.
     var level: Float = 0
+    /// A second pass is armed. Drawn as one dot: this is a thing to notice once and then stop
+    /// noticing, not a thing to read.
+    var hasSecondPass = false { didSet { if oldValue != hasSecondPass { needsDisplay = true } } }
     private var shown: CGFloat = 0
     private var phase: CGFloat = 0
     private var timer: Timer?
@@ -291,6 +294,12 @@ final class MicButton: NSView {
                          width: size.width, height: size.height)
         let colour: NSColor = isListening ? Style.accent
             : (hovering ? .secondaryLabelColor : .tertiaryLabelColor)
+        if hasSecondPass {
+            let d: CGFloat = 3
+            colour.withAlphaComponent(isListening ? 0.9 : 0.55).setFill()
+            NSBezierPath(ovalIn: NSRect(x: box.maxX - d / 2, y: box.maxY - d,
+                                        width: d, height: d)).fill()
+        }
         colour.set()
         tinted.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1)
         // SF Symbols are template images; drawing them plain ignores the colour, so tint on top.
