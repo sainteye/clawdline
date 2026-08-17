@@ -100,7 +100,11 @@ enum Whisper {
         if lower.hasPrefix("zh") {
             let traditional = lower.contains("tw") || lower.contains("hk")
                 || lower.contains("hant") || lower.contains("mo")
-            return ("zh", traditional ? "以下是繁體中文的內容。" : "以下是简体中文的内容。")
+            // Punctuated on purpose: the initial prompt is a sample of what the output should
+            // look like, so a seed with commas and full stops in it produces them.
+            return ("zh", traditional
+                ? "以下是繁體中文的內容，句子之間會有標點符號：逗號、句號。問號呢？也會有。"
+                : "以下是简体中文的内容，句子之间会有标点符号：逗号、句号。问号呢？也会有。")
         }
         return (String(lower.prefix(2)), nil)
     }
@@ -137,7 +141,7 @@ enum Whisper {
             .filter { !$0.isEmpty && !$0.hasPrefix("[") }
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return wantsTraditional(tag) ? toTraditional(text) : text
+        return tidy(wantsTraditional(tag) ? toTraditional(text) : text)
     }
 
     /// Turn any Simplified characters into Traditional ones, leaving everything else alone.
@@ -156,6 +160,54 @@ enum Whisper {
         guard CFStringTransform(out as CFMutableString, nil,
                                 "Simplified-Traditional" as CFString, false) else { return text }
         return out as String
+    }
+
+    /// Put the spaces and the punctuation back.
+    ///
+    /// Whisper writes Chinese without a space before the English inside it — 那個webhook的retry
+    /// — and reaches for a half-width comma in the middle of a Chinese sentence. Neither is
+    /// something the model can be asked to stop doing; both are mechanical to repair.
+    ///
+    /// A space between Han characters and Latin ones is a typographic convention old enough to
+    /// have a name, and it is the difference between a sentence you read and one you decode.
+    static func tidy(_ text: String) -> String {
+        let chars = Array(text)
+        var out = ""
+        for (i, ch) in chars.enumerated() {
+            let before = i > 0 ? chars[i - 1] : nil
+            let after = i + 1 < chars.count ? chars[i + 1] : nil
+
+            if let p = before {
+                // Only between the two scripts, and never doubling a space already there.
+                let boundary = (isHan(p) && isLatin(ch)) || (isLatin(p) && isHan(ch))
+                if boundary, !p.isWhitespace, !ch.isWhitespace { out.append(" ") }
+            }
+
+            // A comma with Chinese on either side belongs to the Chinese sentence, even when the
+            // word in front of it happens to be English — which is most of them here.
+            let touchesHan = (before.map(isHan) ?? false) || (after.map(isHan) ?? false)
+            if touchesHan, let full = fullWidth[ch] {
+                out.append(full)
+            } else {
+                out.append(ch)
+            }
+        }
+        return out
+    }
+
+    private static let fullWidth: [Character: Character] = [
+        ",": "，", ";": "；", ":": "：", "?": "？", "!": "！",
+    ]
+
+    private static func isHan(_ ch: Character) -> Bool {
+        guard let v = ch.unicodeScalars.first?.value else { return false }
+        return (0x4E00...0x9FFF).contains(v) || (0x3400...0x4DBF).contains(v)
+            || (0xF900...0xFAFF).contains(v)
+    }
+
+    private static func isLatin(_ ch: Character) -> Bool {
+        guard let v = ch.unicodeScalars.first?.value, v < 0x2E80 else { return false }
+        return ch.isLetter || ch.isNumber
     }
 
     /// Whether this language tag asks for Traditional characters.

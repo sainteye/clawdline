@@ -721,6 +721,26 @@ group("whisper as an optional engine") {
     check("the brew test fixture is not a model",
           Whisper.model(configured: "") .map { !$0.contains("for-tests") } ?? true)
 
+    // Whisper writes 那個webhook的retry with no air in it, and reaches for a half-width comma
+    // in the middle of a Chinese sentence. Neither can be asked away; both are mechanical.
+    expect("a space appears between the scripts",
+           Whisper.tidy("把那個webhook的retry改成exponential backoff"),
+           "把那個 webhook 的 retry 改成 exponential backoff")
+    expect("a space that is already there is not doubled",
+           Whisper.tidy("把那個 webhook 改掉"), "把那個 webhook 改掉")
+    expect("digits count as Latin", Whisper.tidy("跑第3次"), "跑第 3 次")
+    expect("a comma after Chinese becomes full width",
+           Whisper.tidy("先跑測試,然後 commit"), "先跑測試，然後 commit")
+    expect("a comma after English does not",
+           Whisper.tidy("run verify, then commit"), "run verify, then commit")
+    // Real output: the word before the comma is English, the sentence around it is not.
+    expect("a comma between English and Chinese is Chinese punctuation",
+           Whisper.tidy("改成 backoff,然後跑測試"), "改成 backoff，然後跑測試")
+    expect("English on its own is untouched",
+           Whisper.tidy("make verify && git commit -m 'x'"), "make verify && git commit -m 'x'")
+    expect("Chinese on its own is untouched", Whisper.tidy("先跑測試，然後提交"), "先跑測試，然後提交")
+    expect("nothing is still nothing", Whisper.tidy(""), "")
+
     // The prompt only biases the script; asking for Traditional and getting Simplified back
     // happens. This is the part that does not depend on the model's mood.
     expect("Simplified becomes Traditional",

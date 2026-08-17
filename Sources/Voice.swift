@@ -322,8 +322,9 @@ final class Voice {
     /// Everything on its way to the box goes through here, so "no Simplified" is one rule in
     /// one place rather than a promise each path has to remember to keep.
     private func emit(_ text: String) {
-        onText?(Whisper.wantsTraditional(Config.shared.voiceLanguage)
-                ? Whisper.toTraditional(text) : text)
+        let script = Whisper.wantsTraditional(Config.shared.voiceLanguage)
+            ? Whisper.toTraditional(text) : text
+        onText?(Whisper.tidy(script))
     }
 
     /// Sentences need a space between them; a language that does not use spaces does not.
@@ -397,8 +398,14 @@ final class Voice {
         let terms = vocabulary
         let rate = recordingRate
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let seconds = Double(audio.count) / (rate * 2)
             let better = Whisper.transcribe(audio, rate: rate, vocabulary: terms,
                                             language: Config.shared.voiceLanguage)
+            // Whether the second pass ran, and what it made of it. Without this the only
+            // evidence is the text itself, and "Apple's version was never replaced" looks
+            // exactly like "Whisper heard it that way".
+            Log.write(String(format: "voice: whisper read %.1fs → %@", seconds,
+                             better.map { String($0.prefix(48)) } ?? "nothing"))
             DispatchQueue.main.async {
                 guard let self else { return }
                 if let better, !better.isEmpty { self.emit(better) }
@@ -452,8 +459,14 @@ final class Voice {
         let terms = vocabulary
         let rate = recordingRate
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let seconds = Double(audio.count) / (rate * 2)
             let better = Whisper.transcribe(audio, rate: rate, vocabulary: terms,
                                             language: Config.shared.voiceLanguage)
+            // Whether the second pass ran, and what it made of it. Without this the only
+            // evidence is the text itself, and "Apple's version was never replaced" looks
+            // exactly like "Whisper heard it that way".
+            Log.write(String(format: "voice: whisper read %.1fs → %@", seconds,
+                             better.map { String($0.prefix(48)) } ?? "nothing"))
             DispatchQueue.main.async {
                 guard let self else { return }
                 // Only replace it if there is something to replace it with. A failed run should
