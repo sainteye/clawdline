@@ -1005,27 +1005,35 @@ group("knowing when somebody has finished, not just paused") {
     expect("nothing said yet is not evidence of anything", Voice.stopDelay(base: 4, after: ""), 4)
 }
 
-group("the line under words that are not settled yet") {
-    // macOS has marked provisional text this way since input methods existed. Borrowing it
-    // means the state needs no explanation — but only if the line actually comes off again.
+group("words that are not settled yet are not fully there") {
+    // Provisional dictation is drawn faded, and settling brings it up to full. The whole claim
+    // rests on the second half actually happening: text that stays faded reads as broken.
+    func alpha(_ storage: NSTextStorage, at i: Int) -> CGFloat {
+        let colour = storage.attribute(.foregroundColor, at: i, effectiveRange: nil) as? NSColor
+        return (colour?.usingColorSpace(.sRGB) ?? .black).alphaComponent
+    }
+    let solid = NSColor.labelColor
+    // Not 1.0: labelColor is 85% black in the light appearance, so "full" means "whatever
+    // settled text has", not "opaque". A test that assumed opaque would be testing the theme.
+    let full = solid.usingColorSpace(.sRGB)!.alphaComponent
+    let base: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13),
+                                               .foregroundColor: solid]
+
     let v = PromptTextView()
-    v.baseAttributes = [.font: NSFont.systemFont(ofSize: 13)]
+    v.baseAttributes = base
     v.setPlainText("")
     v.beginDictation()
     v.updateDictation("還沒定案的字")
-
-    func underlined(at i: Int) -> Bool {
-        v.textStorage?.attribute(.underlineStyle, at: i, effectiveRange: nil) != nil
-    }
-    check("speech in progress is underlined", underlined(at: 0))
+    check("speech in progress is faded", alpha(v.textStorage!, at: 0) < full * 0.7)
 
     v.endDictation()
-    check("settling takes the line off", !underlined(at: 0))
+    check("settling brings it back to what typed text has",
+          abs(alpha(v.textStorage!, at: 0) - full) < 0.01)
     expect("and leaves the words alone", v.string, "還沒定案的字")
 
-    // A pause settles one stretch and opens the next: the old one is plain, the new one is not.
+    // A pause settles one stretch and opens the next: the old one is solid, the new one is not.
     let two = PromptTextView()
-    two.baseAttributes = [.font: NSFont.systemFont(ofSize: 13)]
+    two.baseAttributes = base
     two.setPlainText("")
     two.beginDictation()
     two.updateDictation("第一段")
@@ -1033,10 +1041,58 @@ group("the line under words that are not settled yet") {
     two.beginDictation()
     two.updateDictation("第二段")
     let storage = two.textStorage!
-    check("the settled stretch has no line",
-          storage.attribute(.underlineStyle, at: 0, effectiveRange: nil) == nil)
-    check("the live one does",
-          storage.attribute(.underlineStyle, at: storage.length - 1, effectiveRange: nil) != nil)
+    check("the settled stretch is solid", abs(alpha(storage, at: 0) - full) < 0.01)
+    check("the live one is not", alpha(storage, at: storage.length - 1) < full * 0.7)
+
+    // The fade is a change of alpha and nothing else — a different hue would read as a
+    // different kind of text rather than the same text on its way in.
+    let thin = PromptTextView.provisional(solid).usingColorSpace(.sRGB)!
+    let solidRGB = solid.usingColorSpace(.sRGB)!
+    check("it is the same colour, only thinner",
+          abs(thin.redComponent - solidRGB.redComponent) < 0.01
+          && abs(thin.blueComponent - solidRGB.blueComponent) < 0.01)
+}
+
+group("dictation starts where the caret is") {
+    // Speech is not a different kind of input: it goes where typing would have gone. This used
+    // to append to the end regardless, so going back to add a sentence in the middle put it at
+    // the bottom of the box instead.
+    let base: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13)]
+
+    let mid = PromptTextView()
+    mid.baseAttributes = base
+    mid.setPlainText("first. last.")
+    mid.setSelectedRange(NSRange(location: 6, length: 0))   // after "first."
+    mid.beginDictation()
+    mid.updateDictation("middle.")
+    expect("it lands at the caret, not at the end", mid.string, "first. middle. last.")
+
+    let end = PromptTextView()
+    end.baseAttributes = base
+    end.setPlainText("before")
+    end.setSelectedRange(NSRange(location: 6, length: 0))
+    end.beginDictation()
+    end.updateDictation("after")
+    expect("with the caret at the end it still appends", end.string, "before after")
+
+    // Typing over a selection replaces it, so dictating over one does too.
+    let sel = PromptTextView()
+    sel.baseAttributes = base
+    sel.setPlainText("keep this drop that")
+    sel.setSelectedRange(NSRange(location: 10, length: 9))  // "drop that"
+    sel.beginDictation()
+    sel.updateDictation("say this")
+    expect("a selection is replaced", sel.string, "keep this say this")
+
+    // One space, not two: the separator is about the word in front of the caret, and there
+    // already is one when the caret sits after a space.
+    let spaced = PromptTextView()
+    spaced.baseAttributes = base
+    spaced.setPlainText("a ")
+    spaced.setSelectedRange(NSRange(location: 2, length: 0))
+    spaced.beginDictation()
+    spaced.updateDictation("b")
+    expect("no second space after one that is already there", spaced.string, "a b")
 }
 
 group("dictation across a pause") {

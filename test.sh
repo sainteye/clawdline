@@ -31,7 +31,10 @@ swiftc \
   Tests/main.swift \
   -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation
 
-out=$("$BIN" Resources/mascots); status=$?
+# `if` rather than a bare assignment: under `set -e` a failing command on the right-hand side
+# ends the script right there, before what it captured has been printed — so a red suite exited
+# 1 with nothing on screen at all, which is worse than having no guard.
+if out=$("$BIN" Resources/mascots); then status=0; else status=$?; fi
 echo "$out"
 [ $status -eq 0 ] || exit $status
 

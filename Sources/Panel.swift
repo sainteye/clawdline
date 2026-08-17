@@ -482,35 +482,69 @@ final class PromptTextView: NSTextView {
     /// words it has already handed over.
     var onDictationDisplaced: (() -> Void)?
 
-    /// How speech-in-progress is drawn: underlined, the way macOS marks text that is not
-    /// settled yet. Borrowed rather than invented — an input method has been saying "these
-    /// characters may still change" with this exact line for decades, so it needs no legend.
+    /// The colour settled text has — what dictation fades from, and comes back to.
+    private var settledColour: NSColor {
+        (baseAttributes[.foregroundColor] as? NSColor) ?? textColor ?? .labelColor
+    }
+
+    /// Provisional text is the same colour, not yet fully arrived.
+    ///
+    /// It was an underline first, the mark macOS input methods have used for unsettled text for
+    /// decades. That convention is real, but it only speaks to people who already know it, and a
+    /// line under a sentence competes with the sentence for attention. Fading reads as "not all
+    /// the way here" to anyone — and it puts the emphasis the right way round, because the words
+    /// that have settled are the ones that look normal.
+    ///
+    /// Kept dynamic (`withAlphaComponent` rather than a resolved colour) so it still follows the
+    /// system between light and dark.
+    static func provisional(_ colour: NSColor) -> NSColor { colour.withAlphaComponent(0.45) }
+
     private var pendingAttributes: [NSAttributedString.Key: Any] {
         var attrs = baseAttributes
-        attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
-        attrs[.underlineColor] = NSColor.tertiaryLabelColor
+        attrs[.foregroundColor] = Self.provisional(settledColour)
         return attrs
     }
 
-    /// Take the line off a stretch: those words are final now.
+    /// Bring a stretch up to full: those words are final now.
     private func settle(_ range: NSRange) {
         guard let storage = textStorage, range.length > 0,
               range.location + range.length <= storage.length else { return }
-        storage.removeAttribute(.underlineStyle, range: range)
-        storage.removeAttribute(.underlineColor, range: range)
+        storage.addAttribute(.foregroundColor, value: settledColour, range: range)
     }
 
-    /// Start writing at the end, keeping everything already in the box.
+    /// Start writing at the caret, keeping everything already in the box.
+    ///
+    /// At the caret rather than at the end, because that is where typing would have gone and
+    /// speech is not a different kind of input. It used to append regardless, which meant going
+    /// back to add a sentence in the middle put it at the bottom instead — and the machinery for
+    /// this was already here: the mid-run path, the one that restarts after you edit something,
+    /// has always resumed at the caret. Only the first range was pinned to the end.
+    ///
+    /// Anything selected is replaced, again because that is what typing does.
     ///
     /// Only this range is rewritten as the words arrive. Rebuilding the whole box from a string
     /// was simpler and wrong: the string form of a dropped image is its path, so dictating after
     /// dropping a screenshot turned the thumbnail into forty characters of directory.
     func beginDictation() {
         guard let storage = textStorage else { return }
-        if storage.length > 0, !(string.last?.isWhitespace ?? true) {
-            insertText(" ", replacementRange: NSRange(location: storage.length, length: 0))
+        var at = NSRange(location: min(selectedRange().location, storage.length), length: 0)
+        let selected = selectedRange()
+        if selected.length > 0, selected.location + selected.length <= storage.length {
+            insertText("", replacementRange: selected)
+            at = NSRange(location: selected.location, length: 0)
         }
-        dictationRange = NSRange(location: textStorage?.length ?? 0, length: 0)
+        // Keep speech from fusing onto the word in front of it. Judged from the character before
+        // the caret rather than the last one in the box, which are the same thing only when the
+        // caret is at the end.
+        if at.location > 0 {
+            let before = (storage.string as NSString)
+                .substring(with: NSRange(location: at.location - 1, length: 1))
+            if !(before.first?.isWhitespace ?? true) {
+                insertText(" ", replacementRange: NSRange(location: at.location, length: 0))
+                at.location += 1
+            }
+        }
+        dictationRange = at
         lastDictated = ""
         lastBox = string
     }

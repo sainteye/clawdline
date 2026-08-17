@@ -217,9 +217,12 @@ Claude Code are the words you would say to it, so `webhook`, `rebase` and the na
 survive being said inside a Chinese sentence. It needs no word list to maintain, and a list you
 have to curate is one that goes stale the week you write it.
 
-Words still being worked on are underlined, and the line comes off when they are settled —
-the same mark macOS has used for provisional text since input methods existed, so it needs no
-legend. Every pause of about two seconds fixes what you have said so far, so earlier sentences
+Words still being worked on are drawn faded, and come up to full when they settle. An
+underline is what macOS input methods use, and it was the first thing tried here — but it only
+speaks to people who already know that convention, and a line under a sentence competes with the
+sentence. Fading reads as "not all the way here" to anybody, and it puts the emphasis the right
+way round: the words that have settled are the ones that look normal. **Dictation starts at the
+caret**, so you can go back and say a sentence into the middle of what you have written. Every pause of about two seconds fixes what you have said so far, so earlier sentences
 stop moving while you carry on — `voice_settle_seconds` sets the pause, 0 turns it off. A pause
 means quiet *compared to the last few seconds*, not quiet compared to a number: an ordinary room
 here measures a third of the way up the scale, so a fixed threshold would be this room and
@@ -526,7 +529,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no frameworks, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 473 checks, a couple of seconds
+./test.sh     # 478 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 ```
 
