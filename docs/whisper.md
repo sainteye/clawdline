@@ -115,6 +115,11 @@ the scale, so a fixed threshold would be either this room or somebody else's. Ta
 handful of short reads rather than one long one at the end, and the text you have already read
 stops moving. `voice_settle_seconds` changes the pause, and 0 turns it off.
 
+**While it reads, the microphone becomes a turning arc and the bar counts the seconds.** The
+count is there because the first run after a reboot spends twelve seconds loading the model
+before it transcribes a word, and a spinner with no number beside it cannot be told apart from a
+hang.
+
 **If the second pass fails, the first one stands.** A missing model or a binary that will not run
 leaves the live text exactly where it was; it does not empty the box you were about to send.
 
