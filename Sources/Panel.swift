@@ -266,7 +266,13 @@ final class PromptTextView: NSTextView {
         let run = NSMutableAttributedString()
         for path in paths {
             let attachment = NSTextAttachment()
-            attachment.image = Drop.thumbnail(for: path, height: 30)
+            let thumbnail = Drop.thumbnail(for: path, height: 30)
+            attachment.image = thumbnail
+            // Sat on the baseline it hangs below the line like a dropped letter. Centre it on
+            // the cap height instead, which is where the eye reads the middle of a line to be.
+            let font = (baseAttributes[.font] as? NSFont) ?? NSFont.systemFont(ofSize: 13)
+            attachment.bounds = NSRect(x: 0, y: font.capHeight / 2 - thumbnail.size.height / 2,
+                                       width: thumbnail.size.width, height: thumbnail.size.height)
             droppedPaths[ObjectIdentifier(attachment)] = path
             run.append(NSAttributedString(attachment: attachment))
             run.append(NSAttributedString(string: " ", attributes: baseAttributes))

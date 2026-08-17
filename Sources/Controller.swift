@@ -397,7 +397,16 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let isTerminal = !scope.isEmpty && bundleID.map { scope.contains($0) } == true
         guard isTerminal, hiddenByAppSwitch, !panel.isVisible else { return }
         hiddenByAppSwitch = false
-        show()
+        // Not on this turn of the loop. The notification arrives while macOS is still raising
+        // the terminal's windows, and showing here calls NSApp.activate in the middle of that:
+        // the menu bar says iTerm2 and the screen still shows whatever you were just in. Let the
+        // switch finish, then check the terminal is still where you are before taking the front.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self, !self.panel.isVisible else { return }
+            let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            guard front.map({ Config.shared.scopeApp.contains($0) }) == true else { return }
+            self.show()
+        }
     }
 
     /// `returnFocus` puts the app you came from back in front. That is right when you dismissed
