@@ -28,6 +28,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// of the input row — which is what it looked like sitting on the card's own colour.
     private var paneHeader: NSView!
     private var targetLabel: NSTextField!
+    /// The project's pixel mark, drawn to the left of its name.
+    private var iconView: ProjectIconView!
     private var hints: KeyHintsView!
 
     private var targets: [TargetSession] = []
@@ -49,6 +51,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// Which repository each session is in, by session id. Cleared on every summon: the branch
     /// and the count of uncommitted files both move while you work.
     private var projectCache: [String: ProjectInfo] = [:]
+    private var iconCache: [String: ProjectIcon.Grid] = [:]
 
     /// A full-screen blur behind everything, shown only while the output pane is open.
     /// Reading a transcript is a different mode from firing off one line, and the rest of
@@ -231,6 +234,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         targetLabel.maximumNumberOfLines = 1
         card.addSubview(targetLabel)
 
+        iconView = ProjectIconView()
+        card.addSubview(iconView)
+
         hints = KeyHintsView()
         hints.hints = [
             .init(key: "↵", label: L.t.hintSend),
@@ -309,6 +315,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         stickyID = nil
         stickyBase = nil
         projectCache.removeAll()
+        iconCache.removeAll()
         refreshTargets()
         relayout()
         position()
@@ -607,8 +614,15 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let hintsW = min(hints.intrinsicWidth, W - Style.padH * 2 - 120)
         let hintsX = W - Style.padH - hintsW
         hints.frame = NSRect(x: hintsX, y: 0, width: hintsW, height: Style.hintHeight)
-        targetLabel.frame = NSRect(x: Style.padH, y: (Style.hintHeight - 15) / 2,
-                                   width: max(60, hintsX - Style.padH - 16), height: 15)
+
+        let iconH: CGFloat = 14
+        let iconW = ProjectIconView.width(for: iconView.grid, height: iconH)
+        iconView.isHidden = iconW == 0
+        iconView.frame = NSRect(x: Style.padH, y: (Style.hintHeight - iconH) / 2,
+                                width: iconW, height: iconH)
+        let labelX = Style.padH + (iconW > 0 ? iconW + 7 : 0)
+        targetLabel.frame = NSRect(x: labelX, y: (Style.hintHeight - 15) / 2,
+                                   width: max(60, hintsX - labelX - 16), height: 15)
 
         // Stacked upward from the hint row, so the footer stays the footer.
         var y = Style.hintHeight + 1
@@ -1149,14 +1163,17 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         DispatchQueue.global(qos: .utility).async {
             guard let cwd = Targets.workingDirectory(of: target),
                   let info = Project.info(cwd: cwd) else { return }
+            let icon = ProjectIcon.grid(forCwd: cwd)
             DispatchQueue.main.async {
                 self.projectCache[target.id] = info
+                self.iconCache[target.id] = icon
                 if self.currentTarget?.id == target.id { self.updateTargetLabel() }
             }
         }
     }
 
     private func updateTargetLabel() {
+        iconView?.grid = currentTarget.flatMap { iconCache[$0.id] }
         guard !usingStandInLabel else {
             targetLabel.attributedStringValue = Self.standInTarget()
             return
@@ -1169,8 +1186,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             ]))
             let project = projectCache[t.id]
             if let p = project, !p.name.isEmpty {
+                // The project's own colour, so the name and the mark beside it agree — and so
+                // two tabs that read alike differ before you have finished reading either.
                 s.append(NSAttributedString(string: p.name + "  ", attributes: [
-                    .foregroundColor: NSColor.labelColor,
+                    .foregroundColor: iconCache[t.id]?.accent ?? NSColor.labelColor,
                     .font: NSFont.systemFont(ofSize: Style.hintSize, weight: .semibold),
                 ]))
             }

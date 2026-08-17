@@ -117,6 +117,22 @@ Clawdline 列出所有 iTerm2 session，用 `ps` 比對每個的 TTY，留下真
 
 輸入條下緣一直寫著目標是誰。**它不做盲送**——一個不肯告訴你字會跑去哪的輸入框，比沒有更糟。
 
+### 是哪個專案，不只是哪個任務
+
+輸入條下緣一直寫著目標是誰，而分頁標題是**任務**——「查一下 webhook」跟另一個專案的
+「查一下 webhook」讀起來一模一樣。所以那一行改成先講 repo，再接分支與未提交的數量：
+
+    ▣ atrium  查一下 webhook  ⎇ main *3   9/10
+
+如果你的終端機狀態列用的是 [claude-tools](https://github.com/sainteye/claude-tools)，
+那個圖示與顏色直接來自它的 registry（`~/.claude/project-icons.json`）——所以輸入條上的圖示
+與終端機裡的圖示會一樣，是因為**它們是同一筆資料**，不是因為有人把兩個程式手動對齊。
+Clawdline 對那個檔案只讀不寫：它通常是指向 checkout 的 symlink，透過 symlink 寫入會把它
+換成一份實體檔。
+
+沒有那份 registry 時，顏色由路徑推導，每次啟動都一樣。分支與數量走一次
+`git status --porcelain=v2 --branch`。
+
 ### 看那個分頁在說什麼
 
 <kbd>⌘</kbd><kbd>J</kbd> 會在輸入框下面展開一塊，顯示那個 session 現在的畫面，約一秒更新一次，

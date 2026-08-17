@@ -654,6 +654,61 @@ group("folding runs of tool calls") {
            Transcript.distinct(["Bash", "Read", "Bash", "Bash"]), ["Bash", "Read"])
 }
 
+group("the project's mark and colour") {
+    // The real shape of an entry claude-tools writes, atrium's arch.
+    let art: [String: Any] = [
+        "accent": "#5CBBA1",
+        "bg": "#2F6B5E",
+        "palette": ["W": "#EEF6F4"],
+        "rows": [".WWWWW.", ".W...W.", ".W.W.W.", ".W...W."],
+    ]
+    let drawn = ProjectIcon.artGrid(art)
+    expect("four rows", drawn?.cells.count, 4)
+    expect("seven columns", drawn?.cells.first?.count, 7)
+    expect("the accent is the project's colour",
+           drawn?.accent, ProjectIcon.color(hex: "#5CBBA1"))
+    expect("a dot is background", drawn?.cells[0][0], ProjectIcon.color(hex: "#2F6B5E"))
+    expect("a letter is its palette colour", drawn?.cells[0][1], ProjectIcon.color(hex: "#EEF6F4"))
+    // An icon with a typo in it should come out slightly wrong, not blank.
+    let typo = ProjectIcon.artGrid(["rows": ["ZZ", "ZZ", "ZZ", "ZZ"], "bg": "#000000"])
+    check("an unknown character falls back to the ground", typo != nil)
+    check("rows of a different length are padded",
+          ProjectIcon.artGrid(["rows": ["WW", "W", "W", "W"],
+                               "palette": ["W": "#ffffff"]])?.cells[1].count == 2)
+
+    // Longest match, because a session sits in a subfolder of the project that names it —
+    // and a subfolder with a row of its own should win for anything inside it.
+    let list: [String: [String: Any]] = [
+        "/Users/me/code/atrium": ["label": "atrium"],
+        "/Users/me/code/atrium/backend": ["label": "backend"],
+    ]
+    expect("the containing project names it",
+           ProjectIcon.entry(forCwd: "/Users/me/code/atrium/frontend", in: list)?["label"] as? String,
+           "atrium")
+    expect("a nested row wins inside it",
+           ProjectIcon.entry(forCwd: "/Users/me/code/atrium/backend/app", in: list)?["label"] as? String,
+           "backend")
+    check("a sibling with a shared prefix is not a match",
+          ProjectIcon.entry(forCwd: "/Users/me/code/atrium-old", in: list) == nil)
+
+    // The generated fallback: mirrored, with a body and eyes punched out of it.
+    let cells = ProjectIcon.creatureCells(shape: 45)
+    expect("five wide", cells[0].count, 5)
+    expect("four tall", cells.count, 4)
+    check("mirrored", cells[0][0] == cells[0][4] && cells[3][1] == cells[3][3])
+    check("it has a body", cells[1].contains(1) || cells[2].contains(1))
+    check("it has eyes", cells[1].contains(0) || cells[2].contains(0))
+    check("out-of-range shapes still draw something",
+          ProjectIcon.creatureCells(shape: -7).count == 4)
+
+    // Swift seeds hashValue per process, so the same project would change colour every launch.
+    expect("the same path always hashes the same",
+           ProjectIcon.stableHash("/Users/me/code/atrium"),
+           ProjectIcon.stableHash("/Users/me/code/atrium"))
+    check("different paths differ",
+          ProjectIcon.stableHash("/a") != ProjectIcon.stableHash("/b"))
+}
+
 group("which project a session is in") {
     // git's --porcelain=v2 is the documented, stable shape. The human one changes with git's
     // mood and with the user's language, which is exactly what a parser must not depend on.

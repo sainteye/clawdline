@@ -124,6 +124,23 @@ actually running `claude`. It defaults to the session you were last looking at.
 The bar always names its target along the bottom edge. **It never sends blind** — a prompt box
 that will not tell you where the text goes is worse than no prompt box.
 
+### Which project, not just which task
+
+The bar names its target along the bottom edge, and a tab title is the *task* — "investigate the
+webhook" reads much like another project's "investigate the webhook". So the line leads with the
+repository, its branch, and how much is uncommitted:
+
+    ▣ atrium  investigate the webhook  ⎇ main *3   9/10
+
+If you use [claude-tools](https://github.com/sainteye/claude-tools) for your terminal status
+line, the mark and the colour come from its registry — `~/.claude/project-icons.json` — so the
+icon in the bar and the icon in the terminal are the same icon because they are the same row,
+not because two programs were kept in step by hand. Clawdline only ever reads that file: it is
+usually a symlink into a checkout, and writing through the link would replace it with a copy.
+
+Without that registry the colour is derived from the path instead, which is stable from one
+launch to the next. The branch and the count come from one `git status --porcelain=v2 --branch`.
+
 ### Reading a session back
 
 <kbd>⌘</kbd><kbd>J</kbd> opens a pane below the input showing what that session currently says,
