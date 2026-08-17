@@ -26,7 +26,7 @@ protocol Copy {
     func voiceListening(onDevice: Bool) -> String
     var voiceNoPermission: String { get }
     var voiceUnavailable: String { get }
-    var voiceTranscribing: String { get }
+    func voiceTranscribing(seconds: Double) -> String
     var whisperMissing: String { get }
     var whisperNothingHeard: String { get }
     func dictationStatus(_ status: Whisper.Status) -> String
@@ -83,7 +83,9 @@ struct English: Copy {
     }
     let voiceNoPermission = "Dictation needs microphone and speech access"
     let voiceUnavailable = "Dictation is not available right now"
-    let voiceTranscribing = "Reading it back…"
+    func voiceTranscribing(seconds: Double) -> String {
+        String(format: "Whisper is reading it back… %.1fs", seconds)
+    }
     let whisperMissing = "Whisper is not installed — see docs/whisper.md"
     let whisperNothingHeard = "Heard nothing"
     func dictationStatus(_ status: Whisper.Status) -> String {
@@ -157,7 +159,9 @@ struct TraditionalChinese: Copy {
     }
     let voiceNoPermission = "語音輸入需要麥克風與語音辨識權限"
     let voiceUnavailable = "現在無法使用語音輸入"
-    let voiceTranscribing = "重讀一次⋯"
+    func voiceTranscribing(seconds: Double) -> String {
+        String(format: "Whisper 重讀中⋯ %.1f 秒", seconds)
+    }
     let whisperMissing = "沒有裝 Whisper——見 docs/whisper.md"
     let whisperNothingHeard = "沒聽到東西"
     func dictationStatus(_ status: Whisper.Status) -> String {

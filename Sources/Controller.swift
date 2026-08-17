@@ -33,6 +33,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// The project's pixel mark, drawn to the left of its name.
     private var iconView: ProjectIconView!
     private var hints: KeyHintsView!
+    /// What the microphone is doing, in the footer's right-hand slot. Its own label rather than
+    /// the shared hint line: that one replaces the whole footer, so the project name and the
+    /// keys vanished and the bar looked emptied out at exactly the moment it was busiest.
+    private var voiceLabel: NSTextField!
     private var hintsAll: [KeyHintsView.Hint] = []
 
     private var targets: [TargetSession] = []
@@ -291,6 +295,13 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
         iconView = ProjectIconView()
         card.addSubview(iconView)
+
+        voiceLabel = NSTextField(labelWithString: "")
+        voiceLabel.font = NSFont.systemFont(ofSize: Style.hintSize, weight: .medium)
+        voiceLabel.alignment = .right
+        voiceLabel.lineBreakMode = .byTruncatingTail
+        voiceLabel.isHidden = true
+        card.addSubview(voiceLabel)
 
         hints = KeyHintsView()
         hints.onClick = { [weak self] in self?.toggleKeys() }
@@ -715,9 +726,16 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
         hintLine.frame = NSRect(x: 0, y: Style.hintHeight, width: W, height: 1)
 
-        let hintsW = min(hints.intrinsicWidth, W - Style.padH * 2 - 120)
+        let speaking = !voiceLabel.stringValue.isEmpty
+        voiceLabel.isHidden = !speaking
+        hints.isHidden = hints.isHidden || speaking
+        let hintsW = speaking
+            ? min(voiceLabel.intrinsicContentSize.width + 4, W - Style.padH * 2 - 120)
+            : min(hints.intrinsicWidth, W - Style.padH * 2 - 120)
         let hintsX = W - Style.padH - hintsW
         hints.frame = NSRect(x: hintsX, y: 0, width: hintsW, height: Style.hintHeight)
+        voiceLabel.frame = NSRect(x: hintsX, y: (Style.hintHeight - 16) / 2,
+                                  width: hintsW, height: 16)
 
         let iconH: CGFloat = 14
         let iconW = ProjectIconView.width(for: iconView.grid, height: iconH)
@@ -1406,6 +1424,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         switch state {
         case .idle:
             micButton.isListening = false
+            micButton.isThinking = false
+            stopVoiceClock()
+            setVoiceStatus("", colour: .clear)
             textView.endDictation()
             if sendWhenVoiceFinishes {
                 sendWhenVoiceFinishes = false
@@ -1413,13 +1434,22 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             }
         case .listening(let onDevice):
             micButton.isListening = true
-            setHint(whisper ? L.t.voiceListeningWhisper() : L.t.voiceListening(onDevice: onDevice),
-                    warn: false)
+            micButton.isThinking = false
+            stopVoiceClock()
+            setVoiceStatus(whisper ? L.t.voiceListeningWhisper()
+                                   : L.t.voiceListening(onDevice: onDevice),
+                           colour: Style.accent)
         case .transcribing:
             micButton.isListening = false
-            setHint(L.t.voiceTranscribing, warn: false)
+            micButton.isThinking = true
+            // A clock, because this is the one part with no other sign of life — and the first
+            // run after a reboot spends twelve seconds loading the model before it reads a word.
+            startVoiceClock()
         case .failed(let why):
             micButton.isListening = false
+            micButton.isThinking = false
+            stopVoiceClock()
+            setVoiceStatus("", colour: .clear)
             textView.endDictation()
             setHint(why, warn: true)
             // The words on screen are still the live ones, and they are what was asked for.
@@ -1429,6 +1459,33 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             }
         }
         relayout()
+    }
+
+    private func setVoiceStatus(_ text: String, colour: NSColor) {
+        voiceLabel.stringValue = text
+        voiceLabel.textColor = colour
+        voiceLabel.isHidden = text.isEmpty
+        if text.isEmpty { hints.isHidden = false }
+    }
+
+    private func startVoiceClock() {
+        stopVoiceClock()
+        let began = Date()
+        let tick = { [weak self] in
+            guard let self else { return }
+            self.setVoiceStatus(L.t.voiceTranscribing(seconds: Date().timeIntervalSince(began)),
+                                colour: Style.accent)
+            self.relayout()
+        }
+        tick()
+        let t = Timer(timeInterval: 0.1, repeats: true) { _ in tick() }
+        RunLoop.main.add(t, forMode: .common)
+        voiceClock = t
+    }
+
+    private func stopVoiceClock() {
+        voiceClock?.invalidate()
+        voiceClock = nil
     }
 
     /// What to listen in: what the bar is set to, then whatever the Mac is set to.
@@ -1582,6 +1639,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     /// Set when Enter arrived mid-sentence: send as soon as the words are final.
     private var sendWhenVoiceFinishes = false
+    private var voiceClock: Timer?
 
     private func submit() {
         // Pressing Enter while still talking means "that was the end of it", not "send what you

@@ -214,8 +214,19 @@ final class MicButton: NSView {
     /// A second pass is armed. Drawn as one dot: this is a thing to notice once and then stop
     /// noticing, not a thing to read.
     var hasSecondPass = false { didSet { if oldValue != hasSecondPass { needsDisplay = true } } }
+    /// Not listening any more, but not finished either: the recording is being read back.
+    /// A different shape from the listening halo, because it is a different thing happening —
+    /// an arc that goes round says "working", a halo that breathes says "I can hear you".
+    var isThinking = false {
+        didSet {
+            guard oldValue != isThinking else { return }
+            isThinking ? start() : stop()
+            needsDisplay = true
+        }
+    }
     private var shown: CGFloat = 0
     private var phase: CGFloat = 0
+    private var spin: CGFloat = 0
     private var timer: Timer?
     private var hovering = false
     private var tracking: NSTrackingArea?
@@ -236,6 +247,7 @@ final class MicButton: NSView {
 
     private func start() {
         guard timer == nil else { return }
+        spin = 0
         // 30fps, because nothing here moves fast enough to need more — and this sits in the
         // corner of a window that is open while you think.
         let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
@@ -243,6 +255,8 @@ final class MicButton: NSView {
             // A slow follow: loud syllables should swell it, not make it flicker.
             self.shown += (CGFloat(self.level) - self.shown) * 0.06
             self.phase += 1.0 / (30.0 * 4.0)      // one breath every four seconds
+            self.spin += 1.0 / (30.0 * 1.4)       // one turn every 1.4 seconds
+            if self.spin > 1 { self.spin -= 1 }
             if self.phase > 1 { self.phase -= 1 }
             self.needsDisplay = true
         }
@@ -259,6 +273,19 @@ final class MicButton: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let centre = NSPoint(x: bounds.midX, y: bounds.midY)
+
+        if isThinking {
+            // Three quarters of a circle, going round. Deliberately not a full ring: an arc
+            // with a gap in it is the difference between "turning" and "sitting there".
+            let r: CGFloat = 9
+            let path = NSBezierPath()
+            path.appendArc(withCenter: centre, radius: r,
+                           startAngle: spin * 360, endAngle: spin * 360 + 260)
+            path.lineWidth = 1.6
+            path.lineCapStyle = .round
+            Style.accent.withAlphaComponent(0.85).setStroke()
+            path.stroke()
+        }
 
         if isListening {
             // One breath, sine rather than sawtooth: a ring that restarts has an edge, and an
@@ -284,7 +311,7 @@ final class MicButton: NSView {
             ring.stroke()
         }
 
-        let name = isListening ? "mic.fill" : "mic"
+        let name = isListening || isThinking ? "mic.fill" : "mic"
         guard let glyph = NSImage(systemSymbolName: name, accessibilityDescription: L.t.hintVoice)
         else { return }
         let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
@@ -292,7 +319,7 @@ final class MicButton: NSView {
         let size = tinted.size
         let box = NSRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2,
                          width: size.width, height: size.height)
-        let colour: NSColor = isListening ? Style.accent
+        let colour: NSColor = isListening || isThinking ? Style.accent
             : (hovering ? .secondaryLabelColor : .tertiaryLabelColor)
         if hasSecondPass {
             let d: CGFloat = 3
