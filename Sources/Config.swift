@@ -34,6 +34,14 @@ final class Config {
     /// Only the transcript reads this way: a terminal capture is a picture of a grid, and
     /// flipping its lines would have a wrapped sentence reading upwards.
     var outputNewestFirst = false
+    /// Which recogniser the microphone uses.
+    ///
+    /// "apple" is live and needs nothing installed. "whisper" transcribes when you stop and
+    /// handles a sentence with two languages in it, at the cost of a binary and a model file —
+    /// see docs/whisper.md. "auto" uses whisper when both are present.
+    var voiceEngine = "auto"
+    var whisperBinary = ""
+    var whisperModel = ""
     /// Come back when the terminal does.
     ///
     /// Switching away from a panel you left open is "I need to see something for a moment", not
@@ -78,6 +86,9 @@ final class Config {
         if let v = obj["output_newest_first"] as? Bool { outputNewestFirst = v }
         if let v = obj["card_opacity"] as? Double, v >= 0, v <= 1 { cardOpacity = v }
         if let v = obj["reopen_on_return"] as? Bool { reopenOnReturn = v }
+        if let v = obj["voice_engine"] as? String, !v.isEmpty { voiceEngine = v }
+        if let v = obj["whisper_binary"] as? String { whisperBinary = v }
+        if let v = obj["whisper_model"] as? String { whisperModel = v }
         if let v = obj["last_target_id"] as? String { lastTargetID = v }
         if let v = obj["history"] as? [String] { history = v }
     }
@@ -99,6 +110,9 @@ final class Config {
             "output_newest_first": outputNewestFirst,
             "card_opacity": cardOpacity,
             "reopen_on_return": reopenOnReturn,
+            "voice_engine": voiceEngine,
+            "whisper_binary": whisperBinary,
+            "whisper_model": whisperModel,
             "last_target_id": lastTargetID as Any,
             "history": Array(history.suffix(60)),
         ]

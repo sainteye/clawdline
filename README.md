@@ -162,9 +162,9 @@ are stitched back together on this side rather than the second one replacing the
 a ring that will not move means the microphone is hearing nothing — a failure you would otherwise
 find out about by reading an empty box afterwards.
 
-**Mixed-language speech is not a switch anyone can offer you.** Neither of Apple's speech APIs
-changes language mid-sentence: one recogniser, one locale. What is available is a hundred phrases
-of bias, and Clawdline spends them on your own prompt history — the words you have typed at
+**Mixed-language speech is not a switch Apple can offer you.** Neither of its speech APIs changes
+language mid-sentence: one recogniser, one locale. What is available is a hundred phrases of
+bias, and Clawdline spends them on your own prompt history — the words you have typed at
 Claude Code are the words you would say to it, so `webhook`, `rebase` and the name of your repo
 survive being said inside a Chinese sentence. It needs no word list to maintain, and a list you
 have to curate is one that goes stale the week you write it.
@@ -176,6 +176,11 @@ the middle of the sentence you were correcting.
 Recognition runs on this Mac for the dictation languages you have downloaded, and goes to Apple
 for the ones you have not. The bar says which, for as long as it is listening. See
 [Permissions and privacy](#permissions-and-privacy).
+
+If you do speak two languages in one sentence, **[Whisper](docs/whisper.md) is an optional
+engine that handles it** — a `brew install` and a model file, after which Clawdline uses it
+without being told to. The trade is that the text arrives when you stop talking instead of as
+you go. That page has a prompt you can paste into Claude Code to have it done for you.
 
 ### Which project, not just which task
 

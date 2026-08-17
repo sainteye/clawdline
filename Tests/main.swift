@@ -690,6 +690,34 @@ group("the words dictation is told to expect") {
     check("the oldest is not", !capped.contains("term1"))
 }
 
+group("whisper as an optional engine") {
+    // The header is written by hand, so it is the one part that can be wrong in a way whisper
+    // would report as silence rather than as an error.
+    let samples = Data(repeating: 0, count: 320)          // 160 frames of 16-bit mono
+    let wav = Whisper.wavData(samples, rate: 16_000)
+    expect("header plus samples", wav.count, 44 + samples.count)
+    func text(_ r: Range<Int>) -> String { String(decoding: wav[r], as: UTF8.self) }
+    expect("RIFF", text(0..<4), "RIFF")
+    expect("WAVE", text(8..<12), "WAVE")
+    expect("fmt chunk", text(12..<16), "fmt ")
+    expect("data chunk", text(36..<40), "data")
+    func u32(_ at: Int) -> UInt32 {
+        wav[at..<at+4].reversed().reduce(UInt32(0)) { $0 << 8 | UInt32($1) }
+    }
+    expect("riff size counts everything after it", u32(4), UInt32(36 + samples.count))
+    expect("sample rate", u32(24), 16_000)
+    expect("byte rate is rate × channels × width", u32(28), 32_000)
+    expect("data size", u32(40), UInt32(samples.count))
+
+    // Nothing installed has to read as "not available", not as a crash or an empty transcript.
+    check("a path that is not there is not a binary",
+          Whisper.binary(configured: "/nope/whisper-cli") == nil
+            || FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/whisper-cli"))
+    check("a model that is not there is not a model",
+          Whisper.model(configured: "/nope/ggml.bin") == nil
+            || Whisper.model(configured: "/nope/ggml.bin")?.hasSuffix(".bin") == true)
+}
+
 group("how long a process has been running") {
     // Used to tell a session's own transcript from every other transcript in the project.
     // etime rather than lstart: lstart is a localised date, and parsing one of those to find a

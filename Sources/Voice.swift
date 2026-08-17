@@ -22,10 +22,14 @@ final class Voice {
         case idle
         /// `onDevice` is false when the audio is going to Apple to be transcribed.
         case listening(onDevice: Bool)
+        /// Recorded, now being turned into text. Only the Whisper engine goes through this:
+        /// Apple's is live, so there is nothing to wait for.
+        case transcribing
         case failed(String)
     }
 
     private(set) var state: State = .idle
+    var isListening: Bool { if case .listening = state { return true }; return false }
     var onState: ((State) -> Void)?
     /// Called with the text so far, replacing whatever the last call said.
     var onText: ((String) -> Void)?

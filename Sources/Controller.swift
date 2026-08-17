@@ -16,6 +16,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var chevron: NSTextField!
     private var micButton: MicButton!
     private let voice = Voice()
+    private let whisper = Whisper()
     private var scroll: NSScrollView!
     private var textView: PromptTextView!
     private var hintLine: NSView!
@@ -1347,38 +1348,74 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     /// Talk instead of type. Wired here rather than in the text view because the state it puts
     /// the bar into — listening, and on which machine — belongs to the whole card.
+    /// Whisper when it is installed and wanted, Apple otherwise.
+    ///
+    /// "auto" rather than a switch you have to find: installing whisper is the deliberate act,
+    /// and having done it, being asked again in a config file is a second hoop for no reason.
+    private var useWhisper: Bool {
+        switch Config.shared.voiceEngine {
+        case "whisper": return true
+        case "apple": return false
+        default:
+            return Whisper.isAvailable(binary: Config.shared.whisperBinary,
+                                       model: Config.shared.whisperModel)
+        }
+    }
+
     private func toggleVoice() {
         voice.onText = { [weak self] text in
             guard let self else { return }
             self.textView.updateDictation(text)
             self.relayout()
         }
-        voice.onState = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .idle:
-                self.micButton.isListening = false
-                self.textView.endDictation()
-            case .listening(let onDevice):
-                self.micButton.isListening = true
-                self.setHint(L.t.voiceListening(onDevice: onDevice), warn: false)
-            case .failed(let why):
-                self.micButton.isListening = false
-                self.textView.endDictation()
-                self.setHint(why, warn: true)
-            }
-            self.relayout()
-        }
         voice.onLevel = { [weak self] level in self?.micButton.level = level }
-        // The words you have typed at Claude Code are the words you would say to it.
-        voice.vocabulary = Voice.vocabulary(
+
+        let words = Voice.vocabulary(
             from: Config.shared.history,
             extras: Voice.alwaysExpected
                 + [currentTarget.flatMap { projectCache[$0.id]?.name },
                    currentTarget.flatMap { projectCache[$0.id]?.branch }].compactMap { $0 })
+
+        if useWhisper {
+            textView.onDictationDisplaced = { [weak self] in self?.whisper.forgetAccumulated() }
+            whisper.onText = { [weak self] text in
+                self?.textView.updateDictation(text)
+                self?.relayout()
+            }
+            whisper.onLevel = { [weak self] level in self?.micButton.level = level }
+            whisper.onState = { [weak self] state in self?.showVoice(state, whisper: true) }
+            whisper.vocabulary = words
+            if !whisper.isListening { textView.beginDictation() }
+            whisper.toggle(locale: Self.voiceLocales())
+            return
+        }
+
         textView.onDictationDisplaced = { [weak self] in self?.voice.forgetAccumulated() }
-        if case .listening = voice.state {} else { textView.beginDictation() }
+        voice.onState = { [weak self] state in self?.showVoice(state, whisper: false) }
+        voice.vocabulary = words
+        if !voice.isListening { textView.beginDictation() }
         voice.toggle(locale: Self.voiceLocales())
+    }
+
+    /// One place that turns a voice state into what the card shows.
+    private func showVoice(_ state: Voice.State, whisper: Bool) {
+        switch state {
+        case .idle:
+            micButton.isListening = false
+            textView.endDictation()
+        case .listening(let onDevice):
+            micButton.isListening = true
+            setHint(whisper ? L.t.voiceListeningWhisper() : L.t.voiceListening(onDevice: onDevice),
+                    warn: false)
+        case .transcribing:
+            micButton.isListening = false
+            setHint(L.t.voiceTranscribing, warn: false)
+        case .failed(let why):
+            micButton.isListening = false
+            textView.endDictation()
+            setHint(why, warn: true)
+        }
+        relayout()
     }
 
     /// What to listen in: what the bar is set to, then whatever the Mac is set to.
