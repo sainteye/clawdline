@@ -399,7 +399,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         show()
     }
 
-    func hide() {
+    /// `returnFocus` puts the app you came from back in front. That is right when you dismissed
+    /// the panel — you were in the terminal, you are done here, go back. It is wrong when the
+    /// panel is closing *because* you went somewhere else: doing it then drags you back out of
+    /// the app you just switched to, and if the switch also armed the full-screen return, that
+    /// yank lands on the terminal and opens the panel again. You could not leave.
+    func hide(returnFocus: Bool = true) {
         guard panel.isVisible, !dismissing else { return }
         dismissing = true
         resizeTimer?.invalidate()
@@ -416,7 +421,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             self.hideBackdrop(animated: false)
             self.listMode = .none
             self.dismissing = false
-            if let prev = self.previousApp,
+            if returnFocus, let prev = self.previousApp,
                prev.processIdentifier != NSRunningApplication.current.processIdentifier {
                 prev.activate()
             }
@@ -436,7 +441,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // Losing focus is the app-switch path; Esc and sending come through hide() directly and
         // must not arm the return, or dismissing it would only postpone it.
         hiddenByAppSwitch = fullscreen
-        hide()
+        // Whoever took focus keeps it. This is the path where the user chose to be elsewhere.
+        hide(returnFocus: false)
     }
 
     private func position() {
