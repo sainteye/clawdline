@@ -762,6 +762,26 @@ group("whisper as an optional engine") {
     check("leading quiet is dropped", tail.count < tone(quiet + loud).count)
     check("and the speech is still all there", tail.count >= loud.count * 2)
 
+    // The bug this threshold was rewritten for. A sentence falls away as it ends — thirty
+    // decibels of range is ordinary — so the last words are quiet compared to the loudest
+    // moment and loud compared to an empty room. Judged against the peak they were cut, and
+    // the result was a correct transcription of slightly less than you said.
+    let room = [Int16](repeating: 30, count: Int(rate))
+    let shout = [Int16](repeating: 8000, count: Int(rate))
+    let trailing = [Int16](repeating: 600, count: Int(rate))   // 7.5% of the peak, 20x the room
+    let ending = Whisper.trimSilence(tone(room + shout + trailing + room + room), rate: rate)
+    check("the end of a sentence survives being quiet",
+          ending.count >= (shout.count + trailing.count) * 2,
+          "kept \(ending.count / 2) frames of \((shout.count + trailing.count)) spoken")
+    check("and the room at either end still goes",
+          ending.count < tone(room + shout + trailing + room + room).count)
+
+    // Which must not turn into "keep everything": four seconds of silence is exactly what the
+    // end of a recording looks like now that dictation stops itself.
+    let withHang = Whisper.trimSilence(tone(shout + room + room + room + room), rate: rate)
+    check("a long silence at the end is still cut",
+          withHang.count < tone(shout + room + room).count)
+
     // Whisper writes 那個webhook的retry with no air in it, and reaches for a half-width comma
     // in the middle of a Chinese sentence. Neither can be asked away; both are mechanical.
     expect("a space appears between the scripts",
@@ -781,6 +801,45 @@ group("whisper as an optional engine") {
            Whisper.tidy("make verify && git commit -m 'x'"), "make verify && git commit -m 'x'")
     expect("Chinese on its own is untouched", Whisper.tidy("先跑測試，然後提交"), "先跑測試，然後提交")
     expect("nothing is still nothing", Whisper.tidy(""), "")
+
+    // Names that are not words come back as something that merely sounds right, and no amount
+    // of asking fixes it — so it is repaired afterwards, where the repair is deterministic.
+    let vocab = ["Clawdline", "Claude", "Claude Code", "Clawd"]
+    func named(_ s: String) -> String { Whisper.applyVocabulary(s, terms: vocab) }
+
+    expect("cloud code is Claude Code", named("ask cloud code about it"),
+           "ask Claude Code about it")
+    expect("two words become the two-word term", named("open Cloud Code now"),
+           "open Claude Code now")
+    expect("clawed line is Clawdline", named("type it into clawed line"),
+           "type it into Clawdline")
+    expect("and so is cloudline", named("cloudline is open"), "Clawdline is open")
+    expect("it works inside a Chinese sentence",
+           named("在 clawed line 裡面打字"), "在 Clawdline 裡面打字")
+    expect("something already right is left exactly as it is",
+           named("Clawdline and Claude Code"), "Clawdline and Claude Code")
+
+    // The half that matters more. A corrector that rewrites ordinary words is worse than none,
+    // because it is wrong in sentences that had nothing to do with the feature.
+    expect("an ordinary cloud is still a cloud", named("deploy it to the cloud"),
+           "deploy it to the cloud")
+    expect("so is a cloudy day", named("it was a cloudy afternoon"), "it was a cloudy afternoon")
+    expect("and a claw is not a name", named("the claw came off"), "the claw came off")
+    expect("an unrelated sentence is untouched",
+           named("run make verify and then commit"), "run make verify and then commit")
+    expect("nothing is still nothing", named(""), "")
+    expect("no terms means no changes", Whisper.applyVocabulary("cloud code", terms: []),
+           "cloud code")
+
+    // Short terms are matched exactly or not at all: at three letters everything is within one
+    // edit of everything, and "API" would start eating "app".
+    expect("a short term does not fuzzy-match",
+           Whisper.applyVocabulary("the app is fine", terms: ["API"]), "the app is fine")
+
+    expect("distance counts substitutions", Whisper.distance("cloud", "claud"), 1)
+    expect("and insertions", Whisper.distance("clawdline", "clawdlines"), 1)
+    expect("identical strings are zero apart", Whisper.distance("same", "same"), 0)
+    expect("everything is empty away from nothing", Whisper.distance("", "abc"), 3)
 
     // The prompt only biases the script; asking for Traditional and getting Simplified back
     // happens. This is the part that does not depend on the model's mood.

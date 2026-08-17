@@ -84,6 +84,21 @@ is worth knowing before you conclude it is broken.
 Bigger is not automatically better for a given sentence, and the difference between them is
 mostly proper nouns.
 
+### Words it cannot be expected to know
+
+"Clawdline" is in no model's vocabulary and "Claude Code" is two ordinary English words in an
+order no corpus has seen, so both come back as something that merely sounds right — *cloud code*,
+*clawed line*. Put them in `voice_vocabulary` and they are repaired in the text afterwards:
+
+```jsonc
+{ "voice_vocabulary": ["Clawdline", "Kubernetes", "Zhuoyi"] }
+```
+
+Afterwards rather than in the prompt, for the reason below. It is deliberately timid — a term
+under six letters is matched exactly or not at all, because at that length one edit reaches every
+ordinary word nearby, and a corrector that rewrites real words is worse than none. Measured
+against both directions: *cloudline* becomes Clawdline, and *the claw came off* is left alone.
+
 **Clawdline does not send Whisper a word list.** Apple's recogniser gets one — `contextualStrings`
 is a list field, and it costs nothing there. Whisper's `--prompt` is not a list field: it is a
 sample of the text that came before, and the transcript imitates it. Measured on one clip,

@@ -43,6 +43,14 @@ final class Voice {
     var refineWithWhisper = false
     /// Called when a stretch of speech has been fixed and the next one should start after it.
     var onSettled: (() -> Void)?
+    /// True while a system permission sheet is up, false once it has been answered.
+    ///
+    /// The panel hides itself when it stops being the key window, because that is what an app
+    /// switch looks like. A permission sheet looks exactly the same from here — so the first
+    /// time anyone dictated, the box vanished the moment they were asked, and granting brought
+    /// nothing back. Worse, hiding stops the microphone, so the permission they had just given
+    /// bought them nothing until they opened it again and asked a second time.
+    var onPermissionPrompt: ((Bool) -> Void)?
 
     private let engine = AVAudioEngine()
     private var recogniser: SFSpeechRecognizer?
@@ -217,14 +225,33 @@ final class Voice {
             fail(L.t.voiceUnavailable)
             return
         }
+        // Two sheets can appear here, speech and then the microphone, and the second only after
+        // the first is answered. So the guard covers the whole run up to listening rather than
+        // just the call that asks — lifting it between the two would hide the panel in the gap.
+        let asking = SFSpeechRecognizer.authorizationStatus() == .notDetermined
+            || AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined
+        if asking { onPermissionPrompt?(true) }
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             DispatchQueue.main.async {
                 guard let self else { return }
                 guard status == .authorized else {
+                    if asking { self.onPermissionPrompt?(false) }
                     self.fail(L.t.voiceNoPermission)
                     return
                 }
-                self.listen(locale: choice.locale, onDevice: choice.onDevice)
+                // Ask for the microphone before starting the engine. Left to `AVAudioEngine`,
+                // the sheet arrives underneath a tap that is already installed, and the first
+                // seconds of what you say go into a stream nobody is allowed to read yet.
+                AVCaptureDevice.requestAccess(for: .audio) { granted in
+                    DispatchQueue.main.async {
+                        if asking { self.onPermissionPrompt?(false) }
+                        guard granted else {
+                            self.fail(L.t.voiceNoPermission)
+                            return
+                        }
+                        self.listen(locale: choice.locale, onDevice: choice.onDevice)
+                    }
+                }
             }
         }
     }
@@ -339,7 +366,12 @@ final class Voice {
     private func emit(_ text: String) {
         let script = Whisper.wantsTraditional(Config.shared.voiceLanguage)
             ? Whisper.toTraditional(text) : text
-        let out = Whisper.tidy(script)
+        // Both engines, not just Whisper: Apple is told to expect these words and still mishears
+        // them, and doing it in one place is what stops the two paths drifting into disagreeing
+        // about how your own project is spelled.
+        let named = Whisper.applyVocabulary(Whisper.tidy(script),
+                                            terms: Self.alwaysExpected + Config.shared.voiceVocabulary)
+        let out = named
         // Kept because how a sentence ended is evidence about whether it ended. See `stopDelay`.
         if !out.isEmpty { lastEmitted = out }
         onText?(out)
@@ -434,6 +466,14 @@ final class Voice {
         func done() {
             self.onSettled?()
             self.settling = false
+            // Somebody pressed stop while this was running. Go back to listening for exactly as
+            // long as it takes `finish` to read what was said in the meantime.
+            if self.stopAfterSettling {
+                self.stopAfterSettling = false
+                self.set(.listening(onDevice: self.refinedOnDevice))
+                self.finish()
+                return
+            }
             if case .transcribing = self.state { self.set(.listening(onDevice: refinedOnDevice)) }
         }
 
@@ -487,6 +527,9 @@ final class Voice {
         recordingLock.unlock()
     }
 
+    /// A stop arrived while a settle was still being transcribed. See `stop()`.
+    private var stopAfterSettling = false
+
     func stop() {
         engine.inputNode.removeTap(onBus: 0)
         if engine.isRunning { engine.stop() }
@@ -494,8 +537,22 @@ final class Voice {
         task?.cancel()
         task = nil
         request = nil
-        guard case .listening = state else { return }
 
+        switch state {
+        case .idle, .failed:
+            return
+        case .transcribing:
+            // A pass is running. If it is a settle, everything said since it started is sitting
+            // in the recording and used to be dropped right here — the microphone closed, this
+            // returned, and that stretch was never read. Wait for the pass and finish then.
+            if settling { stopAfterSettling = true }
+            return
+        case .listening:
+            finish()
+        }
+    }
+
+    private func finish() {
         // Nothing to improve on, or nothing installed to improve it with.
         let spoken = silence.heardSpeech
         let audio = takeRecording()

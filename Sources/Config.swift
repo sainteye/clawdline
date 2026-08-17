@@ -62,6 +62,14 @@ final class Config {
     /// finished", a long one says "I am finished". Being late costs an open microphone in a room
     /// where nobody is talking; being early costs the keystroke this exists to remove.
     var voiceStopSeconds: Double = 4.0
+    /// Words a transcriber cannot be expected to know, put back afterwards.
+    ///
+    /// Names, product names, the odd piece of jargon — anything that comes back as something
+    /// that merely sounds right ("cloud code"). Apple's recogniser is told to expect them;
+    /// Whisper is not, because its only lever is a writing sample and a list of words in one
+    /// costs all the punctuation. So they are repaired in the text instead, which is
+    /// deterministic and cannot make the sentence worse.
+    var voiceVocabulary: [String] = []
     /// Come back when the terminal does.
     ///
     /// Switching away from a panel you left open is "I need to see something for a moment", not
@@ -119,6 +127,7 @@ final class Config {
         if let v = obj["voice_engine"] as? String, !v.isEmpty { voiceEngine = v }
         if let v = obj["voice_settle_seconds"] as? Double, v >= 0, v <= 30 { voiceSettleSeconds = v }
         if let v = obj["voice_stop_seconds"] as? Double, v >= 0, v <= 300 { voiceStopSeconds = v }
+        if let v = obj["voice_vocabulary"] as? [String] { voiceVocabulary = v }
         if let v = obj["voice_language"] as? String, !v.isEmpty { voiceLanguage = v }
         if let v = obj["whisper_binary"] as? String { whisperBinary = v }
         if let v = obj["whisper_model"] as? String { whisperModel = v }
@@ -151,6 +160,7 @@ final class Config {
             "voice_engine": voiceEngine,
             "voice_settle_seconds": voiceSettleSeconds,
             "voice_stop_seconds": voiceStopSeconds,
+            "voice_vocabulary": voiceVocabulary,
             "voice_language": voiceLanguage,
             "whisper_binary": whisperBinary,
             "whisper_model": whisperModel,

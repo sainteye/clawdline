@@ -241,6 +241,109 @@ enum Whisper {
         ",": "，", ";": "；", ":": "：", "?": "？", "!": "！",
     ]
 
+    // MARK: - Names a transcriber cannot be expected to know
+
+    /// Put back the words that are not words.
+    ///
+    /// "Clawdline" is in no model's vocabulary and "Claude Code" is two ordinary English words
+    /// arranged in a way no corpus has seen, so both come back as something that sounds right:
+    /// *cloud code*, *clawed line*. Asking harder does not fix it. Apple's recogniser takes a
+    /// list — `contextualStrings` — and costs nothing for it, but the words you finally read
+    /// come from Whisper, and Whisper's only lever is `--prompt`.
+    ///
+    /// **Which is why this is not done there.** `--prompt` is a sample of the text that came
+    /// before, not a list of terms, and the transcript imitates it: measured on one clip,
+    /// changing nothing else, a prompt of seed-plus-twenty-words produced a transcript with not
+    /// one punctuation mark in it. Spelling is worth less than punctuation, and this repair is
+    /// mechanical anyway — the same trade as the space between two scripts.
+    ///
+    /// Conservative on purpose. A term shorter than four letters is matched exactly or not at
+    /// all, because at that length everything is within one edit of everything.
+    static func applyVocabulary(_ text: String, terms: [String]) -> String {
+        guard !text.isEmpty else { return text }
+        let words = wordRanges(in: text)
+        guard !words.isEmpty else { return text }
+
+        // Longest first, so "Claude Code" is settled before "Claude" can claim half of it.
+        let wanted = terms
+            .map { (term: $0, key: normalise($0)) }
+            .filter { $0.key.count >= 4 }
+            .sorted { $0.key.count > $1.key.count }
+
+        var replacements: [(range: Range<String.Index>, with: String)] = []
+        var claimed = Set<Int>()
+
+        for (term, key) in wanted {
+            // How wrong a word is allowed to be and still count. Calibrated against the two
+            // failures that matter, in both directions: "cloudline" is two edits from
+            // "clawdline" and has to match, and "claw" is one edit from "Clawd" and must not.
+            // So a short term buys no tolerance at all — at five letters, one edit reaches every
+            // ordinary word nearby.
+            let tolerance = key.count >= 9 ? 2 : (key.count >= 6 ? 1 : 0)
+            let span = term.split(separator: " ").count
+            for size in 1...(span + 1) {
+                guard size <= words.count else { break }
+                for start in 0...(words.count - size) {
+                    let indices = Array(start..<(start + size))
+                    if indices.contains(where: claimed.contains) { continue }
+                    let joined = indices.map { normalise(String(text[words[$0]])) }.joined()
+                    // Nothing to do when it is already right, and a bad idea to try: an exact
+                    // match differing only in case is usually the user's own capitalisation.
+                    guard joined != key, !joined.isEmpty else { continue }
+                    guard abs(joined.count - key.count) <= tolerance,
+                          distance(joined, key) <= tolerance else { continue }
+                    indices.forEach { claimed.insert($0) }
+                    replacements.append((words[start].lowerBound..<words[start + size - 1].upperBound,
+                                         term))
+                }
+            }
+        }
+
+        var out = text
+        for r in replacements.sorted(by: { $0.range.lowerBound > $1.range.lowerBound }) {
+            out.replaceSubrange(r.range, with: r.with)
+        }
+        return out
+    }
+
+    /// Runs of letters and digits. Everything between them — spaces, punctuation, Han
+    /// characters — is a boundary, which is what makes this work inside a Chinese sentence.
+    static func wordRanges(in text: String) -> [Range<String.Index>] {
+        var out: [Range<String.Index>] = []
+        var start: String.Index?
+        for i in text.indices {
+            let latin = text[i].isASCII && (text[i].isLetter || text[i].isNumber)
+            if latin, start == nil { start = i }
+            if !latin, let s = start { out.append(s..<i); start = nil }
+        }
+        if let s = start { out.append(s..<text.endIndex) }
+        return out
+    }
+
+    private static func normalise(_ s: String) -> String {
+        String(s.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
+    }
+
+    /// Levenshtein, on strings a few characters long. Two rows rather than a matrix, because
+    /// this runs on every partial result while somebody is still talking.
+    static func distance(_ a: String, _ b: String) -> Int {
+        let x = Array(a), y = Array(b)
+        if x.isEmpty { return y.count }
+        if y.isEmpty { return x.count }
+        var prev = Array(0...y.count)
+        var row = [Int](repeating: 0, count: y.count + 1)
+        for i in 1...x.count {
+            row[0] = i
+            for j in 1...y.count {
+                row[j] = x[i - 1] == y[j - 1]
+                    ? prev[j - 1]
+                    : min(prev[j - 1], prev[j], row[j - 1]) + 1
+            }
+            prev = row
+        }
+        return prev[y.count]
+    }
+
     private static func isHan(_ ch: Character) -> Bool {
         guard let v = ch.unicodeScalars.first?.value else { return false }
         return (0x4E00...0x9FFF).contains(v) || (0x3400...0x4DBF).contains(v)
@@ -267,9 +370,21 @@ enum Whisper {
     /// repeating one phrase for as long as the silence lasts. Neither is fixable by asking; the
     /// fix is to not hand it silence in the first place.
     ///
-    /// The threshold is relative, for the same reason the pause detector's is: a room is not a
-    /// number. Anything within a factor of the loudest part is kept.
-    static func trimSilence(_ samples: Data, rate: Double, keep: Double = 0.25) -> Data {
+    /// The threshold is relative to **the room**, not to the loudest moment — and getting that
+    /// backwards ate the end of every sentence.
+    ///
+    /// It used to keep anything above a quarter of the peak. A quarter of the amplitude is about
+    /// twelve decibels down, and ordinary speech has thirty decibels of range in it: a sentence
+    /// falls away as it ends, which is a thing people do and not a thing they can stop doing. So
+    /// the last few words sat under the line, `lastIndex` stopped in front of them, and they were
+    /// cut before the model ever saw them. The symptom was not a wrong transcription — it was a
+    /// correct transcription of slightly less than you said, which is far harder to notice.
+    ///
+    /// What has to be excluded is room tone, so room tone is what the threshold is built from:
+    /// the quietest tenth of the clip, times a small factor. Trailing syllables are quiet
+    /// compared to a shout and loud compared to an empty room, and that second comparison is the
+    /// one that separates them from nothing.
+    static func trimSilence(_ samples: Data, rate: Double, overRoom: Float = 2.5) -> Data {
         let count = samples.count / 2
         guard count > Int(rate * 0.2) else { return samples }
         let window = max(1, Int(rate * 0.05))          // 50 ms
@@ -286,11 +401,25 @@ enum Whisper {
             }
         }
         guard let loudest = energies.max(), loudest > 0 else { return Data() }
-        let floor = loudest * Float(keep)
+        // The quietest tenth stands in for the room. A percentile rather than the minimum: one
+        // freak-quiet window would otherwise set the level for the whole clip.
+        let sorted = energies.sorted()
+        let room = sorted[min(sorted.count - 1, sorted.count / 10)]
+        // One level all the way through: there is no room tone here to tell speech apart from,
+        // so there is nothing this can honestly cut. Whether anything was said at all is the
+        // pause detector's question, and it was asked before this was called.
+        guard loudest > room * overRoom else { return samples }
+        // The second term matters in a recording with no room tone at all, where `room` is
+        // near zero and the first term would keep every stray bit. Two per cent of the peak is
+        // about thirty-four decibels down — permissive on purpose, because including a little
+        // room costs nothing and cutting a word costs the word.
+        let floor = max(room * overRoom, loudest * 0.02)
         guard let first = energies.firstIndex(where: { $0 > floor }),
               let last = energies.lastIndex(where: { $0 > floor }) else { return Data() }
-        // A breath of room either side, so words are not clipped at their edges.
-        let pad = 3
+        // A breath of room either side, so words are not clipped at their edges. 300ms rather
+        // than 150: a consonant that starts a word is quieter than the vowel behind it, and the
+        // padding is what stops the threshold from shaving it off.
+        let pad = 6
         let from = max(0, first - pad) * window
         let to = min(count, (last + 1 + pad) * window)
         guard to > from else { return Data() }

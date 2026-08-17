@@ -446,6 +446,7 @@ of the file — including settings from a version that knew about more of them �
   "backdrop": 0.5,                       // ⌘J background blur, 0 = none
   "voice_settle_seconds": 1.8,           // how long a pause ends a sentence, 0 = off
   "voice_stop_seconds": 4.0,             // how long a silence ends the session, 0 = off
+  "voice_vocabulary": [],                // names a transcriber cannot be expected to know
   "status_dir": "",                      // project status files; "" = claude-tools' own
   "icons_file": "",                      // icon registry;        "" = claude-tools' own
 }
@@ -545,7 +546,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 706 checks, a couple of seconds
+./test.sh     # 726 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code — see Package.swift
 ```
