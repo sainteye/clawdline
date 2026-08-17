@@ -90,12 +90,22 @@ final class Voice {
         /// pure room tone has nothing in it to transcribe, and handing one to Whisper is how
         /// you get a confident short sentence out of an empty room.
         private(set) var heardSpeech = false
+        /// The same question asked of the whole session rather than the current stretch.
+        ///
+        /// A settle clears `heardSpeech` so the next stretch starts empty; ending the session
+        /// needs the other answer — a microphone that was opened and never spoken into should
+        /// stay open, because nothing has happened yet for a silence to be the end of.
+        private(set) var everHeardSpeech = false
+        private var lastSpeech: Double = 0
 
         private let sliceSeconds = 0.5
         private let sliceCount = 6             // three seconds of history
         private let margin: Float = 0.14
 
         var floor: Float { min(lowestHere, recent.min() ?? 1) }
+
+        /// How long since anything was actually said — across settles, not since the last one.
+        func quiet(now: Double) -> Double { everHeardSpeech ? now - lastSpeech : 0 }
 
         mutating func feed(_ level: Float, now: Double, gap: Double) -> Bool {
             if sliceEnds == 0 {
@@ -112,8 +122,10 @@ final class Voice {
 
             if level > floor + margin {
                 lastLoud = now
+                lastSpeech = now
                 armed = true
                 heardSpeech = true
+                everHeardSpeech = true
                 return false
             }
             guard gap > 0, armed, now - lastLoud > gap else { return false }
@@ -126,8 +138,10 @@ final class Voice {
             lowestHere = 1
             sliceEnds = 0
             lastLoud = now
+            lastSpeech = now
             armed = false
             heardSpeech = false
+            everHeardSpeech = false
         }
 
         /// Called once a stretch has been handed over.
@@ -267,6 +281,7 @@ final class Voice {
 
         settled = ""
         latest = ""
+        lastEmitted = ""
         silence.reset(now: CFAbsoluteTimeGetCurrent())
         settling = false
         listen(on: request, with: recogniser, onDevice: onDevice)
@@ -324,8 +339,14 @@ final class Voice {
     private func emit(_ text: String) {
         let script = Whisper.wantsTraditional(Config.shared.voiceLanguage)
             ? Whisper.toTraditional(text) : text
-        onText?(Whisper.tidy(script))
+        let out = Whisper.tidy(script)
+        // Kept because how a sentence ended is evidence about whether it ended. See `stopDelay`.
+        if !out.isEmpty { lastEmitted = out }
+        onText?(out)
     }
+
+    /// The last thing put in the box, whichever engine wrote it.
+    private var lastEmitted = ""
 
     /// Sentences need a space between them; a language that does not use spaces does not.
     static func join(_ first: String, _ second: String) -> String {
@@ -361,14 +382,42 @@ final class Voice {
     /// Speech sits well above this; a quiet room sits well below. The threshold does not have to
     /// be clever because the thing being detected is a person stopping, not a signal ending.
     private func noteLevel(_ level: Float) {
-        guard case .listening = state else { return }
-        let hit = silence.feed(level, now: CFAbsoluteTimeGetCurrent(),
-                               gap: Config.shared.voiceSettleSeconds)
+        let now = CFAbsoluteTimeGetCurrent()
+        let hit = silence.feed(level, now: now, gap: Config.shared.voiceSettleSeconds)
+        // Loudness is tracked whatever the state, and only acted on while listening. Talking
+        // over the second pass is still talking: if those seconds did not count, a long stretch
+        // would end the session the instant Whisper handed its version back.
+        guard case .listening = state, !settling else { return }
+
         recordingLock.lock()
         let recorded = !recording.isEmpty
         recordingLock.unlock()
-        guard hit, !settling, recorded || !latest.isEmpty else { return }
-        settle()
+        if hit, recorded || !latest.isEmpty { settle(); return }
+
+        // A pause ends a sentence. A longer one ends the session — which is the whole point:
+        // finishing a thought should not also mean reaching for the key that turns the
+        // microphone off.
+        let base = Config.shared.voiceStopSeconds
+        guard base > 0, silence.everHeardSpeech,
+              silence.quiet(now: now) > Self.stopDelay(base: base, after: lastEmitted) else { return }
+        Log.write("voice: stopped itself after a long silence")
+        stop()
+    }
+
+    /// How long a silence has to run before it ends the session rather than a sentence.
+    ///
+    /// A sentence that arrived with a full stop on it is one somebody finished. One that breaks
+    /// off mid-clause is somebody thinking, and cutting them off there costs exactly what this
+    /// is meant to save — reaching for the key again, only now by surprise. So the unfinished
+    /// case waits longer rather than never firing: being wrong in that direction is free.
+    static let unfinishedFactor = 1.75
+
+    static func stopDelay(base: Double, after text: String) -> Double {
+        guard base > 0 else { return 0 }
+        // Closing marks belong to the sentence they close; the full stop is in front of them.
+        let closers = CharacterSet(charactersIn: " \t\n」』】〕）\")]}")
+        guard let last = text.trimmingCharacters(in: closers).last else { return base }
+        return ".!?。！？…‽".contains(last) ? base : base * unfinishedFactor
     }
 
     /// Fix everything said so far and start again after it.

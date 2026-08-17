@@ -107,6 +107,7 @@ Nothing here is required; set it only to override what was found.
   "voice_engine": "auto",        // auto | apple | whisper
   "voice_language": "auto",      // "zh-TW", "en", … — auto lets Whisper decide
   "voice_settle_seconds": 1.8,   // how long a pause ends a sentence; 0 turns it off
+  "voice_stop_seconds": 4.0,     // how long a silence ends the session; 0 leaves it listening
   "whisper_binary": "",          // a specific whisper-cli
   "whisper_model": ""            // a specific .bin
 }
@@ -145,6 +146,15 @@ few seconds", not quiet compared to a number — measured here, an ordinary room
 the scale, so a fixed threshold would be either this room or somebody else's. Talking for two minutes therefore costs a
 handful of short reads rather than one long one at the end, and the text you have already read
 stops moving. `voice_settle_seconds` changes the pause, and 0 turns it off.
+
+**A longer silence closes the microphone.** A settle says "that sentence is finished"; four
+seconds of quiet says "I am finished", and the session ends without being pressed again — which
+is what makes a long paragraph one keystroke instead of two. The two thresholds are different
+claims about the same silence, so they are separate numbers. A stretch that ended mid-clause
+waits `1.75×` longer than one that ended on a full stop: being late costs an open microphone in
+an empty room, being early costs exactly the keystroke this removes. A microphone that was opened
+and never spoken into is never closed this way — nothing has happened for the silence to be the
+end of.
 
 **While it reads, the microphone becomes a turning arc and the bar counts the seconds.** The
 count is there because the first run after a reboot spends twelve seconds loading the model

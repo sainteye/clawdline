@@ -55,6 +55,13 @@ final class Config {
     /// nothing after that point rewrites it. Without this, a two-minute dictation is one lump
     /// that gets re-transcribed at the end — slower, and everything you already read moves.
     var voiceSettleSeconds: Double = 1.8
+    /// How long a silence ends the whole session, in seconds. 0 leaves the microphone on until
+    /// it is pressed again.
+    ///
+    /// Longer than a settle, because these are different claims: a pause says "that sentence is
+    /// finished", a long one says "I am finished". Being late costs an open microphone in a room
+    /// where nobody is talking; being early costs the keystroke this exists to remove.
+    var voiceStopSeconds: Double = 4.0
     /// Come back when the terminal does.
     ///
     /// Switching away from a panel you left open is "I need to see something for a moment", not
@@ -101,6 +108,7 @@ final class Config {
         if let v = obj["reopen_on_return"] as? Bool { reopenOnReturn = v }
         if let v = obj["voice_engine"] as? String, !v.isEmpty { voiceEngine = v }
         if let v = obj["voice_settle_seconds"] as? Double, v >= 0, v <= 30 { voiceSettleSeconds = v }
+        if let v = obj["voice_stop_seconds"] as? Double, v >= 0, v <= 300 { voiceStopSeconds = v }
         if let v = obj["voice_language"] as? String, !v.isEmpty { voiceLanguage = v }
         if let v = obj["whisper_binary"] as? String { whisperBinary = v }
         if let v = obj["whisper_model"] as? String { whisperModel = v }
@@ -127,6 +135,7 @@ final class Config {
             "reopen_on_return": reopenOnReturn,
             "voice_engine": voiceEngine,
             "voice_settle_seconds": voiceSettleSeconds,
+            "voice_stop_seconds": voiceStopSeconds,
             "voice_language": voiceLanguage,
             "whisper_binary": whisperBinary,
             "whisper_model": whisperModel,

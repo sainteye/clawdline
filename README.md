@@ -202,9 +202,11 @@ only thing this leaves behind, so the most recent few are kept and the rest are 
 ### Talk instead of type
 
 <kbd>⌘</kbd><kbd>L</kbd>, or the microphone at the right of the box, turns your voice into text
-in it. Press it again to stop; closing the panel stops it too. Pausing does not stop it — the
-recogniser settles a sentence at every pause and starts the next from nothing, so the sentences
-are stitched back together on this side rather than the second one replacing the first. The rings around it follow the same audio being transcribed, so
+in it. **It stops on its own when you are done talking** — a pause of a couple of seconds fixes
+a sentence, a longer silence ends the session, so a paragraph said in one go needs one keystroke
+rather than two. Pausing does not stop it: the recogniser settles a sentence at every pause and
+starts the next from nothing, so the sentences are stitched back together on this side rather
+than the second one replacing the first. The rings around it follow the same audio being transcribed, so
 a ring that will not move means the microphone is hearing nothing — a failure you would otherwise
 find out about by reading an empty box afterwards.
 
@@ -221,7 +223,10 @@ legend. Every pause of about two seconds fixes what you have said so far, so ear
 stop moving while you carry on — `voice_settle_seconds` sets the pause, 0 turns it off. A pause
 means quiet *compared to the last few seconds*, not quiet compared to a number: an ordinary room
 here measures a third of the way up the scale, so a fixed threshold would be this room and
-nobody else's. Pressing <kbd>Enter</kbd> while still talking means "that was the
+nobody else's. Four seconds of it ends the session altogether (`voice_stop_seconds`), and a
+sentence that broke off mid-clause is given longer than one that arrived with a full stop on it —
+being late costs an open microphone in a quiet room, being early costs the keystroke this is
+here to remove. Pressing <kbd>Enter</kbd> while still talking means "that was the
 end of it": the microphone closes, the last stretch is read back, and then it sends — you do not
 have to stop it first. You can also stop, fix a word by hand, and carry on talking: an edit anywhere in the box ends the
 current run, and the next thing you say starts after the caret rather than being written into

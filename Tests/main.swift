@@ -953,6 +953,46 @@ group("knowing when somebody has stopped talking") {
     check("a sentence reports speech", spoken.heardSpeech)
 }
 
+group("knowing when somebody has finished, not just paused") {
+    func speech(seconds: Double) -> [Float] {
+        (0..<Int(seconds * 30)).map { $0 % 5 < 3 ? Float(0.72) : Float(0.28) }
+    }
+    func room(seconds: Double) -> [Float] { Array(repeating: 0.28, count: Int(seconds * 30)) }
+
+    // A settle ends a stretch and clears `heardSpeech`; ending the session asks the other
+    // question, and it has to survive that clearing or the answer is always no.
+    var d = Voice.SilenceDetector()
+    var t = 0.0
+    d.reset(now: t)
+    for level in speech(seconds: 2) { t += 1.0 / 30; _ = d.feed(level, now: t, gap: 1.8) }
+    for level in room(seconds: 2) { t += 1.0 / 30; _ = d.feed(level, now: t, gap: 1.8) }
+    d.startNewStretch(now: t)
+    check("a settled stretch is no longer speech in progress", !d.heardSpeech)
+    check("but the session still knows somebody spoke", d.everHeardSpeech)
+
+    for level in room(seconds: 3) { t += 1.0 / 30; _ = d.feed(level, now: t, gap: 1.8) }
+    check("silence is measured from the last word, not from the settle", d.quiet(now: t) > 4.9)
+
+    // The case this must never fire in: opened and left alone. There is no stretch to be the
+    // end of, so the microphone stays open however long the room stays quiet.
+    var untouched = Voice.SilenceDetector()
+    t = 0
+    untouched.reset(now: t)
+    for level in room(seconds: 30) { t += 1.0 / 30; _ = untouched.feed(level, now: t, gap: 1.8) }
+    expect("an unused microphone never counts as finished", untouched.quiet(now: t), 0)
+
+    // How the sentence ended is evidence about whether it ended.
+    expect("a full stop is somebody finishing", Voice.stopDelay(base: 4, after: "跑一次測試。"), 4)
+    expect("so is one in English", Voice.stopDelay(base: 4, after: "run the tests."), 4)
+    check("breaking off mid-clause waits longer",
+          Voice.stopDelay(base: 4, after: "然後我想要") > 4.5)
+    check("a comma is mid-thought too", Voice.stopDelay(base: 4, after: "first, ") > 4.5)
+    expect("a bracket belongs to the sentence it closes",
+           Voice.stopDelay(base: 4, after: "(run the tests.)"), 4)
+    expect("zero turns it off", Voice.stopDelay(base: 0, after: "done."), 0)
+    expect("nothing said yet is not evidence of anything", Voice.stopDelay(base: 4, after: ""), 4)
+}
+
 group("the line under words that are not settled yet") {
     // macOS has marked provisional text this way since input methods existed. Borrowing it
     // means the state needs no explanation — but only if the line actually comes off again.
