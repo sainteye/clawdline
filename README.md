@@ -14,11 +14,10 @@ Works with iTerm2 directly, and with every other terminal through tmux.
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](Sources)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#install)
 
-<!-- Sponsor badges. Left commented until the accounts exist: a badge that links to a page
-     which is not there is worse than no badge. See .github/FUNDING.yml for the same note.
+<!-- Uncomment once buymeacoffee.com/threath is public — it 404s to a logged-out request
+     today, and a badge that leads nowhere is worse than no badge.
 
-[![Sponsor](https://img.shields.io/badge/sponsor-%E2%99%A5-db61a2.svg)](https://github.com/sponsors/sainteye)
-[![Buy me a coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-ffdd00.svg?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sainteye)
+[![Buy me a coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-ffdd00.svg?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/threath)
 -->
 
 English · [繁體中文](README.zh-TW.md)
