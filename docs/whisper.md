@@ -109,7 +109,9 @@ transcription even with whisper present.
 **The words you watched appear get replaced a sentence at a time.** whisper.cpp is not a
 streaming transcriber, so it can only read a finished recording — which is why the live text is
 still Apple's. Every pause of about two seconds ends a stretch: Whisper reads that stretch,
-replaces it, and nothing after that point rewrites it. Talking for two minutes therefore costs a
+replaces it, and nothing after that point rewrites it. A pause means "quiet compared to the last
+few seconds", not quiet compared to a number — measured here, an ordinary room sits at a third of
+the scale, so a fixed threshold would be either this room or somebody else's. Talking for two minutes therefore costs a
 handful of short reads rather than one long one at the end, and the text you have already read
 stops moving. `voice_settle_seconds` changes the pause, and 0 turns it off.
 

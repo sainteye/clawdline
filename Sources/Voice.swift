@@ -59,9 +59,66 @@ final class Voice {
     private var recording = Data()
     private var recorder: AVAudioConverter?
     private let recordingRate: Double = 16_000
-    /// When something was last loud enough to be speech, for spotting the gap between sentences.
-    private var lastLoud = CFAbsoluteTimeGetCurrent()
+    private var silence = SilenceDetector()
     private var settling = false
+
+    /// Deciding when somebody has stopped talking.
+    ///
+    /// Not a fixed threshold. The first version used one — 0.12 on a 0…1 scale — and it never
+    /// fired in a real room: measured here, an ordinary quiet office sits at 0.28 with peaks
+    /// past 0.7, so "quiet" was never true and nothing ever settled. A number that works in one
+    /// room is not a threshold, it is that room.
+    ///
+    /// The floor is the quietest moment in the last few seconds. Speech has gaps in it — between
+    /// syllables, between words — so those gaps are the room, and anything a clear margin above
+    /// them is a voice. A version that instead let the floor drift upwards had the opposite bug:
+    /// hold a note long enough and it becomes the background.
+    struct SilenceDetector {
+        private var recent: [Float] = []       // the quietest point in each finished slice
+        private var lowestHere: Float = 1
+        private var sliceEnds: Double = 0
+        private var lastLoud: Double = 0
+        /// A settle ends a stretch of speech. Without speech first there is no stretch to end,
+        /// so silence on its own fires once at most, not once per gap forever.
+        private var armed = false
+
+        private let sliceSeconds = 0.5
+        private let sliceCount = 6             // three seconds of history
+        private let margin: Float = 0.14
+
+        var floor: Float { min(lowestHere, recent.min() ?? 1) }
+
+        mutating func feed(_ level: Float, now: Double, gap: Double) -> Bool {
+            if sliceEnds == 0 {
+                sliceEnds = now + sliceSeconds
+                lastLoud = now
+            }
+            lowestHere = min(lowestHere, level)
+            if now >= sliceEnds {
+                recent.append(lowestHere)
+                if recent.count > sliceCount { recent.removeFirst() }
+                lowestHere = 1
+                sliceEnds = now + sliceSeconds
+            }
+
+            if level > floor + margin {
+                lastLoud = now
+                armed = true
+                return false
+            }
+            guard gap > 0, armed, now - lastLoud > gap else { return false }
+            armed = false
+            return true
+        }
+
+        mutating func reset(now: Double) {
+            recent = []
+            lowestHere = 1
+            sliceEnds = 0
+            lastLoud = now
+            armed = false
+        }
+    }
 
     /// The locale to listen in, and whether it can be done without leaving the machine.
     ///
@@ -192,7 +249,7 @@ final class Voice {
 
         settled = ""
         latest = ""
-        lastLoud = CFAbsoluteTimeGetCurrent()
+        silence.reset(now: CFAbsoluteTimeGetCurrent())
         settling = false
         listen(on: request, with: recogniser, onDevice: onDevice)
         refinedOnDevice = onDevice
@@ -269,14 +326,10 @@ final class Voice {
     /// Speech sits well above this; a quiet room sits well below. The threshold does not have to
     /// be clever because the thing being detected is a person stopping, not a signal ending.
     private func noteLevel(_ level: Float) {
-        guard case .listening = state, Config.shared.voiceSettleSeconds > 0 else { return }
-        if level > 0.12 {
-            lastLoud = CFAbsoluteTimeGetCurrent()
-            return
-        }
-        guard !settling,
-              CFAbsoluteTimeGetCurrent() - lastLoud > Config.shared.voiceSettleSeconds,
-              !recording.isEmpty || !latest.isEmpty else { return }
+        guard case .listening = state else { return }
+        let hit = silence.feed(level, now: CFAbsoluteTimeGetCurrent(),
+                               gap: Config.shared.voiceSettleSeconds)
+        guard hit, !settling, !recording.isEmpty || !latest.isEmpty else { return }
         settle()
     }
 
@@ -293,7 +346,6 @@ final class Voice {
         func done() {
             self.onSettled?()
             self.settling = false
-            self.lastLoud = CFAbsoluteTimeGetCurrent()
             if case .transcribing = self.state { self.set(.listening(onDevice: refinedOnDevice)) }
         }
 

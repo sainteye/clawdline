@@ -791,6 +791,56 @@ group("dictating next to a dropped image") {
     expect("what was already typed survives", typed.resolvedText(), "看一下 這個錯誤")
 }
 
+group("knowing when somebody has stopped talking") {
+    // The numbers are real: a quiet room here measures around 0.28, speech peaks past 0.7. A
+    // fixed threshold of 0.12 — the first version — never fired once in that room.
+    func feed(_ levels: [Float], gap: Double = 1.8) -> (hits: Int, floor: Float) {
+        var d = Voice.SilenceDetector()
+        var now = 0.0
+        var hits = 0
+        d.reset(now: now)
+        for level in levels {
+            now += 1.0 / 30
+            if d.feed(level, now: now, gap: gap) { hits += 1 }
+        }
+        return (hits, d.floor)
+    }
+    /// Speech is not a flat line: it has gaps between syllables, and those gaps are the room.
+    func speech(seconds: Double, room: Float = 0.28, voice: Float = 0.72) -> [Float] {
+        (0..<Int(seconds * 30)).map { $0 % 5 < 3 ? voice : room }
+    }
+    func room(seconds: Double, at level: Float = 0.28) -> [Float] {
+        Array(repeating: level, count: Int(seconds * 30))
+    }
+
+    let sentence = feed(speech(seconds: 2) + room(seconds: 4))
+    expect("one sentence then quiet is one settle", sentence.hits, 1)
+    check("the floor has learned the room, not the voice", abs(sentence.floor - 0.28) < 0.06)
+
+    expect("while talking, never", feed(speech(seconds: 6)).hits, 0)
+    expect("a gap between words is not a full stop",
+           feed(speech(seconds: 2) + room(seconds: 1) + speech(seconds: 2)).hits, 0)
+    expect("two sentences, two settles",
+           feed(speech(seconds: 2) + room(seconds: 3)
+                + speech(seconds: 2) + room(seconds: 3)).hits, 2)
+
+    // Silence with nothing said before it has no stretch to end, however long it lasts.
+    expect("an empty room settles nothing", feed(room(seconds: 10)).hits, 0)
+
+    // A loud room is still a room, and a quiet voice is still a voice: the margin is what
+    // matters, not the number.
+    // Louder room, louder voice — which is what people do. The margin is about seven decibels
+    // above the floor, so a voice that is only a hair above the noise is not one.
+    expect("a noisy room does not stop it working",
+           feed(speech(seconds: 2, room: 0.6, voice: 0.9) + room(seconds: 4, at: 0.6)).hits, 1)
+    expect("a voice barely above the noise is not picked out",
+           feed(speech(seconds: 2, room: 0.6, voice: 0.68) + room(seconds: 4, at: 0.6)).hits, 0)
+    expect("a quiet voice in a silent room is speech",
+           feed((0..<180).map { $0 % 5 < 3 ? Float(0.2) : Float(0.02) }).hits, 0)
+
+    expect("zero turns it off", feed(speech(seconds: 2) + room(seconds: 6), gap: 0).hits, 0)
+}
+
 group("the line under words that are not settled yet") {
     // macOS has marked provisional text this way since input methods existed. Borrowing it
     // means the state needs no explanation — but only if the line actually comes off again.
