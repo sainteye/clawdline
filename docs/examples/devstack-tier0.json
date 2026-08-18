@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "name": "myapp",
+
+  "up": "make dev",
+
+  "processes": [
+    { "name": "api", "port": 8002 },
+    { "name": "web", "port": 3001 }
+  ]
+}

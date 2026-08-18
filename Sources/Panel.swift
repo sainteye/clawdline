@@ -674,6 +674,11 @@ final class PromptTextView: NSTextView {
     var onCycleTarget: ((Bool) -> Void)?
     var onToggleList: (() -> Void)?
     var onToggleMascots: (() -> Void)?
+    var onToggleStacks: (() -> Void)?
+    /// ⌘⇧n — stopping, kept off the key you press by reflex. Starting and restarting are
+    /// recoverable; taking a public tunnel down is the one you would rather not do by aiming
+    /// badly. (There is a button for it too; this is for hands that stay on the keyboard.)
+    var onStopIndex: ((Int) -> Void)?
     var onToggleOutput: (() -> Void)?
     var onZoomOutput: ((Int) -> Void)?   // +1 bigger, -1 smaller, 0 reset
     var onPickIndex: ((Int) -> Void)?
@@ -705,6 +710,7 @@ final class PromptTextView: NSTextView {
             case "z": undoManager?.undo(); return true
             case "k": onToggleList?(); return true
             case "m": onToggleMascots?(); return true
+            case "s": onToggleStacks?(); return true
             case "j": onToggleOutput?(); return true
             case "f": onToggleFullscreen?(); return true
             case "r": onToggleOrder?(); return true
@@ -722,6 +728,12 @@ final class PromptTextView: NSTextView {
             }
         }
         if cmdShift, key == "z" { undoManager?.redo(); return true }
+        // ⌘⇧n arrives with the shifted character ("!" for 1), so read the unshifted one.
+        if cmdShift, let raw = event.characters(byApplyingModifiers: .init())?.lowercased(),
+           let n = Int(raw), n >= 1, n <= 9 {
+            onStopIndex?(n - 1)
+            return true
+        }
 
         return super.performKeyEquivalent(with: event)
     }
@@ -770,25 +782,203 @@ final class PromptTextView: NSTextView {
     }
 }
 
+// MARK: - Measuring a single line
+
+/// Where the runs carrying a given attribute landed, in a string drawn as one line.
+///
+/// Both places that need this draw one line with no wrapping, so accumulated run widths *are*
+/// the layout — which also means it behaves the same whether the text is drawn by hand or lives
+/// in a TextKit 1 or TextKit 2 view. Asking a layout manager would work in exactly one of those
+/// three cases.
+enum TextZones {
+    static func of(_ s: NSAttributedString, key: NSAttributedString.Key,
+                   x0: CGFloat, height: CGFloat) -> [(rect: NSRect, value: String)] {
+        guard s.length > 0 else { return [] }
+        var out: [(NSRect, String)] = []
+        var x = x0
+        s.enumerateAttributes(in: NSRange(location: 0, length: s.length)) { attrs, range, _ in
+            let width = s.attributedSubstring(from: range).size().width
+            if let value = attrs[key] as? String, !value.isEmpty {
+                out.append((NSRect(x: x, y: 0, width: width, height: height), value))
+            }
+            x += width
+        }
+        return out
+    }
+}
+
+/// What a run of the footer means, in words, for anyone who has not yet learned the marks.
+///
+/// A separate key from `.link` because a thing can be both — the address a tunnel serves is
+/// somewhere to go *and* something to explain — and because `.toolTip` is not an attribute
+/// AppKit knows how to act on by itself.
+extension NSAttributedString.Key {
+    static let clawdlineTip = NSAttributedString.Key("clawdlineTip")
+}
+
 // MARK: - One row of the session list
 
-/// One row of whichever list is open — a session, or a mascot pack.
-/// Both lists look and behave the same, so they share the row rather than the row
+/// One row of whichever list is open — a session, a mascot pack, or a project's dev stack.
+/// The lists look and behave the same, so they share the row rather than the row
 /// knowing what a session is.
 final class TargetRow: NSView {
     let title: String
     let index: Int
+    /// Set instead of `title` when the row has colour in it — a green mark and a red one in the
+    /// same line, which a plain string cannot carry.
+    let rich: NSAttributedString?
     var isSelected = false { didSet { needsDisplay = true } }
     var onClick: (() -> Void)?
 
-    init(title: String, index: Int) {
+    /// Somewhere to go, when part of the row is a place rather than a label — the port a server
+    /// is on, the address a tunnel is serving. Set by putting `.link` on a run of `rich`.
+    ///
+    /// The row draws itself rather than being a text view, so `.link` does nothing on its own;
+    /// these are the same runs, measured, so that clicking the words that name a place goes
+    /// there. Without it the address is something you read and then retype.
+    var onOpen: ((String) -> Void)?
+
+    /// One of the row's buttons.
+    ///
+    /// **A row must not be an invisible button.** An earlier version made the whole row pressable
+    /// and worked out what to do from the state, so a single click could take a public site down
+    /// for a minute with nothing on screen having offered to — and afterwards the only evidence
+    /// was a count going down. If a press does something, it says so first.
+    struct Button {
+        /// An SF Symbol. Start, stop and restart are the three actions every media control in
+        /// the world has already taught, so the glyph reads faster than a word — and it is the
+        /// same glyph in all twenty languages.
+        var symbol: String?
+        /// Drawn when there is no symbol, and used as the accessibility description either way.
+        /// Actions with no universal picture — "allow" — keep their word.
+        var label: String
+        /// What the press will do, in words, and the command it will run. This is what keeps an
+        /// icon from being a guess, and it is the difference between "restart" and a minute of
+        /// downtime.
+        var tip: String
+        /// Pressed once and waiting to be asked again: the button lights up and the line below
+        /// the list spells out the command. Anything that can take a live site off the air goes
+        /// through this; starting something already stopped does not.
+        var armed = false
+    }
+
+    /// Drawn right-aligned in order — the last one is the rightmost, and the rightmost is where
+    /// the hand goes, so that is where the everyday action lives.
+    ///
+    /// An array rather than named slots because the set is not fixed: a stopped stack offers
+    /// start, a running one offers restart and stop, and both offer their log.
+    var buttons: [Button] = []
+    var onButton: ((Int) -> Void)?
+
+    init(title: String, index: Int, rich: NSAttributedString? = nil) {
         self.title = title
         self.index = index
+        self.rich = rich
         super.init(frame: .zero)
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    override func mouseDown(with event: NSEvent) { onClick?() }
+    private let actionFont = NSFont.systemFont(ofSize: Style.hintSize, weight: .medium)
+
+    private func symbolImage(_ b: Button) -> NSImage? {
+        guard let name = b.symbol else { return nil }
+        return NSImage(systemSymbolName: name, accessibilityDescription: b.label)
+    }
+
+    private func width(of b: Button) -> CGFloat {
+        // Square for a glyph; sized to the word otherwise, because a fixed box would clip
+        // "yeniden başlat" while looking half empty for "允許".
+        if symbolImage(b) != nil { return 30 }
+        let w = b.label.size(withAttributes: [.font: actionFont]).width
+        return max(46, w + 18)
+    }
+
+    /// Laid out from the right edge inwards, so adding one shifts the others left rather than
+    /// moving the one the hand already knows.
+    private var buttonRects: [NSRect] {
+        var out: [NSRect] = []
+        var right = bounds.width - Style.padH
+        for b in buttons.reversed() {
+            let w = width(of: b)
+            out.append(NSRect(x: right - w, y: bounds.midY - 11, width: w, height: 22))
+            right -= w + 5
+        }
+        return out.reversed()
+    }
+
+    /// Where the buttons start, so the row's text stops before them instead of running through.
+    private var buttonsLeftEdge: CGFloat {
+        var edge = bounds.width - Style.padH
+        for r in buttonRects where r.minX < edge { edge = r.minX }
+        return edge
+    }
+
+    /// Where each linked run landed.
+    private var linkZones: [(rect: NSRect, value: String)] {
+        guard let rich else { return [] }
+        return TextZones.of(rich, key: .link, x0: Style.padH + 40, height: bounds.height)
+    }
+
+    private func draw(_ b: Button, in r: NSRect) {
+        let path = NSBezierPath(roundedRect: r, xRadius: 6, yRadius: 6)
+        (b.armed ? Style.accent.withAlphaComponent(0.22) : Style.chipFill).setFill()
+        path.fill()
+        (b.armed ? Style.accent : Style.chipEdge).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+
+        let tint: NSColor = b.armed ? Style.accent : NSColor.secondaryLabelColor
+        if let image = symbolImage(b) {
+            let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+            let glyph = image.withSymbolConfiguration(config) ?? image
+            let size = glyph.size
+            let box = NSRect(x: r.midX - size.width / 2, y: r.midY - size.height / 2,
+                             width: size.width, height: size.height)
+            // These are template images: drawing them straight comes out black in dark mode,
+            // so the glyph is painted and then tinted through itself.
+            glyph.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1,
+                       respectFlipped: true, hints: nil)
+            tint.set()
+            box.fill(using: .sourceAtop)
+            return
+        }
+        let attrs: [NSAttributedString.Key: Any] = [.font: actionFont, .foregroundColor: tint]
+        let size = b.label.size(withAttributes: attrs)
+        b.label.draw(at: NSPoint(x: r.midX - size.width / 2, y: r.midY - size.height / 2),
+                     withAttributes: attrs)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        for (i, r) in buttonRects.enumerated() where r.contains(p) { onButton?(i); return }
+        if let hit = linkZones.first(where: { $0.rect.contains(p) }) {
+            onOpen?(hit.value)
+            return
+        }
+        // Anywhere else on a row that has buttons: nothing. They are the only places that act,
+        // which is what makes it possible to read the row without arming anything.
+        if buttons.isEmpty { onClick?() }
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        // Only over the things that do something. A pointing hand across the whole row would
+        // promise that clicking anywhere works, and on the stack list it does not.
+        for zone in linkZones { addCursorRect(zone.rect, cursor: .pointingHand) }
+        for r in buttonRects { addCursorRect(r, cursor: .pointingHand) }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        removeAllToolTips()
+        // On a button, the hover says what the press will do — not what the row currently is.
+        // Those are different questions, and only one of them is about to change something.
+        // **This is what makes an icon safe to use**: the picture is the shortcut, the hover is
+        // the contract.
+        for (i, r) in buttonRects.enumerated() where !buttons[i].tip.isEmpty {
+            _ = addToolTip(r, owner: buttons[i].tip as NSString, userData: nil)
+        }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         if isSelected {
@@ -808,11 +998,116 @@ final class TargetRow: NSView {
             .foregroundColor: isSelected ? Style.accent : NSColor.tertiaryLabelColor,
         ])
 
-        let text = NSMutableAttributedString(string: title, attributes: [
+        let text = rich ?? NSAttributedString(string: title, attributes: [
             .font: NSFont.systemFont(ofSize: Style.listSize, weight: isSelected ? .medium : .regular),
             .foregroundColor: isSelected ? NSColor.labelColor : NSColor.secondaryLabelColor,
         ])
         let x = Style.padH + 40
-        text.draw(in: NSRect(x: x, y: bounds.midY - 9, width: bounds.width - x - Style.padH, height: 18))
+        // Stop before the buttons, or a long row of ports draws straight through them.
+        let right = buttons.isEmpty ? Style.padH : bounds.width - buttonsLeftEdge + 10
+        text.draw(in: NSRect(x: x, y: bounds.midY - 9,
+                             width: max(40, bounds.width - x - right), height: 18))
+
+        for (i, r) in buttonRects.enumerated() { draw(buttons[i], in: r) }
+    }
+}
+
+// MARK: - The stack log's header
+
+/// The project, the way out, and a tab per process — pinned to the top of the log pane.
+///
+/// A real view rather than the first two lines of the text, because those scrolled away. The
+/// tabs are the only means of getting anywhere in this pane, and a control that leaves the
+/// screen the moment you start reading is a control you have to scroll back up to find.
+///
+/// Added with `NSScrollView.addFloatingSubview(_:for:)`, which is AppKit's own answer to this
+/// and keeps it correct through live resize and elastic scrolling.
+final class StackLogHeader: NSView {
+    var title = ""
+    var titleColor: NSColor = .labelColor
+    var backLabel = ""
+    /// (label, value) — value nil is the "all" tab.
+    var tabs: [(label: String, value: String?)] = []
+    var current: String?
+    var onTab: ((String?) -> Void)?
+    var onBack: (() -> Void)?
+
+    static let height: CGFloat = 46
+
+    private var titleFont: NSFont { NSFont.systemFont(ofSize: Style.outputSize, weight: .semibold) }
+    private var tabFont: NSFont { NSFont.systemFont(ofSize: Style.outputSize - 1) }
+
+    override var isOpaque: Bool { true }
+
+    private var backRect: NSRect {
+        let w = ("← " + backLabel).size(withAttributes: [.font: tabFont]).width
+        let t = title.size(withAttributes: [.font: titleFont]).width
+        return NSRect(x: Style.padH + t + 14, y: bounds.height - 22, width: w, height: 18)
+    }
+
+    private var tabRects: [(rect: NSRect, value: String?)] {
+        var out: [(NSRect, String?)] = []
+        var x = Style.padH
+        for tab in tabs {
+            let w = tab.label.size(withAttributes: [.font: tabFont]).width
+            out.append((NSRect(x: x, y: 4, width: w, height: 18), tab.value))
+            x += w + 16
+        }
+        return out
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // Its own background: it floats over the text, and without one the lines it covers show
+        // straight through it.
+        (NSColor.textBackgroundColor.withAlphaComponent(0)).setFill()
+        Style.outputBg.setFill()
+        bounds.fill()
+        NSColor.windowBackgroundColor.withAlphaComponent(0.92).setFill()
+        bounds.fill()
+
+        title.draw(at: NSPoint(x: Style.padH, y: bounds.height - 22), withAttributes: [
+            .font: titleFont, .foregroundColor: titleColor,
+        ])
+        ("← " + backLabel).draw(in: backRect, withAttributes: [
+            .font: tabFont,
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+        ])
+
+        for (i, zone) in tabRects.enumerated() {
+            let isCurrent = zone.value == current
+            var attrs: [NSAttributedString.Key: Any] = [
+                .font: tabFont,
+                .foregroundColor: isCurrent ? NSColor.labelColor : NSColor.tertiaryLabelColor,
+            ]
+            if isCurrent {
+                attrs[.underlineStyle] = NSUnderlineStyle.thick.rawValue
+                attrs[.underlineColor] = Style.accent
+            }
+            tabs[i].label.draw(in: zone.rect, withAttributes: attrs)
+        }
+
+        Style.hairline.setStroke()
+        let line = NSBezierPath()
+        line.move(to: NSPoint(x: 0, y: 0.5))
+        line.line(to: NSPoint(x: bounds.width, y: 0.5))
+        line.stroke()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        if backRect.contains(p) { onBack?(); return }
+        for zone in tabRects where zone.rect.insetBy(dx: -6, dy: -4).contains(p) {
+            if zone.value != current { onTab?(zone.value) }
+            return
+        }
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(backRect, cursor: .pointingHand)
+        for zone in tabRects where zone.value != current {
+            addCursorRect(zone.rect, cursor: .pointingHand)
+        }
     }
 }

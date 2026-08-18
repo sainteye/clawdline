@@ -1,0 +1,163 @@
+# A worked dev stack, in the shape docs/devstack-adopting.md describes.
+#
+# This is an *implementation*, not the contract. The contract is .devstack.json, and it names
+# make targets — so this file can be replaced with Overmind, pm2, Docker Compose or a hand-rolled
+# supervisor without anything that reads the stack noticing.
+#
+# Four ideas are doing all the work here:
+#
+#   1. **Builds are their own process.** That is what lets `web` say "only run me if the build
+#      succeeded", and it is why a failed build leaves the previous build serving instead of
+#      taking the site down to discover the error.
+#   2. **Nothing hardcodes a port or a hostname.** Every one arrives as ${...} from the Makefile,
+#      which is the single source. A second copy does not fail loudly — the service starts fine
+#      and talks to the wrong place, and both sides' logs look normal.
+#   3. **The tunnel starts last and restarts never.** It waits for everything it fronts to be
+#      healthy, so there is no window where the address resolves to an empty site.
+#   4. **Health is declared, not assumed.** Without a probe, "up" only means the process has not
+#      exited yet, and a server that is listening but broken looks identical to a working one.
+
+version: "0.5"
+
+log_level: info
+log_location: "${MYAPP_STACK_LOG_DIR}/process-compose.log"
+
+processes:
+
+  # ── Datastores ────────────────────────────────────────────────────────────
+  # A one-shot: `docker compose up -d` returns as soon as the containers are up, so this process
+  # completes rather than running. Everything that needs a database waits on
+  # `process_completed_successfully` — not on `process_started`, which would only mean the
+  # `docker` command had begun.
+  datastores:
+    command: "docker compose up -d"
+    log_location: "${MYAPP_STACK_LOG_DIR}/datastores.log"
+
+  # ── Front-end production build ────────────────────────────────────────────
+  # Separate so that `web` can depend on its success.
+  #
+  # **The build must write somewhere the running server is not reading.** Next.js `next start`
+  # does not lock its output directory, so a second build into the same place swaps the chunks
+  # underneath the server that is currently serving them, and visitors get ChunkLoadError from a
+  # site nobody deployed to. Hence a directory name that arrives from the outside.
+  build-web:
+    command: "npm run build"
+    working_dir: "frontend"
+    environment:
+      - "NEXT_PUBLIC_API_BASE=${MYAPP_PUBLIC_URL}"
+      - "NEXT_DIST_DIR=${MYAPP_WEB_DIST_DIR}"
+    log_location: "${MYAPP_STACK_LOG_DIR}/build-web.log"
+
+  # ── API ───────────────────────────────────────────────────────────────────
+  # No --reload: a public stack serves committed code. Picking up a back-end change means
+  # restarting this one process, which is a second or two and touches nothing else.
+  api:
+    command: ".venv/bin/uvicorn myapp.app:app --host 127.0.0.1 --port ${MYAPP_API_PORT}"
+    working_dir: "backend"
+    environment:
+      # Without this, log lines wait for a 4KB buffer to fill. "Did the webhook arrive" then
+      # answers minutes late, which reads as "it never arrived".
+      - "PYTHONUNBUFFERED=1"
+    depends_on:
+      datastores:
+        condition: process_completed_successfully
+    # exec + curl rather than http_get: http_get's port is an integer field, and this port has to
+    # arrive by substitution — only string fields are guaranteed to expand.
+    readiness_probe:
+      exec:
+        command: "curl -fsS -o /dev/null http://127.0.0.1:${MYAPP_API_PORT}/health"
+      initial_delay_seconds: 3
+      period_seconds: 5
+      timeout_seconds: 3
+      failure_threshold: 12
+    availability:
+      restart: on_failure
+      max_restarts: 3
+    log_location: "${MYAPP_STACK_LOG_DIR}/api.log"
+
+  # ── Front end ─────────────────────────────────────────────────────────────
+  # `-- -p` overrides the port baked into package.json, so the port keeps a single source.
+  #
+  # NEXT_DIST_DIR is needed *here as well as on the build*. `next start` reads the directory from
+  # next.config, which reads it from the environment; give it to the build only and the build goes
+  # to the new directory while the server keeps serving whatever was left in the old one — with no
+  # error anywhere.
+  web:
+    command: "npm run start -- -p ${MYAPP_WEB_PORT}"
+    working_dir: "frontend"
+    environment:
+      - "NEXT_DIST_DIR=${MYAPP_WEB_DIST_DIR}"
+    depends_on:
+      build-web:
+        condition: process_completed_successfully
+    readiness_probe:
+      exec:
+        command: "curl -fsS -o /dev/null http://127.0.0.1:${MYAPP_WEB_PORT}/"
+      initial_delay_seconds: 2
+      period_seconds: 5
+      timeout_seconds: 5
+      failure_threshold: 12
+    availability:
+      restart: on_failure
+      max_restarts: 3
+    log_location: "${MYAPP_STACK_LOG_DIR}/web.log"
+
+  # ── The public address ────────────────────────────────────────────────────
+  # Waits for everything behind it, so the address never resolves to a half-built site.
+  #
+  # **This is the process you least want to restart casually.** Cloudflare load-balances across
+  # every connector registered for a hostname, so a flapping tunnel means some requests reach the
+  # old connector and some the new — with two different databases behind them, that reads to a
+  # user as the application forgetting things at random.
+  #
+  # --metrics is what makes /ready available to probe.
+  tunnel:
+    command: "cloudflared tunnel --config ${MYAPP_TUNNEL_CONFIG} --metrics 127.0.0.1:${MYAPP_TUNNEL_METRICS_PORT} run"
+    depends_on:
+      api:
+        condition: process_healthy
+      web:
+        condition: process_healthy
+    readiness_probe:
+      exec:
+        command: "curl -fsS -o /dev/null http://127.0.0.1:${MYAPP_TUNNEL_METRICS_PORT}/ready"
+      initial_delay_seconds: 3
+      period_seconds: 10
+      timeout_seconds: 3
+      failure_threshold: 6
+    # /ready turns 503 when the connection count reaches zero, so this asks "is it still
+    # connected". With restart: always, a tunnel that dies after a laptop sleeps comes back by
+    # itself.
+    #
+    # failure_threshold 3 (45 seconds), not 1: see the warning above about flapping. A blip must
+    # not be enough.
+    #
+    # ⚠ This does NOT cover a changed IP. After the address changes, the old TCP connections are
+    #   dead but the local end does not know until retransmits time out — minutes during which
+    #   /ready still answers 200 and the site is already unreachable. tunnel-watch covers that.
+    liveness_probe:
+      exec:
+        command: "curl -fsS -o /dev/null http://127.0.0.1:${MYAPP_TUNNEL_METRICS_PORT}/ready"
+      initial_delay_seconds: 20
+      period_seconds: 15
+      timeout_seconds: 3
+      failure_threshold: 3
+    availability:
+      restart: always
+    log_location: "${MYAPP_STACK_LOG_DIR}/tunnel.log"
+
+  # ── Reconnect when this machine's address changes ─────────────────────────
+  # Asks the same question from the other end: is this machine still at the address it was at.
+  # See docs/devstack-adopting.md for the script and why the liveness probe alone is not enough.
+  #
+  # **Deliberately no log_location.** process-compose buffers captured output — a long-running
+  # process's log sits at exactly 8192 bytes until the buffer fills. This one prints a handful of
+  # lines in its whole life, and they are the lines you most need to see immediately, so it writes
+  # its own file. Declaring one here as well would truncate that file on every restart.
+  tunnel-watch:
+    command: "bash deploy/tunnel-watch.sh"
+    depends_on:
+      tunnel:
+        condition: process_healthy
+    availability:
+      restart: always

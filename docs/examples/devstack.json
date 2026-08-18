@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "atrium",
+
+  "status": "make stack-status",
+
+  "up": "make stack-up",
+  "down": "make stack-down",
+  "restart": "make stack-restart P={process}",
+  "logs": "make stack-logs P={process} N={lines}",
+  "attach": "make stack-attach"
+}
