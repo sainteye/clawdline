@@ -72,38 +72,6 @@ items:
     trigger: Anybody reports the page saying something they cannot read, or a fifteenth language.
     opened: 2026-08-19
 
-  - id: B-STALE-PAGE-UNDETECTABLE
-    title: The page cannot tell it is older than the app
-    problem: >-
-      An open page keeps whatever it loaded, so after an update somebody is using an interface
-      that no longer matches the server — and the check that would notice cannot fire, so they
-      find out by hitting a bug instead.
-    evidence: >-
-      The version check reads `CFBundleShortVersionString` from `/v1/health`, and `build.sh`
-      hardcodes `0.5.0`, so two builds of the same release are indistinguishable. Observed
-      2026-08-19: a phone showed a build an hour old while the Mac had been rebuilt twice.
-    severity: degrades
-    cost: hours
-    who_hurts: user
-    trigger: None needed — this is small enough that the next person in `build.sh` should do it.
-    opened: 2026-08-19
-
-  - id: B-TRANSCRIPT-PATH-SLUG
-    title: Transcript lookup silently fails for paths with a space, dot or underscore
-    problem: >-
-      Claude Code turns every character that is not a letter or digit into a dash when it names a
-      project folder. Clawdline only replaces `/`, so for a project whose path contains anything
-      else the transcript is looked for under a name that does not exist — and a missing
-      transcript is a normal state, so nothing reports it.
-    evidence: >-
-      `Sources/Transcript.swift:34` against the encoding worked out in
-      `Sources/StartPoints.swift`, which does the forward check correctly.
-    severity: degrades
-    cost: hours
-    who_hurts: user
-    trigger: Already true for anyone with an underscore in a project name.
-    opened: 2026-08-19
-
   - id: B-CACHE-KEY-DIVERGENCE
     title: Clawdline and claude-bestiary compute different cache filenames for the same project
     problem: >-

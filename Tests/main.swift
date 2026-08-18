@@ -472,6 +472,25 @@ group("transcript project directory") {
     let dir = Transcript.projectDirectory(forCwd: "/Users/me/code/atrium")
     expect("separators become dashes", dir.lastPathComponent, "-Users-me-code-atrium")
     check("under ~/.claude/projects", dir.path.contains("/.claude/projects/"))
+
+    // **Every character that is not a letter or a digit**, not just the separators. Replacing `/`
+    // alone is right until a path has a space, a dot or an underscore in it, and then the lookup
+    // goes to a folder that does not exist — silently, because a missing transcript is a normal
+    // state. These are the three that were wrong.
+    expect("an underscore is a dash too",
+           Transcript.projectDirectory(forCwd: "/a/two_words").lastPathComponent, "-a-two-words")
+    expect("so is a dot",
+           Transcript.projectDirectory(forCwd: "/a/v1.2").lastPathComponent, "-a-v1-2")
+    expect("so is a space",
+           Transcript.projectDirectory(forCwd: "/a/two words").lastPathComponent, "-a-two-words")
+
+    // One rule, one implementation — the two used to be written out separately and would have
+    // agreed only until somebody edited one of them.
+    for path in ["/Users/me/code/a_b", "/x/y.z", "/p q/r", "/plain/path"] {
+        expect("it is the same rule StartPoints uses, for \(path)",
+               Transcript.projectDirectory(forCwd: path).lastPathComponent,
+               StartPoints.slug(of: path))
+    }
 }
 
 group("transcript rendering") {

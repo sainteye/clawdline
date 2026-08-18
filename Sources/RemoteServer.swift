@@ -34,6 +34,15 @@ final class RemoteServer {
     /// a person is asking "what am I talking to".
     static let protocolVersion = 1
 
+    static let buildStamp: Int = {
+        // Read once. It cannot change while this process is running — a rebuild replaces
+        // the binary and relaunches, so the next answer comes from the next process.
+        guard let url = Bundle.main.executableURL,
+              let at = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+        else { return 0 }
+        return Int(at.timeIntervalSince1970)
+    }()
+
     private let queue = DispatchQueue(label: "dev.sainteye.clawdline.remote")
     private var listener: NWListener?
     private var streams: [ObjectIdentifier: Stream] = [:]
@@ -266,6 +275,16 @@ final class RemoteServer {
             return .json([
                 "ok": true,
                 "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
+                // **Which build, not which release.** `version` comes from the bundle and
+                // `build.sh` writes the same string into every build of a release, so a page that
+                // watched it could never tell it had fallen behind — which is exactly what
+                // happened: a phone held an interface an hour old while the Mac had been rebuilt
+                // twice, and the check meant to notice had nothing to compare.
+                //
+                // The executable's own modification time, because it is the one thing that cannot
+                // be forgotten. A build number in `build.sh` is a number somebody has to remember
+                // to bump, and the failure mode of forgetting is silence.
+                "build": Self.buildStamp,
                 "protocol": Self.protocolVersion,
                 // The client uses these to decide what to draw at all. Saying "you may not" once
                 // is kinder than a button that fails when pressed.

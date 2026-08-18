@@ -28,10 +28,18 @@ enum Transcript {
 
     // MARK: - Finding the file
 
-    /// Where Claude Code keeps a project's sessions: the working directory with every
-    /// separator turned into a dash.
+    /// Where Claude Code keeps a project's sessions: the working directory with **every
+    /// character that is not a letter or a digit** turned into a dash — not just the separators.
+    ///
+    /// This replaced `/` alone for a long time, which is right for a path made of plain words and
+    /// wrong the moment one has a space, a dot or an underscore in it. Nothing reported it: a
+    /// missing transcript is an ordinary state, so the lookup simply came back empty and the
+    /// session looked like one Claude Code had never written anything about.
+    ///
+    /// `StartPoints.slug(of:)` is the same rule, checked against the folders actually on disk.
+    /// One implementation, because two would agree for exactly as long as nobody edited either.
     static func projectDirectory(forCwd cwd: String) -> URL {
-        let slug = cwd.replacingOccurrences(of: "/", with: "-")
+        let slug = StartPoints.slug(of: cwd)
         return FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects/\(slug)", isDirectory: true)
     }

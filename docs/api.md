@@ -106,12 +106,13 @@ is talking to, and whether it is allowed in, before it can act on either.
 
 ```console
 $ curl -s http://127.0.0.1:7717/v1/health
-{"ok":true,"version":"0.5.0","protocol":1,"write":false,"auth":false,"password":false,"authed":false}
+{"ok":true,"version":"0.5.0","build":1787096354,"protocol":1,"write":false,"auth":false,"password":false,"authed":false}
 ```
 
 | field | |
 |---|---|
 | `version` | the app's, for a person |
+| `build` | which build, as opposed to which release — the executable's modification time. `version` is the same string for every build of a release, so a long-lived page watching only that could never tell it had fallen behind. Compare it to what you saw first; if it moved, the app was rebuilt under you |
 | `protocol` | this document's; bumped when a client would have to change |
 | `write` | is the second switch on — **draw the UI from this**, because saying "you may not" once is kinder than a button that fails when pressed |
 | `auth` | has anybody paired a device or set a password. The local token does not count |
