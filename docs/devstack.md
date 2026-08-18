@@ -159,6 +159,22 @@ is the difference between an agent that reports a red mark and one that fixes it
 
 You do not need a supervisor, or any new software, to be visible.
 
+The tiers below are about how much machinery you already have. **What a reader of the panel can
+actually do is decided by which keys are in the file**, which is a different question and the one
+worth answering first:
+
+| the file names | the panel offers |
+|---|---|
+| `processes` with ports | which are up, ports as links. **Nothing to press.** |
+| …and `status` | the project's own answer — readiness, exit codes, the error from a crash |
+| …and `up` / `down` / `restart` | **buttons** |
+| …and `logs` | the failed process's log, next to its red mark |
+
+A file with `status` and no `up` is a legitimate thing to write and a frustrating thing to arrive
+at by accident: the row reports that two of three services are down and offers nowhere to press.
+If that is what you meant, good. If you stopped there because the project had no start command
+lying around, **write one** — that is a `Makefile` target, not a change to this format.
+
 ### Tier 0 — declare ports, run nothing
 
 ```jsonc

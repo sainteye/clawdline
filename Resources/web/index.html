@@ -61,6 +61,12 @@ if (location.protocol === 'file:') {
     --safe-l: env(safe-area-inset-left, 0px);
     --safe-r: env(safe-area-inset-right, 0px);
 
+    /* The visible viewport, kept up to date by the script. Declared here so that the first
+       paint has a real value rather than a fallback, and so a browser with no `visualViewport`
+       simply keeps these. */
+    --vvh: 100dvh;
+    --vvt: 0px;
+
     --ease: cubic-bezier(.2, .7, .2, 1);
 }
 
@@ -80,6 +86,12 @@ body {
     flex-direction: column;
     height: 100vh;
     height: 100dvh;
+    /* And then the visible viewport, which is the only one of the three that knows about the
+       keyboard. iOS does not shrink `dvh` when the keyboard comes up — it leaves the layout
+       viewport alone and pans what you can see — so a page sized in `dvh` puts its bottom edge
+       under the keyboard and everything anchored there goes with it. `--vvh` is written by the
+       script from `visualViewport` and falls back to `100dvh` where there is none. */
+    height: var(--vvh, 100dvh);
     overflow: hidden;
     overscroll-behavior: none;
 }
@@ -205,7 +217,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .notify {
     flex: 0 0 auto;
     display: flex; align-items: center; gap: 9px;
-    padding: 8px calc(12px + var(--safe-r)) calc(8px + var(--safe-b)) calc(12px + var(--safe-l));
+    padding: 8px calc(12px + var(--safe-r)) max(8px, var(--safe-b)) calc(12px + var(--safe-l));
     border-top: 1px solid var(--line);
     color: var(--faint); font-size: 11.5px;
     line-height: 1.35;
@@ -500,7 +512,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .composer {
     flex: 0 0 auto;
     border-top: 1px solid var(--line);
-    padding: 10px 14px calc(10px + var(--safe-b)) 14px;
+    /* `max` rather than `calc`: the home indicator's inset is already clearance, and adding
+       ten more pixels underneath it is ten pixels of nothing. Ten is the floor for a screen
+       that has no inset at all. */
+    padding: 10px 14px max(10px, var(--safe-b)) 14px;
     background: #0d0d11;
     /* A `<form>` carries a bottom margin of one em from the browser's own stylesheet, and one em
        here is fourteen pixels of nothing under the composer — which on a phone, stacked on top of
@@ -714,7 +729,11 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
            with its bottom padding stranded above it. The dynamic unit is the height that is
            actually on screen right now, so the box lands on the real bottom edge and the only
            thing left under it is the home indicator's own inset. */
-        height: 100dvh;
+        height: var(--vvh, 100dvh);
+        /* And it moves with the visible viewport as well. When the keyboard opens, iOS pans what
+           you can see rather than moving the layout, so a fixed element stays where the layout
+           put it — which is behind the keyboard. */
+        top: var(--vvt, 0px);
         background: var(--bg);
         transform: translateX(100%);
         transition: transform 260ms var(--ease);
@@ -960,6 +979,38 @@ var MOCK_DOOR = params.get("door") === "1";     // mock only: arrive with no cre
 
 var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 var phone = function () { return window.matchMedia("(max-width: 899px)").matches; };
+
+/**
+ * How tall the page actually is, written into `--vvh` for the layout to use.
+ *
+ * `100dvh` is the right answer for the browser's own toolbars and the wrong one for the
+ * keyboard. iOS does not resize the layout viewport when the keyboard comes up: it leaves the
+ * page the height it was and pans the part you can see. So a composer pinned to the bottom of
+ * `100dvh` is pinned to a bottom that is now behind the keyboard, and what is left on screen is
+ * the gap where it used to be. `visualViewport` is the one measurement that knows — its height
+ * is what you can see and its `offsetTop` is how far down the page that view has been panned.
+ *
+ * Everything falls back to `100dvh` where there is no `visualViewport`, which is where `dvh` was
+ * always correct anyway.
+ */
+(function trackVisibleViewport() {
+    var vv = window.visualViewport;
+    if (!vv) return;
+    var root = document.documentElement;
+    function apply() {
+        root.style.setProperty("--vvh", vv.height + "px");
+        root.style.setProperty("--vvt", vv.offsetTop + "px");
+    }
+    vv.addEventListener("resize", apply);
+    vv.addEventListener("scroll", apply);
+    // And the window's own events as well, measured: resizing the frame this page was being
+    // tested in changed `visualViewport.height` without firing a single `visualViewport` event,
+    // and the layout kept the height it had. The keyboard is what `visualViewport` is for; a
+    // rotation, a window drag and a browser toolbar sliding away are what these are for.
+    window.addEventListener("resize", apply);
+    window.addEventListener("orientationchange", apply);
+    apply();
+})();
 
 /* ==========================================================================
    1. State

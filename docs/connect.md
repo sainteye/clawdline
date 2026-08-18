@@ -77,12 +77,33 @@ Its own repository has a page like this one, written for you.
 The one that changes a user's day. It puts the project's processes in the bar, with their ports as
 links, and lets them be started and restarted from there.
 
-Put it at the repository root. **Start at Tier 0**, which declares ports and no commands:
+Put it at the repository root. **What you write decides what the user can do**, so decide that
+first rather than picking a tier:
+
+| the file names | the user gets |
+|---|---|
+| `processes` with ports | a live row: which are up, ports as links. **Read only.** |
+| …and `status` | the same row, but the project's own answer — health probes, exit codes, the error from a crashed process |
+| …and `up` / `down` / `restart` | **buttons.** Start, stop and restart from the bar, without finding the tab |
+| …and `logs` | the log of a process that failed, in the panel, next to the red mark |
+
+**Stopping before `up` and `restart` leaves a panel nobody can act on** — it tells the reader that
+two of three services are down and gives them nowhere to press. That is worse than it sounds,
+because the row looks finished. Go all the way unless something makes it impossible, and if you
+stop short, **say in your report which of these the user did not get and why**.
+
+Start with the shape:
 
 ```jsonc
 {
   "version": 1,
   "name": "thing",
+  "status":  "make stack-status",
+  "up":      "make stack-up",
+  "down":    "make stack-down",
+  "restart": "make stack-restart P={process}",
+  "logs":    "make stack-logs P={process} N={lines}",
+
   "processes": [
     { "name": "api", "port": 8002 },
     { "name": "web", "port": 3001 }
@@ -90,27 +111,42 @@ Put it at the repository root. **Start at Tier 0**, which declares ports and no 
 }
 ```
 
-That alone gets a live row: Clawdline connects to each port to see what is up, which executes
-nothing and therefore needs no trust from the user.
+`processes` alone already gets a live row — Clawdline connects to each port itself, which executes
+nothing and needs no trust. Keep it even when `status` exists: it is what still works before the
+user has granted trust, and for a project they never trust at all.
 
-Go to Tier 1 when the project already has a way to ask what is running — a `make` target, a
-`docker compose ps`, a process manager. Add a `status` command that prints the state document
-described in `devstack.md`, and `up` / `down` / `restart` / `logs` if the project has them.
+### If the project has no start command, writing one is part of this job
 
-Three things to get right, all of them in `devstack.md` and all of them easy to get wrong:
+Most projects do not have `make stack-up`. They have a `README` that says to open three terminals
+and run three things, or a `docker compose up`, or a script somebody wrote once. **Turning that
+into one command the project genuinely has is the work**, not a reason to skip the field.
+
+What "do not invent a command" means, precisely:
+
+- **Never name a command that does not exist or does not work.** A button that fails when pressed
+  is worse than no button, and the user granted trust on the strength of that name.
+- **Do write one, and prove it.** A `Makefile` target, a `scripts/stack-up.sh` — whatever fits how
+  this project already does things. Then run it, run `status`, and show that the row goes green.
+- **Ask before anything destructive.** `down` that drops a database volume, `restart` that
+  redeploys — those are the user's call, not yours.
+
+`{process}` and `{lines}` are substituted by Clawdline, so `restart` and `logs` can act on one
+service rather than all of them. A `restart` that ignores `{process}` and restarts everything is
+allowed and is much less useful — the whole reason somebody reaches for it is that one thing died.
+
+### Three things about `status` that are easy to get wrong
+
+All of them are in `devstack.md`:
 
 - **The process states are a closed vocabulary**: `healthy`, `running`, `starting`, `completed`,
-  `exited`, `stopped`. Do not invent one.
+  `exited`, `stopped`. Do not invent one. The *top-level* `state` is a different vocabulary —
+  `running`, `partial`, `stopped`, `unknown` — and you may omit it entirely.
 - **`completed` is for a one-shot that finished on purpose** — a build, a `docker compose up -d`.
   Without it every successful build draws a red mark, and a red mark that is usually wrong is one
   nobody reads on the day it is right.
 - **Put the failed process's last few log lines in its `error` field.** It travels with the state
   because the reader always wants it next, and that one field is the difference between an agent
   that reports a red mark and one that fixes it.
-
-**Do not add commands the user has not agreed to.** Naming a command in this file means Clawdline
-can run it, gated behind a per-repository trust prompt. Write what the project genuinely has; do
-not invent a `make stack-up` that does not exist.
 
 ---
 
@@ -194,7 +230,11 @@ Do not report success without evidence. For each file you created:
 2. Confirm it parses: `python3 -m json.tool < the-file`.
 3. If `.devstack.json` names a `status` command, **run it**, show what it printed, and confirm
    every process state is one of the six.
-4. For anything that is supposed to stay current, **run its update path once** and show that the
+4. **Run every other command the file names**, and show it worked: `up` from stopped, then
+   `status` again to show the row goes green; `restart` on one process; `logs` returning
+   something. A command in that file is a button somebody will press, and an untested one is a
+   button that fails in front of them.
+5. For anything that is supposed to stay current, **run its update path once** and show that the
    file's modification time moved.
 
 Then tell the user, in plain terms: what now appears in their bar, what they still have to do
