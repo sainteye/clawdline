@@ -64,9 +64,12 @@ pairing routes needs a token, wherever the request came from.
 Two ways in:
 
 - **Open in a browser** — mints a device of its own called `Browser on this Mac` and opens
-  `http://127.0.0.1:7717/#t=<token>`. A fragment, because browsers do not send fragments to servers
-  and do not leave them in the places a query string ends up. The page trades it for a cookie
-  through `/v1/auth/adopt` and clears the address bar.
+  `http://127.0.0.1:7717/?t=<token>`. A query string rather than a fragment, and that is the whole
+  point: **a fragment is the one part of a URL a browser never sends**, so on a cold open the
+  server would have nothing to authenticate and the page would be refused before it could run any
+  script. The server takes the token off the query, sets a cookie and answers `303` back to `/`,
+  which takes it out of the address bar and out of history in the same move. The page also accepts
+  `#t=` for the case where something already loaded hands it one.
 - **From the other device** — the six-digit flow below.
 
 ### 3. A tunnel, if the device is not on this Mac — Settings → Remote → **Reachable from outside**
