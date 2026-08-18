@@ -141,6 +141,10 @@ struct Italian: Copy {
     let settingsTunnelHint = "Apre una connessione in uscita attraverso cloudflared — nessun port forwarding, niente in ascolto sulla tua rete. Non parte finché non c'è un dispositivo abbinato, perché dietro al tunnel c'è il nome di ogni repository e il titolo di ogni attività su questo Mac."
     let settingsRemoteWrite = "Lascia scrivere ai dispositivi abbinati"
     let settingsRemoteWriteHint = "Spento, un dispositivo abbinato può solo leggere. Acceso, può mandare testo dentro una sessione e avviarne di nuove — e questo esegue codice su questo Mac, perché è quello che fa Claude Code. È una decisione diversa da quella sopra, quindi è un interruttore a parte."
+    let settingsRemotePhone = "Abbina un telefono…"
+    let settingsRemotePhoneHint = "Mostra un codice da inquadrare. Porta con sé una chiave tutta sua: una fotografia di quel codice è un dispositivo che vedi in questo elenco e che puoi togliere di nuovo — non la chiave di questo Mac."
+    let pairingScanTitle = "Inquadra questo con il telefono"
+    let pushWaiting = "aspetta una risposta"
     let settingsOpenFile = "Apri il file di configurazione…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

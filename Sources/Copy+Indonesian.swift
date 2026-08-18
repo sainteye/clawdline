@@ -141,6 +141,10 @@ struct Indonesian: Copy {
     let settingsTunnelHint = "Membuka koneksi keluar lewat cloudflared — tanpa penerusan port, tidak ada yang mendengarkan di jaringanmu. Tidak akan mulai sebelum ada satu perangkat berpasangan, karena di balik terowongan itu ada setiap nama repositori dan setiap judul tugas di Mac ini."
     let settingsRemoteWrite = "Biarkan perangkat berpasangan mengetik"
     let settingsRemoteWriteHint = "Mati, perangkat berpasangan hanya bisa membaca. Menyala, ia bisa mengirim teks ke dalam sesi dan memulai sesi baru — dan itu menjalankan kode di Mac ini, karena memang itu yang dikerjakan Claude Code. Ini keputusan yang lain dari yang di atas, jadi sakelarnya juga lain."
+    let settingsRemotePhone = "Pasangkan ponsel…"
+    let settingsRemotePhoneHint = "Menampilkan kode untuk dipindai. Kode itu membawa kuncinya sendiri, jadi foto kode itu cuma satu perangkat yang terlihat di daftar ini dan bisa kamu cabut lagi — bukan kunci Mac ini sendiri."
+    let pairingScanTitle = "Pindai ini dengan ponsel"
+    let pushWaiting = "menunggu jawaban"
     let settingsOpenFile = "Buka berkas konfigurasi…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f dtk", value) }
 

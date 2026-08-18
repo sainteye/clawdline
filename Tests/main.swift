@@ -2302,6 +2302,16 @@ group("the remote server refuses the right cross-origin requests") {
           !sub([:]))
 }
 
+group("a tool result is what a command printed, not how it wanted to be coloured") {
+    // Observed on a phone: four hundred characters of escape codes with no spaces in them, which
+    // pushed the page sideways and left a screen of black with one line of noise in the middle.
+    let noisy = "\u{1B}[38;2;47;107;94m\u{1B}[48;2;47;107;94m▪\u{1B}[0msample-app — ~/code/sample-app"
+    expect("the colours go and the sentence stays",
+           Ansi.plain(noisy), "▪sample-app — ~/code/sample-app")
+    expect("text with no escapes in it is untouched",
+           Ansi.plain("total 95904"), "total 95904")
+}
+
 // MARK: - Claude Code hooks
 
 private func hookSession(_ id: String, tty: String) -> TargetSession {

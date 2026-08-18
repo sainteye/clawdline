@@ -144,6 +144,10 @@ struct Portuguese: Copy {
     let settingsTunnelHint = "Abre uma conexão de saída através do cloudflared — sem redirecionamento de portas, nada à escuta na sua rede. Não começa enquanto não houver um dispositivo pareado, porque atrás do túnel está o nome de cada repositório e o título de cada tarefa deste Mac."
     let settingsRemoteWrite = "Deixar os dispositivos pareados escrever"
     let settingsRemoteWriteHint = "Desligado, um dispositivo pareado só consegue ler. Ligado, ele pode mandar texto para dentro de uma sessão e abrir sessões novas — o que executa código neste Mac, porque é isso que o Claude Code faz. É uma decisão diferente da de cima, então é um interruptor separado."
+    let settingsRemotePhone = "Parear um celular…"
+    let settingsRemotePhoneHint = "Mostra um código para escanear. Ele carrega uma chave só dele: uma foto desse código é um dispositivo que você vê nesta lista e pode tirar de novo — não a chave deste Mac."
+    let pairingScanTitle = "Escaneie isto com o celular"
+    let pushWaiting = "está esperando uma resposta"
     let settingsOpenFile = "Abrir o ficheiro de configuração…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

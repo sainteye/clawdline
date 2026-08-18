@@ -216,6 +216,22 @@ enum StateHook {
         previous = [:]
     }
 
+    /// What to call a session on a lock screen.
+    ///
+    /// The project, never ``TargetSession/label`` — that is the *task*, and Claude Code writes
+    /// things like "fix the billing bug before the customer call" into it. Encryption settles who
+    /// can read a notification in transit and settles nothing about the screen it lights up, which
+    /// is a screen other people in the room can see.
+    static func projectName(for session: TargetSession) -> String {
+        guard let cwd = Targets.workingDirectory(of: session) else { return "Claude Code" }
+        if let registry = ProjectIcon.row(forCwd: cwd), let label = registry["label"] as? String,
+           !label.isEmpty {
+            return label
+        }
+        let name = (cwd as NSString).lastPathComponent
+        return name.isEmpty ? "Claude Code" : name
+    }
+
     private static func react() {
         let states = SessionWatch.shared.states
         let sessions = SessionWatch.shared.targets
@@ -225,9 +241,28 @@ enum StateHook {
         // were doing when they last edited their config.
         defer { previous = states }
 
+        let changes = transitions(from: previous, to: states, sessions: sessions)
+
+        // A phone, buzzing, for the one state that is worth it.
+        //
+        // **Only `waiting`.** "It finished" is the tempting one and it is the wrong one: it
+        // happens dozens of times a day, and not being told costs nothing — it will still be
+        // finished when you next look. A question with nobody answering it is the only state that
+        // costs something for every second it goes unnoticed, and a notification that fires for
+        // everything trains somebody who looks at none of them.
+        //
+        // Above the guard below on purpose: sending to a phone has nothing to do with whether
+        // this machine has a command configured to run.
+        for change in changes where change.to == .waiting {
+            WebPush.send(title: projectName(for: change.session),
+                         body: L.t.pushWaiting,
+                         url: "/#session=\(change.session.id)",
+                         tag: change.session.id)
+        }
+
         let argv = Config.shared.onStateChange
         guard !argv.isEmpty else { return }
-        for change in transitions(from: previous, to: states, sessions: sessions) {
+        for change in changes {
             fire(change, argv: argv)
         }
     }

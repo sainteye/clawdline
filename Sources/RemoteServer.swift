@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Network
 
@@ -197,7 +198,10 @@ final class RemoteServer {
         // and independently of the page, and an install prompt fetches the manifest's icons the
         // same way. It discloses nothing — it is the same drawing of the same creature for
         // everybody, and it is in a public repository.
-        let icon = request.path == "/favicon.ico"
+        // The service worker with them: a browser fetches it outside the page's own credentials in
+        // some flows, and what it contains is a push handler and nothing else.
+        let icon = request.path == "/sw.js"
+            || request.path == "/favicon.ico"
             || (request.path.hasPrefix("/icon-") && request.path.hasSuffix(".png"))
         if !open.contains(request.path), !pairing, !icon {
             if case .denied = permission(for: request) {
@@ -287,6 +291,35 @@ final class RemoteServer {
             }
             return .error(404, "not_found", "No such route")
 
+        // Subscribing is read-level, deliberately. It does not go through `writing` — that gate is
+        // about typing into somebody's session, and asking to be told when one needs an answer is
+        // the opposite of that: it is the reading half arriving by a different road.
+        case ("GET", "/v1/push/key"):
+            return .json(["key": WebPush.publicKey])
+
+        case ("POST", "/v1/push/subscribe"):
+            guard case .allowed(let device, _) = permission(for: request) else {
+                return .error(401, "unauthorized", "This needs a paired device.")
+            }
+            let json = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
+            // Validated rather than stored as given. An endpoint is a URL **this Mac will POST to
+            // from inside your network**, every time a session changes — so an unchecked one is a
+            // request-forgery primitive, handed over by whoever holds a token.
+            guard let subscription = WebPush.subscription(from: json, device: device) else {
+                return .error(400, "bad_request", "That is not a usable push subscription.")
+            }
+            WebPush.add(subscription)
+            RemoteAuth.audit("push.subscribe", ["device": device, "id": subscription.id])
+            return .json(["ok": true, "id": subscription.id])
+
+        case ("POST", "/v1/push/unsubscribe"):
+            let json = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
+            guard let id = json["id"] as? String else {
+                return .error(400, "bad_request", "That needs an id.")
+            }
+            WebPush.remove(id: id)
+            return .json(["ok": true])
+
         case ("GET", "/v1/projects"):
             // The icon registry is the closest thing to a list of "projects I work on" that
             // already exists on this machine, and the stack panel reads it for the same reason.
@@ -331,16 +364,39 @@ final class RemoteServer {
                 guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
                     return .error(404, "not_found", "No session named that")
                 }
-                guard let text = body["text"] as? String, !text.isEmpty else {
-                    return .error(400, "bad_request", "That needs some text.")
+                let text = (body["text"] as? String) ?? ""
+                let images = (body["images"] as? [String]) ?? []
+                guard !text.isEmpty || !images.isEmpty else {
+                    return .error(400, "bad_request", "That needs some text or an image.")
                 }
+
                 // Off the main thread on purpose: this is an osascript round trip of a hundred
                 // milliseconds or so, and the only thing it touches is a terminal.
-                let problem = Targets.send(text, to: session)
+                var problem: String?
+                if images.isEmpty {
+                    problem = Targets.send(text, to: session)
+                } else {
+                    // Written to disk and handed over as files, because that is the shape the
+                    // existing path already takes: `Drop` borrows the pasteboard, sends Ctrl-V so
+                    // Claude Code turns each one into `[Image #3]`, and hands the pasteboard back.
+                    // All of that works today from a drag onto the bar — this is the same journey
+                    // with a phone at the far end of it.
+                    let made = Self.pieces(text: text, images: images)
+                    defer {
+                        for path in made.temporary { try? FileManager.default.removeItem(atPath: path) }
+                    }
+                    guard made.pieces.contains(where: {
+                        if case .image = $0 { return true }; return false
+                    }) else {
+                        return .error(400, "bad_request", "None of those were images I could read.")
+                    }
+                    problem = Targets.send(made.pieces, to: session)
+                }
                 // Written down before the answer goes back, because the interesting case for the
                 // log is the one where something went wrong afterwards.
                 RemoteAuth.audit("session.send", ["id": session.id, "tty": session.tty,
                                                   "chars": "\(text.count)",
+                                                  "images": "\(images.count)",
                                                   "ok": problem == nil ? "1" : "0"])
                 if let problem { return .error(502, "internal", problem) }
                 return .json(["ok": true, "at": Int(Date().timeIntervalSince1970)])
@@ -383,6 +439,9 @@ final class RemoteServer {
 
         case ("GET", "/manifest.webmanifest"):
             return manifest()
+
+        case ("GET", "/sw.js"):
+            return serviceWorker()
 
         case ("GET", "/favicon.ico"):
             guard let data = RemoteIcon.ico() else { return .error(404, "not_found", "No icon") }
@@ -634,6 +693,53 @@ final class RemoteServer {
 
     private var idempotent: [String: (at: Date, response: Response)] = [:]
 
+    /// Turn a message with pictures in it into the pieces the sender already understands.
+    ///
+    /// Each image arrives as a `data:` URL and leaves as a file, because that is what
+    /// ``Drop/Piece`` is: the pasteboard wants a file it can read, and the path is also the
+    /// fallback if the bytes turn out not to be an image after all.
+    ///
+    /// **Everything is re-encoded to PNG rather than trusted**, and there are two reasons, one
+    /// practical and one not. The practical one: a photograph taken on an iPhone is HEIC, and a
+    /// terminal程式 asked to read a HEIC gets a file it does not want. The other: these bytes
+    /// arrived over a network from something that said they were an image, and the cheapest way
+    /// to be sure of that is to decode them and write them out again — what does not survive
+    /// being drawn was not a picture.
+    ///
+    /// The claimed media type is ignored entirely for the same reason. It is a string somebody
+    /// sent us.
+    static func pieces(text: String, images: [String]) -> (pieces: [Drop.Piece], temporary: [String]) {
+        var pieces: [Drop.Piece] = []
+        var temporary: [String] = []
+        if !text.isEmpty { pieces.append(.text(text)) }
+
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("clawdline-remote", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        for (index, source) in images.enumerated() {
+            guard let raw = decodeDataURL(source),
+                  let rep = NSBitmapImageRep(data: raw),
+                  let png = rep.representation(using: .png, properties: [:]) else { continue }
+            let url = folder.appendingPathComponent("\(UUID().uuidString)-\(index).png")
+            guard (try? png.write(to: url, options: .atomic)) != nil else { continue }
+            temporary.append(url.path)
+            pieces.append(.image(url.path))
+        }
+        return (pieces, temporary)
+    }
+
+    /// `data:image/heic;base64,AAAA…` → the bytes. Anything else, including a `data:` URL that is
+    /// not base64, comes back nil: this is not a general URL loader and must never become one —
+    /// a `file:` or an `http:` here would be somebody making this app fetch things for them.
+    static func decodeDataURL(_ text: String) -> Data? {
+        guard text.hasPrefix("data:"), let comma = text.firstIndex(of: ",") else { return nil }
+        let header = text[text.startIndex..<comma]
+        guard header.contains(";base64") else { return nil }
+        let body = String(text[text.index(after: comma)...])
+        return Data(base64Encoded: body, options: [.ignoreUnknownCharacters])
+    }
+
     // MARK: - What the routes answer with
 
     private func sessionsPayload() -> [String: Any] {
@@ -731,6 +837,52 @@ final class RemoteServer {
             return .error(404, "not_found", "The web interface is not in this build")
         }
         return Response(status: 200, headers: ["Content-Type": "text/html; charset=utf-8"], body: data)
+    }
+
+    /// The service worker, which exists for one reason: **a page cannot receive a push while it
+    /// is closed, and a service worker can.**
+    ///
+    /// Deliberately tiny, and served rather than shipped as a file, because a service worker is
+    /// the one script a browser keeps and re-runs on its own — the smaller its surface, the less
+    /// there is to be wrong in a copy somebody installed last month.
+    private func serviceWorker() -> Response {
+        let js = #"""
+        // Clawdline's service worker. Its whole job is to be awake when the page is not.
+        self.addEventListener("push", function (event) {
+            var payload = {};
+            try { payload = event.data ? event.data.json() : {}; } catch (e) {}
+            event.waitUntil(self.registration.showNotification(payload.title || "Clawdline", {
+                body: payload.body || "",
+                // The tag collapses repeats about one session into a single line rather than a
+                // stack: a phone that was in a pocket for ten minutes should find one notification
+                // about a session, not six.
+                tag: payload.tag || "clawdline",
+                renotify: true,
+                data: { url: payload.url || "/" }
+            }));
+        });
+
+        self.addEventListener("notificationclick", function (event) {
+            event.notification.close();
+            var url = (event.notification.data && event.notification.data.url) || "/";
+            // Focus a window that is already open before making another one — the point of
+            // tapping this is to reach the session, not to collect tabs.
+            event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true })
+                .then(function (list) {
+                    for (var i = 0; i < list.length; i++) {
+                        if ("focus" in list[i]) {
+                            if (list[i].navigate) { list[i].navigate(url); }
+                            return list[i].focus();
+                        }
+                    }
+                    return clients.openWindow(url);
+                }));
+        });
+        """#
+        return Response(status: 200,
+                        headers: ["Content-Type": "text/javascript; charset=utf-8",
+                                  "Cache-Control": "no-cache"],
+                        body: Data(js.utf8))
     }
 
     private func manifest() -> Response {

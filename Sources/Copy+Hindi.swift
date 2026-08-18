@@ -145,6 +145,10 @@ struct Hindi: Copy {
     let settingsTunnelHint = "cloudflared के ज़रिये इसी Mac से बाहर की ओर जुड़ता है — न port forwarding, न आपके नेटवर्क पर कुछ सुनता हुआ। जब तक कोई डिवाइस जुड़ा न हो, यह चालू नहीं होगा, क्योंकि tunnel के उस पार इस Mac का हर repository नाम और हर काम का शीर्षक है।"
     let settingsRemoteWrite = "जुड़े डिवाइस को लिखने दें"
     let settingsRemoteWriteHint = "बंद हो तो जुड़ा हुआ डिवाइस सिर्फ़ पढ़ सकता है। चालू हो तो वह किसी session में लिख भी सकता है और नए session शुरू भी कर सकता है — यानी इस Mac पर कोड चलता है, क्योंकि Claude Code यही करता है। यह ऊपर वाले से अलग फ़ैसला है, इसलिए इसका स्विच भी अलग है।"
+    let settingsRemotePhone = "फ़ोन जोड़ें…"
+    let settingsRemotePhoneHint = "scan करने के लिए एक code दिखाता है। उस code की अपनी एक चाबी होती है, इसलिए उसकी तस्वीर से बनता है बस एक डिवाइस — जो इसी सूची में दिखेगा और जिसे कभी भी हटाया जा सकता है — इस Mac की अपनी चाबी नहीं।"
+    let pairingScanTitle = "इसे फ़ोन से scan करें"
+    let pushWaiting = "जवाब का इंतज़ार कर रहा है"
     let settingsOpenFile = "कॉन्फ़िग फ़ाइल खोलें…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f से॰", value) }
 

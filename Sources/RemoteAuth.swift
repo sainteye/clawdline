@@ -341,6 +341,11 @@ enum RemoteAuth {
         devices.removeValue(forKey: id)
         lock.unlock()
         save()
+        // Its notifications go with it. A device that has been signed out and still buzzes was not
+        // really signed out, and the phone holding it has no way to make it stop.
+        for subscription in WebPush.subscriptions where subscription.device == id {
+            WebPush.remove(id: subscription.id)
+        }
         audit("device.revoke", ["device": name, "id": id])
         devicesChanged()
     }
@@ -355,6 +360,7 @@ enum RemoteAuth {
         pending.removeAll()
         lock.unlock()
         save()
+        for subscription in WebPush.subscriptions { WebPush.remove(id: subscription.id) }
         audit("device.revoke_all", ["count": "\(count)"])
         devicesChanged()
     }

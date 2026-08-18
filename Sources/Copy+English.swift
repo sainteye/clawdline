@@ -140,6 +140,10 @@ struct English: Copy {
     let settingsTunnelHint = "Opens an outbound connection through cloudflared — no port forwarding, nothing listening on your network. It will not start until a device is paired, because what is behind it is every repository name and task title on this Mac."
     let settingsRemoteWrite = "Let paired devices type"
     let settingsRemoteWriteHint = "Off, and a paired device can only read. On, and it can send text into a session and start new ones — which runs code on this Mac, because that is what Claude Code does. A different decision from the one above, so it is a different switch."
+    let settingsRemotePhone = "Pair a phone…"
+    let settingsRemotePhoneHint = "Shows a code to scan. It carries a key of its own, so a photograph of it is a device you can see in this list and take away again — not this Mac's own key."
+    let pairingScanTitle = "Scan this with the phone"
+    let pushWaiting = "is waiting for an answer"
     let settingsOpenFile = "Open the config file…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

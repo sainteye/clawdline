@@ -142,6 +142,10 @@ struct TraditionalChinese: Copy {
     let settingsTunnelHint = "透過 cloudflared 從這台 Mac 往外連出去——不必開通訊埠轉發，你的網路上也沒有東西在聽。要先配對過一台裝置它才會啟動，因為通道後面就是這台 Mac 上每一個儲存庫名稱、每一個工作標題。"
     let settingsRemoteWrite = "讓配對的裝置打字"
     let settingsRemoteWriteHint = "關著的時候，配對過的裝置只能讀。打開之後，它可以把文字送進 session，也可以開新的 session——那就是在這台 Mac 上執行程式碼，因為 Claude Code 做的就是這件事。這跟上面那一題是兩回事，所以它是另一個開關。"
+    let settingsRemotePhone = "配對手機……"
+    let settingsRemotePhoneHint = "顯示一張可以掃的 QR code。它自己帶著一把鑰匙，所以就算被拍走，被拍走的也只是一台會出現在上面清單裡、隨時拿得掉的裝置——不是這台 Mac 自己的鑰匙。"
+    let pairingScanTitle = "用手機掃這張 QR code"
+    let pushWaiting = "在等你回答"
     let settingsOpenFile = "打開設定檔……"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 
@@ -305,6 +309,10 @@ struct SimplifiedChinese: Copy {
     let settingsTunnelHint = "通过 cloudflared 从这台 Mac 往外连出去——不用做端口转发，你的网络上也没有东西在监听。要先配对过一台设备它才会启动，因为隧道后面就是这台 Mac 上每一个仓库名称、每一个任务标题。"
     let settingsRemoteWrite = "让配对的设备打字"
     let settingsRemoteWriteHint = "关着的时候，配对过的设备只能读。打开之后，它可以把文字送进 session，也可以开新的 session——那就是在这台 Mac 上执行代码，因为 Claude Code 做的就是这件事。这跟上面那一题是两回事，所以它是另一个开关。"
+    let settingsRemotePhone = "配对手机……"
+    let settingsRemotePhoneHint = "显示一张可以扫的 QR code。它自己带着一把钥匙，所以就算被拍走，被拍走的也只是一台会出现在上面列表里、随时拿得掉的设备——不是这台 Mac 自己的钥匙。"
+    let pairingScanTitle = "用手机扫这张 QR code"
+    let pushWaiting = "在等你回答"
     let settingsOpenFile = "打开配置文件……"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 

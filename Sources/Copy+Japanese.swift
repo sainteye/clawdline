@@ -139,6 +139,10 @@ struct Japanese: Copy {
     let settingsTunnelHint = "cloudflared を通して、この Mac のほうから外へつなぎます。ポート開放も要らず、あなたのネットワークで待ち受けるものもありません。機器がひとつペアリングされるまでは起動しません。トンネルの向こうにあるのは、この Mac のリポジトリ名とタスクの見出しのすべてだからです。"
     let settingsRemoteWrite = "ペアリング済み機器に入力させる"
     let settingsRemoteWriteHint = "オフのあいだ、ペアリング済みの機器は読むだけです。オンにすると、セッションに文字を送ることも、新しいセッションを始めることもできます。それはこの Mac 上でコードを実行するということです。Claude Code がやっているのはまさにそれだからです。上の項目とは別の判断なので、スイッチも別にしてあります。"
+    let settingsRemotePhone = "スマートフォンとペアリング…"
+    let settingsRemotePhoneHint = "読み取るためのコードを表示します。そのコードは自分の鍵を持っているので、写真に撮られても増えるのは、この一覧に出てきていつでも外せる機器がひとつだけです。この Mac 自身の鍵ではありません。"
+    let pairingScanTitle = "これをスマートフォンで読み取ってください"
+    let pushWaiting = "が答えを待っています"
     let settingsOpenFile = "設定ファイルを開く…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 

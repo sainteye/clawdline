@@ -394,7 +394,14 @@ enum Transcript {
         } else if let list = content as? [[String: Any]] {
             text = list.compactMap { $0["text"] as? String }.joined(separator: " ")
         }
-        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // What a command printed, not how it wanted a terminal to colour it.
+        //
+        // A tool result is the raw output of something that thought it was writing to a terminal,
+        // so it can arrive full of escape sequences. They are invisible in a terminal and they are
+        // not invisible anywhere else — on a phone one of these turned into four hundred characters
+        // of `[38;2;47;107;94m` with no spaces in it, which pushed the whole page sideways and left
+        // a screen of black with one line of noise floating in it.
+        text = Ansi.plain(text).trimmingCharacters(in: .whitespacesAndNewlines)
         guard let line = text.split(separator: "\n").first else { return "" }
         return String(line)
     }

@@ -151,24 +151,29 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
     private func devicesControl() -> NSView {
         let width: CGFloat = 560 - (22 + 168 + 14) - 22
-        let box = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 52))
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 80))
 
         let label = NSTextField(wrappingLabelWithString: "")
         label.font = NSFont.systemFont(ofSize: 11)
         label.textColor = .secondaryLabelColor
-        label.frame = NSRect(x: 0, y: 26, width: width, height: 22)
+        label.frame = NSRect(x: 0, y: 56, width: width, height: 22)
         box.addSubview(label)
         devicesLabel = label
 
         let open = NSButton(title: L.t.settingsRemoteOpen, target: self, action: #selector(openRemote))
         open.bezelStyle = .rounded
-        open.frame = NSRect(x: 0, y: 0, width: 150, height: 24)
+        open.frame = NSRect(x: 0, y: 26, width: 150, height: 24)
         box.addSubview(open)
+
+        let phone = NSButton(title: L.t.settingsRemotePhone, target: self, action: #selector(pairPhone))
+        phone.bezelStyle = .rounded
+        phone.frame = NSRect(x: 158, y: 26, width: 150, height: 24)
+        box.addSubview(phone)
 
         let revoke = NSButton(title: L.t.settingsRemoteRevokeAll, target: self,
                               action: #selector(revokeAllDevices))
         revoke.bezelStyle = .rounded
-        revoke.frame = NSRect(x: 158, y: 0, width: 190, height: 24)
+        revoke.frame = NSRect(x: 0, y: 0, width: 190, height: 24)
         box.addSubview(revoke)
 
         refreshDevices()
@@ -235,6 +240,65 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     /// A device of its own rather than the machine's, because they are not the same thing — the
     /// local token can send and administer, and a browser tab should start with neither until
     /// somebody says so.
+    /// Mint a key for a phone and put it on screen as something a camera can read.
+    ///
+    /// Its own device, not this Mac's token: a photograph of a screen is a thing that happens, and
+    /// what should survive that is a row in the list above with a name on it that can be taken
+    /// away — not the key the machine uses for itself.
+    @objc private func pairPhone() {
+        guard Config.shared.remote else { return }
+        let caps: Set<RemoteAuth.Capability> = Config.shared.remoteWrite ? [.read, .send] : [.read]
+        let made = RemoteAuth.addDevice(name: "Phone", caps: caps)
+        let url = RemoteQR.signInURL(token: made.token,
+                                     hostname: Config.shared.remoteHostname,
+                                     tunnel: RemoteTunnel.shared.state,
+                                     port: Config.shared.remotePort)
+        refreshDevices()
+        showQR(url)
+    }
+
+    private var qrWindow: NSWindow?
+
+    private func showQR(_ url: String) {
+        let side: CGFloat = 300
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: side + 40, height: side + 108))
+
+        let title = NSTextField(labelWithString: L.t.pairingScanTitle)
+        title.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        title.alignment = .center
+        title.frame = NSRect(x: 20, y: side + 74, width: side, height: 20)
+        content.addSubview(title)
+
+        let image = NSImageView(frame: NSRect(x: 20, y: 60, width: side, height: side))
+        image.image = RemoteQR.image(for: url, side: side)
+        // A QR code is squares; letting AppKit smooth it is how a code that should read at arm's
+        // length ends up needing a second try.
+        image.imageScaling = .scaleNone
+        image.wantsLayer = true
+        image.layer?.backgroundColor = NSColor.white.cgColor
+        content.addSubview(image)
+
+        // The address in text as well, because a phone with no camera permission still has a
+        // keyboard, and because somebody will want to see what they are about to scan.
+        let text = NSTextField(wrappingLabelWithString: url)
+        text.font = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        text.textColor = .tertiaryLabelColor
+        text.alignment = .center
+        text.isSelectable = true
+        text.frame = NSRect(x: 20, y: 14, width: side, height: 38)
+        content.addSubview(text)
+
+        let w = NSWindow(contentRect: content.frame,
+                         styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        w.title = L.t.settingsRemotePhone
+        w.contentView = content
+        w.isReleasedWhenClosed = false
+        w.center()
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        qrWindow = w
+    }
+
     @objc private func openRemote() {
         guard Config.shared.remote else { return }
         let caps: Set<RemoteAuth.Capability> = Config.shared.remoteWrite ? [.read, .send] : [.read]

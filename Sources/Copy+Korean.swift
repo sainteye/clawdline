@@ -139,6 +139,10 @@ struct Korean: Copy {
     let settingsTunnelHint = "cloudflared를 통해 이 Mac에서 바깥으로 연결을 겁니다. 포트 포워딩도 없고, 네트워크에서 듣고 있는 것도 없습니다. 기기가 하나 페어링될 때까지는 시작하지 않습니다. 터널 너머에 있는 것이 이 Mac의 모든 저장소 이름과 모든 작업 제목이기 때문입니다."
     let settingsRemoteWrite = "페어링된 기기의 입력 허용"
     let settingsRemoteWriteHint = "꺼져 있으면 페어링된 기기는 읽기만 할 수 있습니다. 켜면 세션에 텍스트를 보내고 새 세션을 시작할 수도 있습니다. 그것은 이 Mac에서 코드를 실행한다는 뜻입니다. Claude Code가 하는 일이 바로 그것이기 때문입니다. 위쪽과는 다른 결정이라 스위치도 따로 두었습니다."
+    let settingsRemotePhone = "휴대폰 페어링…"
+    let settingsRemotePhoneHint = "스캔할 코드를 보여줍니다. 그 코드는 자기 키를 따로 갖고 있어서, 사진으로 찍히더라도 남는 것은 이 목록에 보이고 언제든 지울 수 있는 기기 하나뿐입니다. 이 Mac 자신의 키가 아닙니다."
+    let pairingScanTitle = "휴대폰으로 이것을 스캔하세요"
+    let pushWaiting = "이 답을 기다리는 중"
     let settingsOpenFile = "설정 파일 열기…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f초", value) }
 

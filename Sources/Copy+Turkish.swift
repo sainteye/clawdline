@@ -141,6 +141,10 @@ struct Turkish: Copy {
     let settingsTunnelHint = "cloudflared üzerinden bu Mac'ten dışarı doğru bir bağlantı açar — port yönlendirme yok, ağında dinleyen hiçbir şey yok. Bir cihaz eşleşene kadar başlamaz, çünkü tünelin arkasında bu Mac'teki her depo adı ve her görev başlığı var."
     let settingsRemoteWrite = "Eşleşen cihazlar yazabilsin"
     let settingsRemoteWriteHint = "Kapalıyken eşleşmiş bir cihaz yalnızca okuyabilir. Açıkken bir oturuma metin gönderebilir ve yeni oturumlar başlatabilir — bu da bu Mac'te kod çalıştırmak demektir, çünkü Claude Code'un yaptığı şey tam olarak budur. Yukarıdakinden başka bir karar, o yüzden ayrı bir anahtar."
+    let settingsRemotePhone = "Telefon eşleştir…"
+    let settingsRemotePhoneHint = "Taranacak bir kod gösterir. Kodun kendine ait bir anahtarı vardır: fotoğrafı çekilirse ortaya çıkan, bu listede görüp istediğin an kaldırabileceğin bir cihazdır — bu Mac'in kendi anahtarı değil."
+    let pairingScanTitle = "Bunu telefonla tara"
+    let pushWaiting = "bir yanıt bekliyor"
     let settingsOpenFile = "Yapılandırma dosyasını aç…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f sn", value) }
 

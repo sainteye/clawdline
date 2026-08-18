@@ -141,6 +141,10 @@ struct French: Copy {
     let settingsTunnelHint = "Ouvre une connexion sortante via cloudflared — aucune redirection de port, rien à l'écoute sur votre réseau. Ne démarre pas tant qu'aucun appareil n'est jumelé, parce que derrière le tunnel il y a le nom de chaque dépôt et le titre de chaque tâche de ce Mac."
     let settingsRemoteWrite = "Laisser les appareils jumelés écrire"
     let settingsRemoteWriteHint = "Désactivé, un appareil jumelé ne peut que lire. Activé, il peut envoyer du texte dans une session et en ouvrir de nouvelles — ce qui exécute du code sur ce Mac, puisque c'est ce que fait Claude Code. Ce n'est pas la même décision que celle du dessus, donc ce n'est pas le même interrupteur."
+    let settingsRemotePhone = "Jumeler un téléphone…"
+    let settingsRemotePhoneHint = "Affiche un code à scanner. Il porte une clé bien à lui : une photo de ce code, c'est un appareil que vous voyez dans cette liste et que vous pouvez retirer — pas la clé de ce Mac."
+    let pairingScanTitle = "Scannez ceci avec le téléphone"
+    let pushWaiting = "attend une réponse"
     let settingsOpenFile = "Ouvrir le fichier de configuration…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

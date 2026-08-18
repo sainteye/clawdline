@@ -141,6 +141,10 @@ struct Spanish: Copy {
     let settingsTunnelHint = "Abre una conexión saliente a través de cloudflared: sin redirección de puertos y sin nada a la escucha en tu red. No arranca hasta que haya un dispositivo vinculado, porque detrás del túnel está el nombre de cada repositorio y el título de cada tarea de este Mac."
     let settingsRemoteWrite = "Dejar escribir a los dispositivos vinculados"
     let settingsRemoteWriteHint = "Desactivado, un dispositivo vinculado solo puede leer. Activado, puede enviar texto a una sesión y abrir sesiones nuevas — lo que ejecuta código en este Mac, porque eso es lo que hace Claude Code. Es una decisión distinta de la de arriba, así que es un interruptor distinto."
+    let settingsRemotePhone = "Vincular un teléfono…"
+    let settingsRemotePhoneHint = "Muestra un código para escanear. Lleva una clave propia: una foto de ese código es un dispositivo que ves en esta lista y que puedes quitar cuando quieras — no la clave de este Mac."
+    let pairingScanTitle = "Escanea esto con el teléfono"
+    let pushWaiting = "espera una respuesta"
     let settingsOpenFile = "Abrir el archivo de configuración…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

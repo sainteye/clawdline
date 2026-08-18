@@ -195,6 +195,13 @@ protocol Copy {
     var settingsTunnelHint: String { get }
     var settingsRemoteWrite: String { get }
     var settingsRemoteWriteHint: String { get }
+    var settingsRemotePhone: String { get }
+    var settingsRemotePhoneHint: String { get }
+    var pairingScanTitle: String { get }
+    /// The body of the one notification this app sends. The title is the project, so this is the
+    /// half that says what happened — short, because a lock screen truncates and the important
+    /// word should not be the one that gets cut.
+    var pushWaiting: String { get }
     var settingsOpenFile: String { get }
     /// A number of seconds, as a settings row shows it.
     ///
