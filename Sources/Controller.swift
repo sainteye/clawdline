@@ -183,6 +183,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var pendingShowList = false
     /// While set, the list shows invented sessions and nothing replaces them. Snapshots only.
     private var standInList = false
+    /// Where the stand-in list is in its little story. Negative means "the still".
+    private var standInTime: Double = -1
     private var spinnerTimer: Timer?
 
     private var currentTarget: TargetSession? {
@@ -1607,7 +1609,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// so the picture cannot drift away from what the app does. It can only be entered from the
     /// snapshot URL, and the pinning is what stops the next reading from the watch replacing
     /// somebody's invented work with their real work half a second later.
-    private func showStandInSessions() {
+    private func showStandInSessions(at t: Double = -1) {
+        standInTime = t
         standInList = true
         // The footer names the project too, and it is the same problem one line down: a picture
         // of the list must not carry this machine's repository, branch and uncommitted count.
@@ -1621,12 +1624,15 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private func rebuildRows() {
         rows.forEach { $0.removeFromSuperview() }
         if standInList {
-            rows = Self.standInSessions().prefix(9).enumerated().map { i, row in
-                let selected = (i == 1)
+            let t = standInTime
+            let pick = t < 0 ? 1 : Self.standInSelection(at: t)
+            rows = Self.standInSessions(at: t).prefix(9).enumerated().map { i, row in
+                let selected = (i == pick)
                 let view = TargetRow(title: row.label, index: i,
                                      rich: standInRowText(row, selected: selected))
                 view.detail = sessionRowDetail(row.state, selected: selected)
                 if case .working = row.state { view.isBusy = true }
+                if t >= 0 { view.spinnerTime = t }
                 view.icon = ProjectIcon.demoGrid(hue: row.hue).image(height: 11)
                 view.isSelected = selected
                 listBox.addSubview(view)
@@ -2855,13 +2861,22 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
         let margin: CGFloat = 64
         textView.clearText()
+        // The list has to be up *before* the canvas is measured, or every frame is drawn at the
+        // height of a bar with no list under it and the rows fall off the bottom.
+        let listStrip = script == "sessions"
+        if listStrip { showStandInSessions(at: 0) }
         relayout()
         let panelSize = container.bounds.size
         let canvas = NSSize(width: panelSize.width + margin * 2, height: panelSize.height + margin * 2)
 
         let total = Int(seconds * fps)
+        Log.write("filmstrip: script=\(script) frames=\(total) panel=\(panelSize) dir=\(dir)")
         for i in 0..<total {
             let t = Double(i) / fps
+            if listStrip {
+                showStandInSessions(at: t)
+                relayout()
+            }
             let step = Self.timeline(script: script, t: t, seconds: seconds, text: text)
 
             if step.provisional {
@@ -2941,12 +2956,29 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// real one: every row is a project name and a task title off this machine. So the rows are
     /// invented — three projects, three states, and the marks come from the same renderer the
     /// real rows use, so the picture cannot show something the app would not draw.
-    static func standInSessions() -> [(label: String, state: SessionState, hue: Int)] {
-        [("investigate the webhook", .working("Crystallizing… (13m 46s · ↓ 48.2k tokens)"), 2),
-         ("port the Android feature", .waiting, 9),
-         ("evaluate the coverage", .idle, 5),
-         ("rename the split components", .working("Herding… (54s)"), 13),
-         ("draft the release notes", .idle, 6)]
+    static func standInSessions(at t: Double = -1)
+        -> [(label: String, state: SessionState, hue: Int)] {
+        // A still shows what the rows *are*; the strip has to show what they *do*, so the states
+        // move. One session is answered and goes quiet, one finishes, and one that was quiet
+        // starts asking — which is the whole argument for the list in four seconds.
+        let asking: SessionState = t < 0 || t < 2.6 ? .waiting : .idle
+        let long: SessionState = t < 0 || t < 4.0
+            ? .working("Herding… (54s)") : .idle
+        let last: SessionState = t < 0 || t < 3.2 ? .idle : .waiting
+        return [("investigate the webhook", .working("Crystallizing… (13m 46s · ↓ 48.2k tokens)"), 2),
+                ("port the Android feature", asking, 9),
+                ("evaluate the coverage", .idle, 5),
+                ("rename the split components", long, 13),
+                ("draft the release notes", last, 6)]
+    }
+
+    /// Which row the strip has walked to by then — ⌘K, then ↓ twice.
+    static func standInSelection(at t: Double) -> Int {
+        switch t {
+        case ..<1.4: return 0
+        case ..<3.0: return 1
+        default:     return 4
+        }
     }
 
     static func standInTarget() -> NSAttributedString {
@@ -3003,6 +3035,14 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
         // Any routine name plays that routine straight through, which is how the pack
         // gallery and the per-routine clips are shot.
+        // The list strip is not about the character or the box: you have just pressed ⌘K and are
+        // looking at the rows, so the box is empty and the mascot is doing what it does.
+        if script == "sessions" {
+            s.routine = "idle"
+            s.mascotTime = t
+            s.text = ""
+            return s
+        }
         if !script.isEmpty, script != "demo" {
             s.routine = script
             s.mascotTime = t

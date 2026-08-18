@@ -94,7 +94,7 @@ bar has to tell you what the terminal would have.**
 
 <div align="center">
 
-<img src="docs/assets/sessions.png" width="760" alt="The session list: one row per session, each with its project's mark — one working with its live line, one waiting for an answer, the rest quiet.">
+<img src="docs/assets/sessions-live.gif" width="760" alt="The session list, live: the selection walks down it, one session is answered and goes quiet, another finishes, and a third starts asking — with the spinners turning.">
 
 <img src="docs/assets/island.gif" width="760" alt="The notch: the mascot leaning out while sessions run, then naming the one that is waiting, then the one that just finished.">
 

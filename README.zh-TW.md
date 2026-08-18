@@ -82,7 +82,7 @@ iTerm2 直接支援，其餘終端機透過 tmux。
 
 <div align="center">
 
-<img src="docs/assets/sessions.png" width="760" alt="Session 清單：一列一個，各自帶著專案的像素圖示——一個在跑並帶著它的即時狀態行，一個在等你回答，其餘安靜">
+<img src="docs/assets/sessions-live.gif" width="760" alt="Session 清單，動起來：選取往下走，一個被回答了於是安靜下來、一個跑完、另一個開始發問——spinner 一直在轉。">
 
 <img src="docs/assets/island.gif" width="760" alt="瀏海：有東西在跑時吉祥物探出來，接著講出在等你的是哪一個，最後是剛跑完的那個">
 

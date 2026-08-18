@@ -88,7 +88,8 @@ run_if() { local n="$1"; shift; if want "$n"; then "$@"; fi; }
 set_cfg 'language="en"' 'output_size=11.5' 'mascot="clawd"'
 relaunch
 
-run_if sessions   shot sessions   "list=demo"
+run_if sessions   shot sessions   "list=demo"          # the still, for the section
+run_if sessions   strip sessions-live sessions 5.2 760   # and the strip, for the top of the page
 run_if picker     shot picker     "list=mascots"
 run_if transcript shot transcript "output=1&full=0&transcript=$T" 6
 run_if fullscreen shot fullscreen "output=1&full=1&transcript=$T" 7

@@ -878,6 +878,10 @@ final class TargetRow: NSView {
     var detail: NSAttributedString?
     /// Draw the spinner between the label and the detail.
     var isBusy = false
+    /// Pin the spinner's phase, for a filmstrip: frames are rendered as fast as the machine can
+    /// draw them, so a wall clock would give a strip whose spinner turns at whatever speed that
+    /// happened to be.
+    var spinnerTime: Double?
     var onClick: (() -> Void)?
 
     /// Somewhere to go, when part of the row is a place rather than a label — the port a server
@@ -1076,7 +1080,7 @@ final class TargetRow: NSView {
         var dx = x + min(text.size().width, room) + 12
         if isBusy {
             PixelSpinner.draw(at: NSPoint(x: dx, y: bounds.midY - PixelSpinner.size / 2),
-                              time: CACurrentMediaTime(), colour: Style.accent)
+                              time: spinnerTime ?? CACurrentMediaTime(), colour: Style.accent)
             dx += PixelSpinner.size + 7
         }
         detail.draw(in: NSRect(x: dx, y: bounds.midY - 9,
