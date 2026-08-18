@@ -185,6 +185,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var standInList = false
     /// Where the stand-in list is in its little story. Negative means "the still".
     private var standInTime: Double = -1
+    private var standInRow: (label: String, state: SessionState, hue: Int, project: String)?
     private var spinnerTimer: Timer?
 
     private var currentTarget: TargetSession? {
@@ -1540,7 +1541,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     }
 
     /// The stand-in rows, drawn by the same rules as the real ones.
-    private func standInRowText(_ row: (label: String, state: SessionState, hue: Int),
+    private func standInRowText(_ row: (label: String, state: SessionState, hue: Int, project: String),
                                 selected: Bool) -> NSAttributedString {
         let s = NSMutableAttributedString()
         let base = NSFont.systemFont(ofSize: Style.listSize, weight: selected ? .medium : .regular)
@@ -1612,6 +1613,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private func showStandInSessions(at t: Double = -1) {
         standInTime = t
         standInList = true
+        // The footer is a copy of the terminal's status line — that is the point of it — so in a
+        // picture that shows both, the two have to be looking at the same session. It used to
+        // keep the *real* current project's mark while the rows and the status line moved.
+        let rows = Self.standInSessions(at: t)
+        let pick = t < 0 ? 1 : Self.standInSelection(at: t)
+        standInRow = rows[min(pick, rows.count - 1)]
         // The footer names the project too, and it is the same problem one line down: a picture
         // of the list must not carry this machine's repository, branch and uncommitted count.
         usingStandInLabel = true
@@ -2500,7 +2507,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private func updateTargetLabel() {
         iconView?.grid = currentTarget.flatMap { iconCache[$0.id] }
         guard !usingStandInLabel else {
-            setFooter(Self.standInTarget())
+            iconView?.grid = standInRow.map { ProjectIcon.demoGrid(hue: $0.hue) }
+            setFooter(Self.standInTarget(row: standInRow))
             return
         }
         let s = NSMutableAttributedString()
@@ -2859,7 +2867,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
         let fake = Self.standInTarget()
 
-        let margin: CGFloat = 64
+        // Room for the tab bar above and the status line below. The other strips are the card on
+        // a wallpaper and want none of it.
+        let margin: CGFloat = script == "sessions" ? 108 : 64
         textView.clearText()
         // The list has to be up *before* the canvas is measured, or every frame is drawn at the
         // height of a bar with no list under it and the rows fall off the bottom.
@@ -2894,7 +2904,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             mascot.play(step.routine, then: step.routine)
             mascot.frozenTime = step.mascotTime
             relayout()
-            setFooter(fake)
+            // The list strip's footer names the session the rows are pointed at, and changes
+            // with them; `fake` is computed once and would pin it to one project for the whole
+            // clip, next to a status line that was moving.
+            setFooter(listStrip ? Self.standInTarget(row: standInRow) : fake)
 
             guard let rep = container.bitmapImageRepForCachingDisplay(in: container.bounds) else { continue }
             container.cacheDisplay(in: container.bounds, to: rep)
@@ -2903,7 +2916,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
             let out = NSImage(size: canvas)
             out.lockFocus()
-            Self.drawBackdrop(NSRect(origin: .zero, size: canvas))
+            if listStrip {
+                Self.drawTerminal(NSRect(origin: .zero, size: canvas),
+                                  selected: Self.standInSelection(at: t))
+            } else {
+                Self.drawBackdrop(NSRect(origin: .zero, size: canvas))
+            }
 
             // The card itself (frosted glass cannot be captured, so approximate it)
             let box = NSRect(x: margin, y: margin, width: panelSize.width, height: panelSize.height)
@@ -2957,7 +2975,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// invented — three projects, three states, and the marks come from the same renderer the
     /// real rows use, so the picture cannot show something the app would not draw.
     static func standInSessions(at t: Double = -1)
-        -> [(label: String, state: SessionState, hue: Int)] {
+        -> [(label: String, state: SessionState, hue: Int, project: String)] {
         // A still shows what the rows *are*; the strip has to show what they *do*, so the states
         // move. One session is answered and goes quiet, one finishes, and one that was quiet
         // starts asking — which is the whole argument for the list in four seconds.
@@ -2965,11 +2983,13 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let long: SessionState = t < 0 || t < 4.0
             ? .working("Herding… (54s)") : .idle
         let last: SessionState = t < 0 || t < 3.2 ? .idle : .waiting
-        return [("investigate the webhook", .working("Crystallizing… (13m 46s · ↓ 48.2k tokens)"), 2),
-                ("port the Android feature", asking, 9),
-                ("evaluate the coverage", .idle, 5),
-                ("rename the split components", long, 13),
-                ("draft the release notes", last, 6)]
+        // Five made-up projects rather than one: a tab title is the task, and the point of the
+        // mark beside it is that two tasks can read alike while belonging to different work.
+        return [("investigate the webhook", .working("Crystallizing… (13m 46s · ↓ 48.2k tokens)"), 2, "harbour"),
+                ("port the Android feature", asking, 9, "atlas"),
+                ("evaluate the coverage", .idle, 5, "pier"),
+                ("rename the split components", long, 13, "relay"),
+                ("draft the release notes", last, 6, "mono")]
     }
 
     /// Which row the strip has walked to by then — ⌘K, then ↓ twice.
@@ -2981,11 +3001,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
     }
 
-    static func standInTarget() -> NSAttributedString {
+    static func standInTarget(row: (label: String, state: SessionState, hue: Int, project: String)? = nil)
+        -> NSAttributedString {
         let out = NSMutableAttributedString()
         out.append(NSAttributedString(string: "● ", attributes: [
             .foregroundColor: Style.accent, .font: NSFont.systemFont(ofSize: 10)]))
-        out.append(NSAttributedString(string: "✳ my-project", attributes: [
+        out.append(NSAttributedString(string: "✳ " + (row?.project ?? "my-project"), attributes: [
             .foregroundColor: NSColor.secondaryLabelColor,
             .font: NSFont.systemFont(ofSize: Style.hintSize)]))
         out.append(NSAttributedString(string: "  2/3", attributes: [
@@ -3076,6 +3097,82 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             s.scale = CGFloat(1 - 0.05 * p)
         }
         return s
+    }
+
+    /// A terminal to put the bar in front of, for the strip that is about switching sessions.
+    ///
+    /// **This one is drawn rather than photographed, and that is a deliberate exception.** Every
+    /// other picture in docs/assets is the app rendering itself, so that a change to the app
+    /// changes the picture. This cannot be: the other half of what it shows is somebody else's
+    /// application, and there is no permission this can be granted that would let it record a
+    /// screen. Drawing it is honest here for a reason that took an argument to see — **a
+    /// terminal has no canonical appearance.** Fonts, colours, tab position, whether the tab bar
+    /// is even shown: all of it is configured, so nobody's iTerm2 looks like anybody else's, and
+    /// a schematic is not pretending otherwise.
+    ///
+    /// What has to be true is the *behaviour*: the tab that is selected, and the status line
+    /// underneath it, follow the row the bar is pointing at. That is the claim being made.
+    private static func drawTerminal(_ rect: NSRect, selected: Int) {
+        let rows = standInSessions()
+        NSColor(srgbRed: 0.055, green: 0.055, blue: 0.066, alpha: 1).setFill()
+        rect.fill()
+
+        func text(_ str: String, _ x: CGFloat, _ y: CGFloat, _ size: CGFloat,
+                  _ colour: NSColor, mono: Bool = true, bold: Bool = false) -> CGFloat {
+            let font = mono
+                ? NSFont.monospacedSystemFont(ofSize: size, weight: bold ? .bold : .regular)
+                : NSFont.systemFont(ofSize: size, weight: bold ? .bold : .regular)
+            let a = NSAttributedString(string: str, attributes: [.font: font, .foregroundColor: colour])
+            a.draw(at: NSPoint(x: x, y: y))
+            return a.size().width
+        }
+
+        // The tab bar. Names are shortened the way a tab does it, because a tab is narrow and
+        // that is the whole reason the bar's list exists.
+        let tabH: CGFloat = 26
+        let tabY = rect.maxY - tabH
+        NSColor(white: 0.11, alpha: 1).setFill()
+        NSRect(x: 0, y: tabY, width: rect.width, height: tabH).fill()
+        let tabW = rect.width / CGFloat(rows.count)
+        for (i, row) in rows.enumerated() {
+            let box = NSRect(x: CGFloat(i) * tabW, y: tabY, width: tabW, height: tabH)
+            if i == selected {
+                NSColor(white: 0.17, alpha: 1).setFill()
+                box.fill()
+                Style.accent.setFill()
+                NSRect(x: box.minX, y: box.maxY - 2, width: box.width, height: 2).fill()
+            }
+            let name = row.label.count > 22 ? String(row.label.prefix(21)) + "…" : row.label
+            let colour = i == selected ? NSColor.white.withAlphaComponent(0.85)
+                                       : NSColor.white.withAlphaComponent(0.35)
+            _ = text("✳ " + name, box.minX + 12, box.minY + 7, 9.5, colour, mono: false)
+        }
+
+        // The status line the terminal itself draws — the project's mark and name, what it is
+        // doing, where it is, and the budget. The bar's footer is a copy of this on purpose, and
+        // showing both is the clearest way to say so.
+        let row = rows[min(selected, rows.count - 1)]
+        let grid = ProjectIcon.demoGrid(hue: row.hue)
+        var y: CGFloat = 46
+        if let icon = grid.image(height: 22) {
+            icon.draw(in: NSRect(x: 16, y: y - 6, width: icon.size.width, height: icon.size.height))
+        }
+        var x: CGFloat = 52
+        x += text(row.project, x, y + 2, 10.5, grid.accent, mono: false, bold: true) + 10
+        _ = text(row.label, x, y + 2, 10.5, NSColor.white.withAlphaComponent(0.75), mono: false)
+
+        y -= 15
+        x = 52
+        x += text("~/code/" + row.project, x, y, 9.5, NSColor.white.withAlphaComponent(0.30)) + 12
+        x += text("⎇ main", x, y, 9.5, NSColor.white.withAlphaComponent(0.30)) + 8
+        x += text("*1", x, y, 9.5, NSColor.white.withAlphaComponent(0.30)) + 10
+        x += text("✓ ci", x, y, 9.5, NSColor(srgbRed: 0.45, green: 0.75, blue: 0.45, alpha: 1)) + 12
+        _ = text("Opus 5 (1M context) · xhigh", x, y, 9.5, NSColor.white.withAlphaComponent(0.30))
+
+        y -= 15
+        x = 16
+        x += text("⏵⏵ ", x, y, 9.5, Style.accent)
+        _ = text("auto mode on (shift+tab to cycle)", x, y, 9.5, NSColor.white.withAlphaComponent(0.30))
     }
 
     private static func drawBackdrop(_ rect: NSRect) {
