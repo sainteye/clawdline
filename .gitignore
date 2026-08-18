@@ -11,3 +11,6 @@ docs/assets/frames/
 .build/
 .swiftpm/
 Package.resolved
+
+# Frames and working files from tools/shoot-assets.sh — large, and regenerated on demand.
+.shoot/

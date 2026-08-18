@@ -1183,6 +1183,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                     // without this the pane could finish by painting a conversation you had
                     // already moved off — confidently, under the next session's name.
                     guard self.currentTarget?.id == target.id else { return }
+                    // And the pane may have been handed a stand-in while this was in flight.
+                    // The check at the top of this function is made before the read; a read
+                    // that started a fraction earlier lands *after* the canned transcript and
+                    // overwrites it — which is how a real conversation got into a picture
+                    // bound for the README, twice, with the guard already there.
+                    guard self.cannedTranscript == nil, self.stackLog == nil else { return }
                     guard self.outputOpen, rendered.signature != self.lastOutput else { return }
                     self.lastOutput = rendered.signature
                     // Which edge is "keeping up" depends on the order: newest-first puts the
@@ -2745,6 +2751,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
 
         let wasVisible = panel.isVisible
+        let wasFullscreen = fullscreen
         if !wasVisible { show() }
         resetForSnapshot(keepingOutput: output)
         // The session list arrives from an async scan, so picking one has to wait for it —
@@ -2754,6 +2761,14 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             // Reading a session back costs an osascript round trip, so give it room.
             DispatchQueue.main.asyncAfter(deadline: .now() + (output ? 2.2 : 0.55)) {
                 render()
+                // Put back what was borrowed. A shot that asked for ⌘F used to leave the panel
+                // filling the screen afterwards, and the next ⌥Space came up as a window the
+                // size of the display with no obvious way out — which reads as the application
+                // having hung, and was reported as exactly that.
+                if self.fullscreen != wasFullscreen { self.toggleFullscreen() }
+                self.standInList = false
+                self.cannedTranscript = nil
+                self.usingStandInLabel = false
                 if !wasVisible { self.hide() }
             }
         }
@@ -2773,8 +2788,18 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         listMode = .none
         standInList = false
         cannedTranscript = nil
-        usingStandInLabel = false
         setActivity(nil)
+        // **The stand-in footer is the default, not something a shot opts into.**
+        //
+        // It used to be turned on only by the canned-transcript path, so a picture that did not
+        // ask for a transcript — the mascot picker, for one — came out with the real footer on
+        // it: this machine's repository, its branch, its uncommitted count, a failing deploy and
+        // the domain one of them serves. That shot was one `git push` away from a public page.
+        //
+        // This URL exists to make documentation. Nothing that comes out of it should be able to
+        // name a real project by accident, so naming one has to be the thing you go out of your
+        // way to do rather than the thing that happens when you forget.
+        usingStandInLabel = true
         pendingShowList = false
         pendingFocusID = nil
         if fullscreen { toggleFullscreen() }
@@ -2811,6 +2836,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// Drawing every frame gives full control and reproduces byte for byte on every rerun.
     func filmstrip(dir: String, fps: Double, seconds: Double, script: String, text: String) {
         show()
+        // The same known state a still starts from, and for the same reason. The strip draws
+        // `container`, so whatever the ⌘J pane happens to be showing is drawn with it — and what
+        // it is showing is a real conversation. One of these went out with this machine's own
+        // session in the background of a clip about dictation.
+        resetForSnapshot(keepingOutput: false)
+        usingStandInLabel = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.renderFilmstrip(dir: dir, fps: fps, seconds: seconds, script: script, text: text)
             self.hide()
