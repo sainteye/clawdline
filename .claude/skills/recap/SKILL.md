@@ -1,6 +1,6 @@
 ---
 name: recap
-version: 1.0.0
+version: 1.1.0
 description: |
   收工盤點：總結這段工作實際做了什麼、對使用者有什麼差別、該同步的東西同步了沒
   （**翻譯、兩份 README、測試數、文件**），**把這批東西 commit 進去**（逐檔指名，不 push），
@@ -242,6 +242,11 @@ git diff --name-only HEAD | grep README
 ⚪ 那一格**必須附一句為什麼不用動**。「這輪沒動任何 `Config` 的 key，也沒加鍵」
 是合格的；只寫「⚪ 不用動」等於沒查。
 
+**skill 自己也會過期。** 上面那張表最後幾行是給下一個 session 的 Claude 讀的——
+`SKILL.md` 描述的行為改了而 skill 沒改，下一次工作會**照著一份錯的地圖走**，
+而且不會有任何東西報錯。動過 `Config`、鍵位、面板行為、或這幾份文件所描述的任何
+機制，就回頭確認那些 skill 還說得對。
+
 ---
 
 ## 3.5 把這批東西 commit 進去——**收工的一部分，不是選項**
@@ -275,6 +280,35 @@ git diff --name-only HEAD | grep README
 | 我的東西全部未提交 | 照下面的做法 commit。這是常態 |
 | **HEAD 動了，而且不是我推的** | 照樣 commit，但報告裡講出來 |
 | **我的一部分被別人 commit 走了** | **先看那半進去了什麼**，再補上缺的那半 |
+
+### 最危險的那一種：被切成兩半
+
+平行 session 的 `git commit -a`（或 `git add .`）挑的是**「存檔時機」，不是「誰改的」**
+——當下已存檔的我的檔案會一起被帶走。而 `git add <改過的檔>` 只會加已追蹤的那些，
+**新檔案（`git status` 裡的 `??`）不會跟著進去**。
+
+兩條路殊途同歸，症狀一樣惡劣：**HEAD 上的東西在引用一個 HEAD 上不存在的東西。**
+誰現在 clone 都編不起來，而 git log 看起來完全正常。
+
+⚫ **2026-08-18 的實例（`c4fe15a`）**：`Tests/main.swift` 裡引用 `DevStack` 的十幾條測試
+進了版控，而 `Sources/DevStack.swift` 與 `Sources/StackLog.swift` 兩個**新檔**留在
+working tree 沒被追蹤。本機 `./test.sh` 全綠——檔案就在磁碟上——**CI 上是
+`cannot find 'DevStack' in scope`，紅了一整天沒人發現**，因為沒有人跑 recap。
+
+所以 §0 蒐證時 `git status --short` 要**看第一欄也看 `??`**：
+
+```bash
+git status --short | grep '^??'          # 新檔案：最容易漏，而且漏了本機看不出來
+git log --oneline -3 --name-only         # HEAD 那幾筆帶走了什麼
+```
+
+**這個狀態下要做的是補完，不是重來**：把留在 working tree 的那半 commit 進去，
+訊息指得回被帶走的那筆（`接 c4fe15a 帶走的那半`），讓後來的人看 log 就知道那兩筆
+是同一件事。**不要 revert 別人的 commit** 去湊完整——那會把他們同一筆裡的其他改動
+一起弄掉。
+
+報告裡照樣列一張兩欄的表（哪些是被帶走的／哪些是我補的），不要只寫「已 commit」
+——那句話蓋掉了「這件事曾經斷成兩半」這個事實。
 
 ### 怎麼 commit
 

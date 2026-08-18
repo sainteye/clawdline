@@ -14,3 +14,6 @@ Package.resolved
 
 # Frames and working files from tools/shoot-assets.sh — large, and regenerated on demand.
 .shoot/
+
+# Local working artifacts — plans, landscapes, audits. Deliberately not published.
+artifacts/
