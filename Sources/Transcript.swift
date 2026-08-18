@@ -309,7 +309,9 @@ enum Transcript {
         for block in blocks {
             switch block["type"] as? String {
             case "text":
-                let text = (block["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                var text = (block["text"] as? String ?? "")
+                if type == "user" { text = withoutMachineBlocks(text) }
+                text = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { continue }
                 out.append(Entry(kind: type == "user" ? .user : .assistant,
                                  text: text, tool: nil, time: time))
@@ -331,6 +333,50 @@ enum Transcript {
 
     /// One line describing what a tool was asked to do. The fields are tried in the order a
     /// person would read them, so a Bash call shows its command rather than its description.
+    /// Take the machinery back out of a turn attributed to the person.
+    ///
+    /// Claude Code injects its own bookkeeping into the user's side of the conversation — a
+    /// background task finishing, a reminder to itself, the expansion of a slash command — all
+    /// wrapped in tags and all recorded as though somebody typed it. On screen that is fine,
+    /// because it never appears there. In a transcript it is the loudest thing in the pane:
+    /// twenty lines of XML with a file path in it, sitting under the word "you", above the one
+    /// sentence you actually said.
+    ///
+    /// Removed rather than folded, and only from the user's turns. Nobody typed it, so there is
+    /// no version of "show it anyway" that is honest about whose words they are — and an entry
+    /// left empty afterwards is dropped by the caller, which is the right answer for a turn that
+    /// was nothing but machinery.
+    ///
+    /// Unknown tags are left alone. This is a list of things observed to be injected, not a rule
+    /// about angle brackets: somebody quoting XML at Claude has typed that, and it stays.
+    static func withoutMachineBlocks(_ text: String) -> String {
+        var out = text
+        for tag in ["task-notification", "system-reminder", "local-command-stdout",
+                    "local-command-stderr", "command-name", "command-message", "command-args"] {
+            out = removing(tag: tag, from: out)
+        }
+        return out
+    }
+
+    /// Every `<tag>…</tag>`, non-greedy and across newlines. Written by hand rather than with a
+    /// regular expression because the pane parses several megabytes of this on every switch, and
+    /// a backtracking match over that is a pause somebody notices.
+    private static func removing(tag: String, from text: String) -> String {
+        let open = "<\(tag)>", close = "</\(tag)>"
+        guard text.contains(open) else { return text }
+        var out = ""
+        var rest = Substring(text)
+        while let start = rest.range(of: open) {
+            out += rest[rest.startIndex..<start.lowerBound]
+            guard let end = rest.range(of: close, range: start.upperBound..<rest.endIndex) else {
+                // Opened and never closed — a truncated record. Everything after it is the block.
+                return out
+            }
+            rest = rest[end.upperBound...]
+        }
+        return out + rest
+    }
+
     static func summarise(input: Any?) -> String {
         guard let dict = input as? [String: Any] else { return "" }
         for key in ["command", "file_path", "path", "pattern", "url", "query", "prompt", "description"] {

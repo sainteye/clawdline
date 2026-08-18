@@ -2237,6 +2237,37 @@ group("the label a tab shows, without the animation on the front") {
            TargetSession.withoutStatusGlyph("◐ "), "◐ ")
 }
 
+group("the machinery Claude Code injects into your turns") {
+    // These arrive tagged, attributed to the user, and never appear on screen — so a transcript
+    // is the first place anybody sees them, sitting under the word "you" above the one sentence
+    // they actually typed.
+    let noisy = """
+    <task-notification>
+    <task-id>be95b5m2o</task-id>
+    <status>completed</status>
+    </task-notification>
+    確認要部署上正式站嗎？
+    """
+    expect("the block goes and the sentence stays",
+           Transcript.withoutMachineBlocks(noisy).trimmingCharacters(in: .whitespacesAndNewlines),
+           "確認要部署上正式站嗎？")
+    expect("a turn that was nothing but machinery comes back empty",
+           Transcript.withoutMachineBlocks("<system-reminder>be careful</system-reminder>")
+               .trimmingCharacters(in: .whitespacesAndNewlines), "")
+    expect("several in one turn",
+           Transcript.withoutMachineBlocks("a<system-reminder>x</system-reminder>b<command-name>y</command-name>c"),
+           "abc")
+    // Opened and never closed is a truncated record, and everything after it is the block.
+    expect("an unclosed block takes the rest with it",
+           Transcript.withoutMachineBlocks("keep me<task-notification>cut from here"), "keep me")
+    // The rule is a list of observed tags, not a rule about angle brackets.
+    expect("somebody quoting xml typed that themselves",
+           Transcript.withoutMachineBlocks("why does <thing>this</thing> fail?"),
+           "why does <thing>this</thing> fail?")
+    expect("ordinary text is untouched",
+           Transcript.withoutMachineBlocks("deploy it"), "deploy it")
+}
+
 // MARK: - Claude Code hooks
 
 private func hookSession(_ id: String, tty: String) -> TargetSession {

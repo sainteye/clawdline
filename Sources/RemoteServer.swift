@@ -215,6 +215,21 @@ final class RemoteServer {
         case ("POST", "/v1/auth/pair/confirm"):
             return confirmPairing(request)
 
+        case ("POST", "/v1/auth/adopt"):
+            // Turn a token the page was handed into a cookie it can keep.
+            //
+            // This exists for one reason: **`EventSource` cannot set headers**, so a page holding
+            // a bearer token in a variable cannot open the event stream with it. The token comes
+            // in a URL fragment — which browsers do not send to servers and do not put in logs —
+            // and is traded here for the cookie the stream will use. Nothing is granted: an
+            // unknown token is refused exactly as it would be anywhere else.
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
+            guard let token = body["token"] as? String,
+                  case .allowed = RemoteAuth.verify(bearer: token) else {
+                return .error(401, "unauthorized", "That token is not one of ours.")
+            }
+            return signedIn(token, secure: request.headers["x-forwarded-proto"] == "https")
+
         case ("POST", "/v1/auth/password"):
             return exchangePassword(request)
 

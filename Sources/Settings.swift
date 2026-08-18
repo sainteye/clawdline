@@ -225,10 +225,24 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         }
     }
 
+    /// Open the interface with a key already in it.
+    ///
+    /// The page needs a token and there is nowhere sensible for somebody to type one, so pressing
+    /// this mints a device of its own and hands it over in the URL's fragment. A fragment is the
+    /// right place: browsers do not send it to servers and do not keep it in history the way a
+    /// query string ends up in logs, and the page trades it for a cookie and clears it.
+    ///
+    /// A device of its own rather than the machine's, because they are not the same thing — the
+    /// local token can send and administer, and a browser tab should start with neither until
+    /// somebody says so.
     @objc private func openRemote() {
-        guard Config.shared.remote,
-              let url = URL(string: "http://127.0.0.1:\(Config.shared.remotePort)/") else { return }
+        guard Config.shared.remote else { return }
+        let caps: Set<RemoteAuth.Capability> = Config.shared.remoteWrite ? [.read, .send] : [.read]
+        let made = RemoteAuth.addDevice(name: "Browser on this Mac", caps: caps)
+        guard let url = URL(string:
+            "http://127.0.0.1:\(Config.shared.remotePort)/#t=\(made.token)") else { return }
         NSWorkspace.shared.open(url)
+        refreshDevices()
     }
 
     // MARK: - Claude Code hooks
