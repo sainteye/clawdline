@@ -2981,6 +2981,30 @@ group("telling two devices with the same name apart") {
     check("never seen says nothing", DeviceChips.ago(nil) == nil)
 }
 
+group("a top-level state from the wrong vocabulary") {
+    // The two `state` keys mean different things, and the first project outside this repository
+    // to write one of these sent `healthy` — a process word — at the top. Taken literally it put
+    // a healthy stack under a mark that said nobody had agreed to run it.
+    func read(_ json: String) -> DevStack.State? { DevStack.parseState(Data(json.utf8)) }
+    let processes = """
+    "processes": [{"name": "api", "port": 1, "state": "healthy"},
+                  {"name": "web", "port": 2, "state": "healthy"}]
+    """
+    expect("a process word at the top is not believed",
+           read("{\"state\": \"healthy\", \(processes)}")?.state, "running")
+    expect("and neither is anything else unrecognised",
+           read("{\"state\": \"lovely\", \(processes)}")?.state, "running")
+    expect("one of the four is taken as written",
+           read("{\"state\": \"partial\", \(processes)}")?.state, "partial")
+    expect("unknown is one of the four, and cannot be derived",
+           read("{\"state\": \"unknown\", \(processes)}")?.state, "unknown")
+    expect("no top-level state at all derives one",
+           read("{\(processes)}")?.state, "running")
+    expect("and a process that is down makes it partial",
+           read("{\"processes\": [{\"name\": \"a\", \"state\": \"healthy\"}, "
+                + "{\"name\": \"b\", \"state\": \"exited\"}]}")?.state, "partial")
+}
+
 // MARK: - Result
 
 print("")

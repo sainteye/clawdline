@@ -241,7 +241,21 @@ enum DevStack {
         let derived = procs.isEmpty ? "stopped"
             : (procs.contains { $0.isDown } ? "partial"
                : (procs.allSatisfy { $0.isUp } ? "running" : "partial"))
-        return State(state: obj["state"] as? String ?? derived,
+        // **A top-level state is only believed if it is one of the four.**
+        //
+        // The two vocabularies share a key name — `state` on a process means `healthy`,
+        // `running`, `starting`, `completed`, `exited` or `stopped`, and `state` on the document
+        // means `running`, `partial`, `stopped` or `unknown` — so sending a process word at the
+        // top is the predictable mistake, and it was made by the first project outside this
+        // repository to write one of these. Taking it literally put a healthy stack under a mark
+        // that said nobody had agreed to run it.
+        //
+        // Deriving instead is not a fallback, it is the better answer: it is computed from the
+        // writer's own process list, so it cannot disagree with the rest of the document the way
+        // a hand-written summary can.
+        let top = obj["state"] as? String
+        let believed = ["running", "partial", "stopped", "unknown"].contains(top ?? "") ? top! : derived
+        return State(state: believed,
                      updatedAt: obj["updated_at"] as? Double ?? Date().timeIntervalSince1970,
                      processes: procs)
     }

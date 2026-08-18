@@ -792,7 +792,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 1100 checks, a couple of seconds
+./test.sh     # 1106 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code — see Package.swift
 ```
