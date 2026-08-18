@@ -683,12 +683,11 @@ Mac built from Claude Code's own record of where it has run, and the command is 
 written into, which is a stronger statement than "the path is validated", because validation is
 something the next person to edit the file can weaken by accident and an absent parameter is not.
 It needs iTerm2 running or tmux to hand, and it takes no focus: whoever is at the Mac is in the
-middle of something else.
+middle of something else. On the page it is the `+` beside the filter: the Mac's own list of
+places, marks and all, and a line under the header while the tab opens and the session catches up.
 
-**Two rough edges worth knowing.** The web page has no button for this yet — the route works and
-`curl` reaches it today, but on a phone there is nothing to press, so this is a capability the API
-has and the interface has not caught up with. And a page that is already open keeps the interface
-it loaded, so after updating the app you reload it by hand.
+**One rough edge worth knowing.** A page that is already open keeps the interface it loaded, so
+after updating the app you reload it by hand.
 
 `docs/remote.md` has the threat model in full, including what this does **not** defend against, and
 [docs/api.md](docs/api.md) is the surface a script or a plugin talks to — every session, every
@@ -944,7 +943,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 1193 checks, a couple of seconds
+./test.sh     # 1198 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code — see Package.swift
 ```

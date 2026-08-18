@@ -3213,6 +3213,52 @@ group("starting a session is behind the write gate, like everything else that ru
     expect("and the route that took a path in the body is gone", old.status, 404)
 }
 
+group("the page is given the words it draws the start sheet with") {
+    // A string in `Copy` is not a string on the page. `strings(for:)` is the only thing that
+    // decides what a browser is told, and thirteen of these sat translated into fourteen
+    // languages for a release without being in it — which is a feature nobody outside English
+    // could read, and nothing anywhere went red about it.
+    // The header only decides anything while the app is following whoever is asking. A machine
+    // running the tests may well have picked a language for the bar, and that choice wins over a
+    // browser — so it is put back to `auto` here and restored, or this group would be reading
+    // whichever language this Mac happens to be set to.
+    let wasLanguage = Config.shared.language
+    defer { Config.shared.language = wasLanguage }
+    Config.shared.language = "auto"
+
+    func words(language: String) -> [String: Any] {
+        let response = RemoteServer.shared.route(
+            remoteRequest("GET", "/v1/strings", headers: ["Accept-Language": language]))
+        return ((try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]) ?? [:]
+    }
+
+    let english = words(language: "en")
+    let needed = ["webStart", "webStartLabel", "webStartPick", "webStartEmpty", "webStartFilter",
+                  "webStarting", "webStartWaiting", "webStartSlow", "webStartFailed",
+                  "webStartGone", "webStartTerminalClosed", "webStartTerminalUnsupported",
+                  "webStartOff"]
+    let absent = needed.filter { (english[$0] as? String ?? "").isEmpty }
+    check("every word the start sheet draws is published", absent.isEmpty,
+          "not on /v1/strings: " + absent.joined(separator: ", "))
+
+    // The page writes its own sentence around the terminal's name, which arrives in the error
+    // object rather than in the copy. A translation that dropped the hole would leave a phone
+    // saying that something unnamed is not running.
+    let holeless = L.catalog.filter {
+        !$0.copy.webStartTerminalClosed.contains("{app}")
+            || !$0.copy.webStartTerminalUnsupported.contains("{app}")
+    }.map { $0.tag }.sorted()
+    check("every language keeps the hole the terminal's name goes in", holeless.isEmpty,
+          holeless.joined(separator: ", "))
+
+    // And they arrive in the language that was asked for, which is the entire reason the page
+    // fetches this before it draws anything.
+    let french = words(language: "fr")
+    check("and they arrive in the language the browser asked for",
+          (french["webStart"] as? String).map { !$0.isEmpty && $0 != (english["webStart"] as? String) } == true,
+          "fr said \((french["webStart"] as? String) ?? "nothing")")
+}
+
 group("a deploy is news only when it stops running") {
     // The whole feature is one rule applied to two readings, and every way of getting it wrong
     // is a phone buzzing about something that did not just happen.
@@ -3340,6 +3386,46 @@ group("the key route is gated like every other write") {
     expect("a good key against no session is a 404",
            key(writer.token, "{\"key\":\"3\"}").status, 404)
     expect("and tab is a good key", key(writer.token, "{\"key\":\"tab\"}").status, 404)
+}
+
+group("every word the page can draw is a word the page is sent") {
+    // **This one is here because the same mistake happened twice.** A string gets added to `Copy`,
+    // translated into fourteen languages, and then not listed in `strings(for:)` — and nothing
+    // breaks, because the page carries an English copy of everything as a fallback. So the failure
+    // is invisible to whoever made it and visible only to somebody reading one of the other
+    // thirteen languages. The second time, the string left behind was the warning that sending
+    // from a phone confirms the wrong menu option.
+    //
+    // Walking `Copy` rather than listing names, for the same reason the translation check walks
+    // it: a list you have to remember to extend is the thing that failed.
+    let payload = RemoteServer.shared.route(remoteRequest("GET", "/v1/strings"))
+    let sent = ((try? JSONSerialization.jsonObject(with: payload.body)) as? [String: Any]) ?? [:]
+
+    // Members the page is deliberately not given. Each one needs a reason written here, and
+    // "the page does not use it yet" is not a reason — an unused string should not be in `Copy`.
+    let notSent: Set<String> = []
+
+    // Keys that are sent without being members, which is legitimate only when a *function* on
+    // `Copy` supplies them: a question with two answers does not cross a JSON boundary as one.
+    let derived: Set<String> = ["webOrderNewest", "webOrderOldest"]  // t.outputOrder(newestFirst:)
+
+    var missing: [String] = []
+    for child in Mirror(reflecting: English()).children {
+        guard let label = child.label, label.hasPrefix("web"), child.value is String else { continue }
+        if notSent.contains(label) { continue }
+        if sent[label] == nil { missing.append(label) }
+    }
+    check("no web string is translated and then never sent", missing.isEmpty,
+          "in Copy but not in /v1/strings: " + missing.sorted().joined(separator: ", "))
+
+    // And the other direction, which is the cheaper mistake but still a mistake: a key the page
+    // is sent that no longer exists on `Copy` is a key nothing can ever change again.
+    let known = Set(Mirror(reflecting: English()).children.compactMap { $0.label })
+    let orphans = sent.keys.filter {
+        $0.hasPrefix("web") && !known.contains($0) && !derived.contains($0)
+    }
+    check("and nothing is sent under a name Copy does not have", orphans.isEmpty,
+          "sent but not in Copy: " + orphans.sorted().joined(separator: ", "))
 }
 
 // MARK: - Result

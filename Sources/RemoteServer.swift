@@ -1070,6 +1070,25 @@ final class RemoteServer {
             "webShotNeedsSession": t.webShotNeedsSession,
         ])
 
+        // Starting a session from the page — the sheet, and the wait between the tab opening and
+        // the session turning up in the list. The last two carry `{app}`, which the page fills in
+        // from the terminal's name in the error object rather than from anything it knows itself.
+        add([
+            "webStart": t.webStart,
+            "webStartLabel": t.webStartLabel,
+            "webStartPick": t.webStartPick,
+            "webStartEmpty": t.webStartEmpty,
+            "webStartFilter": t.webStartFilter,
+            "webStarting": t.webStarting,
+            "webStartWaiting": t.webStartWaiting,
+            "webStartSlow": t.webStartSlow,
+            "webStartFailed": t.webStartFailed,
+            "webStartGone": t.webStartGone,
+            "webStartTerminalClosed": t.webStartTerminalClosed,
+            "webStartTerminalUnsupported": t.webStartTerminalUnsupported,
+            "webStartOff": t.webStartOff,
+        ])
+
         // The key row along the bottom, on a desk.
         add([
             "webHintMove": t.webHintMove,
@@ -1178,6 +1197,24 @@ final class RemoteServer {
             // because a question with two answers does not cross a JSON boundary as one.
             "webOrderNewest": t.outputOrder(newestFirst: true),
             "webOrderOldest": t.outputOrder(newestFirst: false),
+        ])
+
+        // A question with a menu on it, a page that has fallen behind the app.
+        //
+        // **These were translated into fourteen languages and then not sent for a day.** Nothing
+        // broke — the page carries an English copy of everything as a fallback — which is exactly
+        // why nobody noticed, and why `webWaitingSend`, a warning that sending from here confirms
+        // the wrong option, was in English for everybody who does not read English. The test that
+        // now walks every `web*` member on `Copy` and fails on anything missing here is the real
+        // fix; this block is the part that was owed.
+        add([
+            "webAskLabel": t.webAskLabel,
+            "webAskAny": t.webAskAny,
+            "webWaitingTitle": t.webWaitingTitle,
+            "webWaitingSay": t.webWaitingSay,
+            "webWaitingSend": t.webWaitingSend,
+            "webStale": t.webStale,
+            "webStaleGo": t.webStaleGo,
         ])
 
         var response = Response.json(out)

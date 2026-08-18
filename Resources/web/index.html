@@ -263,6 +263,36 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 }
 .stale .go:hover { background: rgba(224, 139, 110, 0.12); }
 
+/* The gap between a tab being opened on the Mac and the session turning up in the list.
+   The same row, under the same header, for a reason: **the tab already exists by the time this
+   is on screen**. It is news about something that has happened and is settling, not a request
+   that might still fail — so it does not sit in the sheet looking like a button being pressed,
+   and it does not put a fake row in the list either. A row that is not a session is worse than
+   a spinner. It is up here rather than in the list column so that it is still on screen after
+   the reader has walked off into a transcript. */
+.starting {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px calc(12px + var(--safe-r)) 7px calc(12px + var(--safe-l));
+    border-bottom: 1px solid var(--line);
+    background: var(--card);
+    color: var(--dim);
+    font-size: 11.5px;
+}
+.starting[hidden] { display: none; }
+.starting span { min-width: 0; overflow-wrap: anywhere; }
+.starting canvas { flex: 0 0 auto; display: block; }
+/* Given up on: nothing is coming that this page can see, so nothing spins. The sentence is
+   the whole of it, and it points at the machine where the answer is. */
+.starting[data-state="slow"] canvas { display: none; }
+.starting[data-state="slow"] { color: var(--ink); }
+.starting .x {
+    margin-left: auto; flex: 0 0 auto;
+    color: var(--faint); font-size: 15px; line-height: 1;
+    padding: 3px 8px; border-radius: 7px;
+}
+.starting .x:hover { background: var(--card-hi); color: var(--ink); }
+
 /* ==========================================================================
    Shell — two columns on a desk, one screen at a time on a phone
    ========================================================================== */
@@ -302,6 +332,20 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     flex: 0 0 auto; color: var(--faint); font-size: 11px;
     border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px;
 }
+/* The way to start a new session, on the row that is already furniture rather than in the list
+   the page exists for. Starting one is a rare act next to reading them — a word here would take
+   width off the filter on every screen for ever, and a row of its own would take a session off
+   the top of a phone display. So it is a square with a mark in it, the height of the box beside
+   it, and one tap from the list whichever pane you are on. */
+.filter-row .start {
+    flex: 0 0 auto; align-self: stretch;
+    display: flex; align-items: center; justify-content: center;
+    width: 36px;
+    border: 1px solid var(--line); border-radius: 9px;
+    background: var(--card); color: var(--dim);
+}
+.filter-row .start:hover { background: var(--card-hi); color: var(--ink); }
+.filter-row .start svg { display: block; width: 15px; height: 15px; }
 
 /* The notifications footer. It owns the bottom edge of this column, which is why the scroller
    above it no longer pays for the home indicator: two things counting the same inset is how the
@@ -985,6 +1029,53 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    the screen this sheet is mostly opened on. */
 .sheet .chip.wide { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; }
 
+/* Where a new session may be started — the same furniture again, with the Mac's own list of
+   places in it. There is no path to type here and there is no route that would take one: what
+   is offered is what the Mac offered, and what goes back is the id it put on the row. */
+.sheet .find {
+    display: block; width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--line); border-radius: 9px;
+    padding: 7px 10px; margin-bottom: 8px;
+    font-size: 13px; color: var(--ink);
+}
+.sheet .find::placeholder { color: var(--faint); }
+.sheet .find:focus { outline: none; border-color: var(--accent-ed); background: var(--card-hi); }
+.sheet .find[hidden] { display: none; }
+.sheet .places { list-style: none; margin: 0; padding: 0; max-height: min(46vh, 340px); overflow-y: auto; }
+.sheet .places li { margin: 0; }
+.sheet .place {
+    display: grid;
+    /* The same fixed first column as a session row, and for the same reason: these are the same
+       marks, and a five-wide creature next to an eight-wide logo would start two titles in two
+       different places down a list that is read by its titles. */
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 1px 10px; align-items: center;
+    width: 100%; min-height: 44px;          /* a thumb's worth, on the screen this is for */
+    text-align: left;
+    padding: 8px 10px; margin-bottom: 2px;
+    border: 1px solid transparent; border-radius: 9px;
+    background: transparent; color: var(--ink);
+}
+.sheet .place:hover:not(:disabled) { background: var(--card-hi); }
+.sheet .place:active:not(:disabled) { background: var(--line); }
+.sheet .place:disabled { opacity: 0.45; cursor: default; }
+.sheet .place canvas { grid-row: 1 / span 2; align-self: center; justify-self: start; display: block; image-rendering: pixelated; opacity: 0.9; }
+.sheet .place canvas.none { width: 16px; height: 12px; border-radius: 2px; background: #202028; }
+.sheet .place .name {
+    grid-column: 2; font-size: 13.5px; font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sheet .place .where {
+    grid-column: 2;
+    font-family: var(--mono); font-size: 11px; color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The one being started. It keeps its place in the list rather than becoming a spinner
+   somewhere else — what was pressed is what is happening. */
+.sheet .place[data-busy="1"] { opacity: 1; border-color: var(--accent-ed); }
+.sheet .place[data-busy="1"] .where { color: var(--accent); }
+
 /* --------------------------------------------------------------------------
    The door
    The whole page, until the server knows who is asking. Not a banner and not a
@@ -1156,6 +1247,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    ========================================================================== */
 @media (pointer: coarse) {
     .filter-row input,
+    .sheet .find,
     .composer .msg,
     #door-name, #door-password, #door-pw-name { font-size: 16px; }
     /* The six pairing boxes are set at 22px, and at 19px on the narrowest phones, so they are
@@ -1199,6 +1291,16 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     <button class="go" id="stale-go" type="button">Reload</button>
 </div>
 
+<!-- A session has been started on the Mac and has not turned up in the list yet. The tab is
+     open by the time this appears — nothing here is still in doubt — so it is a line saying
+     what is settling, not a spinner over a button. `polite` because it is news that can wait
+     for whatever a screen reader is in the middle of saying. -->
+<div class="starting" id="starting" hidden role="status" aria-live="polite">
+    <canvas id="starting-spin"></canvas>
+    <span id="starting-say"></span>
+    <button class="x" id="starting-close" type="button" aria-label="Close">×</button>
+</div>
+
 <main class="app" id="app" data-view="list" data-pane="on">
     <section class="pane pane-list">
         <div class="filter-row">
@@ -1215,6 +1317,15 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
                    data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
                    aria-label="Filter sessions">
             <span class="slash">/</span>
+            <!-- Drawn rather than typed, like the bell downstairs: a plus sign out of a font is
+                 whichever plus that font has, and this one has to line up with a box beside it
+                 at every size. -->
+            <button class="start" id="start-go" type="button" title="Start a session"
+                    aria-label="Start a session in a project">
+                <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+                    <path d="M7 2.6v8.8M2.6 7h8.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                </svg>
+            </button>
         </div>
         <div class="scroller list-scroll" id="list-scroll">
             <div class="ptr" id="ptr"><span id="ptr-label">Pull to refresh</span></div>
@@ -1324,6 +1435,30 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 
         <div class="foot"><span id="settings-version"></span></div>
         <button class="chip wide" id="settings-close" type="button">Close</button>
+    </div>
+</div>
+
+<!-- Where a new session may be started, which is a question about the *Mac* — so it is its own
+     sheet rather than a block in the one behind the wordmark, which is about this browser on
+     this device. The list is the Mac's: directories `claude` has actually been run in, that are
+     still there. Nothing on this page can name a directory that is not on it. -->
+<div class="overlay" id="start" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" id="start-sheet" aria-label="Start a session in a project">
+        <h2 id="start-title">Start a session</h2>
+
+        <div class="block">
+            <p class="say" id="start-say"></p>
+            <!-- Same defence as the two boxes above: a field that filters a list of project
+                 names has no business being offered somebody's saved logins. -->
+            <input class="find" id="start-filter" type="search" name="p2k" placeholder="Filter projects" hidden
+                   autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                   data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
+                   aria-label="Filter projects">
+            <ul class="places" id="start-list"></ul>
+            <p class="said" id="start-said" role="status" aria-live="polite"></p>
+        </div>
+
+        <button class="chip wide" id="start-close" type="button">Close</button>
     </div>
 </div>
 
@@ -1620,6 +1755,23 @@ var T = {
     webSending: "Sending…",
     webSendTip: "Return sends · Shift-Return starts a line",
 
+    // Starting one. Every one of these is about choosing among what the Mac offered — there is
+    // no path in any of them, because there is no field on that route a path could go in.
+    webStart: "Start a session",
+    webStartLabel: "Start a session in a project",
+    webStartPick: "Where should it start?",
+    webStartEmpty: "Nowhere to start yet. Run Claude Code on the Mac once and it will be here.",
+    webStartFilter: "Filter projects",
+    webStarting: "Opening a tab…",
+    // The tab is open by the time this shows, so it says what happened rather than what might.
+    webStartWaiting: "Started. Waiting for it to appear…",
+    webStartSlow: "The tab is open, but the session has not reported in. Have a look at the Mac.",
+    webStartFailed: "That could not be started.",
+    webStartGone: "That project is not on the Mac any more.",
+    webStartTerminalClosed: "{app} is not running on the Mac. Open it there and try again.",
+    webStartTerminalUnsupported: "A session cannot be started in {app} from here. Run tmux in it and this works.",
+    webStartOff: "Starting a session is switched off. Settings → Remote on the Mac turns it on.",
+
     // Said in both places, so said once — the bar's own words, arriving here too.
     placeholder: "Message Claude Code…",
     noSession: "No Claude Code session found",
@@ -1726,6 +1878,8 @@ var els = {};
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
  "settings-notify-go", "settings-notify-test", "settings-notify-said", "settings-version",
  "settings-close",
+ "start-go", "start", "start-sheet", "start-title", "start-say", "start-filter", "start-list",
+ "start-said", "start-close", "starting", "starting-spin", "starting-say", "starting-close",
  "notify", "notify-go", "notify-go-label", "notify-say", "shots", "attach", "pick",
  "door", "door-mark", "door-name", "door-ask", "door-to-password", "door-digits", "door-confirm",
  "door-restart", "door-left", "door-password", "door-pw-name", "door-pw-go", "door-to-pair", "door-say"
@@ -1899,11 +2053,16 @@ function drawSpinner(canvas, phase) {
 // One clock for every spinner on the page. Eight separate timers would drift apart and the
 // list would look like eight machines rather than one.
 var spinPhase = 0;
-var spinners = [];
+var spinners = [];        // the list's own, thrown away and rebuilt by every render
+// The one outside the list: the band that waits for a started session to appear. It is kept on
+// its own because no render owns it, and it rides this clock rather than starting a second one
+// — two spinners on one screen turning at their own speeds is the thing this note is about.
+var bandSpin = null;
 setInterval(function () {
-    if (reduced || !spinners.length) return;
+    if (reduced || (!spinners.length && !bandSpin)) return;
     spinPhase = (spinPhase + 1) % 8;
     for (var i = 0; i < spinners.length; i++) drawSpinner(spinners[i], spinPhase);
+    if (bandSpin) drawSpinner(bandSpin, spinPhase);
 }, SPIN.step);
 
 /* ==========================================================================
@@ -1973,6 +2132,9 @@ var handlers = {
         if (info.version) S.version = info.version;
         Build.saw(info);
         renderComposer();
+        // The same switch decides whether a session can be started, and it can change under an
+        // open sheet — this arrives again on every reconnect.
+        Start.sync();
     },
     conn: function (state, seconds) {
         S.conn = state;
@@ -2003,6 +2165,12 @@ function jsonFetch(path, options) {
                 var err = data && data.error ? data.error : { code: "http_" + res.status, message: res.statusText || T.webRequestFailed };
                 var e2 = new Error(err.message || err.code);
                 e2.code = err.code;
+                // `code` and `message` are on every refusal this server makes; a route may add
+                // one more field, and dropping it here would cost the page its own sentence.
+                // Today there is exactly one: both 409s from starting a session carry `app`,
+                // the terminal's name as macOS spells it, so that a phone can say "Ghostty is
+                // not running" in the reader's language instead of showing the English.
+                if (typeof err.app === "string") e2.app = err.app;
                 throw e2;
             }
             if (!data) throw new Error(T.webNotJSON);
@@ -2194,6 +2362,24 @@ var Live = {
                          post({}, { "Idempotency-Key": uuid() }));
     },
 
+    /// Where a session may be started. Asked afresh every time the sheet opens: the Mac drops
+    /// directories that are no longer there while it builds this, and the answer is only as
+    /// true as the moment it was given.
+    places: function () { return jsonFetch("/v1/places"); },
+
+    /// The id is the whole request. There is no body on this route — not "an optional body",
+    /// none is read — so there is nothing this page could send that would widen what gets
+    /// started, and the command at the other end is the literal `claude`. The key is minted
+    /// once per press, which is what makes a retry of *this* request the same start rather
+    /// than a second tab.
+    ///
+    /// Named for what it starts. `start` on this object is the transport's own — the one `boot`
+    /// calls to open the stream — and a second one would have quietly replaced it.
+    startPlace: function (id) {
+        return jsonFetch("/v1/places/" + encodeURIComponent(id) + "/start",
+                         post({}, { "Idempotency-Key": uuid() }));
+    },
+
     // The three doors. None of them carries the code: it is shown on the Mac, and this page is
     // only ever the thing typing it back.
     pair: function (name) { return jsonFetch("/v1/auth/pair", post({ name: name })); },
@@ -2359,6 +2545,27 @@ var Mock = (function () {
         { role: "assistant", text: "It explains the file and never says where to put it. Everything else assumes you already know that `devstack.json` sits at the root of the project it describes.", tool: null, at: now - 3580 }
     ];
 
+    // Where a session may be started — the Mac's own list, which is not the session list and is
+    // not the icon registry either: directories `claude` has been run in that are still there,
+    // newest first. Ten of them, because that is enough to put the filter on screen.
+    var places = [
+        { id: "3b9e26c1587facfd", label: "clawdline", path: "/Users/you/code/clawdline", icon: clawdline },
+        { id: "24f9bac626da56ea", label: "atrium", path: "/Users/you/code/atrium", icon: atrium },
+        { id: "470885724e5330e1", label: "cairn", path: "/Users/you/code/cairn", icon: creature },
+        { id: "9c1d4e77a0b3f215", label: "notebook", path: "/Users/you/code/notebook", icon: creature },
+        { id: "b04f8a2c6d915e33", label: "astro", path: "/Users/you/code/astro", icon: null },
+        { id: "5e7a1c93f2680b4d", label: "frontend", path: "/Users/you/code/cairn/frontend", icon: creature },
+        { id: "1f6b0d38e9a742c5", label: "docs", path: "/Users/you/code/clawdline/docs", icon: clawdline },
+        { id: "c83e5f10ab24d967", label: "sketches", path: "/Users/you/code/sketches", icon: null },
+        { id: "7a2c9e46b1d05f38", label: "website", path: "/Users/you/code/website", icon: null },
+        { id: "e51b7d02c4a86f19", label: "notes", path: "/Users/you/tmp/notes", icon: null }
+    ];
+    // How the fixture's start behaves: `?start=slow` never reports in, so the fifteen seconds
+    // can be watched rather than described; `closed`, `unsupported` and `gone` are the three
+    // refusals with a sentence of their own on the other end, and `empty` is a Mac with
+    // nowhere to start at all.
+    var MOCK_START = params.get("start") || "";
+
     var live = false;
     var beat = 0;
     var admitted = !MOCK_DOOR;   // ?door=1 arrives with nothing, the way a phone does
@@ -2509,6 +2716,62 @@ var Mock = (function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Focus is not enabled on this server."), { code: "write_disabled" })); return; }
                     done({ ok: true });
                 }, 150);
+            });
+        },
+
+        places: function () {
+            return new Promise(function (done) {
+                setTimeout(function () {
+                    var now = Math.floor(Date.now() / 1000);
+                    done({
+                        at: now,
+                        // `?start=empty` empties the list, which is the other thing this screen
+                        // has to be able to say: a Mac that has never run Claude Code anywhere.
+                        places: MOCK_START === "empty" ? [] : places.map(function (p, i) {
+                            return { id: p.id, label: p.label, path: p.path, icon: p.icon, at: now - i * 900 };
+                        })
+                    });
+                }, 260);
+            });
+        },
+
+        /** The real one answers before the session exists, so this does too — and the row turns
+         *  up a couple of seconds later, which is the gap the band above the list is for. */
+        startPlace: function (id) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
+                    var place = null;
+                    for (var i = 0; i < places.length; i++) if (places[i].id === id) place = places[i];
+                    if (!place || MOCK_START === "gone") {
+                        fail(Object.assign(new Error("No place named that"), { code: "not_found" }));
+                        return;
+                    }
+                    if (MOCK_START === "closed") {
+                        fail(Object.assign(new Error("Ghostty is not running, and this will not launch it for you."),
+                                           { code: "terminal_closed", app: "Ghostty" }));
+                        return;
+                    }
+                    if (MOCK_START === "unsupported") {
+                        fail(Object.assign(new Error("A session cannot be started in that terminal from here."),
+                                           { code: "terminal_unsupported", app: "Ghostty" }));
+                        return;
+                    }
+                    var made = "N" + Math.floor(Math.random() * 9000 + 1000) + "-" + Math.floor(Math.random() * 90 + 10);
+                    done({ ok: true, id: made, backend: "iterm", place: place.id, cwd: place.path,
+                           at: Math.floor(Date.now() / 1000) });
+                    // Not with the reply: the whole point is that the id is answered before
+                    // there is a session to go with it. `?start=slow` is the one that never does.
+                    if (MOCK_START === "slow") return;
+                    setTimeout(function () {
+                        sessions.push({ id: made, backend: "iterm", tty: "ttys0" + Math.floor(Math.random() * 90 + 10),
+                                        label: place.label, cwd: place.path, state: "idle", line: null,
+                                        // False for a moment on the real thing too — a shell has
+                                        // to start before `claude` is a process anything can see.
+                                        isClaude: false, sessionId: null, icon: place.icon });
+                        emit();
+                    }, 2600);
+                }, 320);
             });
         }
     };
@@ -2884,6 +3147,11 @@ function onSessions() {
 
     render();
 
+    // A session that was started from this page, as soon as the list has it. Before `openWanted`
+    // for the same reason it is here at all: both of them are "somebody asked for this session",
+    // and this one asked most recently.
+    var started = Start.check();
+
     // A session the URL asked for — a tapped notification — as soon as it is in the list. It is
     // tried on every list rather than once, because a cold start routes before it knows what
     // sessions exist.
@@ -2897,7 +3165,9 @@ function onSessions() {
         firstList = false;
         // Not when somebody asked for a particular one. Opening the top of the list first and
         // theirs a moment later is two screens for one tap, and the first of them is wrong.
-        if (!routed && !wantedSession) {
+        // A Mac with nothing running is where this matters: the first list to arrive there can
+        // be the one carrying the session that was just started from this page.
+        if (!routed && !wantedSession && !started) {
             var top = ordered()[0];
             if (top) { if (phone()) { S.selectedId = top.id; render(); } else { openSession(top.id, true); } }
         }
@@ -3829,6 +4099,18 @@ function paintStatic() {
     text(els["settings-notify-title"], T.webSettingsNotify);
     text(els["settings-close"], T.webClose);
 
+    // Starting one. The button carries the short words as its hover text and the long ones as
+    // its name, because what a screen reader reads out is the only label a drawn `+` has.
+    attr(els["start-go"], "title", T.webStart);
+    attr(els["start-go"], "aria-label", T.webStartLabel);
+    attr(els["start-sheet"], "aria-label", T.webStartLabel);
+    text(els["start-title"], T.webStart);
+    els["start-filter"].placeholder = T.webStartFilter;
+    attr(els["start-filter"], "aria-label", T.webStartFilter);
+    text(els["start-close"], T.webClose);
+    // The × is a shape, not a word; the word is what it is called.
+    attr(els["starting-close"], "aria-label", T.webClose);
+
     // The transcript's left margin. Claude's own name is not in the strings and is not
     // translated — it is a name, and it is the same name in fourteen languages.
     WHO.user = T.webWhoYou;
@@ -4113,6 +4395,7 @@ document.addEventListener("keydown", function (ev) {
     }
 
     if (key === "Escape") {
+        if (!els.start.hidden) { Start.close(); return; }
         if (!els.settings.hidden) { Settings.close(); return; }
         if (!els.keys.hidden) { els.keys.hidden = true; return; }
         if (document.activeElement === els.filter) {
@@ -4128,7 +4411,7 @@ document.addEventListener("keydown", function (ev) {
     if (typing(document.activeElement)) return;
     if (meta || ev.altKey) return;
     // A sheet is over the page, so `j` is not "move down the list behind it".
-    if (!els.settings.hidden) return;
+    if (!els.settings.hidden || !els.start.hidden) return;
 
     switch (key) {
         case "ArrowDown": case "j": ev.preventDefault(); move(1); break;
@@ -4328,6 +4611,280 @@ els["settings-sheet"].addEventListener("click", function (ev) { ev.stopPropagati
 els["settings-close"].addEventListener("click", function () { Settings.close(); });
 els["settings-notify-go"].addEventListener("click", function () { Push.toggle(); });
 els["settings-notify-test"].addEventListener("click", function () { Settings.test(); });
+
+/* ---- starting a session -------------------------------------------------- */
+
+/**
+ * A new Claude Code session, started from the sofa.
+ *
+ * **The page never names a directory.** It shows a list the Mac built — the places `claude` has
+ * actually been run in, that are still there — and sends back the opaque id printed on the row
+ * it was given. There is no field on that route a path could be written into, so there is
+ * nothing here that could be persuaded to start a session somewhere the Mac did not offer.
+ *
+ * **It is its own sheet.** The one behind the wordmark is what is true of *this browser on this
+ * device*; this is a question about the Mac, and putting them together would have made one sheet
+ * that answers two different questions. It is one tap from the list and it costs the list
+ * nothing — a square on a row that already exists, rather than a control the session list has to
+ * make room for on every screen for ever.
+ *
+ * **The gap is the hard part.** `POST …/start` answers *before the session exists*: the id it
+ * gives back is in the same space as every id in `/v1/sessions`, but that session is not in the
+ * list yet and asking for it directly would `404` for a moment. So the id is kept and the list
+ * is watched — for the **id**, not for `isClaude`, which stays false until `claude` itself is up
+ * — and what is on screen meanwhile is one line under the header saying so. Nothing invents a
+ * row: a session that does not exist yet and a session that does are different things, and only
+ * one of them has a state, a title and a transcript. After fifteen seconds it stops waiting and
+ * says the tab is open but nothing has reported in. **It never retries.** The tab exists; a
+ * retry is a second tab, and "did that work?" has never meant "do it again".
+ */
+var Start = (function () {
+    var HOLD = 15000;    // how long the band waits before it admits it has stopped waiting
+    var MANY = 8;        // places, past which a box to filter them earns its row
+
+    var places = null;   // as the Mac sent them; null until an answer has arrived
+    var loading = false;
+    var pressing = null; // the place being started, while that one request is in flight
+    var find = "";       // what has been typed into the sheet's filter
+    var wait = null;     // { id, from, late } — started, and not in the list yet
+    var timer = null;
+
+    function say(words) { els["start-say"].textContent = words || ""; }
+    function said(words) { els["start-said"].textContent = words || ""; }
+
+    /**
+     * What a refusal means, said in this page's own words.
+     *
+     * The server's `message` is English, and the reader may not be — so the codes that have a
+     * translated sentence get it, and the terminal's name comes out of the error object rather
+     * than out of the sentence it was written into. Everything else is one dead end: `forbidden`
+     * is a token without the capability, `bad_request` is this page having sent something wrong,
+     * and neither is a thing the person holding the phone can do anything about.
+     */
+    function why(e) {
+        var code = e && e.code;
+        if (code === "offline") return e.message;          // already this page's own sentence
+        if (code === "write_disabled") return T.webStartOff;
+        if (code === "not_found") return T.webStartGone;
+        // Both 409s carry `app`. Without it there is no sentence to write — a translation with
+        // `{app}` still in it is worse than the plain refusal — so that falls through.
+        if (e && e.app && code === "terminal_closed") return fill(T.webStartTerminalClosed, { app: e.app });
+        if (e && e.app && code === "terminal_unsupported") return fill(T.webStartTerminalUnsupported, { app: e.app });
+        return T.webStartFailed;
+    }
+
+    function matching() {
+        var q = find.trim().toLowerCase();
+        return (places || []).filter(function (p) {
+            if (!q) return true;
+            return ((p.label || "") + " " + (p.path || "")).toLowerCase().indexOf(q) >= 0;
+        });
+    }
+
+    function draw() {
+        if (els.start.hidden) return;
+        var list = els["start-list"];
+        var box = els["start-filter"];
+
+        // Sending switched off, and that is the whole sheet. The control is still here and it
+        // still opens — a button that fails on press teaches nothing, and the sentence names the
+        // switch and where it lives. Nothing is fetched: there is nothing to press.
+        if (!S.write) {
+            say(T.webStartOff);
+            box.hidden = true;
+            list.innerHTML = "";
+            return;
+        }
+
+        say(wait ? T.webStartWaiting
+            : (loading && !places) ? T.webLoading
+            : (places && !places.length) ? T.webStartEmpty
+            : T.webStartPick);
+
+        // Forty is the most the Mac will ever offer and three fit on a phone without scrolling.
+        // Under nine, a box to narrow them down is furniture in front of the answer.
+        box.hidden = !(places && places.length > MANY);
+        if (box.hidden && box.value) { box.value = ""; find = ""; }
+
+        list.innerHTML = "";
+        matching().forEach(function (p) {
+            var li = document.createElement("li");
+            var row = document.createElement("button");
+            row.type = "button";
+            row.className = "place";
+            row.dataset.id = p.id;
+            // One press. While a start is in flight, or while one is settling, every row is
+            // shut — the second press is a second tab and nobody ever wanted two.
+            row.disabled = !!pressing || !!wait;
+            if (pressing === p.id) row.dataset.busy = "1";
+            row.innerHTML = '<canvas></canvas><span class="name"></span><span class="where"></span>';
+
+            // The same mark the session list draws, drawn by the same code, and still optional.
+            var mark = row.querySelector("canvas");
+            if (!drawIcon(mark, p.icon, 4)) mark.classList.add("none");
+
+            var name = row.querySelector(".name");
+            name.textContent = p.label || p.path;
+            name.style.color = p.icon ? tint(p.icon.accent) : "";
+            // The path is here so two projects with the same name can be told apart, and it is
+            // stood aside for the one line that matters more while a row is being pressed.
+            row.querySelector(".where").textContent =
+                pressing === p.id ? T.webStarting : shortPath(p.path);
+
+            li.appendChild(row);
+            list.appendChild(li);
+        });
+    }
+
+    /** Asked afresh every time the sheet opens: a directory can go away between two looks, and
+     *  the list is sorted by when each was last worked in. The old one stays on screen while
+     *  the new one is on its way — a list that blanks itself to refetch is a flicker. */
+    function load() {
+        if (loading || typeof api.places !== "function") return;
+        loading = true;
+        draw();
+        api.places().then(function (d) {
+            places = (d && d.places) || [];
+        }).catch(function (e) {
+            places = places || [];
+            said(why(e));
+        }).then(function () {
+            loading = false;
+            draw();
+        });
+    }
+
+    function press(id) {
+        if (pressing || wait || !S.write || typeof api.startPlace !== "function") return;
+        pressing = id;
+        said("");
+        draw();
+        api.startPlace(id).then(function (d) {
+            pressing = null;
+            // From here the tab exists on the Mac. Nothing after this line is allowed to read
+            // as "it might not have worked", and nothing after it presses this again.
+            began(d && d.id);
+        }).catch(function (e) {
+            pressing = null;
+            if (e && e.code === "write_disabled") {
+                // The switch was turned off while this sheet was open. The server is the one
+                // that knows, so take its word for it — the composer answers to the same flag.
+                S.write = false;
+                renderComposer();
+            } else if (e && e.code === "not_found") {
+                // That directory has gone since the list was built. It is the list that is
+                // wrong rather than the press, so the list is what gets asked again.
+                places = null;
+                load();
+            }
+            said(why(e));
+            draw();
+        });
+    }
+
+    /** Started. The sheet has done its job, and what is left is a wait. */
+    function began(id) {
+        close();
+        if (!id) {
+            // A reply with no id is nothing to watch the list for. The tab was still opened —
+            // that is what `ok` meant — so this says now what the fifteen seconds would have.
+            band(T.webStartSlow, true);
+            return;
+        }
+        wait = { id: id, from: S.openId, late: false };
+        band(T.webStartWaiting, false);
+        clearTimeout(timer);
+        timer = setTimeout(function () {
+            if (!wait) return;
+            wait.late = true;
+            band(T.webStartSlow, true);
+        }, HOLD);
+    }
+
+    function band(words, slow) {
+        els.starting.dataset.state = slow ? "slow" : "waiting";
+        // Shown before it is written into: it is a live region, and a change made while it is
+        // still `hidden` is a change nothing was listening to.
+        els.starting.hidden = false;
+        els["starting-say"].textContent = words;
+        // The spinner rides the list's clock — see `bandSpin`. Nothing turns once the wait has
+        // been given up on: there is nothing left to be waiting for.
+        bandSpin = slow ? null : els["starting-spin"];
+        if (bandSpin) drawSpinner(bandSpin, spinPhase);
+    }
+
+    function hideBand() {
+        els.starting.hidden = true;
+        bandSpin = null;
+    }
+
+    function open() {
+        els.start.hidden = false;
+        said("");
+        if (S.write && !wait) load();
+        draw();
+        els["start-close"].focus({ preventScroll: true });
+    }
+
+    function close() { els.start.hidden = true; }
+
+    return {
+        open: open,
+        close: close,
+        press: press,
+        typed: function (value) { find = value; draw(); },
+
+        /** The write switch can flip under an open sheet — `hello` carries it on every
+         *  reconnect — and the sheet is a different screen on either side of that. */
+        sync: draw,
+
+        /** Let go of the wait: the reader has read the line and closed it. A session that
+         *  turns up afterwards is a row in the list like any other. */
+        dismiss: function () {
+            wait = null;
+            clearTimeout(timer);
+            timer = null;
+            hideBand();
+        },
+
+        /**
+         * Every list that arrives, until the one with this session in it.
+         *
+         * The id is what is watched for, not `isClaude` — a tab exists a good second or two
+         * before `claude` is a process `ps` can see, and a page waiting for the flag would sit
+         * there through a session that had already started fine.
+         */
+        check: function () {
+            if (!wait || !byId(wait.id)) return false;
+            var id = wait.id, from = wait.from, late = wait.late;
+            wait = null;
+            clearTimeout(timer);
+            timer = null;
+            hideBand();
+            draw();
+            // Opened, for somebody who has not gone anywhere since pressing it — that is what
+            // they asked for, and it is one less tap on a phone. Not if they have opened
+            // something else meanwhile, and not after the fifteen seconds have gone by: by then
+            // they have been told to look at the Mac, and a transcript arriving over whatever
+            // they moved on to is the page having an opinion it has not earned.
+            if (late || S.openId !== from) { S.selectedId = id; renderList(); return false; }
+            openSession(id);
+            return true;
+        }
+    };
+})();
+
+els["start-go"].addEventListener("click", function () { Start.open(); });
+els.start.addEventListener("click", function () { Start.close(); });
+els["start-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
+els["start-close"].addEventListener("click", function () { Start.close(); });
+els["start-filter"].addEventListener("input", function () { Start.typed(this.value); });
+els["start-list"].addEventListener("click", function (ev) {
+    var row = ev.target.closest ? ev.target.closest(".place") : null;
+    if (!row || row.disabled) return;
+    Start.press(row.dataset.id);
+});
+els["starting-close"].addEventListener("click", function () { Start.dismiss(); });
 
 /* ---- notifications ------------------------------------------------------- */
 
