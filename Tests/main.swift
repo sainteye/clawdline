@@ -1692,9 +1692,23 @@ group("the documented example files") {
         .flatMap { ProjectIcon.grid(for: $0) }
     expect("the generated example draws too", generated?.cells.count, 4)
 
+    // The registry holds more than a mark: a project that deploys something puts its health
+    // check here, and that is what the poller reads.
+    let health = ProjectIcon.entry(forCwd: "/Users/you/code/atrium", in: rows)?["health"] as? [String: Any]
+    check("the registry example carries a health block", health != nil)
+    expect("with somewhere to poll", (health?["url"] as? String)?.hasPrefix("https://"), true)
+    check("and something that is false when it is broken",
+          (health?["expect"] as? [String: Any])?.isEmpty == false)
+
     let deploy = ProjectStatus.deploy(load("ghrun-you-atrium.json"))
     expect("the deploy example is running", deploy?.state, "running")
     expect("with somewhere to click", deploy?.url?.hasPrefix("https://github.com/"), true)
+
+    // A producer emits this constantly — no workflow, no run on this branch, gh not installed.
+    // A consumer that has not heard of it draws a cross for a project that simply has no CI,
+    // which is a red mark that is always wrong.
+    let quiet = ProjectStatus.deploy(load("ghrun-you-quiet.json"))
+    expect("nothing to say is its own state", quiet?.state, "none")
     expect("and a bar to draw", ProjectStatus.bar(0.5, width: 8), "▰▰▰▰▱▱▱▱")
 
     let backlog = ProjectStatus.backlog(load("backlog--Users-you-code-atrium.json"))
@@ -2940,6 +2954,24 @@ group("a cache stamp has to see through a symlink") {
 
     check("a file that is not there stamps as nothing rather than crashing",
           Paths.stamp(of: dir.appendingPathComponent("absent.json")) == "0-0")
+}
+
+group("telling two devices with the same name apart") {
+    // Pressing "Open in a browser" twice mints two devices called the same thing, and two
+    // identical rows is a list nobody can act on. What separates them is not a better name —
+    // two browsers deserve the same name — it is when each was last used.
+    let now = Date()
+    func ago(_ seconds: TimeInterval) -> String? {
+        DeviceChips.ago(now.addingTimeInterval(-seconds), now: now)
+    }
+    expect("just now", ago(5), "now")
+    expect("under an hour is minutes", ago(125), "2m")
+    expect("under a day is hours", ago(3 * 3600 + 100), "3h")
+    expect("beyond that is days", ago(4 * 86_400), "4d")
+    expect("a clock that ran backwards is not negative", ago(-30), "now")
+    // The one that matters: a device minted and never used has no time at all, and that is
+    // exactly the one it is safe to take away.
+    check("never seen says nothing", DeviceChips.ago(nil) == nil)
 }
 
 // MARK: - Result

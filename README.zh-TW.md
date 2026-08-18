@@ -691,7 +691,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`：熱鍵有沒有
 純 AppKit、沒有框架、除了 `swiftc` 沒有 build 系統。
 
 ```bash
-./test.sh     # 1086 個檢查，約兩秒
+./test.sh     # 1100 個檢查，約兩秒
 ./build.sh    # 編譯，原本有在跑的話會自己接回來
 ```
 

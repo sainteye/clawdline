@@ -139,15 +139,30 @@ protocol Copy {
     var settingsScope: String { get }
     var settingsScopeGlobal: String { get }
     var settingsScopeHint: String { get }
+    /// The words on the settings window's app picker.
+    ///
+    /// It used to be a text field asking for `com.googlecode.iterm2`, which is a string with no
+    /// discoverable spelling — so these name applications the way a person does, and "open right
+    /// now" heads the short list of what is running, which is where the answer nearly always is.
+    var settingsScopeAdd: String { get }
+    var settingsScopeChoose: String { get }
+    var settingsScopeRunning: String { get }
+    var settingsScopeRemove: String { get }
     var settingsLanguage: String { get }
+    /// A switch label has to name its subject.
+    ///
+    /// "Come back with the terminal" read as a fragment with nothing in front of the verb, which
+    /// in a language that does not carry an implied English subject is not a sentence at all. Both
+    /// of these say what the thing is that does the coming back or the following.
     var settingsReopen: String { get }
+    var settingsReopenHint: String { get }
     var settingsFollow: String { get }
+    var settingsFollowHint: String { get }
     var settingsNotch: String { get }
     var settingsNotchHint: String { get }
     var settingsPosition: String { get }
     var settingsWidth: String { get }
     var settingsOpacity: String { get }
-    var settingsImagesPaste: String { get }
     var settingsShow: String { get }
     var settingsPaneHeight: String { get }
     var settingsTextSize: String { get }
@@ -172,6 +187,14 @@ protocol Copy {
     var settingsHooksOff: String { get }
     var settingsHooksOn: String { get }
     var settingsHooksLive: String { get }
+    /// The other direction: this app telling somebody else's program that a session moved.
+    ///
+    /// It has no control, because `on_state_change` is an argument list and a single text box
+    /// invites the word-splitting that ruins a path with a space in it. But it is the extension
+    /// point everything else hangs off, and a feature nobody can find is a feature nobody has —
+    /// so the hooks tab says what it is and where it lives. See Sources/StateHook.swift.
+    var settingsStateHook: String { get }
+    var settingsStateHookHint: String { get }
 
     // Remote access — see Sources/RemoteServer.swift and Sources/RemoteAuth.swift
     var settingsRemote: String { get }
@@ -202,7 +225,6 @@ protocol Copy {
     /// half that says what happened — short, because a lock screen truncates and the important
     /// word should not be the one that gets cut.
     var pushWaiting: String { get }
-    var settingsOpenFile: String { get }
     /// A number of seconds, as a settings row shows it.
     ///
     /// Here rather than as a bare "s" because it is the one unit in that window that reads as a
