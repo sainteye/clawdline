@@ -52,7 +52,18 @@ final class Voice {
     /// bought them nothing until they opened it again and asked a second time.
     var onPermissionPrompt: ((Bool) -> Void)?
 
-    private let engine = AVAudioEngine()
+    /// Built the first time somebody dictates, never before.
+    ///
+    /// **An object that owns a microphone should not exist before anybody has asked for one.**
+    /// This was a stored property, so it was constructed with the panel — which is to say at
+    /// launch — and macOS decides for itself when the audio input has been touched closely enough
+    /// to be worth asking about. The symptom was the microphone prompt appearing before the
+    /// microphone button had ever been pressed, which is exactly the promise `Info.plist` makes
+    /// underneath `NSMicrophoneUsageDescription`: *only while you hold a dictation session open*.
+    ///
+    /// Lazy is the whole fix, and it is the right shape anyway: nothing about this app needs an
+    /// audio engine until the moment it is recording.
+    private lazy var engine = AVAudioEngine()
     private var recogniser: SFSpeechRecognizer?
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?

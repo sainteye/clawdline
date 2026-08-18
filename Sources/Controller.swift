@@ -15,7 +15,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var glow: GlowView!
     private var chevron: NSTextField!
     private var micButton: MicButton!
-    private let voice = Voice()
+    /// Made when somebody first dictates. See the note on `Voice.engine`: this used to be built
+    /// with the panel, and everything it owns was therefore built at launch.
+    private lazy var voice = Voice()
     private var scroll: NSScrollView!
     private var textView: PromptTextView!
     private var hintLine: NSView!
@@ -2741,6 +2743,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             if list == "mascots" { self.showList(.mascots) }
             else if list == "sessions" { self.showList(.sessions) }
             else if list == "demo" { self.showStandInSessions() }
+            else if list == "stacks" { self.showList(.stacks) }
         }
 
         let render = { [weak self] in
