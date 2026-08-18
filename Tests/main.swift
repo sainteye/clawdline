@@ -2888,6 +2888,31 @@ group("the cloudflared config we write, rather than the one that was already the
                                             credentials: nil)).contains("credentials-file"))
 }
 
+group("which language to answer a browser in") {
+    // A browser may write its preferences in any order and let `q` say what it means, and several
+    // do — so the order on the wire is not the order of preference.
+    expect("plain order", L.preferences(in: "zh-TW,zh,en"), ["zh-TW", "zh", "en"])
+    expect("quality wins over position",
+           L.preferences(in: "en;q=0.5,zh-TW;q=0.9,ja"), ["ja", "zh-TW", "en"])
+    expect("a missing q is 1.0, the specification's default",
+           L.preferences(in: "de,en;q=0.9"), ["de", "en"])
+    expect("ties keep the order they were written in",
+           L.preferences(in: "fr;q=0.8,it;q=0.8"), ["fr", "it"])
+    expect("the wildcard is not a language", L.preferences(in: "*"), [])
+    expect("and neither is nothing at all", L.preferences(in: ""), [])
+    expect("whitespace is not part of a tag",
+           L.preferences(in: "zh-TW, en;q=0.7"), ["zh-TW", "en"])
+
+    // The catalog's ordering is what stops zh-Hans falling into the Traditional bucket.
+    check("a Taiwanese browser gets Traditional",
+          L.copy(preferring: ["zh-TW"]).settingsRemote == TraditionalChinese().settingsRemote)
+    check("and a mainland one does not",
+          L.copy(preferring: ["zh-CN"]).settingsRemote == SimplifiedChinese().settingsRemote)
+    check("a language nobody here speaks falls back to English",
+          L.copy(preferring: ["is-IS"]).settingsRemote == English().settingsRemote)
+    check("and so does an empty list", L.copy(preferring: []).settingsRemote == English().settingsRemote)
+}
+
 // MARK: - Result
 
 print("")

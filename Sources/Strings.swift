@@ -265,9 +265,55 @@ enum L {
     private static func pick() -> Copy {
         let want = Config.shared.language
         let tags = want == "auto" ? Locale.preferredLanguages : [want]
+        return copy(preferring: tags)
+    }
+
+    /// The first language in a list of preferences that this app actually speaks.
+    ///
+    /// Split out of ``pick`` because the web interface asks the same question about a *different*
+    /// reader: the person holding the phone is not necessarily the person the Mac belongs to, and
+    /// their browser is the only thing that knows what they read.
+    static func copy(preferring tags: [String]) -> Copy {
         for tag in tags {
             if let hit = catalog.first(where: { tag.hasPrefix($0.tag) }) { return hit.copy }
         }
         return English()
+    }
+
+    /// What to speak to a browser, from its `Accept-Language` header.
+    ///
+    /// **A named language in the config wins**, because that is somebody having said what they
+    /// want rather than a default being inferred — and if they picked Japanese for the bar, a
+    /// second window of the same app should not answer in English. `auto` is the interesting
+    /// case: on the Mac it means "follow this machine", and here it has to mean "follow the
+    /// browser", because a phone in a kitchen is a different reader from the desk it is talking
+    /// to. Neither answer is more correct in general; each is right about the screen it is on.
+    static func copy(forAcceptLanguage header: String?) -> Copy {
+        let want = Config.shared.language
+        guard want == "auto" else { return copy(preferring: [want]) }
+        return copy(preferring: preferences(in: header ?? ""))
+    }
+
+    /// `zh-TW,zh;q=0.9,en-US;q=0.8` → the tags, best first.
+    ///
+    /// Sorted by the quality value rather than by the order they appear, because those are not
+    /// the same list — a browser is allowed to write its preferences in any order and let `q` say
+    /// what it means, and several do. A tag with no `q` is 1.0, which is the specification's
+    /// default and also the common case.
+    static func preferences(in header: String) -> [String] {
+        header.split(separator: ",").compactMap { piece -> (tag: String, q: Double)? in
+            let parts = piece.split(separator: ";")
+            guard let tag = parts.first?.trimmingCharacters(in: .whitespaces), !tag.isEmpty,
+                  tag != "*" else { return nil }
+            let q = parts.dropFirst()
+                .first(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("q=") })
+                .flatMap { Double($0.trimmingCharacters(in: .whitespaces).dropFirst(2)) } ?? 1
+            return (tag, q)
+        }
+        // Stable within a quality: `sorted(by:)` is not, so the index keeps ties in the order the
+        // browser wrote them, which is what it meant by writing them that way.
+        .enumerated()
+        .sorted { $0.element.q == $1.element.q ? $0.offset < $1.offset : $0.element.q > $1.element.q }
+        .map(\.element.tag)
     }
 }
