@@ -50,24 +50,13 @@
 
 version: 1
 
-items:
-  - id: B-BACKLOG-PIPELINE
-    title: This file is read by nobody
-    problem: >-
-      A backlog that only a person opening the file can see is one that gets consulted when
-      somebody remembers it exists, which is never at the moment it would have helped. Clawdline
-      already draws `backlog-<path>.json` in its own footer for other projects and cannot draw
-      one for itself.
-    evidence: >-
-      `docs/project-status.md` documents the cache shape; `ProjectStatus.backlog` parses it;
-      `~/.claude/statusline-cache/` has files for other projects on this machine and none for
-      clawdline.
-    severity: noise
-    cost: days
-    who_hurts: us
-    trigger: The first time an item in here is rediscovered late, or the list passes ~15 items.
-    opened: 2026-08-19
+# Where the count links to. A path is generated from this file on every count; an `https://` value
+# is treated as somebody else's page and left alone, which is what a project with a hosted backlog
+# would use. This one has nowhere to host anything, so it is a local file — and `artifacts/` is
+# ignored by git, so the page is yours and never travels.
+artifact: artifacts/backlog.html
 
+items:
   - id: B-API-ERRORS-ENGLISH
     title: API error messages are hardcoded English and the page shows them verbatim
     problem: >-
