@@ -2,16 +2,14 @@
 
 # Clawdline
 
-**Your Claude Code sessions, at eye level.**
+**One bar for every Claude Code session you have open.**
 
-A Spotlight-style bar that floats in the middle of your screen. Type into it and the message
-lands in Claude Code; press <kbd>⌘</kbd><kbd>J</kbd> and the session reads back in the same
-place — laid out, not scraped.
+Type into it and the message lands in whichever session you point it at.
+Press <kbd>⌘</kbd><kbd>J</kbd> and that session reads back where you are already looking — laid
+out, not scraped. Press <kbd>⌘</kbd><kbd>K</kbd> and every session is a row that says what it is
+doing: **working, finished, or waiting for an answer.**
 
-And when you have five of them running, it tells you **which one is working, which one has
-stopped, and which one is waiting for an answer** — in the list, in the menu bar, and in the
-notch. You never look at the corner of the terminal again.
-Works with iTerm2 directly, and with every other terminal through tmux.
+Nothing is installed into Claude Code. iTerm2 directly, every other terminal through tmux.
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13%2B-black.svg)](#install)
@@ -30,12 +28,24 @@ English · [繁體中文](README.zh-TW.md)
 
 ## What it is for
 
-**Claude Code asks you to look at the bottom-left corner of a full-screen terminal a few hundred
-times a day.** Clawdline is a second place to type — one that appears where your eyes already
-are, sends into the session you were last in, and hands focus straight back.
+Claude Code puts everything in one rectangle at the bottom of one terminal window: what it says,
+what it is asking you, and the box you type into. That is a good design for one session.
 
-Everything else follows from one consequence: **if you are not going to look at the terminal, the
-bar has to tell you what the terminal would have.**
+**You have four.**
+
+So the day gets spent going *to* sessions. To say anything to one, you find its tab. To find out
+whether it is still working, you find its tab. And the thing you are picking from is a row of tab
+titles — which are *tasks*, and two projects can be working on tasks that read alike.
+
+Clawdline is one place for all of them, at eye level. It types into any of them, reads any of
+them back, and — the part that only matters once there is more than one — tells you which one
+has stopped and which one is waiting for an answer, without your having to go and look.
+
+**It installs nothing into Claude Code.** No hooks, no MCP server, nothing added to your
+settings, no wrapper around the `claude` command. It reads the screens your sessions are already
+drawing and the transcripts they are already writing. That is why it works with the sessions you
+started an hour ago, why it cannot break the thing it is reading, and why turning it off leaves
+nothing behind to undo.
 
 ## What it does that a prompt box does not
 
@@ -204,8 +214,7 @@ Press <kbd>⌥</kbd><kbd>Space</kbd> in iTerm2, type, press <kbd>Enter</kbd>.
 | drag / <kbd>⌘</kbd><kbd>V</kbd> | drop a file or paste an image anywhere on the window |
 | <kbd>Esc</kbd> | close |
 
-<kbd>⌘</kbd><kbd>A</kbd> <kbd>⌘</kbd><kbd>C</kbd> <kbd>⌘</kbd><kbd>V</kbd> <kbd>⌘</kbd><kbd>X</kbd>
-<kbd>⌘</kbd><kbd>Z</kbd> work as you expect.
+<kbd>⌘A</kbd> · <kbd>⌘C</kbd> · <kbd>⌘V</kbd> · <kbd>⌘X</kbd> · <kbd>⌘Z</kbd> work as you expect.
 
 **The hotkey only fires while iTerm2 is in front.** Everywhere else <kbd>⌥</kbd><kbd>Space</kbd>
 is still whatever it was before you installed this. Set `"scope_app": ""` to make it global.
@@ -484,7 +493,7 @@ Edit it, press <kbd>⌥</kbd><kbd>Space</kbd>, and the change is on screen. No r
 ### Browse and switch
 
 <div align="center">
-<img src="docs/assets/picker.png" width="620" alt="The mascot picker, listing clawd and mochi">
+<img src="docs/assets/picker-live.gif" width="620" alt="The mascot picker: the arrow keys walk the list and the character on the bar changes with them, so you pick by looking.">
 </div>
 
 <kbd>⌘</kbd><kbd>M</kbd> lists every pack you have. Arrow keys **preview as you move** — the

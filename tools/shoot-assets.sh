@@ -90,7 +90,25 @@ relaunch
 
 run_if sessions   shot sessions   "list=demo"          # the still, for the section
 run_if sessions   strip sessions-live sessions 5.2 760   # and the strip, for the top of the page
-run_if picker     shot picker     "list=mascots"
+# The picker, still and moving. Any pack that did not ship with the app is moved aside first:
+# the picture is what a fresh install has, and somebody else's character does not belong in this
+# repository's README whatever it is doing on this machine.
+if want picker; then
+  ASIDE="$TMP/packs-aside"; mkdir -p "$ASIDE"
+  for f in "$HOME/.config/clawdline/mascots/"*.json; do
+    [ -e "$f" ] || continue
+    n=$(basename "$f")
+    [ -e "Resources/mascots/$n" ] || mv "$f" "$ASIDE/$n"
+  done
+  restore_packs() { for f in "$ASIDE"/*.json; do [ -e "$f" ] && mv "$f" "$HOME/.config/clawdline/mascots/"; done; }
+  trap 'restore_packs; restore' EXIT
+  relaunch
+  shot picker "list=mascots"
+  strip picker-live mascots 4.5 620
+  restore_packs
+  trap restore EXIT
+  relaunch
+fi
 run_if transcript shot transcript "output=1&full=0&transcript=$T" 6
 run_if fullscreen shot fullscreen "output=1&full=1&transcript=$T" 7
 

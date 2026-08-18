@@ -2874,7 +2874,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // The list has to be up *before* the canvas is measured, or every frame is drawn at the
         // height of a bar with no list under it and the rows fall off the bottom.
         let listStrip = script == "sessions"
+        // The mascot picker's claim is about motion — "the character on the bar changes while the
+        // list is still open, so you pick by looking rather than by reading names" — which a still
+        // of a list of names is the one thing that cannot show.
+        let packStrip = script == "mascots"
         if listStrip { showStandInSessions(at: 0) }
+        if packStrip { showList(.mascots) }
         relayout()
         let panelSize = container.bounds.size
         let canvas = NSSize(width: panelSize.width + margin * 2, height: panelSize.height + margin * 2)
@@ -2886,6 +2891,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             if listStrip {
                 showStandInSessions(at: t)
                 relayout()
+            }
+            if packStrip, !mascotNames.isEmpty {
+                // A beat on each, long enough to look at, walking the list and coming back.
+                let beat = seconds / Double(mascotNames.count)
+                let want = min(mascotNames.count - 1, Int(t / beat))
+                if want != mascotIndex { pickMascot(want, closeList: false) }
             }
             let step = Self.timeline(script: script, t: t, seconds: seconds, text: text)
 
@@ -3058,7 +3069,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // gallery and the per-routine clips are shot.
         // The list strip is not about the character or the box: you have just pressed ⌘K and are
         // looking at the rows, so the box is empty and the mascot is doing what it does.
-        if script == "sessions" {
+        if script == "sessions" || script == "mascots" {
             s.routine = "idle"
             s.mascotTime = t
             s.text = ""

@@ -2,15 +2,14 @@
 
 # Clawdline
 
-**把你所有的 Claude Code session，放到眼睛的高度。**
+**一條輸入條，管你開著的每一個 Claude Code session。**
 
-一條浮在螢幕中上方、Spotlight 風格的輸入條。打完字按 Enter，內容直接進到 Claude Code
-session；按 <kbd>⌘</kbd><kbd>J</kbd>，那個 session 就在同一個地方讀得回來——是**排版過的**，
-不是刮畫面。
+打完字按 Enter，內容進到你指定的那個 session。
+按 <kbd>⌘</kbd><kbd>J</kbd>，那個 session 就在你眼睛已經在看的地方讀得回來——是**排版過的**，
+不是刮畫面。按 <kbd>⌘</kbd><kbd>K</kbd>，每個 session 都是一行，而那一行會說它在做什麼：
+**在跑、跑完了、還是在等你回答。**
 
-而當你同時開著五個的時候，它會告訴你**哪一個在跑、哪一個停了、哪一個在等你回答**——
-在清單裡、在選單列上、也在瀏海裡。從此不必再盯著終端機的角落。
-iTerm2 直接支援，其餘終端機透過 tmux。
+不會在 Claude Code 裡裝任何東西。iTerm2 直接支援，其餘終端機透過 tmux。
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13%2B-black.svg)](#安裝)
@@ -29,10 +28,23 @@ iTerm2 直接支援，其餘終端機透過 tmux。
 
 ## 這個東西是為了什麼
 
-**Claude Code 要你一天看幾百次滿版終端機的左下角。** Clawdline 是第二個打字的地方——
-出現在你視線已經在的高度，送進你剛才在用的那個 session，然後把焦點還給你。
+Claude Code 把所有東西都放在一個終端機視窗底部的同一個方框裡：它說的話、它問你的問題、
+還有你打字的地方。**開一個 session 的時候，這是好設計。**
 
-其餘每一個功能都是從同一個推論長出來的：**既然你不打算看終端機，這條輸入條就得替它把話講完。**
+**但你開了四個。**
+
+於是一天就花在「跑去某個 session」上面。要跟它講一句話，先找到它的分頁。要知道它跑完了沒，
+再找一次它的分頁。而你在找的那排東西是**分頁標題**——那是**任務**，
+兩個不同專案很容易在做讀起來一模一樣的任務。
+
+Clawdline 把它們收在同一個地方，放在眼睛的高度。它可以打字進任何一個、把任何一個讀回來，
+而且——這一項只有在「不只一個」的時候才有意義——**告訴你哪一個停了、哪一個在等你回答**，
+你不必跑過去看。
+
+**它不會在 Claude Code 裡裝任何東西。** 沒有 hook、沒有 MCP server、不會動你的設定檔、
+也不會包一層 `claude` 指令。它讀的是你的 session 本來就在畫的螢幕、本來就在寫的逐字稿。
+所以它對**一小時前就開好的** session 一樣有效，所以它不可能弄壞它正在讀的那個東西，
+也所以你不想要的時候，關掉就是關掉，沒有東西要復原。
 
 ## 它做得到、而一般輸入框做不到的事
 
@@ -187,8 +199,7 @@ macOS 會把從網路下載的東西加上隔離屬性，並拒絕開啟沒公�
 | 拖曳 / <kbd>⌘</kbd><kbd>V</kbd> | 視窗上任何地方都可以丟檔案、貼圖片 |
 | <kbd>Esc</kbd> | 關掉 |
 
-<kbd>⌘</kbd><kbd>A</kbd> <kbd>⌘</kbd><kbd>C</kbd> <kbd>⌘</kbd><kbd>V</kbd> <kbd>⌘</kbd><kbd>X</kbd>
-<kbd>⌘</kbd><kbd>Z</kbd> 都照你想的運作。
+<kbd>⌘A</kbd> · <kbd>⌘C</kbd> · <kbd>⌘V</kbd> · <kbd>⌘X</kbd> · <kbd>⌘Z</kbd> 都照你想的運作。
 
 **熱鍵只在 iTerm2 在前景時生效。** 在其他 app 裡，<kbd>⌥</kbd><kbd>Space</kbd> 還是你裝這個
 之前的那顆鍵。把 `"scope_app"` 設成 `""` 就變全域。
@@ -416,7 +427,7 @@ iTerm2 只交得出**目前可見的畫面**，它的 scripting 沒有 scrollbac
 ### 瀏覽與快速切換
 
 <div align="center">
-<img src="docs/assets/picker.png" width="620" alt="吉祥物挑選器，列出 clawd 與 mochi">
+<img src="docs/assets/picker-live.gif" width="620" alt="吉祥物挑選器：方向鍵在清單裡走，輸入條上的角色跟著換，所以你是用看的挑，不是用讀名字挑">
 </div>
 
 <kbd>⌘</kbd><kbd>M</kbd> 列出你有的每一份 pack，上下鍵**邊移動邊預覽**——清單還開著，
