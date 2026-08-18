@@ -43,10 +43,9 @@ enum ProjectIcon {
 
     private static func projects() -> [String: [String: Any]] {
         let url = registryURL
-        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-        let size = (attrs?[.size] as? Int) ?? 0
-        let date = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-        let stamp = "\(size)-\(Int(date))"
+        // Through the symlink, deliberately — see `Paths.stamp(of:)`. This file is normally a link
+        // into a checkout, and stat'ing the link gives a number that never changes.
+        let stamp = Paths.stamp(of: url)
         if let c = cache, c.stamp == stamp { return c.projects }
 
         var found: [String: [String: Any]] = [:]

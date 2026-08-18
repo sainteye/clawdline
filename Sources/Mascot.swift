@@ -147,8 +147,13 @@ struct MascotPack: Decodable {
         return names.sorted()
     }
 
+    /// When a pack last changed, through a symlink if it is one.
+    ///
+    /// Same reason the icon registry needed it: a pack somebody is working on is very often a link
+    /// into a checkout, and stat'ing the link says the day the link was made. See
+    /// ``Paths/stamp(of:)`` for the bug that produced.
     static func modificationDate(named name: String) -> Date? {
-        let url = userDirectory.appendingPathComponent("\(name).json")
+        let url = userDirectory.appendingPathComponent("\(name).json").resolvingSymlinksInPath()
         return (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
     }
 

@@ -121,11 +121,11 @@ finding out on its next look. It changes when a reading happens and never what o
 
 - [Install](#install) · [Use it](#use-it)
 - **Knowing** — [which session wants you](#which-session-wants-you) · [the notch](#the-notch)
-- **Reading** — [the transcript pane](#reading-a-session-back) · [which project](#which-project-not-just-which-task)
+- **Reading** — [the transcript pane](#reading-a-session-back) · [which project](#which-project-not-just-which-task) · [the servers behind it](#the-servers-that-make-up-running-locally)
 - **Writing** — [dictation](#talk-instead-of-type) · [files and images](#dropping-in-a-file-or-an-image) · [which tab it sends to](#which-tab-does-it-send-to)
 - **Making it yours** — [mascots](#bring-your-own-mascot) · [config](#config) · [other terminals](#other-terminals-run-claude-code-in-tmux)
 - **Under it** — [how it works](#how-it-works) · [permissions and privacy](#permissions-and-privacy) · [limitations](#limitations) · [troubleshooting](#troubleshooting)
-- **Going further** — [hooks, for the twenty-second gap](docs/hooks.md) · [Whisper for mixed languages](docs/whisper.md) · [which Claude Code versions](docs/compatibility.md) · [project status files](docs/project-status.md) · [mascot format](docs/mascots.md)
+- **Going further** — [the dev stack a project declares](docs/devstack.md) · [hooks, for the twenty-second gap](docs/hooks.md) · [Whisper for mixed languages](docs/whisper.md) · [which Claude Code versions](docs/compatibility.md) · [project status files](docs/project-status.md) · [mascot format](docs/mascots.md)
 
 ## Why
 
@@ -314,6 +314,48 @@ being told to. It does not replace the live text: Apple's recogniser keeps writi
 and when you stop, Whisper reads the same recording and replaces the run with its version. The
 feedback of one, the sentence of the other. That page has a prompt you can paste into Claude Code
 to have it installed for you.
+
+### The servers that make up "running locally"
+
+Most projects have a handful of long-running things — an API, a front end, a worker, a tunnel.
+Each was started from a terminal tab, and that tab belongs to it for the rest of the day.
+Restarting one means finding its tab, stopping all of them, and starting all of them again.
+
+<kbd>⌘</kbd><kbd>S</kbd> puts them where you already type:
+
+    ⌘1  atrium   ▪ 8/8   9h 37m   api:8004  blog:4324  web:3004   ↗ atrium-dev.example.com
+    ⌘2  cairn    ▪ 6/6   9h 48m   api:8002  web:3001            ↗ cairn-dev.example.com
+
+How many are up, how long they have been, every port as a link, and the address it is served on.
+Start, stop and restart are there too.
+
+**Clawdline never starts a process of its own**, and that one rule is why this works at all.
+Anything it spawned would die with it — on quit, on update, on crash — and a dev stack whose life
+is tied to a text field is worse than one tied to a terminal tab; at least the tab is visible
+while it dies. So it reads one file from your repository, `.devstack.json`, and runs the commands
+that file names. process-compose, Overmind, pm2, Docker Compose, a Makefile with PID files: they
+all reduce to "a command that prints state", and nothing here knows which one you use.
+
+Adopting it has three heights, and the first one is four lines of JSON:
+
+| | | |
+|---|---|---|
+| **Tier 0** | declare which ports belong to which service | no commands, and nothing to trust |
+| **Tier 1** | add a `status` command that prints a small JSON document | the row goes live |
+| **Tier 2** | point it at something that already keeps state — process-compose, Compose | it reads what is already there |
+
+**Naming commands in a file means something can run them, so cloning a repository must not be
+enough.** Reading declared ports needs no trust — connecting to a TCP port executes nothing — so
+an untrusted project still shows real state at Tier 0. Running any of its commands, including
+`status`, is gated per repository, and editing the file revokes that, because the edit is exactly
+where a command would be added.
+
+A project that declares no ports and has not been trusted reports *unknown*, not *stopped*. It is
+very likely running, and an indicator that says "down" about a live site is worse than none — the
+next real outage looks identical to it.
+
+**[docs/devstack.md](docs/devstack.md) is the format**, with working examples the test suite
+parses, so the page cannot quietly stop being true.
 
 ### Which project, not just which task
 

@@ -2913,6 +2913,35 @@ group("which language to answer a browser in") {
     check("and so does an empty list", L.copy(preferring: []).settingsRemote == English().settingsRemote)
 }
 
+group("a cache stamp has to see through a symlink") {
+    // The bug this exists for: ~/.claude/project-icons.json is normally a link into a checkout,
+    // and neither attributesOfItem(atPath:) nor URL.resourceValues(forKeys:) follows one. Both
+    // describe the link — 64 bytes, and the modification time of the day it was made — so the
+    // stamp never changed, the registry could be rewritten all afternoon, and only relaunching
+    // the app picked it up.
+    let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-stamp-\(getpid())")
+    let fm = FileManager.default
+    try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: dir) }
+
+    let real = dir.appendingPathComponent("real.json")
+    let link = dir.appendingPathComponent("link.json")
+    try? Data("first".utf8).write(to: real)
+    try? fm.createSymbolicLink(at: link, withDestinationURL: real)
+
+    let before = Paths.stamp(of: link)
+    check("a link and its target stamp the same", before == Paths.stamp(of: real))
+
+    // Enough of a change to move the size, which is the half that does not depend on a clock.
+    try? Data("second, and appreciably longer than the first".utf8).write(to: real)
+    check("writing through the target changes the link's stamp", Paths.stamp(of: link) != before)
+    check("and it still agrees with the target", Paths.stamp(of: link) == Paths.stamp(of: real))
+
+    check("a file that is not there stamps as nothing rather than crashing",
+          Paths.stamp(of: dir.appendingPathComponent("absent.json")) == "0-0")
+}
+
 // MARK: - Result
 
 print("")
