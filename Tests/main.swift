@@ -2808,6 +2808,37 @@ group("a hook written as #!/usr/bin/env node has to be able to find node") {
     check("and so does a missing one", StateHook.usefulPath(nil).contains("/usr/bin"))
 }
 
+group("pairing tells a client apart from a sentence") {
+    // Wrong and lapsed used to be the same code with different English in them, so a page could
+    // only tell them apart by reading the message — the one part of an error nobody should ever
+    // branch on. They are different things to do about: try again, versus start again.
+    let entry = RemoteAuth.beginPairing(name: "a test")
+    if case .wrongCode(let left) = RemoteAuth.confirmPairing(id: entry.id, code: "000000") {
+        expect("a wrong code says how many are left", left, 4)
+    } else {
+        check("a wrong code is a wrong code", false)
+    }
+    // Five and it is gone, and gone reads as expired rather than as another wrong guess.
+    for _ in 0..<3 { _ = RemoteAuth.confirmPairing(id: entry.id, code: "000000") }
+    expect("the fifth wrong code ends it",
+           RemoteAuth.confirmPairing(id: entry.id, code: "000000"), .expired)
+    expect("and it stays ended",
+           RemoteAuth.confirmPairing(id: entry.id, code: entry.code), .expired)
+
+    // Only one pairing is ever live: two codes would be two chances to guess, and the person at
+    // the Mac is looking at one window.
+    let first = RemoteAuth.beginPairing(name: "first")
+    let second = RemoteAuth.beginPairing(name: "second")
+    expect("a new request replaces the old one",
+           RemoteAuth.confirmPairing(id: first.id, code: first.code), .expired)
+    if case .paired(let token) = RemoteAuth.confirmPairing(id: second.id, code: second.code) {
+        check("and the newest one is the one that works", token.count >= 40)
+        RemoteAuth.revoke(id: second.id)
+    } else {
+        check("and the newest one is the one that works", false)
+    }
+}
+
 // MARK: - Result
 
 print("")

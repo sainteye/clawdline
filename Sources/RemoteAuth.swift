@@ -62,10 +62,24 @@ enum RemoteAuth {
     private static var devices: [String: Device] = [:]
     private static var password: (hash: Data, salt: Data, iterations: Int)?
 
-    static var storeURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/clawdline/remote.json")
+    /// Where the store lives.
+    ///
+    /// `CLAWDLINE_REMOTE_DIR` moves it, and that exists for one reason: **the test suite pairs
+    /// devices**. Without it a run of `./test.sh` writes into whoever's real store is on the
+    /// machine — adding devices, appending to their audit log, and leaving whatever the last
+    /// assertion happened to leave. A test that mutates the thing it is testing on the developer's
+    /// own account is a test people learn not to run. The hook script has the same escape hatch
+    /// for the same reason; see `CLAWDLINE_HOOK_DIR`.
+    static var directory: URL {
+        if let override = ProcessInfo.processInfo.environment["CLAWDLINE_REMOTE_DIR"],
+           !override.isEmpty {
+            return URL(fileURLWithPath: Paths.expand(override), isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/clawdline", isDirectory: true)
     }
+
+    static var storeURL: URL { directory.appendingPathComponent("remote.json") }
 
     /// True when a **person** has set this up — a paired device or a password.
     ///
@@ -77,6 +91,14 @@ enum RemoteAuth {
         load()
         lock.lock(); defer { lock.unlock() }
         return password != nil || devices.values.contains { $0.approved && !$0.local }
+    }
+
+    /// Whether the password path exists at all. Separate from ``isConfigured``, which is true
+    /// for a paired device as well — a page needs to know which doors are actually there.
+    static var hasPassword: Bool {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        return password != nil
     }
 
     static var approvedDevices: [Device] {
@@ -375,9 +397,7 @@ enum RemoteAuth {
 
     private static var cachedLocalToken: String?
 
-    static var tokenURL: URL {
-        storeURL.deletingLastPathComponent().appendingPathComponent("remote-token")
-    }
+    static var tokenURL: URL { directory.appendingPathComponent("remote-token") }
 
     /// Written where a script can find it, with the same mode as the store.
     private static func writeLocalTokenFile(_ token: String) {
@@ -437,10 +457,7 @@ enum RemoteAuth {
 
     // MARK: - The log
 
-    static var auditURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/clawdline/remote-audit.jsonl")
-    }
+    static var auditURL: URL { directory.appendingPathComponent("remote-audit.jsonl") }
 
     /// Append-only, one JSON object per line, and the app can show it.
     ///

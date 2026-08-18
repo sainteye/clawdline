@@ -39,7 +39,13 @@ swiftc \
 # `if` rather than a bare assignment: under `set -e` a failing command on the right-hand side
 # ends the script right there, before what it captured has been printed — so a red suite exited
 # 1 with nothing on screen at all, which is worse than having no guard.
-if out=$("$BIN" Resources/mascots); then status=0; else status=$?; fi
+# The suite pairs devices, so point the store somewhere disposable. Without this a test run
+# writes into whoever's real ~/.config/clawdline is on the machine — see RemoteAuth.directory.
+STORE="${TMPDIR:-/tmp}/clawdline-test-store-$$"
+mkdir -p "$STORE"
+trap 'rm -rf "$STORE"' EXIT
+
+if out=$(CLAWDLINE_REMOTE_DIR="$STORE" "$BIN" Resources/mascots); then status=0; else status=$?; fi
 echo "$out"
 [ $status -eq 0 ] || exit $status
 

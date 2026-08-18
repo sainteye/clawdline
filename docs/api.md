@@ -105,7 +105,7 @@ is talking to, and whether it is allowed in, before it can act on either.
 
 ```console
 $ curl -s http://127.0.0.1:7717/v1/health
-{"ok":true,"version":"0.5.0","protocol":1,"write":false,"auth":false,"authed":false}
+{"ok":true,"version":"0.5.0","protocol":1,"write":false,"auth":false,"password":false,"authed":false}
 ```
 
 | field | |
@@ -114,6 +114,7 @@ $ curl -s http://127.0.0.1:7717/v1/health
 | `protocol` | this document's; bumped when a client would have to change |
 | `write` | is the second switch on — **draw the UI from this**, because saying "you may not" once is kinder than a button that fails when pressed |
 | `auth` | has anybody paired a device or set a password. The local token does not count |
+| `password` | is there a password to offer at all — separate from `auth`, so a page can decide whether to draw that door rather than offering it blind and letting somebody learn from a 401 that it was never set |
 | `authed` | did *this* request carry a credential that works |
 
 ### `GET /v1/sessions`
@@ -258,14 +259,20 @@ does, not a thing a client automates. What matters here:
 - `POST /v1/auth/pair` `{"name":…}` → `{"pairing_id":…,"expires":…}`, and the code appears **on the
   Mac's screen only**. Three of these in ten minutes and the route answers `429 rate_limited`.
 - `POST /v1/auth/pair/confirm` `{"pairing_id":…,"code":…}` → `{"ok":true,"token":…}` and a cookie.
+  A wrong code is `403 wrong_code`, and the body carries `tries_left` — a page saying "two tries
+  left" should not be counting for itself. A lapsed or exhausted pairing is `403 expired`, which is
+  a different code because it is a different thing to do about it: one is try again, the other is
+  start again.
 - `POST /v1/auth/password` `{"password":…,"name":…}` → the same, if a password has been set. A
   correct password *mints* a device token rather than being one, so it can be changed without
   re-pairing anything and a device can be revoked without changing it.
 - `POST /v1/auth/adopt` `{"token":…}` → trades a token the page is holding for the cookie the event
   stream will use. It grants nothing: a token that is not already ours is refused exactly as it
   would be anywhere else.
-- `POST /v1/auth/logout` → clears the cookie. Nothing else; the token itself stays valid, and
-  revoking is done at the Mac.
+- `POST /v1/auth/logout` → clears the cookie **and revokes the device it authenticated as**.
+  Clearing a cookie is not signing out: the token it held is still a key and the browser may still
+  have it written down, so "sign out" here means what somebody handing a laptop back would expect
+  it to mean.
 
 These five are the only mutating routes that do **not** want an `Idempotency-Key`, and they are not
 idempotent either. Each is its own kind of one-shot: a retried pairing is a new pairing with a new
@@ -364,7 +371,9 @@ it draws them, and that is a drawing decision which does not travel over the wir
 |---|---|---|
 | `bad_request` | 400 | a missing or unusable field, or a mutating call with no `Idempotency-Key` |
 | `unauthorized` | 401 | no token, or one that is not ours |
-| `forbidden` | 403 | wrong `Host`, a cross-site request, a foreign `Origin` on a `POST`, a wrong pairing code, or a device that may read and not send |
+| `forbidden` | 403 | wrong `Host`, a cross-site request, a foreign `Origin` on a `POST`, or a device that may read and not send |
+| `wrong_code` | 403 | that pairing code is not the one on the Mac. `tries_left` says how many are left |
+| `expired` | 403 | the pairing lapsed, or five wrong codes used it up. Start a new one |
 | `write_disabled` | 403 | the second switch is off. Its own code because it is not the client's fault and no retry fixes it |
 | `not_found` | 404 | no such session, or no such route |
 | `rate_limited` | 429 | too many pairing attempts |

@@ -240,6 +240,12 @@ final class RemoteServer {
             return exchangePassword(request)
 
         case ("POST", "/v1/auth/logout"):
+            // Clearing the cookie is not signing out. The token it held is still a key, and a
+            // browser that once had it may still have it written down — so the device goes too,
+            // and "sign out" means what somebody handing a laptop back would expect it to mean.
+            if case .allowed(let device, _) = permission(for: request) {
+                RemoteAuth.revoke(id: device)
+            }
             return Response(status: 200,
                             headers: ["Content-Type": "application/json; charset=utf-8",
                                       "Set-Cookie": "clawdline=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"],
@@ -254,6 +260,9 @@ final class RemoteServer {
                 // is kinder than a button that fails when pressed.
                 "write": Config.shared.remoteWrite,
                 "auth": RemoteAuth.isConfigured,
+                // So a page can decide whether to offer the password path at all, rather than
+                // offering it blind and letting somebody learn from a 401 that it was never set.
+                "password": RemoteAuth.hasPassword,
                 "authed": { if case .allowed = permission(for: request) { return true }; return false }(),
             ])
 
@@ -540,10 +549,22 @@ final class RemoteServer {
         switch RemoteAuth.confirmPairing(id: id, code: code) {
         case .paired(let token):
             return signedIn(token, secure: request.headers["x-forwarded-proto"] == "https")
+        // Two different things, and until now they were the same code with different English in
+        // them — so a client could only tell them apart by reading the sentence, which is the one
+        // part of an error nobody should ever branch on. `left` is in the body for the same
+        // reason: a page that wants to say "two tries left" should not be counting for itself.
         case .wrongCode(let left):
-            return .error(403, "forbidden", "That code is not right. \(left) tries left.")
+            var response = Response.error(403, "wrong_code", "That code is not right. \(left) tries left.")
+            if var obj = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
+               var error = obj["error"] as? [String: Any] {
+                error["tries_left"] = left
+                obj["error"] = error
+                response.body = (try? JSONSerialization.data(withJSONObject: obj,
+                                                             options: [.withoutEscapingSlashes])) ?? response.body
+            }
+            return response
         case .expired:
-            return .error(403, "forbidden", "That pairing has expired. Start again.")
+            return .error(403, "expired", "That pairing has expired. Start again.")
         }
     }
 

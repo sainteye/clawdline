@@ -814,6 +814,7 @@ var MOCK = location.protocol === "file:"
     || params.get("mock") === "1" || params.get("mock") === "";
 var MOCK_WRITE = params.get("write") === "1";   // mock only: see the composer switched on
 var MOCK_FLAKY = params.get("flaky") === "1";   // mock only: drop the stream now and then
+var MOCK_DOOR = params.get("door") === "1";     // mock only: arrive with no credentials
 
 var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 var phone = function () { return window.matchMedia("(max-width: 899px)").matches; };
@@ -849,7 +850,9 @@ var S = {
 var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
  "app", "pane-detail", "back", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
- "tx-order", "tx-focus", "composer", "msg", "send", "why", "hints", "keys", "toast", "brand-mark"
+ "tx-order", "tx-focus", "composer", "msg", "send", "why", "hints", "keys", "toast", "brand-mark",
+ "door", "door-mark", "door-name", "door-ask", "door-to-password", "door-digits", "door-confirm",
+ "door-restart", "door-left", "door-password", "door-pw-name", "door-pw-go", "door-to-pair", "door-say"
 ].forEach(function (id) { els[id] = document.getElementById(id); });
 
 /* ==========================================================================
@@ -1042,7 +1045,14 @@ var handlers = {
 /* ---- the real one -------------------------------------------------------- */
 
 function jsonFetch(path, options) {
-    return fetch(path, options).then(function (res) {
+    return fetch(path, options).catch(function () {
+        // `fetch` rejects with "Failed to fetch" and nothing else when there is no server at the
+        // other end. That string ends up in front of somebody as an explanation, so it is turned
+        // into one here rather than in each of the five places that show a message.
+        var dead = new Error("Could not reach Clawdline. Is it still running on the Mac?");
+        dead.code = "offline";
+        throw dead;
+    }).then(function (res) {
         return res.text().then(function (body) {
             var data = null;
             try { data = body ? JSON.parse(body) : null; } catch (e) { /* below */ }
@@ -1117,7 +1127,9 @@ var Live = {
      */
     check: function () {
         var self = this;
-        return jsonFetch("/v1/health").then(function (h) {
+        // Never from the cache. This one answer decides whether the reader is shown the door or
+        // the sessions, and a stale "yes you are signed in" is the wrong answer to have kept.
+        return jsonFetch("/v1/health", { cache: "no-store" }).then(function (h) {
             handlers.hello(h);
             if (h.authed === false) { self.stop(); Door.show(); return; }
             Door.hide();
@@ -1180,6 +1192,10 @@ var Live = {
 
     retry: function () {
         var self = this;
+        // Anything already scheduled goes first. Two errors arriving close together used to leave
+        // an orphaned countdown interval with no handle, writing "retrying in 12s" over a chip
+        // that had since been told something truer.
+        this.clearTimers();
         var base = Math.min(30000, 1000 * Math.pow(2, this.attempt));
         // Jitter, because every page open on this machine reconnects at the same instant
         // otherwise — the app restarting is exactly the moment they all lost the stream.
@@ -1313,7 +1329,11 @@ var Mock = (function () {
         ["user", "add one for the crash-between case", null, 0],
         ["assistant", "Done — it kills the process after the insert and before the email, restarts, and checks that the receipt is still sent from the queue rather than lost.", null, 0],
         ["tool", "swift test", "Bash", 0],
-        ["assistant", "Green. The migration is `0009_event_id_unique.sql`; it will need running on staging before the next deploy or the index will not be there to protect anything.", null, 0]
+        ["assistant", "Green. The migration is `0009_event_id_unique.sql`; it will need running on staging before the next deploy or the index will not be there to protect anything.", null, 0],
+        ["user", "summarise what changed", null, 0],
+        // Everything the renderer knows how to draw, in one answer, so the fixture is also the
+        // test: a table with alignment markers, a heading, both kinds of list, a quote, a rule.
+        ["assistant", "## What changed\n\n| file | change | lines |\n|---|:---:|---:|\n| `Sources/Webhook.swift` | ack before the email | **+18 −24** |\n| `Sources/Ledger.swift` | upsert on `event_id` | +7 −2 |\n| `0009_event_id_unique.sql` | new | +4 |\n\n### Still to do\n\n1. Run the migration on staging\n2. Watch the redelivery counter for a day\n   - it should fall to zero\n   - if it does not, the index did not take\n\n> The handler now answers as soon as the row is durable, and *not* before.\n\n---\n\nSee [the Stripe note on retries](https://stripe.com/docs/webhooks) for where the 30 seconds comes from.", null, 0]
     ];
 
     var transcripts = {};
@@ -1332,6 +1352,8 @@ var Mock = (function () {
 
     var live = false;
     var beat = 0;
+    var admitted = !MOCK_DOOR;   // ?door=1 arrives with nothing, the way a phone does
+    var asked = 0, wrong = 0;
 
     function emit() {
         if (!live) return;
@@ -1384,9 +1406,13 @@ var Mock = (function () {
     return {
         start: function () {
             handlers.conn("connecting");
+            if (!admitted) {
+                setTimeout(function () { handlers.conn("locked"); Door.show(); }, 300);
+                return;
+            }
             setTimeout(function () {
                 live = true;
-                handlers.hello({ version: "0.6.0-mock", protocol: 1, write: MOCK_WRITE });
+                handlers.hello({ version: "0.6.0-mock", protocol: 1, write: MOCK_WRITE, auth: true, authed: true });
                 handlers.conn("live");
                 emit();
             }, 420);
@@ -1401,6 +1427,47 @@ var Mock = (function () {
             }
         },
         refresh: function () { return new Promise(function (done) { setTimeout(function () { emit(); done(); }, 500); }); },
+
+        // The door, fixtured. The code is 424242 and the password is "mock" — said out loud here
+        // because a fixture that keeps secrets from the person testing it is only a nuisance, and
+        // `mock_code` is a field no real server sends.
+        pair: function (name) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    asked += 1;
+                    if (asked > 3) {
+                        fail(Object.assign(new Error("Too many pairing attempts. Try again in a few minutes."),
+                                           { code: "rate_limited" }));
+                        return;
+                    }
+                    wrong = 0;
+                    // `?expires=5` shortens the two minutes so the lapse can be watched rather
+                    // than waited out.
+                    var life = parseInt(params.get("expires"), 10) || 120;
+                    done({ pairing_id: "mock-" + name, expires: Math.floor(Date.now() / 1000) + life,
+                           mock_code: "424242" });
+                }, 350);
+            });
+        },
+        confirmPair: function (id, code) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (code === "424242") { admitted = true; done({ ok: true }); return; }
+                    wrong += 1;
+                    fail(Object.assign(new Error(wrong >= 5
+                        ? "That pairing has expired. Start again."
+                        : "That code is not right. " + (5 - wrong) + " tries left."), { code: "forbidden" }));
+                }, 300);
+            });
+        },
+        password: function (secret) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (secret === "mock") { admitted = true; done({ ok: true }); return; }
+                    fail(Object.assign(new Error("That is not the password."), { code: "unauthorized" }));
+                }, 300);
+            });
+        },
         transcript: function (id) {
             return new Promise(function (done, fail) {
                 setTimeout(function () {
@@ -1437,7 +1504,254 @@ var Mock = (function () {
 var api = MOCK ? Mock : Live;
 
 /* ==========================================================================
-   5. Deriving what to show
+   5. The door
+   Everything below this line assumes the server is answering. This is what is
+   on screen when it is not answering *this browser* — a pairing code that is
+   shown on the Mac and typed in here, in that direction and never the other.
+   ========================================================================== */
+
+var Door = {
+
+    pairing: null,      // { id, expires } while a code is live on the Mac's screen
+    wrong: 0,           // counted here as well as there: the server kills a pairing at five
+    ticker: null,
+
+    show: function () {
+        if (!els.door.hidden) return;
+        els.door.hidden = false;
+        S.locked = true;
+        if (!els["door-name"].value) els["door-name"].value = suggestName();
+        if (!els["door-pw-name"].value) els["door-pw-name"].value = suggestName();
+        this.step("ask");
+        // Not on a phone: a keyboard springing up over the explanation of what is about to
+        // happen means the explanation is never read.
+        if (!phone()) els["door-name"].focus();
+    },
+
+    hide: function () {
+        if (els.door.hidden) return;
+        els.door.hidden = true;
+        S.locked = false;
+        this.stopClock();
+        this.say("");
+        render();
+    },
+
+    step: function (name) {
+        els.door.dataset.step = name;
+        this.say("");
+        if (name !== "code") this.stopClock();
+    },
+
+    /** What went wrong, or what is about to happen. The server writes real sentences; this
+     *  shows them rather than translating them into a code the reader has to look up. */
+    say: function (words, calm) {
+        els["door-say"].textContent = words || "";
+        els["door-say"].className = "say" + (calm ? " calm" : "");
+    },
+
+    ask: function () {
+        var self = this;
+        var name = els["door-name"].value.trim() || suggestName();
+        els["door-ask"].disabled = true;
+        this.say("Asking the Mac…", true);
+        api.pair(name).then(function (d) {
+            self.pairing = { id: d.pairing_id, expires: d.expires };
+            self.wrong = 0;
+            self.clearDigits();
+            self.step("code");
+            self.startClock();
+            // Only ever from the fixture: a real server does not put the code in the reply, which
+            // is the one thing this whole screen exists to be true about.
+            if (MOCK && d.mock_code) self.say("Fixture: the code is " + d.mock_code, true);
+            if (!phone()) els["door-digits"].firstElementChild.focus();
+        }).catch(function (e) {
+            // The one refusal that needs a sentence of our own: three requests in ten minutes is
+            // the limit because each one puts an alert on somebody's screen, and "rate_limited"
+            // on its own reads like a fault rather than like a door working correctly.
+            self.say(e.code === "rate_limited"
+                ? e.message + " Each request puts an alert on the Mac, so there are only three every ten minutes."
+                : e.message || "Could not ask the Mac.");
+        }).then(function () { els["door-ask"].disabled = false; });
+    },
+
+    confirm: function () {
+        var self = this;
+        if (!this.pairing) { this.step("ask"); return; }
+        var code = this.code();
+        if (code.length !== 6) { this.say("Six digits."); return; }
+        els["door-confirm"].disabled = true;
+        this.say("Checking…", true);
+        api.confirmPair(this.pairing.id, code).then(function () {
+            self.signedIn();
+        }).catch(function (e) {
+            // Only a refusal counts. A code that never reached the Mac was not a wrong guess, and
+            // five dropped connections should not tell somebody their pairing is finished when the
+            // far end never touched its counter.
+            if (e.code === "forbidden") self.wrong += 1;
+            self.clearDigits();
+            // Five wrong guesses and the pending pairing is gone at the far end. Counting here
+            // too is what keeps the screen honest about it: the server's refusal for a dead
+            // pairing and its refusal for a wrong digit are the same 403 with the same code, and
+            // only the sentence differs — which is a fine thing to *show* and a poor thing to
+            // branch on.
+            if (self.wrong >= 5) {
+                self.pairing = null;
+                self.step("ask");
+                self.say("That pairing is finished — five wrong codes. Ask again when you are at the Mac.");
+                return;
+            }
+            self.say(e.message || "That code is not right.");
+            if (!phone()) els["door-digits"].firstElementChild.focus();
+        }).then(function () { els["door-confirm"].disabled = false; });
+    },
+
+    password: function () {
+        var self = this;
+        var secret = els["door-password"].value;
+        if (!secret) { this.say("The password, first."); return; }
+        els["door-pw-go"].disabled = true;
+        this.say("Checking…", true);
+        api.password(secret, els["door-pw-name"].value.trim() || suggestName()).then(function () {
+            els["door-password"].value = "";
+            self.signedIn();
+        }).catch(function (e) {
+            self.say(e.message || "That is not the password.");
+        }).then(function () { els["door-pw-go"].disabled = false; });
+    },
+
+    /** The cookie is set; ask the server again from the top rather than assuming. */
+    signedIn: function () {
+        this.pairing = null;
+        this.wrong = 0;
+        this.hide();
+        toast("Paired — this browser is in");
+        api.start();
+    },
+
+    code: function () {
+        var out = "";
+        var boxes = els["door-digits"].children;
+        for (var i = 0; i < boxes.length; i++) out += boxes[i].value;
+        return out;
+    },
+
+    clearDigits: function () {
+        var boxes = els["door-digits"].children;
+        for (var i = 0; i < boxes.length; i++) {
+            boxes[i].value = "";
+            boxes[i].classList.remove("filled");
+        }
+    },
+
+    startClock: function () {
+        var self = this;
+        this.stopClock();
+        function tick() {
+            if (!self.pairing) return;
+            var left = Math.max(0, self.pairing.expires - Math.floor(Date.now() / 1000));
+            if (left <= 0) {
+                self.pairing = null;
+                self.step("ask");
+                self.say("That code has expired. Ask again and a fresh one appears on the Mac.");
+                return;
+            }
+            var m = Math.floor(left / 60), sec = left % 60;
+            els["door-left"].textContent = m + ":" + (sec < 10 ? "0" : "") + sec;
+        }
+        tick();
+        this.ticker = setInterval(tick, 1000);
+    },
+
+    stopClock: function () { clearInterval(this.ticker); this.ticker = null; }
+};
+
+/**
+ * What to call this device, guessed from the browser so that nobody has to think of a name for
+ * a thing they are holding. Editable, because the guess is often "Chrome on Mac" when what
+ * matters is "the work laptop".
+ */
+function suggestName() {
+    var ua = navigator.userAgent || "";
+    if (/iPhone/.test(ua)) return "iPhone";
+    if (/iPad/.test(ua)) return "iPad";
+    if (/Android/.test(ua)) return /Mobile/.test(ua) ? "Android phone" : "Android tablet";
+    var browser = /Edg\//.test(ua) ? "Edge"
+        : /OPR\//.test(ua) ? "Opera"
+        : /Chrome\//.test(ua) ? "Chrome"
+        : /Firefox\//.test(ua) ? "Firefox"
+        : /Safari\//.test(ua) ? "Safari" : "";
+    var machine = /Macintosh|Mac OS X/.test(ua) ? "Mac"
+        : /Windows/.test(ua) ? "Windows"
+        : /Linux/.test(ua) ? "Linux" : "";
+    if (browser && machine) return browser + " on " + machine;
+    return browser || machine || "A browser";
+}
+
+/* ---- the six boxes -------------------------------------------------------
+   A code read off another screen and typed with a thumb. Every ordinary thing
+   somebody does to a field like this works: paste the whole code anywhere in
+   it, type straight through without tabbing, backspace out of an empty box.
+   -------------------------------------------------------------------------- */
+
+(function digits() {
+    var boxes = Array.prototype.slice.call(els["door-digits"].children);
+
+    function fill(from, text) {
+        var digits = text.replace(/\D/g, "").split("");
+        for (var i = from; i < boxes.length && digits.length; i++) {
+            boxes[i].value = digits.shift();
+            boxes[i].classList.add("filled");
+        }
+        var next = Math.min(boxes.length - 1, from + text.replace(/\D/g, "").length);
+        boxes[next].focus();
+        // Six digits in and there is nothing else this screen is for.
+        if (Door.code().length === 6) Door.confirm();
+    }
+
+    boxes.forEach(function (box, index) {
+        box.addEventListener("input", function () {
+            var typed = box.value;
+            box.value = "";
+            fill(index, typed);
+        });
+        box.addEventListener("keydown", function (ev) {
+            if (ev.key === "Backspace" && !box.value && index > 0) {
+                ev.preventDefault();
+                boxes[index - 1].value = "";
+                boxes[index - 1].classList.remove("filled");
+                boxes[index - 1].focus();
+            } else if (ev.key === "ArrowLeft" && index > 0) {
+                ev.preventDefault(); boxes[index - 1].focus();
+            } else if (ev.key === "ArrowRight" && index < boxes.length - 1) {
+                ev.preventDefault(); boxes[index + 1].focus();
+            } else if (ev.key === "Enter") {
+                ev.preventDefault(); Door.confirm();
+            }
+        });
+        box.addEventListener("paste", function (ev) {
+            var text = (ev.clipboardData || window.clipboardData).getData("text") || "";
+            if (!/\d/.test(text)) return;
+            ev.preventDefault();
+            fill(index, text);
+        });
+        box.addEventListener("focus", function () { box.select(); });
+    });
+})();
+
+els["door-ask"].addEventListener("click", function () { Door.ask(); });
+els["door-confirm"].addEventListener("click", function () { Door.confirm(); });
+els["door-restart"].addEventListener("click", function () { Door.pairing = null; Door.step("ask"); });
+els["door-to-password"].addEventListener("click", function () { Door.step("password"); });
+els["door-to-pair"].addEventListener("click", function () { Door.step("ask"); });
+els["door-pw-go"].addEventListener("click", function () { Door.password(); });
+els["door-name"].addEventListener("keydown", function (ev) { if (ev.key === "Enter") Door.ask(); });
+els["door-password"].addEventListener("keydown", function (ev) { if (ev.key === "Enter") Door.password(); });
+els["door-pw-name"].addEventListener("keydown", function (ev) { if (ev.key === "Enter") Door.password(); });
+
+
+/* ==========================================================================
+   6. Deriving what to show
    ========================================================================== */
 
 var RANK = { waiting: 0, working: 1, idle: 2, unknown: 3 };
@@ -1503,7 +1817,7 @@ function byId(id) {
 function revisionOf(s) { return s ? s.state + "|" + (s.line || "") + "|" + (s.label || "") : ""; }
 
 /* ==========================================================================
-   6. Render
+   7. Render
    Every path in here is a full render from S. The list keeps its DOM nodes
    between renders — partly so a row can animate to its new place, partly so
    the selected row does not lose focus every time the stream breathes.
@@ -1564,11 +1878,13 @@ function render() {
 
 function renderConn() {
     var label = { live: "live", connecting: "connecting", offline: "offline",
+                  locked: "not paired",
                   retrying: "retrying in " + S.retryIn + "s" }[S.conn] || S.conn;
     els.conn.dataset.state = S.conn;
     els["conn-label"].textContent = label;
     els.conn.title = S.conn === "live"
         ? "Streaming from the app" + (S.version ? " · " + S.version : "")
+        : S.conn === "locked" ? "This browser has not been paired with the Mac"
         : "Not connected — click to try now";
 }
 
@@ -2053,7 +2369,7 @@ function renderHints() {
 }
 
 /* ==========================================================================
-   7. Opening a session
+   8. Opening a session
    ========================================================================== */
 
 function loadTranscript(id, quiet) {
@@ -2140,7 +2456,7 @@ function move(delta) {
 }
 
 /* ==========================================================================
-   8. Input
+   9. Input
    ========================================================================== */
 
 function typing(el) {
@@ -2150,6 +2466,10 @@ function typing(el) {
 document.addEventListener("keydown", function (ev) {
     var key = ev.key;
     var meta = ev.metaKey || ev.ctrlKey;
+
+    // Nothing behind the door is reachable, so nothing behind it takes keys either — and the
+    // door is not a dialog you dismiss. There is no page under it to go back to.
+    if (!els.door.hidden) return;
 
     // The two that work from anywhere, including out of a text box, because they are how you
     // get out of the text box.
@@ -2326,19 +2646,21 @@ window.addEventListener("resize", function () {
 });
 
 /* ==========================================================================
-   9. Go
+   10. Go
    ========================================================================== */
 
 // The wordmark wears the project's own mark, drawn by the same code the rows use — it comes
 // from ~/.claude/project-icons.json in the app, and it is the one icon this page knows by heart.
-drawIcon(els["brand-mark"], {
+var mark = {
     accent: "#d97757",
     cells: [".######.", ".#o##o#.", "########", ".##..##."].map(function (row) {
         return row.split("").map(function (ch) {
             return ch === "#" ? "#d97757" : (ch === "o" ? "#141416" : "#33201a");
         });
     })
-}, 3);
+};
+drawIcon(els["brand-mark"], mark, 3);
+drawIcon(els["door-mark"], mark, 3);
 
 renderConn();
 renderTranscript();
