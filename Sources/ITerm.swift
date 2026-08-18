@@ -207,8 +207,28 @@ enum ITerm {
         return res["text"] as? String
     }
 
-    /// Bring a session to the front (used by the menu bar).
-    static func reveal(_ sessionID: String) {
-        _ = osa(["reveal", sessionID])
+    /// The tail of several sessions' screens, keyed by session id, in one round trip.
+    ///
+    /// Asking `capture` per session would be a process and an Apple event bridge each, once a
+    /// second, for as long as the list is open. The tail is enough because everything read off a
+    /// screen here — the live line, a menu waiting for an answer — is drawn at the bottom of it.
+    static func tails(ids: [String], lines: Int = 60) -> [String: String] {
+        guard !ids.isEmpty else { return [:] }
+        let res = osa(["tails", ids.joined(separator: ","), String(lines)])
+        guard res["ok"] as? Bool == true, let rows = res["tails"] as? [String: String] else {
+            return [:]
+        }
+        var out: [String: String] = [:]
+        for (id, text) in rows { out[id.uppercased()] = text }
+        return out
+    }
+
+    /// Select a session's window and tab.
+    ///
+    /// `activate: false` stops short of bringing iTerm2 forward, which is what the prompt bar
+    /// wants while it is open: the tab underneath should follow the target you are pointing at,
+    /// but the keyboard has to stay in the box you are typing into.
+    static func reveal(_ sessionID: String, activate: Bool = true) {
+        _ = osa(["reveal", sessionID, activate ? "1" : "0"])
     }
 }

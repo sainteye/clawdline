@@ -23,7 +23,10 @@ enum Activity {
     /// were scrolled past rather than erased — reading one of those would report a session as
     /// busy long after it went quiet.
     static func parse(_ screen: String, tailLines: Int = 25) -> String? {
-        let lines = screen
+        // tmux keeps the colours in its captures, and a line that starts with a colour code does
+        // not start with the character it looks like it starts with — so the glyph test below saw
+        // ESC every time and no tmux session ever reported being busy.
+        let lines = Ansi.plain(screen)
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }

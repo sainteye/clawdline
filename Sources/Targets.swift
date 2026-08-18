@@ -29,13 +29,16 @@ enum Targets {
         snap.currentID = iterm.currentID
 
         var seenTTYs = Set<String>()
+        // Asked once. Walking it twice was two `list-panes` subprocesses per scan for one answer
+        // that cannot have changed between them.
+        let panes = Tmux.panes()
         // tmux first: when a pane and its host terminal both appear, the pane is the one that
         // can actually receive text, so it should win the tty.
-        for pane in Tmux.panes() where pane.isClaude {
+        for pane in panes where pane.isClaude {
             seenTTYs.insert(pane.tty)
             snap.sessions.append(pane)
         }
-        for pane in Tmux.panes() where !pane.isClaude {
+        for pane in panes where !pane.isClaude {
             guard !seenTTYs.contains(pane.tty) else { continue }
             seenTTYs.insert(pane.tty)
             snap.sessions.append(pane)
@@ -148,6 +151,31 @@ enum Targets {
         }
     }
 
+    /// What each of these sessions is doing, keyed by session id.
+    ///
+    /// Batched per backend rather than session by session, because the cost here is round trips
+    /// and not text: iTerm2 answers for all of them in one osascript run, and tmux is asked pane
+    /// by pane only because `capture-pane` has no plural.
+    ///
+    /// A session that could not be read comes back as `.unknown`, which is why the map is filled
+    /// in for every session asked about rather than only the ones that answered — a missing key
+    /// and a session that is doing nothing must not look the same to the caller.
+    static func states(of sessions: [TargetSession]) -> [String: SessionState] {
+        var out: [String: SessionState] = [:]
+
+        let iterm = sessions.filter { $0.backend == .iterm }
+        if !iterm.isEmpty {
+            let tails = ITerm.tails(ids: iterm.map { $0.id })
+            for session in iterm { out[session.id] = SessionState.read(tails[session.id]) }
+        }
+        // Only the visible pane: `-S -0` starts at the top of the screen rather than in the
+        // scrollback, which is both cheaper and the right question — what is on screen *now*.
+        for session in sessions where session.backend == .tmux {
+            out[session.id] = SessionState.read(Tmux.capture(session.id, scrollback: 0))
+        }
+        return out
+    }
+
     /// Where that session is working. tmux hands it over with the pane list; for iTerm2 it
     /// has to be asked of the process, so it is only looked up when something needs it.
     private static let cwdLock = NSLock()
@@ -178,15 +206,36 @@ enum Targets {
 
     /// When the Claude Code process in this session started. Used to tell its transcript from
     /// the transcripts of every other session in the same project.
+    ///
+    /// Remembered for the same reason and the same while as the working directory: it is asked
+    /// once per session on every move through the list, it costs a `ps` of its own on top of the
+    /// one that finds the pid, and the answer it gives is a fact about a process that has already
+    /// started. Held rather than kept forever, because a tab whose session is restarted keeps its
+    /// id and gets a new start time.
+    private static var startCache: [String: (at: CFAbsoluteTime, started: Date?)] = [:]
+
     static func processStart(of session: TargetSession) -> Date? {
+        cwdLock.lock()
+        if let hit = startCache[session.id], CFAbsoluteTimeGetCurrent() - hit.at < 20 {
+            defer { cwdLock.unlock() }
+            return hit.started
+        }
+        cwdLock.unlock()
+
         let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
-        guard let pid = ITerm.claudePIDs()[bare] else { return nil }
-        return ITerm.processStart(ofPID: pid)
+        let started = ITerm.claudePIDs()[bare].flatMap { ITerm.processStart(ofPID: $0) }
+        cwdLock.lock()
+        startCache[session.id] = (CFAbsoluteTimeGetCurrent(), started)
+        cwdLock.unlock()
+        return started
     }
 
-    static func reveal(_ session: TargetSession) {
+    /// Put this session in front of you — or, with `activate: false`, merely make it the one its
+    /// terminal is showing. tmux is always the second kind: selecting a pane moves nothing to the
+    /// front, because tmux is not an application and has no front to move to.
+    static func reveal(_ session: TargetSession, activate: Bool = true) {
         switch session.backend {
-        case .iterm: ITerm.reveal(session.id)
+        case .iterm: ITerm.reveal(session.id, activate: activate)
         case .tmux:  Tmux.reveal(session.id)
         }
     }

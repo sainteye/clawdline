@@ -54,6 +54,44 @@ enum Ansi {
     /// True when there is anything here worth parsing.
     static func hasEscapes(_ text: String) -> Bool { text.contains("\u{1b}") }
 
+    /// The same text with every escape sequence taken out.
+    ///
+    /// tmux hands a capture over with the colours still in it — `capture-pane -e`, which is what
+    /// the output pane wants and what every *parser* here does not. A line that begins with a
+    /// colour code does not begin with the character it appears to begin with, so anything
+    /// reading `line.first` sees ESC and recognises nothing: on a tmux session the live line was
+    /// never once read, because the reader was looking at a colour code and not at a spinner.
+    ///
+    /// So anything reading a capture for its **shape** goes through here first. The output pane
+    /// does not, because there the colours are the point.
+    static func plain(_ text: String) -> String {
+        guard hasEscapes(text) else { return text }
+        var out = ""
+        out.reserveCapacity(text.count)
+        let chars = Array(text)
+        var i = 0
+        while i < chars.count {
+            guard chars[i] == "\u{1b}", i + 1 < chars.count else {
+                out.append(chars[i]); i += 1; continue
+            }
+            if chars[i + 1] == "[" {
+                var j = i + 2
+                while j < chars.count, !("@"..."~").contains(chars[j]) { j += 1 }
+                i = j + 1
+            } else if chars[i + 1] == "]" {
+                var j = i + 2
+                while j < chars.count, chars[j] != "\u{07}" {
+                    if chars[j] == "\u{1b}", j + 1 < chars.count, chars[j + 1] == "\\" { j += 1; break }
+                    j += 1
+                }
+                i = j + 1
+            } else {
+                i += 2
+            }
+        }
+        return out
+    }
+
     static func attributed(_ text: String, font: NSFont, defaultColor: NSColor) -> NSAttributedString {
         let bold = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
         let out = NSMutableAttributedString()

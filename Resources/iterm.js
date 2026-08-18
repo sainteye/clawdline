@@ -4,7 +4,7 @@
 // TTY on modern macOS (TIOCSTI is gone). iTerm2's `write text` is supported, stable, and
 // does not require bringing the window forward — which is the entire point of this tool.
 //
-// Usage: osascript -l JavaScript iterm.js <list|current|send|capture|reveal> [args...]
+// Usage: osascript -l JavaScript iterm.js <list|current|send|key|capture|tails|reveal> [args...]
 
 function run(argv) {
   const cmd = argv[0] || "list";
@@ -111,8 +111,35 @@ function run(argv) {
       : { ok: true, text: hit });
   }
 
+  // The tail of several sessions at once. The session list asks what every tab is doing, and
+  // one `capture` per tab is one osascript process and one Apple event bridge per tab — four
+  // of them behind every refresh of a four-tab list. This walks the windows once instead.
+  //
+  // Trailing blank lines go first, then the tail is taken: iTerm2 hands over the whole visible
+  // grid, blank rows below the cursor included, so "the last 60 lines" of a half-filled screen
+  // would otherwise be mostly nothing.
+  if (cmd === "tails") {
+    const want = String(argv[1] || "").toUpperCase().split(",").filter(function (s) { return s; });
+    const lines = parseInt(String(argv[2] || "60"), 10) || 60;
+    const out = {};
+    eachSession(function (s) {
+      const id = safe(function () { return s.id(); }, "").toUpperCase();
+      if (want.indexOf(id) === -1) return undefined;
+      const rows = safe(function () { return s.text(); }, "").split("\n");
+      while (rows.length && !rows[rows.length - 1].trim()) rows.pop();
+      out[id] = rows.slice(Math.max(0, rows.length - lines)).join("\n");
+      return undefined;   // keep walking: every session that was asked for, not the first one
+    });
+    return JSON.stringify({ ok: true, tails: out });
+  }
+
+  // `reveal <id> [activate]`. Selecting the tab and bringing iTerm2 to the front are two
+  // different things, and the second one is not always wanted: the prompt bar follows your
+  // target as you move through its list, and a terminal that jumped in front on every press
+  // would take the keyboard away from the box you were typing into.
   if (cmd === "reveal") {
     const want = String(argv[1] || "").toUpperCase();
+    const activate = String(argv[2] === undefined ? "1" : argv[2]) === "1";
     const hit = eachSession(function (s, wi, ti, win, tab) {
       if (safe(function () { return s.id(); }, "").toUpperCase() !== want) return undefined;
       try { win.select(); } catch (e) {}
@@ -120,7 +147,7 @@ function run(argv) {
       try { s.select(); } catch (e) {}
       return true;
     });
-    if (hit) {
+    if (hit && activate) {
       try { it.activate(); } catch (e) {}
     }
     return JSON.stringify(hit ? { ok: true } : { ok: false, error: "That session is gone" });
