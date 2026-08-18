@@ -41,9 +41,23 @@ upwards, so a monorepo can put one beside each deployable instead of one at the 
   "down":    "make stack-down",
   "restart": "make stack-restart P={process}",
   "logs":    "make stack-logs P={process} N={lines}",
-  "attach":  "make stack-attach"          // opens a full view for a human
+  "attach":  "make stack-attach",         // opens a full view for a human
+
+  // Tier 0: the processes this project has and the ports they listen on. Clawdline probes
+  // these itself, so a file with nothing but these gets a live row — see below.
+  "processes": [
+    { "name": "api", "port": 8002 },
+    { "name": "web", "port": 3001 },
+    { "name": "tunnel", "url": "https://example.dev" }
+  ]
 }
 ```
+
+**`processes` and `status` can both be present, and they answer different questions.** The
+declared list is what the project *has*; a `status` command is what it is *doing right now*. When
+a trusted `status` runs, its answer is used. Until then — and for a project that was never
+trusted — the declared ports are probed directly, which executes nothing. So the sensible file
+has both: the list is what still works before anybody has granted trust.
 
 **Every field except `name` is optional, and `name` falls back to the directory.** A file with a
 `up` and nothing else gets you a button. A file with `{}` in it is valid and does nothing. An
@@ -94,7 +108,28 @@ What `status` prints on stdout:
 
 `name` and `state` are required on a process. Everything else — `port`, `url`, `pid`,
 `exit_code`, `error` — is optional, and a missing field means one less thing on screen, not a
-parse failure. `state` at the top level may be omitted; it is derived from the processes.
+parse failure.
+
+**The top-level `state` is a different vocabulary from the per-process one**, which is easy to
+miss because they share a key name. It is one of:
+
+| top-level state | meaning |
+|---|---|
+| `running` | everything the project declares is up |
+| `partial` | some of it is |
+| `stopped` | none of it is |
+| `unknown` | nobody has been able to look |
+
+`partial` and `unknown` exist only here; `healthy`, `starting` and the rest exist only on a
+process. **You may omit the top-level `state` entirely** — it is derived from the processes, and
+deriving it is the better answer, because a writer that reports `running` while one of its own
+processes says `exited` has told two different stories in one document. Send it only if you know
+something the process list does not.
+
+`unknown` is the one that has to exist and cannot be derived. A project that declares no ports and
+whose `status` command has not been trusted yet must not be reported as `stopped`: it is very
+likely running, and an indicator that says "down" about a live site is worse than no indicator at
+all, because the next real outage looks identical to it.
 
 ### The six process states
 

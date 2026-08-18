@@ -1,7 +1,6 @@
 {
   "projects": {
     "/Users/you/code/atrium": {
-      "label": "atrium",
       "art": {
         "accent": "#5CBBA1",
         "bg": "#2F6B5E",
@@ -14,13 +13,24 @@
           ".W.W.W.",
           ".W...W."
         ]
-      }
+      },
+      "health": {
+        "expect": {
+          "database": true,
+          "status": "ok"
+        },
+        "label": "prod",
+        "site": "https://example.com/",
+        "url": "https://example.com/health",
+        "version_key": "commit"
+      },
+      "label": "atrium"
     },
     "/Users/you/code/cairn": {
-      "label": "cairn",
       "hue": 3,
-      "tone": 1,
-      "shape": 35
+      "label": "cairn",
+      "shape": 35,
+      "tone": 1
     }
   }
 }

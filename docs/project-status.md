@@ -76,9 +76,22 @@ reader that has not heard of it.
 }
 ```
 
-`running` draws a bar from elapsed against typical, plus `12m 20s/13m 20s`; anything else draws a
+`running` draws a bar from elapsed against typical, plus `12m 20s/13m 20s`; `ok` and `fail` draw a
 tick or a cross. The whole chip is a link to `url` — a run you cannot open is a number you have to
 go and look up somewhere else, which is most of the reason nobody looks.
+
+There is a fourth value, and a producer will emit it constantly: **`none` means there is nothing to
+say** — no workflow, no run on this branch yet, `gh` not installed, the workflow disabled. It draws
+nothing at all. A `why` field beside it carries which of those it was, for a person reading the
+file rather than for the bar:
+
+```json
+{ "state": "none", "why": "no-runs", "updated_at": 1787056878 }
+```
+
+**A consumer that has not heard of `none` will draw a cross for a project that simply has no CI**,
+which is a red mark that is always wrong. Treat any state you do not recognise as "say nothing"
+rather than as failure.
 
 `<owner>-<repo>` comes from the repository's `origin` remote.
 
@@ -97,11 +110,55 @@ Only `now` is highlighted: a backlog's enemy is not being long, it is being unre
 
 ### A health check — `health-<path>.json`
 
+**Read this first: you probably do not have to write this file.**
+[claude-bestiary](https://github.com/sainteye/claude-bestiary) polls and writes it for you. Put a
+`health` block in that project's entry in `~/.claude/project-icons.json` — the registry above —
+and its status line refreshes the check in the background whenever the file goes stale. Nothing to
+schedule, no cron entry, no hook. The format below is for a machine that does not run it.
+
 ```jsonc
-{ "state": "ok", "label": "example.com" }
+"health": {
+  "url": "https://example.com/health",            // what to poll
+  "label": "prod",                                // what to call it on the line
+  "site": "https://example.com/",                 // where a click should go instead
+  "expect": { "status": "ok", "database": true }, // what a healthy answer says
+  "version_key": "commit"                         // the field carrying the deployed revision
+}
 ```
 
-A green or red dot with its label.
+`expect` is what separates healthy from merely answering: a 200 that says `{"database": false}` is
+not health, and a check that reads only the status code reports that everything is fine during the
+outage. **One trap worth naming**: with `expect` set, an endpoint that answers something that is
+not JSON is judged `sick` — which is usually right, and is a permanently red light if you pointed
+it at an HTML page by mistake.
+
+`version_key` is what gives you `● prod ↑3`: the live service is three commits behind the code you
+are holding. If the project's health endpoint does not report its own build, adding that field is
+one line and it answers "is what I am looking at deployed".
+
+What lands in the file:
+
+```jsonc
+{ "state": "ok", "label": "example.com", "ms": 1077, "http": 200,
+  "version": "dd138a4dea27", "checked_at": 1787056356 }
+```
+
+Only `state` and `label` are read for the dot; the rest is there for anything else that wants it,
+and a failure carries `detail` and `bad` as well — what went wrong, and which of the `expect` keys
+did not hold.
+
+**`state` has more than two values, and the difference between two of them matters.**
+
+| state | meaning |
+|---|---|
+| `ok` | answering, and `expect` holds |
+| `sick` | **the service is broken** — unreachable, a bad status, or `expect` did not hold |
+| `offline` | **this machine has no network.** The service is probably fine |
+| `unknown` | not checked yet |
+
+`sick` and `offline` draw alike and mean opposite things: one is a thing to go and fix, the other
+is a thing to ignore until the café's wifi comes back. Anything unrecognised should draw nothing
+rather than a red dot.
 
 `<path>` is the project's directory with `/` turned into `-`, the same shape Claude Code uses for
 its own project folders: `/Users/you/code/atrium` → `-Users-you-code-atrium`.

@@ -83,7 +83,10 @@ Put it at the repository root. **Start at Tier 0**, which declares ports and no 
 {
   "version": 1,
   "name": "thing",
-  "ports": { "api": 8002, "web": 3001 }
+  "processes": [
+    { "name": "api", "port": 8002 },
+    { "name": "web", "port": 3001 }
+  ]
 }
 ```
 
@@ -124,10 +127,14 @@ Whether the thing this project deploys is answering, as a dot with a label.
 `state` is `ok` or anything else, and anything else is red. `label` is what to show — usually the
 domain.
 
-**Then make something keep it current, and say what.** A health check frozen on yesterday is worse
-than none: it reports that everything is fine, forever, including during the outage. A cron entry,
-a step at the end of the deploy script, a `make` target the user already runs — pick whatever
-suits this project, wire it up, and prove it moves.
+**Do not build a cron entry for this before checking whether one is needed.**
+[claude-bestiary](https://github.com/sainteye/claude-bestiary) polls and writes this file for you:
+put a `health` block in that project's entry in `~/.claude/project-icons.json` and its status line
+refreshes the check on its own. Writing this file by hand is for machines that do not run it.
+
+If you do have to keep it current yourself, say what you wired up and prove it moves. A health
+check frozen on yesterday is worse than none: it reports that everything is fine, forever,
+including during the outage.
 
 ---
 
