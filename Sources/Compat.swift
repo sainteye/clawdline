@@ -76,6 +76,10 @@ enum Compat {
 
     /// Newest first.
     static let releases: [Release] = [
+        Release(clawdline: "0.5.0", claudeCode: "2.1.234",
+                notes: "Reads every session's screen to say which is working, which has "
+                     + "stopped and which is waiting — so it depends on the shape of the "
+                     + "spinner line and of the box Claude Code asks a question in."),
         Release(clawdline: "0.4.0", claudeCode: "2.1.233",
                 notes: "Images go over as [Image #3] rather than as paths, which adds the "
                      + "clipboard-on-Ctrl-V dependency."),

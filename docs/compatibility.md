@@ -10,7 +10,7 @@ against, and what you would see if that stopped being true.
 
 ## The short version
 
-- Built and used against Claude Code **2.1.233**.
+- Built and used against Claude Code **2.1.234**.
 - The oldest that everything here works with is **1.0.93**, and only one feature cares.
 - Nothing refuses to run on an older one. What you lose is the one feature whose floor
   you are under, and the second table below says which.
@@ -20,6 +20,7 @@ against, and what you would see if that stopped being true.
 
 | Clawdline | Claude Code | |
 |---|---|---|
+| 0.5.0 | 2.1.234 | Reads every session's screen to say which is working, which has stopped and which is waiting — so it depends on the shape of the spinner line and of the box Claude Code asks a question in. |
 | 0.4.0 | 2.1.233 | Images go over as [Image #3] rather than as paths, which adds the clipboard-on-Ctrl-V dependency. |
 | 0.3.0 | not recorded | Transcript reading, the spinner line, and the project footer. |
 | 0.2.0 | not recorded | Mascot packs and the picker. |
@@ -30,7 +31,7 @@ release — not a supported range. A range nobody tried is how a compatibility t
 saying things that are not true.
 
 **A newer Claude Code is the normal state of the world.** It updates itself and this does
-not, so nothing warns about it. Older than 2.1.233 does get a line in the menu bar, because
+not, so nothing warns about it. Older than 2.1.234 does get a line in the menu bar, because
 then a missing feature really is missing rather than broken here.
 
 ## What it depends on, and how you would know

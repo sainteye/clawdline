@@ -7,7 +7,7 @@ older ones can be found from without leaving the repository.
 The entries are prose rather than a list of commits. What belongs in one is **what changed for
 somebody using this** — a commit log already exists and is better at being a commit log.
 
-## Unreleased
+## 0.5.0 — 2026-08-18
 
 ### The bar knows what every session is doing
 
