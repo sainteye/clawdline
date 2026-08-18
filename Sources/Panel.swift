@@ -821,6 +821,45 @@ extension NSAttributedString.Key {
 /// One row of whichever list is open — a session, a mascot pack, or a project's dev stack.
 /// The lists look and behave the same, so they share the row rather than the row
 /// knowing what a session is.
+/// A spinner made of pixels, because everything else here is: the mascot, the project marks,
+/// the blocks a deploy fills up. A rotating glyph from a font would be the one thing on the card
+/// that came from somewhere else.
+///
+/// Eight cells around a three-by-three ring with the middle empty, one head cell and a two-cell
+/// tail behind it. **Dim on purpose** — a session that is working wants nothing from you, and a
+/// list where five rows are all flashing is a list nobody can read. Motion at low contrast is
+/// enough to say "alive"; brightness would be saying "look at me", which is the next state along
+/// and needs to stay distinguishable.
+enum PixelSpinner {
+
+    static let cell: CGFloat = 3
+    static let gap: CGFloat = 1.5
+    static var size: CGFloat { cell * 3 + gap * 2 }
+    /// One step every eighth of a second: a full turn takes a second, which is a heartbeat rather
+    /// than a machine.
+    static let step: Double = 0.125
+
+    /// Clockwise from the top-left, skipping the middle.
+    private static let ring: [(Int, Int)] = [(0, 0), (1, 0), (2, 0), (2, 1),
+                                             (2, 2), (1, 2), (0, 2), (0, 1)]
+
+    static func draw(at origin: NSPoint, time: Double, colour: NSColor) {
+        let head = Int(time / step) % ring.count
+        // The head, then two behind it, fading. Drawn tail-first so the head lands on top of any
+        // rounding overlap.
+        // Three behind the head rather than two: at this size the tail is what reads as rotation,
+        // and with one cell lit it reads as a speck that happens to move.
+        for (i, alpha) in [(3, 0.12), (2, 0.24), (1, 0.45), (0, 0.90)] {
+            let (cx, cy) = ring[(head - i + ring.count * 2) % ring.count]
+            colour.withAlphaComponent(CGFloat(alpha)).setFill()
+            NSRect(x: origin.x + CGFloat(cx) * (cell + gap),
+                   // Rows read top-down, the view's origin is at the bottom.
+                   y: origin.y + CGFloat(2 - cy) * (cell + gap),
+                   width: cell, height: cell).fill()
+        }
+    }
+}
+
 final class TargetRow: NSView {
     let title: String
     let index: Int
@@ -834,6 +873,11 @@ final class TargetRow: NSView {
     /// which is the whole reason the footer leads with this mark rather than with the title. The
     /// list had exactly the same problem and none of the answer.
     var icon: NSImage? { didSet { needsDisplay = true } }
+    /// What the row says *after* its label — the live line, or that it is waiting. Separate from
+    /// `rich` so the spinner can sit between the two and the row can lay all three out.
+    var detail: NSAttributedString?
+    /// Draw the spinner between the label and the detail.
+    var isBusy = false
     var onClick: (() -> Void)?
 
     /// Somewhere to go, when part of the row is a place rather than a label — the port a server
@@ -1023,8 +1067,20 @@ final class TargetRow: NSView {
         let x = textX
         // Stop before the buttons, or a long row of ports draws straight through them.
         let right = buttons.isEmpty ? Style.padH : bounds.width - buttonsLeftEdge + 10
-        text.draw(in: NSRect(x: x, y: bounds.midY - 9,
-                             width: max(40, bounds.width - x - right), height: 18))
+        let room = max(40, bounds.width - x - right)
+        text.draw(in: NSRect(x: x, y: bounds.midY - 9, width: room, height: 18))
+
+        guard let detail else { return }
+        // After the label, measured, so the spinner and the state line follow the words however
+        // long they are rather than sitting at a column that fits one language.
+        var dx = x + min(text.size().width, room) + 12
+        if isBusy {
+            PixelSpinner.draw(at: NSPoint(x: dx, y: bounds.midY - PixelSpinner.size / 2),
+                              time: CACurrentMediaTime(), colour: Style.accent)
+            dx += PixelSpinner.size + 7
+        }
+        detail.draw(in: NSRect(x: dx, y: bounds.midY - 9,
+                               width: max(0, bounds.width - dx - right), height: 18))
 
         for (i, r) in buttonRects.enumerated() { draw(buttons[i], in: r) }
     }

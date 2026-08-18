@@ -183,6 +183,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var pendingShowList = false
     /// While set, the list shows invented sessions and nothing replaces them. Snapshots only.
     private var standInList = false
+    private var spinnerTimer: Timer?
 
     private var currentTarget: TargetSession? {
         guard targets.indices.contains(targetIndex) else { return nil }
@@ -592,6 +593,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             self.panel.orderOut(nil)
             self.mascot.stop()          // once hidden, stop burning a 60fps timer
             self.stopOutput()
+            self.syncSpinner()
             self.prefetchWork?.cancel()
             Transcript.forgetRenders()
             self.hideBackdrop(animated: false)
@@ -1390,6 +1392,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // rows can be marked from the reading in hand rather than sitting plain until the next
         // one comes round.
         if listMode == .sessions { applyWatchedStates() }
+        syncSpinner()
         if let e = snap.error { setHint(e, warn: true) }
         relayout()
     }
@@ -1415,6 +1418,26 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// happen — `SessionWatch` reads all day for the menu bar and the island — only whether they
     /// happen at the pace of a keypress or at the pace of a background chore.
     private var shouldPollStates: Bool { listMode == .sessions || outputOpen }
+
+    /// Keep the spinners turning.
+    ///
+    /// One timer for the whole list rather than one per row, and it only exists while there is
+    /// something to animate: the phase is read from the shared clock inside `draw`, so a tick
+    /// here is nothing but "everybody who is busy, redraw".
+    private func syncSpinner() {
+        let wanted = listMode == .sessions && panel.isVisible && rows.contains { $0.isBusy }
+        guard wanted != (spinnerTimer != nil) else { return }
+        if wanted {
+            let t = Timer(timeInterval: PixelSpinner.step, repeats: true) { [weak self] _ in
+                self?.rows.forEach { if $0.isBusy { $0.needsDisplay = true } }
+            }
+            RunLoop.main.add(t, forMode: .common)
+            spinnerTimer = t
+        } else {
+            spinnerTimer?.invalidate()
+            spinnerTimer = nil
+        }
+    }
 
     private func syncSessionStatePolling() {
         SessionWatch.shared.isForeground = shouldPollStates && panel.isVisible
@@ -1448,6 +1471,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         guard listMode == .sessions, states != sessionStates else { return }
         sessionStates = states
         rebuildRows()
+        syncSpinner()
         relayout()
     }
 
@@ -1518,16 +1542,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                                         attributes: [.font: font, .foregroundColor: colour]))
         }
         add(row.label, selected ? .labelColor : .secondaryLabelColor, base)
-        switch row.state {
-        case .working(let line):
-            let quiet: NSColor = selected ? .secondaryLabelColor : .tertiaryLabelColor
-            add("   ⟳ ", quiet, small)
-            add(line.count > 44 ? line.prefix(43) + "…" : line, quiet, small)
-        case .waiting:
-            add("   ● " + L.t.sessionWaiting, Style.accent, small)
-        case .idle, .unknown:
-            break
-        }
+        _ = small
         return s
     }
 
@@ -1547,7 +1562,18 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
 
         add(target.label, selected ? .labelColor : .secondaryLabelColor, base)
+        return s
+    }
 
+    /// What the row says after its label. Split from the label so the row can put the spinner
+    /// between the two and lay the three of them out itself.
+    private func sessionRowDetail(_ state: SessionState, selected: Bool) -> NSAttributedString? {
+        let s = NSMutableAttributedString()
+        let small = NSFont.systemFont(ofSize: Style.listSize - 1.5)
+        func add(_ text: String, _ colour: NSColor, _ font: NSFont) {
+            s.append(NSAttributedString(string: text,
+                                        attributes: [.font: font, .foregroundColor: colour]))
+        }
         switch state {
         case .working(let line):
             // Quiet, deliberately. A session that is working wants nothing from you, and four
@@ -1556,14 +1582,13 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             // A step less quiet on the selected row: it draws on a tinted background, and the
             // grey that reads as "in the background" against the card reads as illegible there.
             let quiet: NSColor = selected ? .secondaryLabelColor : .tertiaryLabelColor
-            add("   ⟳ ", quiet, small)
             // Cut with a mark on it. The row clips whatever runs past its edge, and a sentence
             // that stops mid-word with nothing to say so reads as a bug rather than as a limit.
             add(line.count > 44 ? line.prefix(43) + "…" : line, quiet, small)
         case .waiting:
             // The one loud thing in the list, because it is the only state that costs you
             // something for every second it goes unnoticed.
-            add("   ● " + L.t.sessionWaiting, Style.accent, small)
+            add("● " + L.t.sessionWaiting, Style.accent, small)
         case .idle, .unknown:
             return nil
         }
@@ -1594,6 +1619,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 let selected = (i == 1)
                 let view = TargetRow(title: row.label, index: i,
                                      rich: standInRowText(row, selected: selected))
+                view.detail = sessionRowDetail(row.state, selected: selected)
+                if case .working = row.state { view.isBusy = true }
                 view.icon = ProjectIcon.demoGrid(hue: row.hue).image(height: 11)
                 view.isSelected = selected
                 listBox.addSubview(view)
@@ -1656,8 +1683,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
         rows = targets.prefix(9).enumerated().map { i, target in
             let selected = (i == targetIndex)
+            let state = sessionStates[target.id] ?? .unknown
             let row = TargetRow(title: target.label, index: i,
                                 rich: sessionRowText(target, selected: selected))
+            row.detail = sessionRowDetail(state, selected: selected)
+            if case .working = state { row.isBusy = true }
             row.icon = rowIcons[target.id]
             row.isSelected = selected
             row.onClick = { [weak self] in self?.choose(i) }
@@ -1681,6 +1711,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // reason anybody is about to press ↓.
         if mode == .sessions { prefetchNeighbours() }
         rebuildRows()
+        syncSpinner()
         relayout()
     }
 
