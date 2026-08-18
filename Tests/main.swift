@@ -243,13 +243,15 @@ group("hotkey specs parse") {
 
 // MARK: - Target parsing
 
-group("iTerm session labels drop the job name") {
+group("iTerm session labels drop the job name and the status glyph") {
     func label(_ name: String) -> String {
         TargetSession(backend: .iterm, id: "x", name: name, tty: "/dev/ttys1",
                       windowIndex: 0, tabIndex: 0, isClaude: true).label
     }
-    expect("trailing job name is removed", label("✳ fix the thing (python)"), "✳ fix the thing")
-    expect("a name without one is untouched", label("✳ fix the thing"), "✳ fix the thing")
+    // Both ends come off: iTerm appends the job name, Claude Code prefixes a status glyph that
+    // is now a frame of an animation rather than a fixed mark.
+    expect("trailing job name is removed", label("✳ fix the thing (python)"), "fix the thing")
+    expect("and the glyph on the front with it", label("✳ fix the thing"), "fix the thing")
     expect("parentheses mid-name survive", label("build (debug) now"), "build (debug) now")
     expect("an empty name falls back to coordinates", label("   "), "⌘1-1")
 }
@@ -290,7 +292,7 @@ group("tmux pane listing parses") {
     expect("tty is kept", panes[0].tty, "/dev/ttys080")
     check("a claude pane is flagged", panes[0].isClaude)
     check("a shell pane is not", !panes[1].isClaude)
-    expect("a pane title is used as the label", panes[0].label, "✳ writing tests")
+    expect("a pane title is used as the label", panes[0].label, "writing tests")
     // When the title is just the command name it says nothing, so tmux coordinates are better.
     expect("a title equal to the command falls back", panes[1].label, "work:0.2")
     expect("an empty title falls back too", panes[2].label, "other:2.0")
@@ -2209,6 +2211,30 @@ group("devstack: port probing") {
     check("also out of range", !DevStack.isListening(port: 70000))
 }
 
+
+group("the label a tab shows, without the animation on the front") {
+    // Claude Code used to put a fixed ✳ in front of the title, which was worth keeping. 2.1.228
+    // cycles half circles through it instead, so the same tab reads differently four times a
+    // second — and a label that changes on its own is noise on every surface that draws one.
+    expect("a half circle goes", TargetSession.withoutStatusGlyph("◐ IG 設定指引改進"), "IG 設定指引改進")
+    expect("and so does the next frame", TargetSession.withoutStatusGlyph("◑ 評估動態島實現機制"), "評估動態島實現機制")
+    expect("braille too", TargetSession.withoutStatusGlyph("⠐ 設計基本問題"), "設計基本問題")
+    expect("and the ✳ it used to be", TargetSession.withoutStatusGlyph("✳ investigate the webhook"),
+           "investigate the webhook")
+
+    // What must survive. A title is allowed to start with punctuation, and a marker is only a
+    // marker when it stands alone in front of one.
+    expect("a title that starts with a quote is a title",
+           TargetSession.withoutStatusGlyph("\"why\" is the question"), "\"why\" is the question")
+    expect("a glyph with no space after it is part of the word",
+           TargetSession.withoutStatusGlyph("◐IG"), "◐IG")
+    expect("a letter is never a marker", TargetSession.withoutStatusGlyph("a b"), "a b")
+    expect("a digit is never a marker", TargetSession.withoutStatusGlyph("1 b"), "1 b")
+    expect("an ordinary title is untouched",
+           TargetSession.withoutStatusGlyph("fix the retry backoff"), "fix the retry backoff")
+    expect("and nothing is taken off something too short to have a marker",
+           TargetSession.withoutStatusGlyph("◐ "), "◐ ")
+}
 
 // MARK: - Claude Code hooks
 

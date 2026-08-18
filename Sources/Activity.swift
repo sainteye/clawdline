@@ -14,7 +14,14 @@ enum Activity {
     /// The glyphs the spinner cycles through. Observed, not documented — and deliberately the
     /// discriminator, because a terminal is full of other lines that end in "(3s)": tool
     /// results, timing output, an echoed command that happened to be truncated with an ellipsis.
-    private static let spinners: Set<Character> = ["✳", "✻", "✽", "✢", "✶", "✱", "✴", "·", "*"]
+    private static let spinners: Set<Character> = [
+        "✳", "✻", "✽", "✢", "✶", "✱", "✴", "·", "*",
+        // 2.1.228 started drawing half circles in the tab title. The live line has not moved yet,
+        // but the set it is drawn from evidently can — and the cost of being early here is nil,
+        // because a glyph on its own proves nothing: the line still has to carry an ellipsis and
+        // a running clock before any of this is believed.
+        "◐", "◑", "◒", "◓", "◴", "◵", "◶", "◷",
+    ]
 
     /// The live line, or nil when nothing is running.
     ///

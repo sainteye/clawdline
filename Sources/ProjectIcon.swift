@@ -177,6 +177,18 @@ enum ProjectIcon {
         return Int(h % 0x7fff_ffff)
     }
 
+    /// The other direction, for anything that has to hand a colour to something that is not
+    /// AppKit — a browser, a JSON payload. Converted into sRGB first: a colour that came from a
+    /// catalog or a display profile has components that mean nothing until they are in a space
+    /// somebody named, and `#RRGGBB` is a promise about sRGB.
+    static func hex(_ color: NSColor) -> String {
+        let c = color.usingColorSpace(.sRGB) ?? color
+        let r = Int((c.redComponent * 255).rounded())
+        let g = Int((c.greenComponent * 255).rounded())
+        let b = Int((c.blueComponent * 255).rounded())
+        return String(format: "#%02X%02X%02X", max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b)))
+    }
+
     static func color(hex: String) -> NSColor? {
         var s = hex.trimmingCharacters(in: .whitespaces)
         if s.hasPrefix("#") { s.removeFirst() }

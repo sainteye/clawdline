@@ -123,6 +123,15 @@ final class Config {
     /// editing another program's settings file to find out. Nothing else changes: the screen was
     /// always where every reading came from. See Sources/HookBridge.swift.
     var hooks = true
+    /// Answer questions over HTTP, on the loopback address, so that a browser or a script can ask
+    /// what the panel asks.
+    ///
+    /// **Off, and that is not a shy default.** A listening socket is the difference between a
+    /// program on your machine and a service on your machine, and reading a session hands over a
+    /// repository name, a branch and a task title. Turning it on should be a thing somebody did
+    /// on purpose. See docs/remote.md and Sources/RemoteServer.swift.
+    var remote = false
+    var remotePort = 7717
     var tmuxPath = ""
     /// Where the project status files are read from, and where the icon registry lives.
     ///
@@ -151,6 +160,8 @@ final class Config {
         if let v = obj["language"] as? String, !v.isEmpty { language = v }
         if let v = obj["mascot"] as? String, !v.isEmpty { mascot = v }
         if let v = obj["hooks"] as? Bool { hooks = v }
+        if let v = obj["remote"] as? Bool { remote = v }
+        if let v = obj["remote_port"] as? Int, v > 0, v < 65536 { remotePort = v }
         if let v = obj["tmux_path"] as? String { tmuxPath = v }
         if let v = obj["status_dir"] as? String { statusDir = v }
         if let v = obj["icons_file"] as? String { iconsFile = v }
@@ -188,6 +199,8 @@ final class Config {
             "language": language,
             "mascot": mascot,
             "hooks": hooks,
+            "remote": remote,
+            "remote_port": remotePort,
             "tmux_path": tmuxPath,
             "status_dir": statusDir,
             "icons_file": iconsFile,

@@ -34,7 +34,7 @@ swiftc \
   -o "$BIN" \
   $(ls Sources/*.swift | grep -v 'Sources/main.swift') \
   Tests/main.swift \
-  -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation
+  -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation -framework Network
 
 # `if` rather than a bare assignment: under `set -e` a failing command on the right-hand side
 # ends the script right there, before what it captured has been printed — so a red suite exited

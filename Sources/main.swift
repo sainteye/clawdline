@@ -21,6 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HookBridge.onNote = { SessionWatch.shared.nudge() }
         HookBridge.start()
         SessionWatch.shared.start()
+        // Reads the config and does nothing at all when it says off, which is what it says
+        // until somebody changes it.
+        RemoteServer.shared.apply()
         NotificationCenter.default.addObserver(self, selector: #selector(configChanged),
                                                name: .clawdlineConfigChanged, object: nil)
 
@@ -304,6 +307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateHotKeyScope()
         statusItem.menu = buildMenu()
         NotchIsland.shared.install()
+        RemoteServer.shared.apply()
         refreshStatusItem()
     }
 
@@ -331,6 +335,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `"notch": false` has to take effect on a reload rather than on a relaunch: the whole
         // reason it exists is that somebody may want it gone the moment it annoys them.
         NotchIsland.shared.install()
+        RemoteServer.shared.apply()
         refreshStatusItem()
     }
 }

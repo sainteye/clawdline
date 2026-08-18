@@ -11,16 +11,49 @@ struct TargetSession: Equatable, Identifiable {
     let isClaude: Bool
     var cwd: String?
 
-    /// A short label for display. Claude Code prefixes its title with ✳, which is a useful marker,
-    /// so keep it; iTerm appends " (job name)", which helps nobody pick a tab, so drop it.
+    /// A short label for display: the task, and only the task.
+    ///
+    /// Two things get taken off. iTerm appends " (job name)", which helps nobody pick a tab. And
+    /// Claude Code puts a status glyph on the front — which used to be a fixed ✳ and was worth
+    /// keeping as a marker, and is now **a frame of an animation**: 2.1.228 cycles half circles
+    /// through the title, so the same tab reads `◐ …`, `◑ …`, `◒ …` one after another. A label
+    /// that changes four times a second is not a label, it is noise on every surface that draws
+    /// one — and the thing it was standing in for is now answered properly by ``SessionState``.
     var label: String {
         var s = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.hasSuffix(")"), let open = s.lastIndex(of: "("), open > s.startIndex {
             let before = s.index(before: open)
             if s[before] == " " { s = String(s[s.startIndex..<before]) }
         }
+        s = TargetSession.withoutStatusGlyph(s)
         s = s.trimmingCharacters(in: .whitespaces)
         return s.isEmpty ? "⌘\(windowIndex + 1)-\(tabIndex + 1)" : s
+    }
+
+    /// Strip a leading status glyph and the space after it.
+    ///
+    /// Recognised by *shape* rather than by a list of characters, for the same reason everything
+    /// else here is: the glyphs changed once already and the list would have to be chased. What
+    /// does not change is that it is one non-alphanumeric mark, on its own, in front of a title —
+    /// so a single leading character from the symbol, punctuation or Braille blocks goes, and one
+    /// that is followed by anything other than a space stays, because that is a title starting
+    /// with a bullet rather than a marker in front of one.
+    static func withoutStatusGlyph(_ title: String) -> String {
+        var chars = Array(title)
+        guard chars.count > 2, chars[1] == " " else { return title }
+        guard let scalar = chars[0].unicodeScalars.first, chars[0].unicodeScalars.count == 1,
+              !chars[0].isLetter, !chars[0].isNumber else { return title }
+        // Braille (⠀–⣿), geometric shapes (◀–◿), dingbats and misc symbols — the blocks a
+        // terminal spinner is drawn from. A quotation mark or a bracket is not one of them.
+        let v = scalar.value
+        let isMarker = (0x2800...0x28FF).contains(v)   // Braille
+            || (0x25A0...0x25FF).contains(v)           // geometric shapes, incl. ◐◑◒◓
+            || (0x2600...0x27BF).contains(v)           // misc symbols and dingbats, incl. ✳
+            || (0x2B00...0x2BFF).contains(v)           // misc symbols and arrows
+            || (0x1F300...0x1FAFF).contains(v)         // emoji
+        guard isMarker else { return title }
+        chars.removeFirst(2)
+        return String(chars)
     }
 }
 

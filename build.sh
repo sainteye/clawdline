@@ -26,11 +26,13 @@ swiftc \
   -O \
   -o "$BIN" \
   Sources/*.swift \
-  -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation
+  -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation -framework Network
 
 cp Resources/iterm.js "$RES/"
 cp Resources/clawdline-hook.sh "$RES/"
 cp -R Resources/mascots "$RES/"
+# The web interface, served by RemoteServer when it is switched on.
+[ -d Resources/web ] && cp -R Resources/web "$RES/"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
