@@ -2209,6 +2209,228 @@ group("devstack: port probing") {
     check("also out of range", !DevStack.isListening(port: 70000))
 }
 
+
+// MARK: - Claude Code hooks
+
+private func hookSession(_ id: String, tty: String) -> TargetSession {
+    TargetSession(backend: .iterm, id: id, name: "x", tty: tty,
+                  windowIndex: 0, tabIndex: 0, isClaude: true)
+}
+
+group("hooks: reading a note") {
+    let good = Data(#"{"event":"Stop","tty":"ttys004","at":1787039500,"session":"3f6a1c2e-7b4d-4a9e-8c15-2d0e9f7b6a34"}"#.utf8)
+    let note = HookBridge.parse(good)
+    check("a whole note reads", note != nil)
+    expect("its event", note?.event, .stop)
+    expect("its tty", note?.tty, "ttys004")
+    expect("its session id", note?.session, "3f6a1c2e-7b4d-4a9e-8c15-2d0e9f7b6a34")
+
+    // The script leaves the session out when it could not find one, and that is a note worth
+    // keeping: the tty is what a reading is keyed on, and the id is only ever a shortcut.
+    let noSession = HookBridge.parse(Data(#"{"event":"Stop","tty":"ttys004","at":1}"#.utf8))
+    check("a note with no session id is still a note", noSession != nil)
+    expect("and says so", noSession?.session, nil)
+
+    // An event this version does not know about is not an error to report; it is a note from a
+    // newer script, and the right answer is to ignore it rather than to draw something wrong.
+    check("an unknown event is dropped",
+          HookBridge.parse(Data(#"{"event":"PreCompact","tty":"ttys004","at":1}"#.utf8)) == nil)
+    check("half a file is dropped", HookBridge.parse(Data(#"{"event":"Stop","tt"#.utf8)) == nil)
+    check("no tty is dropped",
+          HookBridge.parse(Data(#"{"event":"Stop","tty":"","at":1}"#.utf8)) == nil)
+}
+
+group("hooks: what a note is allowed to change") {
+    let now = Date()
+    let one = hookSession("A", tty: "/dev/ttys004")
+    let two = hookSession("B", tty: "/dev/ttys009")
+    let sessions = [one, two]
+    func notes(_ event: HookBridge.Event, ago: TimeInterval = 1) -> [String: HookBridge.Note] {
+        ["ttys004": HookBridge.Note(event: event, tty: "ttys004",
+                                    at: now.addingTimeInterval(-ago), session: nil)]
+    }
+
+    // Nothing installed is the state every reading has to be right in, so it is the first check.
+    expect("with no notes, the screen is the whole answer",
+           HookBridge.merge([:], into: ["A": .waiting], sessions: sessions, now: now)["A"],
+           .waiting)
+    expect("a session nobody left a note for is untouched",
+           HookBridge.merge(notes(.stop), into: ["B": .working("x")], sessions: sessions,
+                            now: now)["B"],
+           .working("x"))
+
+    // The one state the list exists for. A menu is a shape on screen; a note is a moment, and
+    // `Notification` fires for a permission request and for a minute of quiet alike.
+    expect("a question on screen outranks a Stop",
+           HookBridge.merge(notes(.stop), into: ["A": .waiting], sessions: sessions, now: now)["A"],
+           .waiting)
+    expect("and a prompt going in leaves it alone",
+           HookBridge.merge(notes(.userPromptSubmit), into: ["A": .waiting],
+                            sessions: sessions, now: now)["A"],
+           .waiting)
+
+    // **No note asserts that a session is working**, and this is the narrowing that measuring
+    // produced: Claude Code draws its live line about two seconds after Return and draws nothing
+    // at all while plain text comes back, so a claim short enough to be safe covers almost none
+    // of a turn — and a long one cannot be retracted when somebody presses Esc, because
+    // cancelling fires no hook. `SessionWatch.nudge` looks twice instead.
+    expect("a submitted prompt claims nothing about an idle screen",
+           HookBridge.merge(notes(.userPromptSubmit), into: ["A": .idle],
+                            sessions: sessions, now: now)["A"],
+           .idle)
+    expect("nor about one that could not be read at all",
+           HookBridge.merge(notes(.userPromptSubmit), into: ["A": .unknown],
+                            sessions: sessions, now: now)["A"],
+           .unknown)
+    expect("and it never touches the live line",
+           HookBridge.merge(notes(.userPromptSubmit), into: ["A": .working("Generating… (4s)")],
+                            sessions: sessions, now: now)["A"],
+           .working("Generating… (4s)"))
+
+    // The stale spinner: Claude Code does not always erase its live line when a fast turn ends.
+    expect("a fresh Stop beats a spinner left on the screen",
+           HookBridge.merge(notes(.stop), into: ["A": .working("Generating… (4s)")],
+                            sessions: sessions, now: now)["A"],
+           .idle)
+    // …and only for as long as a leftover line could plausibly still be one. Past that, anything
+    // running started with a prompt of its own, and calling it idle is the worst answer here.
+    expect("an old one does not",
+           HookBridge.merge(notes(.stop, ago: HookBridge.stopWindow + 5),
+                            into: ["A": .working("Generating… (4s)")],
+                            sessions: sessions, now: now)["A"],
+           .working("Generating… (4s)"))
+
+    // These two only ask us to look. The reading that followed is the answer.
+    expect("a notification changes no state by itself",
+           HookBridge.merge(notes(.notification), into: ["A": .idle], sessions: sessions,
+                            now: now)["A"],
+           .idle)
+    expect("nor does a session starting",
+           HookBridge.merge(notes(.sessionStart), into: ["A": .unknown], sessions: sessions,
+                            now: now)["A"],
+           .unknown)
+}
+
+group("hooks: editing somebody else's settings file") {
+    // What has to survive: a hook that belongs to a plugin, and every key that is not `hooks`.
+    let theirs: [String: Any] = [
+        "model": "opus",
+        "hooks": [
+            "PreToolUse": [["matcher": "Write",
+                            "hooks": [["type": "command", "command": "/opt/theirs/check.sh"]]]],
+            "Stop": [["hooks": [["type": "command", "command": "/opt/theirs/done.sh"]]]],
+        ],
+    ]
+    let after = HookBridge.adding("/Users/x/.config/clawdline/hook.sh", to: theirs)
+    let hooks = after["hooks"] as? [String: Any] ?? [:]
+    expect("everything outside hooks is left alone", after["model"] as? String, "opus")
+    expect("an event we do not use keeps its entry",
+           (hooks["PreToolUse"] as? [[String: Any]])?.count, 1)
+    expect("an event we share keeps theirs and gains ours",
+           (hooks["Stop"] as? [[String: Any]])?.count, 2)
+    for event in HookBridge.Event.allCases {
+        check("\(event.rawValue) is wired up",
+              (hooks[event.rawValue] as? [[String: Any]] ?? []).contains { group in
+                  (group["hooks"] as? [[String: Any]] ?? []).contains(where: HookBridge.isOurs)
+              })
+    }
+
+    // Pressing Install twice is a thing people do.
+    let twice = HookBridge.adding("/Users/x/.config/clawdline/hook.sh", to: after)
+    expect("installing twice leaves one of ours",
+           ((twice["hooks"] as? [String: Any])?["Stop"] as? [[String: Any]])?.count, 2)
+
+    let back = HookBridge.removing(from: twice)
+    let left = back["hooks"] as? [String: Any] ?? [:]
+    expect("removing puts the file back", NSDictionary(dictionary: left),
+           NSDictionary(dictionary: theirs["hooks"] as? [String: Any] ?? [:]))
+    expect("and leaves the rest of it alone", back["model"] as? String, "opus")
+
+    // A file that had no hooks of its own should read afterwards as though nothing happened.
+    // The real path, because that is what marks an entry as ours — see `isOurs`.
+    let bare = HookBridge.removing(
+        from: HookBridge.adding("/Users/x/.config/clawdline/hook.sh", to: ["model": "opus"]))
+    check("an event left empty goes away rather than staying as []", bare["hooks"] == nil)
+
+    // A path with a space in it is a home directory somebody actually has.
+    let spaced = HookBridge.adding("/Users/a b/.config/clawdline/hook.sh", to: [:])
+    let command = (((spaced["hooks"] as? [String: Any])?["Stop"] as? [[String: Any]])?
+        .first?["hooks"] as? [[String: Any]])?.first?["command"] as? String
+    expect("the path is quoted", command, "'/Users/a b/.config/clawdline/hook.sh' Stop")
+}
+
+group("hooks: the script itself") {
+    // The one piece of this that is not Swift, and the piece with the most ways to be quietly
+    // wrong: it writes nothing on stdout, it always exits 0, and it names its note after the
+    // terminal the session is on — which is the only string this app and Claude Code both know.
+    let script = "Resources/clawdline-hook.sh"
+    guard FileManager.default.fileExists(atPath: script) else {
+        check("Resources/clawdline-hook.sh is there", false)
+        return
+    }
+    let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-hook-test-\(getpid())")
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    func run(_ event: String, payload: String, into: URL? = dir) -> (out: String, code: Int32) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = [script, event]
+        var env = ProcessInfo.processInfo.environment
+        if let into { env["CLAWDLINE_HOOK_DIR"] = into.path } else { env["CLAWDLINE_HOOK_DIR"] = "/nowhere/at/all" }
+        p.environment = env
+        let stdin = Pipe(), stdout = Pipe()
+        p.standardInput = stdin
+        p.standardOutput = stdout
+        p.standardError = Pipe()
+        try? p.run()
+        stdin.fileHandleForWriting.write(Data(payload.utf8))
+        try? stdin.fileHandleForWriting.close()
+        let out = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        p.waitUntilExit()
+        return (out, p.terminationStatus)
+    }
+
+    // A prompt with a quote and a backslash in it, because that is what breaks a reader that
+    // tries to parse JSON with string operations. The session id is a uuid and cannot.
+    let payload = #"{"session_id":"3f6a1c2e-7b4d-4a9e-8c15-2d0e9f7b6a34","cwd":"/tmp","hook_event_name":"Stop","prompt":"a \" quote and a \\ backslash"}"#
+    let first = run("Stop", payload: payload)
+    expect("it exits 0", first.code, 0)
+    expect("and says nothing on stdout — that is read back as instructions", first.out, "")
+
+    let written = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+    let notes = written.filter { $0.hasSuffix(".json") }
+    // The test binary is a child of whatever ran it, so there may be no tty above it at all —
+    // in CI there is not. No tty is a note that is deliberately not written, so both outcomes
+    // are correct and only their contents can be wrong.
+    if let name = notes.first {
+        let note = HookBridge.parse(
+            (try? Data(contentsOf: dir.appendingPathComponent(name))) ?? Data())
+        check("what it wrote is a note", note != nil)
+        expect("named after the tty it found", name, "\(note?.tty ?? "?").json")
+        expect("carrying the event it was told", note?.event, .stop)
+        expect("and the session id, cut out of a payload with quotes in it",
+               note?.session, "3f6a1c2e-7b4d-4a9e-8c15-2d0e9f7b6a34")
+
+        // Overwritten, never appended: a session has one note and it is the newest one.
+        _ = run("Notification", payload: payload)
+        let after = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
+            .filter { $0.hasSuffix(".json") }
+        expect("a second note replaces the first", after.count, 1)
+        expect("with the newer event",
+               HookBridge.parse((try? Data(contentsOf: dir.appendingPathComponent(name))) ?? Data())?.event,
+               .notification)
+    }
+
+    // Every way this can be asked to do nothing, it has to do nothing quietly. A hook that
+    // exits non-zero is making a decision about somebody's turn.
+    expect("no event argument, no complaint", run("", payload: payload).code, 0)
+    expect("empty stdin, no complaint", run("Stop", payload: "").code, 0)
+    expect("no directory to write into, no complaint",
+           run("Stop", payload: payload, into: nil).code, 0)
+}
+
 // MARK: - Result
 
 print("")

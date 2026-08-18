@@ -16,7 +16,7 @@
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](Sources)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#安裝)
 
-[![Ko-fi](https://img.shields.io/badge/ko--fi-support-ff5e5b.svg?logo=ko-fi&logoColor=white)](https://ko-fi.com/sainteye)
+<a href="https://ko-fi.com/sainteye"><img src="https://ko-fi.com/img/githubbutton_sm.svg" height="36" alt="在 Ko-fi 上支持 Clawdline"></a>
 
 [English](README.md) · 繁體中文
 
@@ -45,6 +45,10 @@ Clawdline 把它們收在同一個地方，放在眼睛的高度。它可以打�
 也不會包一層 `claude` 指令。它讀的是你的 session 本來就在畫的螢幕、本來就在寫的逐字稿。
 所以它對**一小時前就開好的** session 一樣有效，所以它不可能弄壞它正在讀的那個東西，
 也所以你不想要的時候，關掉就是關掉，沒有東西要復原。
+
+唯一一件你**可以要求**它裝的東西，是一個要你自己按下去的按鈕：五個 hook 設定，讓 Claude Code
+在一輪對話開始與結束的當下直接說一聲，而不是等 Clawdline 下一次去看。它改變的是判讀「什麼時候
+發生」，從來不是判讀「說了什麼」。[它怎麼運作、以及為什麼畫面仍然說了算](docs/hooks.md)。
 
 ## 它做得到、而一般輸入框做不到的事
 
@@ -110,7 +114,7 @@ Clawdline 把它們收在同一個地方，放在眼睛的高度。它可以打�
 - **寫** — [語音輸入](#用說的代替打字) · [檔案與圖片](#把檔案或圖片丟進來) · [它會送到哪個分頁](#它會送到哪個分頁)
 - **調成你的樣子** — [吉祥物](#換上你自己的吉祥物) · [設定](#設定) · [其他終端機](#其他終端機把-claude-code-跑在-tmux-裡)
 - **底下是什麼** — [怎麼把字送進去的](#它是怎麼把字送進去的) · [權限與隱私](#權限與隱私) · [限制](#限制) · [出事的時候](#出事的時候)
-- **再往下** — [Whisper 與中英夾雜](docs/whisper.md) · [專案狀態檔](docs/project-status.md) · [吉祥物格式](docs/mascots.md)
+- **再往下** — [Hook：補上那二十秒](docs/hooks.md) · [Whisper 與中英夾雜](docs/whisper.md) · [專案狀態檔](docs/project-status.md) · [吉祥物格式](docs/mascots.md)
 
 ## 為什麼有這個東西
 
@@ -386,6 +390,24 @@ iTerm2 只交得出**目前可見的畫面**，它的 scripting 沒有 scrollbac
 它讀的就是每個 session 自己的螢幕，跟 <kbd>⌘</kbd><kbd>J</kbd> 那一格讀的是同一份——
 輸入條開著的時候大約每秒一次，收起來的時候每二十秒一次。
 
+### 二十秒是很長的時間
+
+那個數字是「用看的」唯一補不起來的地方。一次判讀是對你開著的每一個終端機各跑一趟，所以離開
+輸入條之後它很少發生——一個權限對話框可以在那裡坐過你一整段思路，選單列才提到它。
+
+Claude Code 願意自己說一聲，只要你要求它。**設定 → Claude Code Hook → 安裝**，會在
+`~/.claude/settings.json` 放進五筆設定；之後每當一輪對話開始、結束、或需要你回答，一則兩行的
+紀錄就會落在 Clawdline 正在看的目錄裡，而原本要二十秒後才發生的那次判讀，會在**一秒之內**發生。
+
+底下的輪詢幾乎沒有變，畫面也沒有因此不再說了算：一則紀錄講的是「什麼時候」，從來不是
+「畫面上有什麼」，所以它的工作是要求判讀，狀態仍然由 `SessionState` 決定。
+**hook 送來的東西不會宣告任何一個 session 正在工作**——Claude Code 的狀態列大約在你按下
+Enter 兩秒後才畫出來，而且答案在串流的時候它又不見了，所以我們的做法是「看兩次」而不是
+宣告什麼。移除之後不留任何東西，而且第一次會幫你的設定檔留一份副本，你可以自己 diff。
+
+五個事件，全部都很少發生——`PreToolUse` 是刻意不在裡面的。完整的約定，包含一則紀錄可以與不可以
+改變什麼，寫在 [docs/hooks.md](docs/hooks.md)。
+
 ## 瀏海
 
 這一段是拿來玩的，程式碼裡也是這樣寫的。它講的東西選單列那個記號都講得出來，
@@ -499,6 +521,7 @@ CR                                     ← 再單獨送一個 Return 才送出
   "card_opacity": 0.55,                  // 0 ＝ 純玻璃，1 ＝ 完全不透明
   "reopen_on_return": true,              // 切回終端機時自己回來
   "notch": true,                        // 住在瀏海裡的那隻——false 就整個關掉
+  "hooks": true,                         // 裝了 Claude Code hook 之後要不要相信它送來的紀錄
   "follow_target": true,                 // 終端機的分頁跟著輸入條的目標走
   "backdrop": 0.5,                       // ⌘J 的背景模糊，0 ＝ 不要
   "voice_settle_seconds": 1.8,           // 多長的停頓算一句話結束，0 ＝ 關掉
@@ -594,7 +617,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`：熱鍵有沒有
 純 AppKit、沒有框架、除了 `swiftc` 沒有 build 系統。
 
 ```bash
-./test.sh     # 880 個檢查，約兩秒
+./test.sh     # 924 個檢查，約兩秒
 ./build.sh    # 編譯，原本有在跑的話會自己接回來
 ```
 
@@ -616,8 +639,8 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`：熱鍵有沒有
 [bistin](https://github.com/bistin) 的 [CLI Island](https://github.com/bistin/cc-island)
 （原名 `cc-island`）先做的——讀了那個專案，「輸入條應該在某個 session 需要你的時候告訴你」
 才從一句話變成一個有形狀的東西。這裡的實作是自己寫的、做法也不一樣（讀 session 自己的螢幕，
-而不是在 Claude Code 裡裝 hook），但那個點子、以及「內容放在洞的左右兩耳」這個讓它好看的
-文法，是借來的，在此致謝。
+[hook](docs/hooks.md) 是選配的、而且只用來決定「什麼時候讀」而不是判讀說了什麼），
+但那個點子、以及「內容放在洞的左右兩耳」這個讓它好看的文法，是借來的，在此致謝。
 
 瀏海本身的形狀——與選單列相接處那兩個往外張的凹角——出自
 [DynamicNotchKit](https://github.com/MrKai77/DynamicNotchKit)，經由

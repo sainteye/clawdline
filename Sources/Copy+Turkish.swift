@@ -108,6 +108,13 @@ struct Turkish: Copy {
     let settingsTranscript = "Döküm"
     let settingsTerminal = "Terminal"
     let settingsOff = "Kapalı"
+    let settingsHooks = "Claude Code kancaları"
+    let settingsHooksHint = "Kurulduğunda Claude Code bir turun başladığı, bittiği ya da yanıt beklediği anı kendisi haber verir; Clawdline'ın bir sonraki bakışını beklemez. Okuma yine ekrandan yapılır, burada belirlenen yalnızca ne kadar çabuk olduğu."
+    let settingsHooksInstall = "Kur"
+    let settingsHooksRemove = "Kaldır"
+    let settingsHooksOff = "Kurulu değil — durum yalnızca ekrandan okunuyor"
+    let settingsHooksOn = "Kurulu — henüz hiçbir oturum haber vermedi"
+    let settingsHooksLive = "Kurulu, oturumlar haber veriyor"
     let settingsOpenFile = "Yapılandırma dosyasını aç…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f sn", value) }
 

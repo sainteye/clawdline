@@ -72,11 +72,40 @@ final class SessionWatch {
         timer = nil
     }
 
+    /// Read now, because something said it was worth it.
+    ///
+    /// This is what a hook buys, and it is most of what a hook buys. Away from the panel the
+    /// timer is on twenty seconds — long enough that a permission dialog can sit there through a
+    /// whole train of thought — and the reason it is that long is that a reading costs a round
+    /// trip to every terminal, which is a thing worth doing rarely when nothing has happened.
+    /// A note says something has happened. The cadence underneath does not change; it just stops
+    /// being the only thing that decides when to look.
+    ///
+    /// Not a separate path: it calls the same reading, and drops out under the same guard if one
+    /// is already running.
+    ///
+    /// **Two readings, not one**, and the second is the one that does the work. Measured against a
+    /// real session: Claude Code draws its live line about two seconds after you press Return, so
+    /// a single reading taken the instant a turn begins looks at a screen that has nothing on it
+    /// yet — and away from the panel the next scheduled one is up to twenty seconds later. The
+    /// follow-up costs one more round trip per turn, and it removes the need for anything to
+    /// *claim* that a session is working, which was the part that could be wrong.
+    func nudge() {
+        read()
+        DispatchQueue.main.asyncAfter(deadline: .now() + settleDelay) { [weak self] in self?.read() }
+    }
+
+    /// How long to wait before looking again. Just past the two seconds it takes the live line to
+    /// appear, and comfortably inside the twenty-second gap it exists to cover.
+    private let settleDelay: TimeInterval = 2.5
+
     /// Read every session's screen, once. Overlapping readings are dropped rather than queued:
     /// on a loaded machine a slow round trip would otherwise pile up behind itself.
     private func read() {
         guard !reading else { return }
         reading = true
+        // Taken here, on the main thread, because that is the only thread that writes them.
+        let notes = Config.shared.hooks ? HookBridge.notes : [:]
         DispatchQueue.global(qos: isForeground ? .userInitiated : .utility).async { [weak self] in
             guard let self else { return }
             // Cheapest possible answer to "is any of this worth doing": one `ps`, already cached
@@ -85,7 +114,10 @@ final class SessionWatch {
             let anyClaude = !ITerm.claudePIDs().isEmpty
             let snap = anyClaude ? Targets.snapshot() : Targets.Snapshot()
             let sessions = snap.claudeSessions.isEmpty ? snap.sessions : snap.claudeSessions
-            let states = anyClaude ? Targets.states(of: sessions) : [:]
+            let screen = anyClaude ? Targets.states(of: sessions) : [:]
+            // What was read, with what Claude Code said about itself folded in. A no-op when
+            // nothing is installed, which is the state every reading has to be right in.
+            let states = HookBridge.merge(notes, into: screen, sessions: sessions)
 
             // Only the ones nothing is known about yet.
             var grids: [String: ProjectIcon.Grid] = [:]

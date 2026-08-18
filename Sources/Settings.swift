@@ -23,6 +23,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private var recording: NSButton?
     private var monitor: Any?
+    private var hooksButton: NSButton?
+    private var hooksStatus: NSTextField?
 
     func show() {
         if window == nil { window = build() }
@@ -99,6 +101,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                     set: { Config.shared.voiceStopSeconds = $0 },
                     format: { $0 == 0 ? L.t.settingsOff : L.t.settingsSeconds($0) })
 
+        form.section(L.t.settingsHooks)
+        form.row("", hooksControl(), hint: L.t.settingsHooksHint)
+
         form.footer(L.t.settingsOpenFile) {
             let url = Config.shared.fileURL
             if !FileManager.default.fileExists(atPath: url.path) { Config.shared.save() }
@@ -120,6 +125,59 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         w.isReleasedWhenClosed = false
         w.delegate = self
         return w
+    }
+
+    // MARK: - Claude Code hooks
+
+    /// A button and a sentence saying what it did.
+    ///
+    /// The sentence is the point. This writes into `~/.claude/settings.json`, which is somebody
+    /// else's file and often somebody else's business — a team may manage it, a plugin may
+    /// rewrite it — so "the button says installed" is not a claim worth making on its own.
+    /// Whether a session has ever actually reported is the only evidence that the wiring works,
+    /// and it costs nothing to look: it is the newest note on disk.
+    private func hooksControl() -> NSView {
+        let width: CGFloat = 560 - (22 + 168 + 14) - 22
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 24))
+
+        let b = NSButton(title: "", target: self, action: #selector(toggleHooks))
+        b.bezelStyle = .rounded
+        b.frame = NSRect(x: 0, y: 0, width: 104, height: 24)
+        box.addSubview(b)
+        hooksButton = b
+
+        let status = NSTextField(labelWithString: "")
+        status.font = NSFont.systemFont(ofSize: 11)
+        status.textColor = .secondaryLabelColor
+        status.lineBreakMode = .byTruncatingTail
+        status.frame = NSRect(x: 114, y: 4, width: width - 114, height: 16)
+        box.addSubview(status)
+        hooksStatus = status
+
+        refreshHooksControl()
+        return box
+    }
+
+    private func refreshHooksControl() {
+        let installed = HookBridge.isInstalled
+        hooksButton?.title = installed ? L.t.settingsHooksRemove : L.t.settingsHooksInstall
+        // Heard from within the day. Longer and this would go on saying "reporting" about a
+        // machine that has not run Claude Code since last week, which is the reassurance the
+        // line exists to withhold.
+        let heard = HookBridge.lastHeard.map { Date().timeIntervalSince($0) < 86_400 } ?? false
+        hooksStatus?.stringValue = !installed ? L.t.settingsHooksOff
+            : (heard ? L.t.settingsHooksLive : L.t.settingsHooksOn)
+    }
+
+    @objc private func toggleHooks() {
+        let problem = HookBridge.isInstalled ? HookBridge.uninstall() : HookBridge.install()
+        refreshHooksControl()
+        guard let problem else { return }
+        let a = NSAlert()
+        a.messageText = L.t.settingsHooks
+        a.informativeText = problem
+        a.alertStyle = .warning
+        a.runModal()
     }
 
     // MARK: - The controls that are not a checkbox or a slider

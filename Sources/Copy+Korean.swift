@@ -106,6 +106,13 @@ struct Korean: Copy {
     let settingsTranscript = "트랜스크립트"
     let settingsTerminal = "터미널"
     let settingsOff = "끔"
+    let settingsHooks = "Claude Code 훅"
+    let settingsHooksHint = "설치해 두면 한 차례가 시작되거나 끝나거나 답을 기다리는 순간을 Claude Code가 곧바로 알려 줍니다. Clawdline이 다음에 확인할 때까지 기다리지 않습니다. 상태를 읽는 곳은 여전히 화면이고, 여기서 정해지는 것은 얼마나 빨리인지뿐입니다."
+    let settingsHooksInstall = "설치"
+    let settingsHooksRemove = "제거"
+    let settingsHooksOff = "설치 안 됨 — 상태는 모두 화면에서 읽습니다"
+    let settingsHooksOn = "설치됨 — 아직 알려 온 세션이 없습니다"
+    let settingsHooksLive = "설치됨. 세션이 알려 오고 있습니다"
     let settingsOpenFile = "설정 파일 열기…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f초", value) }
 

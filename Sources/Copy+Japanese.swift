@@ -106,6 +106,13 @@ struct Japanese: Copy {
     let settingsTranscript = "トランスクリプト"
     let settingsTerminal = "ターミナル"
     let settingsOff = "オフ"
+    let settingsHooks = "Claude Code のフック"
+    let settingsHooksHint = "入れておくと、応答が始まった瞬間、終わった瞬間、返事を待っている瞬間を Claude Code のほうから知らせます。Clawdline が次に見にいくまで待ちません。読み取り自体はこれまでどおり画面からで、ここで決まるのは速さだけです。"
+    let settingsHooksInstall = "入れる"
+    let settingsHooksRemove = "外す"
+    let settingsHooksOff = "未設定 — 状態はすべて画面から読んでいます"
+    let settingsHooksOn = "設定済み — まだどのセッションからも届いていません"
+    let settingsHooksLive = "設定済み。セッションから届いています"
     let settingsOpenFile = "設定ファイルを開く…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 

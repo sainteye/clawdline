@@ -116,6 +116,13 @@ final class Config {
     /// How far the ⌘J backdrop goes, from 0 (none) to 1 (fully obscured).
     /// Below 1 the blur is partly transparent, so what is behind stays legible.
     var backdropStrength: Double = 0.5
+    /// Believe what Claude Code's hooks say about a session, when they are installed.
+    ///
+    /// Off, and the notes are ignored while the hooks stay wired up — which is the setting to
+    /// reach for if a reading ever looks wrong and you want to know whether this is why, without
+    /// editing another program's settings file to find out. Nothing else changes: the screen was
+    /// always where every reading came from. See Sources/HookBridge.swift.
+    var hooks = true
     var tmuxPath = ""
     /// Where the project status files are read from, and where the icon registry lives.
     ///
@@ -143,6 +150,7 @@ final class Config {
         if let v = obj["scope_app"] as? String { scopeApp = v }
         if let v = obj["language"] as? String, !v.isEmpty { language = v }
         if let v = obj["mascot"] as? String, !v.isEmpty { mascot = v }
+        if let v = obj["hooks"] as? Bool { hooks = v }
         if let v = obj["tmux_path"] as? String { tmuxPath = v }
         if let v = obj["status_dir"] as? String { statusDir = v }
         if let v = obj["icons_file"] as? String { iconsFile = v }
@@ -179,6 +187,7 @@ final class Config {
             "scope_app": scopeApp,
             "language": language,
             "mascot": mascot,
+            "hooks": hooks,
             "tmux_path": tmuxPath,
             "status_dir": statusDir,
             "icons_file": iconsFile,

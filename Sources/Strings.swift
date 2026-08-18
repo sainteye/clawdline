@@ -161,6 +161,18 @@ protocol Copy {
     var settingsTranscript: String { get }
     var settingsTerminal: String { get }
     var settingsOff: String { get }
+    // Claude Code hooks — see Sources/HookBridge.swift
+    var settingsHooks: String { get }
+    var settingsHooksHint: String { get }
+    var settingsHooksInstall: String { get }
+    var settingsHooksRemove: String { get }
+    /// The three states worth telling apart. "Installed" and "installed and actually running"
+    /// look identical from a checkbox, and the gap between them is where a wrong shell, a
+    /// settings file somebody else manages, or a plain typo in a path would hide.
+    var settingsHooksOff: String { get }
+    var settingsHooksOn: String { get }
+    var settingsHooksLive: String { get }
+
     var settingsOpenFile: String { get }
     /// A number of seconds, as a settings row shows it.
     ///

@@ -79,9 +79,23 @@ enum Transcript {
 
     /// Match a session on screen to its transcript: narrow by project, then by title, then
     /// fall back to whichever was written most recently.
-    static func locate(cwd: String, tabTitle: String, startedAt: Date? = nil) -> URL? {
+    ///
+    /// `sessionID` skips all of that. Claude Code names a transcript after the session it belongs
+    /// to, so when a hook has told us the id there is nothing left to work out — and everything
+    /// below is working out what a name would have said. Only ever an improvement: with no hooks
+    /// installed it is nil, and the matching underneath is what it always was.
+    static func locate(cwd: String, tabTitle: String, startedAt: Date? = nil,
+                       sessionID: String? = nil) -> URL? {
         let dir = projectDirectory(forCwd: cwd)
         let fm = FileManager.default
+
+        if let sessionID, !sessionID.isEmpty {
+            let named = dir.appendingPathComponent("\(sessionID).jsonl")
+            if fm.fileExists(atPath: named.path) { return named }
+            // Falls through rather than returning nothing. A session can be resumed into a new
+            // file, and a project directory is named after the working directory — which moves
+            // if somebody renames a folder. Guessing again beats an empty pane.
+        }
         guard let names = try? fm.contentsOfDirectory(atPath: dir.path) else { return nil }
         // Stat once per file and sort the answers. Asking inside the comparator looked tidier and
         // meant a stat per *comparison* — a project with fifty-six transcripts in it, which is

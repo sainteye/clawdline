@@ -15,6 +15,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The reading everything else here is a consumer of. Started before the panel exists,
         // because the whole point of it is the stretches when the panel does not.
         NotchIsland.shared.install()
+        // Before the watch, so the first reading already has whatever the notes on disk say.
+        // A note that arrives later asks for a reading rather than making one of its own — the
+        // screen is still what every state comes from, and this only changes when it is read.
+        HookBridge.onNote = { SessionWatch.shared.nudge() }
+        HookBridge.start()
         SessionWatch.shared.start()
         NotificationCenter.default.addObserver(self, selector: #selector(configChanged),
                                                name: .clawdlineConfigChanged, object: nil)
@@ -198,6 +203,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             PromptController.shared.toggle()
         case "settings":
             SettingsWindow.shared.show()
+        case "hooks":
+            // `?install=1` and `?install=0`, so the wiring can be put in and taken out by a
+            // script — a setup step somebody runs once on a new machine, or a line in an
+            // uninstaller. The window has the same two buttons; neither is the real interface.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let want = items.first(where: { $0.name == "install" })?.value ?? "1"
+            let problem = want == "0" ? HookBridge.uninstall() : HookBridge.install()
+            Log.write("hooks: \(want == "0" ? "uninstall" : "install") — \(problem ?? "ok")")
         case "send":
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let text = items.first(where: { $0.name == "text" })?.value ?? ""

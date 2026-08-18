@@ -1275,7 +1275,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         guard target.isClaude,
               let cwd = Targets.workingDirectory(of: target),
               let file = Transcript.locate(cwd: cwd, tabTitle: target.name,
-                                           startedAt: Targets.processStart(of: target))
+                                           startedAt: Targets.processStart(of: target),
+                                           sessionID: HookBridge.note(for: target)?.session)
         else { return nil }
 
         let folds = expandedFolds

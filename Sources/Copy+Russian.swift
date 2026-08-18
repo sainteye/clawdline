@@ -108,6 +108,13 @@ struct Russian: Copy {
     let settingsTranscript = "Расшифровка"
     let settingsTerminal = "Терминал"
     let settingsOff = "Выкл"
+    let settingsHooks = "Хуки Claude Code"
+    let settingsHooksHint = "Когда они установлены, Claude Code сам сообщает момент, когда ход начался, закончился или ждёт ответа, — вместо того чтобы Clawdline узнал об этом при следующем опросе. Читается всё по-прежнему с экрана; здесь решается только, насколько быстро."
+    let settingsHooksInstall = "Установить"
+    let settingsHooksRemove = "Убрать"
+    let settingsHooksOff = "Не установлены — состояние читается только с экрана"
+    let settingsHooksOn = "Установлены — ни одна сессия ещё не отозвалась"
+    let settingsHooksLive = "Установлены, сессии отзываются"
     let settingsOpenFile = "Открыть файл настроек…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f с", value) }
 

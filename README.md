@@ -16,7 +16,7 @@ Nothing is installed into Claude Code. iTerm2 directly, every other terminal thr
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](Sources)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#install)
 
-[![Ko-fi](https://img.shields.io/badge/ko--fi-support-ff5e5b.svg?logo=ko-fi&logoColor=white)](https://ko-fi.com/sainteye)
+<a href="https://ko-fi.com/sainteye"><img src="https://ko-fi.com/img/githubbutton_sm.svg" height="36" alt="Support Clawdline on Ko-fi"></a>
 
 English · [繁體中文](README.zh-TW.md)
 
@@ -46,6 +46,11 @@ settings, no wrapper around the `claude` command. It reads the screens your sess
 drawing and the transcripts they are already writing. That is why it works with the sessions you
 started an hour ago, why it cannot break the thing it is reading, and why turning it off leaves
 nothing behind to undo.
+
+There is exactly one thing you can *ask* it to install, and it is a button you have to press:
+five hook entries that let Claude Code say when a turn starts and ends, instead of Clawdline
+finding out on its next look. It changes when a reading happens and never what one says.
+[How that works, and why the screen still decides](docs/hooks.md).
 
 ## What it does that a prompt box does not
 
@@ -120,7 +125,7 @@ nothing behind to undo.
 - **Writing** — [dictation](#talk-instead-of-type) · [files and images](#dropping-in-a-file-or-an-image) · [which tab it sends to](#which-tab-does-it-send-to)
 - **Making it yours** — [mascots](#bring-your-own-mascot) · [config](#config) · [other terminals](#other-terminals-run-claude-code-in-tmux)
 - **Under it** — [how it works](#how-it-works) · [permissions and privacy](#permissions-and-privacy) · [limitations](#limitations) · [troubleshooting](#troubleshooting)
-- **Going further** — [Whisper for mixed languages](docs/whisper.md) · [which Claude Code versions](docs/compatibility.md) · [project status files](docs/project-status.md) · [mascot format](docs/mascots.md)
+- **Going further** — [hooks, for the twenty-second gap](docs/hooks.md) · [Whisper for mixed languages](docs/whisper.md) · [which Claude Code versions](docs/compatibility.md) · [project status files](docs/project-status.md) · [mascot format](docs/mascots.md)
 
 ## Why
 
@@ -450,6 +455,28 @@ nothing to set up: it is each session's own screen, read the same way the <kbd>�
 pane reads it, about once a second while the bar is up and once every twenty seconds while it is
 not.
 
+### Twenty seconds is a long time
+
+That last number is the one thing looking cannot fix. A reading is a round trip to every terminal
+you have open, so away from the bar it happens rarely — and a permission dialog can sit there
+through a whole train of thought before the menu bar mentions it.
+
+Claude Code will say so itself, if you ask it to. **Settings → Claude Code hooks → Install** puts
+five entries in `~/.claude/settings.json`; after that, the moment a turn starts, ends, or needs an
+answer, a two-line note lands in a directory Clawdline is watching, and the reading it would have
+taken twenty seconds later happens in **under a second** instead.
+
+The polling underneath barely changes, and the screen does not stop being the authority: a note
+says *when* something happened, never what is on the screen, so it asks for a reading and
+`SessionState` still decides. **Nothing a hook sends ever claims that a session is working** —
+Claude Code draws its live line about two seconds after you press Return and removes it again
+while the answer streams, so a nudge looks twice rather than asserting anything. Removing the
+hooks leaves nothing behind, and a copy of your settings file is kept the first time so you can
+diff it.
+
+Five events, all rare — `PreToolUse` is deliberately not among them. The full contract, including
+what a note is and is not allowed to change, is in [docs/hooks.md](docs/hooks.md).
+
 ## The notch
 
 This one is play, and it says so in the source. It tells you nothing the menu bar mark does not —
@@ -579,6 +606,7 @@ of the file — including settings from a version that knew about more of them �
   "voice_stop_seconds": 4.0,             // how long a silence ends the session, 0 = off
   "voice_vocabulary": [],                // names a transcriber cannot be expected to know
   "send_images_as_paste": true,          // images arrive as [Image #3], not as a path
+  "hooks": true,                         // believe Claude Code's hooks when they are installed
   "status_dir": "",                      // project status files; "" = claude-bestiary' own
   "icons_file": "",                      // icon registry;        "" = claude-bestiary' own
 }
@@ -681,7 +709,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 880 checks, a couple of seconds
+./test.sh     # 924 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code — see Package.swift
 ```
@@ -702,9 +730,10 @@ your own — see [docs/mascots.md](docs/mascots.md).
 camera housing is [CLI Island](https://github.com/bistin/cc-island) (formerly `cc-island`) by
 [bistin](https://github.com/bistin) — that project got there first, and reading it is what
 turned "the bar should tell you when a session wants you" into something with a shape. The
-implementation here is its own and works differently (it reads the sessions' screens rather than
-installing hooks into Claude Code), but the idea, and the two-ears-around-the-hole grammar that
-makes it look right, are borrowed with thanks.
+implementation here is its own and works differently (it reads the sessions' screens, and only
+uses [hooks](docs/hooks.md) — optionally, and to decide *when* to read rather than what a reading
+says), but the idea, and the two-ears-around-the-hole grammar that makes it look right, are
+borrowed with thanks.
 
 The shape of the notch itself — the concave flare where it meets the menu bar — comes from
 [DynamicNotchKit](https://github.com/MrKai77/DynamicNotchKit) by way of

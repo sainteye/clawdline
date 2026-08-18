@@ -29,6 +29,7 @@ swiftc \
   -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation
 
 cp Resources/iterm.js "$RES/"
+cp Resources/clawdline-hook.sh "$RES/"
 cp -R Resources/mascots "$RES/"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'

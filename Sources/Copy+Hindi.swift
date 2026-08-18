@@ -112,6 +112,13 @@ struct Hindi: Copy {
     let settingsTranscript = "ट्रांसक्रिप्ट"
     let settingsTerminal = "टर्मिनल"
     let settingsOff = "बंद"
+    let settingsHooks = "Claude Code हुक"
+    let settingsHooksHint = "ये लगे होने पर Claude Code उसी क्षण बता देता है जब कोई बारी शुरू होती है, ख़त्म होती है या जवाब माँगती है — Clawdline को अगली बार देखने तक इंतज़ार नहीं करना पड़ता। पढ़ा फिर भी स्क्रीन से ही जाता है; यह सिर्फ़ यह तय करता है कि कितनी जल्दी।"
+    let settingsHooksInstall = "लगाएँ"
+    let settingsHooksRemove = "हटाएँ"
+    let settingsHooksOff = "नहीं लगे — सब कुछ स्क्रीन से पढ़ा जाता है"
+    let settingsHooksOn = "लगे हैं — अभी किसी सत्र ने कुछ नहीं बताया"
+    let settingsHooksLive = "लगे हैं, और सत्र बता रहे हैं"
     let settingsOpenFile = "कॉन्फ़िग फ़ाइल खोलें…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f से॰", value) }
 

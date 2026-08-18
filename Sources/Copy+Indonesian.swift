@@ -108,6 +108,13 @@ struct Indonesian: Copy {
     let settingsTranscript = "Transkrip"
     let settingsTerminal = "Terminal"
     let settingsOff = "Mati"
+    let settingsHooks = "Hook Claude Code"
+    let settingsHooksHint = "Setelah dipasang, Claude Code memberi tahu saat sebuah giliran dimulai, selesai, atau menunggu jawaban — bukan menunggu Clawdline melihatnya pada pemeriksaan berikutnya. Semuanya tetap dibaca dari layar; ini hanya menentukan secepat apa."
+    let settingsHooksInstall = "Pasang"
+    let settingsHooksRemove = "Lepas"
+    let settingsHooksOff = "Belum dipasang — semua dibaca dari layar"
+    let settingsHooksOn = "Terpasang — belum ada sesi yang melapor"
+    let settingsHooksLive = "Terpasang, dan sesi sedang melapor"
     let settingsOpenFile = "Buka berkas konfigurasi…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f dtk", value) }
 

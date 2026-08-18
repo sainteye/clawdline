@@ -111,6 +111,13 @@ struct Portuguese: Copy {
     let settingsTranscript = "Transcrição"
     let settingsTerminal = "Terminal"
     let settingsOff = "Desligado"
+    let settingsHooks = "Hooks do Claude Code"
+    let settingsHooksHint = "Com eles instalados, o Claude Code avisa no instante em que um turno começa, termina ou espera por uma resposta, em vez de o Clawdline descobrir na verificação seguinte. Tudo continua a ser lido do ecrã; isto só decide com que rapidez."
+    let settingsHooksInstall = "Instalar"
+    let settingsHooksRemove = "Remover"
+    let settingsHooksOff = "Não instalados — tudo é lido do ecrã"
+    let settingsHooksOn = "Instalados — nenhuma sessão avisou ainda"
+    let settingsHooksLive = "Instalados, e as sessões estão a avisar"
     let settingsOpenFile = "Abrir o ficheiro de configuração…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

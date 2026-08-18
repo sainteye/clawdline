@@ -110,6 +110,13 @@ struct TraditionalChinese: Copy {
     let settingsTranscript = "對話記錄"
     let settingsTerminal = "終端機畫面"
     let settingsOff = "關閉"
+    let settingsHooks = "Claude Code Hook"
+    let settingsHooksHint = "裝上之後，一輪對話開始、結束、或是需要你回答的當下，Claude Code 會直接說一聲，不必等 Clawdline 下一次去看。每一次判讀仍然來自畫面，這裡只決定判讀發生得多快。"
+    let settingsHooksInstall = "安裝"
+    let settingsHooksRemove = "移除"
+    let settingsHooksOff = "未安裝——狀態全部從畫面讀"
+    let settingsHooksOn = "已安裝——還沒有 session 回報過"
+    let settingsHooksLive = "已安裝，session 正在回報"
     let settingsOpenFile = "打開設定檔……"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 
@@ -241,6 +248,13 @@ struct SimplifiedChinese: Copy {
     let settingsTranscript = "对话记录"
     let settingsTerminal = "终端画面"
     let settingsOff = "关闭"
+    let settingsHooks = "Claude Code Hook"
+    let settingsHooksHint = "装上之后，一轮对话开始、结束、或是需要你回答的当下，Claude Code 会直接说一声，不必等 Clawdline 下一次去看。每一次判读仍然来自画面，这里只决定判读发生得多快。"
+    let settingsHooksInstall = "安装"
+    let settingsHooksRemove = "移除"
+    let settingsHooksOff = "未安装——状态全部从画面读"
+    let settingsHooksOn = "已安装——还没有 session 回报过"
+    let settingsHooksLive = "已安装，session 正在回报"
     let settingsOpenFile = "打开配置文件……"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 

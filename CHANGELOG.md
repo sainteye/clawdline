@@ -7,6 +7,46 @@ older ones can be found from without leaving the repository.
 The entries are prose rather than a list of commits. What belongs in one is **what changed for
 somebody using this** — a commit log already exists and is better at being a commit log.
 
+## Unreleased
+
+### Claude Code can say so itself
+
+Everything here works by looking, and looking has one cost it cannot avoid: it only knows what it
+has looked at. With the bar away that is once every twenty seconds — long enough for a permission
+dialog to sit there through a whole train of thought.
+
+- **Optional hooks, off until you press a button.** *Settings → Claude Code hooks → Install* puts
+  five entries in `~/.claude/settings.json`. After that, the moment a turn starts, ends or needs
+  an answer, a two-line note lands in a directory the app is watching, and the reading that would
+  have happened twenty seconds later happens in under a second instead. Measured on three
+  sessions: 20s → 0.8s.
+- **The polling does not change.** Same three round trips a minute; a note moves one of them to a
+  moment worth taking it rather than adding one.
+- **The screen is still the authority, and that is the design.** `Notification` fires both for a
+  permission request and for a session that has merely been quiet for a minute, so a note asks
+  for a reading and `SessionState` still decides what is on the screen. **No note asserts that a
+  session is working.** Measuring is what settled that: Claude Code draws its live line about 2.1
+  seconds after you press Return and then removes it again while the answer streams, so a claim
+  short enough to be safe would cover almost none of a turn — and a long one could not be
+  retracted, because pressing Esc to cancel fires no hook at all. A nudge looks twice instead,
+  immediately and again 2.5 seconds later, which is the same information with nothing claimed.
+- **The one thing a note does settle** is something the screen gets wrong rather than misses: a
+  live line that was never erased after a fast turn. A `Stop` overrides it for ten seconds.
+- **Five events, all rare.** `PreToolUse` is deliberately not among them — it fires hundreds of
+  times an hour to say something `UserPromptSubmit` and `Stop` already bracket. `SubagentStop` is
+  left out because a subagent finishing is not the session finishing.
+- **Your settings file is a guest room.** Everything already in it is read, changed and written
+  back, a copy is kept once as `settings.json.before-clawdline`, and removing the hooks leaves
+  the file reading as though this had never touched it.
+- **⌘J finds the transcript by name.** A hook carries the session id, which is what Claude Code
+  names the transcript file after — so the matching by title and start time is only needed when
+  there are no hooks.
+- `clawdline://hooks?install=1` and `install=0`, for setting a machine up from a script.
+- `"hooks": false` in the config ignores the notes without touching anybody's settings file.
+
+The contract, including what a note is and is not allowed to change, is in
+[docs/hooks.md](docs/hooks.md).
+
 ## 0.5.0 — 2026-08-18
 
 ### The bar knows what every session is doing
