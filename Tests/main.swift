@@ -297,6 +297,19 @@ group("tmux pane listing parses") {
 
     expect("a malformed line is skipped", Tmux.parsePanes("not\u{1}enough\u{1}fields").count, 0)
     expect("empty input yields nothing", Tmux.parsePanes("").count, 0)
+
+    // The installer everybody now has puts the binary at ~/.local/share/claude/versions/2.1.233
+    // and symlinks `claude` at it. tmux reports the process name the kernel holds — the basename
+    // of the executable — so the pane running Claude Code calls itself "2.1.233", and every tmux
+    // session was listed as an ordinary shell. `ps` reads argv, which still says claude.
+    let versioned = ["%9", "/dev/ttys061", "2.1.233", "work", "0", "0", "✳ a task"]
+        .joined(separator: sep)
+    check("a versioned binary is not recognised by name alone",
+          !Tmux.parsePanes(versioned)[0].isClaude)
+    check("but the tty says what the name does not",
+          Tmux.parsePanes(versioned, claudeTTYs: ["ttys061"])[0].isClaude)
+    check("and a shell on a tty nobody claimed is still a shell",
+          !Tmux.parsePanes(rows, claudeTTYs: ["ttys080"])[1].isClaude)
 }
 
 // MARK: - Terminal escapes
@@ -391,6 +404,49 @@ group("transcript parsing") {
     check("unparseable lines are ignored rather than fatal", true)
 
     expect("the limit keeps the tail", Transcript.parse(sampleTranscript, limit: 2).count, 2)
+
+    // It reads backwards from the newest line and stops as soon as it has enough, because
+    // parsing every line of an eight-megabyte tail to keep four hundred entries was a third of a
+    // second on the path a session switch runs. What comes back has to be indistinguishable from
+    // having read the whole thing: the *newest* entries, still in the order they were written.
+    let tail2 = Transcript.parse(sampleTranscript, limit: 2)
+    expect("the tail is the newest, not the oldest", tail2.last?.text, "plain string content")
+    expect("and it is still in reading order", tail2.first?.text, "Done.")
+
+    // One row can yield several entries, so the limit can be reached in the middle of a row.
+    let tail4 = Transcript.parse(sampleTranscript, limit: 4)
+    expect("a row that straddles the limit is trimmed to it", tail4.count, 4)
+    expect("from the newest end", tail4.map(\.text).suffix(2).joined(separator: "|"),
+           "Done.|plain string content")
+
+    // A last line with no newline after it is the normal shape of a file being appended to.
+    let unterminated = #"{"type":"user","message":{"role":"user","content":"last word"}}"#
+    expect("a line with no newline after it is still read",
+           Transcript.parse(sampleTranscript + "\n" + unterminated).last?.text, "last word")
+    expect("a single line with no newline at all parses",
+           Transcript.parse(unterminated).count, 1)
+    expect("blank lines between records are not entries",
+           Transcript.parse("\n\n" + unterminated + "\n\n").count, 1)
+    expect("nothing at all is nothing", Transcript.parse("").count, 0)
+
+    // The scan walks the UTF-8 view a byte at a time and then slices the String with the indices
+    // it stopped on. Those stops are always just after an ASCII newline, so they are always on a
+    // character boundary — but if that ever stopped being true the slice would not be wrong, it
+    // would trap, and it would trap in the pane rather than in a test. So: lines of characters
+    // that are three and four bytes long, on both sides of the separator.
+    let wide = [
+        #"{"type":"user","message":{"role":"user","content":"把重試改成指數退避"}}"#,
+        #"{"type":"assistant","message":{"role":"assistant","content":"好，改在 upload.rb 裡 🐈‍⬛"}}"#,
+        #"{"type":"user","message":{"role":"user","content":"謝謝"}}"#,
+    ].joined(separator: "\n")
+    let multibyte = Transcript.parse(wide)
+    expect("multi-byte lines are read", multibyte.count, 3)
+    expect("and come back whole", multibyte[0].text, "把重試改成指數退避")
+    expect("emoji with a zero-width joiner survive the slice", multibyte[1].text,
+           "好，改在 upload.rb 裡 🐈‍⬛")
+    expect("and the newest is still last", multibyte[2].text, "謝謝")
+    expect("stopping early does not cut a character in half",
+           Transcript.parse(wide, limit: 1)[0].text, "謝謝")
 }
 
 group("transcript tool summaries") {
@@ -1358,29 +1414,64 @@ group("the languages the interface speaks") {
     expect("ja-JP is Japanese", name(resolve("ja-JP")), "Japanese")
     check("a language nobody has written yet falls through", resolve("sv-SE") == nil)
 
-    let en = English()
-    let sample: [(String, (Copy) -> String)] = [
-        ("placeholder", { $0.placeholder }),
-        ("noSession", { $0.noSession }),
-        ("nothingToSend", { $0.nothingToSend }),
-        ("sendFailed", { $0.sendFailed }),
-        ("voiceNoPermission", { $0.voiceNoPermission }),
-        ("voiceUnavailable", { $0.voiceUnavailable }),
-        ("whisperNothingHeard", { $0.whisperNothingHeard }),
-        ("noOutput", { $0.noOutput }),
-        ("menuOpen", { $0.menuOpen }),
-        ("menuReveal", { $0.menuReveal }),
-        ("menuLogin", { $0.menuLogin }),
-        ("menuReload", { $0.menuReload }),
-        ("loginFailed", { $0.loginFailed }),
-        ("hintSend", { $0.hintSend }),
-        ("hintNewline", { $0.hintNewline }),
+    // Every stored string, not a hand-written sample of fifteen.
+    //
+    // The sample version was the reason a whole settings window shipped with thirty-two new
+    // strings that nothing checked: a new string is by definition not in a list written before
+    // it existed, so the one test meant to catch "copied the reference file and translated half
+    // of it" could not see the half that mattered. `Mirror` over the struct gets all of them, so
+    // adding a string adds its own check with it.
+    //
+    // A handful legitimately read the same in two languages — "Terminal" is "Terminal" in most
+    // of Europe — so those are named here, one at a time, with a reason. Anything not on this
+    // list that matches English is untranslated, and says so by name.
+    // A handful legitimately read the same in two languages — "Terminal" is "Terminal" in most
+    // of Europe, and "General" is a Spanish word. Those are named one at a time as `tag:member`,
+    // or `*:member` for the ones that are the same everywhere, each with a reason. Anything not
+    // named here that matches English is untranslated, and the failure says which.
+    //
+    // Per language rather than per string on purpose: "log" being the word in Italian is not a
+    // reason for it to still be the word in Chinese, and a global exemption would have said it
+    // was.
+    let sameIsFine: Set<String> = [
+        "*:settingsAuto",       // "Auto" is the word in Italian and French too
+        "*:settingsTerminal",   // the same loan word almost everywhere
+        "*:settingsTranscript", // ditto, and it is the name of the thing on screen
+        "*:settingsTitle",      // starts with the app's name, which is not translated
+        "*:settingsOff",        // "Off" survives untranslated in several
+        "*:hintMascot",         // a short loan word in most of these
+        "es:settingsGeneral",   // "General" is Spanish
+        "it:hintOutput",        // and "output" is Italian
+        "it:stackActionLogs",   // as is "log"
+        "id:stackActionLogs",   // and in Indonesian
     ]
+    let en = English()
+
+    func strings(of copy: Copy) -> [String: String] {
+        var out: [String: String] = [:]
+        for child in Mirror(reflecting: copy).children {
+            guard let label = child.label, let value = child.value as? String else { continue }
+            out[label] = value
+        }
+        return out
+    }
+
+    let reference = strings(of: en)
+    check("the reference file has strings to compare against", reference.count > 40,
+          "found \(reference.count)")
+
     for (tag, copy) in L.catalog where tag != "en" {
-        let same = sample.filter { $0.1(copy) == $0.1(en) }
-        check("\(tag) is translated, not copied",
-              same.count <= 2, "\(same.count) of \(sample.count) still English: "
-              + same.map(\.0).joined(separator: ", "))
+        let mine = strings(of: copy)
+        let missing = reference.keys.filter { mine[$0] == nil }
+        check("\(tag) implements every string", missing.isEmpty,
+              missing.sorted().joined(separator: ", "))
+
+        let untranslated = reference
+            .filter { mine[$0.key] == $0.value }
+            .filter { !sameIsFine.contains("*:" + $0.key) && !sameIsFine.contains(tag + ":" + $0.key) }
+            .keys.sorted()
+        check("\(tag) is translated, not copied", untranslated.isEmpty,
+              "still English: " + untranslated.joined(separator: ", "))
     }
 
     // The hint words share one row along the bottom. A long one there does not wrap, it pushes
@@ -1756,6 +1847,76 @@ group("the line that says what it is doing") {
     let several = ["✢ Generating… (9s)", "✻ Generating… (10s)", "✽ Generating… (11s)", "❯"]
         .joined(separator: "\n")
     expect("the last one is the live one", Activity.parse(several), "Generating… (11s)")
+
+    // tmux captures arrive with the colours still in them. A line that begins with a colour code
+    // does not begin with the character it looks like it begins with, so the glyph test saw ESC
+    // and no tmux session ever once reported being busy.
+    let coloured = "\u{1b}[38;5;215m✢\u{1b}[0m Generating… (18s)\n\u{1b}[2m❯\u{1b}[0m"
+    expect("colour codes do not hide the spinner", Activity.parse(coloured), "Generating… (18s)")
+    expect("plain text is left alone", Ansi.plain("nothing to strip"), "nothing to strip")
+    expect("an OSC title goes too", Ansi.plain("\u{1b}]0;a title\u{07}body"), "body")
+}
+
+group("what a session is doing, from its screen") {
+    // Every question Claude Code stops for is drawn the same way — numbered options with a caret
+    // parked on one of them — and that shape is what is recognised, because the sentences beside
+    // it are English, undocumented, and different from one release to the next.
+    let permission = """
+    ╭──────────────────────────────────────────────╮
+    │ Bash command                                 │
+    │                                              │
+    │ rm -rf node_modules                          │
+    │ Remove the installed packages                │
+    │                                              │
+    │ Do you want to proceed?                      │
+    │ ❯ 1. Yes                                     │
+    │   2. Yes, and don't ask again this session   │
+    │   3. No, and tell Claude what to do instead  │
+    ╰──────────────────────────────────────────────╯
+    """
+    expect("a question on screen is waiting for you", SessionState.read(permission), .waiting)
+
+    let working = "✢ Generating… (18s · thinking)\n────────\n❯"
+    expect("a spinner is working", SessionState.read(working), .working("Generating… (18s · thinking)"))
+    expect("an idle prompt is idle", SessionState.read("❯\n────\n  atrium  main"), .idle)
+
+    // Not the same answer as "doing nothing", and it must not be drawn like it. A session whose
+    // screen could not be read is a session nothing is known about.
+    expect("an unreadable screen is not an idle one", SessionState.read(nil), .unknown)
+    expect("neither is an empty one", SessionState.read(""), .unknown)
+
+    // The order of the two tests is the whole of the correctness. Claude Code draws its dialog
+    // below whatever came before it and does not always erase the spinner line above — so asking
+    // "is it busy?" first finds that stale line and hides the one row that needed a person.
+    let stale = "✢ Generating… (9s)\n\n❯ 1. Yes\n  2. No, tell Claude what to do instead\n"
+    expect("a stale spinner above a menu does not win", SessionState.read(stale), .waiting)
+
+    // Claude writes numbered lists in prose all day. What prose does not do is put a selection
+    // caret on one of them — and a menu never offers fewer than two things to choose between.
+    let prose = """
+    Here is what I found:
+    1. the retry is not exponential
+    2. the timeout is hard-coded
+    3. neither is covered by a test
+    ❯
+    """
+    expect("a numbered list in prose is not a menu", SessionState.read(prose), .idle)
+    check("a caret on its own is not a menu", !SessionState.isChoosing("❯ 1. Yes"))
+    check("a quoted list is not a menu either",
+          !SessionState.isChoosing("> 1. first\n> 2. second"))
+    check("options with no caret are a list that scrolled past",
+          !SessionState.isChoosing("  1. Yes\n  2. No"))
+
+    // The dialog is drawn inside a box, so the caret is never at the front of the captured line.
+    check("the wall the dialog is drawn in does not hide the caret",
+          SessionState.isChoosing("│ ❯ 1. Yes            │\n│   2. No             │"))
+    check("colours do not hide it either",
+          SessionState.read("\u{1b}[1m❯ 1. Yes\u{1b}[0m\n  2. No") == .waiting)
+
+    // A menu that has scrolled off the top of the visible screen is not a menu you can answer.
+    let scrolled = (["❯ 1. Yes", "  2. No"] + Array(repeating: "output", count: 40) + ["❯"])
+        .joined(separator: "\n")
+    expect("a menu far above the fold is gone", SessionState.read(scrolled), .idle)
 }
 
 group("the transcript behind the README pictures") {
@@ -1977,6 +2138,68 @@ group("devstack: the documented example files") {
     // link, so confirming a site is really up is a click and not a retyped address.
     expect("the tunnel carries the address it serves",
            state?.processes.first { $0.name == "tunnel" }?.url, "https://dev.example.com")
+}
+
+group("stack logs: unwrapping the supervisor's envelope") {
+    let line = #"{"level":"error","process":"api","replica":0,"message":"INFO: GET /health 200"}"#
+    expect("the line the server actually printed", StackLog.unwrap(line), "INFO: GET /health 200")
+    // A project whose `logs` is plain `tail` must not come out empty for not being JSON.
+    expect("plain lines pass through", StackLog.unwrap("just a line"), "just a line")
+    expect("so does something JSON-shaped but not an envelope",
+           StackLog.unwrap(#"{"a":1}"#), "")
+    expect("and a brace that starts a sentence", StackLog.unwrap("{not json"), "{not json")
+}
+
+group("stack logs: severity comes from the text, not the pipe") {
+    // process-compose labels everything on stderr as level=error, and uvicorn, next, mkdocs and
+    // cloudflared all log their ordinary progress there. Believing that field paints a healthy
+    // stack entirely red, after which nobody reads the colour again.
+    check("an INFO line is not an error", StackLog.level(of: "INFO: GET /health 200") == .normal)
+    check("an ERROR line is", StackLog.level(of: "ERROR - could not connect") == .error)
+    check("a warning is a warning", StackLog.level(of: "WARNING: deprecated") == .warning)
+    // A request path is not a severity.
+    check("a path containing the word does not count",
+          StackLog.level(of: "GET /api/v1/error-report 200") == .normal)
+}
+
+group("stack logs: the three shapes a logs command can hand back") {
+    // tail over files, with banners.
+    let files = """
+    ==> logs/stack/api.log <==
+    {"level":"info","process":"api","message":"listening on 8002"}
+    ==> logs/stack/web.log <==
+    {"level":"info","process":"web","message":"ready"}
+    """
+    let a = StackLog.entries(files)
+    expect("one entry per line", a.count, 2)
+    expect("named by the file, without path or suffix", a.first?.process, "api")
+    expect("and unwrapped", a.first?.message, "listening on 8002")
+
+    // process-compose's own multi-process prefix.
+    let prefixed = "[web\t]  ✓ Ready in 244ms\n[api\t]  INFO: started"
+    let b = StackLog.entries(prefixed)
+    expect("two entries", b.count, 2)
+    expect("first is web", b.first?.process, "web")
+    expect("with the bracket gone", b.first?.message, "✓ Ready in 244ms")
+
+    // A single process: clean lines, no prefix, no envelope. Nothing to strip.
+    let plain = StackLog.entries("INFO: one\nINFO: two")
+    expect("both kept", plain.count, 2)
+    expect("verbatim", plain.first?.message, "INFO: one")
+    expect("with no process to name", plain.first?.process, "")
+}
+
+group("stack logs: the timestamp every line starts with") {
+    // Dimming it is most of what makes a wall of log readable — it is the same eighteen
+    // characters on every row and the least informative part of each.
+    let line = "2026-08-18 10:39:28 INFO    cairn.access GET /health → 200"
+    expect("date and time, up to the following space",
+           StackLog.timestampLength(line), 20)
+    expect("a bare clock too", StackLog.timestampLength("10:39:28 INFO x"), 9)
+    expect("nothing to dim when there is no stamp",
+           StackLog.timestampLength("INFO: 127.0.0.1 - GET /"), 0)
+    // A version number is not a time.
+    expect("and not a version", StackLog.timestampLength("v1.120.0 released"), 0)
 }
 
 group("devstack: port probing") {
