@@ -17,3 +17,6 @@ Package.resolved
 
 # Local working artifacts — plans, landscapes, audits. Deliberately not published.
 artifacts/
+
+# Python bytecode from tools/, which are scripts and not a package.
+__pycache__/

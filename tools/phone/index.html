@@ -1,0 +1,395 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>clawdline — a phone, for the notification picture</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!--
+    A drawn phone, so that a real notification has somewhere to land.
+
+    The one thing this page must never do is invent the notification. What is on the glass is
+    drawn here — the wallpaper, the icons, the dock, the shape of the banner — and **everything
+    inside the banner comes off the wire**: this page asks Clawdline for the real VAPID key,
+    subscribes this browser with it, asks Clawdline to send one, and draws whatever the service
+    worker is handed. Title, body and time are the app's, in the app's configured language.
+
+    That is the whole reason it goes to this length instead of being a screenshot with some text
+    typed into it. A staged picture of a notification is a claim that the feature works, made by
+    a person rather than by the code, and it stays in the README long after it stops being true.
+
+    Run it through tools/web-serve.py, which puts this page and the app's `/v1/` on one origin —
+    a browser will only subscribe for the origin the page came from. Then:
+
+        node tools/shoot-web.js --url http://127.0.0.1:7788/ --script push --grant notifications
+
+    Query string:
+        ?time=10:14        the clock in the status bar. Fixed, so the picture is reproducible
+        ?replay=<base64>   draw a payload captured earlier instead of asking for a live one.
+                           For working on the drawing without sending a notification every time
+                           — never for the README picture, which is shot live.
+-->
+<style>
+:root {
+    --ink: #f7f7f9;
+    --dim: rgba(255, 255, 255, 0.62);
+    /* The wallpaper is the app's accent taken down to something a phone would actually wear —
+       dark enough that a white banner sits on it the way iOS intends, and not so branded that
+       the picture looks like an advertisement for itself. */
+    --wall-a: #2a1c19;
+    --wall-b: #12100f;
+    --wall-c: #3a2621;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+    font: 15px/1.35 -apple-system, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    background: #000;
+}
+
+/* ---- the screen ---------------------------------------------------------- */
+
+#phone {
+    position: relative;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background:
+        radial-gradient(120% 80% at 22% 8%, var(--wall-c) 0%, transparent 60%),
+        radial-gradient(100% 70% at 85% 92%, #241a2e 0%, transparent 55%),
+        linear-gradient(168deg, var(--wall-a) 0%, var(--wall-b) 58%, #0b0a0a 100%);
+}
+
+/* The status bar, and the cutout that lives in the middle of it. The pill is drawn rather than
+   left as a gap: this is a picture of a phone, and on a phone that shape is black glass. */
+.status {
+    position: relative;
+    height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 30px 0;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.1px;
+}
+.island {
+    position: absolute;
+    left: 50%;
+    top: 11px;
+    transform: translateX(-50%);
+    width: 124px;
+    height: 36px;
+    border-radius: 20px;
+    background: #000;
+}
+.status .glyphs { display: flex; align-items: center; gap: 6px; }
+.bars { display: flex; align-items: flex-end; gap: 2px; height: 11px; }
+.bars i { width: 3px; background: var(--ink); border-radius: 1px; display: block; }
+.bars i:nth-child(1) { height: 4px; }
+.bars i:nth-child(2) { height: 6px; }
+.bars i:nth-child(3) { height: 8.5px; }
+.bars i:nth-child(4) { height: 11px; }
+.wifi { width: 16px; height: 11px; }
+.battery {
+    width: 25px; height: 12px; border: 1.5px solid rgba(255,255,255,0.55);
+    border-radius: 3.5px; position: relative; padding: 1.5px;
+}
+.battery::after {
+    content: ""; position: absolute; right: -3.5px; top: 3.5px; width: 2px; height: 4px;
+    border-radius: 0 1px 1px 0; background: rgba(255,255,255,0.45);
+}
+.battery span { display: block; height: 100%; width: 72%; border-radius: 1.5px; background: var(--ink); }
+
+/* ---- the home screen ----------------------------------------------------- */
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 26px 18px;
+    /* Clear of the banner. On a real phone a notification covers the top row, which is true and
+       also means the one icon worth seeing is the one behind it. */
+    padding: 96px 24px 0;
+}
+.app { text-align: center; }
+.app .tile {
+    width: 62px; height: 62px; margin: 0 auto 7px;
+    border-radius: 15px;
+    background: rgba(255, 255, 255, 0.10);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 6px 14px rgba(0,0,0,0.28);
+    display: block;
+    object-fit: cover;
+}
+/* The other icons are shapes and not logos. A README picture with somebody else's app on the
+   home screen is a picture using somebody else's trade mark to sell this one. */
+.app.blank .tile { background: rgba(255, 255, 255, 0.075); }
+.app.blank .tile::after {
+    content: ""; display: block; margin: 21px auto; width: 20px; height: 20px;
+    border-radius: 6px; background: rgba(255,255,255,0.10);
+}
+.app .name { font-size: 11.5px; color: rgba(255,255,255,0.88); text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+.app.blank .name { color: rgba(255,255,255,0.30); }
+
+.dock {
+    position: absolute; left: 12px; right: 12px; bottom: 26px;
+    background: rgba(255, 255, 255, 0.10);
+    backdrop-filter: blur(22px);
+    border-radius: 30px;
+    padding: 13px 14px;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+}
+.dock .tile { width: 60px; height: 60px; margin: 0 auto; border-radius: 14px; background: rgba(255,255,255,0.09); }
+.home-bar {
+    position: absolute; bottom: 9px; left: 50%; transform: translateX(-50%);
+    width: 138px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.72);
+}
+
+/* ---- the banner ---------------------------------------------------------- */
+/*
+   Shaped like the notification iOS draws, because the reader is being told "this is what lands
+   on your phone" and a shape they do not recognise makes them work out what they are looking at.
+   The words in it are not written here — see `show()`.
+*/
+.banner {
+    position: absolute;
+    top: 62px; left: 10px; right: 10px;
+    display: flex; gap: 11px; align-items: flex-start;
+    padding: 13px 14px;
+    border-radius: 22px;
+    background: rgba(44, 44, 48, 0.72);
+    backdrop-filter: blur(26px) saturate(160%);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.42), inset 0 0 0 0.5px rgba(255,255,255,0.13);
+    transform: translateY(-190%);
+    opacity: 0;
+    /* Overshoot on the way in, so it arrives the way a notification arrives rather than sliding
+       into place like a panel. Out is quicker and does not overshoot: nothing bounces on exit. */
+    transition: transform 620ms cubic-bezier(0.16, 1.02, 0.30, 1.06), opacity 260ms linear;
+}
+.banner.in { transform: translateY(0); opacity: 1; }
+.banner.out { transform: translateY(-190%); opacity: 0; transition: transform 380ms ease-in, opacity 260ms linear; }
+.banner .mark { width: 38px; height: 38px; border-radius: 9px; flex: 0 0 auto; background: #1a1a1e; }
+.banner .text { min-width: 0; flex: 1; }
+.banner .head { display: flex; align-items: baseline; gap: 8px; }
+.banner .title {
+    font-size: 14px; font-weight: 600; letter-spacing: 0.1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.banner .when { margin-left: auto; font-size: 12.5px; color: var(--dim); flex: 0 0 auto; }
+.banner .body { font-size: 14px; line-height: 1.32; margin-top: 1px; overflow-wrap: anywhere; }
+
+/* Only ever seen while the storyboard is being written. If this is in a README picture,
+   something went wrong and it should be obvious rather than subtle. */
+.fault {
+    position: absolute; left: 10px; right: 10px; top: 62px;
+    padding: 12px 14px; border-radius: 18px;
+    background: #7a1f1f; font-size: 13px; line-height: 1.35;
+}
+</style>
+
+<div id="phone">
+    <div class="status">
+        <div class="island"></div>
+        <span id="clock">10:14</span>
+        <span class="glyphs">
+            <span class="bars"><i></i><i></i><i></i><i></i></span>
+            <svg class="wifi" viewBox="0 0 16 11" aria-hidden="true">
+                <path d="M8 9.6 6.1 7.5a2.7 2.7 0 0 1 3.8 0Z" fill="#fff"/>
+                <path d="M3.6 5a6.4 6.4 0 0 1 8.8 0" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+                <path d="M1.2 2.4a9.9 9.9 0 0 1 13.6 0" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+            </svg>
+            <span class="battery"><span></span></span>
+        </span>
+    </div>
+
+    <div class="grid" id="grid"></div>
+
+    <div class="dock"><div class="tile"></div><div class="tile"></div><div class="tile"></div><div class="tile"></div></div>
+    <div class="home-bar"></div>
+
+    <div class="banner" id="banner" hidden>
+        <img class="mark" id="banner-mark" alt="">
+        <div class="text">
+            <div class="head">
+                <span class="title" id="banner-title"></span>
+                <span class="when" id="banner-when">now</span>
+            </div>
+            <div class="body" id="banner-body"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+"use strict";
+
+var params = new URLSearchParams(location.search);
+document.getElementById("clock").textContent = params.get("time") || "10:14";
+
+/* ---- the home screen ----------------------------------------------------- */
+/*
+   The app's own icon, fetched from the app — `/icon-180.png` is the same drawing the manifest
+   points a real phone at, so the thing on this home screen is the thing that would be on yours.
+   The rest are blanks: a home screen with one app on it looks staged, and a home screen with
+   other people's apps on it is using their marks.
+*/
+(function () {
+    var grid = document.getElementById("grid");
+    var apps = [
+        { name: "clawdline", icon: "/icon-180.png" },
+        {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
+    ];
+    apps.forEach(function (app) {
+        var cell = document.createElement("div");
+        cell.className = "app" + (app.icon ? "" : " blank");
+        if (app.icon) {
+            var img = document.createElement("img");
+            img.className = "tile";
+            img.src = app.icon;
+            img.alt = "";
+            cell.appendChild(img);
+        } else {
+            var tile = document.createElement("div");
+            tile.className = "tile";
+            cell.appendChild(tile);
+        }
+        var name = document.createElement("div");
+        name.className = "name";
+        name.textContent = app.name || "";
+        cell.appendChild(name);
+        grid.appendChild(cell);
+    });
+    document.getElementById("banner-mark").src = "/icon-180.png";
+})();
+
+/* ---- drawing one -------------------------------------------------------- */
+
+var banner = document.getElementById("banner");
+
+/** Draw a payload. **Every field comes from the payload**; there is no fallback text here on
+ *  purpose, so a missing field shows up as a blank line in the picture rather than as a
+ *  plausible sentence nobody sent. */
+function show(payload) {
+    document.getElementById("banner-title").textContent = payload.title;
+    document.getElementById("banner-body").textContent = payload.body;
+    banner.hidden = false;
+    banner.classList.remove("out");
+    // A frame between "in the document" and "in the animation", or the transition has nothing to
+    // start from and the banner is simply there.
+    requestAnimationFrame(function () {
+        requestAnimationFrame(function () { banner.classList.add("in"); });
+    });
+}
+
+function hide() {
+    banner.classList.remove("in");
+    banner.classList.add("out");
+}
+
+function fault(why) {
+    var box = document.createElement("div");
+    box.className = "fault";
+    box.textContent = why;
+    document.getElementById("phone").appendChild(box);
+    console.log("fault: " + why);
+}
+
+/* ---- the real thing ------------------------------------------------------ */
+
+function urlBase64ToUint8Array(value) {
+    var padded = value.replace(/-/g, "+").replace(/_/g, "/");
+    padded += "=".repeat((4 - padded.length % 4) % 4);
+    var raw = atob(padded);
+    var out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) { out[i] = raw.charCodeAt(i); }
+    return out;
+}
+
+async function json(path, options) {
+    var answer = await fetch(path, options);
+    var body = await answer.json();
+    if (!answer.ok) {
+        throw new Error(path + " → " + answer.status + " " + JSON.stringify(body));
+    }
+    return body;
+}
+
+var arrived = null;                       // set by the worker, read by the storyboard
+navigator.serviceWorker && navigator.serviceWorker.addEventListener("message", function (event) {
+    if (!event.data || event.data.type !== "push") { return; }
+    arrived = event.data.payload;
+    console.log("push arrived: " + JSON.stringify(arrived));
+    if (arrived) { show(arrived); } else { fault("a push arrived with no payload in it"); }
+});
+
+var PhoneMock = {
+    subscription: null,
+
+    /**
+     * Subscribe this browser, for real, and report the endpoint the push service gave it.
+     *
+     * Deliberately noisy about failing. The alternative — falling back to something drawn — is
+     * how a README ends up with a picture of a feature that stopped working.
+     */
+    async ready() {
+        var replay = params.get("replay");
+        if (replay) { return "replay"; }
+        if (Notification.permission !== "granted") {
+            fault("notification permission is " + Notification.permission +
+                  " — pass --grant notifications");
+            throw new Error("notifications not granted");
+        }
+        var registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        await navigator.serviceWorker.ready;
+        var key = await json("/v1/push/key");
+        this.subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(key.key)
+        });
+        var registered = await json("/v1/push/subscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(this.subscription)
+        });
+        this.id = registered.id;
+        console.log("subscribed: " + this.subscription.endpoint.slice(0, 48) + "…");
+        return this.subscription.endpoint;
+    },
+
+    /** Ask the Mac to send one to this device, and nothing else. */
+    async fire() {
+        var replay = params.get("replay");
+        if (replay) {
+            show(JSON.parse(atob(replay.replace(/-/g, "+").replace(/_/g, "/"))));
+            return "replayed";
+        }
+        var sent = await json("/v1/push/test", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
+        });
+        console.log("asked the Mac to send: " + JSON.stringify(sent));
+        return sent;
+    },
+
+    /** What actually landed, so the shoot can prove it did rather than assume. */
+    arrived() { return arrived; },
+
+    hide: hide,
+
+    /**
+     * Take the subscription away again.
+     *
+     * A shoot must not leave a dead endpoint in somebody's `push.json`: the browser it belonged
+     * to is deleted along with its profile the moment the recording stops, so every notification
+     * sent afterwards would go to a subscription that cannot receive one.
+     */
+    async forget() {
+        if (!this.id) { return "nothing to forget"; }
+        try { await this.subscription.unsubscribe(); } catch (e) { /* the profile is going anyway */ }
+        await json("/v1/push/unsubscribe", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: this.id })
+        });
+        return "forgotten";
+    }
+};
+
+window.PhoneMock = PhoneMock;
+</script>

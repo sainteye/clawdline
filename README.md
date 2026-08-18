@@ -82,6 +82,12 @@ finding out on its next look. It changes when a reading happens and never what o
   starts waiting for you.
   → [From a browser, or a phone](#from-a-browser-or-a-phone)
 
+  <img src="docs/assets/web.gif" width="390" alt="The page on a phone: six sessions, each with its
+  project's mark, and the one that is asking pulled out in the accent colour. Opening it shows the
+  question — and a note saying the menu behind it has to be answered at the Mac. Back in the list,
+  another session's transcript, where a run of two tool calls sits folded to one line until it is
+  opened; then a reply typed into the box at the bottom and sent.">
+
 - **Says it in the notch, too.** Your mascot lives in the camera housing: it leans out while
   something runs, names the session that wants you, and dances when a long job finishes. How busy
   it looks is how much you have running. One word in the config turns it off.
@@ -551,6 +557,11 @@ an app rather than a page. It speaks the same fourteen languages the bar does, a
 `auto` it answers in the *phone's* language rather than the Mac's, because the phone is the thing
 being held.
 
+<img src="docs/assets/web-wide.png" width="860" alt="The same page on a laptop: the session list
+down the left with the one that is waiting picked out in the accent colour, its transcript beside
+it — a heading, a bordered table, a line of prose — a box to type in underneath, and the app's own
+keys along the bottom.">
+
 It is off in a fresh install and stays off until you go and switch it on. Not a default somebody
 picked: a listening socket is the difference between a program on your machine and a service on
 your machine, and that difference should be something you did on purpose.
@@ -647,6 +658,11 @@ A paired phone can subscribe to notifications and then buzz when **a session sta
 answer** — the one state that costs you something for every second it goes unnoticed. Two more,
 both off unless asked for: `push_on_finish` for a turn that ran over two minutes and stopped, and
 `push_on_deploy` for a deploy that stopped running, whichever way it went.
+
+<img src="docs/assets/web-push.gif" width="390" alt="A notification arriving on a phone: the banner
+drops over the home screen carrying the app's own mark, sits long enough to be read, and slides
+away. This one is the test the page can ask for; the ones that arrive unasked name the project that
+is waiting.">
 
 The message is sealed to the device, so the push service carries ciphertext and learns only that
 something went to a subscription. Encryption settles who may read it in transit and settles nothing

@@ -28,6 +28,29 @@ for f in sessions picker transcript fullscreen; do
   ffmpeg -v error -y -i "$OUT/$f.png" -vf "crop=$W:220:0:$((H-225)),scale=1100:-1" -frames:v 1 "$TMP/$f.png"
 done
 
+# The browser pictures carry their identity somewhere else: not in a footer, but in the session
+# list — the project names, the paths under them and the task titles.
+#
+# What these must show is the page's **own fixtures** — atrium, clawdline, notebook, and paths under
+# `/Users/x/`. A path under your home directory, or a project you recognise, means the picture was
+# taken against a live server rather than against the fixtures, and must not be committed.
+#
+# They are phone-shaped, so they go into the sheet scaled to the same height as everything else
+# and padded out to its width rather than scaled to it — a 390-wide picture stretched to 1100 is
+# two thousand pixels of column nobody can take in.
+band() {  # band <in> <out> <filters before the pad>
+  ffmpeg -v error -y -i "$1" -vf "$3,pad=1100:520:(ow-iw)/2:0:0x101010" -frames:v 1 "$2"
+}
+
+if [ -f "$OUT/web-wide.png" ]; then
+  band "$OUT/web-wide.png" "$TMP/web-wide.png" "scale=1100:-1,crop=420:520:0:56"
+fi
+for g in web web-push; do
+  [ -f "$OUT/$g.gif" ] || continue
+  ffmpeg -v error -y -i "$OUT/$g.gif" -vf "select='eq(n\,12)',scale=-2:520,pad=1100:520:(ow-iw)/2:0:0x101010" \
+    -frames:v 1 "$TMP/web-$g.png"
+done
+
 # One frame from the middle of every clip.
 for g in demo island dance mochi-dance stretch voice voice.zh; do
   [ -f "$OUT/$g.gif" ] || continue
@@ -43,3 +66,6 @@ echo "→ $TMP/sheet.png"
 echo
 echo "Look at it. Every footer must read 'my-project', and the only conversation in there"
 echo "must be the made-up one. If you see a repository you recognise, do not commit."
+echo
+echo "The browser pictures are held to the same rule: the only projects in the session list may"
+echo "be the page's own fixtures, and the only notification may be one the app actually sent."
