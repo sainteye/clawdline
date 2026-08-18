@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Log.write("launch: hotkey=\(Config.shared.hotKey) width=\(Config.shared.width) y=\(Config.shared.yFraction)")
         MascotPack.installBundledPacks()
+        installMainMenu()
         buildStatusItem()
         // The reading everything else here is a consumer of. Started before the panel exists,
         // because the whole point of it is the stretches when the panel does not.
@@ -132,6 +133,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hotKeyActive = false
             Log.write("hotkey detached (frontmost: \(front))")
         }
+    }
+
+    /// A menu bar this app never shows, for the one thing a menu bar is still needed for.
+    ///
+    /// The activation policy is `.accessory`, so there is no menu across the top and there should
+    /// not be: this is a prompt you summon, not an application you visit. But key equivalents are
+    /// dispatched through the main menu whether or not it is drawn — and **⌘, is where everybody
+    /// on this platform looks for settings**, including people who have never opened the ✳. An app
+    /// that does not answer it is an app that feels slightly broken for a reason nobody can name.
+    ///
+    /// ⌘W and ⌘Q come along because a window with no way to close it from the keyboard is the
+    /// next thing somebody notices.
+    private func installMainMenu() {
+        let main = NSMenu()
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu()
+
+        let settings = NSMenuItem(title: L.t.menuEditConfig, action: #selector(editConfig),
+                                  keyEquivalent: ",")
+        settings.target = self
+        appMenu.addItem(settings)
+        appMenu.addItem(.separator())
+        appMenu.addItem(NSMenuItem(title: L.t.menuQuit,
+                                   action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        appItem.submenu = appMenu
+        main.addItem(appItem)
+
+        let windowItem = NSMenuItem()
+        let windowMenu = NSMenu()
+        windowMenu.addItem(NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)),
+                                      keyEquivalent: "w"))
+        windowItem.submenu = windowMenu
+        main.addItem(windowItem)
+
+        NSApp.mainMenu = main
     }
 
     private func buildStatusItem() {

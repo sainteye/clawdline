@@ -1,5 +1,12 @@
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- `user-scalable=no` is a deliberate trade against accessibility, and it is made because this
+     is a thing you add to a home screen and use as an app rather than a page you visit. Pinch
+     zoom there is almost always an accident — a two-finger scroll that leaves the page at 1.4×
+     with the header off the top and no obvious way back. What it costs has to be paid for in
+     the layout instead, and is: nothing on the page needs magnifying to be read, every text
+     field is at least 16px on a touch screen so that focusing one cannot zoom the page either,
+     and the page itself never scrolls sideways whatever a session prints into it. -->
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="clawdline">
@@ -83,6 +90,13 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 
 .scroller {
     overflow-y: auto;
+    /* Never sideways. A scroller that says `overflow-y: auto` and nothing about x is entitled to
+       scroll in both directions, and that is how one unbreakable line of tool output turned the
+       reading column into a sideways scroll on a phone: the page went several screens wide and
+       the transcript was left as a strip of empty space beside it. Anything honestly wider than
+       the column — a table, a block of code — scrolls inside its own box; this is the page, and
+       the page does not move. */
+    overflow-x: hidden;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
@@ -185,10 +199,25 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px;
 }
 
+/* The notifications footer. It owns the bottom edge of this column, which is why the scroller
+   above it no longer pays for the home indicator: two things counting the same inset is how the
+   composer in the other column ended up floating in a band of nothing. */
+.notify {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px calc(12px + var(--safe-r)) calc(8px + var(--safe-b)) calc(12px + var(--safe-l));
+    border-top: 1px solid var(--line);
+    color: var(--faint); font-size: 11.5px;
+    line-height: 1.35;
+}
+.notify .chip { flex: 0 0 auto; }
+.notify .say { min-width: 0; overflow-wrap: anywhere; }
+.notify.on .chip { border-color: var(--accent-ed); color: var(--accent); }
+
 /* ==========================================================================
    The session list
    ========================================================================== */
-.list-scroll { flex: 1 1 auto; padding: 8px 10px calc(14px + var(--safe-b)) calc(10px + var(--safe-l)); }
+.list-scroll { flex: 1 1 auto; padding: 8px 10px 14px calc(10px + var(--safe-l)); }
 .rows { list-style: none; margin: 0; padding: 0; }
 
 .row {
@@ -333,7 +362,17 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .chip.on { border-color: var(--accent-ed); color: var(--accent); }
 
 .tx-scroll { flex: 1 1 auto; padding: 16px 18px 22px 18px; }
-.tx { max-width: 760px; }
+.tx {
+    max-width: 760px;
+    /* Break a word rather than the layout. This text is somebody's terminal: a base64 blob, a
+       path with no spaces in it, a line of escape codes — any of them can be four hundred
+       characters with nowhere to wrap, and left alone one of them stretches its container past
+       the edge of a phone and takes the whole page with it. `anywhere` rather than `break-word`
+       because only `anywhere` also shrinks the box's own minimum width, which is the number the
+       grid track is measuring; `word-break` says the same thing to older WebKit. */
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
 
 .entry {
     display: grid;
@@ -435,11 +474,22 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 
 /* A run the reader was spared. It says how much was hidden, because "nothing happened here"
    and "eleven tool calls happened here" are not the same silence. */
+.entry.folded { padding-bottom: 0; }
 .entry.folded .body { color: var(--faint); font-size: 12px; }
 .entry.folded .pill {
-    display: inline-block; border: 1px dashed #33333d; border-radius: 999px;
+    display: inline-flex; align-items: baseline; gap: 7px;
+    border: 1px dashed #33333d; border-radius: 999px;
     padding: 2px 10px; font-family: var(--mono); font-size: 11px;
+    color: var(--faint);
+    max-width: 100%;
 }
+.entry.folded .pill:hover { border-color: var(--accent-ed); color: var(--dim); }
+.entry.folded .pill .caret { color: var(--accent); opacity: 0.8; }
+.entry.folded .pill .steps { flex: 0 0 auto; white-space: nowrap; }
+/* The names of what ran, and the first thing to go when there is no room for them: how many
+   steps were folded away is the part that cannot be guessed from the rest of the page. */
+.entry.folded .pill .what { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entry.folded .pill[aria-expanded="true"] { border-style: solid; }
 
 .tx-note { color: var(--faint); font-size: 12.5px; padding: 26px 2px; }
 .tx-note.err { color: #c58472; }
@@ -452,6 +502,11 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     border-top: 1px solid var(--line);
     padding: 10px 14px calc(10px + var(--safe-b)) 14px;
     background: #0d0d11;
+    /* A `<form>` carries a bottom margin of one em from the browser's own stylesheet, and one em
+       here is fourteen pixels of nothing under the composer — which on a phone, stacked on top of
+       the home indicator's inset, is the band of dead space that made the box look like it was
+       floating rather than sitting on the bottom edge. */
+    margin: 0;
 }
 .composer .box {
     display: flex; align-items: flex-end; gap: 9px;
@@ -461,7 +516,15 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .composer textarea {
     flex: 1 1 auto; min-width: 0;
     background: none; border: 0; resize: none;
-    max-height: 140px; min-height: 22px;
+    /* One line of text, centred against the Send button beside it, and still right when the box
+       has grown to five lines. The centring is the padding rather than `align-items`: a textarea
+       cannot centre its own text, so the line is centred *inside the field* by equal padding
+       above and below, and the field is made no shorter than the button so that the two of them
+       agree about where the middle is. Growing keeps it: the script sets the height from
+       `scrollHeight`, which already counts this padding, so every extra line lands under the
+       first one and the two edges stay where they were. */
+    max-height: 140px; min-height: 30px;
+    padding: 5px 0;
     font-size: 14px; line-height: 1.4;
 }
 .composer textarea:focus { outline: none; }
@@ -471,10 +534,15 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     background: var(--accent); color: #17110e;
     font-size: 12.5px; font-weight: 600;
     border-radius: 8px; padding: 6px 13px;
+    min-height: 30px;                     /* the height the field above centres its line against */
 }
 .composer .send:disabled { background: #2a2a32; color: var(--faint); cursor: default; }
 .composer[data-write="off"] .box { opacity: 0.55; }
 .composer .why { color: var(--faint); font-size: 11.5px; margin-top: 7px; }
+/* Nothing to explain, no row. The line under the box now only ever says why the box will not
+   take what you type; when everything is working it says nothing, and a line that says nothing
+   should not be costing a row of a phone screen to do it. */
+.composer .why:empty { display: none; }
 .composer .why b { color: var(--dim); font-weight: 500; }
 .composer .why code { font-family: var(--mono); font-size: 11px; color: #8cbaf9; }
 
@@ -638,7 +706,15 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     .pane-list { border-right: 0; }
 
     .pane-detail {
-        position: fixed; inset: 0; z-index: 40;
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 40;
+        /* `100dvh` rather than `bottom: 0` alone, and this is the composer floating in a band of
+           dead space on a phone. A fixed element is laid out against the *large* viewport — the
+           one with the browser's own bottom bar hidden — so it runs on underneath that bar, and
+           the composer, which is the last thing in it, sits below the edge of what you can see
+           with its bottom padding stranded above it. The dynamic unit is the height that is
+           actually on screen right now, so the box lands on the real bottom edge and the only
+           thing left under it is the home indicator's own inset. */
+        height: 100dvh;
         background: var(--bg);
         transform: translateX(100%);
         transition: transform 260ms var(--ease);
@@ -667,11 +743,31 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     .row[data-state="waiting"]:hover { background: #2f2322; }
     .row:active { background: var(--card-hi); }
 
-    .tx-scroll { padding: 14px 16px calc(16px + var(--safe-b)) 16px; }
+    /* No safe-area inset here. The composer sits under this and is the thing that touches the
+       bottom edge, so it is the one that pays for the home indicator; adding it here as well
+       bought a second inch of nothing between the last message and the box. */
+    .tx-scroll { padding: 14px 16px 16px 16px; }
     .entry { grid-template-columns: minmax(0, 1fr); gap: 3px; padding: 9px 0; }
     .entry .who { text-align: left; display: flex; gap: 8px; align-items: baseline; }
     .entry .who time { margin: 0; }
     .toast { bottom: calc(20px + var(--safe-b)); }
+}
+
+/* ==========================================================================
+   Touch screens — the sixteen pixel rule
+   iOS zooms the page when you focus a text field whose type is smaller than
+   16px, and there is no way back from that zoom now that the viewport is
+   fixed: the page would simply sit at 1.3× for the rest of the session. So
+   every field that can be focused is at least 16px on a screen you touch.
+   Keyed on the pointer rather than the width, because a landscape iPad is
+   wider than the phone breakpoint and zooms exactly the same way.
+   ========================================================================== */
+@media (pointer: coarse) {
+    .filter-row input,
+    .composer textarea,
+    #door-name, #door-password, #door-pw-name { font-size: 16px; }
+    /* The six pairing boxes are set at 22px, and at 19px on the narrowest phones, so they are
+       already well over the line and are deliberately left to their own rule. */
 }
 
 /* ==========================================================================
@@ -697,13 +793,32 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 <main class="app" id="app" data-view="list" data-pane="on">
     <section class="pane pane-list">
         <div class="filter-row">
-            <input id="filter" type="search" placeholder="Filter by task, project or tty" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Filter sessions">
+            <!-- Every one of these attributes is here to keep a password manager out of a box
+                 that filters a list. Chrome had decided this was a username field — there is a
+                 `type="password"` further down the document, and this is the first text input
+                 above it — and clicking it dropped the reader's saved logins, email addresses
+                 and all, over the session list. `autocomplete="off"` alone does not stop that:
+                 Chrome ignores it on fields it has already guessed about. So the field says
+                 what it is (`type="search"`), carries a name no heuristic can read anything
+                 into, and tells the three managers that offer an opt-out to stand down. -->
+            <input id="filter" type="search" name="q7f3" placeholder="Filter by task, project or tty"
+                   autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                   data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
+                   aria-label="Filter sessions">
             <span class="slash">/</span>
         </div>
         <div class="scroller list-scroll" id="list-scroll">
             <div class="ptr" id="ptr"><span id="ptr-label">Pull to refresh</span></div>
             <ul class="rows" id="rows" role="listbox" aria-label="Claude Code sessions" tabindex="0"></ul>
             <div class="empty" id="list-empty" hidden></div>
+        </div>
+        <!-- Whether this device gets told when a session is waiting. A footer rather than
+             anything louder: it is a setting you change once, and the list above it is the page.
+             It is also the one place that can hold the sentence iOS readers need, which is
+             longer than a button and is the entire feature until they have read it. -->
+        <div class="notify" id="notify">
+            <button class="chip" id="notify-go" type="button" hidden></button>
+            <span class="say" id="notify-say"></span>
         </div>
     </section>
 
@@ -761,7 +876,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
             <p class="lede">This browser has not been let in yet.</p>
             <p class="fine">Ask to pair and a six-digit code appears <b>on the Mac</b> — it is deliberately not in the reply to this page. Only somebody at that machine can finish this, and that is the point rather than the hurdle.</p>
             <label for="door-name">Call this device</label>
-            <input id="door-name" type="text" maxlength="40" autocomplete="off" autocapitalize="words" spellcheck="false">
+            <!-- Same defence as the filter box: this is a nickname for a laptop, and the only
+                 reason a password manager would ever offer a login here is that it guessed. -->
+            <input id="door-name" type="text" name="d1n" maxlength="40" autocomplete="off" autocapitalize="words" spellcheck="false"
+                   data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
             <button class="go" id="door-ask" type="button">Ask to pair</button>
             <button class="alt" id="door-to-password" type="button">Sign in with a password instead</button>
         </section>
@@ -770,12 +888,18 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
             <p class="lede">Look at the Mac.</p>
             <p class="fine">Clawdline is showing six digits for <span id="door-left">two minutes</span>. Type them here.</p>
             <div class="digits" id="door-digits">
-                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 1">
-                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 2">
-                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 3">
-                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 4">
-                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 5">
-                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 6">
+                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" name="c1"
+                       data-1p-ignore data-lpignore="true" data-bwignore aria-label="Digit 1">
+                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" name="c2"
+                       data-1p-ignore data-lpignore="true" data-bwignore aria-label="Digit 2">
+                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" name="c3"
+                       data-1p-ignore data-lpignore="true" data-bwignore aria-label="Digit 3">
+                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" name="c4"
+                       data-1p-ignore data-lpignore="true" data-bwignore aria-label="Digit 4">
+                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" name="c5"
+                       data-1p-ignore data-lpignore="true" data-bwignore aria-label="Digit 5">
+                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" name="c6"
+                       data-1p-ignore data-lpignore="true" data-bwignore aria-label="Digit 6">
             </div>
             <button class="go" id="door-confirm" type="button">Pair this device</button>
             <button class="alt" id="door-restart" type="button">Start again</button>
@@ -784,11 +908,25 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
         <section data-step="password">
             <p class="lede">Sign in with the password.</p>
             <p class="fine">The one set in Clawdline on the Mac, under Settings → Remote. If none has been set, pairing is the way in.</p>
+            <!-- A real form around the password, and it is here for the filter box at the top of
+                 the page. A browser groups fields that are not in any form into one imaginary
+                 form, and then goes looking for a username to go with the password it has found —
+                 which is how a box that filters a list came to be offered somebody's saved
+                 logins. Giving the password a form of its own ends the search inside these four
+                 fields, where it belongs. Nothing submits it: the button does the work, and the
+                 handler below stops Return from reloading the page under everybody. -->
+            <form id="door-pw-form">
             <label for="door-password">Password</label>
             <input id="door-password" type="password" autocomplete="current-password">
             <label for="door-pw-name">Call this device</label>
-            <input id="door-pw-name" type="text" maxlength="40" autocomplete="off" autocapitalize="words" spellcheck="false">
+            <!-- The one field on the page a manager is entitled to misread: it sits directly
+                 under a password box, which is exactly the shape of a login form. It is still a
+                 nickname for a device, so it opts out too. The password field above does not —
+                 offering a saved password there is the manager doing its job. -->
+            <input id="door-pw-name" type="text" name="d2n" maxlength="40" autocomplete="off" autocapitalize="words" spellcheck="false"
+                   data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
             <button class="go" id="door-pw-go" type="button">Sign in</button>
+            </form>
             <button class="alt" id="door-to-pair" type="button">Use a pairing code instead</button>
         </section>
 
@@ -846,6 +984,10 @@ var S = {
     newestFirst: false,
 
     tx: { id: null, entries: [], signature: null, loading: false, error: null },
+    // Which folded runs of tool calls the reader has opened, by fold key. Kept beside the
+    // transcript rather than in it: this pane redraws whenever the session moves, and a run
+    // that closed itself under somebody who was reading it would be worse than never folding.
+    expanded: {},
     // What each session looked like last render, so a change can be noticed: the transcript
     // is refetched when its session moves, and a row that has just stopped gets its pulse.
     seen: {}
@@ -855,6 +997,7 @@ var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
  "app", "pane-detail", "back", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
  "tx-order", "tx-focus", "composer", "msg", "send", "why", "hints", "keys", "toast", "brand-mark",
+ "notify", "notify-go", "notify-say",
  "door", "door-mark", "door-name", "door-ask", "door-to-password", "door-digits", "door-confirm",
  "door-restart", "door-left", "door-password", "door-pw-name", "door-pw-go", "door-to-pair", "door-say"
 ].forEach(function (id) { els[id] = document.getElementById(id); });
@@ -1258,7 +1401,14 @@ var Live = {
     },
     password: function (password, name) {
         return jsonFetch("/v1/auth/password", post({ password: password, name: name }));
-    }
+    },
+
+    // Web Push. The subscription goes up exactly as the browser wrote it — it is the browser's
+    // own object, endpoint and keys, and anything this end reshaped would be a chance to get a
+    // credential wrong on the way past.
+    pushKey: function () { return jsonFetch("/v1/push/key"); },
+    pushSubscribe: function (subscription) { return jsonFetch("/v1/push/subscribe", post(subscription)); },
+    pushUnsubscribe: function (id) { return jsonFetch("/v1/push/unsubscribe", post({ id: id })); }
 };
 
 /* ---- fixtures ------------------------------------------------------------
@@ -1316,48 +1466,64 @@ var Mock = (function () {
           isClaude: true, sessionId: null, icon: null }
     ];
 
-    // One session gets a real transcript: twenty-odd entries, prose and tools mixed, with two
-    // runs folded the way the bar folds them.
+    // The line that cannot wrap, five hundred characters of it, because this is the shape that
+    // broke the page and there is no waiting around for a real session to print another one. A
+    // phone showed it as a black screen with one strip of garbage floating in the middle: nothing
+    // in the string could break, so it stretched the transcript column past the edge of the
+    // display and left every readable line stranded off to one side. Escape codes were the first
+    // producer of these and are now stripped upstream; a base64 blob or a long path is the same
+    // string with a different story, so the fixture keeps one.
+    var unbreakable = "aGVsbG8td29ybGQtdGhpcy1pcy1vbmUtdmVyeS1sb25nLXRva2Vu".repeat(10);
+
+    // One session gets a real transcript: twenty-odd entries, prose and tools mixed, with
+    // several runs of tool calls back to back — which is what the folding has to hold up
+    // under, and the reason the fixture is worth having.
     var script = [
-        ["user", "the webhook from stripe is landing twice on staging. same event id, two rows.", null, 0],
-        ["assistant", "Two rows for one `event.id` means either the handler is not idempotent or it is being invoked twice. Let me look at where the row is written before guessing.", null, 0],
-        ["tool", "Sources/Webhook.swift, Sources/Ledger.swift", "Grep", 0],
-        ["tool", "", "Read", 4],
-        ["assistant", "The insert is unconditional:\n\n```swift\ntry db.insert(Payment(eventID: event.id, amount: event.amount))\n```\n\nNothing consults `eventID` first, so a redelivery writes a second row. Stripe redelivers whenever our 200 arrives late.", null, 0],
-        ["user", "how late is late", null, 0],
-        ["assistant", "Stripe waits 30 seconds for the ack. Anything slower is treated as a failure and queued for retry — the work still finished on our side, which is exactly how you get one event and two rows.", null, 0],
-        ["tool", "grep -n \"await\" Sources/Webhook.swift", "Bash", 0],
-        ["assistant", "The handler does the ledger write, then sends the receipt email, then answers. The email is the slow part and it is on the wrong side of the reply.", null, 0],
-        ["user", "so ack first, then work?", null, 0],
-        ["assistant", "That is half of it. Acking first stops the redelivery, but a crash between the ack and the write would then lose the payment silently — which is a worse bug than the one being fixed. Both halves: a unique index on `event_id` so a second write cannot land, and the email moved off the request.", null, 0],
-        ["tool", "", "Edit", 3],
-        ["tool", "Sources/Ledger.swift", "Edit", 0],
-        ["assistant", "Added the unique index and made the insert an upsert on `event_id`. The handler now answers as soon as the row is durable.", null, 0],
-        ["tool", "swift test --filter WebhookTests", "Bash", 0],
-        ["tool", "", "Read", 6],
-        ["assistant", "Eleven tests, all passing, including a new one that posts the same event twice and asserts one row.", null, 0],
-        ["user", "add one for the crash-between case", null, 0],
-        ["assistant", "Done — it kills the process after the insert and before the email, restarts, and checks that the receipt is still sent from the queue rather than lost.", null, 0],
-        ["tool", "swift test", "Bash", 0],
-        ["assistant", "Green. The migration is `0009_event_id_unique.sql`; it will need running on staging before the next deploy or the index will not be there to protect anything.", null, 0],
-        ["user", "summarise what changed", null, 0],
+        ["user", "the webhook from stripe is landing twice on staging. same event id, two rows.", null],
+        ["assistant", "Two rows for one `event.id` means either the handler is not idempotent or it is being invoked twice. Let me look at where the row is written before guessing.", null],
+        ["tool", "Sources/Webhook.swift, Sources/Ledger.swift", "Grep"],
+        ["tool", "", "Read"],
+        ["assistant", "The insert is unconditional:\n\n```swift\ntry db.insert(Payment(eventID: event.id, amount: event.amount))\n```\n\nNothing consults `eventID` first, so a redelivery writes a second row. Stripe redelivers whenever our 200 arrives late.", null],
+        ["user", "how late is late", null],
+        ["assistant", "Stripe waits 30 seconds for the ack. Anything slower is treated as a failure and queued for retry — the work still finished on our side, which is exactly how you get one event and two rows.", null],
+        ["tool", "grep -n \"await\" Sources/Webhook.swift", "Bash"],
+        ["assistant", "The handler does the ledger write, then sends the receipt email, then answers. The email is the slow part and it is on the wrong side of the reply.", null],
+        ["user", "so ack first, then work?", null],
+        ["assistant", "That is half of it. Acking first stops the redelivery, but a crash between the ack and the write would then lose the payment silently — which is a worse bug than the one being fixed. Both halves: a unique index on `event_id` so a second write cannot land, and the email moved off the request.", null],
+        ["tool", "", "Edit"],
+        ["tool", "Sources/Ledger.swift", "Edit"],
+        ["assistant", "Added the unique index and made the insert an upsert on `event_id`. The handler now answers as soon as the row is durable.", null],
+        ["tool", "swift test --filter WebhookTests", "Bash"],
+        ["tool", "", "Read"],
+        ["assistant", "Eleven tests, all passing, including a new one that posts the same event twice and asserts one row.", null],
+        ["user", "add one for the crash-between case", null],
+        ["assistant", "Done — it kills the process after the insert and before the email, restarts, and checks that the receipt is still sent from the queue rather than lost.", null],
+        ["tool", "swift test", "Bash"],
+        ["assistant", "Green. The migration is `0009_event_id_unique.sql`; it will need running on staging before the next deploy or the index will not be there to protect anything.", null],
+        // On its own between two answers, so it is never folded away: the point of it is to be
+        // on screen. Both halves of the problem are here — the result below, and the same run of
+        // characters inside a sentence, which is where a wrapping rule that only covers `.body`
+        // and forgets its children falls over.
+        ["tool", "curl -s /v1/artifacts/" + unbreakable, "Bash"],
+        ["assistant", "The upload came back as `" + unbreakable + "` — one token, no spaces, and nowhere for a line to break.", null],
+        ["user", "summarise what changed", null],
         // Everything the renderer knows how to draw, in one answer, so the fixture is also the
         // test: a table with alignment markers, a heading, both kinds of list, a quote, a rule.
-        ["assistant", "## What changed\n\n| file | change | lines |\n|---|:---:|---:|\n| `Sources/Webhook.swift` | ack before the email | **+18 −24** |\n| `Sources/Ledger.swift` | upsert on `event_id` | +7 −2 |\n| `0009_event_id_unique.sql` | new | +4 |\n\n### Still to do\n\n1. Run the migration on staging\n2. Watch the redelivery counter for a day\n   - it should fall to zero\n   - if it does not, the index did not take\n\n> The handler now answers as soon as the row is durable, and *not* before.\n\n---\n\nSee [the Stripe note on retries](https://stripe.com/docs/webhooks) for where the 30 seconds comes from.", null, 0]
+        ["assistant", "## What changed\n\n| file | change | lines |\n|---|:---:|---:|\n| `Sources/Webhook.swift` | ack before the email | **+18 −24** |\n| `Sources/Ledger.swift` | upsert on `event_id` | +7 −2 |\n| `0009_event_id_unique.sql` | new | +4 |\n\n### Still to do\n\n1. Run the migration on staging\n2. Watch the redelivery counter for a day\n   - it should fall to zero\n   - if it does not, the index did not take\n\n> The handler now answers as soon as the row is durable, and *not* before.\n\n**Run `0009_event_id_unique.sql` on staging first** — until it has run there is no index, and nothing stopping the second row.\n\n---\n\nSee [the Stripe note on retries](https://stripe.com/docs/webhooks) for where the 30 seconds comes from.", null]
     ];
 
     var transcripts = {};
     transcripts["8F3A-1C"] = script.map(function (e, i) {
-        return { role: e[0], text: e[1], tool: e[2], at: now - (script.length - i) * 47, folded: e[3] };
+        return { role: e[0], text: e[1], tool: e[2], at: now - (script.length - i) * 47 };
     });
     transcripts["2C71-90"] = [
-        { role: "user", text: "run the migration on staging", tool: null, at: now - 220, folded: 0 },
-        { role: "assistant", text: "This drops `payments_legacy`. Before I run it: the table still has 12,041 rows and nothing in the repo reads it. Confirm and I will go.", tool: null, at: now - 180, folded: 0 }
+        { role: "user", text: "run the migration on staging", tool: null, at: now - 220 },
+        { role: "assistant", text: "This drops `payments_legacy`. Before I run it: the table still has 12,041 rows and nothing in the repo reads it. Confirm and I will go.", tool: null, at: now - 180 }
     ];
     transcripts["A15E-77"] = [
-        { role: "user", text: "read docs/devstack.md and tell me what is missing", tool: null, at: now - 3600, folded: 0 },
-        { role: "tool", text: "docs/devstack.md", tool: "Read", at: now - 3590, folded: 0 },
-        { role: "assistant", text: "It explains the file and never says where to put it. Everything else assumes you already know that `devstack.json` sits at the root of the project it describes.", tool: null, at: now - 3580, folded: 0 }
+        { role: "user", text: "read docs/devstack.md and tell me what is missing", tool: null, at: now - 3600 },
+        { role: "tool", text: "docs/devstack.md", tool: "Read", at: now - 3590 },
+        { role: "assistant", text: "It explains the file and never says where to put it. Everything else assumes you already know that `devstack.json` sits at the root of the project it describes.", tool: null, at: now - 3580 }
     ];
 
     var live = false;
@@ -1402,7 +1568,7 @@ var Mock = (function () {
         var order = [
             function () { find("9B04-2D").state = "working"; },
             function () { find("8F3A-1C").state = "idle"; find("8F3A-1C").line = null;
-                          transcripts["8F3A-1C"].push({ role: "assistant", text: "Pushed to `fix/webhook-idempotency`. Nothing else is outstanding.", tool: null, at: Math.floor(Date.now() / 1000), folded: 0 }); },
+                          transcripts["8F3A-1C"].push({ role: "assistant", text: "Pushed to `fix/webhook-idempotency`. Nothing else is outstanding.", tool: null, at: Math.floor(Date.now() / 1000) }); },
             function () { find("44D2-05").state = "waiting"; },
             function () { find("2C71-90").state = "working"; find("C0FF-3E").state = "idle"; },
             function () { find("9B04-2D").state = "waiting"; find("44D2-05").state = "idle"; },
@@ -1492,7 +1658,7 @@ var Mock = (function () {
                 setTimeout(function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
                     var t = transcripts[id] || (transcripts[id] = []);
-                    t.push({ role: "user", text: text, tool: null, at: Math.floor(Date.now() / 1000), folded: 0 });
+                    t.push({ role: "user", text: text, tool: null, at: Math.floor(Date.now() / 1000) });
                     var s = find(id);
                     if (s) { s.state = "working"; }
                     emit();
@@ -1620,6 +1786,9 @@ var Door = {
         var self = this;
         var secret = els["door-password"].value;
         if (!secret) { this.say("The password, first."); return; }
+        // Return in either box asks for this, and so does the button; the box is in a form as
+        // well now. One attempt at a time whichever of them it came from.
+        if (els["door-pw-go"].disabled) return;
         els["door-pw-go"].disabled = true;
         this.say("Checking…", true);
         api.password(secret, els["door-pw-name"].value.trim() || suggestName()).then(function () {
@@ -1756,6 +1925,12 @@ els["door-to-password"].addEventListener("click", function () { Door.step("passw
 els["door-to-pair"].addEventListener("click", function () { Door.step("ask"); });
 els["door-pw-go"].addEventListener("click", function () { Door.password(); });
 els["door-name"].addEventListener("keydown", function (ev) { if (ev.key === "Enter") Door.ask(); });
+// The password box is in a form now — see the note beside it — so Return would otherwise reload
+// the page and lose whatever was typed. It means the same thing it always did.
+document.getElementById("door-pw-form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    Door.password();
+});
 els["door-password"].addEventListener("keydown", function (ev) { if (ev.key === "Enter") Door.password(); });
 els["door-pw-name"].addEventListener("keydown", function (ev) { if (ev.key === "Enter") Door.password(); });
 
@@ -2081,24 +2256,132 @@ function renderTranscript() {
     if (S.tx.loading && !S.tx.entries.length) { box.innerHTML = '<div class="tx-note">Reading…</div>'; return; }
     if (!S.tx.entries.length) { box.innerHTML = '<div class="tx-note">Nothing to read from this session yet.</div>'; return; }
 
-    var entries = S.newestFirst ? S.tx.entries.slice().reverse() : S.tx.entries;
-    var html = entries.map(entryHTML).join("");
-    box.innerHTML = html;
+    // Built a block at a time rather than an entry at a time, the way `Transcript.render` builds
+    // it: one message, or one whole run of tool calls, per block. Reversing is then the order the
+    // blocks go out in, and a run stays one thing whichever way round the transcript is read.
+    var entries = S.tx.entries;
+    var blocks = [];
+    var i = 0;
+    while (i < entries.length) {
+        if (entries[i].role !== "tool") { blocks.push(entryHTML(entries[i])); i += 1; continue; }
+        var run = [];
+        while (i < entries.length && entries[i].role === "tool") { run.push(entries[i]); i += 1; }
+        blocks.push(runHTML(run, i >= entries.length));
+    }
+    if (S.newestFirst) blocks.reverse();
+    box.innerHTML = blocks.join("");
 }
+
+/**
+ * A run of consecutive tool entries, folded the way the bar folds one.
+ *
+ * The machinery is what makes a transcript unreadable: a single answer can sit under thirty
+ * lines of paths and shell, and the two sentences worth reading are somewhere past them. So a
+ * run comes back as one line saying how much it stands for, and opens when it is asked to.
+ *
+ * Which run is which comes from `Transcript.render`, not from a rule invented here: the wire
+ * files a tool call and what it returned under the same role, and a run is every one of them in
+ * a row. Only the calls are counted, because a call is the step — the one entry with a name on
+ * it. Two of them is where folding starts to pay: a line reading "1 step" is longer than the
+ * step it hid. And the run at the end never folds, because it is the one still happening, and
+ * folding it would hide exactly the part that is changing.
+ */
+function runHTML(run, isTail) {
+    var names = [];
+    run.forEach(function (e) { if (e.tool) names.push(e.tool); });
+    var key = foldKey(run);
+    if (isTail || names.length < 2) return run.map(entryHTML).join("");
+    var open = !!S.expanded[key];
+    return foldHTML(key, names, open) + (open ? run.map(entryHTML).join("") : "");
+}
+
+/**
+ * The line a folded run leaves behind, and the handle that opens it.
+ *
+ * A `<button>` rather than a styled `<div>`: the rest of this page can be driven from the
+ * keyboard and this may not be the one thing that cannot. It stays put once the run is open —
+ * the bar draws no handle over an opened run, but its own click handler toggles both ways, and
+ * a control that deletes itself on use leaves the focus standing on nothing.
+ */
+function foldHTML(key, names, open) {
+    return '<div class="entry folded" data-role="tool">' +
+        '<div class="who">' + WHO.tool + "</div>" +
+        '<div class="body"><button type="button" class="pill" data-fold="' + key +
+        '" aria-expanded="' + (open ? "true" : "false") + '">' +
+        '<span class="caret">' + (open ? "⏷" : "⏵") + "</span>" +
+        // The count is its own element so it cannot be broken across two lines by the names
+        // beside it: a pill reading "9" above "steps" is the one part of this that has to be
+        // legible at a glance.
+        '<span class="steps">' + names.length + " steps</span>" +
+        (open ? "" : '<span class="what">' + esc(distinct(names).join(" · ")) + "</span>") +
+        "</button></div></div>";
+}
+
+/** Tool names in the order they first ran, without repeats — five greps read as one thing. */
+function distinct(names) {
+    var seen = {};
+    return names.filter(function (n) {
+        if (seen[n]) return false;
+        seen[n] = true;
+        return true;
+    });
+}
+
+/**
+ * Identifies a folded run so the reader's choice to open it survives a re-render.
+ *
+ * Content-derived rather than positional, for the reason `Transcript.foldKey` gives: this pane
+ * re-renders every time the session moves, and an index would slide under the reader and open a
+ * different run than the one they clicked. FNV-1a, as there — 32-bit rather than 64 because
+ * JavaScript has no 64-bit integer, and the key only has to tell one run in a transcript from
+ * the handful of others in the same transcript.
+ */
+function foldKey(run) {
+    var hash = 0x811c9dc5;
+    run.forEach(function (e) {
+        // The separator is the one the bar puts there, so a name cannot run into the text
+        // beside it and hash the same as a different pair that happens to join up the same
+        // way. Written as an escape: a raw control character in a source file is something
+        // an editor will quietly eat.
+        var text = (e.tool || "") + "\u0001" + (e.text || "");
+        for (var i = 0; i < text.length; i++) {
+            hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
+        }
+    });
+    return (hash >>> 0).toString(36);
+}
+
+function toggleFold(key) {
+    if (S.expanded[key]) delete S.expanded[key];
+    else S.expanded[key] = true;
+    renderTranscript();
+    // The row the reader pressed was just thrown away and written again, so the focus has to be
+    // put back on its replacement — otherwise opening a run with the keyboard is also the moment
+    // the keyboard loses its place in the page.
+    var again = els.tx.querySelector('[data-fold="' + key + '"]');
+    if (again) again.focus({ preventScroll: true });
+}
+
+els.tx.addEventListener("click", function (ev) {
+    var handle = ev.target.closest ? ev.target.closest("[data-fold]") : null;
+    if (handle) toggleFold(handle.getAttribute("data-fold"));
+});
+
+els.tx.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    if (!ev.target.closest || !ev.target.closest("[data-fold]")) return;
+    // Return means "open the selected session" everywhere else on this page, and the handler
+    // that does it calls preventDefault — which would stop the button ever seeing the click the
+    // browser was about to make out of this key. While a fold has the focus, the key is its own.
+    ev.stopPropagation();
+});
 
 var WHO = { user: "you", assistant: "claude", tool: "tool" };
 
 function entryHTML(e) {
     var role = WHO[e.role] ? e.role : "assistant";
-    var cls = "entry" + (e.folded ? " folded" : "");
-    var body;
-    if (e.folded) {
-        // The bar says "N steps" and so does this. What was hidden matters less than how much.
-        body = '<span class="pill">' + (e.tool ? esc(e.tool) + " · " : "") + e.folded + " steps</span>";
-    } else {
-        body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "") + richText(e.text);
-    }
-    return '<div class="' + cls + '" data-role="' + role + '">' +
+    var body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "") + richText(e.text);
+    return '<div class="entry" data-role="' + role + '">' +
         '<div class="who">' + WHO[role] +
         (e.at ? '<time data-at="' + e.at + '">' + esc(clockOf(e.at)) + "</time>" : "") + "</div>" +
         '<div class="body">' + body + "</div></div>";
@@ -2320,7 +2603,7 @@ function listHTML(block) {
 }
 
 /**
- * `**bold**`, `*italic*`, `` `code` ``, `~~struck~~`, `[text](url)`.
+ * `**bold**`, `*italic*`, `_italic_`, `` `code` ``, `~~struck~~`, `[text](url)`.
  *
  * Unmatched markers stay as text, the same rule the bar follows. The one thing this does that
  * the bar does not have to think about is *where a link may point*: a transcript is somebody
@@ -2329,27 +2612,46 @@ function listHTML(block) {
  */
 function inlineMd(text) {
     var s = esc(text);
-    // Code first and by itself: whatever is inside a span of code is not markup, and running the
-    // other rules over it would put tags inside a literal.
-    var parts = s.split("`");
-    for (var i = 0; i < parts.length; i++) {
-        if (i % 2) continue;                            // inside a code span
-        parts[i] = parts[i]
-            .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, function (all, label, href) {
-                return safeHref(href) ? '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + "</a>" : all;
-            })
-            .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
-            .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
-            .replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
-    }
-    var out = "";
-    for (var j = 0; j < parts.length; j++) {
-        // An unclosed backtick is a backtick, not the start of code that never ends.
-        var closed = (parts.length % 2 === 1);
-        if (j % 2 && closed) out += "<code>" + parts[j] + "</code>";
-        else out += (j % 2 ? "`" + parts[j] : parts[j]);
-    }
-    return out;
+
+    // Code spans come out of the string first and go back in last.
+    //
+    // Splitting on backticks and running the emphasis rules over each piece separately looks
+    // equivalent to this and is not. In `**turn on `remote_write` first**` the opening `**` and
+    // the closing `**` land in different pieces, so neither one matches, and the reader is shown
+    // literal asterisks around the exact sentence somebody was trying to make emphatic — which
+    // is how a real answer came to read `**在 Cloudflare Zero Trust 幫 `host` 掛一層 Access**`.
+    //
+    // The stand-in is `<0>`, `<1>`, …, and the angle brackets are what make it safe: `esc` above
+    // has already turned every `<` in the source into `&lt;`, so the only ones left in the string
+    // are the ones put here, and nothing the source can say will collide with them. It is also
+    // inert to every rule below, carrying no `*`, `_`, `~`, `[` or `(` for them to match on.
+    // What goes back is the span's escaped text and nothing else: whatever was inside a code
+    // span was never markup, and never met a rule that could have read it as any.
+    var spans = [];
+    s = s.replace(/`([^`]*)`/g, function (all, code) {
+        // An unclosed backtick is a backtick, not the start of code that never ends: this needs
+        // a closing one to match, so a lone backtick is left standing where it was written.
+        spans.push(code);
+        return "<" + (spans.length - 1) + ">";
+    });
+
+    s = s
+        .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, function (all, label, href) {
+            return safeHref(href) ? '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + "</a>" : all;
+        })
+        // Lazy, and not "no marker inside": the bar recurses into what it finds between two
+        // markers, so `**a *b* c**` is bold with an italic in it there. Refusing the whole thing
+        // over the inner pair would put three pairs of asterisks back on the screen.
+        .replace(/\*\*([^\n]+?)\*\*/g, "<strong>$1</strong>")
+        .replace(/~~([^\n]+?)~~/g, "<del>$1</del>")
+        // A single `*` or `_`, on the bar's terms: it has to open a word — start of the line, or
+        // after a space or a bracket — and what it closes must not end in a space. `snake_case`
+        // and `rm *.o *.a` are far more common in this text than emphasis is, and both of them
+        // come through as themselves.
+        .replace(/(^|[\s(])\*([^*\n]*[^\s*\n])\*/g, "$1<em>$2</em>")
+        .replace(/(^|[\s(])_([^_\n]*[^\s_\n])_/g, "$1<em>$2</em>");
+
+    return s.replace(/<(\d+)>/g, function (all, n) { return "<code>" + spans[n] + "</code>"; });
 }
 
 /** Only the schemes that cannot run anything. `javascript:` in a transcript is not a link. */
@@ -2362,8 +2664,12 @@ function renderComposer() {
     els.composer.dataset.write = S.write ? "on" : "off";
     els.msg.disabled = !on;
     els.send.disabled = !on || !els.msg.value.trim();
+    // Only ever the reason the box will not take what you type. There used to be a line here
+    // saying that Return sends and Shift-Return starts a line, and it was true and it was in the
+    // way: a row of every screen, forever, to teach something once. When there is nothing to
+    // explain this is empty, and an empty one is not drawn at all.
     els.why.innerHTML = S.write
-        ? (S.openId ? "<b>Return</b> sends · <b>Shift-Return</b> starts a line" : "Open a session to write to it.")
+        ? (S.openId ? "" : "Open a session to write to it.")
         : "<b>Sending is off</b> — the server reports <code>write: false</code>. The box is wired; it switches itself on when that changes.";
 }
 
@@ -2418,6 +2724,10 @@ function openSession(id, keepFocus) {
     S.selectedId = id;
     if (S.openId !== id) {
         S.openId = id;
+        // Which runs were open is where a reader had got to in that transcript, not a setting.
+        // Fold keys come from content and so would not collide across sessions, but carrying
+        // them over means arriving in a new transcript with something already open.
+        S.expanded = {};
         loadTranscript(id, false);
     }
     if (phone()) {
@@ -2438,6 +2748,7 @@ function openSession(id, keepFocus) {
 function closeDetail(silent) {
     S.openId = null;
     S.tx = { id: null, entries: [], signature: null, loading: false, error: null };
+    S.expanded = {};
     if (phone()) els.app.dataset.view = "list";
     renderTranscript();
     if (!silent) render();
@@ -2561,6 +2872,176 @@ window.addEventListener("popstate", function () {
     if (phone() && els.app.dataset.view === "detail") closeDetail();
 });
 
+/* ---- notifications ------------------------------------------------------- */
+
+/**
+ * Web Push: the phone buzzes when a session is waiting for an answer.
+ *
+ * Four things can be true here and only one of them is "on", so the footer says which. A button
+ * that has been pressed and did nothing is the worst of the four — that is what a permission the
+ * reader denied looks like from inside the page, and the only cure for it is in the browser's own
+ * settings, which is a sentence rather than a control.
+ *
+ * **On iOS this only works from the home screen.** Not "works badly" — the API is absent in a
+ * Safari tab, so there is nothing to press and nothing to explain afterwards. The one sentence
+ * that gets somebody from there to a working notification is therefore the whole feature until
+ * they have read it, and it is shown instead of a button rather than beside one.
+ *
+ * The service worker is the app's own `/sw.js`. It already knows how to draw a notification and
+ * what to do when one is tapped; this end registers it and hands it a subscription.
+ */
+var Push = (function () {
+    var registration = null;
+    var subscribed = false;
+    var state = "unsupported";   // unsupported | homescreen | blocked | off | on
+    var busy = false;
+
+    /** The id the server gave this subscription, kept so it can be taken back after a reload. */
+    function remember(value) {
+        try {
+            if (value == null) localStorage.removeItem("clawdline.push");
+            else localStorage.setItem("clawdline.push", String(value));
+        } catch (e) { /* a private window has no storage, and this is not worth failing over */ }
+    }
+    function recall() {
+        try { return localStorage.getItem("clawdline.push"); } catch (e) { return null; }
+    }
+
+    function standalone() {
+        return window.navigator.standalone === true
+            || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+    }
+
+    /** iPadOS calls itself a Mac, and a touch screen is the only tell left. */
+    function iOS() {
+        var platform = navigator.platform || "";
+        return /iP(hone|ad|od)/.test(platform)
+            || (/Mac/.test(platform) && navigator.maxTouchPoints > 1);
+    }
+
+    function decide() {
+        if (iOS() && !standalone()) return "homescreen";
+        if (typeof api.pushKey !== "function") return "unsupported";      // mock mode has no server
+        if (!window.isSecureContext) return "unsupported";
+        if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported";
+        if (typeof Notification === "undefined") return "unsupported";
+        if (Notification.permission === "denied") return "blocked";
+        return subscribed ? "on" : "off";
+    }
+
+    /// The VAPID key arrives as base64url and `subscribe` wants bytes.
+    function keyBytes(key) {
+        var padded = String(key).replace(/-/g, "+").replace(/_/g, "/");
+        while (padded.length % 4) padded += "=";
+        var raw = atob(padded);
+        var out = new Uint8Array(raw.length);
+        for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+        return out;
+    }
+
+    /// Safari answered this with a callback for years before it answered with a promise.
+    function askPermission() {
+        return new Promise(function (done, fail) {
+            try {
+                var maybe = Notification.requestPermission(function (answer) { done(answer); });
+                if (maybe && typeof maybe.then === "function") maybe.then(done, fail);
+            } catch (e) { fail(e); }
+        });
+    }
+
+    function draw() {
+        state = busy ? state : decide();
+        var say = els["notify-say"], go = els["notify-go"];
+        els.notify.classList.toggle("on", state === "on");
+        go.hidden = !(state === "off" || state === "on");
+        go.disabled = busy;
+        if (state === "off") go.textContent = busy ? "Asking…" : "Notify me";
+        if (state === "on") go.textContent = busy ? "Stopping…" : "Stop";
+        say.textContent =
+            state === "homescreen" ? "Add clawdline to your home screen and open it from there — iOS only sends notifications to an app that lives there."
+            : state === "unsupported" ? "This browser cannot show notifications."
+            : state === "blocked" ? "Notifications are blocked for this site. That switch is in the browser's own settings, not here."
+            : state === "on" ? "This device is told when a session is waiting."
+            : "when a session is waiting for an answer";
+    }
+
+    function enable() {
+        busy = true; draw();
+        askPermission().then(function (answer) {
+            if (answer !== "granted") { busy = false; draw(); return null; }
+            return navigator.serviceWorker.ready.then(function (r) {
+                registration = r;
+                return api.pushKey();
+            }).then(function (d) {
+                return registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: keyBytes(d.key)
+                });
+            }).then(function (subscription) {
+                return api.pushSubscribe(subscription.toJSON());
+            }).then(function (d) {
+                subscribed = true;
+                remember(d && d.id);
+                busy = false; draw();
+                toast("This device will be told when a session is waiting");
+            });
+        }).catch(function (e) {
+            busy = false; draw();
+            toast(e && e.message ? e.message : "Could not turn notifications on", true);
+        });
+    }
+
+    function disable() {
+        busy = true; draw();
+        var id = recall();
+        navigator.serviceWorker.ready.then(function (r) {
+            return r.pushManager.getSubscription();
+        }).then(function (subscription) {
+            return subscription ? subscription.unsubscribe() : null;
+        }).then(function () {
+            // Told, but not waited on: the subscription is already gone from this browser, and a
+            // server that never hears about it will drop it the first time it pushes to nothing.
+            return id ? api.pushUnsubscribe(id).catch(function () { return null; }) : null;
+        }).then(function () {
+            subscribed = false;
+            remember(null);
+            busy = false; draw();
+        }).catch(function (e) {
+            busy = false; draw();
+            toast(e && e.message ? e.message : "Could not turn notifications off", true);
+        });
+    }
+
+    return {
+        start: function () {
+            draw();
+            if (decide() === "unsupported" || decide() === "homescreen") return;
+            navigator.serviceWorker.register("/sw.js").then(function (r) {
+                registration = r;
+                return navigator.serviceWorker.ready;
+            }).then(function (r) {
+                return r.pushManager.getSubscription();
+            }).then(function (subscription) {
+                // Both halves have to agree. A subscription this browser still holds but the app
+                // has forgotten — reinstalled, database cleared — would draw as "on" and never
+                // arrive, so what is remembered here is the id the server gave back.
+                subscribed = !!subscription && !!recall();
+                draw();
+            }).catch(function () {
+                // No worker means no notifications, and the footer already has a sentence for it.
+                draw();
+            });
+        },
+        toggle: function () {
+            if (busy) return;
+            if (state === "off") enable();
+            else if (state === "on") disable();
+        }
+    };
+})();
+
+els["notify-go"].addEventListener("click", function () { Push.toggle(); });
+
 /* ---- the composer -------------------------------------------------------- */
 
 els.msg.addEventListener("input", function () {
@@ -2569,13 +3050,36 @@ els.msg.addEventListener("input", function () {
     els.send.disabled = !S.write || !S.openId || !els.msg.value.trim();
 });
 els.msg.addEventListener("keydown", function (ev) {
-    if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); submit(); }
+    if (ev.key !== "Enter" || ev.shiftKey) return;
+    // **Not while an input method is mid-word.** Typing Chinese, Japanese or Korean, Return is
+    // how you accept the candidate the IME is offering — it is a keystroke aimed at the input
+    // method, not at us, and acting on it sends whatever is in the box before the person has
+    // finished the word they are writing. `isComposing` is the browser telling us which one this
+    // is; keyCode 229 is the same fact from browsers that predate it.
+    if (ev.isComposing || ev.keyCode === 229) return;
+    ev.preventDefault();
+    submit();
 });
 els.composer.addEventListener("submit", function (ev) { ev.preventDefault(); submit(); });
 
+/// True from the moment a send starts until its answer comes back.
+///
+/// The button is disabled while a send is in flight, and that was the whole guard — which does
+/// nothing at all for Return, because Return does not go through the button. Sending takes a
+/// couple of hundred milliseconds (it is an osascript round trip at the far end), the box is not
+/// cleared until the answer arrives, and a second Return inside that window found the same text
+/// still sitting there and sent it again. Two identical messages in somebody's session, and
+/// nothing on this page had said no.
+///
+/// The `Idempotency-Key` does not help here and is not supposed to: it exists so a **retried**
+/// request is not a second prompt, and these were two requests the page chose to make.
+var sending = false;
+
 function submit() {
+    if (sending) return;
     var text = els.msg.value.trim();
     if (!text || !S.openId || !S.write) return;
+    sending = true;
     els.send.disabled = true;
     api.send(S.openId, text).then(function () {
         els.msg.value = "";
@@ -2589,7 +3093,7 @@ function submit() {
             renderDetailHead();
         }
         toast(e.message || "Could not send", true);
-    }).then(function () { renderComposer(); });
+    }).then(function () { sending = false; renderComposer(); });
 }
 
 /* ---- pull to refresh, phones only ---------------------------------------- */
@@ -2676,6 +3180,7 @@ renderConn();
 renderTranscript();
 render();
 api.start();
+Push.start();
 
 // A page left open all day: "2m ago" is only true for a minute. The timestamps are rewritten in
 // place rather than by rendering the transcript again — a re-render replaces the whole pane, and
