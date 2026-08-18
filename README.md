@@ -26,6 +26,16 @@ English · [繁體中文](README.zh-TW.md)
 
 ---
 
+> ### Connecting your own project
+>
+> Paste this repository's address at your Claude Code agent and ask it to connect your project.
+> **[docs/connect.md](docs/connect.md) is written for it** — the files to create, the formats,
+> and how to check its own work. It installs nothing and adds no dependency to your project;
+> every integration here is a small JSON file that Clawdline reads.
+>
+> *"Connect this project to Clawdline — https://github.com/sainteye/clawdline"* is the whole
+> instruction.
+
 ## What it is for
 
 Claude Code puts everything in one rectangle at the bottom of one terminal window: what it says,
@@ -125,7 +135,7 @@ finding out on its next look. It changes when a reading happens and never what o
 - **Writing** — [dictation](#talk-instead-of-type) · [files and images](#dropping-in-a-file-or-an-image) · [which tab it sends to](#which-tab-does-it-send-to)
 - **Making it yours** — [mascots](#bring-your-own-mascot) · [config](#config) · [other terminals](#other-terminals-run-claude-code-in-tmux)
 - **Under it** — [how it works](#how-it-works) · [permissions and privacy](#permissions-and-privacy) · [limitations](#limitations) · [troubleshooting](#troubleshooting)
-- **Going further** — [the dev stack a project declares](docs/devstack.md) · [hooks, for the twenty-second gap](docs/hooks.md) · [Whisper for mixed languages](docs/whisper.md) · [which Claude Code versions](docs/compatibility.md) · [project status files](docs/project-status.md) · [mascot format](docs/mascots.md)
+- **Going further** — [connect your own project](docs/connect.md) · [from a browser or a phone](docs/remote.md) · [the API](docs/api.md) · [the dev stack a project declares](docs/devstack.md) · [hooks, for the twenty-second gap](docs/hooks.md) · [Whisper for mixed languages](docs/whisper.md) · [which Claude Code versions](docs/compatibility.md) · [project status files](docs/project-status.md) · [mascot format](docs/mascots.md)
 
 ## Why
 
@@ -518,6 +528,37 @@ diff it.
 
 Five events, all rare — `PreToolUse` is deliberately not among them. The full contract, including
 what a note is and is not allowed to change, is in [docs/hooks.md](docs/hooks.md).
+
+## From a browser, or a phone
+
+The bar answers "which session wants me" while you are at the machine. Away from it, the same
+question is still worth answering — and it is the same reading, so there is a page for it.
+
+Switch it on in **Settings → Remote** and the app serves the session list on `127.0.0.1`: every
+session with its state, its project's mark, and its transcript laid out the way <kbd>⌘</kbd><kbd>J</kbd>
+lays it out. On a desktop it is two columns with the app's own keys; on a phone it is a single
+column meant to be added to the home screen, where it behaves like an app rather than a page.
+
+To reach it from outside, point it at `cloudflared` — a quick tunnel for a generated address, or
+your own domain. **The connection dials out**, so there is no port to forward and nothing
+listening on your network.
+
+**Two switches, because they are two different risks.** Reading a session discloses a repository
+name, a branch and a task title. *Writing* to one is remote code execution, because Claude Code
+runs `bash`. So sending is a second switch, off by default, and granted to paired devices as a
+group so it can be taken back from all of them at once.
+
+Nothing is reachable without a paired device. Pairing shows a six-digit code **on the Mac and
+nowhere else** — it is never in the reply the browser got, so whoever asked cannot finish without
+being able to see your screen. A phone can scan a QR code instead. A tunnel refuses to start until
+something has been paired, because *reachable from the internet* should be a decision somebody
+made rather than something one config key did.
+
+`docs/remote.md` has the threat model, including what this does **not** defend against, and
+[docs/api.md](docs/api.md) is the surface a script or a plugin talks to — every session, every
+transcript, an event stream, and `curl` as the only SDK.
+
+**[docs/remote.md](docs/remote.md)** · **[docs/api.md](docs/api.md)**
 
 ## The notch
 
