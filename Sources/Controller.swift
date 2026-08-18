@@ -43,8 +43,30 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var rows: [TargetRow] = []
     private var targetIndex = 0
     /// Which list the panel is showing, if any. Sessions and mascots share the UI.
-    private enum ListMode { case none, sessions, mascots }
-    private var listMode: ListMode = .none
+    private enum ListMode { case none, sessions, mascots, stacks }
+    private var listMode: ListMode = .none {
+        didSet {
+            guard listMode != oldValue else { return }
+            // Set here rather than at each of the six places that close a list, because the one
+            // that gets forgotten is the leak.
+            syncSessionStatePolling()
+        }
+    }
+    /// The live line each session last showed, by session id.
+    ///
+    /// It is the same reading the session list makes — `SessionState.working` carries it — kept
+    /// so that switching can put the strip up in the *same* turn as the text. Reading it fresh
+    /// costs a round trip to the terminal, which used to land a beat after the pane had already
+    /// been painted: the conversation appeared, and then a moment later a line arrived above it
+    /// and shoved the whole thing down. One late strip is more noticeable than a slow pane.
+    private var activityCache: [String: String] = [:]
+    /// What each session is doing, by session id.
+    ///
+    /// Thrown away when the panel goes down, and deliberately: a reading is only true for about
+    /// as long as it took to make. Keeping it would mean opening the bar an hour later onto a
+    /// row that says a session is waiting for you when it has long since been answered — and a
+    /// mark that is confidently wrong is worse than the plain row this replaces.
+    private var sessionStates: [String: SessionState] = [:]
     private var mascotNames: [String] = []
     private var mascotIndex = 0
     private var scanning = false
@@ -60,6 +82,36 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var projectCache: [String: ProjectInfo] = [:]
     private var iconCache: [String: ProjectIcon.Grid] = [:]
     private var statusCache: [String: ProjectStatus.Snapshot] = [:]
+    /// The project's own servers, when it describes them (`.devstack.json`). Keyed by repository
+    /// root rather than by session, because two sessions in one repository are looking at one
+    /// set of servers — and because the panel has to show projects no session is sitting in.
+    private var stackSpecCache: [String: DevStack.Spec] = [:]
+    private var stackCache: [String: DevStack.State] = [:]
+    /// Which repository root each session's stack was found in — the join between the two.
+    private var stackRootOfSession: [String: String] = [:]
+    /// The stack list, in the order it is shown. Rebuilt when the list opens, refreshed while
+    /// it is open — a panel of servers that stops updating while you look at it is a panel you
+    /// have to close and reopen to trust.
+    private var stackRows: [DevStack.Spec] = []
+    private var stackBusy: Set<String> = []
+    /// The project whose button has been pressed once and is waiting to be confirmed. Cleared
+    /// whenever the panel closes, so an agreement never survives out of sight of what it was about.
+    private var armedStack: (root: String, stop: Bool)?
+    /// A stack's log, while it is what the ⌘J pane is showing. Non-nil parks the transcript
+    /// refresh — otherwise the next poll would paint the conversation over the log a second
+    /// after it arrived, which reads as the button not working.
+    private var stackLog: NSAttributedString?
+    /// Which stack's log is on screen, and which of its processes — nil meaning all of them.
+    private var stackLogSpec: DevStack.Spec?
+    private var stackLogProcess: String?
+    /// The whole stack's log, fetched once. Tabs slice this rather than fetching again —
+    /// `process-compose process logs` costs a flat second per call however little you ask it
+    /// for, so paying that per tab made switching feel broken.
+    private var stackLogRaw: String?
+    /// Pinned to the top of the log pane. See StackLogHeader for why it is a view and not the
+    /// first two lines of the text.
+    private var stackLogHeader: StackLogHeader?
+    private var savedOutputInset: NSSize?
     /// When each session was last looked up, so a summon repaints from what is known and asks
     /// again in the background rather than showing nothing while it waits.
     private var projectSeen: [String: CFAbsoluteTime] = [:]
@@ -75,7 +127,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var historyCursor = -1
     private var hintResetWork: DispatchWorkItem?
     private var idleWork: DispatchWorkItem?
-    private var outputOpen = false
+    private var outputOpen = false {
+        didSet {
+            guard outputOpen != oldValue else { return }
+            syncSessionStatePolling()
+        }
+    }
     /// The keycap row costs most of the footer's width to say things you learn once. Collapsed
     /// to a single ⌘/ until asked for.
     private var keysShown = false
@@ -110,6 +167,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// it is a reading position, not a setting, and it should not outlive the session on screen.
     private var expandedFolds: Set<String> = []
     private var danceWork: DispatchWorkItem?
+    /// Queued work that lays out the sessions either side of the selected one. Cancelled and
+    /// re-armed on every move, so holding ↓ through eight tabs does not start eight of them.
+    private var prefetchWork: DispatchWorkItem?
+    /// A session the bar was asked to open on, waiting for the scan that will contain it.
+    private var pendingFocusID: String?
 
     private var currentTarget: TargetSession? {
         guard targets.indices.contains(targetIndex) else { return nil }
@@ -123,6 +185,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private override init() {
         super.init()
         buildPanel()
+        SessionWatch.shared.observers["panel"] = { [weak self] in self?.applyWatchedStates() }
     }
 
     private func buildPanel() {
@@ -290,6 +353,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             .init(key: "⌘K", label: L.t.hintList),
             .init(key: "⌘M", label: L.t.hintMascot),
             .init(key: "⌘J", label: L.t.hintOutput),
+            .init(key: "⌘S", label: L.t.hintStacks),
             .init(key: "⌘F", label: L.t.hintFullscreen),
             .init(key: "⌘L", label: L.t.hintVoice),
             .init(key: "⌘R", label: L.t.hintOrder),
@@ -340,7 +404,13 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         textView.onCycleTarget = { [weak self] forward in self?.cycle(forward: forward) }
         textView.onToggleList = { [weak self] in self?.showList(.sessions) }
         textView.onToggleMascots = { [weak self] in self?.showList(.mascots) }
-        textView.onPickIndex = { [weak self] i in self?.pick(i) }
+        textView.onToggleStacks = { [weak self] in self?.showList(.stacks) }
+        textView.onStopIndex = { [weak self] i in self?.stopStack(i) }
+        // Through `choose`, not straight to `pick`: ⌘n means "the nth row of whatever is open",
+        // and with no list open that is still a session. Wired to `pick` directly, ⌘n over the
+        // stack list quietly switched sessions instead — the list looked inert, and the only
+        // way to act on a stack was a key that appeared to do nothing.
+        textView.onPickIndex = { [weak self] i in self?.choose(i) }
         textView.onToggleDance = { [weak self] in self?.toggleDance() }
         textView.onToggleOutput = { [weak self] in self?.toggleOutput() }
         textView.onToggleFullscreen = { [weak self] in self?.toggleFullscreen() }
@@ -369,6 +439,31 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     func toggle() {
         if isVisible { hide() } else { show() }
+    }
+
+    /// Open the bar already pointed at a particular session.
+    ///
+    /// For the island and the menu bar, whose whole message is "*this one* wants you" — arriving
+    /// at the bar and then having to find which of nine rows it meant would undo the point of
+    /// having been told. The id is remembered rather than applied, because the session scan is
+    /// asynchronous and there is nothing to select until it lands.
+    func show(focusing sessionID: String?) {
+        pendingFocusID = sessionID
+        if isVisible {
+            applyPendingFocus()
+            NSApp.activate(ignoringOtherApps: true)
+            panel.makeKeyAndOrderFront(nil)
+        } else {
+            show()
+        }
+    }
+
+    /// Select the session the island was pointing at, once the scan has produced it.
+    private func applyPendingFocus() {
+        guard let wanted = pendingFocusID else { return }
+        guard let i = targets.firstIndex(where: { $0.id == wanted }) else { return }
+        pendingFocusID = nil
+        pick(i, closeList: false)
     }
 
     func show() {
@@ -468,6 +563,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             self.panel.orderOut(nil)
             self.mascot.stop()          // once hidden, stop burning a 60fps timer
             self.stopOutput()
+            self.prefetchWork?.cancel()
+            Transcript.forgetRenders()
             self.hideBackdrop(animated: false)
             self.listMode = .none
             self.dismissing = false
@@ -872,6 +969,15 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     // is what makes that switch a decision rather than a guess.
 
     private func toggleOutput(layout: Bool = true) {
+        // ⌘J on a stack's log hands the pane back to the transcript rather than closing it.
+        //
+        // This is the way out. Without it the log was a room with no door: the key that opened
+        // the pane shut it, reopening showed the log again — because the log is what the pane
+        // now held — and the conversation never came back at all.
+        if stackLog != nil, outputOpen {
+            clearStackLog()
+            return
+        }
         let from = currentFrameState()
         // Full screen exists to read in. Closing the pane and leaving a screen-sized card with
         // one input line in it would be a state nobody asked for — so ⌘J on a full-screen pane
@@ -1003,6 +1109,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         stopOutput()
         guard outputOpen else { return }
         Log.write("output: following \(currentTarget?.name ?? "-")")
+        // The pane's strip is fed by the same reading the list uses, so opening it turns that
+        // reading on. Here as well as in the property, because a summon that comes back with the
+        // pane already open changes nothing to observe.
+        syncSessionStatePolling()
         refreshOutput()
         let t = Timer(timeInterval: 1.2, repeats: true) { [weak self] _ in self?.refreshOutput() }
         RunLoop.main.add(t, forMode: .common)
@@ -1026,14 +1136,22 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     }
 
     private func refreshOutput() {
-        guard cannedTranscript == nil else { return }
+        guard cannedTranscript == nil, stackLog == nil else { return }
         guard outputOpen, panel.isVisible, let target = currentTarget else { return }
-        DispatchQueue.global(qos: .utility).async {
+        // Not `.utility`. This runs because somebody pressed ↓, and on a machine with nine
+        // sessions on it — which is the machine this is for — background priority is the
+        // difference between the pane keeping up with the key and lagging a beat behind it.
+        DispatchQueue.global(qos: .userInitiated).async {
             // The transcript is the better source when there is one: it has the message
             // boundaries the screen only implies, and it is not truncated to a viewport.
             if Config.shared.outputMode != "terminal",
                let rendered = self.renderTranscript(for: target) {
                 DispatchQueue.main.async {
+                    // Whoever this was read for may not be who is selected by the time it
+                    // lands: holding ↓ starts one of these per session passed through, and
+                    // without this the pane could finish by painting a conversation you had
+                    // already moved off — confidently, under the next session's name.
+                    guard self.currentTarget?.id == target.id else { return }
                     guard self.outputOpen, rendered.signature != self.lastOutput else { return }
                     self.lastOutput = rendered.signature
                     // Which edge is "keeping up" depends on the order: newest-first puts the
@@ -1055,10 +1173,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                         self.outputHost.reflectScrolledClipView(clip)
                     }
                 }
-                // The status line is painted on the terminal and never written to the file, so
-                // reading the conversation from disk still leaves this one thing to scrape.
-                let running = Activity.parse(Targets.capture(target) ?? "")
-                DispatchQueue.main.async { self.setActivity(running) }
+                // The live line used to be scraped here, with a round trip of its own, after the
+                // text had already been handed over — which is exactly why it arrived late and
+                // pushed the conversation down on its way in. The state poller reads every
+                // session's screen on the same 1.2s cadence and keeps the answer, so by the time
+                // this runs the strip is already up and this path has nothing to do.
                 return
             }
             guard Config.shared.outputMode != "transcript" else { return }
@@ -1071,7 +1190,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             while lines.last.map(blank) == true { lines.removeLast() }
             let text = lines.joined(separator: "\n")
             DispatchQueue.main.async {
-                guard self.outputOpen else { return }
+                guard self.currentTarget?.id == target.id, self.outputOpen else { return }
                 // A terminal that is not changing produces an identical capture. Rewriting
                 // the text storage anyway relaid out 3000pt of glyphs and threw the scroll
                 // position around while somebody was reading it.
@@ -1116,21 +1235,31 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         guard target.isClaude,
               let cwd = Targets.workingDirectory(of: target),
               let file = Transcript.locate(cwd: cwd, tabTitle: target.name,
-                                           startedAt: Targets.processStart(of: target)),
-              // Eight megabytes, because the limit that bites is bytes and not entries: at the
-              // 400KB this used to read, a busy session yielded sixteen records and the reader
-              // hit the top of the pane almost immediately.
-              let text = Transcript.tail(of: file, bytes: 8_000_000)
+                                           startedAt: Targets.processStart(of: target))
         else { return nil }
-        let entries = Transcript.parse(text)
-        guard !entries.isEmpty else { return nil }
+
         let folds = expandedFolds
         let newestFirst = Config.shared.outputNewestFirst
-        return (Transcript.render(entries, size: Config.shared.outputSize,
-                                  mono: Style.outputFont, expanded: folds, newestFirst: newestFirst),
-                Transcript.signature(of: file)
-                    + "-\(Config.shared.outputSize)-\(newestFirst)"
-                    + "-\(folds.sorted().joined(separator: ","))")
+        let size = Config.shared.outputSize
+        let signature = Transcript.signature(of: file)
+            + "-\(size)-\(newestFirst)"
+            + "-\(folds.sorted().joined(separator: ","))"
+
+        // Worked out before anything is read, because it is also the answer to "has this
+        // changed": a session you switched away from and came back to is one stat away from
+        // being on screen, rather than eight megabytes and a re-layout away.
+        if let kept = Transcript.cachedRender(for: signature) { return (kept, signature) }
+
+        // Eight megabytes, because the limit that bites is bytes and not entries: at the
+        // 400KB this used to read, a busy session yielded sixteen records and the reader
+        // hit the top of the pane almost immediately.
+        guard let text = Transcript.tail(of: file, bytes: 8_000_000) else { return nil }
+        let entries = Transcript.parse(text)
+        guard !entries.isEmpty else { return nil }
+        let rendered = Transcript.render(entries, size: size, mono: Style.outputFont,
+                                         expanded: folds, newestFirst: newestFirst)
+        Transcript.remember(rendered, for: signature)
+        return (rendered, signature)
     }
 
     /// A folded run of tool calls was clicked. The pane is read-only, so a link is the only
@@ -1138,6 +1267,13 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// a disclosure triangle drawn into the text.
     func textView(_ view: NSTextView, clickedOnLink link: Any, at index: Int) -> Bool {
         guard let url = (link as? URL)?.absoluteString ?? link as? String else { return false }
+        // The way out of the log pane, and the tabs across the top of it.
+        if url == "clawdline://stacklog-back" { clearStackLog(); return true }
+        if url.hasPrefix("clawdline://stacklog/") {
+            let name = String(url.dropFirst("clawdline://stacklog/".count))
+            if let spec = stackLogSpec { showStackLog(spec, process: name.isEmpty ? nil : name) }
+            return true
+        }
         guard url.hasPrefix("clawdline://fold/") else {
             // A deploy run, or the backlog page. Opening it is the whole point of showing it.
             if let real = URL(string: url) { NSWorkspace.shared.open(real) }
@@ -1203,6 +1339,15 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             chosen = i
         }
         targetIndex = targets.isEmpty ? 0 : chosen
+        // Asked for by the island or the menu bar before this list existed. It wins over every
+        // rule above it, because it is the most explicit statement of intent there is: somebody
+        // clicked the thing that named this session.
+        if let wanted = pendingFocusID, let i = targets.firstIndex(where: { $0.id == wanted }) {
+            targetIndex = i
+            stickyID = wanted
+            stickyBase = snap.currentID
+            pendingFocusID = nil
+        }
 
         rebuildRows()
         updateTargetLabel()
@@ -1210,25 +1355,197 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // The session scan is async, so an output pane opened before it landed had no target
         // to read and gave up. Nothing retried it, and it stayed blank for good.
         if outputOpen { refreshOutput() }
+        // The watch has almost certainly read these screens already — it never stops — so the
+        // rows can be marked from the reading in hand rather than sitting plain until the next
+        // one comes round.
+        if listMode == .sessions { applyWatchedStates() }
         if let e = snap.error { setHint(e, warn: true) }
         relayout()
     }
 
+    // MARK: - What each session is doing
+    //
+    // The list is the one place the bar shows every session at once, and every row on it used to
+    // say the same kind of thing: a tab title, which is the task. Four tabs on tasks that read
+    // alike are four identical rows — and the question you open that list with is not "what are
+    // they called", it is "which one stopped, and which one wants something from me".
+    //
+    // Which is the half of this tool that was still missing. Not looking at the terminal works
+    // for one session; with four, you were back to going round the tabs to find out who had
+    // finished. The mark on the row is what makes the list answer that instead.
+
+    /// Both readers of these screens: the list, which draws a mark per row, and the strip above
+    /// the transcript pane, which needs the *selected* session's live line the instant it is
+    /// switched to rather than a round trip later.
+    ///
+    /// One reading serves both, which is why the pane opting in costs nothing extra: it was
+    /// already asking the terminal for the current session once a second on its own.
+    /// Whether anything on screen is showing these readings. It does not decide *whether* they
+    /// happen — `SessionWatch` reads all day for the menu bar and the island — only whether they
+    /// happen at the pace of a keypress or at the pace of a background chore.
+    private var shouldPollStates: Bool { listMode == .sessions || outputOpen }
+
+    private func syncSessionStatePolling() {
+        SessionWatch.shared.isForeground = shouldPollStates && panel.isVisible
+    }
+
+    /// Take the newest reading. Called by the watch, not by a timer of this class's own: four
+    /// pollers asking the same terminal the same question was the thing worth avoiding.
+    private func applyWatchedStates() {
+        let states = SessionWatch.shared.states
+        // The live lines are worth keeping whether or not the rows changed: this is the only
+        // place the *other* sessions' screens are read, so it is the only chance to know what
+        // their strip should say before one of them is switched to.
+        for (id, state) in states {
+            if case .working(let line) = state { activityCache[id] = line }
+            else { activityCache.removeValue(forKey: id) }
+        }
+        guard panel.isVisible else { return }
+        // The strip follows the selected session even when the list is shut, because the pane is
+        // open on its own account and its live line has to keep ticking.
+        if let id = currentTarget?.id, outputOpen { setActivity(activityCache[id]) }
+
+        // Rows are rebuilt only when something actually moved. A list that rebuilds once a second
+        // discards the view under the pointer every second with it, and an unchanged screen is
+        // the common case: most of the time three of the four sessions are doing exactly what
+        // they were doing a second ago.
+        guard listMode == .sessions, states != sessionStates else { return }
+        sessionStates = states
+        rebuildRows()
+        relayout()
+    }
+
+    /// Lay out the sessions either side of the selected one, before anybody asks for them.
+    ///
+    /// Reading a conversation costs about the same whenever it is done; the only question is
+    /// whether it is done while a key is held down. Moving through the list is the one time it is
+    /// possible to know what will be wanted next — it is the row above and the row below — so
+    /// that work happens in the gap between keystrokes, and ↓ finds it already laid out.
+    ///
+    /// Nothing is given up for this. It writes only into the cache that the switch was going to
+    /// consult anyway, at a priority below the pane the user is actually looking at, and after a
+    /// pause long enough that running through eight tabs queues nothing at all.
+    private func prefetchNeighbours() {
+        prefetchWork?.cancel()
+        guard outputOpen, listMode == .sessions, targets.count > 1,
+              cannedTranscript == nil, Config.shared.outputMode != "terminal" else { return }
+        let wanted = [targetIndex - 1, targetIndex + 1]
+            .filter { targets.indices.contains($0) }
+            .map { targets[$0] }
+        guard !wanted.isEmpty else { return }
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            for target in wanted {
+                guard self.outputOpen else { return }
+                _ = self.renderTranscript(for: target)   // its own answer goes into the cache
+            }
+        }
+        prefetchWork = work
+        // Long enough that a held key never starts one, short enough to be ready before the
+        // next deliberate press.
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
+    /// One session row: what the tab is called, and what its screen says it is doing.
+    ///
+    /// Nil when there is nothing to add, so the row falls back to the plain title it has always
+    /// drawn — an idle session and one whose screen could not be read both look exactly as they
+    /// did before, which is the honest drawing for "nothing to say" and for "no idea".
+    private func sessionRowText(_ target: TargetSession, selected: Bool) -> NSAttributedString? {
+        guard let state = sessionStates[target.id] else { return nil }
+        let s = NSMutableAttributedString()
+        let base = NSFont.systemFont(ofSize: Style.listSize, weight: selected ? .medium : .regular)
+        let small = NSFont.systemFont(ofSize: Style.listSize - 1.5)
+        func add(_ text: String, _ colour: NSColor, _ font: NSFont) {
+            s.append(NSAttributedString(string: text,
+                                        attributes: [.font: font, .foregroundColor: colour]))
+        }
+
+        add(target.label, selected ? .labelColor : .secondaryLabelColor, base)
+
+        switch state {
+        case .working(let line):
+            // Quiet, deliberately. A session that is working wants nothing from you, and four
+            // rows calling for attention at once is the same as none of them calling.
+            //
+            // A step less quiet on the selected row: it draws on a tinted background, and the
+            // grey that reads as "in the background" against the card reads as illegible there.
+            let quiet: NSColor = selected ? .secondaryLabelColor : .tertiaryLabelColor
+            add("   ⟳ ", quiet, small)
+            // Cut with a mark on it. The row clips whatever runs past its edge, and a sentence
+            // that stops mid-word with nothing to say so reads as a bug rather than as a limit.
+            add(line.count > 44 ? line.prefix(43) + "…" : line, quiet, small)
+        case .waiting:
+            // The one loud thing in the list, because it is the only state that costs you
+            // something for every second it goes unnoticed.
+            add("   ● " + L.t.sessionWaiting, Style.accent, small)
+        case .idle, .unknown:
+            return nil
+        }
+        return s
+    }
+
     private func rebuildRows() {
         rows.forEach { $0.removeFromSuperview() }
-        let titles: [String]
-        let selected: Int
-        switch listMode {
-        case .mascots:
-            titles = mascotNames
-            selected = mascotIndex
-        default:
-            titles = targets.map { $0.label }
-            selected = targetIndex
+        if listMode == .stacks {
+            rows = stackRows.prefix(9).enumerated().map { i, spec in
+                let row = TargetRow(title: spec.name, index: i,
+                                    rich: stackRowText(spec, selected: false))
+                let state = stackCache[spec.root]
+                row.toolTip = (state == nil || state!.processes.isEmpty)
+                    ? L.t.stackTipUnknown
+                    : L.t.stackTip(up: state!.upCount, total: state!.processes.count)
+                // The buttons are the only things on the row that act; links open; the rest is
+                // just text to read. Two earlier versions got this wrong in opposite directions
+                // — one made nothing clickable and looked broken, the next made the whole row
+                // clickable and took a public site down without asking.
+                //
+                // Order matters: the everyday action is rightmost, under the hand. Reading the
+                // log is leftmost because it is the only one that changes nothing.
+                var buttons: [TargetRow.Button] = []
+                var handlers: [() -> Void] = []
+                if let log = stackLogButton(spec) {
+                    buttons.append(log)
+                    handlers.append { [weak self] in self?.showStackLog(spec) }
+                }
+                if let stop = stackStop(spec) {
+                    buttons.append(stop)
+                    handlers.append { [weak self] in self?.stopStack(i) }
+                }
+                if let act = stackAction(spec) {
+                    buttons.append(act)
+                    handlers.append { [weak self] in self?.actOnStack(i) }
+                }
+                row.buttons = buttons
+                row.onButton = { k in
+                    guard handlers.indices.contains(k) else { return }
+                    handlers[k]()
+                }
+                row.onOpen = { url in
+                    guard let u = URL(string: url) else { return }
+                    NSWorkspace.shared.open(u)
+                }
+                listBox.addSubview(row)
+                return row
+            }
+            return
         }
-        rows = titles.prefix(9).enumerated().map { i, t in
-            let row = TargetRow(title: t, index: i)
-            row.isSelected = (i == selected)
+        if listMode == .mascots {
+            rows = mascotNames.prefix(9).enumerated().map { i, name in
+                let row = TargetRow(title: name, index: i)
+                row.isSelected = (i == mascotIndex)
+                row.onClick = { [weak self] in self?.choose(i) }
+                listBox.addSubview(row)
+                return row
+            }
+            return
+        }
+        rows = targets.prefix(9).enumerated().map { i, target in
+            let selected = (i == targetIndex)
+            let row = TargetRow(title: target.label, index: i,
+                                rich: sessionRowText(target, selected: selected))
+            row.isSelected = selected
             row.onClick = { [weak self] in self?.choose(i) }
             listBox.addSubview(row)
             return row
@@ -1237,19 +1554,29 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     /// Open (or close) one of the lists.
     private func showList(_ mode: ListMode) {
+        armedStack = nil
+        clearStackLog()
         if listMode == mode { listMode = .none; rebuildRows(); relayout(); return }
         listMode = mode
         if mode == .mascots {
             mascotNames = MascotPack.available()
             mascotIndex = max(0, mascotNames.firstIndex(of: Config.shared.mascot) ?? 0)
         }
+        if mode == .stacks { refreshStacks() }
+        // Opening the list is the moment the neighbours become worth having: it is the only
+        // reason anybody is about to press ↓.
+        if mode == .sessions { prefetchNeighbours() }
         rebuildRows()
         relayout()
     }
 
     /// Route a selection to whichever list is open.
     private func choose(_ i: Int) {
-        if listMode == .mascots { pickMascot(i) } else { pick(i) }
+        switch listMode {
+        case .mascots: pickMascot(i)
+        case .stacks: actOnStack(i)
+        default: pick(i)
+        }
     }
 
     /// Switching previews immediately — you pick a character by looking at it, not by
@@ -1264,6 +1591,390 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         for (n, row) in rows.enumerated() { row.isSelected = (n == i) }
         if closeList { listMode = .none }
         relayout()
+        // The character is in two places now. Reloading only the one on the card left the island
+        // wearing the previous mascot until the app was restarted — two different animals on
+        // screen at once, which is a bug you can see from across the room.
+        NotificationCenter.default.post(name: .clawdlineConfigChanged, object: nil)
+    }
+
+    // MARK: - Dev stacks
+    //
+    // The list answers the question a background process cannot answer for itself: is it still
+    // there. Moving a stack off a terminal tab is a straight loss until something watches it —
+    // a foreground process at least dies where you can see it.
+
+    /// Every project that describes a stack, whether or not a session is open in it.
+    ///
+    /// Sessions alone would not do: the project whose servers have quietly fallen over is
+    /// exactly the one you have no session in. The icon registry is the closest thing to a list
+    /// of "projects I work on" that already exists, so this reads that rather than asking for a
+    /// second list to keep current.
+    private func refreshStacks() {
+        let sessionDirs = targets.compactMap { $0.cwd }
+        DispatchQueue.global(qos: .utility).async {
+            var byRoot: [String: DevStack.Spec] = [:]
+            for path in ProjectIcon.knownPaths() + sessionDirs {
+                if let spec = DevStack.find(fromCwd: path) { byRoot[spec.root] = spec }
+            }
+            let specs = byRoot.values.sorted { $0.name < $1.name }
+            DispatchQueue.main.async {
+                self.stackRows = specs
+                for s in specs { self.stackSpecCache[s.root] = s }
+                if self.listMode == .stacks { self.rebuildRows(); self.relayout() }
+            }
+            // One at a time, painting as each answers. A trusted `status` is a subprocess, and
+            // waiting for the slowest project before showing any of them is how a panel comes
+            // up blank for a second every time it opens.
+            for spec in specs {
+                let state = DevStack.read(spec)
+                DispatchQueue.main.async {
+                    self.stackCache[spec.root] = state
+                    if self.listMode == .stacks { self.rebuildRows(); self.relayout() }
+                    self.updateTargetLabel()
+                }
+            }
+        }
+    }
+
+    /// One row: the project, what its servers are doing, and — when something is broken — which
+    /// one and why. The error is on the row because "4/5" sends you looking and "4/5 build-web"
+    /// does not.
+    private func stackRowText(_ spec: DevStack.Spec, selected: Bool) -> NSAttributedString {
+        let s = NSMutableAttributedString()
+        let base = NSFont.systemFont(ofSize: Style.listSize, weight: selected ? .medium : .regular)
+        let small = NSFont.systemFont(ofSize: Style.listSize - 1.5)
+        func add(_ text: String, _ colour: NSColor, _ font: NSFont = NSFont.systemFont(ofSize: 12),
+                 link: String? = nil) {
+            var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: colour]
+            // Underlined, the way the footer marks its health link: a link that does not look
+            // like one is a link nobody presses.
+            if let link, !link.isEmpty {
+                attrs[.link] = link
+                attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+                attrs[.underlineColor] = colour.withAlphaComponent(0.4)
+            }
+            s.append(NSAttributedString(string: text, attributes: attrs))
+        }
+
+        let accent = ProjectIcon.grid(forCwd: spec.root)?.accent ?? NSColor.labelColor
+        add(spec.name.padding(toLength: max(spec.name.count, 10), withPad: " ", startingAt: 0),
+            selected ? accent : accent.withAlphaComponent(0.75), base)
+
+        guard let state = stackCache[spec.root] else { add("  …", .tertiaryLabelColor, small); return s }
+        if stackBusy.contains(spec.root) { add("  ⟳", Style.accent, base) }
+
+        switch state.state {
+        case "running":
+            add("  ▮ \(state.upCount)/\(state.processes.count)", .systemGreen, small)
+        case "partial":
+            add("  ▮ \(state.upCount)/\(state.processes.count)", .systemRed, small)
+        case "stopped":
+            add("  ▯ 0/\(state.processes.count)", .tertiaryLabelColor, small)
+        default:
+            // In words, not a mark. A grey square beside a green one reads as "down", and that
+            // misreading cost someone a hunt for an outage that was not happening — the project
+            // was running perfectly and had simply never been agreed to.
+            add("  ▨ " + L.t.stackUntrusted, .tertiaryLabelColor, small)
+        }
+
+        // How long it has been up. Answers the question a green mark cannot: whether this thing
+        // has been quietly restarting all morning, or has genuinely been there since you started.
+        if let since = state.since {
+            let up = Int(Date().timeIntervalSince1970 - since)
+            if up > 0 { add("  " + ProjectStatus.duration(up), .tertiaryLabelColor, small) }
+        }
+
+        // Each port is the place it names, so it opens. Confirming a server is really up should
+        // not mean reading a number off a row and typing it into a browser.
+        for p in state.processes where p.isUp {
+            guard let port = p.port else { continue }
+            add("  ", .tertiaryLabelColor, small)
+            add("\(p.name):\(port)", .tertiaryLabelColor, small,
+                link: "http://localhost:\(port)")
+        }
+        // The address a tunnel is serving, last and marked, because it is the one thing in the
+        // row that is not a local implementation detail — it is what a visitor would open.
+        for p in state.processes where p.isUp {
+            guard let url = p.url, !url.isEmpty else { continue }
+            let host = URL(string: url)?.host ?? url
+            add("  ↗ ", .tertiaryLabelColor, small)
+            add(host, .secondaryLabelColor, small, link: url)
+        }
+        if let broken = state.processes.first(where: { $0.isDown }) {
+            add("  ✗ " + broken.name, .systemRed, small)
+            if let e = broken.error?.split(separator: "\n").last {
+                add("  " + String(e.prefix(70)), .secondaryLabelColor, small)
+            }
+        }
+        return s
+    }
+
+    /// The word on a row's button, and the hover that says what pressing it will do.
+    ///
+    /// Derived in one place so the button and the press can never disagree about which action
+    /// this row is offering — which is the failure the button exists to prevent.
+    private func stackAction(_ spec: DevStack.Spec) -> TargetRow.Button? {
+        // No universal picture for "you may ask this project about itself", so this one keeps
+        // its word. Play, stop and restart have pictures everyone already knows.
+        if !DevStack.isTrusted(spec) {
+            return TargetRow.Button(symbol: nil, label: L.t.stackActionAllow,
+                                    tip: L.t.stackTipUnknown,
+                                    armed: armedStack?.root == spec.root)
+        }
+        guard let state = stackCache[spec.root], !state.isUnknown else { return nil }
+        let up = state.isStopped
+        guard let template = up ? spec.up : spec.restart else { return nil }
+        let label = up ? L.t.stackActionStart : L.t.stackActionRestart
+        let command = DevStack.expand(template, process: nil)
+        let armed = armedStack?.root == spec.root && armedStack?.stop == false
+        // The command goes in the hover. It is the most specific true thing available, and for
+        // restart it is the difference between a picture and a minute of downtime. Once armed,
+        // the hover says so — the icon stays put so the button does not resize under the cursor.
+        return TargetRow.Button(
+            symbol: up ? "play.fill" : "arrow.clockwise",
+            label: label,
+            tip: armed ? L.t.stackActionAgain + " — " + command
+                        : label + " — " + command,
+            armed: armed)
+    }
+
+    /// The stop button, on rows that have something to stop.
+    private func stackStop(_ spec: DevStack.Spec) -> TargetRow.Button? {
+        guard DevStack.isTrusted(spec), let template = spec.down,
+              let state = stackCache[spec.root], !state.isUnknown, !state.isStopped
+        else { return nil }
+        let command = DevStack.expand(template, process: nil)
+        let armed = armedStack?.root == spec.root && armedStack?.stop == true
+        return TargetRow.Button(
+            symbol: "stop.fill",
+            label: L.t.stackActionStop,
+            tip: armed ? L.t.stackActionAgain + " — " + command
+                       : L.t.stackActionStop + " — " + command,
+            armed: armed)
+    }
+
+    /// Hand the ⌘J pane back to the transcript.
+    ///
+    /// Called whenever the list opens or closes, so a log never outlives the moment you asked
+    /// for it — the pane's usual job is the conversation, and a stale log sitting in it looks
+    /// like the session has stopped saying anything.
+    private func clearStackLog() {
+        guard stackLog != nil else { return }
+        stackLog = nil
+        stackLogSpec = nil
+        stackLogProcess = nil
+        stackLogRaw = nil
+        stackLogHeader?.removeFromSuperview()
+        stackLogHeader = nil
+        if let saved = savedOutputInset {
+            outputView.textContainerInset = saved
+            savedOutputInset = nil
+        }
+        lastOutput = ""
+        refreshOutput()
+    }
+
+    /// The log button. No confirmation and no armed state — it is the only one of the three
+    /// that changes nothing, which is also why it is the safe thing to reach for first.
+    private func stackLogButton(_ spec: DevStack.Spec) -> TargetRow.Button? {
+        guard DevStack.isTrusted(spec), let template = spec.logs else { return nil }
+        return TargetRow.Button(
+            symbol: "text.alignleft",
+            label: L.t.stackActionLogs,
+            tip: L.t.stackActionLogs + " — " + DevStack.expand(template, process: nil))
+    }
+
+    /// Put a stack's logs in the ⌘J pane.
+    ///
+    /// Reusing that pane rather than growing a window of its own: it is already the place where
+    /// long text is read here, it already scrolls and scales, and having two of them would mean
+    /// two answers to "where do I look".
+    ///
+    /// The stack's `logs` command decides what arrives. With no process named, the projects here
+    /// tail every process's file at once — `tail` labels each with its name, which is exactly the
+    /// overview you want before you know which one you care about.
+    private func showStackLog(_ spec: DevStack.Spec, process: String? = nil) {
+        guard DevStack.isTrusted(spec), spec.logs != nil else { return }
+        if !outputOpen { toggleOutput() }
+        let sameStack = stackLogSpec?.root == spec.root
+        stackLogSpec = spec
+        stackLogProcess = process
+        // Already have this stack's log: switching tabs is a re-render, not a fetch.
+        if sameStack, let raw = stackLogRaw {
+            setStackLog(raw, spec: spec)
+            return
+        }
+        stackLogRaw = nil
+        setStackLog("…", spec: spec)
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Every process at once, deep enough that picking a tab is still worth reading.
+            let result = DevStack.run(spec, .logs, process: nil, lines: 300, timeout: 30)
+            DispatchQueue.main.async {
+                guard self.stackLogSpec?.root == spec.root else { return }
+                self.stackLogRaw = result.output
+                self.setStackLog(result.output, spec: spec)
+            }
+        }
+    }
+
+    /// The pane's own chrome: which project, a tab per process, and the way back.
+    ///
+    /// Tabs are links because the pane is a read-only text view — a link is the only thing in it
+    /// that can be clicked at all, which is the same reason the transcript's folds are links.
+    private func setStackLog(_ text: String, spec: DevStack.Spec) {
+        let header = stackLogHeader ?? {
+            let h = StackLogHeader()
+            h.onBack = { [weak self] in self?.clearStackLog() }
+            h.onTab = { [weak self] value in
+                guard let self, let spec = self.stackLogSpec else { return }
+                self.showStackLog(spec, process: value)
+            }
+            stackLogHeader = h
+            // AppKit's own answer to "stay put while the content scrolls" — correct through
+            // live resize and elastic scrolling in a way that repositioning by hand is not.
+            outputHost.addFloatingSubview(h, for: .vertical)
+            if savedOutputInset == nil { savedOutputInset = outputView.textContainerInset }
+            outputView.textContainerInset = NSSize(
+                width: outputView.textContainerInset.width,
+                height: StackLogHeader.height + 6)
+            return h
+        }()
+
+        header.title = spec.name
+        header.titleColor = ProjectIcon.grid(forCwd: spec.root)?.accent ?? .labelColor
+        header.backLabel = L.t.stackLogBack
+        header.current = stackLogProcess
+        var tabs: [(label: String, value: String?)] = [(L.t.stackLogAll, nil)]
+        for p in (stackCache[spec.root]?.processes ?? []) { tabs.append((p.name, p.name)) }
+        header.tabs = tabs
+        header.frame = NSRect(x: 0, y: 0, width: outputHost.contentSize.width,
+                              height: StackLogHeader.height)
+        header.needsDisplay = true
+        header.window?.invalidateCursorRects(for: header)
+
+        let body = StackLog.render(text, mono: Style.outputFont,
+                                   showNames: stackLogProcess == nil,
+                                   only: stackLogProcess)
+        stackLog = body
+        outputView.textStorage?.setAttributedString(body)
+        scrollOutputToNewest()
+    }
+
+    /// Show what the next press will run, and wait to be asked again.
+    private func armStack(_ spec: DevStack.Spec, command: String, stop: Bool = false) {
+        armedStack = (spec.root, stop)
+        setHint(L.t.stackConfirm(command), warn: true)
+        rebuildRows()
+        relayout()
+        // Expires with the message that asked. An agreement that outlives the line it was about
+        // is one you give without seeing what you are agreeing to — the next press would run
+        // the command with nothing on screen to say so.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            guard let self, self.armedStack?.root == spec.root else { return }
+            self.armedStack = nil
+            self.rebuildRows()
+            self.relayout()
+        }
+    }
+
+    /// The button, or ⌘n, on a stack.
+    ///
+    /// **Anything that can take a live site off the air is asked twice**, and the second ask is
+    /// on the button itself — it changes to "press again" and the actual command appears below.
+    /// Starting something that is already down is the one action that cannot make things worse,
+    /// so that one goes on the first press.
+    ///
+    /// An untrusted project only ever buys the right to *ask*: its state is `unknown` by
+    /// construction, and acting on unknown means guessing — the guess would be "it must be down,
+    /// start it", which for a project that is in fact serving traffic is the worse wrong answer.
+    private func actOnStack(_ i: Int) {
+        guard stackRows.indices.contains(i) else { return }
+        let spec = stackRows[i]
+        guard !stackBusy.contains(spec.root) else { return }
+
+        // What `.devstack.json` names is arbitrary code out of a repository, so what is shown is
+        // the `status` command — genuinely the first thing that will run. A dialog asking "do
+        // you trust this workspace" is a question nobody has the information to answer.
+        if !DevStack.isTrusted(spec) {
+            if armedStack?.root == spec.root, armedStack?.stop == false {
+                DevStack.trust(spec)
+                armedStack = nil
+                refreshStacks()
+            } else {
+                armStack(spec, command: spec.status ?? spec.up ?? "?")
+            }
+            return
+        }
+
+        let state = stackCache[spec.root]
+        // Still nothing read back: do not guess.
+        guard let state, !state.isUnknown else { refreshStacks(); return }
+        let up = state.isStopped
+        let action: DevStack.Action = up ? .up : .restart
+        guard let template = up ? spec.up : spec.restart else { return }
+        let command = DevStack.expand(template, process: nil)
+
+        if !up, !(armedStack?.root == spec.root && armedStack?.stop == false) {
+            armStack(spec, command: command)
+            return
+        }
+        armedStack = nil
+
+        // No hint text for progress: a hint clears itself after a second and a half, and a
+        // front-end build is a minute. The ⟳ on the row is what stays for as long as it is true.
+        stackBusy.insert(spec.root)
+        rebuildRows()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = DevStack.run(spec, action)
+            let state = DevStack.read(spec)
+            DispatchQueue.main.async {
+                self.stackBusy.remove(spec.root)
+                self.stackCache[spec.root] = state
+                self.rebuildRows()
+                self.relayout()
+                self.updateTargetLabel()
+                // A failed restart puts its own output in the input bar. That is the whole loop
+                // this exists for: the build error that stopped the deploy is already the
+                // message you would have typed, so stop making the person retype it.
+                if !result.ok, !result.output.isEmpty {
+                    self.textView.setPlainText(
+                        "\(spec.name): \(command) failed\n\n" + result.output.suffix(3000))
+                    self.relayout()
+                }
+            }
+        }
+    }
+
+    /// ⌘⇧n: stop it. On its own modifier because it is the one action here you cannot undo by
+    /// pressing the same key again — a public tunnel taken down stays down until you notice.
+    private func stopStack(_ i: Int) {
+        guard listMode == .stacks, stackRows.indices.contains(i) else { return }
+        let spec = stackRows[i]
+        // Never the first thing a project does on this machine: stopping something you have not
+        // knowingly started yet is an odd first act, and it is the one press with no undo.
+        guard let template = spec.down, DevStack.isTrusted(spec),
+              !stackBusy.contains(spec.root) else { return }
+
+        // Asked twice, like restart — more so, since this one does not bring anything back.
+        if !(armedStack?.root == spec.root && armedStack?.stop == true) {
+            armStack(spec, command: DevStack.expand(template, process: nil), stop: true)
+            return
+        }
+        armedStack = nil
+
+        stackBusy.insert(spec.root)
+        rebuildRows()
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = DevStack.run(spec, .down)
+            let state = DevStack.read(spec)
+            DispatchQueue.main.async {
+                self.stackBusy.remove(spec.root)
+                self.stackCache[spec.root] = state
+                self.rebuildRows()
+                self.relayout()
+                self.updateTargetLabel()
+            }
+        }
     }
 
     private func cycle(forward: Bool) {
@@ -1282,11 +1993,36 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         stickyBase = lastKnownCurrentID
         Config.shared.lastTargetID = targets[i].id
         Config.shared.save()
-        for (n, row) in rows.enumerated() { row.isSelected = (n == i) }
+        // Rebuilt rather than re-flagged. A row that carries state draws its own title, so the
+        // weight and the colour that say "this one" are part of that text and cannot be switched
+        // on from the outside afterwards.
+        if closeList && listMode != .none { listMode = .none }
+        rebuildRows()
+        // Before the pane is asked for anything. The strip changes the card's height, so it has
+        // to be right *now* rather than whenever the terminal answers: put it up late and the
+        // conversation gets painted first and then shoved down by a line arriving above it.
+        setActivity(activityCache[targets[i].id])
         updateTargetLabel()
         refreshProjectInfo()
         refreshOutput()
-        if closeList && listMode != .none { listMode = .none; relayout() }
+        prefetchNeighbours()
+        follow(targets[i])
+        relayout()
+    }
+
+    /// Move the terminal's own tab to the session the bar is now pointing at.
+    ///
+    /// Off the main thread and unwaited-for: this is an osascript round trip, and it is a
+    /// courtesy rather than part of the switch — the pane and the rows must not sit still for a
+    /// couple of hundred milliseconds waiting for a terminal to finish selecting a tab.
+    ///
+    /// **Without activating.** Bringing iTerm2 forward on every Tab press would hand it the
+    /// keyboard, which is the one thing this whole application exists to avoid doing.
+    private func follow(_ target: TargetSession) {
+        guard Config.shared.followTarget else { return }
+        DispatchQueue.global(qos: .utility).async {
+            Targets.reveal(target, activate: false)
+        }
     }
 
     /// Ask git which project the selected session is in, once per session per summon.
@@ -1307,13 +2043,37 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             let icon = ProjectIcon.grid(forCwd: cwd)
             let status = ProjectStatus.read(cwd: cwd, remote: info.remote,
                                             registry: ProjectIcon.row(forCwd: cwd))
+            // The servers, if the project says how to ask. This is the slow one — a trusted
+            // `status` command is a subprocess, and on a busy machine it is a good fraction of a
+            // second — which is why it lands separately below rather than holding up the name.
+            let spec = DevStack.find(fromCwd: cwd)
             DispatchQueue.main.async {
                 self.projectCache[target.id] = info
                 self.iconCache[target.id] = icon
                 self.statusCache[target.id] = status
+                if let spec {
+                    self.stackSpecCache[spec.root] = spec
+                    self.stackRootOfSession[target.id] = spec.root
+                } else {
+                    self.stackRootOfSession.removeValue(forKey: target.id)
+                }
+                if self.currentTarget?.id == target.id { self.updateTargetLabel() }
+            }
+            guard let spec else { return }
+            let stack = DevStack.read(spec)
+            DispatchQueue.main.async {
+                self.stackCache[spec.root] = stack
                 if self.currentTarget?.id == target.id { self.updateTargetLabel() }
             }
         }
+    }
+
+    /// The stack belonging to whichever session is selected, if it has one.
+    private func currentStack() -> (spec: DevStack.Spec, state: DevStack.State?)? {
+        guard let t = currentTarget,
+              let root = stackRootOfSession[t.id],
+              let spec = stackSpecCache[root] else { return nil }
+        return (spec, stackCache[root])
     }
 
     /// The deploy, the backlog and the health check, as things you can click.
@@ -1371,6 +2131,43 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
             }
             s.append(NSAttributedString(string: h.label, attributes: attrs))
+        }
+    }
+
+    /// The project's own servers, in the footer's rightmost slot.
+    ///
+    /// One glyph and a count, because the footer's job here is to answer "do I need to care",
+    /// not "what is going on" — that question has a whole panel. The one exception is a broken
+    /// process, which is named: "4/5" sends you looking, "4/5 build-web" does not.
+    private func appendStackChip(_ state: DevStack.State?, to s: NSMutableAttributedString) {
+        guard let state else { return }
+        let font = NSFont.systemFont(ofSize: Style.hintSize - 0.5)
+        let tip = state.processes.isEmpty
+            ? L.t.stackTipUnknown
+            : L.t.stackTip(up: state.upCount, total: state.processes.count)
+        func chip(_ text: String, _ colour: NSColor) {
+            s.append(NSAttributedString(string: text, attributes: [
+                .font: font, .foregroundColor: colour, .clawdlineTip: tip,
+            ]))
+        }
+        switch state.state {
+        case "running":
+            // **No denominator while everything is up.** "6/6" sat immediately left of the
+            // session counter "3/7", and two fractions side by side read as one pair of related
+            // numbers when they have nothing to do with each other. The count still says how
+            // much is being watched; the fraction only earns its place when part of it is gone.
+            chip("   ▮ \(state.upCount)", .systemGreen)
+        case "partial":
+            chip("   ▮ \(state.upCount)/\(state.processes.count)", .systemRed)
+            if let broken = state.brokenNames.first { chip(" " + broken, .systemRed) }
+        case "stopped":
+            chip("   ▯", .tertiaryLabelColor)
+        default:
+            // Unknown: the project has a stack and we have not been allowed to ask about it.
+            // Drawn like "stopped" it would be a confident wrong answer; drawn like "running"
+            // it would be a dangerous one. The hover says which — see stackUntrusted for why a
+            // mark alone was not enough.
+            chip("   ▨", .tertiaryLabelColor)
         }
     }
 
@@ -1532,6 +2329,15 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     private func setFooter(_ text: NSAttributedString) {
         targetLabel.textStorage?.setAttributedString(text)
+        // What each mark means, for anyone who has not learned them yet — which is everyone at
+        // first, and the marks are small enough that "learning them" mostly does not happen.
+        // Measured from run widths rather than asked of a layout manager: this view is one
+        // truncating line, and the two TextKits answer that question differently.
+        targetLabel.removeAllToolTips()
+        for zone in TextZones.of(text, key: .clawdlineTip, x0: 0,
+                                 height: targetLabel.bounds.height) {
+            _ = targetLabel.addToolTip(zone.rect, owner: zone.value as NSString, userData: nil)
+        }
     }
 
     private func updateTargetLabel() {
@@ -1573,10 +2379,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 ]))
             }
             appendStatusChips(statusCache[t.id], to: s)
+            appendStackChip(currentStack()?.state, to: s)
             if targets.count > 1 {
                 s.append(NSAttributedString(string: "  \(targetIndex + 1)/\(targets.count)", attributes: [
                     .foregroundColor: NSColor.secondaryLabelColor,
                     .font: NSFont.monospacedDigitSystemFont(ofSize: Style.hintSize - 0.5, weight: .regular),
+                    .clawdlineTip: L.t.sessionTip(index: targetIndex + 1, total: targets.count),
                 ]))
             }
         } else {
@@ -2046,6 +2854,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         Config.shared.save()
         if let why = mascot.reload() { Log.write("mascot: \(why)") }
         if panel.isVisible { mascot.play("pop"); relayout() }
+        // The island holds its own copy of the character and has to be told as well.
+        NotificationCenter.default.post(name: .clawdlineConfigChanged, object: nil)
     }
 
     func revealCurrentTarget() {

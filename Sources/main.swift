@@ -12,6 +12,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Log.write("launch: hotkey=\(Config.shared.hotKey) width=\(Config.shared.width) y=\(Config.shared.yFraction)")
         MascotPack.installBundledPacks()
         buildStatusItem()
+        // The reading everything else here is a consumer of. Started before the panel exists,
+        // because the whole point of it is the stretches when the panel does not.
+        NotchIsland.shared.install()
+        SessionWatch.shared.start()
+        NotificationCenter.default.addObserver(self, selector: #selector(configChanged),
+                                               name: .clawdlineConfigChanged, object: nil)
 
         hotKey.onFire = {
             Log.write("hotkey fired")
@@ -81,6 +87,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.title = "✳"
         statusItem.button?.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         statusItem.menu = buildMenu()
+        SessionWatch.shared.observers["menubar"] = { [weak self] in self?.refreshStatusItem() }
+    }
+
+    /// The one piece of screen this app owns all day, finally carrying something.
+    ///
+    /// It was a fixed character that opened a menu — permanently visible and permanently saying
+    /// nothing. Everything the bar knows it knew only while it was on screen, which is exactly
+    /// the wrong way round for the one question worth being told without asking: *is something
+    /// waiting for me right now.*
+    ///
+    /// Quiet by construction. Nothing running and it is the character it always was; things
+    /// running and it carries a count; something waiting for an answer and it says so, in the
+    /// accent, because that is the only state that costs you anything for going unnoticed.
+    private func refreshStatusItem() {
+        guard let button = statusItem?.button else { return }
+        let watch = SessionWatch.shared
+        let waiting = watch.waiting
+        let working = watch.working
+
+        let title = NSMutableAttributedString(string: "✳", attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .foregroundColor: waiting.isEmpty ? NSColor.labelColor : Style.accent,
+        ])
+        if !waiting.isEmpty {
+            title.append(NSAttributedString(string: " ●", attributes: [
+                .font: NSFont.systemFont(ofSize: 9, weight: .bold),
+                .foregroundColor: Style.accent,
+            ]))
+        } else if working.count > 1 {
+            title.append(NSAttributedString(string: " \(working.count)", attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]))
+        }
+        button.attributedTitle = title
+        button.toolTip = waiting.isEmpty
+            ? (working.isEmpty ? nil : L.t.statusWorking(working.count))
+            : L.t.statusWaiting(waiting.map(\.label))
     }
 
     private func buildMenu() -> NSMenu {
@@ -152,6 +196,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch url.host ?? "" {
         case "toggle":
             PromptController.shared.toggle()
+        case "settings":
+            SettingsWindow.shared.show()
         case "send":
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let text = items.first(where: { $0.name == "text" })?.value ?? ""
@@ -159,6 +205,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "snapshot":
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let path = items.first(where: { $0.name == "path" })?.value ?? ""
+            // The island paints itself rather than the card, so it forks here rather than
+            // growing another argument onto a call that has plenty.
+            if let island = items.first(where: { $0.name == "island" })?.value, !path.isEmpty {
+                NotchIsland.shared.snapshot(to: path, mode: island)
+                return
+            }
             let routine = items.first(where: { $0.name == "routine" })?.value
             let t = items.first(where: { $0.name == "t" })?.value.flatMap(Double.init)
             let list = items.first(where: { $0.name == "list" })?.value
@@ -223,9 +275,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func editConfig() {
-        let url = Config.shared.fileURL
-        if !FileManager.default.fileExists(atPath: url.path) { Config.shared.save() }
-        NSWorkspace.shared.open(url)
+        SettingsWindow.shared.show()
+    }
+
+    /// Re-apply everything a changed setting can change.
+    ///
+    /// The same work "Reload config" does, minus the reading from disk — the settings window has
+    /// already written what it changed, and re-reading its own file back would only add a way for
+    /// the two to disagree. Both routes end here, so a control and a hand edit cannot drift apart.
+    @objc private func configChanged() {
+        L.reload()
+        PromptController.shared.reloadMascot()
+        PromptController.shared.applyCardOpacity()
+        applyHotKey()
+        updateHotKeyScope()
+        statusItem.menu = buildMenu()
+        NotchIsland.shared.install()
+        refreshStatusItem()
     }
 
     @objc private func openWhisperDocs() {
@@ -249,6 +315,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         updateHotKeyScope()
         statusItem.menu = buildMenu()
+        // `"notch": false` has to take effect on a reload rather than on a relaunch: the whole
+        // reason it exists is that somebody may want it gone the moment it annoys them.
+        NotchIsland.shared.install()
+        refreshStatusItem()
     }
 }
 

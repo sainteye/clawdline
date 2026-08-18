@@ -294,6 +294,23 @@ final class MascotView: NSView {
     /// For snapshot verification: pin the clock and draw one specific frame of a routine.
     var frozenTime: Double?
 
+    /// How fast the clock runs, as a multiple.
+    ///
+    /// A pack states its own timings and everything else obeys them — so "look busier" cannot be
+    /// a new routine without asking every author to draw one. Running the same routine faster is
+    /// something every pack already supports without knowing it, and it reads exactly the way it
+    /// is meant to: the character somebody drew, doing what it always does, with more on.
+    var rate: Double = 1 {
+        didSet {
+            guard rate != oldValue, rate > 0 else { return }
+            // Rebased rather than just scaled from zero, or a change of pace would jump the
+            // character to a different point in its routine instead of carrying on from here.
+            let now = CACurrentMediaTime()
+            started = now - (now - started) * (oldValue / rate)
+            needsDisplay = true
+        }
+    }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -339,6 +356,11 @@ final class MascotView: NSView {
         timer = nil
     }
 
+    /// Keep drawing without changing what is being drawn. The card plays a routine to wake the
+    /// clock; the island wants the character breathing the moment it appears, whatever it is
+    /// already doing.
+    func start() { startTimer() }
+
     private func startTimer() {
         guard timer == nil else { return }
         let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
@@ -360,24 +382,44 @@ final class MascotView: NSView {
 
     // MARK: Geometry
 
+    /// Drawn smaller than the pack asks for, without the pack having to know.
+    ///
+    /// A pack states the size it was drawn for and the card obeys it — that is the contract, and
+    /// it is why a mascot somebody made looks right without being told about the layout. The
+    /// island is a thirty-point band under a camera housing, and no pack is going to be drawn for
+    /// that, so it asks for the same character at a third of the size instead of asking authors
+    /// to supply a second one.
+    var scale: CGFloat = 1 { didSet { needsDisplay = true } }
+
+    /// Scale the character so it stands roughly this tall, whatever size its pack was drawn for.
+    /// A pack states its own size and everything else asks in points, which is what keeps a
+    /// mascot somebody else made from needing to know where it is being put.
+    func fit(height: CGFloat) {
+        guard let pack, pack.spriteSize.height > 0, height > 0 else { return }
+        scale = height / pack.spriteSize.height
+    }
+
     /// Where the sprite sits in view coordinates. Feet near the bottom edge, the rest is jump room.
     var spriteRect: NSRect {
         guard let pack else { return .zero }
         let s = pack.spriteSize
-        return NSRect(x: (bounds.width - s.width) / 2, y: pack.footInset,
-                      width: s.width, height: s.height)
+        return NSRect(x: (bounds.width - s.width * scale) / 2, y: pack.footInset * scale,
+                      width: s.width * scale, height: s.height * scale)
     }
 
     /// Layout asks the pack how big it wants to be, rather than the other way round.
-    var boxSize: NSSize { pack?.boxSize ?? NSSize(width: 136, height: 124) }
-    var footInset: CGFloat { pack?.footInset ?? 6 }
-    var overlap: CGFloat { pack?.overlap ?? 3 }
+    var boxSize: NSSize {
+        let s = pack?.boxSize ?? NSSize(width: 136, height: 124)
+        return NSSize(width: s.width * scale, height: s.height * scale)
+    }
+    var footInset: CGFloat { (pack?.footInset ?? 6) * scale }
+    var overlap: CGFloat { (pack?.overlap ?? 3) * scale }
 
     // MARK: Painting
 
     override func draw(_ dirtyRect: NSRect) {
         guard let pack else { return }
-        let t = frozenTime ?? (CACurrentMediaTime() - started)
+        let t = frozenTime ?? ((CACurrentMediaTime() - started) * rate)
         var f = pack.frame(routine: routine, at: t)
 
         if let r = pack.routines[routine] { finishOneShot(r, elapsed: t) }
@@ -399,7 +441,10 @@ final class MascotView: NSView {
         NSGraphicsContext.saveGraphicsState()
         let tf = NSAffineTransform()
         let cx = rect.midX, cy = rect.minY + rect.height * 0.42   // pivot low, so it turns on its feet
-        tf.translateX(by: cx + f.dx, yBy: cy + f.dy)
+        // The offsets are points, stated for the size the pack was drawn at, so they scale with
+        // it: a jump that clears the character's own head on the card must not clear the screen
+        // in the island.
+        tf.translateX(by: cx + f.dx * scale, yBy: cy + f.dy * scale)
         tf.rotate(byRadians: f.rot)
         tf.scaleX(by: f.sx, yBy: f.sy)
         tf.translateX(by: -cx, yBy: -cy)

@@ -56,6 +56,112 @@ protocol Copy {
     func outputOrder(newestFirst: Bool) -> String
     func backlogNow(_ count: Int) -> String
     func dropped(_ count: Int) -> String
+    /// Shown once before a project's `.devstack.json` command is run for the first time.
+    ///
+    /// **The command itself goes in the message.** What that file names is arbitrary code out of
+    /// a repository, and "do you trust this workspace" is a question nobody has the information
+    /// to answer — the line that is about to run is the only honest way to ask.
+    func stackConfirm(_ command: String) -> String
+    /// The key-row word for the stack list. One short noun — the row is one line wide.
+    var hintStacks: String { get }
+    /// Hover text for the servers mark in the footer.
+    ///
+    /// It sits next to the session counter, and "6/6" beside "3/7" reads as two of the same
+    /// thing when they are not related at all — so say which is which in words.
+    func stackTip(up: Int, total: Int) -> String
+    var stackTipUnknown: String { get }
+    /// The row's own words for "we have not been allowed to ask yet".
+    ///
+    /// **A mark on its own is not enough here.** A grey square next to a green one reads as
+    /// "down" — that misreading happened the first day this shipped, and it sent someone
+    /// looking for an outage that did not exist. Untrusted is not a health state; it must not
+    /// look like one.
+    var stackUntrusted: String { get }
+    /// The words on a row's action button.
+    ///
+    /// **A row must not be an invisible button.** The first version made the whole row pressable
+    /// and worked out what to do from the state — so one click silently took a public site down
+    /// for a minute, with nothing on screen having offered to. What the press will do has to be
+    /// written on the thing you press.
+    var stackActionStart: String { get }
+    var stackActionRestart: String { get }
+    /// Stopping was on a modifier key and nothing else for a while — which is to say it was not
+    /// really there. A capability only reachable by a keystroke nobody has been told about is
+    /// one the person will conclude does not exist, and go looking for a terminal.
+    var stackActionStop: String { get }
+    /// The one button on the row that changes nothing — so it needs no confirmation, and it is
+    /// the answer to "where do I see what these servers printed".
+    var stackActionLogs: String { get }
+    /// The log pane's tabs: one per process, plus this one for the lot.
+    var stackLogAll: String { get }
+    /// The way out. A pane you can get into and not out of is a trap, and ⌘J alone did not read
+    /// as an exit once the thing on screen was no longer a transcript.
+    var stackLogBack: String { get }
+    var stackActionAllow: String { get }
+    /// What the button says once it is armed and waiting to be confirmed.
+    var stackActionAgain: String { get }
+    func sessionTip(index: Int, total: Int) -> String
+    /// What a session row says when there is a question on its screen and nobody has answered it.
+    ///
+    /// **Short, and addressed to the reader.** It sits after a tab title on a one-line row, so a
+    /// long phrase pushes the title — which is what the row is for — off the end. "Waiting" on
+    /// its own is the wrong word: everything in that list is waiting for something. This one is
+    /// waiting for *you*, and that is the whole of what the row has to get across.
+    var sessionWaiting: String { get }
+    /// What the island says when a session that had been running stops.
+    ///
+    /// **One word.** It is drawn in small capitals above a task name in a strip about as wide as
+    /// a notch, and it is on screen for three seconds — a sentence there is a sentence nobody
+    /// finishes reading.
+    var islandDone: String { get }
+    /// Hover text for the menu bar mark. Names the sessions, because the mark can only say that
+    /// *something* wants you and the next question is always which.
+    func statusWaiting(_ labels: [String]) -> String
+    func statusWorking(_ count: Int) -> String
+
+    // Settings window
+    //
+    // Labels for controls, so: short, and a noun rather than a sentence. The row already says
+    // what it is by what it does; the label only has to name it.
+    var settingsTitle: String { get }
+    var settingsGeneral: String { get }
+    var settingsBar: String { get }
+    var settingsReading: String { get }
+    var settingsVoice: String { get }
+    var settingsHotkey: String { get }
+    /// Shown on the hotkey button while it is listening for one.
+    var settingsRecording: String { get }
+    var settingsScope: String { get }
+    var settingsScopeGlobal: String { get }
+    var settingsScopeHint: String { get }
+    var settingsLanguage: String { get }
+    var settingsReopen: String { get }
+    var settingsFollow: String { get }
+    var settingsNotch: String { get }
+    var settingsNotchHint: String { get }
+    var settingsPosition: String { get }
+    var settingsWidth: String { get }
+    var settingsOpacity: String { get }
+    var settingsImagesPaste: String { get }
+    var settingsShow: String { get }
+    var settingsPaneHeight: String { get }
+    var settingsTextSize: String { get }
+    var settingsPaneFont: String { get }
+    var settingsBlur: String { get }
+    var settingsNewestFirst: String { get }
+    var settingsEngine: String { get }
+    var settingsSettle: String { get }
+    var settingsStop: String { get }
+    var settingsAuto: String { get }
+    var settingsTranscript: String { get }
+    var settingsTerminal: String { get }
+    var settingsOff: String { get }
+    var settingsOpenFile: String { get }
+    /// A number of seconds, as a settings row shows it.
+    ///
+    /// Here rather than as a bare "s" because it is the one unit in that window that reads as a
+    /// foreign word: "1.8 s" is not how a duration is written in every language that this speaks.
+    func settingsSeconds(_ value: Double) -> String
 
     // Menu bar
     var menuOpen: String { get }

@@ -95,6 +95,34 @@ final class HotKey {
         return out
     }
 
+    /// A keypress, back into the spec string the config stores.
+    ///
+    /// The settings window records a combination by listening for one, and what it hears is a
+    /// key code and a modifier mask — the opposite direction to everything else here. Written as
+    /// its own table rather than by searching `keyCodes` backwards, because two names share a
+    /// code there ("return"/"enter", "escape"/"esc") and which one came back would be whichever
+    /// the dictionary happened to hash first.
+    static func spec(forKeyCode code: UInt16, flags: NSEvent.ModifierFlags) -> String? {
+        guard let name = codeNames[UInt32(code)] else { return nil }
+        var parts: [String] = []
+        if flags.contains(.control) { parts.append("control") }
+        if flags.contains(.option) { parts.append("option") }
+        if flags.contains(.shift) { parts.append("shift") }
+        if flags.contains(.command) { parts.append("cmd") }
+        // A bare letter is not a hotkey, it is a letter: registering one takes that key away from
+        // every app that is frontmost. Function keys are the exception, being nobody's letter.
+        guard !parts.isEmpty || name.hasPrefix("f") && name.count <= 3 else { return nil }
+        return (parts + [name]).joined(separator: "+")
+    }
+
+    private static let codeNames: [UInt32: String] = {
+        var out: [UInt32: String] = [:]
+        for (name, code) in keyCodes where out[code] == nil || name.count > out[code]!.count {
+            out[code] = name
+        }
+        return out
+    }()
+
     private static let keyCodes: [String: UInt32] = [
         "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9,
         "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17,

@@ -88,6 +88,25 @@ final class Config {
     /// back takes out again. Turn it off if you would rather every appearance be one you asked
     /// for by hand.
     var reopenOnReturn = true
+    /// The character that lives in the notch, and whether it lives there.
+    ///
+    /// **This one is an experiment and is meant to be switchable off in one word.** It tells you
+    /// nothing the menu bar mark does not; it is the same reading wearing a costume, and whether
+    /// a small animal leaning out of your camera housing is a delight or an irritation is not a
+    /// question anybody can answer on your behalf. `false` and it is not created at all — no
+    /// window, no observer, no drawing.
+    var notch = true
+    /// Move the terminal's own tab to whatever the bar is pointing at.
+    ///
+    /// The bar names its target along the bottom edge and that has always been enough to send
+    /// safely — but the target and the tab in front of you were free to be two different
+    /// sessions, and the moment you closed the panel you were looking at the wrong one. With this
+    /// on they are the same session by construction.
+    ///
+    /// **Selecting is not the same as activating**, and only the first one happens: iTerm2 is not
+    /// brought forward, or every press of Tab would take the keyboard out of the box you are
+    /// typing into. Off for anyone who keeps a terminal tab open to read while working elsewhere.
+    var followTarget = true
     /// How solid the card is, from 0 (pure frosted glass) to 1 (opaque).
     ///
     /// The material samples whatever is behind the window, so a screen of green diff or a
@@ -135,6 +154,8 @@ final class Config {
         if let v = obj["output_newest_first"] as? Bool { outputNewestFirst = v }
         if let v = obj["card_opacity"] as? Double, v >= 0, v <= 1 { cardOpacity = v }
         if let v = obj["reopen_on_return"] as? Bool { reopenOnReturn = v }
+        if let v = obj["notch"] as? Bool { notch = v }
+        if let v = obj["follow_target"] as? Bool { followTarget = v }
         if let v = obj["voice_engine"] as? String, !v.isEmpty { voiceEngine = v }
         if let v = obj["voice_settle_seconds"] as? Double, v >= 0, v <= 30 { voiceSettleSeconds = v }
         if let v = obj["voice_stop_seconds"] as? Double, v >= 0, v <= 300 { voiceStopSeconds = v }
@@ -169,6 +190,8 @@ final class Config {
             "output_newest_first": outputNewestFirst,
             "card_opacity": cardOpacity,
             "reopen_on_return": reopenOnReturn,
+            "notch": notch,
+            "follow_target": followTarget,
             "voice_engine": voiceEngine,
             "voice_settle_seconds": voiceSettleSeconds,
             "voice_stop_seconds": voiceStopSeconds,
