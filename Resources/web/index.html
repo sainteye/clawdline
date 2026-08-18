@@ -1,0 +1,1883 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="clawdline">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0e0e11">
+<title>clawdline</title>
+<link rel="manifest" href="/manifest.webmanifest" id="manifest-link">
+<script>
+// The manifest is served by the app, so from a file:// copy — which is how mock mode is opened —
+// there is nothing at that path and the browser logs a fetch failure. It would be the only line in
+// an otherwise clean console, and a console you have learned to ignore is not a console.
+if (location.protocol === 'file:') {
+    var ml = document.getElementById('manifest-link');
+    if (ml && ml.parentNode) ml.parentNode.removeChild(ml);
+}
+</script>
+
+<style>
+/* ==========================================================================
+   Tokens
+   The bar's palette, ported. Dark only, on purpose: this is a window onto an
+   app that lives in a dark menu bar, and a light version of it would be a
+   different product rather than a courtesy.
+   ========================================================================== */
+:root {
+    --bg:        #0e0e11;
+    --card:      #16161a;
+    --card-hi:   #1c1c22;   /* hover / selected fill */
+    --line:      #24242b;   /* hairlines */
+    --ink:       #e8e6e3;
+    --dim:       #9a978f;
+    --faint:     #6d6a64;   /* the things that must be present but never read first */
+    --accent:    #d97757;
+    --accent-in: rgba(217, 119, 87, 0.13);
+    --accent-ed: rgba(217, 119, 87, 0.34);
+
+    /* The connection dot only. Deliberately small and unsaturated — see the note on
+       weights below: green is a colour that wants to be read, and nothing here
+       outranks a session that is waiting for you. */
+    --ok:        #5f9e73;
+    --warn:      #b08a4a;
+    --bad:       #a3564a;
+
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+
+    --radius: 11px;
+    --head-h: 52px;
+    --hint-h: 34px;
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+
+    --ease: cubic-bezier(.2, .7, .2, 1);
+}
+
+/* ==========================================================================
+   Reset and page frame
+   ========================================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.45 var(--ui);
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent-ed); outline-offset: 2px; border-radius: 4px; }
+::selection { background: var(--accent-ed); color: #fff; }
+
+.scroller {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #33333c transparent;
+}
+.scroller::-webkit-scrollbar { width: 9px; height: 9px; }
+.scroller::-webkit-scrollbar-thumb { background: #2b2b33; border-radius: 5px; border: 2px solid transparent; background-clip: content-box; }
+.scroller::-webkit-scrollbar-track { background: transparent; }
+
+.mono { font-family: var(--mono); font-size: 12px; letter-spacing: -0.1px; }
+
+/* ==========================================================================
+   Header — what is connected, and how much is going on
+   ========================================================================== */
+.top {
+    flex: 0 0 auto;
+    height: calc(var(--head-h) + var(--safe-t));
+    padding: var(--safe-t) calc(14px + var(--safe-r)) 0 calc(14px + var(--safe-l));
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(14, 14, 17, 0.86);
+    -webkit-backdrop-filter: saturate(150%) blur(14px);
+    backdrop-filter: saturate(150%) blur(14px);
+    position: relative;
+    z-index: 20;
+}
+.brand { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
+.brand canvas { display: block; image-rendering: pixelated; }
+.brand b { font-size: 13.5px; font-weight: 600; letter-spacing: 0.2px; }
+
+/* The counts are the header's whole job on a busy machine: how many are running, how many
+   have stopped and want you. The waiting half is the only coloured text up here. */
+.counts {
+    flex: 1 1 auto; min-width: 0;
+    color: var(--dim); font-size: 12.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.counts .part + .part::before { content: "·"; color: #3a3a44; padding: 0 6px; }
+.counts .waiting { color: var(--accent); font-weight: 600; }
+.counts .quiet { color: var(--faint); }
+
+.conn {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 7px;
+    padding: 5px 10px 5px 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--card);
+    color: var(--dim);
+    font-size: 11.5px;
+    white-space: nowrap;
+}
+.conn:hover { background: var(--card-hi); }
+.conn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: 0 0 auto; }
+.conn[data-state="live"] .dot { background: var(--ok); }
+.conn[data-state="connecting"] .dot { background: var(--warn); animation: breathe 1.4s var(--ease) infinite; }
+.conn[data-state="retrying"] .dot { background: var(--warn); }
+.conn[data-state="offline"] .dot { background: var(--bad); }
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+/* ==========================================================================
+   Shell — two columns on a desk, one screen at a time on a phone
+   ========================================================================== */
+.app {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+}
+.app[data-pane="off"] { grid-template-columns: minmax(0, 1fr); }
+.app[data-pane="off"] .pane-detail { display: none; }
+
+.pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.pane-list { border-right: 1px solid var(--line); }
+
+/* ==========================================================================
+   Filter
+   ========================================================================== */
+.filter-row {
+    flex: 0 0 auto;
+    padding: 10px 12px 10px calc(12px + var(--safe-l));
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--line);
+}
+.filter-row input {
+    flex: 1 1 auto; min-width: 0;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 7px 10px;
+    font-size: 13px;
+    color: var(--ink);
+}
+.filter-row input::placeholder { color: var(--faint); }
+.filter-row input:focus { outline: none; border-color: var(--accent-ed); background: var(--card-hi); }
+.filter-row .slash {
+    flex: 0 0 auto; color: var(--faint); font-size: 11px;
+    border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px;
+}
+
+/* ==========================================================================
+   The session list
+   ========================================================================== */
+.list-scroll { flex: 1 1 auto; padding: 8px 10px calc(14px + var(--safe-b)) calc(10px + var(--safe-l)); }
+.rows { list-style: none; margin: 0; padding: 0; }
+
+.row {
+    position: relative;
+    display: grid;
+    /* A fixed first column, because the marks are not all the same width — a five-wide creature
+       and an eight-wide logo would otherwise start their titles at two different places, and the
+       list is read down the titles. */
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 3px 10px;
+    align-items: center;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: var(--card);
+    cursor: pointer;
+    /* No transform here: the reorder is animated by script, and a CSS transition on the same
+       property would be a second opinion about where the row is. */
+    transition: background 160ms var(--ease), border-color 160ms var(--ease);
+}
+.row:hover { background: var(--card-hi); }
+.row.selected { border-color: #33333d; background: var(--card-hi); }
+.row.open { border-color: var(--accent-ed); }
+
+/* The mark, and the title tinted with the mark's own colour. Two sessions in the same
+   project read as the same project before either title has been read. */
+.row .mark { grid-row: 1 / span 2; align-self: center; justify-self: start; display: block; image-rendering: pixelated; opacity: 0.9; }
+.row .mark.none { width: 16px; height: 12px; border-radius: 2px; background: #202028; }
+.row.selected .mark, .row.open .mark { opacity: 1; }
+
+.row .title {
+    grid-column: 2;
+    font-size: 13.5px; font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.row .meta {
+    grid-column: 2;
+    display: flex; align-items: center; gap: 7px;
+    min-width: 0;
+    color: var(--faint);
+    font-family: var(--mono); font-size: 11px;
+}
+.row .meta .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .meta .tty { flex: 0 0 auto; color: #4f4d47; }
+
+/* The state line. Three states get three weights, and that is the design:
+   waiting shouts, working murmurs, idle and unknown keep quiet. */
+.row .state { grid-column: 2; display: flex; align-items: center; gap: 7px; min-width: 0; margin-top: 2px; }
+.row .state:empty { display: none; }
+.row .line {
+    font-family: var(--mono); font-size: 11.5px; color: var(--dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.row canvas.spin { flex: 0 0 auto; display: block; }
+
+/* waiting — the loud one. It is the only state that costs you something for every second it
+   goes unnoticed, so it is the only one allowed a colour, a bar and a heartbeat. */
+/* The accent wash is flattened rather than translucent: rows slide over each other while the
+   list re-sorts, and a see-through row picks up whatever is passing underneath it. */
+.row[data-state="waiting"] { background: #2f2322; border-color: var(--accent-ed); }
+.row[data-state="waiting"]:hover { background: #392725; }
+.row[data-state="waiting"]::before {
+    content: ""; position: absolute; left: 0; top: 14px; bottom: 14px;
+    width: 3px; border-radius: 0 3px 3px 0; background: var(--accent);
+}
+.row[data-state="waiting"] .title { color: var(--accent) !important; font-weight: 600; }
+.row[data-state="waiting"] .wants {
+    font-size: 12px; font-weight: 600; color: var(--accent);
+    animation: nudge 2.2s var(--ease) infinite;
+}
+@keyframes nudge { 0%, 70%, 100% { opacity: 1; } 85% { opacity: 0.45; } }
+
+/* unknown — says nothing, but must not be mistaken for idle. A screen that could not be read
+   is not a session that is doing nothing, and drawing it as one is a confident wrong answer. */
+.row[data-state="unknown"] { border-style: dashed; border-color: #26262e; background: #131317; }
+.row[data-state="unknown"] .title { color: var(--faint) !important; }
+.row[data-state="unknown"] .unread { color: var(--faint); font-size: 11.5px; font-style: italic; }
+
+/* Just finished. A neutral wash rather than the accent: the accent means "you are needed",
+   and a session that has quietly stopped is news, not a request. */
+.row.finished::after {
+    content: ""; position: absolute; inset: -1px; border-radius: var(--radius);
+    pointer-events: none;
+    box-shadow: 0 0 0 1px rgba(232, 230, 227, 0.5) inset;
+    animation: finished 1.5s var(--ease) forwards;
+}
+@keyframes finished {
+    0%   { opacity: 0; }
+    18%  { opacity: 0.85; }
+    100% { opacity: 0; }
+}
+.row.entering { animation: enter 260ms var(--ease); }
+@keyframes enter { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+.empty { padding: 40px 18px; text-align: center; color: var(--faint); font-size: 13px; }
+.empty b { display: block; color: var(--dim); font-weight: 500; margin-bottom: 5px; }
+
+/* Pull to refresh, phones only. */
+.ptr {
+    height: 0; overflow: hidden;
+    display: flex; align-items: flex-end; justify-content: center;
+    color: var(--faint); font-size: 11.5px;
+    transition: height 200ms var(--ease);
+}
+.ptr.dragging { transition: none; }
+.ptr span { padding-bottom: 6px; }
+
+/* ==========================================================================
+   The transcript pane
+   ========================================================================== */
+.pane-detail { background: #101014; }
+
+.detail-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px calc(14px + var(--safe-r)) 10px 14px;
+    border-bottom: 1px solid var(--line);
+    min-height: 50px;
+}
+.detail-head .back {
+    display: none;
+    flex: 0 0 auto;
+    color: var(--dim); font-size: 13px;
+    padding: 6px 10px 6px 4px;
+}
+.detail-head canvas { display: block; image-rendering: pixelated; flex: 0 0 auto; }
+.detail-head .who { min-width: 0; flex: 1 1 auto; }
+.detail-head .name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detail-head .sub {
+    font-family: var(--mono); font-size: 11px; color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.detail-head .tools { display: flex; gap: 6px; flex: 0 0 auto; }
+.chip {
+    border: 1px solid var(--line); border-radius: 7px;
+    padding: 4px 9px; font-size: 11.5px; color: var(--dim);
+    background: var(--card);
+}
+.chip:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
+.chip:disabled { opacity: 0.4; cursor: default; }
+.chip.on { border-color: var(--accent-ed); color: var(--accent); }
+
+.tx-scroll { flex: 1 1 auto; padding: 16px 18px 22px 18px; }
+.tx { max-width: 760px; }
+
+.entry {
+    display: grid;
+    grid-template-columns: 62px minmax(0, 1fr);
+    gap: 14px;
+    padding: 7px 0;
+}
+.entry .who {
+    text-align: right;
+    font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase;
+    color: var(--faint);
+    padding-top: 3px;
+}
+.entry .who time { display: block; font-size: 10px; color: #4d4a45; text-transform: none; letter-spacing: 0; margin-top: 2px; }
+.entry[data-role="user"] .who { color: var(--dim); }
+.entry .body { min-width: 0; }
+.entry .body p { margin: 0 0 8px 0; }
+.entry .body p:last-child { margin-bottom: 0; }
+.entry[data-role="user"] .body {
+    justify-self: start;          /* the box is the size of what was said, not of the column */
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 11px;
+    color: var(--ink);
+}
+.entry[data-role="assistant"] .body { color: var(--ink); }
+.entry[data-role="tool"] .body { color: var(--dim); font-size: 13px; }
+.entry .toolname {
+    display: inline-block;
+    font-family: var(--mono); font-size: 11px;
+    color: var(--accent); opacity: 0.85;
+    border: 1px solid var(--accent-ed); border-radius: 5px;
+    padding: 0 5px; margin-right: 7px;
+}
+.entry .body code {
+    font-family: var(--mono); font-size: 12px;
+    color: #8cbaf9;                       /* blue, not the accent: a path and a link do different things */
+    background: rgba(140, 186, 249, 0.09);
+    border-radius: 4px; padding: 1px 4px;
+}
+.entry .body pre.code {
+    font-family: var(--mono); font-size: 12px; line-height: 1.5;
+    background: #0b0b0e; border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 11px; margin: 6px 0;
+    overflow-x: auto; color: #cfcdc8;
+}
+/* A run the reader was spared. It says how much was hidden, because "nothing happened here"
+   and "eleven tool calls happened here" are not the same silence. */
+.entry.folded .body { color: var(--faint); font-size: 12px; }
+.entry.folded .pill {
+    display: inline-block; border: 1px dashed #33333d; border-radius: 999px;
+    padding: 2px 10px; font-family: var(--mono); font-size: 11px;
+}
+
+.tx-note { color: var(--faint); font-size: 12.5px; padding: 26px 2px; }
+.tx-note.err { color: #c58472; }
+
+/* ==========================================================================
+   Composer — built, wired, and switched off until the server says otherwise
+   ========================================================================== */
+.composer {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--line);
+    padding: 10px 14px calc(10px + var(--safe-b)) 14px;
+    background: #0d0d11;
+}
+.composer .box {
+    display: flex; align-items: flex-end; gap: 9px;
+    border: 1px solid var(--line); border-radius: 12px;
+    background: var(--card); padding: 8px 8px 8px 12px;
+}
+.composer textarea {
+    flex: 1 1 auto; min-width: 0;
+    background: none; border: 0; resize: none;
+    max-height: 140px; min-height: 22px;
+    font-size: 14px; line-height: 1.4;
+}
+.composer textarea:focus { outline: none; }
+.composer textarea::placeholder { color: var(--faint); }
+.composer .send {
+    flex: 0 0 auto;
+    background: var(--accent); color: #17110e;
+    font-size: 12.5px; font-weight: 600;
+    border-radius: 8px; padding: 6px 13px;
+}
+.composer .send:disabled { background: #2a2a32; color: var(--faint); cursor: default; }
+.composer[data-write="off"] .box { opacity: 0.55; }
+.composer .why { color: var(--faint); font-size: 11.5px; margin-top: 7px; }
+.composer .why b { color: var(--dim); font-weight: 500; }
+.composer .why code { font-family: var(--mono); font-size: 11px; color: #8cbaf9; }
+
+/* ==========================================================================
+   Hint row — the same chips the bar wears along its bottom edge
+   ========================================================================== */
+.hints {
+    flex: 0 0 auto;
+    height: calc(var(--hint-h) + var(--safe-b));
+    padding: 0 calc(14px + var(--safe-r)) var(--safe-b) calc(14px + var(--safe-l));
+    display: flex; align-items: center; gap: 13px;
+    border-top: 1px solid var(--line);
+    background: rgba(14, 14, 17, 0.9);
+    color: var(--faint); font-size: 11px;
+    overflow: hidden;
+}
+.hints .pair { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.hints kbd {
+    font: 500 11px/1 var(--ui);
+    min-width: 20px; text-align: center;
+    border: 1px solid #2c2c35; border-radius: 5px;
+    padding: 3px 5px; color: var(--dim); background: #191920;
+}
+.hints .grow { flex: 1 1 auto; }
+
+/* ==========================================================================
+   Overlays — shortcuts, and the small word that says what just happened
+   ========================================================================== */
+.overlay {
+    position: fixed; inset: 0; z-index: 60;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(6, 6, 8, 0.66);
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+    padding: 24px;
+    animation: fade 140ms var(--ease);
+}
+.overlay[hidden] { display: none; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.sheet {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 20px 22px; width: min(460px, 100%);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+.sheet h2 { margin: 0 0 14px 0; font-size: 14px; font-weight: 600; }
+.sheet dl { margin: 0; display: grid; grid-template-columns: 92px 1fr; gap: 9px 14px; align-items: center; }
+.sheet dt { text-align: right; }
+.sheet dd { margin: 0; color: var(--dim); font-size: 12.5px; }
+.sheet kbd {
+    font: 500 11px/1 var(--ui);
+    border: 1px solid #2c2c35; border-radius: 5px; padding: 3px 6px;
+    color: var(--ink); background: #191920;
+}
+.sheet .foot { margin-top: 16px; color: var(--faint); font-size: 11.5px; }
+
+.toast {
+    position: fixed; z-index: 70;
+    left: 50%; transform: translateX(-50%);
+    bottom: calc(20px + var(--safe-b) + var(--hint-h));
+    background: #1e1e25; border: 1px solid var(--line); border-radius: 10px;
+    padding: 9px 14px; font-size: 12.5px; color: var(--ink);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    animation: toast 200ms var(--ease);
+    max-width: min(420px, calc(100vw - 32px));
+}
+.toast[hidden] { display: none; }
+.toast.err { border-color: #4a2b25; color: #dda08e; }
+@keyframes toast { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* ==========================================================================
+   Phones — not the desktop made narrow
+   A phone has no arrow keys, no hover and no second column. It gets one screen
+   at a time, targets a thumb can hit, and a transcript that arrives over the
+   list rather than beside it.
+   ========================================================================== */
+@media (max-width: 899px) {
+    .app { grid-template-columns: minmax(0, 1fr); }
+    .app[data-pane="off"] .pane-detail { display: flex; }
+    .pane-list { border-right: 0; }
+
+    .pane-detail {
+        position: fixed; inset: 0; z-index: 40;
+        background: var(--bg);
+        transform: translateX(100%);
+        transition: transform 260ms var(--ease);
+        padding-top: var(--safe-t);
+    }
+    .app[data-view="detail"] .pane-detail { transform: none; }
+    .app[data-view="detail"] .pane-list { visibility: hidden; }
+
+    /* There is one line of header on a phone and three counts will not fit on it. The one that
+       goes is the one that is only ever a footnote. */
+    .counts .quiet:not(:only-child) { display: none; }
+
+    .detail-head .back { display: block; }
+    .detail-head { padding-left: 8px; gap: 8px; }
+    /* One line of header, and the name of the session is the part of it worth keeping. A control
+       that cannot be pressed yet is the first thing to go. */
+    .detail-head .chip:disabled { display: none; }
+    .hints { display: none; }
+    .filter-row .slash { display: none; }
+
+    .row { padding: 13px 14px; margin-bottom: 8px; gap: 4px 12px; }
+    .row .title { font-size: 15px; }
+    .row .meta { font-size: 11.5px; }
+    .row .line { font-size: 12px; }
+    .row:hover { background: var(--card); }
+    .row[data-state="waiting"]:hover { background: #2f2322; }
+    .row:active { background: var(--card-hi); }
+
+    .tx-scroll { padding: 14px 16px calc(16px + var(--safe-b)) 16px; }
+    .entry { grid-template-columns: minmax(0, 1fr); gap: 3px; padding: 9px 0; }
+    .entry .who { text-align: left; display: flex; gap: 8px; align-items: baseline; }
+    .entry .who time { margin: 0; }
+    .toast { bottom: calc(20px + var(--safe-b)); }
+}
+
+/* ==========================================================================
+   Reduced motion — every animation here is decoration on top of a state that
+   is already legible, so all of it can go.
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+    }
+    .pane-detail { transition: none; }
+}
+</style>
+
+<header class="top">
+    <div class="brand"><canvas id="brand-mark" width="0" height="0"></canvas><b>clawdline</b></div>
+    <div class="counts" id="counts"></div>
+    <button class="conn" id="conn" data-state="connecting" title="Connection to the app"><span class="dot"></span><span id="conn-label">connecting</span></button>
+</header>
+
+<main class="app" id="app" data-view="list" data-pane="on">
+    <section class="pane pane-list">
+        <div class="filter-row">
+            <input id="filter" type="search" placeholder="Filter by task, project or tty" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Filter sessions">
+            <span class="slash">/</span>
+        </div>
+        <div class="scroller list-scroll" id="list-scroll">
+            <div class="ptr" id="ptr"><span id="ptr-label">Pull to refresh</span></div>
+            <ul class="rows" id="rows" role="listbox" aria-label="Claude Code sessions" tabindex="0"></ul>
+            <div class="empty" id="list-empty" hidden></div>
+        </div>
+    </section>
+
+    <section class="pane pane-detail" id="pane-detail">
+        <div class="detail-head">
+            <button class="back" id="back" aria-label="Back to the session list">‹ Sessions</button>
+            <canvas id="detail-mark" width="0" height="0"></canvas>
+            <div class="who">
+                <div class="name" id="detail-name">No session open</div>
+                <div class="sub" id="detail-sub"></div>
+            </div>
+            <div class="tools">
+                <button class="chip" id="tx-order" title="Reverse the transcript (r)">Oldest first</button>
+                <button class="chip" id="tx-focus" title="Bring the terminal forward">Reveal</button>
+            </div>
+        </div>
+        <div class="scroller tx-scroll" id="tx-scroll"><div class="tx" id="tx"></div></div>
+        <form class="composer" id="composer" data-write="off">
+            <div class="box">
+                <textarea id="msg" rows="1" placeholder="Message Claude Code…" disabled></textarea>
+                <button class="send" id="send" type="submit" disabled>Send</button>
+            </div>
+            <div class="why" id="why"></div>
+        </form>
+    </section>
+</main>
+
+<footer class="hints" id="hints"></footer>
+
+<div class="overlay" id="keys" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+        <h2>Keyboard</h2>
+        <dl>
+            <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Move through the list — <kbd>j</kbd> and <kbd>k</kbd> do the same</dd>
+            <dt><kbd>⏎</kbd></dt><dd>Open the selected session</dd>
+            <dt><kbd>/</kbd></dt><dd>Filter the list</dd>
+            <dt><kbd>esc</kbd></dt><dd>Clear the filter, then step back</dd>
+            <dt><kbd>⌘K</kbd></dt><dd>Focus the session list</dd>
+            <dt><kbd>⌘J</kbd></dt><dd>Show or hide the transcript</dd>
+            <dt><kbd>g</kbd> <kbd>G</kbd></dt><dd>Top or bottom of the transcript</dd>
+            <dt><kbd>r</kbd></dt><dd>Reverse the transcript order</dd>
+            <dt><kbd>?</kbd></dt><dd>This card</dd>
+        </dl>
+        <div class="foot">Anything typed into a text box stays in the text box — the shortcuts stand down while you write.</div>
+    </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+(function () {
+
+/* ==========================================================================
+   0. Where the data comes from
+   The page is served by the app from the same origin, so every path here is
+   relative and there is nothing to configure. ?mock=1 swaps the whole API for
+   fixtures so the file opens from disk with no server behind it.
+   ========================================================================== */
+
+var params = new URLSearchParams(location.search);
+// A copy opened from disk has no server behind it and every relative path would resolve to a
+// file that is not there, so file:// is mock whether or not it was asked for. Nobody opens this
+// off a disk to talk to a server, and a page whose first act is four failed requests has taught
+// its reader to ignore the console.
+var MOCK = location.protocol === "file:"
+    || params.get("mock") === "1" || params.get("mock") === "";
+var MOCK_WRITE = params.get("write") === "1";   // mock only: see the composer switched on
+var MOCK_FLAKY = params.get("flaky") === "1";   // mock only: drop the stream now and then
+
+var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+var phone = function () { return window.matchMedia("(max-width: 899px)").matches; };
+
+/* ==========================================================================
+   1. State
+   One object, and every render reads from it. The stream sends a whole list
+   every time, so there is no merge step and therefore no class of bug where
+   half an update landed.
+   ========================================================================== */
+
+var S = {
+    sessions: [],           // as the server sent them, unmodified
+    at: 0,
+    write: false,           // /v1/health and the hello event both carry it
+    version: "",
+    conn: "connecting",     // connecting | live | retrying | offline
+    retryIn: 0,             // seconds, while conn is "retrying"
+    locked: false,          // the server answered 401: this browser is not a paired device
+
+    selectedId: null,       // the highlight in the list
+    openId: null,           // whose transcript is on screen
+    filter: "",
+    paneOpen: true,         // ⌘J, desktop only
+    newestFirst: false,
+
+    tx: { id: null, entries: [], signature: null, loading: false, error: null },
+    // What each session looked like last render, so a change can be noticed: the transcript
+    // is refetched when its session moves, and a row that has just stopped gets its pulse.
+    seen: {}
+};
+
+var els = {};
+["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
+ "app", "pane-detail", "back", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
+ "tx-order", "tx-focus", "composer", "msg", "send", "why", "hints", "keys", "toast", "brand-mark"
+].forEach(function (id) { els[id] = document.getElementById(id); });
+
+/* ==========================================================================
+   2. Small helpers
+   ========================================================================== */
+
+function esc(s) {
+    return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+/** A path the width of a list row. The tail is the part that identifies the project,
+ *  so the head is what gets dropped, not the other way round. */
+function shortPath(p) {
+    if (!p) return "";
+    var s = p.replace(/^\/Users\/[^/]+/, "~").replace(/^\/home\/[^/]+/, "~");
+    var parts = s.split("/");
+    if (parts.length > 4) s = "…/" + parts.slice(-3).join("/");
+    return s;
+}
+
+function clockOf(unix) {
+    if (!unix) return "";
+    var d = new Date(unix * 1000);
+    var age = Date.now() / 1000 - unix;
+    if (age < 60) return "just now";
+    if (age < 3600) return Math.round(age / 60) + "m ago";
+    var h = d.getHours(), m = d.getMinutes();
+    return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+}
+
+/**
+ * A project's colour, pulled a third of the way towards the text colour.
+ *
+ * A mark in the accent and a title in the accent are two different claims: the mark says which
+ * project this is, and the accent says you are needed. Only one row is allowed to say the second
+ * thing, so every tint steps back from full strength — the projects stay told apart, and the one
+ * waiting row is still the only thing on the page at full volume.
+ */
+function tint(hex) {
+    var m = /^#([0-9a-fA-F]{6})$/.exec(hex || "");
+    if (!m) return "";
+    var n = parseInt(m[1], 16);
+    var ink = [0xe8, 0xe6, 0xe3], mix = 0.32;
+    var rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(function (c, i) {
+        return Math.round(c + (ink[i] - c) * mix);
+    });
+    return "rgb(" + rgb.join(",") + ")";
+}
+
+function uuid() {
+    if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+    // Enough of a UUID for an Idempotency-Key: it only has to be unrepeated.
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+        var r = Math.random() * 16 | 0;
+        return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+}
+
+var toastTimer = null;
+function toast(text, bad) {
+    els.toast.textContent = text;
+    els.toast.className = "toast" + (bad ? " err" : "");
+    els.toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { els.toast.hidden = true; }, 3200);
+}
+
+/* ==========================================================================
+   3. Pixels
+   Two things on this page are drawn rather than typeset: the project marks and
+   the spinner. Both come out of the app, and both are pixel art — so both are
+   sized in whole device pixels and drawn with smoothing off, or a retina screen
+   turns them into a smudge.
+   ========================================================================== */
+
+function dpr() { return Math.max(1, Math.min(3, window.devicePixelRatio || 1)); }
+
+/**
+ * Draw `icon.cells` — rows of "#RRGGBB" or null — at `cellPx` logical pixels a cell.
+ * The backing store is exactly cells × whole device pixels and the CSS size is that
+ * divided back down, which is what keeps the edges hard at any scale factor.
+ */
+function drawIcon(canvas, icon, cellPx) {
+    var cells = icon && icon.cells;
+    if (!cells || !cells.length) {
+        // The inline sizes go too, not to zero: a row with no mark falls back to a CSS
+        // placeholder, and an inline width would win over it.
+        canvas.width = canvas.height = 0;
+        canvas.style.width = canvas.style.height = "";
+        return false;
+    }
+    var ratio = dpr();
+    var unit = Math.max(1, Math.round(cellPx * ratio));
+    var rows = cells.length, cols = 0;
+    for (var r = 0; r < rows; r++) cols = Math.max(cols, (cells[r] || []).length);
+    if (!cols) return false;
+
+    canvas.width = cols * unit;
+    canvas.height = rows * unit;
+    canvas.style.width = (cols * unit / ratio) + "px";
+    canvas.style.height = (rows * unit / ratio) + "px";
+
+    var g = canvas.getContext("2d");
+    g.imageSmoothingEnabled = false;
+    g.clearRect(0, 0, canvas.width, canvas.height);
+    for (var y = 0; y < rows; y++) {
+        var row = cells[y] || [];
+        for (var x = 0; x < row.length; x++) {
+            if (!row[x]) continue;                 // null is transparent, and stays transparent
+            g.fillStyle = row[x];
+            g.fillRect(x * unit, y * unit, unit, unit);
+        }
+    }
+    return true;
+}
+
+/**
+ * The bar's spinner, ported cell for cell: eight cells around a three-by-three ring with the
+ * middle empty, one step every eighth of a second so a full turn takes a second, and a
+ * three-cell tail behind the head. Dim on purpose — a session that is working wants nothing
+ * from you, and a list where five rows all flash is a list nobody can read.
+ */
+var SPIN = {
+    cell: 3, gap: 1.5, step: 125,
+    ring: [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1]],
+    tail: [[3, 0.12], [2, 0.24], [1, 0.45], [0, 0.90]],
+    colour: "154, 151, 143"   // --dim: the bar draws this in the accent, the web keeps the accent for waiting
+};
+
+function drawSpinner(canvas, phase) {
+    var ratio = dpr();
+    var cell = Math.max(1, Math.round(SPIN.cell * ratio));
+    var gap = Math.max(1, Math.round(SPIN.gap * ratio));
+    var size = cell * 3 + gap * 2;
+    if (canvas.width !== size) {
+        canvas.width = canvas.height = size;
+        canvas.style.width = canvas.style.height = (size / ratio) + "px";
+    }
+    var g = canvas.getContext("2d");
+    g.clearRect(0, 0, size, size);
+    // Tail first, so the head lands on top of any rounding overlap.
+    for (var i = 0; i < SPIN.tail.length; i++) {
+        var back = SPIN.tail[i][0], alpha = SPIN.tail[i][1];
+        var at = SPIN.ring[((phase - back) % 8 + 8) % 8];
+        g.fillStyle = "rgba(" + SPIN.colour + "," + alpha + ")";
+        g.fillRect(at[0] * (cell + gap), at[1] * (cell + gap), cell, cell);
+    }
+}
+
+// One clock for every spinner on the page. Eight separate timers would drift apart and the
+// list would look like eight machines rather than one.
+var spinPhase = 0;
+var spinners = [];
+setInterval(function () {
+    if (reduced || !spinners.length) return;
+    spinPhase = (spinPhase + 1) % 8;
+    for (var i = 0; i < spinners.length; i++) drawSpinner(spinners[i], spinPhase);
+}, SPIN.step);
+
+/* ==========================================================================
+   4. Transport
+   Two implementations behind one shape: the real thing, and fixtures. Nothing
+   below this section knows which one it is talking to.
+   ========================================================================== */
+
+var handlers = {
+    sessions: function (list, at) {
+        S.sessions = list || [];
+        S.at = at || 0;
+        // Anything arriving at all is proof this browser is allowed to ask, whatever an earlier
+        // request was told — a pairing finished in another tab counts.
+        S.locked = false;
+        onSessions();
+    },
+    hello: function (info) {
+        if (!info) return;
+        if (typeof info.write === "boolean") S.write = info.write;
+        if (info.version) S.version = info.version;
+        renderComposer();
+    },
+    conn: function (state, seconds) {
+        S.conn = state;
+        S.retryIn = seconds || 0;
+        renderConn();
+    }
+};
+
+/* ---- the real one -------------------------------------------------------- */
+
+function jsonFetch(path, options) {
+    return fetch(path, options).then(function (res) {
+        return res.text().then(function (body) {
+            var data = null;
+            try { data = body ? JSON.parse(body) : null; } catch (e) { /* below */ }
+            if (!res.ok) {
+                var err = data && data.error ? data.error : { code: "http_" + res.status, message: res.statusText || "Request failed" };
+                var e2 = new Error(err.message || err.code);
+                e2.code = err.code;
+                throw e2;
+            }
+            if (!data) throw new Error("The server sent something that is not JSON");
+            return data;
+        });
+    });
+}
+
+var Live = {
+    es: null,
+    attempt: 0,
+    timer: null,
+    countdown: null,
+
+    start: function () {
+        jsonFetch("/v1/health").then(handlers.hello).catch(function () { /* the stream says it too */ });
+        jsonFetch("/v1/sessions").then(function (d) {
+            S.locked = false;
+            handlers.sessions(d.sessions, d.at);
+        }).catch(function (e) {
+            // A server that wants a paired device answers 401 to everything but the page itself.
+            // The event stream cannot say this — EventSource reports a failure and never a reason —
+            // so this one request is where a locked-out reader finds out, instead of watching a
+            // reconnect counter go round forever with no explanation.
+            S.locked = (e.code === "unauthorized");
+            render();
+        });
+        this.connect();
+    },
+
+    connect: function () {
+        var self = this;
+        this.clearTimers();
+        handlers.conn("connecting");
+        var es = new EventSource("/v1/events");
+        this.es = es;
+
+        es.addEventListener("hello", function (ev) {
+            try { handlers.hello(JSON.parse(ev.data)); } catch (e) { }
+        });
+        es.addEventListener("sessions", function (ev) {
+            try {
+                var d = JSON.parse(ev.data);
+                handlers.sessions(d.sessions, d.at);
+            } catch (e) { }
+            // A payload that parsed is the only proof the connection actually works; onopen
+            // fires for a socket that a proxy may still be holding open with nothing behind it.
+            self.attempt = 0;
+            handlers.conn("live");
+        });
+        es.onopen = function () { handlers.conn("live"); };
+        es.onerror = function () {
+            // EventSource has a reconnect policy of its own, and it is not one that can be seen
+            // or slowed down. Closing it and coming back on our own terms is what makes the
+            // backoff visible in the header instead of being a silent loop in the browser.
+            es.close();
+            if (self.es === es) self.es = null;
+            self.retry();
+        };
+    },
+
+    retry: function () {
+        var self = this;
+        var base = Math.min(30000, 1000 * Math.pow(2, this.attempt));
+        // Jitter, because every page open on this machine reconnects at the same instant
+        // otherwise — the app restarting is exactly the moment they all lost the stream.
+        var wait = Math.round(Math.min(30000, base * (0.7 + Math.random() * 0.6)));
+        this.attempt = Math.min(this.attempt + 1, 6);
+
+        var left = Math.round(wait / 1000);
+        handlers.conn(left > 1 ? "retrying" : "connecting", left);
+        this.countdown = setInterval(function () {
+            left -= 1;
+            handlers.conn(left > 1 ? "retrying" : "connecting", Math.max(left, 0));
+        }, 1000);
+        this.timer = setTimeout(function () { self.connect(); }, wait);
+    },
+
+    clearTimers: function () {
+        clearTimeout(this.timer); clearInterval(this.countdown);
+        this.timer = this.countdown = null;
+    },
+
+    /** Ask again by hand — the phone's pull-to-refresh, and the connection chip. */
+    refresh: function () {
+        var self = this;
+        if (!this.es) { this.clearTimers(); this.attempt = 0; this.connect(); }
+        return jsonFetch("/v1/sessions").then(function (d) { handlers.sessions(d.sessions, d.at); })
+            .catch(function (e) { toast(e.message, true); });
+    },
+
+    transcript: function (id) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/transcript?limit=200");
+    },
+
+    send: function (id, text) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Idempotency-Key": uuid() },
+            body: JSON.stringify({ text: text })
+        });
+    },
+
+    focus: function (id) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/focus", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Idempotency-Key": uuid() },
+            body: "{}"
+        });
+    }
+};
+
+/* ---- fixtures ------------------------------------------------------------
+   Enough of a machine to see every state, every animation and the reconnect —
+   from a file:// copy with nothing running. It is also how this page was
+   checked, which is the actual reason it exists.
+   -------------------------------------------------------------------------- */
+
+var Mock = (function () {
+    var C = "#d97757", O = "#141416", BG = "#33201a";          // the clawdline mark
+    var W = "#eef6f4", TEAL = "#2f6b5e";                        // atrium
+    var BODY = "#5aa6d8", LIMB = "#2f6b95";                     // a generated creature
+
+    function art(rows, palette, bg) {
+        return rows.map(function (row) {
+            return row.split("").map(function (ch) { return ch === "." ? bg : (palette[ch] || bg); });
+        });
+    }
+
+    var clawdline = {
+        accent: C,
+        cells: art([".######.", ".#o##o#.", "########", ".##..##."], { "#": C, "o": O }, BG)
+    };
+    var atrium = {
+        accent: "#5cbba1",
+        cells: art([".WWWWW.", ".W...W.", ".W.W.W.", ".W...W."], { "W": W }, TEAL)
+    };
+    var creature = {
+        accent: BODY,
+        cells: [[LIMB, null, LIMB, null, LIMB],
+                [BODY, BODY, BODY, BODY, BODY],
+                [BODY, null, BODY, null, BODY],
+                [LIMB, null, LIMB, null, LIMB]]
+    };
+
+    var now = Math.floor(Date.now() / 1000);
+    var sessions = [
+        { id: "8F3A-1C", backend: "iterm", tty: "ttys004", label: "investigate the webhook",
+          cwd: "/Users/x/code/clawdline", state: "working", line: "Gallivanting… (2m 4s · ↓ 6.4k tokens)",
+          isClaude: true, sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38", icon: clawdline },
+        { id: "2C71-90", backend: "iterm", tty: "ttys011", label: "the signup flow keeps 500ing",
+          cwd: "/Users/x/code/atrium", state: "waiting", line: null,
+          isClaude: true, sessionId: null, icon: atrium },
+        { id: "9B04-2D", backend: "iterm", tty: "ttys002", label: "rewrite the CSV importer",
+          cwd: "/Users/x/code/notebook", state: "idle", line: null,
+          isClaude: true, sessionId: null, icon: creature },
+        { id: "A15E-77", backend: "tmux", tty: "tmux:%12", label: "docs pass before the release",
+          cwd: "/Users/x/code/clawdline/docs", state: "idle", line: null,
+          isClaude: true, sessionId: null, icon: clawdline },
+        { id: "44D2-05", backend: "iterm", tty: "ttys017", label: "scratch",
+          cwd: "/Users/x/tmp/notes", state: "idle", line: null,
+          isClaude: true, sessionId: null, icon: null },
+        { id: "C0FF-3E", backend: "iterm", tty: "ttys021", label: "build box over ssh",
+          cwd: "/Users/x", state: "unknown", line: null,
+          isClaude: true, sessionId: null, icon: null }
+    ];
+
+    // One session gets a real transcript: twenty-odd entries, prose and tools mixed, with two
+    // runs folded the way the bar folds them.
+    var script = [
+        ["user", "the webhook from stripe is landing twice on staging. same event id, two rows.", null, 0],
+        ["assistant", "Two rows for one `event.id` means either the handler is not idempotent or it is being invoked twice. Let me look at where the row is written before guessing.", null, 0],
+        ["tool", "Sources/Webhook.swift, Sources/Ledger.swift", "Grep", 0],
+        ["tool", "", "Read", 4],
+        ["assistant", "The insert is unconditional:\n\n```swift\ntry db.insert(Payment(eventID: event.id, amount: event.amount))\n```\n\nNothing consults `eventID` first, so a redelivery writes a second row. Stripe redelivers whenever our 200 arrives late.", null, 0],
+        ["user", "how late is late", null, 0],
+        ["assistant", "Stripe waits 30 seconds for the ack. Anything slower is treated as a failure and queued for retry — the work still finished on our side, which is exactly how you get one event and two rows.", null, 0],
+        ["tool", "grep -n \"await\" Sources/Webhook.swift", "Bash", 0],
+        ["assistant", "The handler does the ledger write, then sends the receipt email, then answers. The email is the slow part and it is on the wrong side of the reply.", null, 0],
+        ["user", "so ack first, then work?", null, 0],
+        ["assistant", "That is half of it. Acking first stops the redelivery, but a crash between the ack and the write would then lose the payment silently — which is a worse bug than the one being fixed. Both halves: a unique index on `event_id` so a second write cannot land, and the email moved off the request.", null, 0],
+        ["tool", "", "Edit", 3],
+        ["tool", "Sources/Ledger.swift", "Edit", 0],
+        ["assistant", "Added the unique index and made the insert an upsert on `event_id`. The handler now answers as soon as the row is durable.", null, 0],
+        ["tool", "swift test --filter WebhookTests", "Bash", 0],
+        ["tool", "", "Read", 6],
+        ["assistant", "Eleven tests, all passing, including a new one that posts the same event twice and asserts one row.", null, 0],
+        ["user", "add one for the crash-between case", null, 0],
+        ["assistant", "Done — it kills the process after the insert and before the email, restarts, and checks that the receipt is still sent from the queue rather than lost.", null, 0],
+        ["tool", "swift test", "Bash", 0],
+        ["assistant", "Green. The migration is `0009_event_id_unique.sql`; it will need running on staging before the next deploy or the index will not be there to protect anything.", null, 0]
+    ];
+
+    var transcripts = {};
+    transcripts["8F3A-1C"] = script.map(function (e, i) {
+        return { role: e[0], text: e[1], tool: e[2], at: now - (script.length - i) * 47, folded: e[3] };
+    });
+    transcripts["2C71-90"] = [
+        { role: "user", text: "run the migration on staging", tool: null, at: now - 220, folded: 0 },
+        { role: "assistant", text: "This drops `payments_legacy`. Before I run it: the table still has 12,041 rows and nothing in the repo reads it. Confirm and I will go.", tool: null, at: now - 180, folded: 0 }
+    ];
+    transcripts["A15E-77"] = [
+        { role: "user", text: "read docs/devstack.md and tell me what is missing", tool: null, at: now - 3600, folded: 0 },
+        { role: "tool", text: "docs/devstack.md", tool: "Read", at: now - 3590, folded: 0 },
+        { role: "assistant", text: "It explains the file and never says where to put it. Everything else assumes you already know that `devstack.json` sits at the root of the project it describes.", tool: null, at: now - 3580, folded: 0 }
+    ];
+
+    var live = false;
+    var beat = 0;
+
+    function emit() {
+        if (!live) return;
+        // A copy each time, for the same reason the server sends the whole list: nothing
+        // downstream should be able to hold a reference into the source of truth.
+        handlers.sessions(JSON.parse(JSON.stringify(sessions)), Math.floor(Date.now() / 1000));
+    }
+
+    function find(id) {
+        for (var i = 0; i < sessions.length; i++) if (sessions[i].id === id) return sessions[i];
+        return null;
+    }
+
+    var verbs = ["Gallivanting", "Puzzling", "Noodling", "Percolating", "Untangling", "Reticulating"];
+    var clocks = {};
+
+    /** The live line carries its own clock, written by Claude Code. Ticking it here is what
+     *  makes a working row look alive between the bigger changes. */
+    function tick() {
+        var changed = false;
+        sessions.forEach(function (s) {
+            if (s.state !== "working") { delete clocks[s.id]; return; }
+            var c = clocks[s.id] || (clocks[s.id] = { since: Date.now(), verb: verbs[Math.floor(Math.random() * verbs.length)], tokens: 1.2 + Math.random() * 4 });
+            var secs = Math.floor((Date.now() - c.since) / 1000);
+            c.tokens += 0.04;
+            s.line = c.verb + "… (" + (secs >= 60 ? Math.floor(secs / 60) + "m " + (secs % 60) + "s" : secs + "s") +
+                " · ↓ " + c.tokens.toFixed(1) + "k tokens)";
+            changed = true;
+        });
+        if (changed) emit();
+    }
+
+    /** The interesting part: states that move, so the transitions can be watched. */
+    function step() {
+        beat += 1;
+        var order = [
+            function () { find("9B04-2D").state = "working"; },
+            function () { find("8F3A-1C").state = "idle"; find("8F3A-1C").line = null;
+                          transcripts["8F3A-1C"].push({ role: "assistant", text: "Pushed to `fix/webhook-idempotency`. Nothing else is outstanding.", tool: null, at: Math.floor(Date.now() / 1000), folded: 0 }); },
+            function () { find("44D2-05").state = "waiting"; },
+            function () { find("2C71-90").state = "working"; find("C0FF-3E").state = "idle"; },
+            function () { find("9B04-2D").state = "waiting"; find("44D2-05").state = "idle"; },
+            function () { find("2C71-90").state = "waiting"; find("8F3A-1C").state = "working"; },
+            function () { find("9B04-2D").state = "idle"; find("C0FF-3E").state = "unknown"; }
+        ];
+        order[beat % order.length]();
+        emit();
+    }
+
+    return {
+        start: function () {
+            handlers.conn("connecting");
+            setTimeout(function () {
+                live = true;
+                handlers.hello({ version: "0.6.0-mock", protocol: 1, write: MOCK_WRITE });
+                handlers.conn("live");
+                emit();
+            }, 420);
+            setInterval(tick, 1000);
+            setInterval(step, 4200);
+            if (MOCK_FLAKY) {
+                setInterval(function () {
+                    live = false;
+                    handlers.conn("retrying", 3);
+                    setTimeout(function () { live = true; handlers.conn("live"); emit(); }, 3000);
+                }, 20000);
+            }
+        },
+        refresh: function () { return new Promise(function (done) { setTimeout(function () { emit(); done(); }, 500); }); },
+        transcript: function (id) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    var entries = transcripts[id] || [];
+                    if (!entries.length) { fail(Object.assign(new Error("Nothing to read from this session yet."), { code: "not_found" })); return; }
+                    done({ entries: entries.slice(), signature: id + ":" + entries.length + ":" + (entries[entries.length - 1] || {}).at });
+                }, 220);
+            });
+        },
+        send: function (id, text) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
+                    var t = transcripts[id] || (transcripts[id] = []);
+                    t.push({ role: "user", text: text, tool: null, at: Math.floor(Date.now() / 1000), folded: 0 });
+                    var s = find(id);
+                    if (s) { s.state = "working"; }
+                    emit();
+                    done({ ok: true, at: Math.floor(Date.now() / 1000), audit_id: uuid() });
+                }, 300);
+            });
+        },
+        focus: function () {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (!MOCK_WRITE) { fail(Object.assign(new Error("Focus is not enabled on this server."), { code: "write_disabled" })); return; }
+                    done({ ok: true });
+                }, 150);
+            });
+        }
+    };
+})();
+
+var api = MOCK ? Mock : Live;
+
+/* ==========================================================================
+   5. Deriving what to show
+   ========================================================================== */
+
+var RANK = { waiting: 0, working: 1, idle: 2, unknown: 3 };
+
+function rankOf(s) { return RANK[s.state] == null ? 9 : RANK[s.state]; }
+
+/**
+ * The order is held still while the pointer is inside the list.
+ *
+ * A list that sorts itself is a list that can move a row out from under a click, and the click
+ * still lands — on whatever slid into its place. Holding the order costs nothing while somebody
+ * is reading, and it is given up the moment the set of waiting sessions changes: a new question
+ * outranks a steady list, and getting to the top is the entire point of that state.
+ */
+var hold = null;
+
+function waitingKey() {
+    return S.sessions.filter(function (s) { return s.state === "waiting"; })
+        .map(function (s) { return s.id; }).sort().join(",");
+}
+function freezeOrder() {
+    if (!hold) hold = { order: ordered().map(function (s) { return s.id; }), waiting: waitingKey() };
+}
+function thawOrder() {
+    if (!hold) return;
+    hold = null;
+    renderList();
+}
+
+/** Waiting first, always. The list exists to answer "which one stopped and wants me", and
+ *  an answer that is third from the bottom is not one. Within a state, alphabetical, so a
+ *  row that has not changed does not move. */
+function ordered() {
+    if (hold && hold.waiting !== waitingKey()) hold = null;
+    var q = S.filter.trim().toLowerCase();
+    var list = S.sessions.filter(function (s) {
+        if (!q) return true;
+        return ((s.label || "") + " " + (s.cwd || "") + " " + (s.tty || "") + " " + (s.backend || ""))
+            .toLowerCase().indexOf(q) >= 0;
+    });
+    if (hold) {
+        var at = {};
+        hold.order.forEach(function (id, i) { at[id] = i; });
+        return list.sort(function (a, b) {
+            var ai = at[a.id] == null ? 1e9 : at[a.id], bi = at[b.id] == null ? 1e9 : at[b.id];
+            return (ai - bi) || (rankOf(a) - rankOf(b)) || (a.label || "").localeCompare(b.label || "");
+        });
+    }
+    return list.sort(function (a, b) {
+        return (rankOf(a) - rankOf(b))
+            || (a.label || "").localeCompare(b.label || "")
+            || (a.id < b.id ? -1 : 1);
+    });
+}
+
+function byId(id) {
+    for (var i = 0; i < S.sessions.length; i++) if (S.sessions[i].id === id) return S.sessions[i];
+    return null;
+}
+
+/** What has to be the same for a transcript to still be current. The line is in it because a
+ *  session that is still working is still writing. */
+function revisionOf(s) { return s ? s.state + "|" + (s.line || "") + "|" + (s.label || "") : ""; }
+
+/* ==========================================================================
+   6. Render
+   Every path in here is a full render from S. The list keeps its DOM nodes
+   between renders — partly so a row can animate to its new place, partly so
+   the selected row does not lose focus every time the stream breathes.
+   ========================================================================== */
+
+var rowNodes = {};   // id → <li>
+
+var firstList = true;
+
+function onSessions() {
+    var open = S.openId ? byId(S.openId) : null;
+
+    // Anything that has just stopped gets a pulse, and whatever is open gets refetched.
+    S.sessions.forEach(function (s) {
+        var was = S.seen[s.id];
+        // Working to idle, and only that. A session that stops to ask a question has not
+        // finished — it has started shouting, and the row is already doing that.
+        if (was && was.state === "working" && s.state === "idle") {
+            var node = rowNodes[s.id];
+            if (node && !reduced) {
+                node.classList.remove("finished");
+                void node.offsetWidth;              // restart the animation rather than let it be ignored
+                node.classList.add("finished");
+                setTimeout(function () { node.classList.remove("finished"); }, 1600);
+            }
+        }
+        if (open && s.id === open.id && (!was || was.rev !== revisionOf(s))) {
+            loadTranscript(s.id, true);
+        }
+        S.seen[s.id] = { state: s.state, rev: revisionOf(s) };
+    });
+
+    // A session that has gone away takes its row, and its transcript, with it.
+    Object.keys(S.seen).forEach(function (id) { if (!byId(id)) delete S.seen[id]; });
+    if (S.selectedId && !byId(S.selectedId)) S.selectedId = null;
+    if (S.openId && !byId(S.openId)) closeDetail(true);
+
+    render();
+
+    // The first list to arrive puts the highlight somewhere, so the arrow keys and Return mean
+    // something without a click first. On a desk it also opens that session: a two-column layout
+    // whose second column is empty on arrival is a layout apologising for itself. On a phone it
+    // does not — there, opening is a whole screen, and nobody asked for it yet.
+    if (firstList && S.sessions.length) {
+        firstList = false;
+        var top = ordered()[0];
+        if (top) { if (phone()) { S.selectedId = top.id; render(); } else { openSession(top.id, true); } }
+    }
+}
+
+function render() {
+    renderCounts();
+    renderList();
+    renderDetailHead();
+    renderComposer();
+    renderHints();
+}
+
+function renderConn() {
+    var label = { live: "live", connecting: "connecting", offline: "offline",
+                  retrying: "retrying in " + S.retryIn + "s" }[S.conn] || S.conn;
+    els.conn.dataset.state = S.conn;
+    els["conn-label"].textContent = label;
+    els.conn.title = S.conn === "live"
+        ? "Streaming from the app" + (S.version ? " · " + S.version : "")
+        : "Not connected — click to try now";
+}
+
+function renderCounts() {
+    var working = 0, waiting = 0, unknown = 0;
+    S.sessions.forEach(function (s) {
+        if (s.state === "working") working++;
+        else if (s.state === "waiting") waiting++;
+        else if (s.state === "unknown") unknown++;
+    });
+    var bits = [];
+    if (working) bits.push('<span class="part">' + working + " working</span>");
+    if (waiting) bits.push('<span class="part waiting">' + waiting + " waiting</span>");
+    if (unknown) bits.push('<span class="part quiet">' + unknown + " unreadable</span>");
+    if (!bits.length) {
+        bits.push('<span class="part quiet">' + (S.sessions.length
+            ? S.sessions.length + (S.sessions.length === 1 ? " session, all quiet" : " sessions, all quiet")
+            : "no sessions") + "</span>");
+    }
+    els.counts.innerHTML = bits.join("");
+}
+
+function renderList() {
+    var list = ordered();
+
+    // FLIP, first half: where every row is now, before the DOM is touched.
+    var before = {};
+    if (!reduced) {
+        Object.keys(rowNodes).forEach(function (id) {
+            before[id] = rowNodes[id].getBoundingClientRect().top;
+        });
+    }
+
+    spinners = [];
+    var wanted = {};
+    list.forEach(function (s) {
+        wanted[s.id] = true;
+        var node = rowNodes[s.id];
+        if (!node) {
+            node = buildRow(s);
+            rowNodes[s.id] = node;
+            if (!reduced) {
+                node.classList.add("entering");
+                setTimeout(function (n) { return function () { n.classList.remove("entering"); }; }(node), 300);
+            }
+        }
+        fillRow(node, s);
+        // appendChild moves a node that is already here, which is what makes this a reorder
+        // rather than a rebuild — the element under the pointer stays the element under the pointer.
+        els.rows.appendChild(node);
+    });
+    Object.keys(rowNodes).forEach(function (id) {
+        if (wanted[id]) return;
+        var node = rowNodes[id];
+        if (node.parentNode) node.parentNode.removeChild(node);
+        delete rowNodes[id];
+    });
+
+    // FLIP, second half: start each row where it used to be and let it travel to where it now is.
+    //
+    // Driven by the animation API rather than by writing a transform and taking it away again.
+    // This list re-renders on every breath of the stream, and pinning through inline styles means
+    // a pin and its release can land in the same style recalculation — the browser is entitled to
+    // see only the end of that and animate nothing, which is how rows came to sit at the position
+    // they held two updates ago. An animation object cannot be coalesced away, and the one already
+    // running is cancelled by name rather than by hoping it has finished.
+    if (!reduced) {
+        Object.keys(rowNodes).forEach(function (id) {
+            var from = before[id];
+            if (from == null) return;
+            var node = rowNodes[id];
+            // Measured before the running animation is cancelled, so a row that is interrupted
+            // mid-flight sets off again from where it visibly is rather than from where it was.
+            var delta = from - node.getBoundingClientRect().top;
+            if (node.flipAnim) node.flipAnim.cancel();
+            if (Math.abs(delta) < 1) return;
+            node.flipAnim = node.animate(
+                [{ transform: "translateY(" + delta + "px)" }, { transform: "none" }],
+                { duration: 240, easing: "cubic-bezier(.2, .7, .2, 1)" }
+            );
+        });
+    }
+
+    var empty = !list.length;
+    els["list-empty"].hidden = !empty;
+    if (empty) {
+        els["list-empty"].innerHTML = S.sessions.length
+            ? "<b>Nothing matches “" + esc(S.filter) + "”</b>Esc clears the filter"
+            : (S.locked
+                ? "<b>This device is not paired</b>The app answered 401 — pair it from Clawdline on the Mac"
+                : S.conn === "live"
+                    ? "<b>No Claude Code session found</b>Start one in a terminal and it appears here"
+                    : "<b>Waiting for the app</b>Nothing has arrived on the stream yet");
+    }
+}
+
+function buildRow(s) {
+    var li = document.createElement("li");
+    li.className = "row";
+    li.setAttribute("role", "option");
+    li.tabIndex = -1;
+    li.innerHTML =
+        '<canvas class="mark"></canvas>' +
+        '<div class="title"></div>' +
+        '<div class="meta"><span class="path"></span><span class="tty"></span></div>' +
+        '<div class="state"></div>';
+    li.addEventListener("click", function () { openSession(s.id); });
+    return li;
+}
+
+function fillRow(node, s) {
+    node.dataset.id = s.id;
+    node.dataset.state = s.state;
+    node.classList.toggle("selected", s.id === S.selectedId);
+    node.classList.toggle("open", s.id === S.openId);
+    node.setAttribute("aria-selected", s.id === S.selectedId ? "true" : "false");
+
+    var mark = node.querySelector(".mark");
+    if (!drawIcon(mark, s.icon, 4)) mark.classList.add("none"); else mark.classList.remove("none");
+
+    var title = node.querySelector(".title");
+    title.textContent = s.label || s.tty || s.id;
+    // Tinted with the project's own colour, so two sessions in one project read as one project
+    // before either title has been read. Waiting overrides it in CSS — that row is not about
+    // which project it is.
+    title.style.color = s.icon ? tint(s.icon.accent) : "";
+
+    node.querySelector(".path").textContent = shortPath(s.cwd);
+    node.querySelector(".tty").textContent = s.tty || s.backend || "";
+
+    // The state line is rebuilt only when the *shape* of it changes. A working session sends a
+    // new line every second, and throwing away the spinner's canvas to write one string would
+    // restart the animation once a second — which is exactly the thing that should look steady.
+    var state = node.querySelector(".state");
+    if (state.dataset.shape !== s.state) {
+        state.dataset.shape = s.state;
+        if (s.state === "waiting") {
+            state.innerHTML = '<span class="wants">waiting for you</span>';
+        } else if (s.state === "working") {
+            state.innerHTML = '<canvas class="spin"></canvas><span class="line"></span>';
+        } else if (s.state === "unknown") {
+            // Not silence — a screen that could not be read is a different fact from "idle",
+            // and drawing it as idle would be a confident wrong answer about someone's work.
+            state.innerHTML = '<span class="unread">screen could not be read</span>';
+        } else {
+            state.innerHTML = "";
+        }
+    }
+    if (s.state === "working") {
+        state.querySelector(".line").textContent = s.line || "";
+        var canvas = state.querySelector(".spin");
+        drawSpinner(canvas, spinPhase);
+        spinners.push(canvas);
+    }
+}
+
+/* ---- the transcript ------------------------------------------------------ */
+
+function renderDetailHead() {
+    var s = S.openId ? byId(S.openId) : null;
+    els["detail-name"].textContent = s ? (s.label || s.tty || s.id) : "No session open";
+    els["detail-name"].style.color = s && s.icon ? tint(s.icon.accent) : "";
+    var sub = [];
+    if (s) {
+        sub.push(shortPath(s.cwd));
+        if (s.tty) sub.push(s.tty);
+        if (s.state === "waiting") sub.push("waiting for you");
+        else if (s.state === "working") sub.push("working");
+        else if (s.state === "unknown") sub.push("screen could not be read");
+    }
+    els["detail-sub"].textContent = sub.join("  ·  ");
+    drawIcon(els["detail-mark"], s && s.icon, 5);
+    els["tx-order"].textContent = S.newestFirst ? "Newest first" : "Oldest first";
+    els["tx-order"].classList.toggle("on", S.newestFirst);
+    els["tx-focus"].disabled = !s || !S.write;
+    els["tx-focus"].title = S.write ? "Bring this session's terminal forward"
+                                    : "The server reports write: false — nothing can be sent yet";
+}
+
+function renderTranscript() {
+    var box = els.tx;
+    if (!S.openId) { box.innerHTML = '<div class="tx-note">Pick a session on the left.</div>'; return; }
+    if (S.tx.error) { box.innerHTML = '<div class="tx-note err">' + esc(S.tx.error) + "</div>"; return; }
+    if (S.tx.loading && !S.tx.entries.length) { box.innerHTML = '<div class="tx-note">Reading…</div>'; return; }
+    if (!S.tx.entries.length) { box.innerHTML = '<div class="tx-note">Nothing to read from this session yet.</div>'; return; }
+
+    var entries = S.newestFirst ? S.tx.entries.slice().reverse() : S.tx.entries;
+    var html = entries.map(entryHTML).join("");
+    box.innerHTML = html;
+}
+
+var WHO = { user: "you", assistant: "claude", tool: "tool" };
+
+function entryHTML(e) {
+    var role = WHO[e.role] ? e.role : "assistant";
+    var cls = "entry" + (e.folded ? " folded" : "");
+    var body;
+    if (e.folded) {
+        // The bar says "N steps" and so does this. What was hidden matters less than how much.
+        body = '<span class="pill">' + (e.tool ? esc(e.tool) + " · " : "") + e.folded + " steps</span>";
+    } else {
+        body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "") + richText(e.text);
+    }
+    return '<div class="' + cls + '" data-role="' + role + '">' +
+        '<div class="who">' + WHO[role] +
+        (e.at ? '<time data-at="' + e.at + '">' + esc(clockOf(e.at)) + "</time>" : "") + "</div>" +
+        '<div class="body">' + body + "</div></div>";
+}
+
+/**
+ * The little that is worth parsing: fenced blocks and inline spans. Claude writes both all day
+ * and a transcript that shows the backticks is a transcript nobody reads twice. Everything is
+ * escaped before a single tag is added — the text arrives from a terminal, and a terminal will
+ * happily carry someone else's angle brackets.
+ */
+function richText(text) {
+    if (!text) return "";
+    var parts = String(text).split("```");
+    var out = "";
+    for (var i = 0; i < parts.length; i++) {
+        if (i % 2) {
+            var code = parts[i].replace(/^[A-Za-z0-9_+-]*\n/, "").replace(/\n$/, "");
+            out += '<pre class="code">' + esc(code) + "</pre>";
+        } else {
+            var prose = parts[i].replace(/^\n+|\n+$/g, "");
+            if (!prose) continue;
+            out += "<p>" + esc(prose)
+                .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+                .replace(/\n{2,}/g, "</p><p>")
+                .replace(/\n/g, "<br>") + "</p>";
+        }
+    }
+    return out;
+}
+
+function renderComposer() {
+    var on = S.write && !!S.openId;
+    els.composer.dataset.write = S.write ? "on" : "off";
+    els.msg.disabled = !on;
+    els.send.disabled = !on || !els.msg.value.trim();
+    els.why.innerHTML = S.write
+        ? (S.openId ? "<b>Return</b> sends · <b>Shift-Return</b> starts a line" : "Open a session to write to it.")
+        : "<b>Sending is off</b> — the server reports <code>write: false</code>. The box is wired; it switches itself on when that changes.";
+}
+
+function renderHints() {
+    if (phone()) { els.hints.innerHTML = ""; return; }
+    var pairs = [
+        ["↑↓", "move"], ["⏎", "open"], ["/", "filter"],
+        ["⌘K", "list"], ["⌘J", "pane"], ["r", "reverse"], ["?", "keys"]
+    ];
+    els.hints.innerHTML = '<span class="grow"></span>' + pairs.map(function (p) {
+        return '<span class="pair"><kbd>' + esc(p[0]) + "</kbd>" + esc(p[1]) + "</span>";
+    }).join("");
+}
+
+/* ==========================================================================
+   7. Opening a session
+   ========================================================================== */
+
+function loadTranscript(id, quiet) {
+    if (!quiet) {
+        S.tx = { id: id, entries: [], signature: null, loading: true, error: null };
+        renderTranscript();
+    }
+    api.transcript(id).then(function (d) {
+        if (S.openId !== id) return;                    // the reader moved on while this was in flight
+        // The signature is the server's own answer to "is this the same transcript". Trusting it
+        // is what keeps a refetch from throwing the reader's scroll position away every few seconds.
+        if (d.signature && d.signature === S.tx.signature) { S.tx.loading = false; return; }
+        var stick = atBottom();
+        S.tx = { id: id, entries: d.entries || [], signature: d.signature || null, loading: false, error: null };
+        renderTranscript();
+        if (stick) toBottom();
+    }).catch(function (e) {
+        if (S.openId !== id) return;
+        S.tx = { id: id, entries: [], signature: null, loading: false, error: e.message || "Could not read the transcript" };
+        renderTranscript();
+    });
+}
+
+function atBottom() {
+    var el = els["tx-scroll"];
+    return el.scrollTop + el.clientHeight >= el.scrollHeight - 40;
+}
+function toBottom() {
+    var el = els["tx-scroll"];
+    el.scrollTop = el.scrollHeight;
+}
+
+function openSession(id, keepFocus) {
+    var s = byId(id);
+    if (!s) return;
+    S.selectedId = id;
+    if (S.openId !== id) {
+        S.openId = id;
+        loadTranscript(id, false);
+    }
+    if (phone()) {
+        els.app.dataset.view = "detail";
+        // The phone's own back gesture should mean what it looks like it means.
+        try { history.pushState({ view: "detail", id: id }, ""); } catch (e) { }
+    } else if (!S.paneOpen) {
+        S.paneOpen = true;
+        els.app.dataset.pane = "on";
+    }
+    render();
+    if (!keepFocus && !phone()) {
+        var node = rowNodes[id];
+        if (node) node.focus({ preventScroll: true });
+    }
+}
+
+function closeDetail(silent) {
+    S.openId = null;
+    S.tx = { id: null, entries: [], signature: null, loading: false, error: null };
+    if (phone()) els.app.dataset.view = "list";
+    renderTranscript();
+    if (!silent) render();
+}
+
+function select(id) {
+    S.selectedId = id;
+    Object.keys(rowNodes).forEach(function (rid) {
+        rowNodes[rid].classList.toggle("selected", rid === id);
+        rowNodes[rid].setAttribute("aria-selected", rid === id ? "true" : "false");
+    });
+    var node = rowNodes[id];
+    if (node) {
+        node.focus({ preventScroll: true });
+        node.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
+    }
+}
+
+function move(delta) {
+    var list = ordered();
+    if (!list.length) return;
+    var at = -1;
+    for (var i = 0; i < list.length; i++) if (list[i].id === S.selectedId) { at = i; break; }
+    var next = at < 0 ? (delta > 0 ? 0 : list.length - 1) : Math.min(list.length - 1, Math.max(0, at + delta));
+    select(list[next].id);
+}
+
+/* ==========================================================================
+   8. Input
+   ========================================================================== */
+
+function typing(el) {
+    return el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+}
+
+document.addEventListener("keydown", function (ev) {
+    var key = ev.key;
+    var meta = ev.metaKey || ev.ctrlKey;
+
+    // The two that work from anywhere, including out of a text box, because they are how you
+    // get out of the text box.
+    if (meta && (key === "k" || key === "K")) {
+        ev.preventDefault();
+        els.rows.focus();
+        if (!S.selectedId) move(1); else select(S.selectedId);
+        return;
+    }
+    if (meta && (key === "j" || key === "J")) {
+        ev.preventDefault();
+        if (phone()) { els.app.dataset.view = els.app.dataset.view === "detail" ? "list" : "detail"; return; }
+        S.paneOpen = !S.paneOpen;
+        els.app.dataset.pane = S.paneOpen ? "on" : "off";
+        return;
+    }
+
+    if (key === "Escape") {
+        if (!els.keys.hidden) { els.keys.hidden = true; return; }
+        if (document.activeElement === els.filter) {
+            if (S.filter) { els.filter.value = ""; S.filter = ""; render(); }
+            else { els.filter.blur(); els.rows.focus(); }
+            return;
+        }
+        if (typing(document.activeElement)) { document.activeElement.blur(); return; }
+        if (S.openId) { closeDetail(); return; }
+        return;
+    }
+
+    if (typing(document.activeElement)) return;
+    if (meta || ev.altKey) return;
+
+    switch (key) {
+        case "ArrowDown": case "j": ev.preventDefault(); move(1); break;
+        case "ArrowUp": case "k": ev.preventDefault(); move(-1); break;
+        case "Enter":
+            if (S.selectedId) { ev.preventDefault(); openSession(S.selectedId); }
+            break;
+        case "/":
+            ev.preventDefault();
+            els.filter.focus();
+            els.filter.select();
+            break;
+        case "g": ev.preventDefault(); els["tx-scroll"].scrollTop = 0; break;
+        case "G": ev.preventDefault(); toBottom(); break;
+        case "r": ev.preventDefault(); toggleOrder(); break;
+        case "?": ev.preventDefault(); els.keys.hidden = !els.keys.hidden; break;
+        default: break;
+    }
+});
+
+function toggleOrder() {
+    S.newestFirst = !S.newestFirst;
+    renderDetailHead();
+    renderTranscript();
+    els["tx-scroll"].scrollTop = 0;
+}
+
+els["list-scroll"].addEventListener("mouseenter", freezeOrder);
+els["list-scroll"].addEventListener("mouseleave", thawOrder);
+els["list-scroll"].addEventListener("touchstart", freezeOrder, { passive: true });
+els["list-scroll"].addEventListener("touchend", function () { setTimeout(thawOrder, 1200); }, { passive: true });
+
+els.filter.addEventListener("input", function () { S.filter = els.filter.value; renderList(); });
+els["tx-order"].addEventListener("click", toggleOrder);
+els.back.addEventListener("click", function () { closeDetail(); });
+els.keys.addEventListener("click", function () { els.keys.hidden = true; });
+els.keys.querySelector(".sheet").addEventListener("click", function (ev) { ev.stopPropagation(); });
+els.conn.addEventListener("click", function () { if (api.refresh) api.refresh(); });
+
+els["tx-focus"].addEventListener("click", function () {
+    if (!S.openId) return;
+    api.focus(S.openId).then(function () { toast("Asked the app to bring it forward"); })
+        .catch(function (e) { toast(e.message, true); });
+});
+
+// Back on a phone: the pushState above put us here, so popping means "list".
+window.addEventListener("popstate", function () {
+    if (phone() && els.app.dataset.view === "detail") closeDetail();
+});
+
+/* ---- the composer -------------------------------------------------------- */
+
+els.msg.addEventListener("input", function () {
+    els.msg.style.height = "auto";
+    els.msg.style.height = Math.min(140, els.msg.scrollHeight) + "px";
+    els.send.disabled = !S.write || !S.openId || !els.msg.value.trim();
+});
+els.msg.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); submit(); }
+});
+els.composer.addEventListener("submit", function (ev) { ev.preventDefault(); submit(); });
+
+function submit() {
+    var text = els.msg.value.trim();
+    if (!text || !S.openId || !S.write) return;
+    els.send.disabled = true;
+    api.send(S.openId, text).then(function () {
+        els.msg.value = "";
+        els.msg.style.height = "auto";
+        loadTranscript(S.openId, true);
+    }).catch(function (e) {
+        if (e.code === "write_disabled") {
+            // The flag and the truth have drifted apart — believe the answer, not the flag.
+            S.write = false;
+            renderComposer();
+            renderDetailHead();
+        }
+        toast(e.message || "Could not send", true);
+    }).then(function () { renderComposer(); });
+}
+
+/* ---- pull to refresh, phones only ---------------------------------------- */
+
+(function pullToRefresh() {
+    var scroller = els["list-scroll"], pad = els.ptr, label = els["ptr-label"];
+    var startY = 0, pulling = false, distance = 0, busy = false;
+    var THRESHOLD = 62;
+
+    scroller.addEventListener("touchstart", function (ev) {
+        if (busy || scroller.scrollTop > 0 || ev.touches.length !== 1) return;
+        startY = ev.touches[0].clientY;
+        pulling = true;
+        distance = 0;
+        pad.classList.add("dragging");
+    }, { passive: true });
+
+    scroller.addEventListener("touchmove", function (ev) {
+        if (!pulling) return;
+        // Resistance, so the list does not feel like it is on a spring — the further it comes,
+        // the harder it pulls back, which is the only honest way to say "that is far enough".
+        var raw = ev.touches[0].clientY - startY;
+        if (raw <= 0) { distance = 0; pad.style.height = "0px"; return; }
+        distance = Math.min(90, Math.pow(raw, 0.82));
+        pad.style.height = distance + "px";
+        label.textContent = distance >= THRESHOLD ? "Release to refresh" : "Pull to refresh";
+    }, { passive: true });
+
+    function end() {
+        if (!pulling) return;
+        pulling = false;
+        pad.classList.remove("dragging");
+        if (distance >= THRESHOLD && !busy) {
+            busy = true;
+            label.textContent = "Refreshing…";
+            pad.style.height = "34px";
+            Promise.resolve(api.refresh ? api.refresh() : null).then(function () {
+                setTimeout(function () {
+                    pad.style.height = "0px";
+                    label.textContent = "Pull to refresh";
+                    busy = false;
+                }, 260);
+            });
+        } else {
+            pad.style.height = "0px";
+        }
+    }
+    scroller.addEventListener("touchend", end, { passive: true });
+    scroller.addEventListener("touchcancel", end, { passive: true });
+})();
+
+/* ---- the layout can change under us -------------------------------------- */
+
+window.addEventListener("resize", function () {
+    renderHints();
+    // Coming back to a desk with a transcript open on the phone layout would otherwise leave
+    // the detail pane sitting off to one side of a two-column grid.
+    if (!phone()) els.app.dataset.view = "list";
+    else if (S.openId) els.app.dataset.view = "detail";
+    // The marks are drawn for a particular scale factor, and a window moved between screens
+    // has a new one.
+    render();
+    if (S.openId) renderTranscript();
+});
+
+/* ==========================================================================
+   9. Go
+   ========================================================================== */
+
+// The wordmark wears the project's own mark, drawn by the same code the rows use — it comes
+// from ~/.claude/project-icons.json in the app, and it is the one icon this page knows by heart.
+drawIcon(els["brand-mark"], {
+    accent: "#d97757",
+    cells: [".######.", ".#o##o#.", "########", ".##..##."].map(function (row) {
+        return row.split("").map(function (ch) {
+            return ch === "#" ? "#d97757" : (ch === "o" ? "#141416" : "#33201a");
+        });
+    })
+}, 3);
+
+renderConn();
+renderTranscript();
+render();
+api.start();
+
+// A page left open all day: "2m ago" is only true for a minute. The timestamps are rewritten in
+// place rather than by rendering the transcript again — a re-render replaces the whole pane, and
+// the reader would find themselves back at the top of it every minute for no reason they could see.
+setInterval(function () {
+    var stamps = els.tx.querySelectorAll("time[data-at]");
+    for (var i = 0; i < stamps.length; i++) {
+        stamps[i].textContent = clockOf(parseInt(stamps[i].getAttribute("data-at"), 10));
+    }
+}, 60000);
+
+})();
+</script>

@@ -101,6 +101,16 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                     set: { Config.shared.voiceStopSeconds = $0 },
                     format: { $0 == 0 ? L.t.settingsOff : L.t.settingsSeconds($0) })
 
+        form.section(L.t.settingsRemote)
+        form.check(L.t.settingsRemoteServe, get: { Config.shared.remote },
+                   set: { Config.shared.remote = $0 }, hint: L.t.settingsRemoteHint)
+        form.check(L.t.settingsRemoteWrite, get: { Config.shared.remoteWrite },
+                   set: { Config.shared.remoteWrite = $0 }, hint: L.t.settingsRemoteWriteHint)
+        form.row(L.t.settingsRemoteDevices, devicesControl())
+        form.row(L.t.settingsTunnel, tunnelPopUp(), hint: L.t.settingsTunnelHint)
+        form.row(L.t.settingsTunnelHostname, hostnameField())
+        form.hint(tunnelStatusText())
+
         form.section(L.t.settingsHooks)
         form.row("", hooksControl(), hint: L.t.settingsHooksHint)
 
@@ -125,6 +135,100 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         w.isReleasedWhenClosed = false
         w.delegate = self
         return w
+    }
+
+    // MARK: - Remote
+
+    private var devicesLabel: NSTextField?
+
+    /// What can currently reach this Mac, and one button that stops all of it.
+    ///
+    /// The list is here rather than tucked away because it is the answer to a question somebody
+    /// only ever asks in a hurry — *what is connected to my machine right now* — and the button
+    /// next to it exists for the same moment. Nothing about that moment is improved by a
+    /// confirmation sheet, so there is not one: revoking is instant and re-pairing is cheap.
+    private func remoteDevicesControl() -> NSView { devicesControl() }
+
+    private func devicesControl() -> NSView {
+        let width: CGFloat = 560 - (22 + 168 + 14) - 22
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 52))
+
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.font = NSFont.systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+        label.frame = NSRect(x: 0, y: 26, width: width, height: 22)
+        box.addSubview(label)
+        devicesLabel = label
+
+        let open = NSButton(title: L.t.settingsRemoteOpen, target: self, action: #selector(openRemote))
+        open.bezelStyle = .rounded
+        open.frame = NSRect(x: 0, y: 0, width: 150, height: 24)
+        box.addSubview(open)
+
+        let revoke = NSButton(title: L.t.settingsRemoteRevokeAll, target: self,
+                              action: #selector(revokeAllDevices))
+        revoke.bezelStyle = .rounded
+        revoke.frame = NSRect(x: 158, y: 0, width: 190, height: 24)
+        box.addSubview(revoke)
+
+        refreshDevices()
+        return box
+    }
+
+    private func refreshDevices() {
+        let devices = RemoteAuth.approvedDevices
+        devicesLabel?.stringValue = devices.isEmpty
+            ? L.t.settingsRemoteNoDevices
+            : devices.map(\.name).joined(separator: " · ")
+    }
+
+    @objc private func revokeAllDevices() {
+        RemoteAuth.revokeAll()
+        refreshDevices()
+    }
+
+    private var tunnelStatus: NSTextField?
+
+    private func tunnelPopUp() -> NSView {
+        popUp([(L.t.settingsOff, "off"),
+               (L.t.settingsTunnelQuick, "quick"),
+               (L.t.settingsTunnelNamed, "named")],
+              current: Config.shared.remoteTunnel) { Config.shared.remoteTunnel = $0 }
+    }
+
+    private func hostnameField() -> NSView {
+        let field = NSTextField(string: Config.shared.remoteHostname)
+        field.placeholderString = "clawd.example.com"
+        field.frame = NSRect(x: 0, y: 0, width: 300, height: 22)
+        field.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        field.target = self
+        field.action = #selector(hostnameEdited(_:))
+        return field
+    }
+
+    @objc private func hostnameEdited(_ sender: NSTextField) {
+        Config.shared.remoteHostname = sender.stringValue.trimmingCharacters(in: .whitespaces)
+        apply()
+    }
+
+    /// What the tunnel is doing, in the words the tunnel itself used.
+    ///
+    /// Its failures are sentences meant for a person — "pair a device first", "the local server
+    /// is off" — and passing them through unchanged is better than translating them into a
+    /// generic "could not start": the useful part of each one is the specific thing to go and do.
+    private func tunnelStatusText() -> String {
+        switch RemoteTunnel.shared.state {
+        case .off:              return RemoteTunnel.isInstalled ? "" : "cloudflared is not installed."
+        case .starting:         return "…"
+        case .up(let url):      return url
+        case .failed(let why):  return why
+        }
+    }
+
+    @objc private func openRemote() {
+        guard Config.shared.remote,
+              let url = URL(string: "http://127.0.0.1:\(Config.shared.remotePort)/") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     // MARK: - Claude Code hooks

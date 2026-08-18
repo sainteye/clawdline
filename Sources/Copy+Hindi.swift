@@ -119,6 +119,32 @@ struct Hindi: Copy {
     let settingsHooksOff = "नहीं लगे — सब कुछ स्क्रीन से पढ़ा जाता है"
     let settingsHooksOn = "लगे हैं — अभी किसी सत्र ने कुछ नहीं बताया"
     let settingsHooksLive = "लगे हैं, और सत्र बता रहे हैं"
+    let settingsRemote = "रिमोट पहुँच"
+    let settingsRemoteServe = "HTTP पर जवाब दें"
+    let settingsRemoteHint = "session की सूची 127.0.0.1 पर देता है, ताकि कोई browser, tunnel के पार रखा फ़ोन, या कोई script उसे पढ़ सके। जब तक आप ख़ुद चालू न करें, बंद रहता है: सुनता हुआ एक socket repository के नाम, branch और काम के शीर्षक सौंप देता है।"
+    let settingsRemoteDevices = "जुड़े हुए डिवाइस"
+    let settingsRemoteNoDevices = "अभी कोई नहीं — इस Mac के बाहर से कुछ भी नहीं पढ़ा जा सकता"
+    let settingsRemoteRevokeAll = "सभी हटाएँ"
+    let settingsRemoteOpen = "browser में खोलें"
+    let pairingIgnore = "अनदेखा करें"
+    func pairingAsks(_ device: String) -> String { "\(device) इस Mac से जुड़ना चाहता है" }
+    func pairingCode(_ code: String) -> String {
+        """
+        उस डिवाइस में यह कोड डालें:
+
+        \(code)
+
+        यह दो मिनट तक चलता है। अगर अभी आपने यह नहीं माँगा, तो अनदेखा कर दें — जिसने माँगा \
+        है, वह इस कोड के बिना आगे नहीं बढ़ सकता।
+        """
+    }
+    let settingsTunnel = "बाहर से पहुँच"
+    let settingsTunnelQuick = "अपने आप बना पता"
+    let settingsTunnelNamed = "मेरा अपना डोमेन"
+    let settingsTunnelHostname = "होस्टनेम"
+    let settingsTunnelHint = "cloudflared के ज़रिये इसी Mac से बाहर की ओर जुड़ता है — न port forwarding, न आपके नेटवर्क पर कुछ सुनता हुआ। जब तक कोई डिवाइस जुड़ा न हो, यह चालू नहीं होगा, क्योंकि tunnel के उस पार इस Mac का हर repository नाम और हर काम का शीर्षक है।"
+    let settingsRemoteWrite = "जुड़े डिवाइस को लिखने दें"
+    let settingsRemoteWriteHint = "बंद हो तो जुड़ा हुआ डिवाइस सिर्फ़ पढ़ सकता है। चालू हो तो वह किसी session में लिख भी सकता है और नए session शुरू भी कर सकता है — यानी इस Mac पर कोड चलता है, क्योंकि Claude Code यही करता है। यह ऊपर वाले से अलग फ़ैसला है, इसलिए इसका स्विच भी अलग है।"
     let settingsOpenFile = "कॉन्फ़िग फ़ाइल खोलें…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f से॰", value) }
 

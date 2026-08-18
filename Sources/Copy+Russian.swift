@@ -115,6 +115,32 @@ struct Russian: Copy {
     let settingsHooksOff = "Не установлены — состояние читается только с экрана"
     let settingsHooksOn = "Установлены — ни одна сессия ещё не отозвалась"
     let settingsHooksLive = "Установлены, сессии отзываются"
+    let settingsRemote = "Удалённый доступ"
+    let settingsRemoteServe = "Отвечать по HTTP"
+    let settingsRemoteHint = "Отдаёт список сессий на 127.0.0.1, чтобы его прочитал браузер, телефон через туннель или скрипт. Выключено, пока вы сами не включите: слушающий сокет отдаёт имена репозиториев, ветки и названия задач."
+    let settingsRemoteDevices = "Сопряжённые устройства"
+    let settingsRemoteNoDevices = "Пока ни одного — за пределами этого Mac ничего прочитать нельзя"
+    let settingsRemoteRevokeAll = "Отключить всё"
+    let settingsRemoteOpen = "Открыть в браузере"
+    let pairingIgnore = "Игнорировать"
+    func pairingAsks(_ device: String) -> String { "\(device) хочет создать пару с этим Mac" }
+    func pairingCode(_ code: String) -> String {
+        """
+        Введите этот код на нём:
+
+        \(code)
+
+        Он действует две минуты. Если вы только что этого не запрашивали — не обращайте \
+        внимания: без этого кода тот, кто запросил, ничего не завершит.
+        """
+    }
+    let settingsTunnel = "Доступен снаружи"
+    let settingsTunnelQuick = "Сгенерированный адрес"
+    let settingsTunnelNamed = "Мой собственный домен"
+    let settingsTunnelHostname = "Имя хоста"
+    let settingsTunnelHint = "Открывает исходящее соединение через cloudflared — никакого проброса портов, ничего слушающего в вашей сети. Не запустится, пока не сопряжено хотя бы одно устройство: за туннелем — имя каждого репозитория и название каждой задачи на этом Mac."
+    let settingsRemoteWrite = "Разрешить сопряжённым устройствам писать"
+    let settingsRemoteWriteHint = "Выключено — сопряжённое устройство может только читать. Включено — оно может отправлять текст в сессию и запускать новые, а это выполняет код на этом Mac, потому что Claude Code именно этим и занимается. Решение здесь другое, чем выше, поэтому и переключатель отдельный."
     let settingsOpenFile = "Открыть файл настроек…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f с", value) }
 

@@ -115,6 +115,32 @@ struct German: Copy {
     let settingsHooksOff = "Nicht eingerichtet — alles kommt vom Bildschirm"
     let settingsHooksOn = "Eingerichtet — noch keine Sitzung hat sich gemeldet"
     let settingsHooksLive = "Eingerichtet, Sitzungen melden sich"
+    let settingsRemote = "Fernzugriff"
+    let settingsRemoteServe = "Über HTTP antworten"
+    let settingsRemoteHint = "Gibt die Liste der Sitzungen auf 127.0.0.1 heraus, damit ein Browser, ein Telefon durch einen Tunnel oder ein Skript sie lesen kann. Aus, solange du es nicht einschaltest: Ein lauschender Socket gibt Repository-Namen, Branches und Aufgabentitel preis."
+    let settingsRemoteDevices = "Gekoppelte Geräte"
+    let settingsRemoteNoDevices = "Noch keine — außerhalb dieses Mac kann niemand etwas lesen"
+    let settingsRemoteRevokeAll = "Alle trennen"
+    let settingsRemoteOpen = "Im Browser öffnen"
+    let pairingIgnore = "Ignorieren"
+    func pairingAsks(_ device: String) -> String { "\(device) möchte sich mit diesem Mac koppeln" }
+    func pairingCode(_ code: String) -> String {
+        """
+        Gib diesen Code dort ein:
+
+        \(code)
+
+        Er gilt zwei Minuten. Wenn du das gerade nicht angefragt hast, ignoriere es — ohne \
+        diesen Code kommt derjenige, der gefragt hat, nicht weiter.
+        """
+    }
+    let settingsTunnel = "Von außen erreichbar"
+    let settingsTunnelQuick = "Eine erzeugte Adresse"
+    let settingsTunnelNamed = "Meine eigene Domain"
+    let settingsTunnelHostname = "Hostname"
+    let settingsTunnelHint = "Baut über cloudflared eine ausgehende Verbindung auf — keine Portweiterleitung, nichts, was in deinem Netz lauscht. Startet erst, wenn ein Gerät gekoppelt ist, denn dahinter liegt jeder Repository-Name und jeder Aufgabentitel auf diesem Mac."
+    let settingsRemoteWrite = "Gekoppelte Geräte tippen lassen"
+    let settingsRemoteWriteHint = "Aus kann ein gekoppeltes Gerät nur lesen. An kann es Text in eine Sitzung schicken und neue starten — und das führt Code auf diesem Mac aus, denn genau das tut Claude Code. Eine andere Entscheidung als die darüber, also ein eigener Schalter."
     let settingsOpenFile = "Konfigurationsdatei öffnen …"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

@@ -113,6 +113,32 @@ struct Japanese: Copy {
     let settingsHooksOff = "未設定 — 状態はすべて画面から読んでいます"
     let settingsHooksOn = "設定済み — まだどのセッションからも届いていません"
     let settingsHooksLive = "設定済み。セッションから届いています"
+    let settingsRemote = "リモート"
+    let settingsRemoteServe = "HTTP で応答する"
+    let settingsRemoteHint = "セッションの一覧を 127.0.0.1 で出すので、ブラウザからも、トンネル越しのスマートフォンからも、スクリプトからも読めます。自分でオンにするまではオフです。待ち受けているソケットは、リポジトリ名もブランチもタスクの見出しも渡してしまいます。"
+    let settingsRemoteDevices = "ペアリング済み機器"
+    let settingsRemoteNoDevices = "まだありません — この Mac の外からは何も読めません"
+    let settingsRemoteRevokeAll = "すべて切断"
+    let settingsRemoteOpen = "ブラウザで開く"
+    let pairingIgnore = "無視"
+    func pairingAsks(_ device: String) -> String { "\(device) がこの Mac とペアリングしようとしています" }
+    func pairingCode(_ code: String) -> String {
+        """
+        その機器に次のコードを入力してください：
+
+        \(code)
+
+        有効なのは 2 分間です。心当たりがなければ無視してかまいません。このコードがなければ、\
+        求めてきた相手は先へ進めません。
+        """
+    }
+    let settingsTunnel = "外から届く"
+    let settingsTunnelQuick = "自動で作られるアドレス"
+    let settingsTunnelNamed = "自分のドメイン"
+    let settingsTunnelHostname = "ホスト名"
+    let settingsTunnelHint = "cloudflared を通して、この Mac のほうから外へつなぎます。ポート開放も要らず、あなたのネットワークで待ち受けるものもありません。機器がひとつペアリングされるまでは起動しません。トンネルの向こうにあるのは、この Mac のリポジトリ名とタスクの見出しのすべてだからです。"
+    let settingsRemoteWrite = "ペアリング済み機器に入力させる"
+    let settingsRemoteWriteHint = "オフのあいだ、ペアリング済みの機器は読むだけです。オンにすると、セッションに文字を送ることも、新しいセッションを始めることもできます。それはこの Mac 上でコードを実行するということです。Claude Code がやっているのはまさにそれだからです。上の項目とは別の判断なので、スイッチも別にしてあります。"
     let settingsOpenFile = "設定ファイルを開く…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 

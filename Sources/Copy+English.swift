@@ -114,6 +114,32 @@ struct English: Copy {
     let settingsHooksOff = "Not installed — readings come from the screen alone"
     let settingsHooksOn = "Installed — no session has reported yet"
     let settingsHooksLive = "Installed, and sessions are reporting"
+    let settingsRemote = "Remote"
+    let settingsRemoteServe = "Answer over HTTP"
+    let settingsRemoteHint = "Serves the session list on 127.0.0.1 so a browser, a phone through a tunnel, or a script can read it. Off unless you turn it on: a listening socket hands over repository names, branches and task titles."
+    let settingsRemoteDevices = "Paired devices"
+    let settingsRemoteNoDevices = "None yet — nothing outside this Mac can read anything"
+    let settingsRemoteRevokeAll = "Disconnect everything"
+    let settingsRemoteOpen = "Open in a browser"
+    let pairingIgnore = "Ignore"
+    func pairingAsks(_ device: String) -> String { "\(device) wants to pair with this Mac" }
+    func pairingCode(_ code: String) -> String {
+        """
+        Type this code into it:
+
+        \(code)
+
+        It is good for two minutes. If you did not just ask for this, ignore it — whoever asked \
+        cannot finish without this code.
+        """
+    }
+    let settingsTunnel = "Reachable from outside"
+    let settingsTunnelQuick = "A generated address"
+    let settingsTunnelNamed = "My own domain"
+    let settingsTunnelHostname = "Hostname"
+    let settingsTunnelHint = "Opens an outbound connection through cloudflared — no port forwarding, nothing listening on your network. It will not start until a device is paired, because what is behind it is every repository name and task title on this Mac."
+    let settingsRemoteWrite = "Let paired devices type"
+    let settingsRemoteWriteHint = "Off, and a paired device can only read. On, and it can send text into a session and start new ones — which runs code on this Mac, because that is what Claude Code does. A different decision from the one above, so it is a different switch."
     let settingsOpenFile = "Open the config file…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

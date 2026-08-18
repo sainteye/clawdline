@@ -144,6 +144,20 @@ enum Targets {
         }
     }
 
+    /// Start a session somewhere, and hand back the one it became.
+    ///
+    /// iTerm2 when it is running, tmux otherwise — the same order everything else here uses, and
+    /// for the same reason: a tab you can see beats a pane you have to go and find.
+    ///
+    /// The new session is not in any snapshot yet, so the caller gets an id and has to wait for
+    /// the next reading like everybody else. Returning something half-filled here would be a
+    /// third kind of `TargetSession` that is true for about a second.
+    static func create(cwd: String, command: String) -> (id: String, backend: Backend)? {
+        if let made = ITerm.newTab(cwd: cwd, command: command) { return (made.id, .iterm) }
+        if let pane = Tmux.newWindow(cwd: cwd, command: command) { return (pane, .tmux) }
+        return nil
+    }
+
     static func capture(_ session: TargetSession) -> String? {
         switch session.backend {
         case .iterm: return ITerm.capture(session.id)

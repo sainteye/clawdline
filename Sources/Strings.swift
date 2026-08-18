@@ -173,6 +173,28 @@ protocol Copy {
     var settingsHooksOn: String { get }
     var settingsHooksLive: String { get }
 
+    // Remote access — see Sources/RemoteServer.swift and Sources/RemoteAuth.swift
+    var settingsRemote: String { get }
+    var settingsRemoteServe: String { get }
+    var settingsRemoteHint: String { get }
+    var settingsRemoteDevices: String { get }
+    var settingsRemoteNoDevices: String { get }
+    var settingsRemoteRevokeAll: String { get }
+    var settingsRemoteOpen: String { get }
+    /// Shown on the Mac when something asks to pair. The code is deliberately only ever here —
+    /// whoever asked cannot finish without walking to this screen, and that is the whole of the
+    /// security property.
+    func pairingAsks(_ device: String) -> String
+    func pairingCode(_ code: String) -> String
+    var pairingIgnore: String { get }
+
+    var settingsTunnel: String { get }
+    var settingsTunnelQuick: String { get }
+    var settingsTunnelNamed: String { get }
+    var settingsTunnelHostname: String { get }
+    var settingsTunnelHint: String { get }
+    var settingsRemoteWrite: String { get }
+    var settingsRemoteWriteHint: String { get }
     var settingsOpenFile: String { get }
     /// A number of seconds, as a settings row shows it.
     ///

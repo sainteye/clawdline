@@ -256,6 +256,18 @@ enum ITerm {
         return out
     }
 
+    /// Open a tab and start something in it.
+    ///
+    /// The one operation that is not "talk to a session that already exists", and the only reason
+    /// it is here rather than being left to the person at the keyboard: from a phone there is no
+    /// keyboard to go to. Returns the new session's id and tty, or the reason it did not happen.
+    static func newTab(cwd: String, command: String) -> (id: String, tty: String)? {
+        let res = osa(["newtab", cwd, command])
+        guard res["ok"] as? Bool == true,
+              let id = res["id"] as? String, !id.isEmpty else { return nil }
+        return (id, res["tty"] as? String ?? "")
+    }
+
     /// Select a session's window and tab.
     ///
     /// `activate: false` stops short of bringing iTerm2 forward, which is what the prompt bar

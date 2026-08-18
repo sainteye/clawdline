@@ -132,6 +132,20 @@ final class Config {
     /// on purpose. See docs/remote.md and Sources/RemoteServer.swift.
     var remote = false
     var remotePort = 7717
+    /// How the outside gets in: "off", "quick" (a generated trycloudflare.com name, no account),
+    /// or "named" (your own tunnel and your own hostname). See Sources/RemoteTunnel.swift.
+    /// Let a paired device type into a session, and start new ones.
+    ///
+    /// **Separate from `remote`, and off, because it is a different feature at a different risk
+    /// level.** Reading a session discloses a repository name and a task title. Writing to one is
+    /// remote code execution — Claude Code runs `bash` — so this is not a finer setting on the
+    /// same dial, it is the second dial. Turning it on grants `send` to every paired device;
+    /// turning it off takes it back from all of them at once.
+    var remoteWrite = false
+    var remoteTunnel = "off"
+    var remoteTunnelName = ""
+    var remoteHostname = ""
+    var cloudflaredPath = ""
     var tmuxPath = ""
     /// Where the project status files are read from, and where the icon registry lives.
     ///
@@ -143,6 +157,13 @@ final class Config {
     var iconsFile = ""
     var lastTargetID: String?
     var history: [String] = []
+
+    /// True when at least one device has been paired or a password set.
+    ///
+    /// Read by ``RemoteTunnel`` before it will start anything: **a tunnel to an endpoint with no
+    /// authentication is a mistake that should not be reachable by editing one config key**, and
+    /// what is behind it is a list of your repositories, branches and task titles.
+    var remoteAuthConfigured: Bool { RemoteAuth.isConfigured }
 
     private let dir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".config/clawdline", isDirectory: true)
@@ -162,6 +183,11 @@ final class Config {
         if let v = obj["hooks"] as? Bool { hooks = v }
         if let v = obj["remote"] as? Bool { remote = v }
         if let v = obj["remote_port"] as? Int, v > 0, v < 65536 { remotePort = v }
+        if let v = obj["remote_write"] as? Bool { remoteWrite = v }
+        if let v = obj["remote_tunnel"] as? String, !v.isEmpty { remoteTunnel = v }
+        if let v = obj["remote_tunnel_name"] as? String { remoteTunnelName = v }
+        if let v = obj["remote_hostname"] as? String { remoteHostname = v }
+        if let v = obj["cloudflared_path"] as? String { cloudflaredPath = v }
         if let v = obj["tmux_path"] as? String { tmuxPath = v }
         if let v = obj["status_dir"] as? String { statusDir = v }
         if let v = obj["icons_file"] as? String { iconsFile = v }
@@ -201,6 +227,11 @@ final class Config {
             "hooks": hooks,
             "remote": remote,
             "remote_port": remotePort,
+            "remote_write": remoteWrite,
+            "remote_tunnel": remoteTunnel,
+            "remote_tunnel_name": remoteTunnelName,
+            "remote_hostname": remoteHostname,
+            "cloudflared_path": cloudflaredPath,
             "tmux_path": tmuxPath,
             "status_dir": statusDir,
             "icons_file": iconsFile,

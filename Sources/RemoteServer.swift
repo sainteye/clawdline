@@ -45,6 +45,9 @@ final class RemoteServer {
 
     /// Start, stop, or restart to match the config. Safe to call whenever anything changes.
     func apply() {
+        // First, and outside the early return below: turning sending on or off must take effect
+        // even when nothing about the listener changed, which is the usual case.
+        syncWriteCapability()
         let want = Config.shared.remote
         let wantPort = UInt16(Config.shared.remotePort)
         if want, isRunning, wantPort == port { return }
@@ -80,10 +83,27 @@ final class RemoteServer {
         listener.start(queue: queue)
         self.listener = listener
         self.port = wanted
+        syncWriteCapability()
+        // Made now rather than lazily, so that the first thing a script does is find a token
+        // already sitting in ~/.config/clawdline/remote-token rather than a 401 it has to
+        // understand. It does not satisfy the tunnel interlock — see RemoteAuth.isConfigured.
+        _ = RemoteAuth.localToken()
 
         // One observer for every stream there will ever be. Registering per client would mean a
         // reading fanned out by the watch to N closures that all do the same work.
         SessionWatch.shared.observers["remote"] = { [weak self] in self?.broadcast() }
+    }
+
+    /// Bring every paired device in line with the one switch.
+    ///
+    /// Per-device grants would be a finer control and a worse one to have as the only one: the
+    /// moment somebody wants sending off, they want it off *everywhere*, and having to walk a
+    /// list is how one gets missed. The switch is the decision; the devices follow it.
+    func syncWriteCapability() {
+        let want: Set<RemoteAuth.Capability> = Config.shared.remoteWrite ? [.read, .send] : [.read]
+        for device in RemoteAuth.approvedDevices where device.caps != want {
+            RemoteAuth.setCapabilities(want, for: device.id)
+        }
     }
 
     func stop() {
@@ -146,8 +166,14 @@ final class RemoteServer {
     // MARK: - Routing
 
     private func handle(_ request: Request, on conn: NWConnection) {
-        // The event stream is the one route that does not answer and close.
+        // The event stream is the one route that does not answer and close — and the one that
+        // carries everything, so it is gated before it is opened rather than after.
         if request.method == "GET", request.path == "/v1/events" {
+            if let refusal = crossOriginRefusal(request) { send(refusal, on: conn); return }
+            if case .denied = permission(for: request) {
+                send(.error(401, "unauthorized", "This needs a paired device."), on: conn)
+                return
+            }
             openStream(on: conn)
             return
         }
@@ -158,16 +184,56 @@ final class RemoteServer {
     /// Every route that answers with a body and closes. Split out from the connection handling so
     /// that a test can ask it a question without opening a socket.
     func route(_ request: Request) -> Response {
+        // Before anything else, and before authentication, because these two refusals are about
+        // *who is allowed to be asking at all* rather than about who they are.
+        if let refusal = crossOriginRefusal(request) { return refusal }
+
+        // The four things reachable without a token, and each of them is on this list for a
+        // reason rather than for convenience: you cannot log in through a page you cannot load,
+        // and you cannot pair with a machine you cannot ask.
+        let open: Set<String> = ["/", "/index.html", "/manifest.webmanifest", "/v1/health"]
+        let pairing = request.path.hasPrefix("/v1/auth/")
+        if !open.contains(request.path), !pairing {
+            if case .denied = permission(for: request) {
+                return .error(401, "unauthorized", "This needs a paired device.")
+            }
+        }
+        // A cookie is sent by the browser whether or not the page asking wanted it to be, so a
+        // mutating route additionally has to be sure the request came from our own page. `Origin`
+        // is set by the browser and cannot be forged by script — and the JSON content type below
+        // is the second half of it, because the shapes a cross-site form can send do not include
+        // one. Reads are exempt: they are already gated by the token.
+        if request.method != "GET", let origin = request.headers["origin"], !isOurs(origin) {
+            return .error(403, "forbidden", "That request did not come from this page.")
+        }
+
         switch (request.method, request.path) {
+
+        case ("POST", "/v1/auth/pair"):
+            return beginPairing(request)
+
+        case ("POST", "/v1/auth/pair/confirm"):
+            return confirmPairing(request)
+
+        case ("POST", "/v1/auth/password"):
+            return exchangePassword(request)
+
+        case ("POST", "/v1/auth/logout"):
+            return Response(status: 200,
+                            headers: ["Content-Type": "application/json; charset=utf-8",
+                                      "Set-Cookie": "clawdline=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"],
+                            body: Data("{\"ok\":true}".utf8))
 
         case ("GET", "/v1/health"):
             return .json([
                 "ok": true,
                 "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
                 "protocol": Self.protocolVersion,
-                // The client uses this to decide whether to draw a composer at all. Saying "you
-                // may not" once is kinder than a button that fails when pressed.
-                "write": false,
+                // The client uses these to decide what to draw at all. Saying "you may not" once
+                // is kinder than a button that fails when pressed.
+                "write": Config.shared.remoteWrite,
+                "auth": RemoteAuth.isConfigured,
+                "authed": { if case .allowed = permission(for: request) { return true }; return false }(),
             ])
 
         case ("GET", "/v1/sessions"):
@@ -191,12 +257,78 @@ final class RemoteServer {
             }
             return .error(404, "not_found", "No such route")
 
-        // Every mutating route, in one place, saying the same thing. They exist now rather than
-        // later so that a client written today finds a documented refusal instead of a 404 it has
-        // to guess about.
+        case ("GET", "/v1/projects"):
+            // The icon registry is the closest thing to a list of "projects I work on" that
+            // already exists on this machine, and the stack panel reads it for the same reason.
+            // It is what the "start a session in…" menu is built from.
+            return .json(["projects": ProjectIcon.knownPaths().sorted().map { path -> [String: Any] in
+                var row: [String: Any] = ["path": path,
+                                          "label": (path as NSString).lastPathComponent]
+                if let registry = ProjectIcon.row(forCwd: path) {
+                    if let label = registry["label"] as? String { row["label"] = label }
+                    if let grid = ProjectIcon.grid(for: registry) { row["icon"] = json(of: grid) }
+                }
+                return row
+            }])
+
+        // Starting a session is the one write that is not aimed at an existing one — and it is
+        // the same risk, because what it starts runs `bash` too. Same gate, deliberately.
+        case ("POST", "/v1/sessions"):
+            return writing(request) { body in
+                let cwd = (body["cwd"] as? String) ?? ""
+                let command = (body["command"] as? String) ?? "claude"
+                guard !cwd.isEmpty else {
+                    return .error(400, "bad_request", "That needs a cwd.")
+                }
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDirectory),
+                      isDirectory.boolValue else {
+                    return .error(400, "bad_request", "There is no directory there.")
+                }
+                guard let made = Targets.create(cwd: cwd, command: command) else {
+                    return .error(500, "internal", "Could not open a tab.")
+                }
+                RemoteAuth.audit("session.create", ["cwd": cwd, "command": command, "id": made.id])
+                // Read it back on the next beat, so whatever asked sees the new row arrive the
+                // same way every other client does rather than through a special case.
+                DispatchQueue.main.async { SessionWatch.shared.nudge() }
+                return .json(["ok": true, "id": made.id, "backend": made.backend.rawValue])
+            }
+
+        case ("POST", let path) where path.hasSuffix("/send") && path.hasPrefix("/v1/sessions/"):
+            let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/send".count))
+            return writing(request) { body in
+                guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
+                    return .error(404, "not_found", "No session named that")
+                }
+                guard let text = body["text"] as? String, !text.isEmpty else {
+                    return .error(400, "bad_request", "That needs some text.")
+                }
+                // Off the main thread on purpose: this is an osascript round trip of a hundred
+                // milliseconds or so, and the only thing it touches is a terminal.
+                let problem = Targets.send(text, to: session)
+                // Written down before the answer goes back, because the interesting case for the
+                // log is the one where something went wrong afterwards.
+                RemoteAuth.audit("session.send", ["id": session.id, "tty": session.tty,
+                                                  "chars": "\(text.count)",
+                                                  "ok": problem == nil ? "1" : "0"])
+                if let problem { return .error(502, "internal", problem) }
+                return .json(["ok": true, "at": Int(Date().timeIntervalSince1970)])
+            }
+
+        case ("POST", let path) where path.hasSuffix("/focus") && path.hasPrefix("/v1/sessions/"):
+            let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/focus".count))
+            return writing(request) { _ in
+                guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
+                    return .error(404, "not_found", "No session named that")
+                }
+                DispatchQueue.main.async { Targets.reveal(session) }
+                RemoteAuth.audit("session.focus", ["id": session.id])
+                return .json(["ok": true])
+            }
+
         case ("POST", let path) where path.hasPrefix("/v1/sessions/"):
-            return .error(403, "write_disabled",
-                          "This build can read sessions and not write to them. See docs/remote.md.")
+            return .error(404, "not_found", "No such route")
 
         case ("GET", "/"), ("GET", "/index.html"):
             return page()
@@ -209,6 +341,198 @@ final class RemoteServer {
         }
     }
 
+    // MARK: - Who is asking
+
+    /// The bearer token for a request, from either place a client can put one.
+    ///
+    /// The header is the right way and the only way a script would do it. The cookie exists
+    /// because of one specific limitation: **the browser's `EventSource` cannot set headers**, at
+    /// all, and the event stream is the whole reason the web interface feels live. So a paired
+    /// browser gets an `HttpOnly` cookie and the stream works; everything else prefers the header.
+    private func bearer(_ request: Request) -> String? {
+        if let header = request.headers["authorization"], header.count > 7,
+           header.lowercased().hasPrefix("bearer ") {
+            return String(header.dropFirst(7)).trimmingCharacters(in: .whitespaces)
+        }
+        for pair in (request.headers["cookie"] ?? "").split(separator: ";") {
+            let kv = pair.split(separator: "=", maxSplits: 1)
+            guard kv.count == 2, kv[0].trimmingCharacters(in: .whitespaces) == "clawdline" else { continue }
+            return String(kv[1]).trimmingCharacters(in: .whitespaces)
+        }
+        return nil
+    }
+
+    private func permission(for request: Request) -> RemoteAuth.Verdict {
+        RemoteAuth.verify(bearer: bearer(request))
+    }
+
+    /// The two refusals that come before authentication, because they are about a browser being
+    /// made to ask on somebody else's behalf.
+    ///
+    /// **`Host`, and this is the one that matters.** A page on `evil.com` can already `fetch`
+    /// `http://127.0.0.1:7717/…`; what normally saves a local server is that the page cannot
+    /// *read* the reply, because the origins differ. **DNS rebinding removes that**: the attacker
+    /// lets `evil.com` resolve to their own address long enough for the page to load, then
+    /// re-answers with `127.0.0.1`, and now the browser believes the local server *is*
+    /// `evil.com` — same origin, no protection left. The one thing that does not change through
+    /// all of it is the `Host` header, which still says `evil.com`. So a request whose `Host` is
+    /// not a name this server actually answers to is refused before it is looked at, and the
+    /// whole attack is over. This costs nothing and it is not optional.
+    ///
+    /// **`Sec-Fetch-Site`** is the modern browser saying, unforgeably, that the page asking is on
+    /// a different site. Absent for anything that is not a browser, so a script is unaffected.
+    func crossOriginRefusal(_ request: Request) -> Response? {
+        if let site = request.headers["sec-fetch-site"], site == "cross-site" {
+            return .error(403, "forbidden", "Cross-site requests are not answered.")
+        }
+        guard let host = request.headers["host"], Self.isAllowedHost(host,
+                                                                     port: Config.shared.remotePort,
+                                                                     hostname: Config.shared.remoteHostname)
+        else {
+            return .error(403, "forbidden", "Wrong host.")
+        }
+        return nil
+    }
+
+    /// Pure, so the rebinding case can be tested without a socket.
+    ///
+    /// A quick tunnel's name is generated per run and cannot be in anybody's config, so the whole
+    /// suffix is allowed. That is safe for the attack this defends against: rebinding needs the
+    /// attacker to control the DNS answer, and `trycloudflare.com` answers are Cloudflare's.
+    static func isAllowedHost(_ header: String, port: Int, hostname: String) -> Bool {
+        var host = header.trimmingCharacters(in: .whitespaces).lowercased()
+        if host.hasPrefix("[") {                       // [::1]:7717
+            guard let close = host.firstIndex(of: "]") else { return false }
+            host = String(host[host.index(after: host.startIndex)..<close])
+        } else if let colon = host.lastIndex(of: ":") {
+            host = String(host[host.startIndex..<colon])
+        }
+        if ["127.0.0.1", "localhost", "::1"].contains(host) { return true }
+        let configured = hostname.trimmingCharacters(in: .whitespaces).lowercased()
+        if !configured.isEmpty, host == configured { return true }
+        return host.hasSuffix(".trycloudflare.com")
+    }
+
+    /// How many pairing requests have been started lately.
+    ///
+    /// This route is reachable without a token — it has to be — and it **puts a modal alert on
+    /// somebody's screen**. Left alone that is a way to make a Mac unusable from a shell script,
+    /// so: one pairing open at a time, three in ten minutes, and then nothing until it lapses.
+    private var pairingTimes: [Date] = []
+    private func pairingAllowed() -> Bool {
+        let now = Date()
+        pairingTimes = pairingTimes.filter { now.timeIntervalSince($0) < 600 }
+        guard pairingTimes.count < 3 else { return false }
+        pairingTimes.append(now)
+        return true
+    }
+
+    /// Same host as the page was served from. Anything else is a different site asking on the
+    /// user's behalf, which is exactly what the check exists to refuse.
+    private func isOurs(_ origin: String) -> Bool {
+        guard let url = URL(string: origin), let host = url.host else { return false }
+        if host == "127.0.0.1" || host == "localhost" { return true }
+        let configured = Config.shared.remoteHostname.trimmingCharacters(in: .whitespaces)
+        if !configured.isEmpty, host == configured { return true }
+        // A quick tunnel's hostname is generated per run, so it cannot be in the config. It is
+        // always under this one domain, though, and that is a narrow enough thing to allow.
+        return host.hasSuffix(".trycloudflare.com")
+    }
+
+    // MARK: - Pairing
+
+    private func beginPairing(_ request: Request) -> Response {
+        guard pairingAllowed() else {
+            return .error(429, "rate_limited", "Too many pairing attempts. Try again in a few minutes.")
+        }
+        let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
+        let entry = RemoteAuth.beginPairing(name: body["name"] as? String ?? "A browser")
+        // The code is not in this response, and that is the entire security property: the person
+        // who can finish this is the person who can see the Mac's screen.
+        return .json(["pairing_id": entry.id, "expires": Int(entry.expires.timeIntervalSince1970)])
+    }
+
+    private func confirmPairing(_ request: Request) -> Response {
+        let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
+        guard let id = body["pairing_id"] as? String, let code = body["code"] as? String else {
+            return .error(400, "bad_request", "That needs a pairing_id and a code.")
+        }
+        switch RemoteAuth.confirmPairing(id: id, code: code) {
+        case .paired(let token):
+            return signedIn(token, secure: request.headers["x-forwarded-proto"] == "https")
+        case .wrongCode(let left):
+            return .error(403, "forbidden", "That code is not right. \(left) tries left.")
+        case .expired:
+            return .error(403, "forbidden", "That pairing has expired. Start again.")
+        }
+    }
+
+    private func exchangePassword(_ request: Request) -> Response {
+        let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
+        guard let password = body["password"] as? String else {
+            return .error(400, "bad_request", "That needs a password.")
+        }
+        let name = body["name"] as? String ?? "A browser"
+        guard let token = RemoteAuth.exchange(password: password, deviceName: name) else {
+            return .error(401, "unauthorized", "That is not the password.")
+        }
+        return signedIn(token, secure: request.headers["x-forwarded-proto"] == "https")
+    }
+
+    /// The token goes back twice: in the body for a script that will keep it, and in an
+    /// `HttpOnly` cookie for the page, because the event stream cannot carry a header.
+    ///
+    /// `Secure` only when the request arrived over HTTPS — which through a tunnel it did, and
+    /// locally it did not. Setting it unconditionally would mean the cookie is silently dropped
+    /// on `http://127.0.0.1` and nothing would work at the desk.
+    private func signedIn(_ token: String, secure: Bool) -> Response {
+        var cookie = "clawdline=\(token); Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict"
+        if secure { cookie += "; Secure" }
+        let body = (try? JSONSerialization.data(withJSONObject: ["ok": true, "token": token],
+                                                options: [.withoutEscapingSlashes])) ?? Data()
+        return Response(status: 200,
+                        headers: ["Content-Type": "application/json; charset=utf-8",
+                                  "Set-Cookie": cookie],
+                        body: body)
+    }
+
+    // MARK: - Writing
+
+    /// Everything a mutating route has to be true before it happens, in one place.
+    ///
+    /// Three separate gates, and they are separate on purpose: the switch is a decision the owner
+    /// of the Mac made, the capability is a decision about *this* device, and the idempotency key
+    /// is about the network. A route that forgot one of them would be a route that quietly did
+    /// something the other two were meant to prevent.
+    private func writing(_ request: Request,
+                         _ body: ([String: Any]) -> Response) -> Response {
+        guard Config.shared.remoteWrite else {
+            return .error(403, "write_disabled",
+                          "Sending is switched off. Settings → Remote turns it on, and it is off "
+                          + "by default because typing into a session runs code on this Mac.")
+        }
+        guard case .allowed(let device, let caps) = permission(for: request), caps.contains(.send) else {
+            return .error(403, "forbidden", "This device may read, and not send.")
+        }
+        // **A retried POST must not be a second prompt.** Phones change networks mid-request and
+        // clients retry; typing the same instruction into somebody's agent twice is not something
+        // that can be taken back, so the key is required rather than merely honoured.
+        guard let key = request.headers["idempotency-key"], !key.isEmpty else {
+            return .error(400, "bad_request", "That needs an Idempotency-Key header.")
+        }
+        if let seen = idempotent[key], Date().timeIntervalSince(seen.at) < 600 {
+            return seen.response
+        }
+        let parsed = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
+        let response = body(parsed)
+        idempotent = idempotent.filter { Date().timeIntervalSince($0.value.at) < 600 }
+        idempotent[key] = (Date(), response)
+        Log.write("remote: \(request.method) \(request.path) by \(device) → \(response.status)")
+        return response
+    }
+
+    private var idempotent: [String: (at: Date, response: Response)] = [:]
+
     // MARK: - What the routes answer with
 
     private func sessionsPayload() -> [String: Any] {
@@ -219,8 +543,12 @@ final class RemoteServer {
         ]
     }
 
+    /// The reading lives on the main thread and this runs on the server's queue, so the crossing
+    /// is here and nowhere else — one hop for a dictionary lookup, rather than a copy of the
+    /// session list kept in two places and drifting.
     private func session(withID id: String) -> TargetSession? {
-        SessionWatch.shared.targets.first { $0.id == id }
+        if Thread.isMainThread { return SessionWatch.shared.targets.first { $0.id == id } }
+        return DispatchQueue.main.sync { SessionWatch.shared.targets.first { $0.id == id } }
     }
 
     private func json(of session: TargetSession) -> [String: Any] {
@@ -353,7 +681,7 @@ final class RemoteServer {
         write(event: "hello", data: [
             "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
             "protocol": Self.protocolVersion,
-            "write": false,
+            "write": Config.shared.remoteWrite,
         ], to: stream)
         DispatchQueue.main.async {
             let payload = self.sessionsPayload()
@@ -495,8 +823,10 @@ extension RemoteServer {
             switch status {
             case 200: return "OK"
             case 400: return "Bad Request"
+            case 401: return "Unauthorized"
             case 403: return "Forbidden"
             case 404: return "Not Found"
+            case 429: return "Too Many Requests"
             case 431: return "Request Header Fields Too Large"
             default:  return "Error"
             }

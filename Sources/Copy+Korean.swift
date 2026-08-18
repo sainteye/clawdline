@@ -113,6 +113,32 @@ struct Korean: Copy {
     let settingsHooksOff = "설치 안 됨 — 상태는 모두 화면에서 읽습니다"
     let settingsHooksOn = "설치됨 — 아직 알려 온 세션이 없습니다"
     let settingsHooksLive = "설치됨. 세션이 알려 오고 있습니다"
+    let settingsRemote = "원격"
+    let settingsRemoteServe = "HTTP로 응답"
+    let settingsRemoteHint = "세션 목록을 127.0.0.1에 내보내 브라우저나 터널 너머의 휴대폰, 스크립트가 읽을 수 있게 합니다. 직접 켜기 전까지는 꺼져 있습니다. 듣고 있는 소켓 하나가 저장소 이름과 브랜치, 작업 제목까지 넘겨줍니다."
+    let settingsRemoteDevices = "페어링된 기기"
+    let settingsRemoteNoDevices = "아직 없음 — 이 Mac 밖에서는 아무것도 읽을 수 없습니다"
+    let settingsRemoteRevokeAll = "모두 연결 해제"
+    let settingsRemoteOpen = "브라우저에서 열기"
+    let pairingIgnore = "무시"
+    func pairingAsks(_ device: String) -> String { "\(device)에서 이 Mac과 페어링을 요청합니다" }
+    func pairingCode(_ code: String) -> String {
+        """
+        그 기기에 이 코드를 입력하세요:
+
+        \(code)
+
+        2분 동안만 유효합니다. 방금 요청한 적이 없다면 무시해도 됩니다. 이 코드 없이는 \
+        요청한 쪽이 끝낼 수 없습니다.
+        """
+    }
+    let settingsTunnel = "바깥에서 접속"
+    let settingsTunnelQuick = "자동 생성된 주소"
+    let settingsTunnelNamed = "내 도메인"
+    let settingsTunnelHostname = "호스트 이름"
+    let settingsTunnelHint = "cloudflared를 통해 이 Mac에서 바깥으로 연결을 겁니다. 포트 포워딩도 없고, 네트워크에서 듣고 있는 것도 없습니다. 기기가 하나 페어링될 때까지는 시작하지 않습니다. 터널 너머에 있는 것이 이 Mac의 모든 저장소 이름과 모든 작업 제목이기 때문입니다."
+    let settingsRemoteWrite = "페어링된 기기의 입력 허용"
+    let settingsRemoteWriteHint = "꺼져 있으면 페어링된 기기는 읽기만 할 수 있습니다. 켜면 세션에 텍스트를 보내고 새 세션을 시작할 수도 있습니다. 그것은 이 Mac에서 코드를 실행한다는 뜻입니다. Claude Code가 하는 일이 바로 그것이기 때문입니다. 위쪽과는 다른 결정이라 스위치도 따로 두었습니다."
     let settingsOpenFile = "설정 파일 열기…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f초", value) }
 

@@ -115,6 +115,32 @@ struct French: Copy {
     let settingsHooksOff = "Non installés — tout est lu sur l'écran"
     let settingsHooksOn = "Installés — aucune session ne s'est encore signalée"
     let settingsHooksLive = "Installés, et les sessions se signalent"
+    let settingsRemote = "À distance"
+    let settingsRemoteServe = "Répondre en HTTP"
+    let settingsRemoteHint = "Publie la liste des sessions sur 127.0.0.1, pour qu'un navigateur, un téléphone au bout d'un tunnel ou un script puisse la lire. Désactivé tant que vous ne l'activez pas : une socket à l'écoute livre les noms des dépôts, les branches et les titres des tâches."
+    let settingsRemoteDevices = "Appareils jumelés"
+    let settingsRemoteNoDevices = "Aucun pour l'instant — rien en dehors de ce Mac ne peut rien lire"
+    let settingsRemoteRevokeAll = "Tout déconnecter"
+    let settingsRemoteOpen = "Ouvrir dans un navigateur"
+    let pairingIgnore = "Ignorer"
+    func pairingAsks(_ device: String) -> String { "\(device) veut se jumeler à ce Mac" }
+    func pairingCode(_ code: String) -> String {
+        """
+        Saisissez ce code sur cet appareil :
+
+        \(code)
+
+        Il est valable deux minutes. Si vous ne venez pas de le demander, ignorez-le — sans ce \
+        code, celui qui a demandé ne peut pas aller au bout.
+        """
+    }
+    let settingsTunnel = "Joignable de l'extérieur"
+    let settingsTunnelQuick = "Une adresse générée"
+    let settingsTunnelNamed = "Mon propre domaine"
+    let settingsTunnelHostname = "Nom d'hôte"
+    let settingsTunnelHint = "Ouvre une connexion sortante via cloudflared — aucune redirection de port, rien à l'écoute sur votre réseau. Ne démarre pas tant qu'aucun appareil n'est jumelé, parce que derrière le tunnel il y a le nom de chaque dépôt et le titre de chaque tâche de ce Mac."
+    let settingsRemoteWrite = "Laisser les appareils jumelés écrire"
+    let settingsRemoteWriteHint = "Désactivé, un appareil jumelé ne peut que lire. Activé, il peut envoyer du texte dans une session et en ouvrir de nouvelles — ce qui exécute du code sur ce Mac, puisque c'est ce que fait Claude Code. Ce n'est pas la même décision que celle du dessus, donc ce n'est pas le même interrupteur."
     let settingsOpenFile = "Ouvrir le fichier de configuration…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

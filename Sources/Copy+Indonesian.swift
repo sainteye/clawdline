@@ -115,6 +115,32 @@ struct Indonesian: Copy {
     let settingsHooksOff = "Belum dipasang — semua dibaca dari layar"
     let settingsHooksOn = "Terpasang — belum ada sesi yang melapor"
     let settingsHooksLive = "Terpasang, dan sesi sedang melapor"
+    let settingsRemote = "Akses jarak jauh"
+    let settingsRemoteServe = "Jawab lewat HTTP"
+    let settingsRemoteHint = "Menyajikan daftar sesi di 127.0.0.1 supaya bisa dibaca peramban, ponsel lewat terowongan, atau skrip. Mati sampai kamu menyalakannya: satu soket yang mendengarkan menyerahkan nama repositori, branch, dan judul tugas."
+    let settingsRemoteDevices = "Perangkat berpasangan"
+    let settingsRemoteNoDevices = "Belum ada — tidak ada apa pun di luar Mac ini yang bisa membaca apa pun"
+    let settingsRemoteRevokeAll = "Putuskan semua"
+    let settingsRemoteOpen = "Buka di peramban"
+    let pairingIgnore = "Abaikan"
+    func pairingAsks(_ device: String) -> String { "\(device) ingin berpasangan dengan Mac ini" }
+    func pairingCode(_ code: String) -> String {
+        """
+        Ketik kode ini di perangkat itu:
+
+        \(code)
+
+        Berlaku dua menit. Kalau bukan kamu yang barusan meminta, abaikan saja — tanpa kode \
+        ini yang meminta tidak bisa menyelesaikannya.
+        """
+    }
+    let settingsTunnel = "Bisa dijangkau dari luar"
+    let settingsTunnelQuick = "Alamat buatan otomatis"
+    let settingsTunnelNamed = "Domain milikku"
+    let settingsTunnelHostname = "Nama host"
+    let settingsTunnelHint = "Membuka koneksi keluar lewat cloudflared — tanpa penerusan port, tidak ada yang mendengarkan di jaringanmu. Tidak akan mulai sebelum ada satu perangkat berpasangan, karena di balik terowongan itu ada setiap nama repositori dan setiap judul tugas di Mac ini."
+    let settingsRemoteWrite = "Biarkan perangkat berpasangan mengetik"
+    let settingsRemoteWriteHint = "Mati, perangkat berpasangan hanya bisa membaca. Menyala, ia bisa mengirim teks ke dalam sesi dan memulai sesi baru — dan itu menjalankan kode di Mac ini, karena memang itu yang dikerjakan Claude Code. Ini keputusan yang lain dari yang di atas, jadi sakelarnya juga lain."
     let settingsOpenFile = "Buka berkas konfigurasi…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f dtk", value) }
 

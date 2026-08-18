@@ -1446,6 +1446,7 @@ group("the languages the interface speaks") {
         "it:hintOutput",        // and "output" is Italian
         "it:stackActionLogs",   // as is "log"
         "id:stackActionLogs",   // and in Indonesian
+        "de:settingsTunnelHostname", // "Hostname" is the German word for it as well
     ]
     let en = English()
 
@@ -2455,6 +2456,141 @@ group("hooks: the script itself") {
     expect("empty stdin, no complaint", run("Stop", payload: "").code, 0)
     expect("no directory to write into, no complaint",
            run("Stop", payload: payload, into: nil).code, 0)
+}
+
+// ---------------------------------------------------------------- real captured fixtures
+// Everything below was copied out of a live run: cloudflared 2026.6.1 on macOS 15,
+// `cloudflared tunnel --url http://127.0.0.1:7717`, stderr.
+
+let banner = "2026-08-18T09:31:17Z INF |  https://denied-franchise-william-jade.trycloudflare.com                                   |"
+let bannerTitle = "2026-08-18T09:31:17Z INF |  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):  |"
+let terms = "2026-08-18T09:31:14Z INF Thank you for trying Cloudflare Tunnel. Doing so, without a Cloudflare account, is a quick way to experiment and try it out. However, be aware that these account-less Tunnels have no uptime guarantee, are subject to the Cloudflare Online Services Terms of Use (https://www.cloudflare.com/website-terms/), and Cloudflare reserves the right to investigate your use of Tunnels for violations of such terms. If you intend to use Tunnels in production you should use a pre-created named tunnel by following: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps"
+let requesting = "2026-08-18T09:31:14Z INF Requesting new quick Tunnel on trycloudflare.com..."
+let registered = "2026-08-18T09:31:18Z INF Registered tunnel connection connIndex=0 connection=da4d66ef-9c21-4b23-82c8-bc14bb60cc8e event=0 ip=2606:4700:a8::5 location=tpe01 protocol=quic"
+let registered1 = "2026-08-18T09:32:00Z INF Registered tunnel connection connIndex=1 connection=7807387d-9b2f-4400-856b-48a74c4fd921 event=0 ip=2606:4700:a8::3 location=tpe01 protocol=quic"
+let curve = "2026-08-18T09:31:17Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveID(65074) CurveP256] connIndex=0 event=0 ip=2606:4700:a8::5"
+let metrics = "2026-08-18T09:31:17Z INF Starting metrics server on 127.0.0.1:20241/metrics"
+let settings = "2026-08-18T09:31:17Z INF Settings: map[cred-file:/Users/x/.cloudflared/471a0799.json ha-connections:1 protocol:quic url:http://127.0.0.1:7717]"
+let precheck = "2026-08-18T09:31:17Z INF precheck component=\"DNS Resolution\" details=\"DNS Resolved successfully\" run_id=f12384d3 status=pass target=region1.v2.argotunnel.com"
+let badName = "error parsing tunnel ID: clawdline-no-such-tunnel is neither the ID nor the name of any of your tunnels"
+let startingNamed = "2026-08-18T09:31:59Z INF Starting tunnel tunnelID=471a0799-077f-42b2-9d7e-21da0f069d07"
+
+// Not captured — cloudflared's own shutdown wording, which is the trap this guards against.
+let unregistered = "2026-08-18T09:35:02Z INF Unregistered tunnel connection connIndex=0 event=0"
+
+group("quickURL") {
+    expect("the banner line", RemoteTunnel.quickURL(in: banner),
+           "https://denied-franchise-william-jade.trycloudflare.com")
+    check("the terms-of-use line has URLs but not ours", RemoteTunnel.quickURL(in: terms) == nil,
+          "got \(String(describing: RemoteTunnel.quickURL(in: terms)))")
+    check("the banner title", RemoteTunnel.quickURL(in: bannerTitle) == nil)
+    check("the requesting line", RemoteTunnel.quickURL(in: requesting) == nil)
+    check("a registration line", RemoteTunnel.quickURL(in: registered) == nil)
+    check("empty", RemoteTunnel.quickURL(in: "") == nil)
+    expect("a trailing slash is dropped",
+           RemoteTunnel.quickURL(in: "INF |  https://a-b-c.trycloudflare.com/  |"),
+           "https://a-b-c.trycloudflare.com")
+    check("a bare apex is not an address",
+          RemoteTunnel.quickURL(in: "https://.trycloudflare.com") == nil)
+    expect("ours wins even when another URL comes first",
+           RemoteTunnel.quickURL(in: "see https://www.cloudflare.com/x/ then https://q-w-e.trycloudflare.com |"),
+           "https://q-w-e.trycloudflare.com")
+}
+
+group("registeredConnection") {
+    expect("the registration line", RemoteTunnel.registeredConnection(in: registered), "tpe01")
+    expect("the second connection", RemoteTunnel.registeredConnection(in: registered1), "tpe01")
+    check("unregistered is not registered",
+          RemoteTunnel.registeredConnection(in: unregistered) == nil,
+          "got \(String(describing: RemoteTunnel.registeredConnection(in: unregistered)))")
+    check("the curve line mentions a connection and is not one",
+          RemoteTunnel.registeredConnection(in: curve) == nil)
+    check("the banner", RemoteTunnel.registeredConnection(in: banner) == nil)
+    check("the metrics line", RemoteTunnel.registeredConnection(in: metrics) == nil)
+    check("the settings line", RemoteTunnel.registeredConnection(in: settings) == nil)
+    check("a precheck row", RemoteTunnel.registeredConnection(in: precheck) == nil)
+    expect("no location field still counts as up",
+           RemoteTunnel.registeredConnection(in: "2026-01-01T00:00:00Z INF Registered tunnel connection connIndex=0"),
+           "?")
+    expect("the older wording",
+           RemoteTunnel.registeredConnection(in: "2021-01-01T00:00:00Z INF Connection 9c1 registered connIndex=1 location=SIN"),
+           "SIN")
+}
+
+group("complaint") {
+    expect("a bare stderr line is the whole message", RemoteTunnel.complaint(in: badName), badName)
+    check("an INF line is not a complaint", RemoteTunnel.complaint(in: registered) == nil)
+    check("the banner is not a complaint", RemoteTunnel.complaint(in: banner) == nil)
+    check("Starting tunnel is not a complaint", RemoteTunnel.complaint(in: startingNamed) == nil)
+    expect("an ERR line loses its timestamp",
+           RemoteTunnel.complaint(in: "2026-08-18T09:31:14Z ERR Couldn't start tunnel error=\"Unauthorized\""),
+           "Couldn't start tunnel error=\"Unauthorized\"")
+    expect("an FTL line too",
+           RemoteTunnel.complaint(in: "2026-08-18T09:31:14Z FTL no credentials file"),
+           "no credentials file")
+    check("blank", RemoteTunnel.complaint(in: "   ") == nil)
+    check("a WRN line is not worth reporting", RemoteTunnel.complaint(in: "2026-08-18T09:31:17Z WRN slow") == nil)
+    check("long lines are cut", (RemoteTunnel.complaint(in: String(repeating: "x", count: 500)) ?? "").count == 200)
+}
+
+group("redacted") {
+    expect("the random half goes",
+           RemoteTunnel.redacted("https://denied-franchise-william-jade.trycloudflare.com"),
+           "https://….trycloudflare.com")
+    expect("a named hostname keeps its zone",
+           RemoteTunnel.redacted("https://clawd.example.com"), "https://….example.com")
+    expect("nothing to redact", RemoteTunnel.redacted("nonsense"), "nonsense")
+}
+
+group("backoff") {
+    expect("first try", RemoteTunnel.backoff(1), 1)
+    expect("second", RemoteTunnel.backoff(2), 2)
+    expect("third", RemoteTunnel.backoff(3), 4)
+    expect("sixth", RemoteTunnel.backoff(6), 32)
+    expect("capped", RemoteTunnel.backoff(20), 60)
+    expect("nonsense is still a wait", RemoteTunnel.backoff(0), 1)
+}
+
+group("arguments") {
+    expect("quick",
+           RemoteTunnel.arguments(for: RemoteTunnel.Plan(mode: .quick, port: 7717)),
+           ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:0",
+            "--grace-period", "2s", "--url", "http://127.0.0.1:7717"])
+    expect("named puts its flags before run",
+           RemoteTunnel.arguments(for: RemoteTunnel.Plan(mode: .named, name: "clawd")),
+           ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:0",
+            "--grace-period", "2s", "run", "clawd"])
+    expect("a non-default port rides along",
+           RemoteTunnel.arguments(for: RemoteTunnel.Plan(mode: .quick, port: 9000)).last,
+           "http://127.0.0.1:9000")
+}
+
+group("TunnelMode") {
+    expect("off", TunnelMode(configured: "off"), .off)
+    expect("quick", TunnelMode(configured: "quick"), .quick)
+    expect("named", TunnelMode(configured: " Named "), .named)
+    expect("a typo is off", TunnelMode(configured: "quik"), .off)
+    expect("empty is off", TunnelMode(configured: ""), .off)
+}
+
+group("the tunnel refuses, and every reason is a pure function of its inputs") {
+    func why(_ mode: TunnelMode, auth: Bool = true, server: Bool = true,
+             name: String = "clawd", host: String = "clawd.example.com") -> String? {
+        RemoteTunnel.refusal(mode: mode, authConfigured: auth, serverOn: server,
+                             name: name, hostname: host)
+    }
+    // The interlock this file exists for: reachable from the internet must be a decision somebody
+    // made, not something one config key did.
+    check("no paired device refuses", why(.quick, auth: false)?.contains("paired device") == true)
+    check("and says so for a named tunnel too", why(.named, auth: false) != nil)
+    check("no local server refuses", why(.quick, server: false)?.contains("local server") == true)
+    check("a named tunnel with no name refuses",
+          why(.named, name: "")?.contains("remote_tunnel_name") == true)
+    check("a named tunnel with no hostname refuses",
+          why(.named, host: "")?.contains("remote_hostname") == true)
+    check("a quick tunnel needs neither", why(.quick, name: "", host: "") == nil)
+    check("off never refuses, it is simply off", why(.off, auth: false, server: false) == nil)
+    check("everything in place is allowed", why(.quick) == nil && why(.named) == nil)
 }
 
 // MARK: - Result

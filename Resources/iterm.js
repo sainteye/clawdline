@@ -153,7 +153,62 @@ function run(argv) {
     return JSON.stringify(hit ? { ok: true } : { ok: false, error: "That session is gone" });
   }
 
+  // newtab <cwd> <command>
+  //
+  // Open a tab and start something in it. Used by the remote API so a session can be started
+  // from a phone — the one operation that is not "talk to a session that already exists".
+  //
+  // The command is typed, not exec'd: iTerm2 gives you a shell and this writes a line into it,
+  // which is why `cd` and the command go over as one line rather than as a working directory
+  // setting. Quoted the shell's way, because directories with spaces in them are ordinary.
+  if (cmd === "newtab") {
+    const cwd = String(argv[1] || "");
+    const command = String(argv[2] || "");
+    let w, t;
+    try {
+      w = it.currentWindow();
+      t = w.createTabWithDefaultProfile();
+    } catch (e) {
+      // No window open at all — the case that happens when the Mac has been left alone and
+      // iTerm2 is running with everything closed.
+      try {
+        w = it.createWindowWithDefaultProfile();
+        t = w.currentTab();
+      } catch (e2) {
+        return JSON.stringify({ ok: false, error: "Could not open a tab: " + e2.message });
+      }
+    }
+    let s;
+    try { s = t.currentSession(); } catch (e) {
+      return JSON.stringify({ ok: false, error: "The new tab has no session" });
+    }
+
+    let line = "";
+    if (cwd) line += "cd " + quoted(cwd) + " && ";
+    line += command || "claude";
+    try { s.write({ text: line, newline: true }); } catch (e) {
+      return JSON.stringify({ ok: false, error: "Could not start it: " + e.message });
+    }
+
+    // The tty is what everything else keys on, and it is not there the instant the tab is.
+    let tty = "";
+    for (let i = 0; i < 20 && !tty; i++) {
+      tty = safe(function () { return s.tty(); }, "");
+      if (!tty) pause(0.05);
+    }
+    return JSON.stringify({
+      ok: true,
+      id: safe(function () { return s.id(); }, "").toUpperCase(),
+      tty: tty
+    });
+  }
+
   return JSON.stringify({ ok: false, error: "Unknown command: " + cmd });
+}
+
+/// A path going into a shell command line, the only way that is always right.
+function quoted(path) {
+  return "'" + String(path).split("'").join("'\\''") + "'";
 }
 
 // Do not call this `delay` — JXA has a built-in global by that name, and shadowing it makes

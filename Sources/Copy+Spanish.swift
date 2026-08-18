@@ -115,6 +115,32 @@ struct Spanish: Copy {
     let settingsHooksOff = "Sin instalar — todo se lee de la pantalla"
     let settingsHooksOn = "Instalados — ninguna sesión ha avisado todavía"
     let settingsHooksLive = "Instalados, y las sesiones avisan"
+    let settingsRemote = "Acceso remoto"
+    let settingsRemoteServe = "Responder por HTTP"
+    let settingsRemoteHint = "Publica la lista de sesiones en 127.0.0.1 para que la puedan leer un navegador, un teléfono al otro lado de un túnel o un script. Desactivado mientras no lo actives: un socket a la escucha entrega los nombres de los repositorios, las ramas y los títulos de las tareas."
+    let settingsRemoteDevices = "Dispositivos vinculados"
+    let settingsRemoteNoDevices = "Ninguno todavía — fuera de este Mac nadie puede leer nada"
+    let settingsRemoteRevokeAll = "Desconectar todo"
+    let settingsRemoteOpen = "Abrir en el navegador"
+    let pairingIgnore = "Ignorar"
+    func pairingAsks(_ device: String) -> String { "\(device) quiere vincularse con este Mac" }
+    func pairingCode(_ code: String) -> String {
+        """
+        Escribe este código en ese dispositivo:
+
+        \(code)
+
+        Vale dos minutos. Si no acabas de pedirlo tú, ignóralo — sin este código, quien lo \
+        pidió no puede terminar.
+        """
+    }
+    let settingsTunnel = "Accesible desde fuera"
+    let settingsTunnelQuick = "Una dirección generada"
+    let settingsTunnelNamed = "Mi propio dominio"
+    let settingsTunnelHostname = "Nombre de host"
+    let settingsTunnelHint = "Abre una conexión saliente a través de cloudflared: sin redirección de puertos y sin nada a la escucha en tu red. No arranca hasta que haya un dispositivo vinculado, porque detrás del túnel está el nombre de cada repositorio y el título de cada tarea de este Mac."
+    let settingsRemoteWrite = "Dejar escribir a los dispositivos vinculados"
+    let settingsRemoteWriteHint = "Desactivado, un dispositivo vinculado solo puede leer. Activado, puede enviar texto a una sesión y abrir sesiones nuevas — lo que ejecuta código en este Mac, porque eso es lo que hace Claude Code. Es una decisión distinta de la de arriba, así que es un interruptor distinto."
     let settingsOpenFile = "Abrir el archivo de configuración…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

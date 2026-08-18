@@ -107,6 +107,21 @@ enum Tmux {
     /// not silently turns every newline back into a Return — which was measurable: two lines
     /// pasted into a shell ran as two commands. Sending the bytes outright makes tmux behave
     /// exactly like the iTerm2 path instead of almost like it.
+    /// A new window in the first session tmux has, running something.
+    ///
+    /// `-P -F '#{pane_id}'` so the pane it made comes back rather than having to be guessed at by
+    /// listing everything again and looking for what is new — which would be a race against
+    /// anybody else's window opening at the same moment.
+    static func newWindow(cwd: String, command: String) -> String? {
+        var args = ["new-window", "-P", "-F", "#{pane_id}"]
+        if !cwd.isEmpty { args += ["-c", cwd] }
+        args.append(command.isEmpty ? "claude" : command)
+        let result = run(args)
+        guard result.ok else { return nil }
+        let id = result.out.trimmingCharacters(in: .whitespacesAndNewlines)
+        return id.hasPrefix("%") ? id : nil
+    }
+
     static func send(_ text: String, to paneID: String,
                      submit shouldSubmit: Bool = true) -> String? {
         guard binary != nil else { return "tmux not found — set \"tmux_path\" in the config" }

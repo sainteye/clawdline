@@ -118,6 +118,32 @@ struct Portuguese: Copy {
     let settingsHooksOff = "Não instalados — tudo é lido do ecrã"
     let settingsHooksOn = "Instalados — nenhuma sessão avisou ainda"
     let settingsHooksLive = "Instalados, e as sessões estão a avisar"
+    let settingsRemote = "Acesso remoto"
+    let settingsRemoteServe = "Responder por HTTP"
+    let settingsRemoteHint = "Publica a lista de sessões em 127.0.0.1 para que um navegador, um celular do outro lado de um túnel ou um script consigam ler. Fica desligado até você ligar: um socket à escuta entrega nomes de repositórios, branches e títulos das tarefas."
+    let settingsRemoteDevices = "Dispositivos pareados"
+    let settingsRemoteNoDevices = "Nenhum ainda — fora deste Mac ninguém consegue ler nada"
+    let settingsRemoteRevokeAll = "Desconectar tudo"
+    let settingsRemoteOpen = "Abrir no navegador"
+    let pairingIgnore = "Ignorar"
+    func pairingAsks(_ device: String) -> String { "\(device) quer parear com este Mac" }
+    func pairingCode(_ code: String) -> String {
+        """
+        Digite este código nele:
+
+        \(code)
+
+        Vale por dois minutos. Se não foi você que acabou de pedir, ignore — sem este código, \
+        quem pediu não consegue concluir.
+        """
+    }
+    let settingsTunnel = "Acessível de fora"
+    let settingsTunnelQuick = "Um endereço gerado"
+    let settingsTunnelNamed = "Meu próprio domínio"
+    let settingsTunnelHostname = "Nome do host"
+    let settingsTunnelHint = "Abre uma conexão de saída através do cloudflared — sem redirecionamento de portas, nada à escuta na sua rede. Não começa enquanto não houver um dispositivo pareado, porque atrás do túnel está o nome de cada repositório e o título de cada tarefa deste Mac."
+    let settingsRemoteWrite = "Deixar os dispositivos pareados escrever"
+    let settingsRemoteWriteHint = "Desligado, um dispositivo pareado só consegue ler. Ligado, ele pode mandar texto para dentro de uma sessão e abrir sessões novas — o que executa código neste Mac, porque é isso que o Claude Code faz. É uma decisão diferente da de cima, então é um interruptor separado."
     let settingsOpenFile = "Abrir o ficheiro de configuração…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

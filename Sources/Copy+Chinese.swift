@@ -117,6 +117,31 @@ struct TraditionalChinese: Copy {
     let settingsHooksOff = "未安裝——狀態全部從畫面讀"
     let settingsHooksOn = "已安裝——還沒有 session 回報過"
     let settingsHooksLive = "已安裝，session 正在回報"
+    let settingsRemote = "遠端"
+    let settingsRemoteServe = "用 HTTP 回應"
+    let settingsRemoteHint = "在 127.0.0.1 上提供 session 清單，讓瀏覽器、隔著通道連進來的手機，或是一支腳本都讀得到。你不打開就一直關著：一個在聽的 socket，等於把儲存庫名稱、分支和工作標題交出去。"
+    let settingsRemoteDevices = "已配對的裝置"
+    let settingsRemoteNoDevices = "還沒有——這台 Mac 以外的東西什麼都讀不到"
+    let settingsRemoteRevokeAll = "全部斷開"
+    let settingsRemoteOpen = "用瀏覽器打開"
+    let pairingIgnore = "忽略"
+    func pairingAsks(_ device: String) -> String { "\(device) 想跟這台 Mac 配對" }
+    func pairingCode(_ code: String) -> String {
+        """
+        在它上面輸入這組代碼：
+
+        \(code)
+
+        兩分鐘內有效。如果剛才不是你要求的，不用理會——對方沒有這組代碼，就完成不了。
+        """
+    }
+    let settingsTunnel = "從外面連得到"
+    let settingsTunnelQuick = "自動產生的網址"
+    let settingsTunnelNamed = "我自己的網域"
+    let settingsTunnelHostname = "主機名稱"
+    let settingsTunnelHint = "透過 cloudflared 從這台 Mac 往外連出去——不必開通訊埠轉發，你的網路上也沒有東西在聽。要先配對過一台裝置它才會啟動，因為通道後面就是這台 Mac 上每一個儲存庫名稱、每一個工作標題。"
+    let settingsRemoteWrite = "讓配對的裝置打字"
+    let settingsRemoteWriteHint = "關著的時候，配對過的裝置只能讀。打開之後，它可以把文字送進 session，也可以開新的 session——那就是在這台 Mac 上執行程式碼，因為 Claude Code 做的就是這件事。這跟上面那一題是兩回事，所以它是另一個開關。"
     let settingsOpenFile = "打開設定檔……"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 
@@ -255,6 +280,31 @@ struct SimplifiedChinese: Copy {
     let settingsHooksOff = "未安装——状态全部从画面读"
     let settingsHooksOn = "已安装——还没有 session 回报过"
     let settingsHooksLive = "已安装，session 正在回报"
+    let settingsRemote = "远程"
+    let settingsRemoteServe = "用 HTTP 回应"
+    let settingsRemoteHint = "在 127.0.0.1 上提供 session 列表，让浏览器、隔着隧道连进来的手机，或者一个脚本都读得到。你不打开就一直关着：一个在监听的 socket，等于把仓库名称、分支和任务标题交出去。"
+    let settingsRemoteDevices = "已配对的设备"
+    let settingsRemoteNoDevices = "还没有——这台 Mac 以外的东西什么都读不到"
+    let settingsRemoteRevokeAll = "全部断开"
+    let settingsRemoteOpen = "用浏览器打开"
+    let pairingIgnore = "忽略"
+    func pairingAsks(_ device: String) -> String { "\(device) 想跟这台 Mac 配对" }
+    func pairingCode(_ code: String) -> String {
+        """
+        在它上面输入这组代码：
+
+        \(code)
+
+        两分钟内有效。如果刚才不是你要求的，不用理会——对方没有这组代码，就完成不了。
+        """
+    }
+    let settingsTunnel = "从外面连得到"
+    let settingsTunnelQuick = "自动生成的网址"
+    let settingsTunnelNamed = "我自己的域名"
+    let settingsTunnelHostname = "主机名"
+    let settingsTunnelHint = "通过 cloudflared 从这台 Mac 往外连出去——不用做端口转发，你的网络上也没有东西在监听。要先配对过一台设备它才会启动，因为隧道后面就是这台 Mac 上每一个仓库名称、每一个任务标题。"
+    let settingsRemoteWrite = "让配对的设备打字"
+    let settingsRemoteWriteHint = "关着的时候，配对过的设备只能读。打开之后，它可以把文字送进 session，也可以开新的 session——那就是在这台 Mac 上执行代码，因为 Claude Code 做的就是这件事。这跟上面那一题是两回事，所以它是另一个开关。"
     let settingsOpenFile = "打开配置文件……"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 

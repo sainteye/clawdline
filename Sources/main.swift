@@ -24,6 +24,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Reads the config and does nothing at all when it says off, which is what it says
         // until somebody changes it.
         RemoteServer.shared.apply()
+        // Somebody, somewhere, is asking to pair. The code is shown **here and nowhere else** —
+        // it is never in the reply the asker got — so finishing requires being able to see this
+        // screen. That is the whole of the security property, and it is why this interrupts
+        // rather than sitting in a badge nobody looks at.
+        RemoteAuth.onPairingRequest = { [weak self] pending in self?.showPairing(pending) }
+        RemoteTunnel.shared.onChange = { [weak self] in self?.refreshStatusItem() }
+        RemoteTunnel.shared.apply()
         NotificationCenter.default.addObserver(self, selector: #selector(configChanged),
                                                name: .clawdlineConfigChanged, object: nil)
 
@@ -54,6 +61,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             a.alertStyle = .warning
             a.runModal()
         }
+    }
+
+    /// Bring the machine forward and say the code out loud.
+    ///
+    /// Deliberately blunt. A request to pair is a request for somebody to be able to read every
+    /// repository name and task title on this Mac, and the only person who should be able to
+    /// grant it is the one who can read this window.
+    private var pairingShowing = false
+
+    private func showPairing(_ pending: RemoteAuth.Pending) {
+        // One at a time. `runModal` blocks the main thread, so a second request arriving while the
+        // first is on screen would queue another window behind it — and something hammering the
+        // pairing route would stack a wall of them the user has to dismiss one by one. That is a
+        // denial of service against the machine, delivered through the one route that has to stay
+        // open. The rate limit in RemoteServer is the other half of this.
+        guard !pairingShowing else {
+            Log.write("pairing: another request while one was on screen — ignored")
+            return
+        }
+        pairingShowing = true
+        defer { pairingShowing = false }
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = L.t.pairingAsks(pending.name)
+        alert.informativeText = L.t.pairingCode(pending.code)
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: L.t.pairingIgnore)
+        alert.runModal()
     }
 
     // MARK: - Where the hotkey applies
@@ -308,6 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = buildMenu()
         NotchIsland.shared.install()
         RemoteServer.shared.apply()
+        RemoteTunnel.shared.apply()
         refreshStatusItem()
     }
 
@@ -336,6 +372,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // reason it exists is that somebody may want it gone the moment it annoys them.
         NotchIsland.shared.install()
         RemoteServer.shared.apply()
+        RemoteTunnel.shared.apply()
         refreshStatusItem()
     }
 }

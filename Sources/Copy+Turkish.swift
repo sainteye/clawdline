@@ -115,6 +115,32 @@ struct Turkish: Copy {
     let settingsHooksOff = "Kurulu değil — durum yalnızca ekrandan okunuyor"
     let settingsHooksOn = "Kurulu — henüz hiçbir oturum haber vermedi"
     let settingsHooksLive = "Kurulu, oturumlar haber veriyor"
+    let settingsRemote = "Uzaktan erişim"
+    let settingsRemoteServe = "HTTP üzerinden yanıtla"
+    let settingsRemoteHint = "Oturum listesini 127.0.0.1 üzerinden sunar; bir tarayıcı, tünelin ucundaki bir telefon ya da bir betik okuyabilir. Sen açana kadar kapalıdır: dinleyen bir soket, depo adlarını, branch'leri ve görev başlıklarını karşı tarafa verir."
+    let settingsRemoteDevices = "Eşleşen cihazlar"
+    let settingsRemoteNoDevices = "Henüz yok — bu Mac'in dışından hiçbir şey okunamıyor"
+    let settingsRemoteRevokeAll = "Bağlantıları kes"
+    let settingsRemoteOpen = "Tarayıcıda aç"
+    let pairingIgnore = "Yoksay"
+    func pairingAsks(_ device: String) -> String { "\(device) bu Mac ile eşleşmek istiyor" }
+    func pairingCode(_ code: String) -> String {
+        """
+        Bu kodu o cihaza yaz:
+
+        \(code)
+
+        İki dakika geçerli. Az önce bunu sen istemediysen boş ver — isteyen kişi bu kod \
+        olmadan işi bitiremez.
+        """
+    }
+    let settingsTunnel = "Dışarıdan erişilebilir"
+    let settingsTunnelQuick = "Üretilen bir adres"
+    let settingsTunnelNamed = "Kendi alan adım"
+    let settingsTunnelHostname = "Host adı"
+    let settingsTunnelHint = "cloudflared üzerinden bu Mac'ten dışarı doğru bir bağlantı açar — port yönlendirme yok, ağında dinleyen hiçbir şey yok. Bir cihaz eşleşene kadar başlamaz, çünkü tünelin arkasında bu Mac'teki her depo adı ve her görev başlığı var."
+    let settingsRemoteWrite = "Eşleşen cihazlar yazabilsin"
+    let settingsRemoteWriteHint = "Kapalıyken eşleşmiş bir cihaz yalnızca okuyabilir. Açıkken bir oturuma metin gönderebilir ve yeni oturumlar başlatabilir — bu da bu Mac'te kod çalıştırmak demektir, çünkü Claude Code'un yaptığı şey tam olarak budur. Yukarıdakinden başka bir karar, o yüzden ayrı bir anahtar."
     let settingsOpenFile = "Yapılandırma dosyasını aç…"
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f sn", value) }
 
