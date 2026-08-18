@@ -559,6 +559,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .door[data-step="ask"] section[data-step="ask"],
 .door[data-step="code"] section[data-step="code"],
 .door[data-step="password"] section[data-step="password"] { display: block; }
+/* The step rules above set `display` on whole sections, which is exactly strong enough to beat
+   the user agent's rule for `hidden` — so an element hidden from script stayed on screen. This
+   puts `hidden` back on top, where a one-word attribute deserves to be. */
+.door [hidden] { display: none !important; }
 
 .door .lede { margin: 0 0 6px 0; font-size: 15px; font-weight: 600; }
 .door .fine { margin: 0 0 16px 0; font-size: 12.5px; line-height: 1.5; color: var(--dim); }
@@ -1131,6 +1135,12 @@ var Live = {
         // the sessions, and a stale "yes you are signed in" is the wrong answer to have kept.
         return jsonFetch("/v1/health", { cache: "no-store" }).then(function (h) {
             handlers.hello(h);
+            // Only offer the password door when there is a password behind it. `auth` is true for
+            // a paired device as well, so it cannot answer this — and a link to a door that was
+            // never built teaches somebody to distrust the rest of the page.
+            if (els["door-to-password"]) {
+                els["door-to-password"].hidden = h.password !== true;
+            }
             if (h.authed === false) { self.stop(); Door.show(); return; }
             Door.hide();
             self.begin();

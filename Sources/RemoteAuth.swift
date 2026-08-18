@@ -241,6 +241,19 @@ enum RemoteAuth {
     /// Shown by the settings window and the menu bar when somebody is asking to pair.
     static var onPairingRequest: ((Pending) -> Void)?
 
+    /// Called after anything changes which devices exist.
+    ///
+    /// The tunnel refuses to start until a person has paired something, and that decision is made
+    /// here rather than in the config — so the moment it changes, the thing that was refusing has
+    /// to be asked again. Without this, pairing a device did nothing visible until the next
+    /// relaunch, which reads as the interlock being broken rather than satisfied.
+    static var onDevicesChanged: (() -> Void)?
+
+    private static func devicesChanged() {
+        guard let hook = onDevicesChanged else { return }
+        DispatchQueue.main.async { hook() }
+    }
+
     static func beginPairing(name: String) -> Pending {
         let raw = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let pendingDevice = Pending(
@@ -301,6 +314,7 @@ enum RemoteAuth {
         lock.unlock()
         save()
         audit("pair.done", ["device": entry.name, "id": entry.id])
+        devicesChanged()
         return .paired(token: entry.token)
     }
 
@@ -317,6 +331,7 @@ enum RemoteAuth {
         lock.unlock()
         save()
         audit("device.add", ["device": name, "id": id])
+        devicesChanged()
         return (id, token)
     }
 
@@ -327,6 +342,7 @@ enum RemoteAuth {
         lock.unlock()
         save()
         audit("device.revoke", ["device": name, "id": id])
+        devicesChanged()
     }
 
     /// Everything, at once. The control that exists because the moment you want it is the moment
@@ -340,6 +356,7 @@ enum RemoteAuth {
         lock.unlock()
         save()
         audit("device.revoke_all", ["count": "\(count)"])
+        devicesChanged()
     }
 
     static func setCapabilities(_ caps: Set<Capability>, for id: String) {
@@ -426,6 +443,7 @@ enum RemoteAuth {
         lock.lock(); password = (hash, salt, passwordIterations); lock.unlock()
         save()
         audit("password.set", [:])
+        devicesChanged()
     }
 
     /// A correct password mints a device token; it is not itself a credential the client keeps.

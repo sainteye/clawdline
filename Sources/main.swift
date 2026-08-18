@@ -29,6 +29,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // screen. That is the whole of the security property, and it is why this interrupts
         // rather than sitting in a badge nobody looks at.
         RemoteAuth.onPairingRequest = { [weak self] pending in self?.showPairing(pending) }
+        RemoteAuth.onDevicesChanged = { [weak self] in
+            // The tunnel is waiting on exactly this, and the menu bar shows whether anything is
+            // paired — so both are asked again the moment the answer can have changed.
+            RemoteTunnel.shared.apply()
+            self?.refreshStatusItem()
+        }
         RemoteTunnel.shared.onChange = { [weak self] in self?.refreshStatusItem() }
         RemoteTunnel.shared.apply()
         // Runs whatever somebody put in `on_state_change`, and nothing at all when that is empty

@@ -266,6 +266,15 @@ final class RemoteTunnel {
             }
         }
 
+        // Written before the launch, every time: the port or the hostname may have moved since
+        // the last one, and a stale file is a tunnel pointing somewhere that is no longer there.
+        let credentials = plan.mode == .named
+            ? Self.credentialsFile(forTunnelNamed: plan.name, binary: bin) : nil
+        let config = Self.configFile(for: plan, credentials: credentials)
+        try? FileManager.default.createDirectory(at: Self.configURL.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        try? config.write(to: Self.configURL, atomically: true, encoding: .utf8)
+
         let task = Process()
         task.executableURL = URL(fileURLWithPath: bin)
         task.arguments = Self.arguments(for: plan)
@@ -324,8 +333,29 @@ final class RemoteTunnel {
     ///   it waiting for in-flight requests to finish. `/v1/events` is a server-sent event stream
     ///   that never finishes on purpose, so the default would turn every quit into a half-minute
     ///   of a process refusing to die.
+    /// Where the configuration we write for cloudflared lives. Ours, not theirs.
+    static var configURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/clawdline/cloudflared.yml")
+    }
+
+    /// **`--config` is not optional here, and the reason took a live test to find.**
+    ///
+    /// cloudflared reads `~/.cloudflared/config.yml` unless told otherwise, and that file belongs
+    /// to whatever else the person runs tunnels for. Two ways it goes wrong, and both were
+    /// observed on a real machine:
+    ///
+    /// - Its `tunnel:` key **overrides the name on the command line**, so `tunnel run clawdline`
+    ///   quietly started somebody's production tunnel instead.
+    /// - Its `ingress:` list applies to a quick tunnel too, and a well-written one ends with
+    ///   `- service: http_status:404`. So the tunnel connected, the address resolved, and every
+    ///   request answered 404 — a failure that looks like Cloudflare being slow and is actually
+    ///   somebody else's config file politely refusing a hostname it has never heard of.
+    ///
+    /// Pointing at our own file makes both impossible, and costs one write.
     static func arguments(for plan: Plan) -> [String] {
         var args = ["tunnel",
+                    "--config", configURL.path,
                     "--no-autoupdate",
                     "--metrics", "127.0.0.1:0",
                     "--grace-period", "2s"]
@@ -338,6 +368,70 @@ final class RemoteTunnel {
             break
         }
         return args
+    }
+
+    /// The file that goes with those arguments. Pure, so what gets written can be tested.
+    ///
+    /// A quick tunnel gets an almost empty one: its address is generated per run and cannot be in
+    /// any ingress list, so `--url` on the command line is the whole routing story and anything
+    /// else here would only be another chance to be wrong. A named tunnel gets the mapping it
+    /// needs and a 404 for everything else, because a tunnel that answers for hostnames it was
+    /// never asked about is an open proxy.
+    static func configFile(for plan: Plan, credentials: String? = nil) -> String {
+        var out = "# Written by Clawdline. Edits here are overwritten every time it starts.\n"
+        out += "#\n"
+        out += "# It exists so that ~/.cloudflared/config.yml is never read for this: that file's\n"
+        out += "# `tunnel:` key overrides the name on the command line, and its ingress list would\n"
+        out += "# answer 404 for an address it has never heard of.\n"
+        // A file of nothing but comments parses as null, and cloudflared logs an error about an
+        // empty configuration before carrying on anyway. It is only noise, but it is noise in the
+        // one place somebody will look when a tunnel does not come up — so give it something
+        // true to read that changes nothing.
+        out += "no-autoupdate: true\n"
+        guard plan.mode == .named else { return out }
+        out += "\ntunnel: \(plan.name)\n"
+        if let credentials, !credentials.isEmpty { out += "credentials-file: \(credentials)\n" }
+        out += "\ningress:\n"
+        out += "  - hostname: \(plan.hostname)\n"
+        out += "    service: http://127.0.0.1:\(plan.port)\n"
+        out += "    originRequest:\n"
+        // /v1/events is a stream that is meant never to end. Without this a reader on a phone is
+        // disconnected on a timer, for no reason it could act on.
+        out += "      connectTimeout: 30s\n"
+        // Anything else is not ours to answer, and a tunnel that answers for hostnames it was
+        // never asked about is an open proxy.
+        out += "  - service: http_status:404\n"
+        return out
+    }
+
+    /// The credentials file for a named tunnel, if it can be found.
+    ///
+    /// Asked of cloudflared rather than guessed at: the file is named after the tunnel's id, and
+    /// the person configuring this knows it by its name. Left out when it cannot be resolved —
+    /// cloudflared can often find it from `cert.pem` on its own, and a wrong path is worse than
+    /// a missing one.
+    static func credentialsFile(forTunnelNamed name: String, binary: String) -> String? {
+        let listing = capture(binary, ["tunnel", "list", "--output", "json"])
+        guard let data = listing.data(using: .utf8),
+              let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              let id = rows.first(where: { ($0["name"] as? String) == name })?["id"] as? String
+        else { return nil }
+        let path = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".cloudflared/\(id).json").path
+        return FileManager.default.fileExists(atPath: path) ? path : nil
+    }
+
+    private static func capture(_ launch: String, _ args: [String]) -> String {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: launch)
+        task.arguments = args
+        let out = Pipe()
+        task.standardOutput = out
+        task.standardError = Pipe()
+        guard (try? task.run()) != nil else { return "" }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        return String(data: data, encoding: .utf8) ?? ""
     }
 
     // MARK: - Reading what it says

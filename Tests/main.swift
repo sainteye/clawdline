@@ -2617,13 +2617,17 @@ group("backoff") {
 }
 
 group("arguments") {
+    // `--config` is the one that is not decoration: without it cloudflared reads
+    // ~/.cloudflared/config.yml, whose `tunnel:` key overrides the name on the command line and
+    // whose ingress list 404s any hostname it has never heard of. Both were observed live.
+    let ours = RemoteTunnel.configURL.path
     expect("quick",
            RemoteTunnel.arguments(for: RemoteTunnel.Plan(mode: .quick, port: 7717)),
-           ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:0",
+           ["tunnel", "--config", ours, "--no-autoupdate", "--metrics", "127.0.0.1:0",
             "--grace-period", "2s", "--url", "http://127.0.0.1:7717"])
     expect("named puts its flags before run",
            RemoteTunnel.arguments(for: RemoteTunnel.Plan(mode: .named, name: "clawd")),
-           ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:0",
+           ["tunnel", "--config", ours, "--no-autoupdate", "--metrics", "127.0.0.1:0",
             "--grace-period", "2s", "run", "clawd"])
     expect("a non-default port rides along",
            RemoteTunnel.arguments(for: RemoteTunnel.Plan(mode: .quick, port: 9000)).last,
@@ -2837,6 +2841,41 @@ group("pairing tells a client apart from a sentence") {
     } else {
         check("and the newest one is the one that works", false)
     }
+}
+
+group("the cloudflared config we write, rather than the one that was already there") {
+    // Only what cloudflared will act on: the file leads with a comment explaining why it exists,
+    // and that comment says the words "ingress" and "tunnel:" out loud.
+    func settings(_ yaml: String) -> String {
+        yaml.split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }
+            .joined(separator: "\n")
+    }
+    let quick = settings(RemoteTunnel.configFile(for: RemoteTunnel.Plan(mode: .quick, port: 7717)))
+    check("a quick tunnel gets no ingress at all — its address cannot be known in advance",
+          !quick.contains("ingress"))
+    check("and no tunnel name to be overridden by", !quick.contains("tunnel:"))
+    // Not literally empty: cloudflared logs an error about an empty configuration file, in the
+    // one place somebody looks when a tunnel will not come up.
+    check("but it is not empty either", quick.contains("no-autoupdate: true"))
+
+    let named = settings(RemoteTunnel.configFile(
+        for: RemoteTunnel.Plan(mode: .named, name: "clawd", hostname: "clawd.example.com",
+                               port: 7717),
+        credentials: "/Users/x/.cloudflared/abc.json"))
+    check("a named tunnel names itself", named.contains("tunnel: clawd"))
+    check("and says where its credentials are",
+          named.contains("credentials-file: /Users/x/.cloudflared/abc.json"))
+    check("and maps the hostname at the port", named.contains("hostname: clawd.example.com"))
+    check("to the loopback address and nothing else",
+          named.contains("service: http://127.0.0.1:7717"))
+    // A stream that is meant never to end, versus a proxy that answers for anybody.
+    check("the event stream is given room", named.contains("connectTimeout: 30s"))
+    check("and everything else is refused", named.contains("service: http_status:404"))
+    check("credentials are left out when they could not be found",
+          !settings(RemoteTunnel.configFile(for: RemoteTunnel.Plan(mode: .named, name: "c",
+                                                                    hostname: "h", port: 1),
+                                            credentials: nil)).contains("credentials-file"))
 }
 
 // MARK: - Result
