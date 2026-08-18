@@ -544,6 +544,37 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 }
 .composer textarea:focus { outline: none; }
 .composer textarea::placeholder { color: var(--faint); }
+/* What is attached, above the box, each one removable before it goes. Small: they are a
+   reminder of what you picked, not a preview worth looking at. */
+.composer .shots { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 9px; }
+.composer .shots:empty { display: none; }
+.shot {
+    position: relative; width: 62px; height: 62px;
+    border: 1px solid var(--line); border-radius: 9px; overflow: hidden;
+    background: var(--card);
+}
+.shot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.shot .drop {
+    position: absolute; top: 3px; right: 3px;
+    width: 19px; height: 19px; border-radius: 50%;
+    background: rgba(0, 0, 0, 0.66); color: #fff;
+    font-size: 13px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+}
+.shot .drop:hover { background: rgba(0, 0, 0, 0.85); }
+.composer .attach {
+    flex: 0 0 auto;
+    width: 30px; min-height: 30px;
+    border-radius: 8px;
+    color: var(--dim); font-size: 19px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+}
+.composer .attach:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
+.composer .attach:disabled { opacity: 0.45; cursor: default; }
+/* Dragging a picture anywhere over the transcript is aiming at the composer. The outline is
+   inside the edge so it cannot be the thing that makes the page scroll. */
+.pane-detail.dropping { outline: 2px dashed var(--accent-ed); outline-offset: -8px; }
+
 .composer .send {
     flex: 0 0 auto;
     background: var(--accent); color: #17110e;
@@ -856,10 +887,16 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
         </div>
         <div class="scroller tx-scroll" id="tx-scroll"><div class="tx" id="tx"></div></div>
         <form class="composer" id="composer" data-write="off">
+            <div class="shots" id="shots"></div>
             <div class="box">
+                <button class="attach" id="attach" type="button" aria-label="Attach a picture" title="Attach a picture" disabled>+</button>
                 <textarea id="msg" rows="1" placeholder="Message Claude Code…" disabled></textarea>
                 <button class="send" id="send" type="submit" disabled>Send</button>
             </div>
+            <!-- No `capture` attribute on purpose. With it, iOS opens the camera and nothing
+                 else; without it the sheet offers the camera *and* the library, and half of
+                 what somebody wants to send is a screenshot they already have. -->
+            <input id="pick" type="file" accept="image/*" multiple hidden tabindex="-1">
             <div class="why" id="why"></div>
         </form>
     </section>
@@ -1048,7 +1085,7 @@ var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
  "app", "pane-detail", "back", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
  "tx-order", "tx-focus", "composer", "msg", "send", "why", "hints", "keys", "toast", "brand-mark",
- "notify", "notify-go", "notify-say",
+ "notify", "notify-go", "notify-say", "shots", "attach", "pick",
  "door", "door-mark", "door-name", "door-ask", "door-to-password", "door-digits", "door-confirm",
  "door-restart", "door-left", "door-password", "door-pw-name", "door-pw-go", "door-to-pair", "door-say"
 ].forEach(function (id) { els[id] = document.getElementById(id); });
@@ -1434,9 +1471,14 @@ var Live = {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/transcript?limit=200");
     },
 
-    send: function (id, text) {
+    /// `text`, `images`, or both — the server refuses only the message that is neither. The key
+    /// is minted here, once per send, so that a retry of *this* request is not a second prompt.
+    send: function (id, text, images) {
+        var body = {};
+        if (text) body.text = text;
+        if (images && images.length) body.images = images;
         return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/send",
-                         post({ text: text }, { "Idempotency-Key": uuid() }));
+                         post(body, { "Idempotency-Key": uuid() }));
     },
 
     focus: function (id) {
@@ -1704,12 +1746,16 @@ var Mock = (function () {
                 }, 220);
             });
         },
-        send: function (id, text) {
+        send: function (id, text, images) {
             return new Promise(function (done, fail) {
                 setTimeout(function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
                     var t = transcripts[id] || (transcripts[id] = []);
-                    t.push({ role: "user", text: text, tool: null, at: Math.floor(Date.now() / 1000) });
+                    // The real thing hands the picture to Claude Code and it comes back as
+                    // `[Image #1]` in the transcript. The fixture says the same, so that what a
+                    // sent photograph looks like afterwards can be seen with no server at all.
+                    var carried = (images || []).map(function (_, i) { return "[Image #" + (i + 1) + "]"; }).join(" ");
+                    t.push({ role: "user", text: [carried, text].filter(Boolean).join(" "), tool: null, at: Math.floor(Date.now() / 1000) });
                     var s = find(id);
                     if (s) { s.state = "working"; }
                     emit();
@@ -2714,7 +2760,10 @@ function renderComposer() {
     var on = S.write && !!S.openId;
     els.composer.dataset.write = S.write ? "on" : "off";
     els.msg.disabled = !on;
-    els.send.disabled = !on || !els.msg.value.trim();
+    // A picture on its own is a message. The server takes text, images, or both, and refuses
+    // only the one that is neither — so the button follows the same rule.
+    els.send.disabled = !on || sending || Shots.busy() || (!els.msg.value.trim() && !Shots.count());
+    els.attach.disabled = !on;
     // Only ever the reason the box will not take what you type. There used to be a line here
     // saying that Return sends and Shift-Return starts a line, and it was true and it was in the
     // way: a row of every screen, forever, to teach something once. When there is nothing to
@@ -2779,6 +2828,8 @@ function openSession(id, keepFocus) {
         // Fold keys come from content and so would not collide across sessions, but carrying
         // them over means arriving in a new transcript with something already open.
         S.expanded = {};
+        // And a picture picked for one session is not a picture for the next one.
+        Shots.clear();
         loadTranscript(id, false);
     }
     if (phone()) {
@@ -2800,6 +2851,7 @@ function closeDetail(silent) {
     S.openId = null;
     S.tx = { id: null, entries: [], signature: null, loading: false, error: null };
     S.expanded = {};
+    Shots.clear();
     if (phone()) els.app.dataset.view = "list";
     renderTranscript();
     if (!silent) render();
@@ -3093,12 +3145,201 @@ var Push = (function () {
 
 els["notify-go"].addEventListener("click", function () { Push.toggle(); });
 
+/* ---- pictures ------------------------------------------------------------ */
+
+/**
+ * Photograph a whiteboard, or the error on the other screen, and send it into the session.
+ *
+ * Everything goes up as a `data:` URL beside the text, and the server decodes it, re-encodes to
+ * PNG and hands Claude Code a real image — it arrives as `[Image #1]`, not as a path somebody
+ * has to go and read.
+ *
+ * **The picture is shrunk here rather than sent as it was taken.** A modern phone photograph is
+ * three to six megabytes, base64 adds a third to that, and the server's body limit is twenty:
+ * two photographs from a 48-megapixel camera would simply fail, and slowly, over the mobile
+ * connection somebody is standing on. A long edge of 1600px is more than Claude Code can use —
+ * text on a whiteboard is legible well below that — and it turns a forty-second upload into an
+ * instant one. Screenshots are kept as PNG unless that comes out too big to send, because a
+ * screenshot is text, and JPEG is exactly the wrong thing to do to text.
+ */
+var Shots = (function () {
+    var LONG_EDGE = 1600;
+    var QUALITY = 0.82;
+    var MAX_COUNT = 6;
+    // Measured on the wire, which is what the limit is about: these are the lengths of the
+    // `data:` strings, base64 and all. The server refuses a body over 20MB, so this leaves room
+    // for the message, the JSON around it and the headers.
+    var MAX_EACH = 5 << 20;
+    var MAX_TOTAL = 15 << 20;
+
+    var list = [];
+    var seq = 0;
+    var busy = 0;
+
+    function total() {
+        return list.reduce(function (sum, shot) { return sum + shot.url.length; }, 0);
+    }
+
+    /// A bitmap from a file, however this browser is willing to give one.
+    function decode(file) {
+        if (window.createImageBitmap) {
+            // `from-image` so a photograph taken sideways is not drawn sideways: the orientation
+            // lives in EXIF, and a canvas does not read EXIF.
+            return createImageBitmap(file, { imageOrientation: "from-image" })
+                .catch(function () { return createImageBitmap(file); });
+        }
+        return new Promise(function (done, fail) {
+            var url = URL.createObjectURL(file);
+            var img = new Image();
+            img.onload = function () { URL.revokeObjectURL(url); done(img); };
+            img.onerror = function () { URL.revokeObjectURL(url); fail(new Error("not a picture")); };
+            img.src = url;
+        });
+    }
+
+    function asDataURL(file) {
+        return new Promise(function (done, fail) {
+            var reader = new FileReader();
+            reader.onload = function () { done(String(reader.result)); };
+            reader.onerror = function () { fail(new Error("could not be read")); };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function shrink(file) {
+        return decode(file).then(function (bitmap) {
+            var scale = Math.min(1, LONG_EDGE / Math.max(bitmap.width, bitmap.height));
+            var canvas = document.createElement("canvas");
+            canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+            canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+            canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+            if (bitmap.close) bitmap.close();
+            var url = file.type === "image/png" ? canvas.toDataURL("image/png") : "";
+            if (!url || url.length > MAX_EACH) url = canvas.toDataURL("image/jpeg", QUALITY);
+            return { url: url, w: canvas.width, h: canvas.height };
+        }).catch(function () {
+            // The browser cannot decode it — a HEIC from an iPhone is this, in everything but
+            // Safari. The bytes still go: the server re-encodes whatever it is given, and that
+            // re-encoding is also how it checks the file really is an image.
+            return asDataURL(file).then(function (url) { return { url: url, w: 0, h: 0 }; });
+        });
+    }
+
+    function draw() {
+        els.shots.innerHTML = list.map(function (shot) {
+            return '<div class="shot"><img src="' + shot.url + '" alt="' + esc(shot.name) + '">' +
+                '<button type="button" class="drop" data-shot="' + shot.id +
+                '" aria-label="Remove ' + esc(shot.name) + '">×</button></div>';
+        }).join("");
+        renderComposer();
+    }
+
+    els.shots.addEventListener("click", function (ev) {
+        var handle = ev.target.closest ? ev.target.closest("[data-shot]") : null;
+        if (!handle) return;
+        var id = handle.getAttribute("data-shot");
+        list = list.filter(function (shot) { return String(shot.id) !== id; });
+        draw();
+    });
+
+    return {
+        count: function () { return list.length; },
+        busy: function () { return busy > 0; },
+        urls: function () { return list.map(function (shot) { return shot.url; }); },
+        clear: function () { list = []; draw(); },
+
+        add: function (files) {
+            var wanted = Array.prototype.filter.call(files || [], function (f) {
+                // A HEIC sometimes arrives with an empty type, so the extension gets a say.
+                return /^image\//.test(f.type) || /\.(hei[cf]|jpe?g|png|gif|webp)$/i.test(f.name || "");
+            });
+            if (!wanted.length) { toast("Only pictures can go with a message", true); return; }
+            if (list.length + wanted.length > MAX_COUNT) {
+                toast(MAX_COUNT + " pictures is the most one message can carry", true);
+                wanted = wanted.slice(0, Math.max(0, MAX_COUNT - list.length));
+                if (!wanted.length) return;
+            }
+            busy += wanted.length;
+            renderComposer();
+            wanted.forEach(function (file) {
+                shrink(file).then(function (shot) {
+                    if (shot.url.length > MAX_EACH) {
+                        toast("That picture is too big to send, even shrunk", true);
+                        return;
+                    }
+                    if (total() + shot.url.length > MAX_TOTAL) {
+                        toast("Those pictures are too big to send together", true);
+                        return;
+                    }
+                    list.push({ id: ++seq, url: shot.url, name: file.name || "picture" });
+                }).catch(function () {
+                    toast("That picture could not be read", true);
+                }).then(function () {
+                    busy -= 1;
+                    draw();
+                });
+            });
+        }
+    };
+})();
+
+els.attach.addEventListener("click", function () { els.pick.click(); });
+els.pick.addEventListener("change", function () {
+    Shots.add(els.pick.files);
+    // Cleared so that picking the same file twice in a row still counts as a change.
+    els.pick.value = "";
+});
+
+// Paste, because copying a screenshot and pressing paste is how this is done everywhere else.
+// Not while the filter box has the focus: that one takes text and nothing else.
+document.addEventListener("paste", function (ev) {
+    if (!S.openId || !S.write) return;
+    if (document.activeElement === els.filter) return;
+    var files = ev.clipboardData && ev.clipboardData.files;
+    if (!files || !files.length) return;
+    ev.preventDefault();
+    Shots.add(files);
+});
+
+// Drag and drop. The whole detail pane is the target — somebody dragging a photograph at this
+// page is aiming at the conversation, not at a 30-pixel button — and the document swallows the
+// drops that miss, because the browser's own answer to those is to navigate away from the page.
+(function dropPictures() {
+    var pane = els["pane-detail"];
+    var depth = 0;
+    function carriesFiles(ev) {
+        var dt = ev.dataTransfer;
+        if (!dt) return false;
+        if (dt.types && Array.prototype.indexOf.call(dt.types, "Files") >= 0) return true;
+        return !!(dt.files && dt.files.length);
+    }
+    document.addEventListener("dragover", function (ev) { if (carriesFiles(ev)) ev.preventDefault(); });
+    document.addEventListener("drop", function (ev) { if (carriesFiles(ev)) ev.preventDefault(); });
+    pane.addEventListener("dragenter", function (ev) {
+        if (!carriesFiles(ev) || !S.openId || !S.write) return;
+        depth += 1;
+        pane.classList.add("dropping");
+    });
+    pane.addEventListener("dragleave", function () {
+        depth = Math.max(0, depth - 1);
+        if (!depth) pane.classList.remove("dropping");
+    });
+    pane.addEventListener("drop", function (ev) {
+        depth = 0;
+        pane.classList.remove("dropping");
+        if (!carriesFiles(ev)) return;
+        ev.preventDefault();
+        if (!S.openId || !S.write) { toast("Open a session to send a picture to it", true); return; }
+        Shots.add(ev.dataTransfer.files);
+    });
+})();
+
 /* ---- the composer -------------------------------------------------------- */
 
 els.msg.addEventListener("input", function () {
     els.msg.style.height = "auto";
     els.msg.style.height = Math.min(140, els.msg.scrollHeight) + "px";
-    els.send.disabled = !S.write || !S.openId || !els.msg.value.trim();
+    renderComposer();
 });
 els.msg.addEventListener("keydown", function (ev) {
     if (ev.key !== "Enter" || ev.shiftKey) return;
@@ -3127,14 +3368,18 @@ els.composer.addEventListener("submit", function (ev) { ev.preventDefault(); sub
 var sending = false;
 
 function submit() {
-    if (sending) return;
+    if (sending || Shots.busy()) return;
     var text = els.msg.value.trim();
-    if (!text || !S.openId || !S.write) return;
+    var pictures = Shots.urls();
+    if ((!text && !pictures.length) || !S.openId || !S.write) return;
     sending = true;
     els.send.disabled = true;
-    api.send(S.openId, text).then(function () {
+    api.send(S.openId, text, pictures).then(function () {
         els.msg.value = "";
         els.msg.style.height = "auto";
+        // Cleared here and not before: a send that failed still has its pictures attached, and
+        // the reader can press the button again rather than going back to the camera roll.
+        Shots.clear();
         loadTranscript(S.openId, true);
     }).catch(function (e) {
         if (e.code === "write_disabled") {

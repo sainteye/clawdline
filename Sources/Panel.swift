@@ -921,7 +921,21 @@ final class TargetRow: NSView {
     ///
     /// An array rather than named slots because the set is not fixed: a stopped stack offers
     /// start, a running one offers restart and stop, and both offer their log.
-    var buttons: [Button] = []
+    /// **Assigning these has to redraw**, and for a while it did not.
+    ///
+    /// A stack row is built the moment the panel opens, before anything is known about what the
+    /// project is doing — and at that moment there are no buttons to offer, because which ones
+    /// apply depends on whether it is running. The state arrives a beat later from a subprocess,
+    /// the buttons are worked out and set here, and the row was never told. So it kept the
+    /// picture it had drawn when it knew nothing: the text updated (that setter does invalidate),
+    /// the buttons never appeared, and the panel looked like a thing you could read and not act
+    /// on. The tool tips went the same way, which is why the tracking areas are rebuilt too.
+    var buttons: [Button] = [] {
+        didSet {
+            needsDisplay = true
+            updateTrackingAreas()
+        }
+    }
     var onButton: ((Int) -> Void)?
 
     init(title: String, index: Int, rich: NSAttributedString? = nil) {
