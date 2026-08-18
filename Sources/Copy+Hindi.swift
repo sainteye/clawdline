@@ -73,6 +73,7 @@ struct Hindi: Copy {
     func sessionTip(index: Int, total: Int) -> String { "\(total) में से \(index) वाँ सेशन — बदलने के लिए ⌘K" }
     let sessionWaiting = "आपके जवाब का इंतज़ार"
     let islandDone = "हो गया"
+    let islandAllSessions = "सभी सेशन…"
     func statusWaiting(_ labels: [String]) -> String {
         labels.count == 1 ? "\(labels[0]) आपके जवाब का इंतज़ार कर रहा है"
                           : "\(labels.count) सेशन आपके जवाब का इंतज़ार कर रहे हैं"

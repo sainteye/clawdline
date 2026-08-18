@@ -69,6 +69,7 @@ struct German: Copy {
     func sessionTip(index: Int, total: Int) -> String { "Sitzung \(index) von \(total) — ⌘K zum Wechseln" }
     let sessionWaiting = "wartet auf dich"
     let islandDone = "fertig"
+    let islandAllSessions = "Alle Sitzungen …"
     func statusWaiting(_ labels: [String]) -> String {
         labels.count == 1 ? "\(labels[0]) wartet auf dich"
                           : "\(labels.count) Sitzungen warten auf dich"

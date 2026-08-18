@@ -72,6 +72,7 @@ struct Portuguese: Copy {
     func sessionTip(index: Int, total: Int) -> String { "Sessão \(index) de \(total) — ⌘K para mudar" }
     let sessionWaiting = "aguarda a sua resposta"
     let islandDone = "concluído"
+    let islandAllSessions = "Todas as sessões…"
     func statusWaiting(_ labels: [String]) -> String {
         labels.count == 1 ? "\(labels[0]) aguarda a sua resposta"
                           : "\(labels.count) sessões aguardam a sua resposta"

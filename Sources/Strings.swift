@@ -114,6 +114,11 @@ protocol Copy {
     /// a notch, and it is on screen for three seconds — a sentence there is a sentence nobody
     /// finishes reading.
     var islandDone: String { get }
+    /// The way out of the island's menu and into the whole list.
+    ///
+    /// That menu offers what is *running*; this is everything, which is a different question and
+    /// has to say so — "more…" would read as "the rest of the running ones".
+    var islandAllSessions: String { get }
     /// Hover text for the menu bar mark. Names the sessions, because the mark can only say that
     /// *something* wants you and the next question is always which.
     func statusWaiting(_ labels: [String]) -> String

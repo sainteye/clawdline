@@ -67,6 +67,7 @@ struct Japanese: Copy {
     func sessionTip(index: Int, total: Int) -> String { "\(total) 件中 \(index) 番目のセッション — ⌘K で切り替え" }
     let sessionWaiting = "返事待ち"
     let islandDone = "完了"
+    let islandAllSessions = "すべてのセッション…"
     func statusWaiting(_ labels: [String]) -> String {
         labels.count == 1 ? "\(labels[0]) が返事を待っています"
                           : "\(labels.count) 件のセッションが返事を待っています"

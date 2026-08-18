@@ -147,6 +147,12 @@ enum ProjectIcon {
         return grid
     }
 
+    /// A mark for the README's invented projects, so the picture of the list has the same
+    /// per-project colours a real one does without naming anybody's real project.
+    static func demoGrid(hue: Int) -> Grid {
+        creature(hue: hue, tone: hue % 2, shape: hue % 4)
+    }
+
     private static func creature(hue hueIndex: Int, tone toneIndex: Int, shape: Int) -> Grid {
         let h = hues[((hueIndex % hues.count) + hues.count) % hues.count]
         let (bs, bl, ls, ll) = tones[((toneIndex % tones.count) + tones.count) % tones.count]
@@ -202,6 +208,36 @@ enum ProjectIcon {
 ///
 /// The status line has to fold two rows into one character with a half block; a window does not,
 /// so the same grid comes out twice the height and square.
+extension ProjectIcon.Grid {
+
+    /// The same pixels as an image, for the places that take one rather than draw their own.
+    ///
+    /// A menu item and a list row both want a small picture and neither can host a view, so the
+    /// grid is rendered once at the size asked for. Drawn with no interpolation: these are seven
+    /// pixels across, and smoothing them turns a deliberate blocky mark into a smudge.
+    func image(height: CGFloat) -> NSImage? {
+        guard let first = cells.first, !first.isEmpty else { return nil }
+        let cell = (height / CGFloat(cells.count)).rounded()
+        guard cell >= 1 else { return nil }
+        let size = NSSize(width: cell * CGFloat(first.count), height: cell * CGFloat(cells.count))
+
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .none
+        for (r, row) in cells.enumerated() {
+            for (c, colour) in row.enumerated() {
+                guard let colour else { continue }
+                colour.setFill()
+                // Rows read top-down; the image's origin is at the bottom.
+                NSRect(x: CGFloat(c) * cell, y: size.height - CGFloat(r + 1) * cell,
+                       width: cell, height: cell).fill()
+            }
+        }
+        image.unlockFocus()
+        return image
+    }
+}
+
 final class ProjectIconView: NSView {
     var grid: ProjectIcon.Grid? { didSet { needsDisplay = true } }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }

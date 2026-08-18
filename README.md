@@ -2,11 +2,15 @@
 
 # Clawdline
 
-**Your Claude Code prompt line, at eye level.**
+**Your Claude Code sessions, at eye level.**
 
 A Spotlight-style bar that floats in the middle of your screen. Type into it and the message
 lands in Claude Code; press <kbd>⌘</kbd><kbd>J</kbd> and the session reads back in the same
-place — laid out, not scraped. You never look at the corner of the terminal again.
+place — laid out, not scraped.
+
+And when you have five of them running, it tells you **which one is working, which one has
+stopped, and which one is waiting for an answer** — in the list, in the menu bar, and in the
+notch. You never look at the corner of the terminal again.
 Works with iTerm2 directly, and with every other terminal through tmux.
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -34,6 +38,24 @@ Everything else follows from one consequence: **if you are not going to look at 
 bar has to tell you what the terminal would have.**
 
 ## What it does that a prompt box does not
+
+- **Tells you which session wants you.** Four tabs working on tasks that read alike are four
+  identical rows in every other tool. Here a session that is running carries the line Claude Code
+  draws for itself, and one with a question on screen says so — loudly, because that is the only
+  state that costs you something for every second it goes unnoticed. Each row wears its own
+  project's mark. Nothing is installed into Claude Code to know this: it is each session's own
+  screen, read.
+  → [The session list](#which-session-wants-you)
+
+- **Says it in the notch, too.** Your mascot lives in the camera housing: it leans out while
+  something runs, names the session that wants you, and dances when a long job finishes. How busy
+  it looks is how much you have running. One word in the config turns it off.
+  → [The notch](#the-notch)
+
+- **The terminal's tab follows.** Move through the list and iTerm2 moves with you — without
+  coming to the front, because taking your keyboard is the one thing this exists to avoid. The
+  bar's target and the tab in front of you stop being two different sessions.
+  → [Which tab it sends to](#which-tab-does-it-send-to)
 
 - **Dictation in Chinese, and in two languages at once, without your voice leaving the Mac.**
   Words appear as you speak them; when you stop, Whisper reads the same audio back and replaces
@@ -72,6 +94,10 @@ bar has to tell you what the terminal would have.**
 
 <div align="center">
 
+<img src="docs/assets/sessions.png" width="760" alt="The session list: one row per session, each with its project's mark — one working with its live line, one waiting for an answer, the rest quiet.">
+
+<img src="docs/assets/island.gif" width="760" alt="The notch: the mascot leaning out while sessions run, then naming the one that is waiting, then the one that just finished.">
+
 <img src="docs/assets/voice.gif" width="760" alt="Speaking into the bar: the words appear live, then Whisper reads the recording back and replaces them.">
 
 <img src="docs/assets/transcript.png" width="760" alt="The transcript pane: a heading, a bordered table and a code block, laid out rather than scraped.">
@@ -81,6 +107,7 @@ bar has to tell you what the terminal would have.**
 ## Contents
 
 - [Install](#install) · [Use it](#use-it)
+- **Knowing** — [which session wants you](#which-session-wants-you) · [the notch](#the-notch)
 - **Reading** — [the transcript pane](#reading-a-session-back) · [which project](#which-project-not-just-which-task)
 - **Writing** — [dictation](#talk-instead-of-type) · [files and images](#dropping-in-a-file-or-an-image) · [which tab it sends to](#which-tab-does-it-send-to)
 - **Making it yours** — [mascots](#bring-your-own-mascot) · [config](#config) · [other terminals](#other-terminals-run-claude-code-in-tmux)
@@ -191,20 +218,12 @@ actually running `claude`. It defaults to the session you were last looking at.
 The bar always names its target along the bottom edge. **It never sends blind** — a prompt box
 that will not tell you where the text goes is worse than no prompt box.
 
-**The list says what each one is doing.** Four tabs working on tasks that read alike are four
-identical rows, and the question you open <kbd>⌘</kbd><kbd>K</kbd> with is not what they are
-called — it is which one stopped and which one wants something. So a session that is working
-carries the line Claude Code draws for itself, quietly:
-
-    ⌘1  investigate the webhook     ⟳ Crystallizing… (13m 46s · ↓ 48.2k tokens)
-    ⌘2  port the Android feature    ● waiting for you
-    ⌘3  evaluate the coverage
-
-The middle one is the only loud thing in the list, because it is the only state that costs you
-something for every second it goes unnoticed — a question on screen with nobody answering it.
-Nothing is installed into Claude Code to know this: it is each session's own screen, read the
-same way the <kbd>⌘</kbd><kbd>J</kbd> pane reads it, and a screen that cannot be read leaves the
-row exactly as plain as it was rather than guessing at it.
+**And the terminal follows.** Move through the list and iTerm2 moves with you: the tab in front
+of you is the session the bar is pointed at, by construction. Selecting a tab is not the same as
+bringing the terminal to the front and only the first one happens — otherwise every press of
+<kbd>Tab</kbd> would hand iTerm2 your keyboard, which is the one thing this application exists to
+avoid doing. `"follow_target": false` if you keep a terminal tab open to read from while you work
+somewhere else.
 
 ### Dropping in a file or an image
 
@@ -390,6 +409,66 @@ means rather than by what the terminal drew.
 Set `output_font` to whatever your terminal uses. The default is Menlo; a status line built out
 of box-drawing characters comes out at the wrong widths in anything with different metrics,
 which is what makes it look broken.
+
+## Which session wants you
+
+Not looking at the terminal works for one session. With four, you are back to going round the
+tabs to find out who finished — so the thing that made the bar worth having stops working at
+exactly the point you start needing it.
+
+<kbd>⌘</kbd><kbd>K</kbd> answers it instead:
+
+<div align="center">
+<img src="docs/assets/sessions.png" width="820" alt="Five sessions: one running with its live line, one waiting for an answer in the accent colour, three quiet — each with its project's own pixel mark.">
+</div>
+
+- **Working** carries the line Claude Code draws for itself — *Crystallizing… (13m 46s)* — in
+  grey. Quiet on purpose: four rows calling for attention at once is the same as none of them
+  calling.
+- **Waiting for you** is the loud one, and the only one. A question on screen with nobody
+  answering it is the single state that costs you something for every second it goes unnoticed.
+- **Quiet** says nothing at all, and so does a session whose screen could not be read — because
+  drawing "no idea" as "idle" would be a confident wrong answer about somebody's work.
+
+Each row wears its project's own pixel mark, from the same registry the footer and your terminal
+status line use. A tab title is the *task*, and two projects can be working on tasks that read
+alike; the mark is the part you do not have to read.
+
+**The menu bar carries it too.** The ✳ was a fixed character that opened a menu — permanently
+visible and permanently saying nothing. It has a count on it now, and a mark when something is
+waiting.
+
+**None of this is installed into Claude Code.** No hooks, no settings file of yours is edited,
+nothing to set up: it is each session's own screen, read the same way the <kbd>⌘</kbd><kbd>J</kbd>
+pane reads it, about once a second while the bar is up and once every twenty seconds while it is
+not.
+
+## The notch
+
+This one is play, and it says so in the source. It tells you nothing the menu bar mark does not —
+it is the same reading, wearing a costume.
+
+<div align="center">
+<img src="docs/assets/island.gif" width="820" alt="The notch growing sideways: the mascot with a count while sessions run, then a name and a dot when one is waiting, then a dance when one finishes.">
+</div>
+
+Your mascot lives in the menu bar band beside the camera housing. It leans out while something is
+running — **how hard it looks like it is working is how much you have running** — names the
+session that wants you when one does, and dances when a long job finishes.
+
+- **Click the character** and the bar opens, already pointed at the session it was talking about.
+- **Click the words** and you land in that terminal tab.
+- **When the number stands for more than one session** it offers a menu rather than guessing,
+  with a way through to the whole list.
+
+Nothing is ever covered except menu bar space: the shape sits in the menu bar's own band and
+grows sideways, because the notch is a hole with a camera behind it and pixels drawn there are
+drawn on the back of a camera. On a display without a notch it becomes a pill under the menu bar,
+on whichever screen your pointer is on.
+
+```jsonc
+{ "notch": false }   // and none of it is created — no window, no observer, nothing drawn
+```
 
 ## Bring your own mascot
 
@@ -611,6 +690,19 @@ Anthropic. Claude and Claude Code are trademarks of Anthropic.
 
 The mascot lives in a swappable JSON file precisely so you can replace it with something of
 your own — see [docs/mascots.md](docs/mascots.md).
+
+**The notch belongs to somebody else's idea.** Putting live agent activity in the MacBook's
+camera housing is [CLI Island](https://github.com/bistin/cc-island) (formerly `cc-island`) by
+[bistin](https://github.com/bistin) — that project got there first, and reading it is what
+turned "the bar should tell you when a session wants you" into something with a shape. The
+implementation here is its own and works differently (it reads the sessions' screens rather than
+installing hooks into Claude Code), but the idea, and the two-ears-around-the-hole grammar that
+makes it look right, are borrowed with thanks.
+
+The shape of the notch itself — the concave flare where it meets the menu bar — comes from
+[DynamicNotchKit](https://github.com/MrKai77/DynamicNotchKit) by way of
+[boring.notch](https://github.com/TheBoredTeam/boring.notch), which is also where the window
+level that gets a panel *above* the menu bar was learned from.
 
 ## License
 

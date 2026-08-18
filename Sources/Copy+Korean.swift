@@ -67,6 +67,7 @@ struct Korean: Copy {
     func sessionTip(index: Int, total: Int) -> String { "\(total)개 중 \(index)번째 세션 — ⌘K로 전환" }
     let sessionWaiting = "답변 대기 중"
     let islandDone = "완료"
+    let islandAllSessions = "모든 세션…"
     func statusWaiting(_ labels: [String]) -> String {
         labels.count == 1 ? "\(labels[0]) 세션이 답변을 기다립니다"
                           : "\(labels.count)개 세션이 답변을 기다립니다"

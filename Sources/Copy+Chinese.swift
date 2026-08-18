@@ -71,6 +71,7 @@ struct TraditionalChinese: Copy {
     func sessionTip(index: Int, total: Int) -> String { "第 \(index) 個 session，共 \(total) 個——⌘K 切換" }
     let sessionWaiting = "在等你回答"
     let islandDone = "跑完了"
+    let islandAllSessions = "所有 session⋯"
     func statusWaiting(_ labels: [String]) -> String {
         labels.count == 1 ? "\(labels[0]) 在等你回答"
                           : "\(labels.count) 個 session 在等你回答"
@@ -201,6 +202,7 @@ struct SimplifiedChinese: Copy {
     func sessionTip(index: Int, total: Int) -> String { "第 \(index) 个 session，共 \(total) 个——⌘K 切换" }
     let sessionWaiting = "在等你回答"
     let islandDone = "跑完了"
+    let islandAllSessions = "所有 session……"
     func statusWaiting(_ labels: [String]) -> String {
         labels.count == 1 ? "\(labels[0]) 在等你回答"
                           : "\(labels.count) 个 session 在等你回答"

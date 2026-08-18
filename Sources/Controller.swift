@@ -81,6 +81,13 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// and the count of uncommitted files both move while you work.
     private var projectCache: [String: ProjectInfo] = [:]
     private var iconCache: [String: ProjectIcon.Grid] = [:]
+    /// The project mark for every session in the list, as an image, by session id.
+    ///
+    /// Separate from `iconCache`, which only ever holds the *selected* session's grid because
+    /// that is all the footer needed. A list needs one per row, and working out which project a
+    /// session is in costs a process listing and an `lsof` on a cold cache — so it is resolved
+    /// once, off the main thread, and the rows are rebuilt when it lands.
+    private var rowIcons: [String: NSImage] = [:]
     private var statusCache: [String: ProjectStatus.Snapshot] = [:]
     /// The project's own servers, when it describes them (`.devstack.json`). Keyed by repository
     /// root rather than by session, because two sessions in one repository are looking at one
@@ -172,6 +179,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var prefetchWork: DispatchWorkItem?
     /// A session the bar was asked to open on, waiting for the scan that will contain it.
     private var pendingFocusID: String?
+    /// Set when the bar was asked to come up on its session list rather than on the box.
+    private var pendingShowList = false
+    /// While set, the list shows invented sessions and nothing replaces them. Snapshots only.
+    private var standInList = false
 
     private var currentTarget: TargetSession? {
         guard targets.indices.contains(targetIndex) else { return nil }
@@ -456,6 +467,24 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         } else {
             show()
         }
+    }
+
+    /// Open the bar with the session list already up, the way ⌘K leaves it.
+    ///
+    /// The island's menu lists what is *running*; this lists everything, which is the question
+    /// the number cannot answer and the reason there is a way out of that menu into here.
+    func showSessionList() {
+        pendingShowList = true
+        if isVisible { applyPendingList() } else { show() }
+    }
+
+    private func applyPendingList() {
+        guard pendingShowList else { return }
+        pendingShowList = false
+        if listMode != .sessions { showList(.sessions) }
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(textView)
     }
 
     /// Select the session the island was pointing at, once the scan has produced it.
@@ -1350,11 +1379,13 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
 
         rebuildRows()
+        applyPendingList()
         updateTargetLabel()
         refreshProjectInfo()
         // The session scan is async, so an output pane opened before it landed had no target
         // to read and gave up. Nothing retried it, and it stayed blank for good.
         if outputOpen { refreshOutput() }
+        refreshRowIcons()
         // The watch has almost certainly read these screens already — it never stops — so the
         // rows can be marked from the reading in hand rather than sitting plain until the next
         // one comes round.
@@ -1403,7 +1434,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         guard panel.isVisible else { return }
         // The strip follows the selected session even when the list is shut, because the pane is
         // open on its own account and its live line has to keep ticking.
-        if let id = currentTarget?.id, outputOpen { setActivity(activityCache[id]) }
+        //
+        // Except over a canned transcript: that is a picture of a stand-in, and a live line from
+        // whatever this machine is really doing has no business being in it.
+        if let id = currentTarget?.id, outputOpen, cannedTranscript == nil {
+            setActivity(activityCache[id])
+        }
 
         // Rows are rebuilt only when something actually moved. A list that rebuilds once a second
         // discards the view under the pointer every second with it, and an unchanged screen is
@@ -1411,6 +1447,30 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // they were doing a second ago.
         guard listMode == .sessions, states != sessionStates else { return }
         sessionStates = states
+        rebuildRows()
+        relayout()
+    }
+
+    /// Work out each session's project mark, off the main thread, and redraw once they are in.
+    ///
+    /// Only for sessions that do not have one yet: this runs on every scan, and the answer for a
+    /// session that has not moved cannot have changed — a Claude Code session is started in a
+    /// directory and stays there.
+    private func refreshRowIcons() {
+        let wanted = targets.prefix(9).filter { rowIcons[$0.id] == nil }
+        guard !wanted.isEmpty else { return }
+        // **Drawn on the main thread.** `NSImage.lockFocus` is main-thread work; done on a
+        // background queue it does not fail loudly, it just hands back an image with nothing in
+        // it — which is exactly what the rows showed the first time. The expensive half, working
+        // out which project a session is in, already happened in the watch.
+        var drew = false
+        for target in wanted {
+            guard let grid = SessionWatch.shared.grid(of: target.id),
+                  let image = grid.image(height: 11) else { continue }
+            rowIcons[target.id] = image
+            drew = true
+        }
+        guard drew, listMode == .sessions else { return }
         rebuildRows()
         relayout()
     }
@@ -1445,6 +1505,30 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // Long enough that a held key never starts one, short enough to be ready before the
         // next deliberate press.
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
+    /// The stand-in rows, drawn by the same rules as the real ones.
+    private func standInRowText(_ row: (label: String, state: SessionState, hue: Int),
+                                selected: Bool) -> NSAttributedString {
+        let s = NSMutableAttributedString()
+        let base = NSFont.systemFont(ofSize: Style.listSize, weight: selected ? .medium : .regular)
+        let small = NSFont.systemFont(ofSize: Style.listSize - 1.5)
+        func add(_ text: String, _ colour: NSColor, _ font: NSFont) {
+            s.append(NSAttributedString(string: text,
+                                        attributes: [.font: font, .foregroundColor: colour]))
+        }
+        add(row.label, selected ? .labelColor : .secondaryLabelColor, base)
+        switch row.state {
+        case .working(let line):
+            let quiet: NSColor = selected ? .secondaryLabelColor : .tertiaryLabelColor
+            add("   ⟳ ", quiet, small)
+            add(line.count > 44 ? line.prefix(43) + "…" : line, quiet, small)
+        case .waiting:
+            add("   ● " + L.t.sessionWaiting, Style.accent, small)
+        case .idle, .unknown:
+            break
+        }
+        return s
     }
 
     /// One session row: what the tab is called, and what its screen says it is doing.
@@ -1486,8 +1570,37 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         return s
     }
 
+    /// Fill the list with invented sessions and pin it there, for the README picture.
+    ///
+    /// Same path as the real rows — `sessionRowText` draws them and `TargetRow` lays them out —
+    /// so the picture cannot drift away from what the app does. It can only be entered from the
+    /// snapshot URL, and the pinning is what stops the next reading from the watch replacing
+    /// somebody's invented work with their real work half a second later.
+    private func showStandInSessions() {
+        standInList = true
+        // The footer names the project too, and it is the same problem one line down: a picture
+        // of the list must not carry this machine's repository, branch and uncommitted count.
+        usingStandInLabel = true
+        updateTargetLabel()
+        listMode = .sessions
+        rebuildRows()
+        relayout()
+    }
+
     private func rebuildRows() {
         rows.forEach { $0.removeFromSuperview() }
+        if standInList {
+            rows = Self.standInSessions().prefix(9).enumerated().map { i, row in
+                let selected = (i == 1)
+                let view = TargetRow(title: row.label, index: i,
+                                     rich: standInRowText(row, selected: selected))
+                view.icon = ProjectIcon.demoGrid(hue: row.hue).image(height: 11)
+                view.isSelected = selected
+                listBox.addSubview(view)
+                return view
+            }
+            return
+        }
         if listMode == .stacks {
             rows = stackRows.prefix(9).enumerated().map { i, spec in
                 let row = TargetRow(title: spec.name, index: i,
@@ -1545,6 +1658,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             let selected = (i == targetIndex)
             let row = TargetRow(title: target.label, index: i,
                                 rich: sessionRowText(target, selected: selected))
+            row.icon = rowIcons[target.id]
             row.isSelected = selected
             row.onClick = { [weak self] in self?.choose(i) }
             listBox.addSubview(row)
@@ -2566,6 +2680,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             if let want = full, want != self.fullscreen { self.toggleFullscreen() }
             if list == "mascots" { self.showList(.mascots) }
             else if list == "sessions" { self.showList(.sessions) }
+            else if list == "demo" { self.showStandInSessions() }
         }
 
         let render = { [weak self] in
@@ -2600,6 +2715,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
         let wasVisible = panel.isVisible
         if !wasVisible { show() }
+        resetForSnapshot(keepingOutput: output)
         // The session list arrives from an async scan, so picking one has to wait for it —
         // arranging immediately picks from an empty list and silently keeps the current target.
         DispatchQueue.main.asyncAfter(deadline: .now() + (session == nil ? 0 : 1.4)) {
@@ -2610,6 +2726,30 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 if !wasVisible { self.hide() }
             }
         }
+    }
+
+    /// Put the panel into a known state before a picture is taken of it.
+    ///
+    /// A shot asks for exactly what it wants and gets whatever was left over as well: a panel
+    /// that is already open keeps its list, its size and whatever transcript it was showing,
+    /// because `show()` — which resets all of that — is skipped when it is already up.
+    ///
+    /// **This is a privacy fix, not a tidiness one.** The picture that prompted it had the
+    /// session list open from an earlier shot, so a README image came out carrying the real
+    /// names of the projects on this machine and the real conversation in one of them. Every
+    /// picture in that folder is supposed to be a stand-in.
+    private func resetForSnapshot(keepingOutput: Bool) {
+        listMode = .none
+        standInList = false
+        cannedTranscript = nil
+        usingStandInLabel = false
+        setActivity(nil)
+        pendingShowList = false
+        pendingFocusID = nil
+        if fullscreen { toggleFullscreen() }
+        if outputOpen && !keepingOutput { toggleOutput() }
+        rebuildRows()
+        relayout()
     }
 
     /// Fill the pane from a transcript file on disk and stop it being refreshed away.
@@ -2733,6 +2873,20 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// The demo storyboard. The timings are fixed on purpose: the README image has to be reproducible.
     /// A stand-in for the target label. Real tab titles would publish what the machine happens
     /// to be working on, and every picture in this repo is meant to be safe to publish.
+    /// A made-up session list, for the picture of one.
+    ///
+    /// The list is the feature that most needs a picture and the one that most cannot have a
+    /// real one: every row is a project name and a task title off this machine. So the rows are
+    /// invented — three projects, three states, and the marks come from the same renderer the
+    /// real rows use, so the picture cannot show something the app would not draw.
+    static func standInSessions() -> [(label: String, state: SessionState, hue: Int)] {
+        [("investigate the webhook", .working("Crystallizing… (13m 46s · ↓ 48.2k tokens)"), 2),
+         ("port the Android feature", .waiting, 9),
+         ("evaluate the coverage", .idle, 5),
+         ("rename the split components", .working("Herding… (54s)"), 13),
+         ("draft the release notes", .idle, 6)]
+    }
+
     static func standInTarget() -> NSAttributedString {
         let out = NSMutableAttributedString()
         out.append(NSAttributedString(string: "● ", attributes: [

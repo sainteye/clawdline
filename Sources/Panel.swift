@@ -828,6 +828,12 @@ final class TargetRow: NSView {
     /// same line, which a plain string cannot carry.
     let rich: NSAttributedString?
     var isSelected = false { didSet { needsDisplay = true } }
+    /// The project's own mark, drawn before the label.
+    ///
+    /// A tab title is the *task*, and two projects can be working on tasks that read alike —
+    /// which is the whole reason the footer leads with this mark rather than with the title. The
+    /// list had exactly the same problem and none of the answer.
+    var icon: NSImage? { didSet { needsDisplay = true } }
     var onClick: (() -> Void)?
 
     /// Somewhere to go, when part of the row is a place rather than a label — the port a server
@@ -914,9 +920,12 @@ final class TargetRow: NSView {
     }
 
     /// Where each linked run landed.
+    /// Where the label starts. After the ⌘n badge, and after the icon when there is one.
+    private var textX: CGFloat { Style.padH + 40 + (icon.map { $0.size.width + 8 } ?? 0) }
+
     private var linkZones: [(rect: NSRect, value: String)] {
         guard let rich else { return [] }
-        return TextZones.of(rich, key: .link, x0: Style.padH + 40, height: bounds.height)
+        return TextZones.of(rich, key: .link, x0: textX, height: bounds.height)
     }
 
     private func draw(_ b: Button, in r: NSRect) {
@@ -998,11 +1007,20 @@ final class TargetRow: NSView {
             .foregroundColor: isSelected ? Style.accent : NSColor.tertiaryLabelColor,
         ])
 
+        if let icon {
+            // Full strength on the selected row and a shade back on the others, the same way the
+            // label is: the mark is part of the row, not a decoration beside it.
+            icon.draw(in: NSRect(x: Style.padH + 40,
+                                 y: (bounds.midY - icon.size.height / 2).rounded(),
+                                 width: icon.size.width, height: icon.size.height),
+                      from: .zero, operation: .sourceOver, fraction: isSelected ? 1 : 0.75)
+        }
+
         let text = rich ?? NSAttributedString(string: title, attributes: [
             .font: NSFont.systemFont(ofSize: Style.listSize, weight: isSelected ? .medium : .regular),
             .foregroundColor: isSelected ? NSColor.labelColor : NSColor.secondaryLabelColor,
         ])
-        let x = Style.padH + 40
+        let x = textX
         // Stop before the buttons, or a long row of ports draws straight through them.
         let right = buttons.isEmpty ? Style.padH : bounds.width - buttonsLeftEdge + 10
         text.draw(in: NSRect(x: x, y: bounds.midY - 9,

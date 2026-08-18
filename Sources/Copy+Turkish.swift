@@ -69,6 +69,7 @@ struct Turkish: Copy {
     func sessionTip(index: Int, total: Int) -> String { "\(total) oturumdan \(index). — değiştirmek için ⌘K" }
     let sessionWaiting = "yanıtını bekliyor"
     let islandDone = "bitti"
+    let islandAllSessions = "Tüm oturumlar…"
     func statusWaiting(_ labels: [String]) -> String {
         labels.count == 1 ? "\(labels[0]) yanıtını bekliyor"
                           : "\(labels.count) oturum yanıtını bekliyor"

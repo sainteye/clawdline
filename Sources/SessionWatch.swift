@@ -35,6 +35,15 @@ final class SessionWatch {
     /// only the second is worth a celebration.
     private(set) var justFinished: [TargetSession] = []
 
+    /// Which project each session is in, as its registry mark, by session id.
+    ///
+    /// Resolved here rather than by each consumer because the answer costs a process listing and
+    /// an `lsof` on a cold cache, and there are now three places that want it: the ⌘K rows, the
+    /// island's right ear, and the menu the island offers when its number stands for more than
+    /// one session. It is also the most stable thing about a session — Claude Code is started in
+    /// a directory and stays there — so a session that already has one is never asked again.
+    private(set) var grids: [String: ProjectIcon.Grid] = [:]
+
     /// Called on the main thread after every reading. Keyed so a consumer that registers twice
     /// replaces itself rather than being called twice.
     var observers: [String: () -> Void] = [:]
@@ -78,8 +87,17 @@ final class SessionWatch {
             let sessions = snap.claudeSessions.isEmpty ? snap.sessions : snap.claudeSessions
             let states = anyClaude ? Targets.states(of: sessions) : [:]
 
+            // Only the ones nothing is known about yet.
+            var grids: [String: ProjectIcon.Grid] = [:]
+            for session in sessions where self.grids[session.id] == nil {
+                guard let cwd = Targets.workingDirectory(of: session),
+                      let grid = ProjectIcon.grid(forCwd: cwd) else { continue }
+                grids[session.id] = grid
+            }
+
             DispatchQueue.main.async {
                 self.reading = false
+                self.grids.merge(grids) { _, new in new }
                 self.apply(targets: sessions, states: states)
             }
         }
@@ -113,6 +131,9 @@ final class SessionWatch {
     var working: [TargetSession] {
         targets.filter { if case .working = states[$0.id] { return true }; return false }
     }
+
+    /// The project mark for a session, if its project has one.
+    func grid(of id: String) -> ProjectIcon.Grid? { grids[id] }
 
     /// The live line a session last showed, if it is showing one.
     func liveLine(of id: String) -> String? {

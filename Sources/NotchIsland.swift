@@ -64,7 +64,14 @@ enum Notch {
     /// `NSBezierPath` has no quadratic segment before macOS 14, so each one is written as the
     /// cubic it is equal to — the control points are two thirds of the way from each end to the
     /// quadratic's single control point.
-    static func path(in b: NSRect) -> NSBezierPath {
+    static func path(in b: NSRect, pill: Bool = false) -> NSBezierPath {
+        // A display with no cutout has nothing to merge with, so the shape is just a shape: a
+        // rounded pill hanging under the menu bar. Drawing the notch outline there would flare
+        // outwards into a top edge that is not the top of anything — the concave corners only
+        // read as "this grew out of the hole" when there is a hole above them.
+        if pill {
+            return NSBezierPath(roundedRect: b, xRadius: b.height / 2, yRadius: b.height / 2)
+        }
         let path = NSBezierPath()
         let top = b.maxY, bottom = b.minY
         let f = min(flare, b.width / 2), c = min(corner, b.width / 2 - f, b.height)
@@ -95,9 +102,19 @@ enum Notch {
         return path
     }
 
-    /// The screen to hang this off: the one with a notch, and the main one if none has one.
+    /// The screen to hang this off: whichever one the pointer is on.
+    ///
+    /// Not "the one with the notch". Plugged into a display, that is the laptop screen — which
+    /// is behind you, or shut. An ambient signal on a screen you are not looking at is not an
+    /// ambient signal.
+    ///
+    /// The external one has no cutout, so there the shape becomes a pill under the menu bar
+    /// instead. It is the same information wearing the only costume available.
     static func screen() -> NSScreen? {
-        NSScreen.screens.first(where: { rect(of: $0) != nil }) ?? NSScreen.main
+        let p = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(p, $0.frame, false) }
+            ?? NSScreen.screens.first(where: { rect(of: $0) != nil })
+            ?? NSScreen.main
     }
 }
 
@@ -188,9 +205,16 @@ final class NotchIsland: NSObject {
 
     // MARK: - Drawing it
 
+    private var lastScreen: NSRect = .zero
+
     private func show(_ next: IslandMode) {
-        guard next != mode else { return }
-        let wasHidden = mode == .hidden
+        // The screen counts as part of "has anything changed": the mode can sit still for an
+        // hour while you move to another display, and an island that only redraws when a session
+        // does would stay on the screen you walked away from.
+        let onScreen = Notch.screen()?.frame ?? .zero
+        guard next != mode || onScreen != lastScreen else { return }
+        let wasHidden = mode == .hidden || onScreen != lastScreen
+        lastScreen = onScreen
         mode = next
 
         guard next != .hidden else {
@@ -213,7 +237,9 @@ final class NotchIsland: NSObject {
         // sticker stuck over it.
         let bar = notch.map { max($0.height, screen.frame.maxY - screen.visibleFrame.maxY) }
             ?? NSStatusBar.system.thickness
-        let core = (notch?.width ?? 150) + Notch.overshoot
+        // Zero where there is no cutout: on a pill there is no hole to leave alone, so the two
+        // ears simply sit next to each other and the shape is centred on the screen.
+        let core = notch.map { $0.width + Notch.overshoot } ?? 0
         let (left, right) = ears(for: next, bar: bar)
 
         view?.mode = next
@@ -223,6 +249,7 @@ final class NotchIsland: NSObject {
         // A mark and a number can only say *that* something is going on. The rest — which
         // sessions, and what the one in front is actually doing — goes here rather than into a
         // wider shape, because the shape is sitting in the menu bar and the menu bar is not ours.
+        view?.projectGrid = subject.flatMap { SessionWatch.shared.grid(of: $0.id) }
         view?.toolTip = tip(for: next)
 
         let width = Notch.flare * 2 + left + core + right
@@ -445,6 +472,8 @@ final class NotchIsland: NSObject {
         let view = IslandView(frame: NSRect(origin: .zero, size: size))
         view.notchWidth = core
         view.leftEar = left
+        // A made-up project's mark, so the picture carries the same thing the real ear does.
+        view.projectGrid = ProjectIcon.demoGrid(hue: 9)
         view.mode = mode
         view.playRoutine(for: mode)
         view.layoutSubtreeIfNeeded()
@@ -527,6 +556,10 @@ final class NotchIsland: NSObject {
                                   keyEquivalent: "")
             item.target = self
             item.representedObject = session.id
+            // The project's own mark, the same one the bar's footer and the terminal's status
+            // line draw. A tab title is the *task*, and two projects can be working on tasks that
+            // read alike — the icon is the part that tells them apart without being read.
+            item.image = SessionWatch.shared.grid(of: session.id)?.image(height: 12)
             // What it is doing, after the name, dimmed — the same line the bar's own list shows,
             // so picking from here and picking from there are the same decision.
             if let line = SessionWatch.shared.liveLine(of: session.id) {
@@ -541,10 +574,28 @@ final class NotchIsland: NSObject {
             }
             menu.addItem(item)
         }
+        // The way out of "what is running" and into "everything".
+        //
+        // A row here rather than a second click on the ear: the first click puts a menu up, and a
+        // menu runs its own event loop — the click that would have been the second one is spent
+        // dismissing it, and never reaches the view at all. Disambiguating by waiting out the
+        // double-click interval before opening the menu would work and would put a quarter of a
+        // second of nothing in front of the common action, which is the wrong trade.
+        menu.addItem(.separator())
+        let all = NSMenuItem(title: L.t.islandAllSessions, action: #selector(showAll),
+                             keyEquivalent: "k")
+        all.keyEquivalentModifierMask = .command
+        all.target = self
+        menu.addItem(all)
+
         // Under the ear that was pressed, in the view's own coordinates.
         let ear = view.rightEarRect
         menu.popUp(positioning: nil, at: NSPoint(x: ear.minX, y: ear.minY - 4), in: view)
         _ = panel
+    }
+
+    @objc private func showAll() {
+        PromptController.shared.showSessionList()
     }
 
     @objc private func jump(_ sender: NSMenuItem) {
@@ -597,6 +648,8 @@ final class IslandView: NSView {
     var leftEar: CGFloat = 0
     var onClickMascot: (() -> Void)?
     var onClickEar: (() -> Void)?
+    /// The mark of the project the named session belongs to.
+    var projectGrid: ProjectIcon.Grid? { didSet { needsDisplay = true } }
 
     private let mascot = MascotView(frame: .zero)
 
@@ -748,7 +801,7 @@ final class IslandView: NSView {
         // The body. Black, because the cutout it grows out of is black and the join between the
         // two has to be invisible.
         NSColor.black.setFill()
-        Notch.path(in: bounds).fill()
+        Notch.path(in: bounds, pill: notchWidth <= 0).fill()
 
         let r = right
         switch mode {
@@ -762,7 +815,7 @@ final class IslandView: NSView {
         case .waiting(let who):
             ear(who, dot: Style.accent, in: r)
         case .finished(let who):
-            ear(who, dot: .systemGreen, in: r)
+            ear(who, dot: NSColor.systemGreen, in: r)
         }
     }
 
@@ -771,11 +824,23 @@ final class IslandView: NSView {
     /// second line nobody can read.
     private func ear(_ name: String, dot: NSColor, in r: NSRect) {
         let d: CGFloat = 5
-        let x = r.minX + Self.inset
+        var x = r.minX + Self.inset
+        // The dot is the *state* — accent for a question, green for something that has finished.
         dot.setFill()
         NSBezierPath(ovalIn: NSRect(x: x, y: r.midY - d / 2, width: d, height: d)).fill()
-        draw(name, in: NSRect(x: x + d + 7, y: r.midY - 8,
-                              width: max(0, r.maxX - Self.inset - (x + d + 7)), height: 16),
+        x += d + 7
+
+        // The mark is *which project*, and it answers a different question: a task name is a
+        // task name, and two of them can read alike. Same registry as the ⌘K rows and the
+        // footer, so the three cannot be looking at different pictures of the same project.
+        if let grid = projectGrid, let icon = grid.image(height: 11) {
+            icon.draw(in: NSRect(x: x, y: (r.midY - icon.size.height / 2).rounded(),
+                                 width: icon.size.width, height: icon.size.height))
+            x += icon.size.width + 7
+        }
+
+        draw(name, in: NSRect(x: x, y: r.midY - 8, width: max(0, r.maxX - Self.inset - x),
+                              height: 16),
              colour: NSColor.white.withAlphaComponent(0.92), size: 12, weight: .medium)
     }
 
