@@ -381,6 +381,58 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     padding: 9px 11px; margin: 6px 0;
     overflow-x: auto; color: #cfcdc8;
 }
+/* Everything else Markdown.swift knows how to draw, drawn here too. The bar and this page read
+   the same documents, and a heading that is a heading on the Mac and a line of hashes in a browser
+   is one of them getting it wrong. */
+.entry .body h3, .entry .body h4, .entry .body h5, .entry .body h6 {
+    margin: 14px 0 6px 0;
+    font-weight: 600;
+    line-height: 1.3;
+}
+.entry .body > *:first-child { margin-top: 0; }
+.entry .body h3 { font-size: 16px; }
+.entry .body h4 { font-size: 14.5px; }
+.entry .body h5, .entry .body h6 { font-size: 13px; color: var(--dim); }
+.entry .body ul, .entry .body ol { margin: 6px 0; padding-left: 22px; }
+.entry .body li { margin: 2px 0; }
+.entry .body li > ul, .entry .body li > ol { margin: 2px 0; }
+.entry .body ul { list-style: disc; }
+.entry .body ul ul { list-style: circle; }
+.entry .body blockquote {
+    margin: 8px 0;
+    padding: 2px 0 2px 12px;
+    border-left: 2px solid var(--line);
+    color: var(--dim);
+}
+.entry .body hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
+.entry .body a { color: #8cbaf9; text-decoration: underline; text-underline-offset: 2px; }
+.entry .body a:hover { color: #a9cbfb; }
+.entry .body del { color: var(--faint); }
+.entry .body strong { font-weight: 650; }
+
+/* A table is the one thing in a transcript that is honestly wider than the reading column.
+   It scrolls inside its own box; the alternative is a page that scrolls sideways, which breaks
+   every other line on the screen to rescue one. */
+.entry .body .tablewrap {
+    overflow-x: auto;
+    max-width: 100%;
+    margin: 9px 0;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    -webkit-overflow-scrolling: touch;
+}
+.entry .body table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.entry .body th, .entry .body td {
+    padding: 6px 11px;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+}
+.entry .body th:last-child, .entry .body td:last-child { border-right: 0; }
+.entry .body tbody tr:last-child td { border-bottom: 0; }
+.entry .body thead th { background: #1a1a1f; color: var(--dim); font-weight: 600; white-space: nowrap; }
+
 /* A run the reader was spared. It says how much was hidden, because "nothing happened here"
    and "eleven tool calls happened here" are not the same silence. */
 .entry.folded .body { color: var(--faint); font-size: 12px; }
@@ -476,6 +528,85 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     color: var(--ink); background: #191920;
 }
 .sheet .foot { margin-top: 16px; color: var(--faint); font-size: 11.5px; }
+
+/* --------------------------------------------------------------------------
+   The door
+   The whole page, until the server knows who is asking. Not a banner and not a
+   modal over a list that is not there — there is nothing behind this to look at,
+   and pretending otherwise would just be a screen full of empty furniture.
+   -------------------------------------------------------------------------- */
+.door {
+    position: fixed; inset: 0; z-index: 80;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg);
+    padding: calc(24px + var(--safe-t)) 20px calc(24px + var(--safe-b)) 20px;
+    overflow-y: auto;
+}
+.door[hidden] { display: none; }
+.door-card {
+    width: min(400px, 100%);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 22px 22px 18px 22px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+.door-head { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; }
+.door-head canvas { display: block; image-rendering: pixelated; }
+.door-head b { font-size: 13.5px; font-weight: 600; letter-spacing: 0.2px; }
+
+.door section { display: none; }
+.door[data-step="ask"] section[data-step="ask"],
+.door[data-step="code"] section[data-step="code"],
+.door[data-step="password"] section[data-step="password"] { display: block; }
+
+.door .lede { margin: 0 0 6px 0; font-size: 15px; font-weight: 600; }
+.door .fine { margin: 0 0 16px 0; font-size: 12.5px; line-height: 1.5; color: var(--dim); }
+.door .fine b { color: var(--ink); font-weight: 600; }
+.door label {
+    display: block; margin-bottom: 6px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--faint);
+}
+.door input[type="text"], .door input[type="password"] {
+    width: 100%;
+    background: #101014; border: 1px solid var(--line); border-radius: 9px;
+    padding: 10px 12px; font-size: 15px; color: var(--ink);
+    margin-bottom: 14px;
+}
+.door input:focus { outline: none; border-color: var(--accent-ed); }
+.door .go {
+    width: 100%;
+    background: var(--accent); color: #17110e;
+    font-size: 14px; font-weight: 600;
+    border-radius: 10px; padding: 12px;
+}
+.door .go:disabled { background: #2a2a32; color: var(--faint); cursor: default; }
+.door .alt {
+    display: block; width: 100%;
+    margin-top: 10px; padding: 8px;
+    color: var(--dim); font-size: 12.5px; text-align: center;
+}
+.door .alt:hover { color: var(--ink); }
+.door .say { margin: 14px 0 0 0; font-size: 12.5px; line-height: 1.5; color: var(--accent); min-height: 1px; }
+.door .say:empty { display: none; }
+.door .say.calm { color: var(--dim); }
+
+/* Six boxes rather than one field: on a phone this is typed with a thumb while reading a code
+   off another screen, and a target you can hit without looking is worth the extra markup. */
+.digits { display: flex; gap: 8px; margin-bottom: 16px; }
+.digits input {
+    flex: 1 1 0; min-width: 0; width: 100%;
+    height: 56px;
+    background: #101014; border: 1px solid var(--line); border-radius: 10px;
+    text-align: center;
+    font-family: var(--mono); font-size: 22px; color: var(--ink);
+    padding: 0;
+    -moz-appearance: textfield;
+}
+.digits input::-webkit-outer-spin-button, .digits input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.digits input:focus { outline: none; border-color: var(--accent); background: #16161c; }
+.digits input.filled { border-color: #3a3a45; }
+@media (max-width: 380px) { .digits { gap: 5px; } .digits input { height: 50px; font-size: 19px; } }
 
 .toast {
     position: fixed; z-index: 70;
@@ -613,6 +744,51 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
             <dt><kbd>?</kbd></dt><dd>This card</dd>
         </dl>
         <div class="foot">Anything typed into a text box stays in the text box — the shortcuts stand down while you write.</div>
+    </div>
+</div>
+
+<!-- The door. Shown when the server says this browser is not one it knows: a pairing code
+     that appears on the Mac and nowhere else, which is the whole of the security property. -->
+<div class="door" id="door" data-step="ask" hidden>
+    <div class="door-card" role="dialog" aria-modal="true" aria-label="Pair this browser">
+        <div class="door-head"><canvas id="door-mark"></canvas><b>clawdline</b></div>
+
+        <section data-step="ask">
+            <p class="lede">This browser has not been let in yet.</p>
+            <p class="fine">Ask to pair and a six-digit code appears <b>on the Mac</b> — it is deliberately not in the reply to this page. Only somebody at that machine can finish this, and that is the point rather than the hurdle.</p>
+            <label for="door-name">Call this device</label>
+            <input id="door-name" type="text" maxlength="40" autocomplete="off" autocapitalize="words" spellcheck="false">
+            <button class="go" id="door-ask" type="button">Ask to pair</button>
+            <button class="alt" id="door-to-password" type="button">Sign in with a password instead</button>
+        </section>
+
+        <section data-step="code">
+            <p class="lede">Look at the Mac.</p>
+            <p class="fine">Clawdline is showing six digits for <span id="door-left">two minutes</span>. Type them here.</p>
+            <div class="digits" id="door-digits">
+                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 1">
+                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 2">
+                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 3">
+                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 4">
+                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 5">
+                <input inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Digit 6">
+            </div>
+            <button class="go" id="door-confirm" type="button">Pair this device</button>
+            <button class="alt" id="door-restart" type="button">Start again</button>
+        </section>
+
+        <section data-step="password">
+            <p class="lede">Sign in with the password.</p>
+            <p class="fine">The one set in Clawdline on the Mac, under Settings → Remote. If none has been set, pairing is the way in.</p>
+            <label for="door-password">Password</label>
+            <input id="door-password" type="password" autocomplete="current-password">
+            <label for="door-pw-name">Call this device</label>
+            <input id="door-pw-name" type="text" maxlength="40" autocomplete="off" autocapitalize="words" spellcheck="false">
+            <button class="go" id="door-pw-go" type="button">Sign in</button>
+            <button class="alt" id="door-to-pair" type="button">Use a pairing code instead</button>
+        </section>
+
+        <p class="say" id="door-say" role="status" aria-live="polite"></p>
     </div>
 </div>
 
@@ -882,6 +1058,44 @@ function jsonFetch(path, options) {
     });
 }
 
+/** A POST of JSON, which is the shape every write on this server takes. */
+function post(body, extra) {
+    var headers = { "Content-Type": "application/json" };
+    for (var k in (extra || {})) headers[k] = extra[k];
+    return { method: "POST", headers: headers, body: JSON.stringify(body || {}) };
+}
+
+/**
+ * A token handed to this page in the URL fragment, traded for a cookie.
+ *
+ * The Settings window on the Mac mints one and opens `#t=…`. A fragment is the right envelope
+ * for a credential: browsers do not send it to the server and do not write it into access logs.
+ * The trade is needed because **`EventSource` cannot carry a header** — a token held in a
+ * variable can fetch, but it cannot open the stream that everything else here depends on.
+ *
+ * The fragment is wiped before the request goes out rather than after it comes back. What is
+ * being removed is a live credential sitting in an address bar on somebody's screen, and there
+ * is no version of "wait for the round trip" that is better than that.
+ */
+function adoptToken() {
+    var match = /(?:^|[#&])t=([^&]+)/.exec(location.hash || "");
+    if (!match) return Promise.resolve(false);
+    var token = decodeURIComponent(match[1]);
+    stripFragment();
+    if (MOCK) return Promise.resolve(true);
+    return jsonFetch("/v1/auth/adopt", post({ token: token }))
+        .then(function () { return true; })
+        .catch(function () { return false; });   // the door is a moment away and says it better
+}
+
+function stripFragment() {
+    try {
+        history.replaceState(null, "", location.pathname + location.search);
+    } catch (e) {
+        location.hash = "";                      // older Safari from a file:// copy
+    }
+}
+
 var Live = {
     es: null,
     attempt: 0,
@@ -889,19 +1103,48 @@ var Live = {
     countdown: null,
 
     start: function () {
-        jsonFetch("/v1/health").then(handlers.hello).catch(function () { /* the stream says it too */ });
+        var self = this;
+        adoptToken().then(function () { self.check(); });
+    },
+
+    /**
+     * Health first, and again before every reconnect.
+     *
+     * It is the one route that answers without a token, which makes it the only way to tell
+     * "this browser is not allowed in" from "the app is not running". `EventSource` reports a
+     * failure and never a reason, so a page that only retried the stream would show a locked-out
+     * reader a counter going round forever with nothing on it about pairing.
+     */
+    check: function () {
+        var self = this;
+        return jsonFetch("/v1/health").then(function (h) {
+            handlers.hello(h);
+            if (h.authed === false) { self.stop(); Door.show(); return; }
+            Door.hide();
+            self.begin();
+        }).catch(function () {
+            // Not even health. Whatever is wrong is not about permission, so let the stream's own
+            // backoff be the thing that says so.
+            self.begin();
+        });
+    },
+
+    begin: function () {
+        var self = this;
         jsonFetch("/v1/sessions").then(function (d) {
-            S.locked = false;
             handlers.sessions(d.sessions, d.at);
         }).catch(function (e) {
-            // A server that wants a paired device answers 401 to everything but the page itself.
-            // The event stream cannot say this — EventSource reports a failure and never a reason —
-            // so this one request is where a locked-out reader finds out, instead of watching a
-            // reconnect counter go round forever with no explanation.
-            S.locked = (e.code === "unauthorized");
-            render();
+            if (e.code === "unauthorized") { self.stop(); Door.show(); }
         });
-        this.connect();
+        if (!this.es) this.connect();
+    },
+
+    /** Stand down: the door is up, and a stream we are not allowed to open is just noise. */
+    stop: function () {
+        this.clearTimers();
+        if (this.es) { this.es.close(); this.es = null; }
+        this.attempt = 0;
+        handlers.conn("locked");
     },
 
     connect: function () {
@@ -949,7 +1192,9 @@ var Live = {
             left -= 1;
             handlers.conn(left > 1 ? "retrying" : "connecting", Math.max(left, 0));
         }, 1000);
-        this.timer = setTimeout(function () { self.connect(); }, wait);
+        // Back through health rather than straight at the stream: a cookie revoked while the page
+        // was open is a 401 the stream can never spell out, and this is where it becomes the door.
+        this.timer = setTimeout(function () { self.check(); }, wait);
     },
 
     clearTimers: function () {
@@ -960,7 +1205,7 @@ var Live = {
     /** Ask again by hand — the phone's pull-to-refresh, and the connection chip. */
     refresh: function () {
         var self = this;
-        if (!this.es) { this.clearTimers(); this.attempt = 0; this.connect(); }
+        if (!this.es) { this.clearTimers(); this.attempt = 0; return this.check(); }
         return jsonFetch("/v1/sessions").then(function (d) { handlers.sessions(d.sessions, d.at); })
             .catch(function (e) { toast(e.message, true); });
     },
@@ -970,19 +1215,23 @@ var Live = {
     },
 
     send: function (id, text) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/send", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Idempotency-Key": uuid() },
-            body: JSON.stringify({ text: text })
-        });
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/send",
+                         post({ text: text }, { "Idempotency-Key": uuid() }));
     },
 
     focus: function (id) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/focus", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Idempotency-Key": uuid() },
-            body: "{}"
-        });
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/focus",
+                         post({}, { "Idempotency-Key": uuid() }));
+    },
+
+    // The three doors. None of them carries the code: it is shown on the Mac, and this page is
+    // only ever the thing typing it back.
+    pair: function (name) { return jsonFetch("/v1/auth/pair", post({ name: name })); },
+    confirmPair: function (id, code) {
+        return jsonFetch("/v1/auth/pair/confirm", post({ pairing_id: id, code: code }));
+    },
+    password: function (password, name) {
+        return jsonFetch("/v1/auth/password", post({ password: password, name: name }));
     }
 };
 
@@ -1529,30 +1778,257 @@ function entryHTML(e) {
         '<div class="body">' + body + "</div></div>";
 }
 
+/* --------------------------------------------------------------------------
+   Markdown, to the same depth the bar's own pane reads it
+   ------------------------------------------------------------------------ */
+
 /**
- * The little that is worth parsing: fenced blocks and inline spans. Claude writes both all day
- * and a transcript that shows the backticks is a transcript nobody reads twice. Everything is
- * escaped before a single tag is added — the text arrives from a terminal, and a terminal will
- * happily carry someone else's angle brackets.
+ * Enough Markdown to read a Claude Code answer, and no more.
+ *
+ * The recognisers are ported from ``Markdown.swift`` so the two surfaces agree about what a
+ * table is and what a heading is — a document that draws as a table on the Mac and as a row of
+ * pipes here would mean one of them is lying about the same text. Its rule about failure is
+ * ported too: **anything unrecognised falls through as plain text.** A stray asterisk on screen
+ * is a blemish; a sentence that disappeared into a parser is a bug you cannot see.
+ *
+ * Everything is escaped before a single tag is written. This text came off somebody's terminal,
+ * and a terminal will carry any angle bracket you put in front of it.
  */
 function richText(text) {
     if (!text) return "";
-    var parts = String(text).split("```");
-    var out = "";
-    for (var i = 0; i < parts.length; i++) {
-        if (i % 2) {
-            var code = parts[i].replace(/^[A-Za-z0-9_+-]*\n/, "").replace(/\n$/, "");
-            out += '<pre class="code">' + esc(code) + "</pre>";
-        } else {
-            var prose = parts[i].replace(/^\n+|\n+$/g, "");
-            if (!prose) continue;
-            out += "<p>" + esc(prose)
-                .replace(/`([^`\n]+)`/g, "<code>$1</code>")
-                .replace(/\n{2,}/g, "</p><p>")
-                .replace(/\n/g, "<br>") + "</p>";
+    var lines = String(text).replace(/\r\n?/g, "\n").split("\n");
+    var out = [];
+    var i = 0;
+
+    while (i < lines.length) {
+        var line = lines[i];
+        var trimmed = line.trim();
+
+        // Fenced code. The opening line may carry a language tag, which is not content.
+        if (trimmed.indexOf("```") === 0) {
+            var body = [];
+            i += 1;
+            while (i < lines.length && lines[i].trim().indexOf("```") !== 0) { body.push(lines[i]); i += 1; }
+            i += 1;
+            out.push('<pre class="code">' + esc(body.join("\n")) + "</pre>");
+            continue;
         }
+
+        if (!trimmed) { i += 1; continue; }
+
+        if (isRule(trimmed)) { out.push("<hr>"); i += 1; continue; }
+
+        var head = heading(trimmed);
+        if (head) {
+            // h1 and h2 in a transcript entry would outweigh the page's own furniture, so the
+            // levels are shifted down: what matters is that six of them stay distinguishable.
+            var tag = "h" + Math.min(6, head[0] + 2);
+            out.push("<" + tag + ">" + inlineMd(head[1]) + "</" + tag + ">");
+            i += 1;
+            continue;
+        }
+
+        // A table is a run of piped lines *under a separator row*. Detected as a block rather
+        // than line by line, or the row of dashes lands in the document as a paragraph.
+        if (looksLikeTableRow(trimmed) && i + 1 < lines.length && isTableSeparator(lines[i + 1].trim())) {
+            var rows = [];
+            while (i < lines.length && looksLikeTableRow(lines[i].trim())) { rows.push(lines[i].trim()); i += 1; }
+            out.push(tableHTML(rows));
+            continue;
+        }
+
+        if (trimmed.charAt(0) === ">") {
+            var quoted = [];
+            while (i < lines.length && lines[i].trim().charAt(0) === ">") {
+                quoted.push(lines[i].trim().slice(1).trim());
+                i += 1;
+            }
+            out.push("<blockquote>" + inlineMd(quoted.join(" ")) + "</blockquote>");
+            continue;
+        }
+
+        if (listItem(line)) {
+            var block = [];
+            while (i < lines.length && (listItem(lines[i]) || (block.length && lines[i].trim() && !isBlockStart(lines[i])))) {
+                block.push(lines[i]);
+                i += 1;
+            }
+            out.push(listHTML(block));
+            continue;
+        }
+
+        // Paragraph: gather until something else starts. Single newlines inside one are a wrapped
+        // line and not a break, which is how the source was written and how the bar reads it.
+        var paragraph = [trimmed];
+        i += 1;
+        while (i < lines.length) {
+            var next = lines[i].trim();
+            if (!next || isBlockStart(lines[i])) break;
+            paragraph.push(next);
+            i += 1;
+        }
+        out.push("<p>" + inlineMd(paragraph.join(" ")) + "</p>");
+    }
+    return out.join("");
+}
+
+function isBlockStart(line) {
+    var t = line.trim();
+    return !t || t.indexOf("```") === 0 || t.charAt(0) === ">" || !!heading(t)
+        || !!listItem(line) || isRule(t) || looksLikeTableRow(t);
+}
+
+function heading(line) {
+    var m = /^(#{1,6})\s+(.*)$/.exec(line);
+    return m ? [m[1].length, m[2].trim()] : null;
+}
+
+/** The marker and the text, plus how far it is indented — the indent is what makes a nested
+ *  list nested, and it is the one thing the bar's flat list cannot show. */
+function listItem(line) {
+    var m = /^(\s*)([-*+])\s+(.*)$/.exec(line);
+    if (m) return { indent: m[1].length, ordered: false, marker: "", text: m[3] };
+    m = /^(\s*)(\d{1,3})\.\s+(.*)$/.exec(line);
+    if (m) return { indent: m[1].length, ordered: true, marker: m[2], text: m[3] };
+    return null;
+}
+
+function isRule(line) {
+    return /^(-{3,}|_{3,}|\*{3,})$/.test(line);
+}
+
+function looksLikeTableRow(line) {
+    return line.indexOf("|") >= 0 && (line.match(/\|/g) || []).length >= 2;
+}
+
+function isTableSeparator(line) {
+    return looksLikeTableRow(line) && /^[|\-: ]+$/.test(line);
+}
+
+/** The cells of one row. A leading and a trailing pipe are borders, not empty cells. */
+function tableCells(row) {
+    var parts = row.split("|");
+    if (!parts[0].trim()) parts.shift();
+    if (parts.length && !parts[parts.length - 1].trim()) parts.pop();
+    return parts.map(function (c) { return c.trim(); });
+}
+
+/**
+ * A real `<table>`, which is the whole reason this page can do better than the bar.
+ *
+ * The pane on the Mac had to build one out of `NSTextTable` after two simpler attempts failed —
+ * pipes left in and set in monospace do not line up, because a CJK glyph comes from a fallback
+ * face whose advance is not reliably twice the monospace one. A browser has actual table layout,
+ * so the columns are the browser's problem and the alignment markers can be honoured on top.
+ *
+ * Wide tables scroll inside their own box. A table is the one thing in a transcript that can be
+ * genuinely wider than the reading column, and the alternative — a page that scrolls sideways —
+ * breaks every other line on the screen to rescue one.
+ */
+function tableHTML(rows) {
+    var separator = -1;
+    for (var r = 0; r < rows.length; r++) { if (isTableSeparator(rows[r])) { separator = r; break; } }
+    var align = separator >= 0 ? tableCells(rows[separator]).map(function (spec) {
+        var left = spec.charAt(0) === ":", right = spec.charAt(spec.length - 1) === ":";
+        return left && right ? "center" : right ? "right" : left ? "left" : "";
+    }) : [];
+
+    var grid = rows.filter(function (row) { return !isTableSeparator(row); }).map(tableCells);
+    if (!grid.length) return "";
+    var columns = 0;
+    grid.forEach(function (row) { columns = Math.max(columns, row.length); });
+    if (!columns) return "";
+
+    function cell(tag, value, c) {
+        var style = align[c] ? ' style="text-align:' + align[c] + '"' : "";
+        return "<" + tag + style + ">" + inlineMd(value || "") + "</" + tag + ">";
+    }
+    var html = '<div class="tablewrap"><table>';
+    // A header row only when the separator says so — the first row of a table with no separator
+    // above it is data, and promoting it would be inventing a heading.
+    var start = 0;
+    if (separator === 1) {
+        html += "<thead><tr>";
+        for (var c = 0; c < columns; c++) html += cell("th", grid[0][c], c);
+        html += "</tr></thead>";
+        start = 1;
+    }
+    html += "<tbody>";
+    for (var g = start; g < grid.length; g++) {
+        html += "<tr>";
+        for (var k = 0; k < columns; k++) html += cell("td", grid[g][k], k);
+        html += "</tr>";
+    }
+    return html + "</tbody></table></div>";
+}
+
+/** A run of list lines, nested by how far each one is indented. */
+function listHTML(block) {
+    var items = [];
+    block.forEach(function (line) {
+        var item = listItem(line);
+        if (item) { items.push(item); return; }
+        // A wrapped continuation line belongs to the item above it.
+        if (items.length) items[items.length - 1].text += " " + line.trim();
+    });
+    if (!items.length) return "";
+
+    var html = "";
+    var stack = [];            // the indents currently open, outermost first
+    items.forEach(function (item) {
+        while (stack.length && item.indent < stack[stack.length - 1].indent) {
+            html += "</li></" + stack.pop().tag + ">";
+        }
+        if (!stack.length || item.indent > stack[stack.length - 1].indent) {
+            var tag = item.ordered ? "ol" : "ul";
+            if (stack.length) html += "<" + tag + ">";       // opens inside the item above
+            else html += "<" + tag + ">";
+            stack.push({ indent: item.indent, tag: tag });
+        } else {
+            html += "</li>";
+        }
+        html += "<li>" + inlineMd(item.text);
+    });
+    while (stack.length) html += "</li></" + stack.pop().tag + ">";
+    return html;
+}
+
+/**
+ * `**bold**`, `*italic*`, `` `code` ``, `~~struck~~`, `[text](url)`.
+ *
+ * Unmatched markers stay as text, the same rule the bar follows. The one thing this does that
+ * the bar does not have to think about is *where a link may point*: a transcript is somebody
+ * else's output, so only the three schemes that cannot execute anything are turned into links
+ * and everything else is left as the words it was written as.
+ */
+function inlineMd(text) {
+    var s = esc(text);
+    // Code first and by itself: whatever is inside a span of code is not markup, and running the
+    // other rules over it would put tags inside a literal.
+    var parts = s.split("`");
+    for (var i = 0; i < parts.length; i++) {
+        if (i % 2) continue;                            // inside a code span
+        parts[i] = parts[i]
+            .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, function (all, label, href) {
+                return safeHref(href) ? '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + "</a>" : all;
+            })
+            .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+            .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
+            .replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
+    }
+    var out = "";
+    for (var j = 0; j < parts.length; j++) {
+        // An unclosed backtick is a backtick, not the start of code that never ends.
+        var closed = (parts.length % 2 === 1);
+        if (j % 2 && closed) out += "<code>" + parts[j] + "</code>";
+        else out += (j % 2 ? "`" + parts[j] : parts[j]);
     }
     return out;
+}
+
+/** Only the schemes that cannot run anything. `javascript:` in a transcript is not a link. */
+function safeHref(href) {
+    return /^(https?:\/\/|mailto:)/i.test(href.replace(/&amp;/g, "&"));
 }
 
 function renderComposer() {

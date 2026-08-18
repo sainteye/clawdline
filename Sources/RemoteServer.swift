@@ -346,6 +346,24 @@ final class RemoteServer {
             return .error(404, "not_found", "No such route")
 
         case ("GET", "/"), ("GET", "/index.html"):
+            // `/?t=<token>` signs the browser in and bounces to `/`.
+            //
+            // The page cannot be handed a token any other way: there is nowhere sensible for a
+            // person to type one, and `EventSource` cannot carry a header even if they did. So
+            // the Mac's "Open in a browser" button and a QR code both point here, the cookie is
+            // set on the way through, and the redirect takes the token back out of the address
+            // bar before anybody can copy it into a chat window. A fragment would keep it off the
+            // wire entirely and the page handles that too — but a fragment is invisible to the
+            // server, so it cannot work on the very first load, and half the QR readers in the
+            // world drop one.
+            if let token = request.query["t"], !token.isEmpty,
+               case .allowed = RemoteAuth.verify(bearer: token) {
+                var response = signedIn(token, secure: request.headers["x-forwarded-proto"] == "https")
+                response.status = 303
+                response.headers["Location"] = "/"
+                response.body = Data()
+                return response
+            }
             return page()
 
         case ("GET", "/manifest.webmanifest"):
@@ -397,7 +415,7 @@ final class RemoteServer {
     /// **`Sec-Fetch-Site`** is the modern browser saying, unforgeably, that the page asking is on
     /// a different site. Absent for anything that is not a browser, so a script is unaffected.
     func crossOriginRefusal(_ request: Request) -> Response? {
-        if let site = request.headers["sec-fetch-site"], site == "cross-site" {
+        if Self.isCrossSiteSubresource(request.headers) {
             return .error(403, "forbidden", "Cross-site requests are not answered.")
         }
         guard let host = request.headers["host"], Self.isAllowedHost(host,
@@ -407,6 +425,28 @@ final class RemoteServer {
             return .error(403, "forbidden", "Wrong host.")
         }
         return nil
+    }
+
+    /// A cross-site request that is **not** somebody following a link.
+    ///
+    /// The distinction cost a bug and is worth the words. `Sec-Fetch-Site: cross-site` covers two
+    /// completely different things: a page's script reaching for this server behind the user's
+    /// back, and the user typing the address into a bar that happened to be on another page —
+    /// Chrome calls a navigation out of `chrome://newtab` cross-site, so the first version of
+    /// this refused to open at all when you typed the URL in.
+    ///
+    /// What separates them is not the site, it is the *mode*: a top-level navigation says
+    /// `navigate` / `document`, and a script's fetch cannot claim either — the browser sets both
+    /// headers and a page cannot forge them. So a navigation is let through and everything else
+    /// cross-site is refused, which is the shape the attack actually has.
+    ///
+    /// Absent headers mean it is not a browser, and a script is left alone: it has to bring a
+    /// token like everything else, and that is the check that matters for it.
+    static func isCrossSiteSubresource(_ headers: [String: String]) -> Bool {
+        guard headers["sec-fetch-site"] == "cross-site" else { return false }
+        let navigating = headers["sec-fetch-mode"] == "navigate"
+            && headers["sec-fetch-dest"] == "document"
+        return !navigating
     }
 
     /// Pure, so the rebinding case can be tested without a socket.
@@ -837,6 +877,7 @@ extension RemoteServer {
         static func reason(_ status: Int) -> String {
             switch status {
             case 200: return "OK"
+            case 303: return "See Other"
             case 400: return "Bad Request"
             case 401: return "Unauthorized"
             case 403: return "Forbidden"

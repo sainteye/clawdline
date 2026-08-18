@@ -2268,6 +2268,40 @@ group("the machinery Claude Code injects into your turns") {
            Transcript.withoutMachineBlocks("deploy it"), "deploy it")
 }
 
+group("the remote server refuses the right cross-origin requests") {
+    // DNS rebinding: the page keeps calling itself evil.com while the address behind the name
+    // becomes 127.0.0.1, so origin checks stop working — and Host is the one thing that does not
+    // change through any of it.
+    func ok(_ host: String) -> Bool {
+        RemoteServer.isAllowedHost(host, port: 7717, hostname: "clawd.example.com")
+    }
+    check("loopback with a port", ok("127.0.0.1:7717"))
+    check("localhost", ok("localhost:7717"))
+    check("ipv6 loopback in brackets", ok("[::1]:7717"))
+    check("the configured hostname", ok("clawd.example.com"))
+    check("and it is not case sensitive", ok("Clawd.Example.COM"))
+    check("a quick tunnel, whose name cannot be known in advance",
+          ok("denied-franchise-william-jade.trycloudflare.com"))
+    check("a rebound host is refused", !ok("evil.com"))
+    check("and one that merely ends in something familiar", !ok("evil-trycloudflare.com"))
+    check("and one pretending to be the configured one", !ok("clawd.example.com.evil.com"))
+
+    // The distinction that cost a bug: typing the address into a bar that was on another page is
+    // cross-site, and is not an attack.
+    func sub(_ h: [String: String]) -> Bool { RemoteServer.isCrossSiteSubresource(h) }
+    check("a script fetching from another site is refused",
+          sub(["sec-fetch-site": "cross-site", "sec-fetch-mode": "cors"]))
+    check("with no mode at all, still refused",
+          sub(["sec-fetch-site": "cross-site"]))
+    check("somebody typing the address is not",
+          !sub(["sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate",
+                "sec-fetch-dest": "document"]))
+    check("the page asking for its own things is not",
+          !sub(["sec-fetch-site": "same-origin", "sec-fetch-mode": "cors"]))
+    check("and a script that is not a browser at all is left to the token check",
+          !sub([:]))
+}
+
 // MARK: - Claude Code hooks
 
 private func hookSession(_ id: String, tty: String) -> TargetSession {

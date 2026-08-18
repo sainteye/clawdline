@@ -240,7 +240,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         let caps: Set<RemoteAuth.Capability> = Config.shared.remoteWrite ? [.read, .send] : [.read]
         let made = RemoteAuth.addDevice(name: "Browser on this Mac", caps: caps)
         guard let url = URL(string:
-            "http://127.0.0.1:\(Config.shared.remotePort)/#t=\(made.token)") else { return }
+            "http://127.0.0.1:\(Config.shared.remotePort)/?t=\(made.token)") else { return }
         NSWorkspace.shared.open(url)
         refreshDevices()
     }
