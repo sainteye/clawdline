@@ -2658,6 +2658,156 @@ group("the tunnel refuses, and every reason is a pure function of its inputs") {
     check("everything in place is allowed", why(.quick) == nil && why(.named) == nil)
 }
 
+private func hookTarget(_ id: String, title: String = "fix the webhook",
+                        tty: String = "/dev/ttys004", cwd: String? = nil) -> TargetSession {
+    TargetSession(backend: .iterm, id: id, name: title, tty: tty,
+                  windowIndex: 0, tabIndex: 0, isClaude: true, cwd: cwd)
+}
+
+group("state hook: a reading is not an event") {
+    let one = hookTarget("A")
+    let two = hookTarget("B", tty: "/dev/ttys009")
+    let sessions = [one, two]
+    func changes(_ old: [String: SessionState],
+                 _ new: [String: SessionState]) -> [StateHook.Change] {
+        StateHook.transitions(from: old, to: new, sessions: sessions)
+    }
+
+    // The moment the whole file exists for: something that was running has stopped to ask.
+    let real = changes(["A": .working("Cogitating… (7s)")], ["A": .waiting])
+    expect("working → waiting is one change", real.count, 1)
+    expect("and it says exactly what happened", real.first,
+           StateHook.Change(session: one, from: .working("Cogitating… (7s)"), to: .waiting))
+
+    expect("the same state twice is nothing", changes(["A": .idle], ["A": .idle]).count, 0)
+
+    // The live line carries its own clock, so two readings of a busy session are never equal and
+    // are never a change either. Anything keyed on `==` here would fire once a second, forever.
+    expect("a ticking live line is not a change",
+           changes(["A": .working("Cogitating… (7s)")],
+                   ["A": .working("Cogitating… (8s)")]).count, 0)
+    expect("nor is losing the line while staying busy",
+           changes(["A": .working("Cogitating… (7s)")], ["A": .working("")]).count, 0)
+
+    // `unknown` is the absence of an answer, not a state — iTerm2 being slow to reply must not
+    // arrive as a session stopping and starting again.
+    expect("going unknown is not a change",
+           changes(["A": .working("x")], ["A": .unknown]).count, 0)
+    expect("coming back from unknown is not one either",
+           changes(["A": .unknown], ["A": .idle]).count, 0)
+    expect("and unknown to unknown is certainly not",
+           changes(["A": .unknown], ["A": .unknown]).count, 0)
+
+    // Ten sessions on the first reading after launch are not ten state changes.
+    expect("a session seen for the first time is not a change",
+           changes([:], ["A": .waiting, "B": .idle]).count, 0)
+    expect("a session that has gone away is not one",
+           changes(["A": .working("x")], [:]).count, 0)
+
+    let both = changes(["A": .working("x"), "B": .idle], ["A": .idle, "B": .waiting])
+    expect("two sessions changing is two changes", both.count, 2)
+    expect("in the order the sessions are listed in", both.map { $0.session.id }, ["A", "B"])
+
+    // The session list is the authority on what exists; a reading keyed to something not in it
+    // belongs to a tab that closed between the two.
+    expect("a reading for a session nobody is watching is ignored",
+           StateHook.transitions(from: ["Z": .idle], to: ["Z": .waiting],
+                                 sessions: sessions).count, 0)
+}
+
+group("state hook: the words a hook reads") {
+    // Spelled out rather than derived, because these are somebody else's API: renaming a case in
+    // Swift must not quietly rename a string a shell script compares against.
+    expect("working", StateHook.name(.working("x")), "working")
+    expect("waiting", StateHook.name(.waiting), "waiting")
+    expect("idle", StateHook.name(.idle), "idle")
+    expect("unknown", StateHook.name(.unknown), "unknown")
+}
+
+group("state hook: what a hook is told") {
+    let session = hookTarget("A9F3", title: "✳ fix the webhook (claude)",
+                             cwd: "/Users/x/code/clawdline")
+    let env = StateHook.environment(
+        for: StateHook.Change(session: session, from: .working("Cogitating… (7s)"), to: .waiting),
+        claudeSession: "3f6a1c2e-7b4d-4a9e-8c15-2d0e9f7b6a34")
+
+    expect("the event has a name of its own", env["CLAWDLINE_EVENT"], "state_changed")
+    expect("the state", env["CLAWDLINE_STATE"], "waiting")
+    expect("the one it came from", env["CLAWDLINE_PREV_STATE"], "working")
+    expect("the session id", env["CLAWDLINE_SESSION_ID"], "A9F3")
+    expect("the tty", env["CLAWDLINE_TTY"], "/dev/ttys004")
+    // The label, not the raw title: the glyph on the front is a frame of an animation and the
+    // job name in brackets is iTerm2's, and neither is worth putting in a notification.
+    expect("the label as a person reads it", env["CLAWDLINE_LABEL"], "fix the webhook")
+    expect("where it is working", env["CLAWDLINE_CWD"], "/Users/x/code/clawdline")
+    expect("and Claude Code's own id, which names the transcript",
+           env["CLAWDLINE_CLAUDE_SESSION"], "3f6a1c2e-7b4d-4a9e-8c15-2d0e9f7b6a34")
+    check("a session that is not working carries no live line", env["CLAWDLINE_LINE"] == nil)
+
+    let obj = (try? JSONSerialization.jsonObject(
+        with: Data((env["CLAWDLINE_EVENT_JSON"] ?? "").utf8))) as? [String: Any]
+    check("the whole thing arrives as one object too", obj != nil)
+    expect("with the prefix off the keys", obj?["state"] as? String, "waiting")
+    expect("and the underscores kept", obj?["session_id"] as? String, "A9F3")
+    expect("the same fields as the variables, no more", obj?.count, env.count - 1)
+    check("and it does not contain itself", obj?["event_json"] == nil)
+
+    let busy = StateHook.environment(
+        for: StateHook.Change(session: session, from: .idle, to: .working("Cogitating… (7s)")))
+    expect("a working session carries the live line", busy["CLAWDLINE_LINE"], "Cogitating… (7s)")
+    expect("and where it came from", busy["CLAWDLINE_PREV_STATE"], "idle")
+    check("with nothing invented for a session no hook told us about",
+          busy["CLAWDLINE_CLAUDE_SESSION"] == nil)
+
+    // Claude Code draws no live line at all while plain text is coming back, and an empty string
+    // would read as one that had been erased rather than one that was never there.
+    let quiet = StateHook.environment(
+        for: StateHook.Change(session: session, from: .idle, to: .working("   ")))
+    check("a blank line is omitted rather than sent empty", quiet["CLAWDLINE_LINE"] == nil)
+
+    let bare = StateHook.environment(
+        for: StateHook.Change(session: hookTarget("B"), from: .waiting, to: .idle))
+    check("a session whose directory is not known omits it", bare["CLAWDLINE_CWD"] == nil)
+    expect("and everything else is still there", bare["CLAWDLINE_STATE"], "idle")
+    expect("including the one it left", bare["CLAWDLINE_PREV_STATE"], "waiting")
+}
+
+group("state hook: finding the program") {
+    // A GUI app has launchd's PATH, not a login shell's, so a bare name has to be looked for in
+    // more places than PATH names — otherwise everything installed by Homebrew is unreachable.
+    expect("an absolute path is taken as one", StateHook.resolve("/bin/sh"), "/bin/sh")
+    expect("one that is not there resolves to nothing", StateHook.resolve("/nope/nope"), nil)
+    // A slash means a path, so this is not hunted for in /usr/bin under the same name.
+    expect("a relative path is not searched for", StateHook.resolve("./nope"), nil)
+    check("a bare name is found", StateHook.resolve("sh")?.hasSuffix("/sh") == true)
+    expect("a bare name that exists nowhere is nothing",
+           StateHook.resolve("clawdline-no-such-program"), nil)
+}
+
+group("a hook written as #!/usr/bin/env node has to be able to find node") {
+    // An app launched from Finder gets the launchd PATH, which has no Homebrew in it — so the
+    // shebang fails for a reason that has nothing to do with the script.
+    let launchd = "/usr/bin:/bin:/usr/sbin:/sbin"
+    let fixed = StateHook.usefulPath(launchd)
+    check("homebrew goes in front", fixed.hasPrefix("/opt/homebrew/bin:"))
+    check("and /usr/local with it", fixed.contains("/usr/local/bin"))
+    check("what was there is still there", fixed.hasSuffix(launchd))
+    // Somebody's ordering is somebody's ordering: only what is genuinely absent goes in front,
+    // and what was already there keeps its place rather than being hoisted.
+    let mine = "/opt/homebrew/bin:/usr/bin:/bin"
+    check("a directory already listed is not listed twice",
+          StateHook.usefulPath(mine).split(separator: ":").filter { $0 == "/opt/homebrew/bin" }.count == 1)
+    check("and the original ordering survives at the end",
+          StateHook.usefulPath(mine).hasSuffix(mine))
+    let complete = "/opt/homebrew/bin:/usr/local/bin:" + NSHomeDirectory() + "/.local/bin:"
+        + NSHomeDirectory() + "/.bun/bin:/usr/bin"
+    expect("nothing missing means nothing is touched at all",
+           StateHook.usefulPath(complete), complete)
+    check("an empty PATH still gets somewhere to look",
+          StateHook.usefulPath("").contains("/usr/bin"))
+    check("and so does a missing one", StateHook.usefulPath(nil).contains("/usr/bin"))
+}
+
 // MARK: - Result
 
 print("")

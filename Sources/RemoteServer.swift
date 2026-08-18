@@ -193,7 +193,13 @@ final class RemoteServer {
         // and you cannot pair with a machine you cannot ask.
         let open: Set<String> = ["/", "/index.html", "/manifest.webmanifest", "/v1/health"]
         let pairing = request.path.hasPrefix("/v1/auth/")
-        if !open.contains(request.path), !pairing {
+        // The icon too, and it has to be: a browser asks for `/favicon.ico` on its own, before
+        // and independently of the page, and an install prompt fetches the manifest's icons the
+        // same way. It discloses nothing — it is the same drawing of the same creature for
+        // everybody, and it is in a public repository.
+        let icon = request.path == "/favicon.ico"
+            || (request.path.hasPrefix("/icon-") && request.path.hasSuffix(".png"))
+        if !open.contains(request.path), !pairing, !icon {
             if case .denied = permission(for: request) {
                 return .error(401, "unauthorized", "This needs a paired device.")
             }
@@ -368,6 +374,25 @@ final class RemoteServer {
 
         case ("GET", "/manifest.webmanifest"):
             return manifest()
+
+        case ("GET", "/favicon.ico"):
+            guard let data = RemoteIcon.ico() else { return .error(404, "not_found", "No icon") }
+            return Response(status: 200,
+                            headers: ["Content-Type": "image/x-icon",
+                                      "Cache-Control": "public, max-age=86400"],
+                            body: data)
+
+        case ("GET", let path) where path.hasPrefix("/icon-") && path.hasSuffix(".png"):
+            let want = Int(path.dropFirst("/icon-".count).dropLast(".png".count)) ?? 0
+            // A short list rather than any number somebody asks for: each one is a bitmap kept in
+            // memory for the life of the app, and an open-ended size is an open-ended cache.
+            guard [32, 64, 180, 192, 512].contains(want), let data = RemoteIcon.png(size: want) else {
+                return .error(404, "not_found", "No icon that size")
+            }
+            return Response(status: 200,
+                            headers: ["Content-Type": "image/png",
+                                      "Cache-Control": "public, max-age=86400"],
+                            body: data)
 
         default:
             return .error(404, "not_found", "No such route")
@@ -696,6 +721,14 @@ final class RemoteServer {
             "theme_color": "#0e0e11",
             "start_url": "/",
             "scope": "/",
+            // `maskable` as well as `any`, so a launcher that wants to crop this into its own
+            // shape crops the dark tile rather than clipping the creature's ears off.
+            "icons": [
+                ["src": "/icon-192.png", "sizes": "192x192", "type": "image/png",
+                 "purpose": "any maskable"],
+                ["src": "/icon-512.png", "sizes": "512x512", "type": "image/png",
+                 "purpose": "any maskable"],
+            ],
         ]
         let data = (try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted])) ?? Data()
         return Response(status: 200,

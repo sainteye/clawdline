@@ -141,6 +141,19 @@ final class Config {
     /// remote code execution — Claude Code runs `bash` — so this is not a finer setting on the
     /// same dial, it is the second dial. Turning it on grants `send` to every paired device;
     /// turning it off takes it back from all of them at once.
+    /// A command to run whenever a session changes state — argv, not a shell line.
+    ///
+    /// The one extension point that pays for itself before anything else does. In Herdr's
+    /// ecosystem, where 682 plugins were counted, the single event "this agent's state changed"
+    /// accounts for 15% of every hook declared and appears in 44% of the plugins that hook
+    /// anything at all: notifications, status lines, dashboards, watchdogs and chat bridges are
+    /// all the same shape. So it is the first thing here to be opened up, and it is opened the
+    /// way they opened theirs — environment variables and an executable, no SDK, no bindings, no
+    /// opinion about what language you write it in.
+    ///
+    /// `["node", "~/bin/notify.mjs"]`. An array because nothing should be word-split: a path with
+    /// a space in it is a path, not two arguments. See Sources/StateHook.swift.
+    var onStateChange: [String] = []
     var remoteWrite = false
     var remoteTunnel = "off"
     var remoteTunnelName = ""
@@ -183,6 +196,7 @@ final class Config {
         if let v = obj["hooks"] as? Bool { hooks = v }
         if let v = obj["remote"] as? Bool { remote = v }
         if let v = obj["remote_port"] as? Int, v > 0, v < 65536 { remotePort = v }
+        if let v = obj["on_state_change"] as? [String] { onStateChange = v }
         if let v = obj["remote_write"] as? Bool { remoteWrite = v }
         if let v = obj["remote_tunnel"] as? String, !v.isEmpty { remoteTunnel = v }
         if let v = obj["remote_tunnel_name"] as? String { remoteTunnelName = v }
@@ -227,6 +241,7 @@ final class Config {
             "hooks": hooks,
             "remote": remote,
             "remote_port": remotePort,
+            "on_state_change": onStateChange,
             "remote_write": remoteWrite,
             "remote_tunnel": remoteTunnel,
             "remote_tunnel_name": remoteTunnelName,

@@ -465,7 +465,11 @@ enum RemoteAuth {
         try? handle.write(contentsOf: line)
     }
 
-    /// The most recent entries, newest first, for the settings window.
+    /// The most recent entries, newest first.
+    ///
+    /// There is no window showing these yet, and the file is the interface until there is — see
+    /// `docs/remote.md` for the `jq` line that reads it. Kept here because the parsing belongs
+    /// next to the writing, and because a log with no reader is a log nobody checks the format of.
     static func recentAudit(limit: Int = 200) -> [[String: Any]] {
         guard let text = try? String(contentsOf: auditURL, encoding: .utf8) else { return [] }
         return text.split(separator: "\n").suffix(limit).reversed().compactMap { line in

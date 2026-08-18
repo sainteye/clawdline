@@ -31,6 +31,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         RemoteAuth.onPairingRequest = { [weak self] pending in self?.showPairing(pending) }
         RemoteTunnel.shared.onChange = { [weak self] in self?.refreshStatusItem() }
         RemoteTunnel.shared.apply()
+        // Runs whatever somebody put in `on_state_change`, and nothing at all when that is empty
+        // — which it is until they do. See Sources/StateHook.swift.
+        StateHook.observe()
         NotificationCenter.default.addObserver(self, selector: #selector(configChanged),
                                                name: .clawdlineConfigChanged, object: nil)
 
