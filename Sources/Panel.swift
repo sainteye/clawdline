@@ -1025,15 +1025,32 @@ final class TargetRow: NSView {
         for r in buttonRects { addCursorRect(r, cursor: .pointingHand) }
     }
 
+    /// The strings the tool tips are made of, held here so that they are still alive when one
+    /// is shown.
+    ///
+    /// **`addToolTip(_:owner:userData:)` does not retain its owner.** Passing `someString as
+    /// NSString` creates a bridged object on the spot that nothing owns, and `NSToolTipManager`
+    /// keeps only an unowned reference to it — so by the time the hover timer fires, half a
+    /// second later, it is messaging freed memory. It crashed in
+    /// `objc_opt_respondsToSelector`, called from `-[NSToolTipManager displayToolTip:]`, while
+    /// asking the owner whether it implements the delegate method.
+    ///
+    /// Half a second is exactly long enough for it to look like "the app quits when I hover over
+    /// the buttons", which is what it was reported as.
+    private var tipOwners: [NSString] = []
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         removeAllToolTips()
+        tipOwners = []
         // On a button, the hover says what the press will do — not what the row currently is.
         // Those are different questions, and only one of them is about to change something.
         // **This is what makes an icon safe to use**: the picture is the shortcut, the hover is
         // the contract.
         for (i, r) in buttonRects.enumerated() where !buttons[i].tip.isEmpty {
-            _ = addToolTip(r, owner: buttons[i].tip as NSString, userData: nil)
+            let owner = buttons[i].tip as NSString
+            tipOwners.append(owner)
+            _ = addToolTip(r, owner: owner, userData: nil)
         }
     }
 

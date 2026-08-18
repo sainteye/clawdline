@@ -2492,6 +2492,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         hints.hints = keysShown ? hintsAll : [.init(key: "⌘/", label: L.t.hintKeys)]
     }
 
+    private var footerTipOwners: [NSString] = []
+
     private func setFooter(_ text: NSAttributedString) {
         targetLabel.textStorage?.setAttributedString(text)
         // What each mark means, for anyone who has not learned them yet — which is everyone at
@@ -2499,9 +2501,15 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // Measured from run widths rather than asked of a layout manager: this view is one
         // truncating line, and the two TextKits answer that question differently.
         targetLabel.removeAllToolTips()
+        // Held, because `addToolTip(_:owner:userData:)` does not retain its owner — see the note
+        // on `StackRow.tipOwners`. A bridged `NSString` created at the call site is owned by
+        // nobody, and the tool tip manager reaches for it half a second later.
+        footerTipOwners = []
         for zone in TextZones.of(text, key: .clawdlineTip, x0: 0,
                                  height: targetLabel.bounds.height) {
-            _ = targetLabel.addToolTip(zone.rect, owner: zone.value as NSString, userData: nil)
+            let owner = zone.value as NSString
+            footerTipOwners.append(owner)
+            _ = targetLabel.addToolTip(zone.rect, owner: owner, userData: nil)
         }
     }
 

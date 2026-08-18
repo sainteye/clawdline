@@ -2515,29 +2515,36 @@ group("hooks: the script itself") {
     expect("it exits 0", first.code, 0)
     expect("and says nothing on stdout — that is read back as instructions", first.out, "")
 
-    let written = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
-    let notes = written.filter { $0.hasSuffix(".json") }
-    // The test binary is a child of whatever ran it, so there may be no tty above it at all —
-    // in CI there is not. No tty is a note that is deliberately not written, so both outcomes
-    // are correct and only their contents can be wrong.
-    if let name = notes.first {
-        let note = HookBridge.parse(
-            (try? Data(contentsOf: dir.appendingPathComponent(name))) ?? Data())
-        check("what it wrote is a note", note != nil)
-        expect("named after the tty it found", name, "\(note?.tty ?? "?").json")
-        expect("carrying the event it was told", note?.event, .stop)
-        expect("and the session id, cut out of a payload with quotes in it",
-               note?.session, "3f6a1c2e-7b4d-4a9e-8c15-2d0e9f7b6a34")
-
-        // Overwritten, never appended: a session has one note and it is the newest one.
-        _ = run("Notification", payload: payload)
-        let after = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
+    // **Every assertion below runs whether or not a note was written**, and that is not
+    // fussiness. The script writes nothing when it cannot find a tty above itself, which is the
+    // normal case on a build machine and never the case here — so a group that only asserted
+    // "when there is a note" counted six more checks locally than in CI, and the count the
+    // README carries is checked against the run. A test whose *number* of assertions depends on
+    // the machine is a test that turns the guard around it into a coin toss.
+    func notes(in dir: URL) -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
             .filter { $0.hasSuffix(".json") }
-        expect("a second note replaces the first", after.count, 1)
-        expect("with the newer event",
-               HookBridge.parse((try? Data(contentsOf: dir.appendingPathComponent(name))) ?? Data())?.event,
-               .notification)
     }
+    let written = notes(in: dir)
+    let note = written.first.flatMap {
+        HookBridge.parse((try? Data(contentsOf: dir.appendingPathComponent($0))) ?? Data())
+    }
+    let noTTY = written.isEmpty      // no controlling terminal above this process
+
+    check("it wrote a note, or found no terminal to name one after", noTTY || note != nil)
+    check("named after the tty it found",
+          noTTY || written.first == "\(note?.tty ?? "?").json")
+    check("carrying the event it was told", noTTY || note?.event == .stop)
+    check("and the session id, cut out of a payload with quotes in it",
+          noTTY || note?.session == "3f6a1c2e-7b4d-4a9e-8c15-2d0e9f7b6a34")
+
+    // Overwritten, never appended: a session has one note and it is the newest one.
+    _ = run("Notification", payload: payload)
+    let after = notes(in: dir)
+    check("a second note replaces the first", noTTY || after.count == 1)
+    check("with the newer event", noTTY || written.first.flatMap {
+        HookBridge.parse((try? Data(contentsOf: dir.appendingPathComponent($0))) ?? Data())?.event
+    } == .notification)
 
     // Every way this can be asked to do nothing, it has to do nothing quietly. A hook that
     // exits non-zero is making a decision about somebody's turn.
