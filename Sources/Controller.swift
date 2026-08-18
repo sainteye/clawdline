@@ -3135,6 +3135,47 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     ///
     /// What has to be true is the *behaviour*: the tab that is selected, and the status line
     /// underneath it, follow the row the bar is pointing at. That is the claim being made.
+    /// The hue of the session a tab belongs to, for tinting its screen.
+    private static func row0Hue(_ index: Int) -> Int {
+        let rows = standInSessions()
+        return rows[min(max(0, index), rows.count - 1)].hue
+    }
+
+    /// A few lines of invented transcript per tab, newest last.
+    ///
+    /// Kept short and dull deliberately: this sits behind a translucent card and its job is to be
+    /// *different* when the tab changes, not to be read. Anything long enough to read would pull
+    /// the eye off the thing the clip is about.
+    private static func standInScreen(_ index: Int) -> [(String, Int)] {
+        let screens: [[(String, Int)]] = [
+            [("> why does the retry fire twice", 1),
+             ("The second one is the queue's, not ours — it redelivers", 0),
+             ("on any non-2xx, and we answer 500 before logging.", 0),
+             ("  Read  handlers/webhook.rb", 2),
+             ("  Grep  redeliver", 2)],
+            [("> port the picker to the Android build", 1),
+             ("The iOS one leans on a modal presentation that has no", 0),
+             ("equivalent here. Two options, and they differ in what", 0),
+             ("happens when the user rotates mid-choice.", 0),
+             ("  Read  app/src/main/java/…/Picker.kt", 2)],
+            [("> is the coverage number honest", 1),
+             ("No. It counts generated files, which are 40% of the", 0),
+             ("lines and are never wrong in an interesting way.", 0),
+             ("  Bash  bundle exec rspec --dry-run", 2)],
+            [("> rename SplitPane to Divider everywhere", 1),
+             ("Forty-one call sites. Three of them are in strings that", 0),
+             ("end up in the UI, so those are not a rename.", 0),
+             ("  Grep  SplitPane", 2),
+             ("  Edit  src/components/Divider.tsx", 2)],
+            [("> draft the release notes", 1),
+             ("Reading the log since the last tag. Most of it is one", 0),
+             ("change described five times, so this is shorter than", 0),
+             ("the commit count suggests.", 0),
+             ("  Bash  git log --oneline v0.4.0..HEAD", 2)],
+        ]
+        return screens[min(max(0, index), screens.count - 1)]
+    }
+
     private static func drawTerminal(_ rect: NSRect, selected: Int) {
         let rows = standInSessions()
         NSColor(srgbRed: 0.055, green: 0.055, blue: 0.066, alpha: 1).setFill()
@@ -3169,6 +3210,33 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             let colour = i == selected ? NSColor.white.withAlphaComponent(0.85)
                                        : NSColor.white.withAlphaComponent(0.35)
             _ = text("✳ " + name, box.minX + 12, box.minY + 7, 9.5, colour, mono: false)
+        }
+
+        // What the tab is showing underneath. **Without this the clip cannot make its own point:**
+        // the caption says the terminal's tab and status line follow the selection, and against an
+        // empty black rectangle the only thing that visibly moves is a highlight sliding along a
+        // strip of grey. A reader has to take the claim on trust from a picture that was supposed
+        // to be the evidence.
+        //
+        // Invented, like every other word in this scene, and different per tab on purpose — the
+        // switch has to be legible in one frame, so the text changes *and* one line carries the
+        // project's own hue, which is the fastest difference an eye picks up.
+        //
+        // Drawn from under the tab bar downward and simply covered where the card lands. Placing
+        // it around the card instead would tie this to the card's size, and the card is laid out
+        // from the list it happens to be showing.
+        let screen = standInScreen(selected)
+        var line = tabY - 22
+        for (text_, kind) in screen {
+            guard line > 96 else { break }
+            let colour: NSColor
+            switch kind {
+            case 0: colour = NSColor.white.withAlphaComponent(0.30)                 // prose
+            case 1: colour = ProjectIcon.demoGrid(hue: row0Hue(selected)).accent.withAlphaComponent(0.55)
+            default: colour = NSColor.white.withAlphaComponent(0.16)                // a tool line
+            }
+            _ = text(text_, 22, line, 9, colour)
+            line -= 15
         }
 
         // The status line the terminal itself draws — the project's mark and name, what it is
