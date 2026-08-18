@@ -1,0 +1,196 @@
+# Backlog — what is not done, what might be done, what is deliberately not being done.
+#
+# **This is data, not prose.** Nothing here is a promise. The point of the file is that a thing
+# somebody noticed on a Tuesday is still findable in November, with enough written down that the
+# person reading it can tell whether it is still true.
+#
+# Modelled on the backlog in another project of this author's, and the one idea worth stealing is
+# this one:
+#
+# ## `lane` is derived, never typed
+#
+# `lane` comes from `severity` x `cost`. **No field here lets anybody set a priority directly**,
+# and that is the whole design. Every P0/P1/P2 scheme ends the same way — each item is filed by
+# the person who cares most about it, so within a year everything is P0 and the scheme carries no
+# information. There are exactly two ways to move an item forward here: show that it hurts more
+# (`severity`), or make it smaller (`cost`). Both require thinking, and that friction is the point.
+#
+#     severity \ cost   hours       days        weeks
+#     blocks            now         now         scheduled
+#     degrades          now         scheduled   waiting
+#     noise             scheduled   waiting     drop
+#     invisible         waiting     drop        drop
+#
+# ## Writing an entry is meant to be slightly hard
+#
+# Adding a line to a markdown list costs nothing, so "I'll put it in the backlog" becomes a way of
+# deferring a problem rather than recording one. These fields exist to stop that:
+#
+# | field        | what it must answer                                          |
+# |--------------|--------------------------------------------------------------|
+# | `id`         | `B-<short-name>`. **Not a number** — numbers imply an order   |
+# | `title`      | one line; when the list is long this is all anybody reads     |
+# | `problem`    | **what goes wrong if nobody does this** — not what to build   |
+# | `evidence`   | why we believe it: a path, a commit, a date, a measurement.   |
+# |              | No anchor means it must start with "Guess:"                   |
+# | `severity`   | blocks / degrades / noise / invisible                          |
+# | `cost`       | hours / days / weeks — **a timebox, not an estimate**          |
+# | `who_hurts`  | user / contributor / us                                        |
+# | `trigger`    | what would have to happen to reconsider this                   |
+# | `opened`     | the date it went in. **How long an item has sat with its**      |
+# |              | **trigger never firing is the best deletion signal we have**   |
+#
+# `problem` must not begin with a verb that names a solution ("add", "build", "support"). If the
+# only way you can describe it is by what you would build, you have not found the problem yet.
+#
+# ## What is not in here
+#
+# Bugs with a reproduction go straight to being fixed; this is for things nobody has decided
+# about. Anything already being worked on is not here either — that is what the working tree is.
+
+version: 1
+
+items:
+  - id: B-BACKLOG-PIPELINE
+    title: This file is read by nobody
+    problem: >-
+      A backlog that only a person opening the file can see is one that gets consulted when
+      somebody remembers it exists, which is never at the moment it would have helped. Clawdline
+      already draws `backlog-<path>.json` in its own footer for other projects and cannot draw
+      one for itself.
+    evidence: >-
+      `docs/project-status.md` documents the cache shape; `ProjectStatus.backlog` parses it;
+      `~/.claude/statusline-cache/` has files for other projects on this machine and none for
+      clawdline.
+    severity: noise
+    cost: days
+    who_hurts: us
+    trigger: The first time an item in here is rediscovered late, or the list passes ~15 items.
+    opened: 2026-08-19
+
+  - id: B-API-ERRORS-ENGLISH
+    title: API error messages are hardcoded English and the page shows them verbatim
+    problem: >-
+      Every string a person can read went through `Copy` and got fourteen languages, except the
+      `message` field of an API error — which is exactly the text somebody sees at the moment
+      something has gone wrong and they least want to be reading a second language.
+    evidence: >-
+      `Sources/RemoteServer.swift` — every `.error(...)` call carries an English literal;
+      `Resources/web/index.html` renders `error.message` as-is.
+    severity: degrades
+    cost: days
+    who_hurts: user
+    trigger: Anybody reports the page saying something they cannot read, or a fifteenth language.
+    opened: 2026-08-19
+
+  - id: B-STALE-PAGE-UNDETECTABLE
+    title: The page cannot tell it is older than the app
+    problem: >-
+      An open page keeps whatever it loaded, so after an update somebody is using an interface
+      that no longer matches the server — and the check that would notice cannot fire, so they
+      find out by hitting a bug instead.
+    evidence: >-
+      The version check reads `CFBundleShortVersionString` from `/v1/health`, and `build.sh`
+      hardcodes `0.5.0`, so two builds of the same release are indistinguishable. Observed
+      2026-08-19: a phone showed a build an hour old while the Mac had been rebuilt twice.
+    severity: degrades
+    cost: hours
+    who_hurts: user
+    trigger: None needed — this is small enough that the next person in `build.sh` should do it.
+    opened: 2026-08-19
+
+  - id: B-TRANSCRIPT-PATH-SLUG
+    title: Transcript lookup silently fails for paths with a space, dot or underscore
+    problem: >-
+      Claude Code turns every character that is not a letter or digit into a dash when it names a
+      project folder. Clawdline only replaces `/`, so for a project whose path contains anything
+      else the transcript is looked for under a name that does not exist — and a missing
+      transcript is a normal state, so nothing reports it.
+    evidence: >-
+      `Sources/Transcript.swift:34` against the encoding worked out in
+      `Sources/StartPoints.swift`, which does the forward check correctly.
+    severity: degrades
+    cost: hours
+    who_hurts: user
+    trigger: Already true for anyone with an underscore in a project name.
+    opened: 2026-08-19
+
+  - id: B-CACHE-KEY-DIVERGENCE
+    title: Clawdline and claude-bestiary compute different cache filenames for the same project
+    problem: >-
+      Two readers of one set of files disagree about what the files are called, so for a long or
+      punctuated path one of them writes a status file the other never finds. The footer simply
+      stays empty, which is indistinguishable from having nothing to say.
+    evidence: >-
+      bestiary's `statusline.py` sanitises every non-alphanumeric character and keeps the last 48;
+      `ProjectStatus.key(forPath:)` replaces `/` only and does not truncate.
+    severity: noise
+    cost: hours
+    who_hurts: user
+    trigger: A project path over 48 characters, or one containing a dot or a space.
+    opened: 2026-08-19
+
+  - id: B-DEVICE-NEVER-EXPIRES
+    title: A paired device is trusted until somebody remembers to revoke it
+    problem: >-
+      A phone that was paired once keeps full access forever. The failure is not dramatic — it is
+      that the list of who can read your sessions grows and nothing ever prompts a review, so the
+      answer to "who has access" drifts from "me" to "I would have to look".
+    evidence: >-
+      `Sources/RemoteAuth.swift` — no expiry field on a device; `docs/remote.md` states this
+      plainly as a limitation.
+    severity: degrades
+    cost: days
+    who_hurts: user
+    trigger: More than a handful of devices in the list, or a device that is lost or sold.
+    opened: 2026-08-19
+
+  - id: B-PASSWORD-NO-UI
+    title: The password path exists and nothing can set one
+    problem: >-
+      Half a feature is worse than none: the code, the PBKDF2 work factor and the route are all
+      there and carry maintenance cost, while nobody can use any of it. Either it earns a control
+      in Settings or it should be deleted.
+    evidence: >-
+      `RemoteAuth.setPassword` has no caller; `POST /v1/auth/password` is documented in
+      `docs/remote.md` and deliberately left out of the README because it points at nothing
+      pressable.
+    severity: noise
+    cost: hours
+    who_hurts: user
+    trigger: Somebody wants access from a device that cannot scan a QR code.
+    opened: 2026-08-19
+
+  - id: B-PICKER-BEYOND-NINE
+    title: A menu with more than nine options cannot be answered from a phone
+    problem: >-
+      The picker is answered with a single byte, and there is no single byte for the tenth row.
+      Somebody on a phone facing a long menu has no way through and no explanation of why.
+    evidence: >-
+      `Targets.answer` allowlists `0x31`–`0x39` and `0x09`; arrow keys are three bytes and
+      `keystroke` sends one, so a partial send would deliver a bare `ESC`, which cancels.
+    severity: noise
+    cost: hours
+    who_hurts: user
+    trigger: The first menu anybody meets with ten or more options.
+    opened: 2026-08-19
+
+  - id: B-NOTIFY-WHEN-PRESENT
+    title: Guess: notifications fire while you are sitting at the Mac
+    problem: >-
+      Guess — the notch and the menu bar have already said it, so a phone buzzing at the same
+      moment carries no new information, and a channel that is usually redundant is one people
+      stop reading. **Deliberately parked**: the obvious fix, suppressing while the Mac has had
+      recent input, has a failure mode where a full-screen window hides the notch and the rule
+      then silences both channels at once. The owner's judgement on 2026-08-19 was that the
+      current volume is low, that a notification arriving is itself useful confirmation the thing
+      works, and that a rule needing two signals to agree is one nobody can debug.
+    evidence: >-
+      `CGEventSource.secondsSinceLastEventType` verified working with no permission prompt
+      (counted 3.3s -> 5.4s idle, reset to 0.0 on input). No measurement of how often this
+      actually overlaps in practice.
+    severity: invisible
+    cost: days
+    who_hurts: user
+    trigger: Notification volume rises enough that somebody starts ignoring them.
+    opened: 2026-08-19

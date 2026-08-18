@@ -33,6 +33,7 @@ a mascot pack. Never ship it; use `./build.sh`.
 | `Sources/Project*.swift` | which repository a session is in, and its status |
 | `Sources/Copy+*.swift` | one file per language |
 | `Resources/mascots/*.json` | mascot packs — see [docs/mascots.md](docs/mascots.md) |
+| `docs/backlog.yaml` | what is not done and why — read the header before adding to it |
 
 ## The tests
 
