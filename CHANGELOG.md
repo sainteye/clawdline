@@ -1,0 +1,139 @@
+# Changelog
+
+Release notes have lived on [the releases page](https://github.com/sainteye/clawdline/releases)
+since 0.1.0. This file is where the next one is written before it gets there, and where the
+older ones can be found from without leaving the repository.
+
+The entries are prose rather than a list of commits. What belongs in one is **what changed for
+somebody using this** — a commit log already exists and is better at being a commit log.
+
+## Unreleased
+
+### The bar knows what every session is doing
+
+Not looking at the terminal worked for one session. With four, you were back to going round the
+tabs to find out who had finished — so the thing that made the bar worth having stopped scaling
+at exactly the point you started needing it.
+
+- **⌘K names what each session is doing.** A row that is working carries the line Claude Code
+  draws for itself, quietly; a session with a question on screen and nobody answering it says
+  so, loudly, because that is the only state that costs you something for every second it goes
+  unnoticed. Nothing is installed into Claude Code to know this — it is each session's own
+  screen, read the same way the ⌘J pane reads it, and a screen that cannot be read leaves the
+  row exactly as plain as it was rather than guessing at it.
+- **The menu bar ✳ carries it too.** Nothing running and it is the character it always was;
+  things running and it carries a count; something waiting for an answer and it says so in the
+  accent. It is the one piece of screen this app owns all day and it used to say nothing.
+- **One reading serves all of it.** The session list, the strip above the transcript, the menu
+  bar and the island are four consumers of one set of terminal round trips — 1.2s while the
+  panel is up, once every twenty seconds while it is not, and a single `ps` and nothing else on
+  a machine with no Claude Code running.
+
+### The servers a project runs
+
+⌘S lists every project that describes a dev stack, whether or not a session is open in it —
+because the project whose servers have quietly fallen over is exactly the one you have no
+session in. It reads a `.devstack.json` out of the repository and runs the commands that file
+names; **Clawdline never starts a process of its own**, so the servers outlive the app rather
+than dying with it on the next quit or update. A row can start, restart and stop a stack, and
+show what its processes printed. The format is documented in
+[docs/devstack.md](docs/devstack.md), so anything can produce one — process-compose, Overmind,
+pm2, Docker Compose, a Makefile with PID files.
+
+A stack whose status command has never been agreed to is drawn as its own thing rather than as
+"down": a grey square next to a green one reads as an outage, and the first day that shipped it
+sent somebody looking for one that was not happening.
+
+### A character in the notch
+
+Play, and meant to read that way — it tells you nothing the menu bar mark does not. Your mascot
+lives in the menu bar band beside the camera housing: it leans out while something is running,
+says which session wants you when one does, and dances when a long job finishes. How hard it
+appears to be working is how much you have running.
+
+Clicking the character opens the bar; clicking the words goes to that terminal tab. When the
+number stands for more than one session, it offers a menu rather than picking for you.
+
+`"notch": false` turns the whole thing off — no window, no observer, nothing drawn.
+
+### Settings, as controls
+
+Menu bar ✳ → **Settings…** has a control for everything worth changing, and every control
+applies the moment you move it. The hotkey is recorded by pressing it rather than spelled into a
+text field; the pane's font list offers only monospaced faces, because that is a setting you can
+only get wrong. `config.json` is still the truth, still hand-editable, and there is a button in
+the window that opens it.
+
+### Switching sessions got about five times faster
+
+Measured on a real 29 MB transcript, per press of ↓: **443 ms → 86 ms**, and to roughly nothing
+for a session you have already looked at.
+
+- `Transcript.parse` read the whole tail and threw away all but the last four hundred entries.
+  It reads backwards now and stops when it has enough — and walks the UTF-8 view rather than
+  building an array of every line, which was 140 ms of the 268 on its own.
+- `Transcript.locate` was calling `stat` inside a sort comparator, so a project with fifty-six
+  transcripts in it spent several hundred of them to order fifty-six names.
+- Transcript titles are remembered against each file's size and mtime, so the six megabytes of
+  reading that picked one file happens once rather than on every switch.
+- Laid-out transcripts are kept, keyed by the same signature that decides whether a repaint is
+  needed, and the sessions either side of the selected one are laid out before you ask for them.
+
+**Fixed: switching quickly could paint the wrong session's conversation**, under the next
+session's name — nothing checked that the reader you started was still the reader you wanted by
+the time it finished.
+
+### The terminal's tab follows the bar
+
+The bar's target and the tab in front of you were free to be two different sessions, and the
+moment you closed the panel you were looking at the wrong one. They are now the same session by
+construction. Selecting is not the same as activating and only the first one happens, or every
+press of Tab would take the keyboard out of the box you are typing into.
+`"follow_target": false` restores the old behaviour.
+
+### Fixed
+
+- **tmux found no Claude Code at all.** The pane's process name is the basename of the
+  executable, and the current installer symlinks `claude` at
+  `~/.local/share/claude/versions/<version>` — so every pane announced itself as a version
+  number and every tmux session was listed as an ordinary shell. That is the one path the README
+  promises for Terminal.app, Ghostty, Warp and the rest. `ps` reads argv, which still says
+  `claude`, so the tty is asked as well as the name.
+- **A tmux session never once reported being busy.** Its captures arrive with the colours still
+  in them, and a line that begins with a colour code does not begin with the character it looks
+  like it begins with.
+
+### For contributors
+
+- **A string that is left in English now fails the build.** The check that catches "copied the
+  reference file and translated half of it" used to sample fifteen strings by hand, so a new one
+  was by definition not in it — a whole settings window shipped with thirty-two strings that
+  nothing looked at. It reflects over every stored string now, and the handful that legitimately
+  read the same in two languages are exempted one at a time, per language, with a reason.
+- **`/recap` is in the repo.** Four questions at the end of a stretch of work — what changed,
+  what it is worth, what has gone out of sync, and is it in version control — with the checks
+  that this project in particular keeps forgetting: the fourteen languages, the two READMEs, and
+  the test count that three files claim.
+
+## 0.4.0 — 2026-08-17
+
+Dictation that hears two languages in one sentence and does not need an account, images that
+arrive as images, and thirteen languages of interface.
+→ [Full notes](https://github.com/sainteye/clawdline/releases/tag/v0.4.0)
+
+## 0.3.0 — 2026-08-15
+
+Every terminal, through tmux: Terminal.app, Warp, Tabby, Ghostty, Alacritty and Kitty all work
+as long as Claude Code runs inside tmux.
+→ [Full notes](https://github.com/sainteye/clawdline/releases/tag/v0.3.0)
+
+## 0.2.0 — 2026-08-15
+
+Mascots became a browsable, swappable format, with a second pack to prove the format was one.
+→ [Full notes](https://github.com/sainteye/clawdline/releases/tag/v0.2.0)
+
+## 0.1.0 — 2026-08-15
+
+First public release: a Spotlight-style prompt bar that floats at eye level and sends what you
+type straight into a Claude Code session, without bringing the terminal to the front.
+→ [Full notes](https://github.com/sainteye/clawdline/releases/tag/v0.1.0)

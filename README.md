@@ -169,7 +169,7 @@ Press <kbd>⌥</kbd><kbd>Space</kbd> in iTerm2, type, press <kbd>Enter</kbd>.
 | <kbd>⌘</kbd><kbd>F</kbd> | fill the screen with it |
 | <kbd>⌘</kbd><kbd>R</kbd> | newest message at the top instead of the bottom |
 | <kbd>⌘</kbd><kbd>+</kbd> / <kbd>⌘</kbd><kbd>−</kbd> / <kbd>⌘</kbd><kbd>0</kbd> | text size in that pane, remembered |
-| <kbd>⌘</kbd><kbd>S</kbd> | the servers each project runs — start, restart, see what broke |
+| <kbd>⌘</kbd><kbd>S</kbd> | the servers each project runs — start, restart, stop, see what broke |
 | <kbd>⌘</kbd><kbd>M</kbd> | browse / switch mascots |
 | <kbd>⌘</kbd><kbd>D</kbd> | make the mascot dance |
 | <kbd>⌘</kbd><kbd>/</kbd> | show the rest of the keys |
@@ -190,6 +190,21 @@ actually running `claude`. It defaults to the session you were last looking at.
 
 The bar always names its target along the bottom edge. **It never sends blind** — a prompt box
 that will not tell you where the text goes is worse than no prompt box.
+
+**The list says what each one is doing.** Four tabs working on tasks that read alike are four
+identical rows, and the question you open <kbd>⌘</kbd><kbd>K</kbd> with is not what they are
+called — it is which one stopped and which one wants something. So a session that is working
+carries the line Claude Code draws for itself, quietly:
+
+    ⌘1  investigate the webhook     ⟳ Crystallizing… (13m 46s · ↓ 48.2k tokens)
+    ⌘2  port the Android feature    ● waiting for you
+    ⌘3  evaluate the coverage
+
+The middle one is the only loud thing in the list, because it is the only state that costs you
+something for every second it goes unnoticed — a question on screen with nobody answering it.
+Nothing is installed into Claude Code to know this: it is each session's own screen, read the
+same way the <kbd>⌘</kbd><kbd>J</kbd> pane reads it, and a screen that cannot be read leaves the
+row exactly as plain as it was rather than guessing at it.
 
 ### Dropping in a file or an image
 
@@ -446,7 +461,12 @@ is that **the terminal never has to come to the front** — which is the entire 
 
 ## Config
 
-`~/.config/clawdline/config.json`. Menu bar ✳ → **Reload config** applies changes. Editing it
+Menu bar ✳ → **Settings…** has a control for everything worth changing, and every
+control applies the moment you move it.
+
+Underneath it is `~/.config/clawdline/config.json`, which is still the truth and still
+hand-editable — the settings window writes exactly what you would have written. There is a
+button in it that opens the file, for the handful of keys that only live there. Editing it
 while the app is running is fine: it writes back only what it changed itself, and leaves the rest
 of the file — including settings from a version that knew about more of them — alone.
 
@@ -466,6 +486,8 @@ of the file — including settings from a version that knew about more of them �
   "output_newest_first": false,          // ⌘R: newest at the top
   "card_opacity": 0.55,                  // 0 = pure glass, 1 = opaque
   "reopen_on_return": true,              // come back when the terminal does
+  "notch": true,                        // the character in the notch — false turns it off
+  "follow_target": true,                 // the terminal's tab follows what the bar points at
   "backdrop": 0.5,                       // ⌘J background blur, 0 = none
   "voice_settle_seconds": 1.8,           // how long a pause ends a sentence, 0 = off
   "voice_stop_seconds": 4.0,             // how long a silence ends the session, 0 = off
@@ -573,7 +595,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 806 checks, a couple of seconds
+./test.sh     # 880 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code — see Package.swift
 ```

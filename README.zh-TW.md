@@ -155,7 +155,7 @@ macOS 會把從網路下載的東西加上隔離屬性，並拒絕開啟沒公�
 | <kbd>⌘</kbd><kbd>F</kbd> | 把它撐滿整個螢幕 |
 | <kbd>⌘</kbd><kbd>R</kbd> | 最新的訊息放最上面，而不是最下面 |
 | <kbd>⌘</kbd><kbd>+</kbd> / <kbd>⌘</kbd><kbd>−</kbd> / <kbd>⌘</kbd><kbd>0</kbd> | 那塊的字級，會記住 |
-| <kbd>⌘</kbd><kbd>S</kbd> | 每個專案的伺服器——啟動、重啟、看是哪個掛了 |
+| <kbd>⌘</kbd><kbd>S</kbd> | 每個專案的伺服器——啟動、重啟、停止、看是哪個掛了 |
 | <kbd>⌘</kbd><kbd>M</kbd> | 瀏覽／切換吉祥物 |
 | <kbd>⌘</kbd><kbd>D</kbd> | 叫吉祥物跳舞 |
 | <kbd>⌘</kbd><kbd>/</kbd> | 展開其餘的快速鍵 |
@@ -175,6 +175,18 @@ Clawdline 列出所有 iTerm2 session，用 `ps` 比對每個的 TTY，留下真
 預設選你最後停留的那一個。
 
 輸入條下緣一直寫著目標是誰。**它不做盲送**——一個不肯告訴你字會跑去哪的輸入框，比沒有更糟。
+
+**清單會說每個 session 正在做什麼。** 四個分頁在做讀起來差不多的任務，就是四行長得一樣的字；
+而你按下 <kbd>⌘</kbd><kbd>K</kbd> 想問的並不是它們叫什麼，是**哪一個停了、哪一個在等你**。
+所以正在跑的那個會安靜地帶著 Claude Code 自己畫的那行字：
+
+    ⌘1  investigate the webhook     ⟳ Crystallizing… (13m 46s · ↓ 48.2k tokens)
+    ⌘2  port the Android feature    ● 在等你回答
+    ⌘3  evaluate the coverage
+
+中間那行是整個清單裡唯一大聲的東西，因為它是唯一一種「每過一秒都在賠錢」的狀態——螢幕上有個問題，
+而沒有人回答它。這件事不需要在 Claude Code 裡裝任何東西：它讀的就是每個 session 自己的螢幕，
+跟 <kbd>⌘</kbd><kbd>J</kbd> 那一格讀的是同一份；讀不到的時候，那一行就維持原本的樣子，不會用猜的補上去。
 
 ### 把檔案或圖片丟進來
 
@@ -387,7 +399,10 @@ CR                                     ← 再單獨送一個 Return 才送出
 
 ## 設定
 
-`~/.config/clawdline/config.json`。選單列 ✳ → **重新載入設定** 套用。
+選單列 ✳ → **設定⋯** 裡每個值得調的東西都有一個控制項，而且**動一下就生效**，沒有確定按鈕。
+
+底下還是 `~/.config/clawdline/config.json`，它仍然是真相、仍然可以手改——設定視窗寫進去的
+就是你自己會寫的東西。視窗裡有一顆按鈕直接打開那個檔案，給只住在檔案裡的那幾個設定用。
 
 ```jsonc
 {
@@ -405,6 +420,8 @@ CR                                     ← 再單獨送一個 Return 才送出
   "output_newest_first": false,          // ⌘R：最新的在最上面
   "card_opacity": 0.55,                  // 0 ＝ 純玻璃，1 ＝ 完全不透明
   "reopen_on_return": true,              // 切回終端機時自己回來
+  "notch": true,                        // 住在瀏海裡的那隻——false 就整個關掉
+  "follow_target": true,                 // 終端機的分頁跟著輸入條的目標走
   "backdrop": 0.5,                       // ⌘J 的背景模糊，0 ＝ 不要
   "voice_settle_seconds": 1.8,           // 多長的停頓算一句話結束，0 ＝ 關掉
   "voice_stop_seconds": 4.0,             // 多長的安靜算整段講完，0 ＝ 麥克風一直開著
@@ -499,7 +516,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`：熱鍵有沒有
 純 AppKit、沒有框架、除了 `swiftc` 沒有 build 系統。
 
 ```bash
-./test.sh     # 806 個檢查，約兩秒
+./test.sh     # 880 個檢查，約兩秒
 ./build.sh    # 編譯，原本有在跑的話會自己接回來
 ```
 
