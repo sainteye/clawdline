@@ -57,10 +57,14 @@ nothing behind to undo.
   screen, read.
   → [The session list](#which-session-wants-you)
 
+  <img src="docs/assets/sessions-live.gif" width="760" alt="The session list, live: the selection walks down it, one session is answered and goes quiet, another finishes, and a third starts asking — and the terminal's own tab and status line follow along above and below.">
+
 - **Says it in the notch, too.** Your mascot lives in the camera housing: it leans out while
   something runs, names the session that wants you, and dances when a long job finishes. How busy
   it looks is how much you have running. One word in the config turns it off.
   → [The notch](#the-notch)
+
+  <img src="docs/assets/island.gif" width="760" alt="The notch: the mascot leaning out while sessions run, then naming the one that is waiting, then the one that just finished.">
 
 - **The terminal's tab follows.** Move through the list and iTerm2 moves with you — without
   coming to the front, because taking your keyboard is the one thing this exists to avoid. The
@@ -77,10 +81,14 @@ nothing behind to undo.
   of Chinese is. Whisper here runs on your machine and needs no account at all.
   → [Dictation](#talk-instead-of-type) · [Whisper setup](docs/whisper.md)
 
+  <img src="docs/assets/voice.gif" width="760" alt="Speaking into the bar: the words appear live, then Whisper reads the recording back and replaces them.">
+
 - **Reads the session back, laid out.** Not a screenshot of a terminal: headings, tables with
   borders, code — and runs of tool calls folded to one line each, because thirty lines of paths
   is not what you came back to read. A live line says what it is doing right now.
   → [The transcript pane](#reading-a-session-back)
+
+  <img src="docs/assets/transcript.png" width="760" alt="The transcript pane: a heading, a bordered table and a code block, laid out rather than scraped.">
 
 - **Tells you which project, not just which task.** Two tabs can be working on tasks that read
   the same. The bar names the repository, its branch, what is uncommitted, a deploy in flight and
@@ -102,17 +110,7 @@ nothing behind to undo.
   and five animations. Swap it without forking anything.
   → [Mascots](#bring-your-own-mascot)
 
-<div align="center">
-
-<img src="docs/assets/sessions-live.gif" width="760" alt="The session list, live: the selection walks down it, one session is answered and goes quiet, another finishes, and a third starts asking — with the spinners turning.">
-
-<img src="docs/assets/island.gif" width="760" alt="The notch: the mascot leaning out while sessions run, then naming the one that is waiting, then the one that just finished.">
-
-<img src="docs/assets/voice.gif" width="760" alt="Speaking into the bar: the words appear live, then Whisper reads the recording back and replaces them.">
-
-<img src="docs/assets/transcript.png" width="760" alt="The transcript pane: a heading, a bordered table and a code block, laid out rather than scraped.">
-
-</div>
+  <img src="docs/assets/picker-live.gif" width="620" alt="The mascot picker: the arrow keys walk the list and the character on the bar changes with them, so you pick by looking.">
 
 ## Contents
 
