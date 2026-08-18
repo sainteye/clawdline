@@ -1105,17 +1105,24 @@ final class TargetRow: NSView {
         let room = max(40, bounds.width - x - right)
         text.draw(in: NSRect(x: x, y: bounds.midY - 9, width: room, height: 18))
 
-        guard let detail else { return }
-        // After the label, measured, so the spinner and the state line follow the words however
-        // long they are rather than sitting at a column that fits one language.
-        var dx = x + min(text.size().width, room) + 12
-        if isBusy {
-            PixelSpinner.draw(at: NSPoint(x: dx, y: bounds.midY - PixelSpinner.size / 2),
-                              time: spinnerTime ?? CACurrentMediaTime(), colour: Style.accent)
-            dx += PixelSpinner.size + 7
+        // **Not a `guard … else { return }`.** It was, and the buttons were drawn after it — so a
+        // row with no detail line returned before reaching them, and every row in the server
+        // panel is exactly that: it puts everything into `rich` and has no detail at all. The
+        // buttons existed, sat in the right place, answered the cursor and showed their tool
+        // tips — because hit testing, cursor rects and tool tips are three separate passes that
+        // never come through here. Only the painting did, and it had already left.
+        if let detail {
+            // After the label, measured, so the spinner and the state line follow the words
+            // however long they are rather than sitting at a column that fits one language.
+            var dx = x + min(text.size().width, room) + 12
+            if isBusy {
+                PixelSpinner.draw(at: NSPoint(x: dx, y: bounds.midY - PixelSpinner.size / 2),
+                                  time: spinnerTime ?? CACurrentMediaTime(), colour: Style.accent)
+                dx += PixelSpinner.size + 7
+            }
+            detail.draw(in: NSRect(x: dx, y: bounds.midY - 9,
+                                   width: max(0, bounds.width - dx - right), height: 18))
         }
-        detail.draw(in: NSRect(x: dx, y: bounds.midY - 9,
-                               width: max(0, bounds.width - dx - right), height: 18))
 
         for (i, r) in buttonRects.enumerated() { draw(buttons[i], in: r) }
     }
