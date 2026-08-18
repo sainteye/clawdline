@@ -189,10 +189,16 @@ final class RemoteServer {
         // *who is allowed to be asking at all* rather than about who they are.
         if let refusal = crossOriginRefusal(request) { return refusal }
 
-        // The four things reachable without a token, and each of them is on this list for a
+        // The five things reachable without a token, and each of them is on this list for a
         // reason rather than for convenience: you cannot log in through a page you cannot load,
         // and you cannot pair with a machine you cannot ask.
-        let open: Set<String> = ["/", "/index.html", "/manifest.webmanifest", "/v1/health"]
+        // `/v1/strings` is the newest of them and belongs here for the same reason the page does:
+        // the door has to be able to ask for a token *in the reader's own language*, and it cannot
+        // ask in a language it has not been told yet. What comes back is interface copy — the same
+        // set of sentences for everybody, naming no session, no repository and no path, and
+        // already sitting in a public repository — so there is nothing in it to withhold.
+        let open: Set<String> = ["/", "/index.html", "/manifest.webmanifest",
+                                 "/v1/health", "/v1/strings"]
         let pairing = request.path.hasPrefix("/v1/auth/")
         // The icon too, and it has to be: a browser asks for `/favicon.ico` on its own, before
         // and independently of the page, and an install prompt fetches the manifest's icons the
@@ -201,6 +207,7 @@ final class RemoteServer {
         // The service worker with them: a browser fetches it outside the page's own credentials in
         // some flows, and what it contains is a push handler and nothing else.
         let icon = request.path == "/sw.js"
+            || (request.path.hasPrefix("/splash-") && request.path.hasSuffix(".png"))
             || request.path == "/favicon.ico"
             || (request.path.hasPrefix("/icon-") && request.path.hasSuffix(".png"))
         if !open.contains(request.path), !pairing, !icon {
@@ -270,6 +277,9 @@ final class RemoteServer {
                 "authed": { if case .allowed = permission(for: request) { return true }; return false }(),
             ])
 
+        case ("GET", "/v1/strings"):
+            return strings(for: request)
+
         case ("GET", "/v1/sessions"):
             return .json(sessionsPayload())
 
@@ -312,6 +322,23 @@ final class RemoteServer {
             RemoteAuth.audit("push.subscribe", ["device": device, "id": subscription.id])
             return .json(["ok": true, "id": subscription.id])
 
+        case ("POST", "/v1/push/test"):
+            // Read-level, like subscribing: this reaches nobody but the person who asked, and it
+            // is the only way to answer "did that work" without waiting for a session to need
+            // you — which is a long way to go to find out whether a key was minted correctly.
+            guard case .allowed(let device, _) = permission(for: request) else {
+                return .error(401, "unauthorized", "This needs a paired device.")
+            }
+            let mine = WebPush.subscriptions.filter { $0.device == device }
+            guard !mine.isEmpty else {
+                return .error(409, "not_subscribed",
+                              "This device has not asked for notifications yet.")
+            }
+            WebPush.send(title: "Clawdline", body: L.t.pushTest, url: "/", tag: "test",
+                         device: device)
+            RemoteAuth.audit("push.test", ["device": device])
+            return .json(["ok": true, "sent": mine.count])
+
         case ("POST", "/v1/push/unsubscribe"):
             let json = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
             guard let id = json["id"] as? String else {
@@ -334,28 +361,85 @@ final class RemoteServer {
                 return row
             }])
 
-        // Starting a session is the one write that is not aimed at an existing one — and it is
-        // the same risk, because what it starts runs `bash` too. Same gate, deliberately.
-        case ("POST", "/v1/sessions"):
+        // Reading which directories a session could be started in is read-level: it discloses the
+        // same kind of thing `/v1/projects` does, which is a repository name. **Starting one is
+        // not**, and it is the route below.
+        //
+        // There was a `POST /v1/sessions` here once that took a `cwd` and a `command` out of the
+        // request body and ran the second in the first. It is gone. Behind a tunnel that is a
+        // remote "run anything anywhere" primitive with a token in front of it, and no amount of
+        // checking the path makes it something else — the check is a thing the next person to
+        // edit this file can weaken by accident, and an absent parameter is not.
+        case ("GET", "/v1/places"):
+            return .json(placesPayload())
+
+        case ("POST", let path) where path.hasSuffix("/start") && path.hasPrefix("/v1/places/"):
+            let id = String(path.dropFirst("/v1/places/".count).dropLast("/start".count))
+            // The body is not read at all, and that is the design rather than an omission: there
+            // is no field on this route a directory or a command could be written into.
+            return writing(request) { _ in
+                guard let place = StartPoints.place(withID: id.removingPercentEncoding ?? id) else {
+                    // Written down as well, and this is the one worth having: an id nobody was
+                    // ever handed is what somebody guessing looks like, and a log that only
+                    // records what worked cannot show you that.
+                    RemoteAuth.audit("place.start", ["place": String(id.prefix(64)), "ok": "0",
+                                                     "why": "not_found"])
+                    return .error(404, "not_found", "No place named that")
+                }
+                switch StartPoints.start(place) {
+                case .refused(let status, let code, let message, let app):
+                    RemoteAuth.audit("place.start", ["place": place.id, "cwd": place.path,
+                                                     "ok": "0", "why": code])
+                    return .error(status, code, message, extra: app.map { ["app": $0] } ?? [:])
+                case .started(let made, let backend):
+                    RemoteAuth.audit("place.start", ["place": place.id, "cwd": place.path,
+                                                     "ok": "1", "id": made])
+                    // Read it back on the next beat, so whatever asked sees the new row arrive
+                    // the same way every other client does rather than through a special case.
+                    DispatchQueue.main.async { SessionWatch.shared.nudge() }
+                    return .json(["ok": true, "id": made, "backend": backend.rawValue,
+                                  "place": place.id, "cwd": place.path,
+                                  "at": Int(Date().timeIntervalSince1970)])
+                }
+            }
+
+        case ("POST", let path) where path.hasPrefix("/v1/places/"):
+            return .error(404, "not_found", "No such route")
+
+        // Answering a menu, which is a different act from typing — see `Targets.answer`.
+        //
+        // Write-level and allowlisted twice over: nothing but `1`–`9` and `Tab` reaches a tty, and
+        // the allowlist that matters is the one in `Targets`, not this parse. A route that took
+        // "any key" would be a way to write escape sequences into somebody's terminal from a
+        // phone, and no amount of validating the *question* would make that not true.
+        case ("POST", let path) where path.hasSuffix("/key") && path.hasPrefix("/v1/sessions/"):
+            let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/key".count))
             return writing(request) { body in
-                let cwd = (body["cwd"] as? String) ?? ""
-                let command = (body["command"] as? String) ?? "claude"
-                guard !cwd.isEmpty else {
-                    return .error(400, "bad_request", "That needs a cwd.")
+                // **Parsed before the session is looked up.** Not for secrecy — a well-formed key
+                // still tells you whether a session exists — but because the allowlist is the
+                // thing this route is for, and a check that runs after two other steps is a check
+                // somebody will later move.
+                let key = (body["key"] as? String) ?? ""
+                let byte: UInt8
+                if key == "tab" {
+                    byte = 0x09
+                } else if key.count == 1, let c = key.unicodeScalars.first,
+                          ("1"..."9").contains(key) {
+                    byte = UInt8(c.value)
+                } else {
+                    return .error(400, "bad_request",
+                                  "key must be \"1\"…\"9\" or \"tab\".")
                 }
-                var isDirectory: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: cwd, isDirectory: &isDirectory),
-                      isDirectory.boolValue else {
-                    return .error(400, "bad_request", "There is no directory there.")
+                guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
+                    return .error(404, "not_found", "No session named that")
                 }
-                guard let made = Targets.create(cwd: cwd, command: command) else {
-                    return .error(500, "internal", "Could not open a tab.")
+                if let failure = Targets.answer(byte, to: session) {
+                    return .error(502, "internal", failure)
                 }
-                RemoteAuth.audit("session.create", ["cwd": cwd, "command": command, "id": made.id])
-                // Read it back on the next beat, so whatever asked sees the new row arrive the
-                // same way every other client does rather than through a special case.
-                DispatchQueue.main.async { SessionWatch.shared.nudge() }
-                return .json(["ok": true, "id": made.id, "backend": made.backend.rawValue])
+                RemoteAuth.audit("session.key", ["id": session.id, "key": key])
+                // A reading now would still show the menu — the terminal has not repainted yet.
+                SessionWatch.shared.nudge()
+                return .json(["ok": true])
             }
 
         case ("POST", let path) where path.hasSuffix("/send") && path.hasPrefix("/v1/sessions/"):
@@ -368,6 +452,23 @@ final class RemoteServer {
                 let images = (body["images"] as? [String]) ?? []
                 guard !text.isEmpty || !images.isEmpty else {
                     return .error(400, "bad_request", "That needs some text or an image.")
+                }
+
+                // **Refuse rather than answer the wrong question.**
+                //
+                // Claude Code's picker discards a bracketed paste and then acts on the Return that
+                // follows it — so sending words to a session showing a menu does not type them, it
+                // confirms whichever row is highlighted. Measured: with the caret on the third
+                // option, sending the word "Tea" answered "Water". Silently. From a phone.
+                //
+                // Only asked when the cached state already says `waiting`, because the answer
+                // costs a screen capture and every other send is the ordinary case.
+                if SessionWatch.shared.states[session.id] == .waiting,
+                   Targets.isChoosing(session) {
+                    return .error(409, "showing_a_menu",
+                                  "That session is showing a menu. Sending text would confirm "
+                                  + "whichever option is highlighted rather than typing. "
+                                  + "Answer it with POST /v1/sessions/<id>/key.")
                 }
 
                 // Off the main thread on purpose: this is an osascript round trip of a hundred
@@ -447,6 +548,20 @@ final class RemoteServer {
             guard let data = RemoteIcon.ico() else { return .error(404, "not_found", "No icon") }
             return Response(status: 200,
                             headers: ["Content-Type": "image/x-icon",
+                                      "Cache-Control": "public, max-age=86400"],
+                            body: data)
+
+        case ("GET", let path) where path.hasPrefix("/splash-") && path.hasSuffix(".png"):
+            // `/splash-1179x2556.png` — the pixel size of one particular iPhone. iOS names the
+            // device in a media query and asks for the image that fits it, so the sizes are not a
+            // list this end can know in advance.
+            let body = path.dropFirst("/splash-".count).dropLast(".png".count).split(separator: "x")
+            guard body.count == 2, let w = Int(body[0]), let h = Int(body[1]),
+                  let data = RemoteIcon.splash(width: w, height: h) else {
+                return .error(404, "not_found", "No splash that size")
+            }
+            return Response(status: 200,
+                            headers: ["Content-Type": "image/png",
                                       "Cache-Control": "public, max-age=86400"],
                             body: data)
 
@@ -613,15 +728,8 @@ final class RemoteServer {
         // part of an error nobody should ever branch on. `left` is in the body for the same
         // reason: a page that wants to say "two tries left" should not be counting for itself.
         case .wrongCode(let left):
-            var response = Response.error(403, "wrong_code", "That code is not right. \(left) tries left.")
-            if var obj = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
-               var error = obj["error"] as? [String: Any] {
-                error["tries_left"] = left
-                obj["error"] = error
-                response.body = (try? JSONSerialization.data(withJSONObject: obj,
-                                                             options: [.withoutEscapingSlashes])) ?? response.body
-            }
-            return response
+            return .error(403, "wrong_code", "That code is not right. \(left) tries left.",
+                          extra: ["tries_left": left])
         case .expired:
             return .error(403, "expired", "That pairing has expired. Start again.")
         }
@@ -742,6 +850,29 @@ final class RemoteServer {
 
     // MARK: - What the routes answer with
 
+    /// The directories a session may be started in — see ``StartPoints``.
+    ///
+    /// `id` is the only part a client sends back, and it is the only part it may send: the
+    /// starting route takes an id and no path. `path` is here so a person can see which of two
+    /// projects with the same name they are pointing at, not so anything can be built out of it.
+    private func placesPayload() -> [String: Any] {
+        [
+            "at": Int(Date().timeIntervalSince1970),
+            "places": StartPoints.places().map { place -> [String: Any] in
+                var row: [String: Any] = [
+                    "id": place.id,
+                    "label": place.label,
+                    "path": place.path,
+                    "at": Int(place.at.timeIntervalSince1970),
+                ]
+                // The same mark the session list draws, and drawn the same way — the registry's
+                // when it has one, and a stable creature off the path when it does not.
+                if let grid = ProjectIcon.grid(forCwd: place.path) { row["icon"] = json(of: grid) }
+                return row
+            },
+        ]
+    }
+
     private func sessionsPayload() -> [String: Any] {
         let watch = SessionWatch.shared
         return [
@@ -830,6 +961,233 @@ final class RemoteServer {
 
     // MARK: - The page
 
+    /// The web interface's own words, in whatever language the browser reads.
+    ///
+    /// **The page translates nothing.** It ships with the English as a fallback so that a fetch
+    /// that fails leaves a readable screen rather than a screen of blank labels, and it asks for
+    /// this before its first render; everything it says afterwards comes from here. One set of
+    /// words in one place is the whole reason ``Copy`` exists, and a second set living in the
+    /// HTML would be a second thing to translate and the first thing to forget.
+    ///
+    /// Which language is ``L/copy(forAcceptLanguage:)``'s answer: the browser's `Accept-Language`
+    /// sorted by `q`, unless somebody has named a language in the config, which wins. The person
+    /// holding the phone is not necessarily the person the Mac belongs to.
+    ///
+    /// A flat object of strings, keyed by the name of the ``Copy`` member it came from, so that a
+    /// string can be followed from the page to this file to the translations with one search.
+    /// Some of them are not new: a session that is waiting for you says the same thing here as it
+    /// does in the bar, and the reused ones are named at the bottom.
+    private func strings(for request: Request) -> Response {
+        let t = L.copy(forAcceptLanguage: request.headers["accept-language"])
+        let tag = L.tag(of: t)
+        var out: [String: Any] = [
+            // For `<html lang>`, which is what a screen reader picks a voice from and what a
+            // browser offers to translate a page against.
+            "lang": tag,
+            // And `<html dir>`. Every language this app speaks is written left to right, so this
+            // is `ltr` today whatever the header said — it is sent, and derived rather than
+            // assumed, so that the day one that is not gets added the page is already asking.
+            "dir": L.direction(of: tag),
+        ]
+        func add(_ pairs: [String: String]) {
+            for (key, value) in pairs { out[key] = value }
+        }
+
+        // The connection chip.
+        add([
+            "webConnLive": t.webConnLive,
+            "webConnConnecting": t.webConnConnecting,
+            "webConnRetrying": t.webConnRetrying,
+            "webConnOffline": t.webConnOffline,
+            "webConnLocked": t.webConnLocked,
+            "webConnTipLive": t.webConnTipLive,
+            "webConnTipLocked": t.webConnTipLocked,
+            "webConnTipDown": t.webConnTipDown,
+        ])
+
+        // The header's counts.
+        add([
+            "webCountWorking": t.webCountWorking,
+            "webCountWaiting": t.webCountWaiting,
+            "webCountUnreadable": t.webCountUnreadable,
+            "webCountQuietOne": t.webCountQuietOne,
+            "webCountQuietMany": t.webCountQuietMany,
+            "webCountNone": t.webCountNone,
+        ])
+
+        // The list, its filter, and the four ways it can be empty.
+        add([
+            "webFilterPlaceholder": t.webFilterPlaceholder,
+            "webFilterLabel": t.webFilterLabel,
+            "webListLabel": t.webListLabel,
+            "webPull": t.webPull,
+            "webPullRelease": t.webPullRelease,
+            "webPullBusy": t.webPullBusy,
+            "webEmptyFilterTitle": t.webEmptyFilterTitle,
+            "webEmptyFilterHint": t.webEmptyFilterHint,
+            "webEmptyLockedTitle": t.webEmptyLockedTitle,
+            "webEmptyLockedHint": t.webEmptyLockedHint,
+            "webEmptyNoneHint": t.webEmptyNoneHint,
+            "webEmptyWaitTitle": t.webEmptyWaitTitle,
+            "webEmptyWaitHint": t.webEmptyWaitHint,
+            "webStateUnreadable": t.webStateUnreadable,
+            "webStateWorking": t.webStateWorking,
+        ])
+
+        // The transcript pane.
+        add([
+            "webBack": t.webBack,
+            "webBackLabel": t.webBackLabel,
+            "webNoSessionOpen": t.webNoSessionOpen,
+            "webOrderTip": t.webOrderTip,
+            "webShowOnMac": t.webShowOnMac,
+            "webShowOnMacTip": t.webShowOnMacTip,
+            "webShowOnMacOff": t.webShowOnMacOff,
+            "webShowOnMacAsked": t.webShowOnMacAsked,
+            "webPickSession": t.webPickSession,
+            "webReading": t.webReading,
+            "webLoading": t.webLoading,
+            "webTranscriptFailed": t.webTranscriptFailed,
+            "webWhoYou": t.webWhoYou,
+            "webWhoTool": t.webWhoTool,
+            "webSteps": t.webSteps,
+            "webJustNow": t.webJustNow,
+            "webMinutesAgo": t.webMinutesAgo,
+        ])
+
+        // The composer, and what it refuses.
+        add([
+            "webSend": t.webSend,
+            "webAttach": t.webAttach,
+            "webRemoveShot": t.webRemoveShot,
+            "webWriteOpen": t.webWriteOpen,
+            "webWriteOff": t.webWriteOff,
+            "webShotsOnlyPictures": t.webShotsOnlyPictures,
+            "webShotsTooMany": t.webShotsTooMany,
+            "webShotTooBig": t.webShotTooBig,
+            "webShotsTooBig": t.webShotsTooBig,
+            "webShotUnreadable": t.webShotUnreadable,
+            "webShotNeedsSession": t.webShotNeedsSession,
+        ])
+
+        // The key row along the bottom, on a desk.
+        add([
+            "webHintMove": t.webHintMove,
+            "webHintOpen": t.webHintOpen,
+            "webHintFilter": t.webHintFilter,
+            "webHintPane": t.webHintPane,
+        ])
+
+        // The shortcuts card.
+        add([
+            "webKeysLabel": t.webKeysLabel,
+            "webKeysTitle": t.webKeysTitle,
+            "webKeysMove": t.webKeysMove,
+            "webKeysOpen": t.webKeysOpen,
+            "webKeysFilter": t.webKeysFilter,
+            "webKeysEscape": t.webKeysEscape,
+            "webKeysList": t.webKeysList,
+            "webKeysPane": t.webKeysPane,
+            "webKeysEnds": t.webKeysEnds,
+            "webKeysReverse": t.webKeysReverse,
+            "webKeysThis": t.webKeysThis,
+            "webKeysFoot": t.webKeysFoot,
+        ])
+
+        // The door.
+        add([
+            "webDoorLabel": t.webDoorLabel,
+            "webDoorAskLede": t.webDoorAskLede,
+            "webDoorAskFine": t.webDoorAskFine,
+            "webDoorName": t.webDoorName,
+            "webDoorAsk": t.webDoorAsk,
+            "webDoorToPassword": t.webDoorToPassword,
+            "webDoorCodeLede": t.webDoorCodeLede,
+            "webDoorCodeFine": t.webDoorCodeFine,
+            "webDoorTwoMinutes": t.webDoorTwoMinutes,
+            "webDoorDigit": t.webDoorDigit,
+            "webDoorConfirm": t.webDoorConfirm,
+            "webDoorRestart": t.webDoorRestart,
+            "webDoorPasswordLede": t.webDoorPasswordLede,
+            "webDoorPasswordFine": t.webDoorPasswordFine,
+            "webDoorPassword": t.webDoorPassword,
+            "webDoorPasswordGo": t.webDoorPasswordGo,
+            "webDoorToPair": t.webDoorToPair,
+            "webDoorAsking": t.webDoorAsking,
+            "webDoorAskFailed": t.webDoorAskFailed,
+            "webDoorRateLimited": t.webDoorRateLimited,
+            "webDoorSixDigits": t.webDoorSixDigits,
+            "webDoorChecking": t.webDoorChecking,
+            "webDoorFinished": t.webDoorFinished,
+            "webDoorWrongCode": t.webDoorWrongCode,
+            "webDoorNeedPassword": t.webDoorNeedPassword,
+            "webDoorWrongPassword": t.webDoorWrongPassword,
+            "webDoorExpired": t.webDoorExpired,
+            "webDoorPaired": t.webDoorPaired,
+        ])
+
+        // What a request that went wrong says.
+        add([
+            "webOffline": t.webOffline,
+            "webNotJSON": t.webNotJSON,
+            "webRequestFailed": t.webRequestFailed,
+        ])
+
+        // Notifications.
+        add([
+            "webNotifyGo": t.webNotifyGo,
+            "webNotifyAsking": t.webNotifyAsking,
+            "webNotifyStop": t.webNotifyStop,
+            "webNotifyStopping": t.webNotifyStopping,
+            "webNotifyOff": t.webNotifyOff,
+            "webNotifyOn": t.webNotifyOn,
+            "webNotifyBlocked": t.webNotifyBlocked,
+            "webNotifyUnsupported": t.webNotifyUnsupported,
+            "webNotifyHomeScreen": t.webNotifyHomeScreen,
+            "webNotifyOnFailed": t.webNotifyOnFailed,
+            "webNotifyOffFailed": t.webNotifyOffFailed,
+        ])
+
+        // The settings sheet, and the composer's in-flight state.
+        add([
+            "webSettings": t.webSettings,
+            "webSettingsNotify": t.webSettingsNotify,
+            "webSettingsVersion": t.webSettingsVersion,
+            "webClose": t.webClose,
+            "webNotifySheetOff": t.webNotifySheetOff,
+            "webNotifyTest": t.webNotifyTest,
+            "webNotifyTestSent": t.webNotifyTestSent,
+            "webNotifyTestNone": t.webNotifyTestNone,
+            "webNotifyTestFailed": t.webNotifyTestFailed,
+            "webSending": t.webSending,
+            "webSendTip": t.webSendTip,
+        ])
+        // Said in both places, so said once. The bar and the page are two windows onto the same
+        // sessions, and a row that reads "waiting for you" on a Mac should not read as something
+        // else on the phone next to it.
+        add([
+            "placeholder": t.placeholder,
+            "noSession": t.noSession,
+            "noOutput": t.noOutput,
+            "sessionWaiting": t.sessionWaiting,
+            "sendFailed": t.sendFailed,
+            "hintList": t.hintList,
+            "hintKeys": t.hintKeys,
+            "hintOrder": t.hintOrder,
+            // A function on the Mac, where it can be called with the answer; two keys here,
+            // because a question with two answers does not cross a JSON boundary as one.
+            "webOrderNewest": t.outputOrder(newestFirst: true),
+            "webOrderOldest": t.outputOrder(newestFirst: false),
+        ])
+
+        var response = Response.json(out)
+        // The answer depends on a request header, so a cache that keyed on the URL alone would
+        // hand the next reader somebody else's language.
+        response.headers["Vary"] = "Accept-Language"
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    }
+
     private func page() -> Response {
         guard let url = Bundle.main.url(forResource: "index", withExtension: "html",
                                         subdirectory: "web"),
@@ -867,13 +1225,34 @@ final class RemoteServer {
             var url = (event.notification.data && event.notification.data.url) || "/";
             // Focus a window that is already open before making another one — the point of
             // tapping this is to reach the session, not to collect tabs.
+            //
+            // **Three things had to be true for this to land on the session and only one of them
+            // was.** `navigate()` throws on a client this worker does not control, which is every
+            // client until the page has been reloaded once after the worker installed — and a
+            // rejected promise here is silent, so it read as "focus worked, routing did not".
+            // Second, a URL differing only in its fragment is a same-document navigation: even
+            // when `navigate()` succeeds the page is not reloaded, so nothing re-reads it. Third,
+            // the page only ever looked at the fragment on first load.
+            //
+            // So the message is the mechanism and the navigation is the fallback: an open page
+            // routes itself, and a cold start gets the fragment the ordinary way.
             event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true })
                 .then(function (list) {
                     for (var i = 0; i < list.length; i++) {
-                        if ("focus" in list[i]) {
-                            if (list[i].navigate) { list[i].navigate(url); }
-                            return list[i].focus();
+                        var client = list[i];
+                        if (!("focus" in client)) { continue; }
+                        if (client.postMessage) {
+                            client.postMessage({ type: "navigate", url: url });
                         }
+                        return client.focus().then(function () {
+                            // Only for a client we control, and only when the message could not
+                            // have done it. `catch` because navigating an uncontrolled client
+                            // rejects, and an unhandled rejection here would take the whole
+                            // handler down with it.
+                            if (!client.postMessage && client.navigate) {
+                                return client.navigate(url).catch(function () {});
+                            }
+                        });
                     }
                     return clients.openWindow(url);
                 }));
@@ -1055,9 +1434,17 @@ extension RemoteServer {
 
         /// One envelope, everywhere. A client that has handled one error has handled all of them,
         /// and `code` is the part it is allowed to branch on — `message` is for a person.
-        static func error(_ status: Int, _ code: String, _ message: String) -> Response {
-            .json(["error": ["code": code, "message": message,
-                             "request_id": UUID().uuidString.lowercased()]], status: status)
+        ///
+        /// `extra` goes **inside** `error`, next to the code, and exists so that a page can write
+        /// its own sentence instead of showing this one: `tries_left` so it can say "two tries
+        /// left" without counting for itself, `app` so it can name the terminal it is complaining
+        /// about in the reader's own language. `message` is English and stays English.
+        static func error(_ status: Int, _ code: String, _ message: String,
+                          extra: [String: Any] = [:]) -> Response {
+            var error: [String: Any] = ["code": code, "message": message,
+                                        "request_id": UUID().uuidString.lowercased()]
+            for (key, value) in extra { error[key] = value }
+            return .json(["error": error], status: status)
         }
 
         static func status(_ code: Int) -> Response {
@@ -1088,6 +1475,7 @@ extension RemoteServer {
             case 401: return "Unauthorized"
             case 403: return "Forbidden"
             case 404: return "Not Found"
+            case 409: return "Conflict"
             case 429: return "Too Many Requests"
             case 431: return "Request Header Fields Too Large"
             default:  return "Error"

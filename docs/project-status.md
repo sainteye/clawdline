@@ -58,6 +58,29 @@ is no longer the one in use.
 
 ---
 
+## Two readers, one set of files — which is which
+
+These files are read by **two different programs**, and the page you are on documents only one
+of them. That distinction is the first thing to get straight, because it decides which fields you
+need:
+
+| | reads | documented in |
+|---|---|---|
+| **Clawdline** — the bar | `state`, `label`, `url`, `started_at`, `typical_seconds` | this page |
+| **[claude-bestiary](https://github.com/sainteye/claude-bestiary)** — the terminal status line | those, **plus** `producer`, `steps`, `sha`, `head_in_run` | [its own docs](https://github.com/sainteye/claude-bestiary/blob/main/docs/producers.md) |
+
+**Write for the one you want to see it in.** A file with only the fields on this page is complete
+for Clawdline and will simply show less on the status line; a file written for the status line is
+a superset and Clawdline ignores what it does not know. Neither reader fails on a field it has
+never heard of.
+
+The one that catches people is `producer`. Clawdline does not read it at all — but the status line
+uses it to decide whether *your* local deploy or *its* GitHub poller owns the file, and a local
+producer that omits it gets quietly overwritten a few seconds later. If you are writing a deploy
+script, read the other page before you write this file.
+
+---
+
 ## What is happening right now
 
 `~/.claude/statusline-cache/`. Each file is optional; absent means the bar has one less thing to
@@ -93,7 +116,14 @@ file rather than for the bar:
 which is a red mark that is always wrong. Treat any state you do not recognise as "say nothing"
 rather than as failure.
 
-`<owner>-<repo>` comes from the repository's `origin` remote.
+`<owner>-<repo>` comes from the repository's `origin` remote — **of the repository you want to
+see it in**, which is not always the one that deployed.
+
+A deploy script in one repository that publishes another is ordinary (`./deploy web` in one place
+putting a different repository on the wire), and the filename cannot express that. It is keyed to
+where somebody will be *sitting* when they want to know, so: write the file for the repository you
+work in. If both are places you work, write both — the file is a few hundred bytes and two copies
+of the truth is better than one copy in the wrong place.
 
 ### A backlog — `backlog-<path>.json`
 

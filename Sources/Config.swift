@@ -153,6 +153,19 @@ final class Config {
     ///
     /// `["node", "~/bin/notify.mjs"]`. An array because nothing should be word-split: a path with
     /// a space in it is a path, not two arguments. See Sources/StateHook.swift.
+    /// Buzz when a turn that took a while finishes, not when any turn finishes.
+    ///
+    /// Off by default, and there is a threshold underneath even when it is on, because the
+    /// unthresholded version is the mistake: a turn ends dozens of times a day and missing one
+    /// costs nothing — it will still be finished when you look. What is worth a notification is
+    /// the one you walked away from. See `StateHook.finishThreshold`.
+    var pushOnFinish = false
+    /// Buzz when a deploy stops running.
+    ///
+    /// A better candidate than the one above and for the opposite reason: deploys are rare, and
+    /// you are usually waiting on one rather than merely interested. Both outcomes are sent —
+    /// a deploy that failed is the one you most want to hear about.
+    var pushOnDeploy = false
     var onStateChange: [String] = []
     var remoteWrite = false
     var remoteTunnel = "off"
@@ -196,6 +209,8 @@ final class Config {
         if let v = obj["hooks"] as? Bool { hooks = v }
         if let v = obj["remote"] as? Bool { remote = v }
         if let v = obj["remote_port"] as? Int, v > 0, v < 65536 { remotePort = v }
+        if let v = obj["push_on_finish"] as? Bool { pushOnFinish = v }
+        if let v = obj["push_on_deploy"] as? Bool { pushOnDeploy = v }
         if let v = obj["on_state_change"] as? [String] { onStateChange = v }
         if let v = obj["remote_write"] as? Bool { remoteWrite = v }
         if let v = obj["remote_tunnel"] as? String, !v.isEmpty { remoteTunnel = v }
@@ -241,6 +256,8 @@ final class Config {
             "hooks": hooks,
             "remote": remote,
             "remote_port": remotePort,
+            "push_on_finish": pushOnFinish,
+            "push_on_deploy": pushOnDeploy,
             "on_state_change": onStateChange,
             "remote_write": remoteWrite,
             "remote_tunnel": remoteTunnel,

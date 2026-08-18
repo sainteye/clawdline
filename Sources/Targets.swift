@@ -130,6 +130,36 @@ enum Targets {
         }
     }
 
+    /// Answer a menu with the one byte its picker reads.
+    ///
+    /// Claude Code's `AskUserQuestion` picker takes a bare digit **outside a bracketed paste** and
+    /// treats it as a selection — in a single-select it also confirms, in a multi-select it
+    /// toggles and `Tab` moves on to the review. That is why this exists at all and why it is a
+    /// byte rather than a string: `send` wraps its text in a bracketed paste, and **the picker
+    /// throws the whole paste away and then acts on the Return that follows it**.
+    ///
+    /// **Allowlisted here rather than at the route**, because the danger is not that somebody
+    /// answers the wrong question — it is that a byte channel into a tty is an escape-sequence
+    /// channel into a tty. `1`–`9` and `Tab` answer a menu and can do nothing else; `ESC` alone
+    /// cancels, and three bytes of an arrow key sent as three round trips arrive as one.
+    static func answer(_ byte: UInt8, to session: TargetSession) -> String? {
+        guard (0x31...0x39).contains(byte) || byte == 0x09 else {
+            return "That is not a key this can send."
+        }
+        return keystroke(byte, to: session)
+    }
+
+    /// Whether this session is showing a menu right now, which changes what typing into it means.
+    ///
+    /// A capture, so only ask when it matters. See the `/send` route: a session that is merely
+    /// `waiting` is the common case and answering it with words is correct; a session showing a
+    /// *picker* is the case where words are silently discarded and the Return confirms whatever
+    /// happens to be highlighted.
+    static func isChoosing(_ session: TargetSession) -> Bool {
+        guard let screen = capture(session) else { return false }
+        return SessionState.isChoosing(screen)
+    }
+
     private static func keystroke(_ byte: UInt8, to session: TargetSession) -> String? {
         switch session.backend {
         case .iterm: return ITerm.keystroke(byte, to: session.id)
@@ -144,19 +174,14 @@ enum Targets {
         }
     }
 
-    /// Start a session somewhere, and hand back the one it became.
-    ///
-    /// iTerm2 when it is running, tmux otherwise — the same order everything else here uses, and
-    /// for the same reason: a tab you can see beats a pane you have to go and find.
-    ///
-    /// The new session is not in any snapshot yet, so the caller gets an id and has to wait for
-    /// the next reading like everybody else. Returning something half-filled here would be a
-    /// third kind of `TargetSession` that is true for about a second.
-    static func create(cwd: String, command: String) -> (id: String, backend: Backend)? {
-        if let made = ITerm.newTab(cwd: cwd, command: command) { return (made.id, .iterm) }
-        if let pane = Tmux.newWindow(cwd: cwd, command: command) { return (pane, .tmux) }
-        return nil
-    }
+    // Starting a session is deliberately **not** here. It used to be — `create(cwd:command:)`,
+    // which ran whatever it was handed wherever it was pointed — and that made it a general
+    // "run this there" primitive one hop from an HTTP route. Every other function in this file
+    // acts on a session somebody already opened; that one created execution, which is a different
+    // kind of thing and now lives in ``StartPoints`` with the policy that decides what may be
+    // started and where. The new session is not in any snapshot yet either way: the caller gets
+    // an id and waits for the next reading like everybody else, because returning something
+    // half-filled would be a third kind of `TargetSession` that is true for about a second.
 
     static func capture(_ session: TargetSession) -> String? {
         switch session.backend {

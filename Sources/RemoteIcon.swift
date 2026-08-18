@@ -113,6 +113,78 @@ enum RemoteIcon {
         return rep.representation(using: .png, properties: [:])
     }
 
+    /// A launch image, at whatever pixel size a device happens to be.
+    ///
+    /// **iOS still does not build one from the manifest**, ten years in: `background_color` is
+    /// what Android uses, and Safari wants `apple-touch-startup-image` with a media query per
+    /// device — twenty of them, matched on width, height, pixel ratio and orientation. Without
+    /// them a home-screen app opens onto whatever Safari decides to draw, which on a dark page is
+    /// a black rectangle for as long as the page takes to arrive, and reads as a hang.
+    ///
+    /// Drawn here rather than shipped as twenty files for the same reason the icon is: they would
+    /// be twenty resampled copies of nine hundred bytes of source, and the list of devices grows
+    /// every autumn. The page asks for the size it needs and gets it.
+    ///
+    /// The ground matches the manifest's `background_color` exactly, so the moment the page does
+    /// arrive nothing changes colour — a splash that hands over to a different shade is a flash,
+    /// and a flash is the thing this exists to remove.
+    static func splash(width: Int, height: Int) -> Data? {
+        let key = width * 100_000 + height
+        lock.lock()
+        if let hit = splashes[key] { lock.unlock(); return hit }
+        lock.unlock()
+
+        let made = onMain { renderSplash(width: width, height: height) }
+        guard let made else { return nil }
+        lock.lock()
+        // Bounded: a device asks for one size and asks again next launch, so the cache should hold
+        // the handful this machine actually serves rather than every size ever requested.
+        if splashes.count > 12 { splashes.removeAll() }
+        splashes[key] = made
+        lock.unlock()
+        return made
+    }
+
+    private static var splashes: [Int: Data] = [:]
+
+    private static func renderSplash(width: Int, height: Int) -> Data? {
+        guard width > 0, height > 0, width <= 4096, height <= 4096,
+              let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor(srgbRed: 0.055, green: 0.055, blue: 0.067, alpha: 1).setFill()   // #0E0E11
+        NSBezierPath(rect: NSRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))).fill()
+
+        // A quarter of the short edge. Big enough to be the thing you see, small enough that it is
+        // still a launch screen rather than a poster.
+        let columns = CGFloat(rows.first?.count ?? 16), lines = CGFloat(rows.count)
+        let cell = (CGFloat(min(width, height)) * 0.26 / columns).rounded()
+        let originX = (CGFloat(width) - cell * columns) / 2
+        let originY = (CGFloat(height) - cell * lines) / 2
+
+        for (row, line) in rows.enumerated() {
+            for (column, character) in line.enumerated() {
+                let colour: NSColor
+                switch character {
+                case "#": colour = body
+                case "o": colour = eye
+                default: continue
+                }
+                colour.setFill()
+                NSBezierPath(rect: NSRect(x: originX + CGFloat(column) * cell,
+                                          y: originY + (lines - 1 - CGFloat(row)) * cell,
+                                          width: cell, height: cell)).fill()
+            }
+        }
+
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.representation(using: .png, properties: [:])
+    }
+
     /// The same PNG, wrapped in the container `/favicon.ico` has to be.
     ///
     /// Worth the twenty-two bytes of header: a browser asks for `/favicon.ico` on its own, without

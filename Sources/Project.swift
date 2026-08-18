@@ -76,7 +76,12 @@ enum Project {
 
     // MARK: - Plumbing
 
-    private static func shellQuoted(_ path: String) -> String {
+    /// A path going into a shell command line, the only way that is always right.
+    ///
+    /// Always quoted, never conditionally — unlike ``Drop/quoted(_:)``, which leaves a plain path
+    /// alone so that what is pasted into a prompt reads like something a person typed. Nobody
+    /// reads this one, so it can be the boring correct thing every time.
+    static func shellQuoted(_ path: String) -> String {
         "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 

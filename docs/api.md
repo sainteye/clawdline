@@ -80,8 +80,9 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/sessions/:id` | token | `read` |
 | `GET` | `/v1/sessions/:id/transcript` | token | `read` |
 | `GET` | `/v1/projects` | token | `read` |
+| `GET` | `/v1/places` | token | `read` |
 | `GET` | `/v1/events` | token | `read` |
-| `POST` | `/v1/sessions` | token + key | `send` **and** the write switch |
+| `POST` | `/v1/places/:id/start` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/send` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/focus` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/auth/pair` | — | — |
@@ -196,10 +197,143 @@ is built from.
 
 ```console
 $ curl -s http://127.0.0.1:7717/v1/projects -H "Authorization: Bearer $TOKEN" | jq -c '.projects[1]'
-{"label":"astro","icon":{"accent":"#B9CFDF","cells":[["#7DA4BF","#7DA4BF","#7DA4BF","#7DA4BF","#7DA4BF"],["#B9CFDF","#B9CFDF","#B9CFDF","#B9CFDF","#B9CFDF"],["#B9CFDF",null,"#B9CFDF",null,"#B9CFDF"],["#7DA4BF",null,"#7DA4BF",null,"#7DA4BF"]]},"path":"/Users/you/code/astro"}
+{"label":"notebook","icon":{"accent":"#B9CFDF","cells":[["#7DA4BF","#7DA4BF","#7DA4BF","#7DA4BF","#7DA4BF"],["#B9CFDF","#B9CFDF","#B9CFDF","#B9CFDF","#B9CFDF"],["#B9CFDF",null,"#B9CFDF",null,"#B9CFDF"],["#7DA4BF",null,"#7DA4BF",null,"#7DA4BF"]]},"path":"/Users/you/code/astro"}
 ```
 
 `path` and `label` always; `icon` only when the registry has one. Sorted by path.
+
+### `GET /v1/places`
+
+**Where a new session may be started**, which is a different list from `/v1/projects` and exists
+for a different reason. `/v1/projects` is "directories somebody drew an icon for"; this is
+"directories `claude` has actually been run in, and that are still there".
+
+```console
+$ curl -s http://127.0.0.1:7717/v1/places -H "Authorization: Bearer $TOKEN" \
+    | jq '{at, places: [.places[] | {id, label, path, at}][:3]}'
+{
+  "at": 1787067658,
+  "places": [
+    {
+      "id": "24f9bac626da56ea",
+      "label": "atrium",
+      "path": "/Users/you/code/atrium",
+      "at": 1787067059
+    },
+    {
+      "id": "3b9e26c1587facfd",
+      "label": "clawdline",
+      "path": "/Users/you/code/clawdline",
+      "at": 1787066824
+    },
+    {
+      "id": "470885724e5330e1",
+      "label": "cairn",
+      "path": "/Users/you/code/cairn",
+      "at": 1787065275
+    }
+  ]
+}
+```
+
+`icon` is left out there so the reply fits on this page; it is on every row and it is the same
+shape as a session's.
+
+| field | |
+|---|---|
+| `id` | opaque, stable between launches, and **the only thing you ever send back** |
+| `label` | the project's name — the icon registry's when it has one, the folder's otherwise |
+| `path` | so a person can tell two projects with the same name apart. Not something to build with |
+| `at` | when that directory was last worked in. The list is sorted by it, newest first |
+| `icon` | the project's mark, the same shape and meaning as a session's — the registry's when it has one, and a stable creature drawn from the path when it does not. Draw it the way the session list draws one, and still treat it as optional |
+
+**Where the list comes from**, in the order it is assembled:
+
+- **`~/.claude/projects/`** — Claude Code's own record of where it has run. One folder per project,
+  named after the working directory with every character that is not an ASCII letter or digit
+  turned into a dash. That map is many-to-one and **the name is never read backwards**:
+  `-Users-me-code-cairn-frontend` is `cairn/frontend` and `cairn-frontend` equally, and a space, a
+  dot and an underscore all arrive as the same dash. The real path is read out of the transcripts
+  inside, which record it, and every candidate found there is checked back against the folder's
+  name before it is believed — because a transcript quotes other people's directories, and one on
+  the machine this was written on had a completely unrelated `cwd` sitting in its last hundred
+  kilobytes inside something that had been pasted in.
+- **The sessions clawdline can already see**, from `GET /v1/sessions`. These are directories a
+  session is open in right now, which covers the one case the record above cannot: a project
+  opened seconds ago, before anything was written down.
+
+**What it excludes**, and each of these is a rule rather than a filter that happens to fire:
+
+- a directory that is not on the disk any more — checked at listing *and* again at starting;
+- a project folder that cannot prove which directory it stands for (an empty one, or one whose
+  transcripts have been trimmed past the point where they say);
+- any path that is not absolute, or that has a control character in it. A directory really can be
+  called `a<LF>b` on macOS, and this list is built out of the filesystem rather than out of
+  anything anybody typed;
+- everything past the fortieth, newest first.
+
+It is not a filesystem browser and will not become one. There is no way to ask it about a directory
+it did not already offer.
+
+### `POST /v1/places/:id/start`
+
+Opens a terminal tab in that place and runs `claude` in it.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/start \
+    -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 6f1c9d3a-41b2' -d '{}'
+{"error":{"code":"write_disabled","message":"Sending is switched off. Settings → Remote turns it on, and it is off by default because typing into a session runs code on this Mac.","request_id":"2fd356e8-bef8-4f54-a312-851c0cfa8045"}}
+```
+
+With the switch on: `{"ok":true,"id":"…","backend":"iterm","place":"…","cwd":"…","at":…}`.
+
+**There is no request body.** Not "the body is optional" — it is not read, and there is no field
+anywhere on this route that a directory or a command could be written into. The `id` in the path is
+resolved against a list the server builds at that moment and the server's own copy of the path is
+what gets used, so an id nobody was handed is `404 not_found` and never a directory. The command is
+the literal `claude`, with no arguments. If `claude --resume` is wanted one day it will be a second
+named action with its own literal, not a field on this one.
+
+Three refusals are specific to this route and worth branching on:
+
+| `code` | status | |
+|---|---|---|
+| `not_found` | 404 | that id is not on the list — including a directory that has been deleted since you last looked |
+| `terminal_closed` | 409 | the terminal is not running, and **this will not launch it for you**. Somebody has to open it on the Mac |
+| `terminal_unsupported` | 409 | the terminal named in Settings is not one this can drive directly. iTerm2 can be driven; everything else is reached through tmux, and without a tmux server there is nothing to do. It is refused by name rather than quietly opening iTerm2 instead |
+
+Both of the `409`s carry **`app`** inside the `error` object — the terminal's name as macOS spells
+it, so a page can write its own sentence around it instead of showing the English one:
+
+```json
+{"error":{"code":"terminal_closed","app":"Ghostty","message":"Ghostty is not running, and this will not launch it for you. Open it on the Mac and try again.","request_id":"…"}}
+```
+
+**Nothing is brought to the front.** The tab is made and written into and the Mac's window order is
+left alone, because whoever pressed this is holding a phone and whoever is at the Mac is in the
+middle of something else. The one exception is a terminal with no window open at all, where making
+a window is unavoidably making a window.
+
+#### Between "started" and the session appearing
+
+`id` is the terminal's own id, in the same space as every `id` in `/v1/sessions` — but **the session
+is not in the list yet when this answers**, and `GET /v1/sessions/:id` will `404` for a moment. That
+is expected and is not an error. Nothing here invents a placeholder row: a session that does not
+exist yet and a session that does are different things, and only one of them has a state, a title
+and a transcript.
+
+What a client should do:
+
+1. Keep the `id` from the reply.
+2. Watch the event stream, or poll `GET /v1/sessions`, for a session with that `id`. A reading is
+   nudged as soon as the tab opens, so it normally lands within a second or two — but a shell has
+   to start and `claude` has to be running before `ps` can see it, and on a cold start that can be
+   longer.
+3. `isClaude` is `false` until `claude` is actually up, so wait for the id, not for the flag.
+4. Give up after about fifteen seconds and say the tab was opened but has not reported in. Do not
+   retry the start — the tab exists, and a second one is not what anybody wanted. (Retrying the
+   *same* `Idempotency-Key` within ten minutes is safe and answers with the stored reply; that is
+   what the header is for.)
 
 ### `POST /v1/sessions/:id/send`
 
@@ -229,27 +363,6 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/focus \
 
 It only moves a window, and it is behind the same gate as sending anyway — one switch, so there is
 never a question about which of them a device has.
-
-### `POST /v1/sessions`
-
-Opens a terminal tab in `cwd` and runs `command` in it, defaulting to `claude`.
-
-```console
-$ curl -s -X POST http://127.0.0.1:7717/v1/sessions \
-    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-    -H 'Idempotency-Key: 1c4f9a02-77bd' \
-    -d '{"cwd":"/Users/you/code/clawdline","command":"claude"}'
-{"error":{"code":"write_disabled","message":"Sending is switched off. Settings → Remote turns it on, and it is off by default because typing into a session runs code on this Mac.","request_id":"97b9d232-2e5a-4cfc-a445-b9d833fcd0a0"}}
-```
-
-With the switch on: `{"ok":true,"id":"…","backend":"iterm"}`. `cwd` is required and must be a
-directory that exists, or `400`; a tab that could not be opened is `500 internal`. The new session
-appears in `GET /v1/sessions` and on the event stream a moment later, by the same route every other
-change arrives on rather than through a special case — so **do not expect the whole session object
-back from this call**, only its id.
-
-This is a write aimed at no existing session, and it is the same risk as sending: what it starts
-runs `bash` too. Same gate, deliberately.
 
 ### `POST /v1/auth/*`
 
@@ -375,7 +488,9 @@ it draws them, and that is a drawing decision which does not travel over the wir
 | `wrong_code` | 403 | that pairing code is not the one on the Mac. `tries_left` says how many are left |
 | `expired` | 403 | the pairing lapsed, or five wrong codes used it up. Start a new one |
 | `write_disabled` | 403 | the second switch is off. Its own code because it is not the client's fault and no retry fixes it |
-| `not_found` | 404 | no such session, or no such route |
+| `not_found` | 404 | no such session, no such place, or no such route |
+| `terminal_closed` | 409 | the terminal a session would start in is not running |
+| `terminal_unsupported` | 409 | the terminal in Settings is not one a session can be started in |
 | `rate_limited` | 429 | too many pairing attempts |
 | `internal` | 500, 502 | a tab that would not open; a terminal that would not take the text |
 

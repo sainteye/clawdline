@@ -74,6 +74,14 @@ finding out on its next look. It changes when a reading happens and never what o
 
   <img src="docs/assets/sessions-live.gif" width="760" alt="The session list, live: the selection walks down it, one session is answered and goes quiet, another finishes, and a third starts asking — and the terminal's own tab and status line follow along above and below.">
 
+- **Answers the same question on your phone.** Your Mac serves a page; your phone opens it and
+  reads what every session is doing, transcript and all — and, if you arm the second switch, types
+  into them. Off in a fresh install, bound to loopback, every request carrying a device token, and
+  a device paired by a code that appears on the Mac and nowhere else. Reaching it from outside is
+  `cloudflared`, which is your own install and never bundled. A phone can be told when a session
+  starts waiting for you.
+  → [From a browser, or a phone](#from-a-browser-or-a-phone)
+
 - **Says it in the notch, too.** Your mascot lives in the camera housing: it leans out while
   something runs, names the session that wants you, and dances when a long job finishes. How busy
   it looks is how much you have running. One word in the config turns it off.
@@ -133,6 +141,7 @@ finding out on its next look. It changes when a reading happens and never what o
 - **Knowing** — [which session wants you](#which-session-wants-you) · [the notch](#the-notch)
 - **Reading** — [the transcript pane](#reading-a-session-back) · [which project](#which-project-not-just-which-task) · [the servers behind it](#the-servers-that-make-up-running-locally)
 - **Writing** — [dictation](#talk-instead-of-type) · [files and images](#dropping-in-a-file-or-an-image) · [which tab it sends to](#which-tab-does-it-send-to)
+- **Away from the Mac** — [the page your phone opens](#from-a-browser-or-a-phone) · [what is in the way](#what-is-in-the-way) · [the tunnel](#the-tunnel-if-the-phone-is-not-in-the-room) · [notifications](#being-told-instead-of-looking)
 - **Making it yours** — [mascots](#bring-your-own-mascot) · [config](#config) · [other terminals](#other-terminals-run-claude-code-in-tmux)
 - **Under it** — [how it works](#how-it-works) · [permissions and privacy](#permissions-and-privacy) · [limitations](#limitations) · [troubleshooting](#troubleshooting)
 - **Going further** — [connect your own project](docs/connect.md) · [from a browser or a phone](docs/remote.md) · [the API](docs/api.md) · [the dev stack a project declares](docs/devstack.md) · [hooks, for the twenty-second gap](docs/hooks.md) · [Whisper for mixed languages](docs/whisper.md) · [which Claude Code versions](docs/compatibility.md) · [project status files](docs/project-status.md) · [mascot format](docs/mascots.md)
@@ -534,27 +543,138 @@ what a note is and is not allowed to change, is in [docs/hooks.md](docs/hooks.md
 The bar answers "which session wants me" while you are at the machine. Away from it, the same
 question is still worth answering — and it is the same reading, so there is a page for it.
 
-Switch it on in **Settings → Remote** and the app serves the session list on `127.0.0.1`: every
-session with its state, its project's mark, and its transcript laid out the way <kbd>⌘</kbd><kbd>J</kbd>
-lays it out. On a desktop it is two columns with the app's own keys; on a phone it is a single
-column meant to be added to the home screen, where it behaves like an app rather than a page.
+**Your Mac serves a page and your phone opens it.** Every session with its state, its project's
+mark, and its transcript laid out the way <kbd>⌘</kbd><kbd>J</kbd> lays it out — and, if you arm
+the second switch, a box to type into them. On a desktop it is two columns with the app's own
+keys; on a phone it is a single column meant to be added to the home screen, where it behaves like
+an app rather than a page. It speaks the same fourteen languages the bar does, and while `lang` is
+`auto` it answers in the *phone's* language rather than the Mac's, because the phone is the thing
+being held.
 
-To reach it from outside, point it at `cloudflared` — a quick tunnel for a generated address, or
-your own domain. **The connection dials out**, so there is no port to forward and nothing
-listening on your network.
+It is off in a fresh install and stays off until you go and switch it on. Not a default somebody
+picked: a listening socket is the difference between a program on your machine and a service on
+your machine, and that difference should be something you did on purpose.
 
-**Two switches, because they are two different risks.** Reading a session discloses a repository
-name, a branch and a task title. *Writing* to one is remote code execution, because Claude Code
-runs `bash`. So sending is a second switch, off by default, and granted to paired devices as a
-group so it can be taken back from all of them at once.
+### What is in the way
 
-Nothing is reachable without a paired device. Pairing shows a six-digit code **on the Mac and
-nowhere else** — it is never in the reply the browser got, so whoever asked cannot finish without
-being able to see your screen. A phone can scan a QR code instead. A tunnel refuses to start until
-something has been paired, because *reachable from the internet* should be a decision somebody
-made rather than something one config key did.
+In the order a request meets it:
 
-`docs/remote.md` has the threat model, including what this does **not** defend against, and
+- **It binds `127.0.0.1` and nothing else.** Not "binds everything and filters" — the listener is
+  created with a required local endpoint of loopback, so there is no interface on your network for
+  it to be found on. The way out of the machine is a tunnel that dials *out*, never a port that
+  sits and waits.
+- **The `Host` header is checked before anything else is looked at.** A page on `evil.com` can
+  already `fetch` `http://127.0.0.1:7717/…`; what usually saves a local server is that the page
+  cannot *read* the reply, and DNS rebinding removes exactly that. The one thing rebinding cannot
+  change is `Host`, which still says `evil.com` — so a request naming a host this server does not
+  answer to is refused on the spot. It answers to `127.0.0.1`, `localhost`, `::1`, whatever is in
+  `remote_hostname`, and anything under `.trycloudflare.com`.
+- **Cross-site requests are refused**, on the `Sec-Fetch-Site` header a browser sets and a page
+  cannot forge. Following a link is let through, because typing the address into a bar that
+  happened to be showing another page is cross-site too — what separates them is the mode, not the
+  site. Anything that mutates is checked against `Origin` as well, since a cookie is sent whether
+  the page asking wanted it or not.
+- **Everything else needs a device token**, wherever it came from. 256 random bits, kept as a
+  SHA-256 and compared in constant time — including the lookup, so a wrong token cannot be used to
+  find out which device ids are real. Open without one: the page, its icons and manifest,
+  `/v1/health`, the interface's own strings, and the pairing routes. There is no exception for
+  loopback, and that is not zeal — once a tunnel is up, a request from a phone in another country
+  arrives from `127.0.0.1` like everything else, so *but it came from this machine* would be wrong
+  in precisely the situation it was meant to cover.
+- **A device is paired by a code shown on the Mac.** The browser asks and gets an id back; the six
+  digits appear in an alert **on the Mac's screen** and are never in that reply. Five guesses, two
+  minutes, one pairing open at a time, three in ten minutes. Anybody who can reach the address can
+  start one; only somebody who can see your screen can finish one.
+- **Typing into a session is a separate switch from reading one.** Reading hands over a repository
+  name, a branch and a task title. Writing is remote code execution, because Claude Code runs
+  `bash`. Two features at two risk levels, so two switches rather than two positions on one dial —
+  and sending is granted to paired devices as a group, so taking it back takes it back from all of
+  them at once.
+- **A tunnel refuses to start until something has been paired.** *Reachable from the internet*
+  should be a decision a person made rather than something one config key did.
+- **What was done is written down.** Every pairing, revocation, send and session started goes to
+  `~/.config/clawdline/remote-audit.jsonl`, mode `0600`, appended and never rewritten — because if
+  somebody does get in, the question you will have is what they did, and that has no answer unless
+  it was recorded while it was happening.
+
+**A paired device is trusted until you revoke it.** There is no expiry and no re-prompt: its token
+works until you take it away in Settings → Remote, which takes its notifications with it.
+[docs/remote.md](docs/remote.md) is where the rest of the honest half lives — a tunnel means
+Cloudflare terminates the TLS and your transcripts cross its edge in the clear, a quick tunnel's
+address is itself a credential, and nothing at this layer defends against something already
+running as you on the Mac.
+
+### Turning it on
+
+**Settings → Remote → let a browser or your phone see your sessions.** If the browser is on this
+Mac that is the whole of it: *Open in a browser* mints a device for it and opens the page already
+signed in.
+
+**For a phone, *Pair a phone…* draws a QR code.** It carries a key of its own, minted for that
+scan, so a photograph of somebody's screen is a device you can see in the list and take away again
+rather than this Mac's own key. The alternative is the six-digit code, from the phone's side —
+which works and costs a walk to the machine.
+
+### The tunnel, if the phone is not in the room
+
+A phone cannot reach `127.0.0.1`, so the QR code points at a public address as soon as there is
+one. That address comes from `cloudflared`, which dials **out** to Cloudflare and lets the traffic
+back down the connection it made — no port to forward, and nothing on your network listening.
+
+**`cloudflared` is a program you install yourself.** It is never bundled and never downloaded by
+this app; `dependencies: none` stays true because it is your binary, found where package managers
+put it, exactly like `tmux` and `whisper-cli`. `brew install cloudflared`, or put the path in
+`cloudflared_path` if yours lives somewhere unusual. Two modes:
+
+- **`quick`** needs no Cloudflare account. It invents an address per run — four English words
+  under `trycloudflare.com` — which this end learns by reading cloudflared's own logging. Good for
+  an afternoon. The address changes every time, and for the length of a run it is a credential:
+  anybody who has it reaches your sign-in page.
+- **`named`** runs a tunnel you created yourself with `cloudflared tunnel create`, at a hostname
+  you routed to it. Both `remote_tunnel_name` and `remote_hostname` have to be set, and it refuses
+  with a sentence rather than starting without them: cloudflared never prints the hostname for a
+  named tunnel, so a tunnel missing that field is one that comes up and can never be told to
+  anybody.
+
+Clawdline writes its own `~/.config/clawdline/cloudflared.yml` and points cloudflared at it, so
+your `~/.cloudflared/config.yml` is never read for this. That is not tidiness: that file's
+`tunnel:` key overrides the name on the command line, and its ingress list will happily answer
+`404` for a hostname it has never heard of.
+
+### Being told, instead of looking
+
+A paired phone can subscribe to notifications and then buzz when **a session starts waiting for an
+answer** — the one state that costs you something for every second it goes unnoticed. Two more,
+both off unless asked for: `push_on_finish` for a turn that ran over two minutes and stopped, and
+`push_on_deploy` for a deploy that stopped running, whichever way it went.
+
+The message is sealed to the device, so the push service carries ciphertext and learns only that
+something went to a subscription. Encryption settles who may read it in transit and settles nothing
+about who reads it off a locked phone lying face-up on a table, so what is inside is the project
+and the state and never the task text.
+
+**The Mac has to be running.** This is not a service somewhere; it is your machine, awake, noticing
+and posting. Asleep or quit, nothing goes out, and nothing is saved up to go out later. And on
+iOS the page has to have been added to the home screen and opened from there — Apple only delivers
+notifications to a web app that lives there, which is a rule of theirs and not a setting here.
+
+### Starting one from the sofa
+
+With sending on, a paired device can also **start a new Claude Code session** in a directory this
+Mac has already worked in. The client never sends a path — it sends an opaque id out of a list the
+Mac built from Claude Code's own record of where it has run, and the command is the literal
+`claude` with no arguments. There is no field on that route a directory or a command could be
+written into, which is a stronger statement than "the path is validated", because validation is
+something the next person to edit the file can weaken by accident and an absent parameter is not.
+It needs iTerm2 running or tmux to hand, and it takes no focus: whoever is at the Mac is in the
+middle of something else.
+
+**Two rough edges worth knowing.** The web page has no button for this yet — the route works and
+`curl` reaches it today, but on a phone there is nothing to press, so this is a capability the API
+has and the interface has not caught up with. And a page that is already open keeps the interface
+it loaded, so after updating the app you reload it by hand.
+
+`docs/remote.md` has the threat model in full, including what this does **not** defend against, and
 [docs/api.md](docs/api.md) is the surface a script or a plugin talks to — every session, every
 transcript, an event stream, and `curl` as the only SDK.
 
@@ -692,6 +812,15 @@ of the file — including settings from a version that knew about more of them �
   "hooks": true,                         // believe Claude Code's hooks when they are installed
   "status_dir": "",                      // project status files; "" = claude-bestiary' own
   "icons_file": "",                      // icon registry;        "" = claude-bestiary' own
+
+  "remote": false,                       // serve the web interface — off until you turn it on
+  "remote_port": 7717,                   // loopback only; the tunnel is what makes it reachable
+  "remote_write": false,                 // may a paired device type into a session, or only read
+  "remote_tunnel": "off",                // off | quick | named
+  "remote_tunnel_name": "",              // the named tunnel to run; required for "named", no default
+  "remote_hostname": "",                 // your own domain, for a named tunnel
+  "push_on_finish": false,               // buzz when a turn over two minutes ends
+  "push_on_deploy": false,               // buzz when a deploy stops running, either way
 }
 ```
 
@@ -720,15 +849,22 @@ The global hotkey uses Carbon's `RegisterEventHotKey` rather than an `NSEvent` m
 specifically to **avoid** the accessibility permission — a tool that opens a text box has no
 business being able to read every key you press.
 
-**Dictation is the one thing here that can use the network, and it says so while it does.**
-macOS recognises speech on the Mac for the dictation languages you have downloaded, and sends
-audio to Apple for the ones you have not. Which of the two is happening is written across the
-bottom of the bar the whole time it is listening — the microphone is never open without that
-line being on screen, and closing the panel stops it. If you would rather it never left the
-machine, install the language in System Settings › Keyboard › Dictation.
+**Two things here can use the network, and both are switches you threw.** [Remote
+access](#from-a-browser-or-a-phone) is one: off in a fresh install, loopback only until you point
+it at a tunnel, and it is `cloudflared` — your own install — that carries anything off the
+machine. Notifications to a phone are the same switch's other half, and they go out sealed. The
+other is dictation, below.
 
-Nothing else here talks to the network. Your prompt history lives in
-`~/.config/clawdline/config.json` and goes nowhere.
+**Dictation says so while it does it.** macOS recognises speech on the Mac for the dictation
+languages you have downloaded, and sends audio to Apple for the ones you have not. Which of the
+two is happening is written across the bottom of the bar the whole time it is listening — the
+microphone is never open without that line being on screen, and closing the panel stops it. If you
+would rather it never left the machine, install the language in System Settings › Keyboard ›
+Dictation.
+
+Nothing else here talks to the network — with remote access off and the microphone untouched,
+nothing does at all. Your prompt history lives in `~/.config/clawdline/config.json` and goes
+nowhere.
 
 ## Other terminals: run Claude Code in tmux
 
@@ -792,7 +928,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 1106 checks, a couple of seconds
+./test.sh     # 1193 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code — see Package.swift
 ```

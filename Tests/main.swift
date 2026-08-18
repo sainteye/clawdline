@@ -1447,6 +1447,11 @@ group("the languages the interface speaks") {
         "it:stackActionLogs",   // as is "log"
         "id:stackActionLogs",   // and in Indonesian
         "de:settingsTunnelHostname", // "Hostname" is the German word for it as well
+        "fr:webBack",           // "Sessions" is the French plural, and the button is a destination
+        "fr:webSettingsNotify", // "Notifications" is what French macOS calls exactly this
+        "fr:webSettingsVersion", // "Version {v}" — the alternatives all mean something else
+        "de:webSettingsVersion", // ditto; Fassung and Ausgabe are not what software has
+        "it:webDoorPassword",   // "Password" is the Italian word; parola d'ordine is nobody's
     ]
     let en = English()
 
@@ -3003,6 +3008,338 @@ group("a top-level state from the wrong vocabulary") {
     expect("and a process that is down makes it partial",
            read("{\"processes\": [{\"name\": \"a\", \"state\": \"healthy\"}, "
                 + "{\"name\": \"b\", \"state\": \"exited\"}]}")?.state, "partial")
+}
+
+// MARK: - Starting a session from somewhere else
+
+/// A request with nothing in it but what the test is about. `Host` is always right, because the
+/// rebinding refusal comes before everything else and a wrong one would make every case below
+/// pass for the wrong reason.
+func remoteRequest(_ method: String, _ target: String,
+                   headers: [String: String] = [:],
+                   body: String? = nil) -> RemoteServer.Request {
+    var head = "\(method) \(target) HTTP/1.1\r\nHost: 127.0.0.1:\(Config.shared.remotePort)\r\n"
+    for (key, value) in headers.sorted(by: { $0.key < $1.key }) { head += "\(key): \(value)\r\n" }
+    var request = RemoteServer.Request(head: Data((head + "\r\n").utf8))!
+    // Set rather than appended to the head: the reader assembles the body from the socket, so a
+    // test that wrote one into the head would be exercising a parse no real request takes.
+    if let body { request.body = Data(body.utf8) }
+    return request
+}
+
+/// The `code` out of an error envelope, and "" for anything that is not one.
+func remoteErrorCode(_ response: RemoteServer.Response) -> String {
+    let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
+    return ((body?["error"] as? [String: Any])?["code"] as? String) ?? ""
+}
+
+group("a project folder says which directory it is, and is not taken at its word") {
+    // Claude Code names the folder after the working directory with every character that is not
+    // a letter or a digit turned into a dash. That map is many-to-one, so the name can never be
+    // read backwards — `-Users-me-code-cairn-frontend` is `cairn/frontend` and `cairn-frontend`
+    // equally. The path is read out of the transcripts instead and checked against the name.
+    expect("separators", StartPoints.slug(of: "/Users/me/code/notebook"), "-Users-me-code-notebook")
+    expect("a space is a dash too", StartPoints.slug(of: "/a/My Work"), "-a-My-Work")
+    expect("and a dot, and an underscore", StartPoints.slug(of: "/a/b.c_d"), "-a-b-c-d")
+    expect("a dash was already a dash", StartPoints.slug(of: "/a/mixed-case"), "-a-mixed-case")
+    expect("case survives", StartPoints.slug(of: "/a/Mixed-Case"), "-a-Mixed-Case")
+    expect("and anything that is not ASCII does not",
+           StartPoints.slug(of: "/a/專案"), "-a---")
+
+    // The reason every candidate is checked: a transcript quotes other people's directories.
+    // Observed on this machine — a session in `some-app` had an `another_project` cwd sitting
+    // in the last hundred kilobytes of it, inside something somebody had pasted in.
+    let text = #"{"type":"user","cwd":"/Users/me/code/other"}"# + "\n"
+        + #"{"type":"user","cwd":"/Users/me/code/thing"}"#
+    expect("every cwd in the text, not the first", StartPoints.cwds(in: text).count, 2)
+    expect("in the order they appeared",
+           StartPoints.cwds(in: text), ["/Users/me/code/other", "/Users/me/code/thing"])
+    expect("escapes come back out",
+           StartPoints.cwds(in: #"{"cwd":"/Users/me/it\"s \\ here"}"#), ["/Users/me/it\"s \\ here"])
+    expect("half a line is not half a path",
+           StartPoints.cwds(in: "{\"cwd\":\"/Users/me/cut\n"), [])
+
+    // End to end over files, because the ordering rule — name wins, position does not — is the
+    // whole point and lives across the two halves.
+    let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-places-\(getpid())")
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let one = folder.appendingPathComponent("one.jsonl")
+    try? Data((#"{"type":"user","cwd":"/Users/me/code/somewhere-else"}"# + "\n"
+               + #"{"type":"user","cwd":"/Users/me/code/thing"}"# + "\n").utf8).write(to: one)
+    expect("the cwd that matches the folder's name is the one believed",
+           StartPoints.directory(named: "-Users-me-code-thing", transcripts: [one]),
+           "/Users/me/code/thing")
+    expect("and a folder whose transcripts never mention it proves nothing",
+           StartPoints.directory(named: "-Users-me-code-missing", transcripts: [one]), nil)
+    expect("nor does one with no transcripts at all",
+           StartPoints.directory(named: "-Users-me-code-thing", transcripts: []), nil)
+}
+
+group("the line a new tab is given, before anything types it") {
+    // The list these come from is derived from the filesystem, which is to say from names the
+    // person at the Mac did not necessarily choose. A quote in one of them must not be able to
+    // end the quoting and start a command.
+    expect("an ordinary path is still quoted",
+           StartPoints.itermLine(cwd: "/Users/me/code/notebook"), "cd '/Users/me/code/notebook' && claude")
+    expect("a space changes nothing about it",
+           StartPoints.itermLine(cwd: "/a/My Work"), "cd '/a/My Work' && claude")
+    expect("a quote cannot close the quoting",
+           StartPoints.itermLine(cwd: "/a/it's here"), "cd '/a/it'\\''s here' && claude")
+    expect("a backslash is a backslash inside single quotes",
+           StartPoints.itermLine(cwd: "/a/back\\slash"), "cd '/a/back\\slash' && claude")
+    check("and nothing a client sent is anywhere in it",
+          !StartPoints.itermLine(cwd: "/a/b").contains(";"))
+
+    // The one thing quoting cannot save, so it never reaches the quoting: on this path the line
+    // *is* the submission, and a newline in the middle of one runs the second half as a command.
+    check("a newline in a directory name is not a place at all",
+          !StartPoints.usable("/a/two\nlines"))
+    check("nor is a carriage return", !StartPoints.usable("/a/two\rlines"))
+    check("nor a relative path", !StartPoints.usable("code/notebook"))
+    check("an ordinary absolute path is", StartPoints.usable("/Users/me/code/notebook"))
+    check("and so is one with a quote in it, which the quoting handles",
+          StartPoints.usable("/a/it's here"))
+}
+
+group("which terminal a session is started in, and when none of them will do") {
+    let iterm = StartPoints.itermBundleID
+    func plan(_ scope: String, _ running: Set<String>, _ tmux: Bool) -> StartPoints.Plan {
+        StartPoints.plan(scope: scope, running: running, hasTmux: tmux)
+    }
+    expect("iTerm2 is named and open", plan(iterm, [iterm], false), .iterm)
+    expect("no scope at all means no preference, and that is iTerm2 first",
+           plan("", [iterm], true), .iterm)
+    expect("named among others", plan("com.apple.Terminal,\(iterm)", [iterm], false), .iterm)
+    expect("iTerm2 is named and shut, and there is a tmux to go through instead",
+           plan(iterm, [], true), .tmux)
+    expect("iTerm2 is named and shut and there is nothing else",
+           plan(iterm, [], false), .notRunning(app: iterm))
+
+    // The refusal that matters: a terminal this cannot drive must be said out loud rather than
+    // quietly handed to iTerm2, because a session that opened somewhere nobody was looking is
+    // worse than a sentence saying it did not open.
+    expect("another terminal, with tmux under it", plan("com.mitchellh.ghostty", [], true), .tmux)
+    expect("another terminal and no tmux is refused by name",
+           plan("com.mitchellh.ghostty", ["com.mitchellh.ghostty"], false),
+           .cannotDrive(app: "com.mitchellh.ghostty"))
+    check("and it never silently becomes iTerm2",
+          plan("com.apple.Terminal", [iterm], false) != .iterm)
+}
+
+group("the list of places, tidied") {
+    let now = Date()
+    func place(_ path: String, _ ago: TimeInterval) -> StartPoints.Place {
+        StartPoints.Place(id: StartPoints.id(for: path), path: path,
+                          label: (path as NSString).lastPathComponent,
+                          at: now.addingTimeInterval(-ago))
+    }
+    let all: [StartPoints.Place] = [
+        place("/a/old", 900), place("/a/new", 10), place("/a/old", 5),
+        place("/a/gone", 1), place("/a/two\nlines", 0), place("relative", 0),
+    ]
+    let tidied = StartPoints.tidy(all, isDirectory: { $0 != "/a/gone" })
+    expect("what is not there any more, and what cannot be typed, are not offered",
+           tidied.count, 2)
+    expect("newest first, at the newest time the same directory was seen",
+           tidied.map(\.path), ["/a/old", "/a/new"])
+    expect("a cap is a cap", StartPoints.tidy(all, limit: 1, isDirectory: { _ in true }).count, 1)
+
+    // The id is opaque and stable, which is the entire reason a client never sends a path.
+    expect("the same path is the same id twice",
+           StartPoints.id(for: "/a/b"), StartPoints.id(for: "/a/b"))
+    check("different paths are different ids",
+          StartPoints.id(for: "/a/b") != StartPoints.id(for: "/a/c"))
+    check("and there is no path anywhere in it",
+          !StartPoints.id(for: "/Users/me/code/notebook").contains("notebook"))
+}
+
+group("starting a session is behind the write gate, like everything else that runs code") {
+    let wasWriting = Config.shared.remoteWrite
+    defer { Config.shared.remoteWrite = wasWriting }
+
+    let reader = RemoteAuth.addDevice(name: "a phone that may read", caps: [.read])
+    let writer = RemoteAuth.addDevice(name: "a phone that may send", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: reader.id); RemoteAuth.revoke(id: writer.id) }
+
+    func post(_ target: String, token: String?, key: String?) -> RemoteServer.Response {
+        var headers: [String: String] = [:]
+        if let token { headers["Authorization"] = "Bearer \(token)" }
+        if let key { headers["Idempotency-Key"] = key }
+        return RemoteServer.shared.route(remoteRequest("POST", target, headers: headers))
+    }
+    let bogus = "/v1/places/0123456789abcdef/start"
+
+    // No token at all, and this one is checked before anything else knows the route exists.
+    let anonymous = post(bogus, token: nil, key: UUID().uuidString)
+    expect("no token is refused", anonymous.status, 401)
+    expect("and says so", remoteErrorCode(anonymous), "unauthorized")
+    expect("reading the list needs one too",
+           RemoteServer.shared.route(remoteRequest("GET", "/v1/places")).status, 401)
+
+    // The switch the owner of the Mac holds, before the capability this device holds — so a
+    // device that may not send cannot learn that it may not while the whole feature is off.
+    Config.shared.remoteWrite = false
+    let shut = post(bogus, token: writer.token, key: UUID().uuidString)
+    expect("the write switch is checked first", remoteErrorCode(shut), "write_disabled")
+    expect("and that is a 403", shut.status, 403)
+
+    Config.shared.remoteWrite = true
+    let readOnly = post(bogus, token: reader.token, key: UUID().uuidString)
+    expect("a device that may read and not send is refused", readOnly.status, 403)
+    expect("and it is a capability refusal, not the switch",
+           remoteErrorCode(readOnly), "forbidden")
+
+    let noKey = post(bogus, token: writer.token, key: nil)
+    expect("a retryable write with no idempotency key is refused", noKey.status, 400)
+    expect("as a bad request", remoteErrorCode(noKey), "bad_request")
+
+    // Past all three gates, and the id still has to be one the server put on the list. Nothing a
+    // client sends is ever a path, so an unknown id is the end of the road rather than a
+    // directory that failed validation.
+    let unknown = post(bogus, token: writer.token, key: UUID().uuidString)
+    expect("an id nobody was given is not a place", unknown.status, 404)
+    expect("and says nothing else about it", remoteErrorCode(unknown), "not_found")
+    let empty = post("/v1/places//start", token: writer.token, key: UUID().uuidString)
+    expect("nor is an empty one", empty.status, 404)
+
+    // The route this replaced took a `cwd` and a `command` out of the body and ran the second in
+    // the first, which behind a tunnel is "run anything anywhere" with a token in front of it.
+    let old = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/sessions",
+        headers: ["Authorization": "Bearer \(writer.token)",
+                  "Idempotency-Key": UUID().uuidString]))
+    expect("and the route that took a path in the body is gone", old.status, 404)
+}
+
+group("a deploy is news only when it stops running") {
+    // The whole feature is one rule applied to two readings, and every way of getting it wrong
+    // is a phone buzzing about something that did not just happen.
+    func changed(_ before: [String: String], _ after: [String: String]) -> [String] {
+        DeployWatch.finished(from: before, to: after).map { "\($0.repo):\($0.ok)" }
+    }
+
+    expect("running to ok is a success",
+           changed(["a": "running"], ["a": "ok"]), ["a:true"])
+    expect("running to fail is a failure",
+           changed(["a": "running"], ["a": "fail"]), ["a:false"])
+    expect("still running is nothing",
+           changed(["a": "running"], ["a": "running"]), [])
+
+    // The one that would have made this lie. A repo read for the first time has no previous
+    // state, and every deploy that ever finished is sitting in that file waiting to be
+    // announced — so opening the app on a Monday would report Friday's deploy as news.
+    expect("a first reading is not a transition",
+           changed([:], ["a": "ok"]), [])
+    expect("a first reading of a failure is not a transition either",
+           changed([:], ["a": "fail"]), [])
+
+    // Starting one is not news: you started it.
+    expect("ok to running is nothing", changed(["a": "ok"], ["a": "running"]), [])
+    expect("an outcome that has not changed is nothing",
+           changed(["a": "fail"], ["a": "fail"]), [])
+
+    // A state nobody has defined must not read as an outcome by accident — `!= "running"` is
+    // the test, so anything unrecognised lands in the failure branch rather than being dropped.
+    expect("an unknown state that follows running still counts, as a failure",
+           changed(["a": "running"], ["a": "cancelled"]), ["a:false"])
+
+    // Reading several projects at once, which is the normal case.
+    expect("each repo is judged on its own",
+           changed(["a": "running", "b": "running", "c": "ok"],
+                   ["a": "ok", "b": "running", "c": "running"]), ["a:true"])
+
+    // A project whose status file went away — the reading simply does not mention it, and a
+    // repo that is not in the new reading has not finished anything.
+    expect("a repo that disappears says nothing",
+           changed(["a": "running"], [:]), [])
+}
+
+group("answering a menu is a byte, and only ever one of ten") {
+    // This is the only path in the app that writes a raw byte into a tty from the network, so the
+    // allowlist is the whole security argument. It lives in `Targets.answer`, not at the route:
+    // a second route added later would otherwise have to remember to repeat it.
+    let session = TargetSession(backend: .tmux, id: "%nope%", name: "x", tty: "/dev/ttys99",
+                                windowIndex: 0, tabIndex: 0, isClaude: true)
+
+    for bad: UInt8 in [0x1b, 0x0d, 0x0a, 0x03, 0x30, 0x41, 0x7f, 0x00] {
+        check("byte \(bad) is refused before it reaches a terminal",
+              Targets.answer(bad, to: session) == "That is not a key this can send.")
+    }
+
+    // The allowed ones are not exercised here on purpose — they would run osascript against a
+    // session that does not exist. What is asserted is that they get *past* the allowlist, which
+    // is the only thing this function decides.
+    for good: UInt8 in [0x31, 0x39, 0x09] {
+        check("byte \(good) is not refused by the allowlist",
+              Targets.answer(good, to: session) != "That is not a key this can send.")
+    }
+}
+
+group("the key route is gated like every other write") {
+    let wasWriting = Config.shared.remoteWrite
+    defer { Config.shared.remoteWrite = wasWriting }
+
+    let reader = RemoteAuth.addDevice(name: "a phone that may read", caps: [.read])
+    let writer = RemoteAuth.addDevice(name: "a phone that may send", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: reader.id); RemoteAuth.revoke(id: writer.id) }
+
+    // A fresh idempotency key every time, or the second call with the same body would be answered
+    // out of the ten-minute cache and assert nothing. The first version of this test omitted the
+    // header entirely, and every case passed — as a 400 for the missing header rather than for the
+    // reason it claimed. A green check that is green for the wrong reason is worse than a red one.
+    func key(_ token: String?, _ body: String,
+             idempotency: String? = nil) -> RemoteServer.Response {
+        var headers: [String: String] = [:]
+        if let token { headers["Authorization"] = "Bearer \(token)" }
+        headers["Content-Type"] = "application/json"
+        headers["Idempotency-Key"] = idempotency ?? UUID().uuidString
+        return RemoteServer.shared.route(
+            remoteRequest("POST", "/v1/sessions/%nope%/key", headers: headers, body: body))
+    }
+
+    Config.shared.remoteWrite = true
+    let anonymous = key(nil, "{\"key\":\"1\"}")
+    expect("no token is refused", anonymous.status, 401)
+
+    let readOnly = key(reader.token, "{\"key\":\"1\"}")
+    expect("a device that may only read cannot answer a menu", readOnly.status, 403)
+
+    Config.shared.remoteWrite = false
+    expect("the write switch is checked first",
+           remoteErrorCode(key(writer.token, "{\"key\":\"1\"}")), "write_disabled")
+
+    Config.shared.remoteWrite = true
+    // Anything that is not a menu key is refused at the parse, before a session is even looked up
+    // — so the shape of the request cannot be used to probe which sessions exist.
+    for bad in ["0", "a", "", "escape", "10", "11", "\\u001b", "1 "] {
+        let out = key(writer.token, "{\"key\":\"\(bad)\"}")
+        expect("key \"\(bad)\" is a bad request", out.status, 400)
+    }
+    expect("a missing key is too", key(writer.token, "{}").status, 400)
+
+    // The header the write gate insists on, checked here too because this route is the one where a
+    // retry is not harmless: the same digit arriving twice answers a question and then types a
+    // stray character into whatever replaced it.
+    var noKey: [String: String] = ["Authorization": "Bearer \(writer.token)"]
+    noKey["Content-Type"] = "application/json"
+    expect("and an answer without an Idempotency-Key is refused",
+           RemoteServer.shared.route(remoteRequest("POST", "/v1/sessions/%nope%/key",
+                                                   headers: noKey,
+                                                   body: "{\"key\":\"1\"}")).status, 400)
+
+    // Retried with the same key, the stored answer comes back rather than a second keystroke.
+    let once = UUID().uuidString
+    let first = key(writer.token, "{\"key\":\"2\"}", idempotency: once)
+    let again = key(writer.token, "{\"key\":\"2\"}", idempotency: once)
+    expect("a retry is the stored answer, not a second press", again.status, first.status)
+
+    // A well-formed key against a session that is not there is a 404, which means the parse ran
+    // first and the allowlist did its job before anything went looking for a terminal.
+    expect("a good key against no session is a 404",
+           key(writer.token, "{\"key\":\"3\"}").status, 404)
+    expect("and tab is a good key", key(writer.token, "{\"key\":\"tab\"}").status, 404)
 }
 
 // MARK: - Result

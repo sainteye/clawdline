@@ -14,6 +14,56 @@
 <meta name="theme-color" content="#0e0e11">
 <title>clawdline</title>
 <link rel="manifest" href="/manifest.webmanifest" id="manifest-link">
+
+<!-- The launch image, twenty times over.
+     iOS will not derive one from the manifest, and without these a page added to the home screen
+     opens on a black rectangle for a second or more while the WebKit process starts — which reads
+     as an app that failed to launch rather than as one that is launching. There is no wildcard: a
+     tag is matched by the exact geometry of the screen, so every geometry needs its own, and the
+     server draws whichever size is asked for rather than shipping twenty files.
+     iPhones only, deliberately. This is the screen people add this to a home screen from, and
+     twenty tags is already a wall of markup; an iPad that matches none of them falls back to the
+     black it has today, which is where it started. -->
+<link rel="apple-touch-startup-image" href="/splash-1320x2868.png"
+      media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="/splash-2868x1320.png"
+      media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)">
+<link rel="apple-touch-startup-image" href="/splash-1290x2796.png"
+      media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="/splash-2796x1290.png"
+      media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)">
+<link rel="apple-touch-startup-image" href="/splash-1284x2778.png"
+      media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="/splash-2778x1284.png"
+      media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)">
+<link rel="apple-touch-startup-image" href="/splash-1206x2622.png"
+      media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="/splash-2622x1206.png"
+      media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)">
+<link rel="apple-touch-startup-image" href="/splash-1179x2556.png"
+      media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="/splash-2556x1179.png"
+      media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)">
+<link rel="apple-touch-startup-image" href="/splash-1170x2532.png"
+      media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="/splash-2532x1170.png"
+      media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)">
+<link rel="apple-touch-startup-image" href="/splash-1125x2436.png"
+      media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="/splash-2436x1125.png"
+      media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)">
+<link rel="apple-touch-startup-image" href="/splash-1242x2688.png"
+      media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="/splash-2688x1242.png"
+      media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)">
+<link rel="apple-touch-startup-image" href="/splash-828x1792.png"
+      media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="/splash-1792x828.png"
+      media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)">
+<link rel="apple-touch-startup-image" href="/splash-750x1334.png"
+      media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+<link rel="apple-touch-startup-image" href="/splash-1334x750.png"
+      media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)">
 <script>
 // The manifest is served by the app, so from a file:// copy — which is how mock mode is opened —
 // there is nothing at that path and the browser logs a fetch failure. It would be the only line in
@@ -22,6 +72,14 @@ if (location.protocol === 'file:') {
     var ml = document.getElementById('manifest-link');
     if (ml && ml.parentNode) ml.parentNode.removeChild(ml);
 }
+// English until the server has said otherwise, which it does before the first render — the words
+// in the markup below are this page's fallback, not its content, and they are in English.
+document.documentElement.lang = "en";
+// And nothing is drawn until they have been written over. The alternative is a tenth of a second
+// of English furniture in front of somebody who reads none, which is a worse first impression
+// than a beat of the background colour. It is taken off in `boot` whatever happens to the
+// request, so there is no path here that leaves the page hidden.
+document.documentElement.className = "booting";
 </script>
 
 <style>
@@ -75,6 +133,12 @@ if (location.protocol === 'file:') {
    ========================================================================== */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; }
+/* On the root as well as on the body. The body's background is what normally paints the whole
+   canvas, and `visibility: hidden` below is not supposed to change that — but this is one line
+   against the chance of a white flash on a page whose entire palette is dark. */
+html { background: #0e0e11; }
+/* The first paint, held until the interface has its words. See the script in the head. */
+html.booting body { visibility: hidden; }
 body {
     margin: 0;
     background: var(--bg);
@@ -137,7 +201,14 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     position: relative;
     z-index: 20;
 }
-.brand { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
+.brand {
+    display: flex; align-items: center; gap: 9px; flex: 0 0 auto;
+    /* Pressable, and it has to look it — the padding is what gives the hover something to fill,
+       and the negative margin keeps the wordmark where it has always been on the left edge. */
+    padding: 5px 8px; margin-left: -8px; border-radius: 9px;
+}
+.brand:hover { background: var(--card-hi); }
+.brand:active { background: var(--line); }
 .brand canvas { display: block; image-rendering: pixelated; }
 .brand b { font-size: 13.5px; font-weight: 600; letter-spacing: 0.2px; }
 
@@ -170,6 +241,27 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .conn[data-state="retrying"] .dot { background: var(--warn); }
 .conn[data-state="offline"] .dot { background: var(--bad); }
 @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+/* The page is older than the app that served it. One line, under the header, out of the way of
+   everything — it is news, not a fault, and the only thing it is allowed to cost is a row. */
+.stale {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px calc(12px + var(--safe-r)) 7px calc(12px + var(--safe-l));
+    border-bottom: 1px solid var(--line);
+    background: var(--card);
+    color: var(--dim);
+    font-size: 11.5px;
+}
+.stale[hidden] { display: none; }
+.stale span { min-width: 0; overflow-wrap: anywhere; }
+.stale .go {
+    margin-left: auto; flex: 0 0 auto;
+    border: 1px solid var(--accent-ed); border-radius: 999px;
+    background: transparent; color: var(--accent);
+    font-size: 11.5px; padding: 3px 11px;
+}
+.stale .go:hover { background: rgba(224, 139, 110, 0.12); }
 
 /* ==========================================================================
    Shell — two columns on a desk, one screen at a time on a phone
@@ -213,18 +305,51 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 
 /* The notifications footer. It owns the bottom edge of this column, which is why the scroller
    above it no longer pays for the home indicator: two things counting the same inset is how the
-   composer in the other column ended up floating in a band of nothing. */
+   composer in the other column ended up floating in a band of nothing.
+
+   Two weights, and which one is on screen is decided by which of them is still worth pressing.
+   **Off is the state that needs a press**, and as a bordered chip down here it was not getting
+   one — this page had been in daily use for weeks by somebody who never found it, and on a phone
+   the feature does not exist at all until it has been. So off is a filled button the width of the
+   column with a bell on it, and the line underneath finishes the sentence the button starts.
+   On is the chip again: a solid button for a thing already done is noise on every screen for
+   ever, and the only reason to come back to it is to stop it. */
 .notify {
     flex: 0 0 auto;
-    display: flex; align-items: center; gap: 9px;
-    padding: 8px calc(12px + var(--safe-r)) max(8px, var(--safe-b)) calc(12px + var(--safe-l));
+    display: flex; flex-direction: column; align-items: stretch; gap: 7px;
+    padding: 10px calc(12px + var(--safe-r)) max(10px, var(--safe-b)) calc(12px + var(--safe-l));
     border-top: 1px solid var(--line);
     color: var(--faint); font-size: 11.5px;
     line-height: 1.35;
 }
-.notify .chip { flex: 0 0 auto; }
 .notify .say { min-width: 0; overflow-wrap: anywhere; }
-.notify.on .chip { border-color: var(--accent-ed); color: var(--accent); }
+.notify .go {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--accent); color: #17110e;
+    font-size: 13.5px; font-weight: 600;
+    border-radius: 10px;
+    padding: 11px 12px;
+    /* A thumb's worth of target, on the screen this whole feature is for. */
+    min-height: 44px;
+}
+.notify .go:hover:not(:disabled) { background: #e08b6e; }
+.notify .go:disabled { background: #2a2a32; color: var(--faint); cursor: default; }
+/* Drawn, not typeset: see the markup. It takes the button's own colour so it is right in both
+   weights without a second rule. */
+.notify .go .bell { flex: 0 0 auto; display: block; width: 16px; height: 16px; }
+/* The line under the button is the second half of its sentence rather than a paragraph beside
+   it, so it sits under the middle of it. The other three states have no button and are prose. */
+.notify[data-state="off"] .say { text-align: center; }
+/* And when there is nothing to press, there is no footer. Turning notifications off again is a
+   once-a-year action and it was charging rent on every screen, which on a phone means competing
+   with the session list for the only axis that matters. Once this device is subscribed the whole
+   thing collapses into the settings sheet; the same goes for the two dead ends, "blocked" and
+   "this browser cannot", which are explanations rather than things to do. What stays out here is
+   the state that is asking to be pressed. */
+.notify[hidden] { display: none; }
+/* The footer was paying for the home indicator on behalf of the scroller above it. With the
+   footer gone the scroller has to pay again, or the last row sits under the indicator. */
+.pane-list[data-notify="off"] .list-scroll { padding-bottom: max(14px, var(--safe-b)); }
 
 /* ==========================================================================
    The session list
@@ -339,6 +464,54 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .ptr span { padding-bottom: 6px; }
 
 /* ==========================================================================
+   Waiting on the network
+   Drawn in the two places the page is honestly empty until something arrives:
+   the transcript pane on the way into a session, and the list on the very
+   first load. Nothing that comes out of memory gets one — a skeleton for
+   something that was never going to be slow is a flicker with no information
+   in it, and the reader has to work out afterwards what they just saw.
+   ========================================================================== */
+.skel .bar {
+    display: block;
+    height: 11px;
+    border-radius: 5px;
+    /* The surfaces this page is already made of: the card highlight, with the hairline colour
+       swept across it. A grey borrowed from somewhere else reads as another product's loading
+       state pasted over this one. Written as rgba because a gradient needs the alpha, and
+       36,36,43 is `--line` and 45,45,54 is one step above it. */
+    background-color: var(--card-hi);
+    background-image: linear-gradient(100deg,
+        rgba(36, 36, 43, 0) 36%, rgba(45, 45, 54, 0.95) 50%, rgba(36, 36, 43, 0) 64%);
+    background-size: 240% 100%;
+    background-repeat: no-repeat;
+    animation: sheen 1.5s linear infinite;
+}
+@keyframes sheen { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+
+/* The transcript's own shape, so the real entries land where the placeholder was rather than
+   somewhere near it. */
+.skel-entry .who .bar { width: 34px; height: 8px; margin-left: auto; }
+.skel-entry .body .bar + .bar { margin-top: 7px; }
+@media (max-width: 899px) { .skel-entry .who .bar { margin-left: 0; } }
+
+/* And the list's. Same geometry as `.row`, because the first thing that happens after this is
+   four real rows arriving in its place. */
+.skel-row {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 6px 10px;
+    align-items: center;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: var(--card);
+}
+.skel-row .bar.mark { grid-row: 1 / span 2; width: 16px; height: 12px; border-radius: 2px; }
+.skel-row .bar.line { height: 12px; }
+.skel-row .bar.sub { height: 9px; }
+
+/* ==========================================================================
    The transcript pane
    ========================================================================== */
 .pane-detail { background: #101014; }
@@ -372,6 +545,13 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .chip:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
 .chip:disabled { opacity: 0.4; cursor: default; }
 .chip.on { border-color: var(--accent-ed); color: var(--accent); }
+/* An icon on each of the two buttons in the transcript header. They used to be two words in two
+   identical chips — one a sort control and one a thing that reaches out and moves a window on
+   another machine — and reading as the same kind of control is how "Reveal" came to mean nothing
+   at all to somebody. */
+.chip .ico { display: inline-block; vertical-align: -2px; width: 13px; height: 13px; margin-right: 5px; }
+.chip .ico.arrow { transition: transform 180ms var(--ease); }
+.chip.on .ico.arrow { transform: rotate(180deg); }
 
 .tx-scroll { flex: 1 1 auto; padding: 16px 18px 22px 18px; }
 .tx {
@@ -503,6 +683,82 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .entry.folded .pill .what { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry.folded .pill[aria-expanded="true"] { border-style: solid; }
 
+/* One line per tool call, and nothing more until it is asked for.
+   The wall this replaces was the page at its worst: an agent doing ordinary work would put six
+   greps on a phone screen, each of them a wrapped four-line command, and the sentence somebody
+   was actually reading went off the top. What a call did is one line — a name and a subject —
+   and the line opens when it is pressed. */
+.entry.toolrow { padding: 2px 0; }
+.entry.toolrow .who { padding-top: 3px; }
+.toolline {
+    display: flex; align-items: baseline; gap: 7px;
+    width: 100%; min-width: 0;
+    text-align: left;
+    padding: 2px 0;
+}
+/* `flex: 0 0 auto` and no wrapping: the name is an inline-block by its own rule, and in a flex
+   row with a long command beside it the browser was happy to squeeze it to one character wide —
+   which drew "Bash" as four letters stacked down the page. */
+.toolline .toolname { flex: 0 0 auto; margin-right: 0; white-space: nowrap; }
+.toolline .caret { flex: 0 0 auto; color: var(--accent); opacity: 0.75; font-size: 10px; }
+.toolline .subject {
+    flex: 1 1 auto; min-width: 0;
+    font-family: var(--mono); font-size: 11.5px; color: var(--faint);
+    /* The one place on this page where a long line is *not* allowed to wrap. Everywhere else the
+       rule is "break the word, never the layout"; here the rule is one line, because a hundred
+       characters of shell is the thing being got out of the way. */
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.toolline:hover .subject { color: var(--dim); }
+.toolline[aria-expanded="true"] .subject { color: var(--dim); }
+.toolbody { margin-top: 5px; }
+.toolbody pre.code { margin-top: 0; }
+
+/* A question Claude stopped to ask.
+
+   Everything else a tool does is drawn to be skipped — one grey line, folded, out of the way.
+   This is the opposite instruction: it is the only thing in the transcript that was addressed to
+   the person reading it, and on a phone it was invisible, folded inside a run with nothing but
+   the word `AskUserQuestion` showing. So it gets a card, the accent, and every option on a row
+   of its own with the number the terminal's picker answers to in front of it. */
+.entry.ask .body { color: var(--ink); font-size: inherit; }
+.askbox {
+    border: 1px solid var(--accent-ed);
+    border-left: 2px solid var(--accent);
+    border-radius: 10px;
+    background: rgba(224, 139, 110, 0.05);
+    padding: 10px 12px;
+}
+.asktag {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.4px; text-transform: uppercase;
+    color: var(--accent); opacity: 0.85;
+    margin-bottom: 6px;
+}
+.askhead { font-size: 12px; color: var(--dim); margin-bottom: 3px; }
+.askany { font-size: 11.5px; color: var(--faint); margin-bottom: 3px; }
+.askq { font-size: 14.5px; line-height: 1.45; color: var(--ink); }
+/* `list-style: none` and a number of our own: the browser's counter would restart per list and
+   sit outside the row, and what is wanted is the terminal's own key, in the row, in monospace,
+   at a width that does not move when the count passes nine. */
+.askopts { list-style: none; margin: 9px 0 0 0; padding: 0; }
+.askopt {
+    display: flex; gap: 9px;
+    padding: 7px 0 0 0;
+    border-top: 1px solid var(--line);
+    margin-top: 7px;
+}
+.askopt:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+.askopt .n {
+    flex: 0 0 auto;
+    min-width: 17px;
+    font-family: var(--mono); font-size: 11px;
+    color: var(--accent); opacity: 0.8;
+    padding-top: 2px;
+}
+.askopt .what { min-width: 0; }
+.askopt .what b { font-weight: 600; color: var(--ink); font-size: 13.5px; }
+.askopt .note { display: block; color: var(--dim); font-size: 12.5px; line-height: 1.45; margin-top: 2px; }
+
 .tx-note { color: var(--faint); font-size: 12.5px; padding: 26px 2px; }
 .tx-note.err { color: #c58472; }
 
@@ -528,22 +784,41 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     border: 1px solid var(--line); border-radius: 12px;
     background: var(--card); padding: 8px 8px 8px 12px;
 }
-.composer textarea {
+/* The message box is a `contenteditable` and not a `<textarea>`.
+   It is here to find out whether iOS still draws its form assistant — the `^ v ✓` strip over the
+   keyboard — for something that is not a form control. The arrows were ours to remove either way;
+   the tick is not, and this is the only technique that touches it. **If the tick is still there
+   on the phone this whole change is worth nothing and should go back**, which is why it is kept
+   to one element: this rule, the markup, and the handlers marked with the same note.
+   `plaintext-only` rather than bare `true`, so a paste cannot carry markup in. */
+.composer .msg {
     flex: 1 1 auto; min-width: 0;
-    background: none; border: 0; resize: none;
-    /* One line of text, centred against the Send button beside it, and still right when the box
-       has grown to five lines. The centring is the padding rather than `align-items`: a textarea
-       cannot centre its own text, so the line is centred *inside the field* by equal padding
-       above and below, and the field is made no shorter than the button so that the two of them
-       agree about where the middle is. Growing keeps it: the script sets the height from
-       `scrollHeight`, which already counts this padding, so every extra line lands under the
-       first one and the two edges stay where they were. */
+    position: relative;
+    /* Growing is the element's own behaviour now — a div is as tall as what is in it — so the
+       height dance that measured `scrollHeight` after every keystroke is gone. What is left is
+       the ceiling, and the floor that keeps one line centred against the Send button beside it. */
     max-height: 140px; min-height: 30px;
+    overflow-y: auto;
     padding: 5px 0;
     font-size: 14px; line-height: 1.4;
+    outline: none;
+    /* Both of these matter and neither is a default for a div: newlines have to survive, and a
+       line of shell somebody pasted has to break rather than widen the page. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
-.composer textarea:focus { outline: none; }
-.composer textarea::placeholder { color: var(--faint); }
+/* The placeholder, on a class rather than on `:empty`. `:empty` is true of no child nodes at all,
+   and a browser leaves a `<br>` behind when the last character is deleted — so the placeholder
+   would go away the first time somebody cleared the box by hand and never come back. The class is
+   set from what `innerText` actually says. Absolutely positioned so it cannot push the caret's
+   line down or add a pixel to the box's height. */
+.composer .msg.blank::before {
+    content: attr(data-placeholder);
+    position: absolute; left: 0; top: 5px;
+    color: var(--faint);
+    pointer-events: none;
+}
 /* What is attached, above the box, each one removable before it goes. Small: they are a
    reminder of what you picked, not a preview worth looking at. */
 .composer .shots { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 9px; }
@@ -583,7 +858,53 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     min-height: 30px;                     /* the height the field above centres its line against */
 }
 .composer .send:disabled { background: #2a2a32; color: var(--faint); cursor: default; }
+/* In flight. The button keeps its colour rather than going grey — grey is "you may not", and
+   this is "it is happening" — and it breathes so that a slow connection has something on screen
+   saying so. There was nothing at all here before: on a phone over a tunnel, tapping Send and
+   watching nothing change for a second is indistinguishable from a page that is broken, and it
+   is exactly long enough to press again. */
+.composer[data-sending="on"] .send:disabled {
+    background: var(--accent); color: #17110e;
+    animation: pulse 1.1s var(--ease) infinite;
+    cursor: default;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+/* The words stay on screen and stay unsent-looking. `readonly` rather than `disabled`, which
+   would take the focus out of the box — and on a phone that closes the keyboard, so every
+   message would cost the whole keyboard dance again. */
+.composer[data-sending="on"] textarea { color: var(--dim); }
 .composer[data-write="off"] .box { opacity: 0.55; }
+/* The session has stopped and is waiting for somebody. Above the box rather than under it: this
+   is the last thing in the conversation, and it is read on the way to the place you would type.
+
+   Loud on purpose, and the second line is the reason why. Sending from here while a menu is up
+   does not type the words — the terminal swallows them and the Return underneath confirms
+   whatever row the menu had highlighted. Somebody who does not know that is one press away from
+   answering a question they never read. */
+.composer .waiting {
+    border: 1px solid var(--accent-ed);
+    border-left: 2px solid var(--accent);
+    border-radius: 10px;
+    background: rgba(224, 139, 110, 0.06);
+    padding: 9px 11px;
+    margin-bottom: 9px;
+}
+.composer .waiting[hidden] { display: none; }
+.composer .waiting .title {
+    color: var(--accent); font-size: 12.5px; font-weight: 600;
+    margin-bottom: 3px;
+}
+.composer .waiting .say { color: var(--dim); font-size: 11.5px; line-height: 1.45; }
+.composer .waiting .say + .say { margin-top: 4px; }
+.composer .waiting .say b { color: var(--ink); font-weight: 600; }
+.composer .waiting .go {
+    margin-top: 7px;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card); color: var(--dim);
+    font-size: 11.5px; padding: 4px 10px;
+}
+.composer .waiting .go:hover { background: var(--card-hi); color: var(--ink); }
+
 .composer .why { color: var(--faint); font-size: 11.5px; margin-top: 7px; }
 /* Nothing to explain, no row. The line under the box now only ever says why the box will not
    take what you type; when everything is working it says nothing, and a line that says nothing
@@ -642,6 +963,27 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     color: var(--ink); background: #191920;
 }
 .sheet .foot { margin-top: 16px; color: var(--faint); font-size: 11.5px; }
+/* A key named inside a sentence rather than in the column beside it — "j and k do the same".
+   The strings mark it with backticks, which everywhere else on this page means the code face;
+   here what is between them is a key, so it is drawn as one. */
+.sheet dd code { font: 500 11px/1 var(--ui); border: 1px solid #2c2c35; border-radius: 5px; padding: 2px 5px; color: var(--ink); background: #191920; }
+
+/* The settings sheet. Same furniture as the shortcuts card — one pattern for "a small thing
+   over the page" — with rows rather than a definition list. */
+.sheet .block { margin-bottom: 4px; }
+.sheet .block b { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
+.sheet .block .say { margin: 0 0 10px 0; color: var(--dim); font-size: 12.5px; line-height: 1.5; }
+.sheet .block .row { display: flex; flex-wrap: wrap; gap: 8px; }
+.sheet .block .row .chip { padding: 7px 12px; font-size: 12.5px; }
+/* What just happened, said where it happened rather than in a toast that has gone by the time
+   somebody looks up from their lock screen. */
+.sheet .block .said { margin: 10px 0 0 0; color: var(--accent); font-size: 12.5px; line-height: 1.5; }
+.sheet .block .said:empty { display: none; }
+.sheet .block .said.calm { color: var(--dim); }
+.sheet .foot span:empty { display: none; }
+/* The way out. Esc and a tap outside both work and neither is discoverable on a phone, which is
+   the screen this sheet is mostly opened on. */
+.sheet .chip.wide { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; }
 
 /* --------------------------------------------------------------------------
    The door
@@ -814,7 +1156,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    ========================================================================== */
 @media (pointer: coarse) {
     .filter-row input,
-    .composer textarea,
+    .composer .msg,
     #door-name, #door-password, #door-pw-name { font-size: 16px; }
     /* The six pairing boxes are set at 22px, and at 19px on the narrowest phones, so they are
        already well over the line and are deliberately left to their own rule. */
@@ -831,14 +1173,31 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
         transition-duration: 0.001ms !important;
     }
     .pane-detail { transition: none; }
+    /* A skeleton without the sheen rather than no skeleton. What it is saying — "this is on its
+       way, the screen has not hung" — is exactly as useful to somebody who has asked for less
+       movement, and it is the moving part they turned off, not the message. */
+    .skel .bar { animation: none; background-image: none; }
 }
 </style>
 
 <header class="top">
-    <div class="brand"><canvas id="brand-mark" width="0" height="0"></canvas><b>clawdline</b></div>
+    <!-- The wordmark is the way into the app's own settings. Tapping a product mark to reach
+         them is a shape people already know, and it is the highest-affordance thing in this
+         header — which is what the notifications control needed and did not have when it was a
+         permanent footer taking a row off every phone screen. -->
+    <button class="brand" id="brand" type="button"><canvas id="brand-mark" width="0" height="0"></canvas><b>clawdline</b></button>
     <div class="counts" id="counts"></div>
     <button class="conn" id="conn" data-state="connecting" title="Connection to the app"><span class="dot"></span><span id="conn-label">connecting</span></button>
 </header>
+
+<!-- One line, and only ever after the app on the Mac has been rebuilt under a page that was
+     left open. Never a reload of its own: somebody may be halfway through a sentence in the
+     composer, and taking that away to fetch a newer copy of the same screen is not a trade
+     anybody would agree to if asked. So it asks. -->
+<div class="stale" id="stale" hidden>
+    <span id="stale-say">Clawdline has been rebuilt on the Mac. This page is the older one.</span>
+    <button class="go" id="stale-go" type="button">Reload</button>
+</div>
 
 <main class="app" id="app" data-view="list" data-pane="on">
     <section class="pane pane-list">
@@ -862,12 +1221,26 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
             <ul class="rows" id="rows" role="listbox" aria-label="Claude Code sessions" tabindex="0"></ul>
             <div class="empty" id="list-empty" hidden></div>
         </div>
-        <!-- Whether this device gets told when a session is waiting. A footer rather than
-             anything louder: it is a setting you change once, and the list above it is the page.
-             It is also the one place that can hold the sentence iOS readers need, which is
-             longer than a button and is the entire feature until they have read it. -->
-        <div class="notify" id="notify">
-            <button class="chip" id="notify-go" type="button" hidden></button>
+        <!-- Whether this device gets told when a session is waiting. It keeps the bottom of
+             this column because it is a setting you change once and the list above it is the
+             page — but off, it is the button, because off is the state that needs pressing and
+             nobody was finding it. It is also the one place that can hold the sentence iOS
+             readers need, which is longer than a button and is the entire feature until they
+             have read it. -->
+        <div class="notify" id="notify" data-state="off">
+            <button class="go" id="notify-go" type="button" hidden>
+                <!-- Drawn here rather than fetched. This page asks the network for nothing it
+                     can draw itself, so the bell is a path and not a font, an emoji or a file:
+                     a font arrives late and swaps a glyph in under the reader, and an emoji is
+                     whichever bell the operating system feels like — a red one on some, an
+                     alarm clock on others. -->
+                <svg class="bell" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <circle cx="8" cy="1.7" r="1" fill="currentColor"></circle>
+                    <path fill="currentColor" d="M8 2.2a3.9 3.9 0 0 1 3.9 3.9v2.6l1.05 1.75H3.05L4.1 8.7V6.1A3.9 3.9 0 0 1 8 2.2Z"></path>
+                    <path fill="currentColor" d="M6.3 11.6h3.4a1.7 1.7 0 0 1-3.4 0Z"></path>
+                </svg>
+                <span id="notify-go-label">Notify me</span>
+            </button>
             <span class="say" id="notify-say"></span>
         </div>
     </section>
@@ -881,16 +1254,27 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
                 <div class="sub" id="detail-sub"></div>
             </div>
             <div class="tools">
-                <button class="chip" id="tx-order" title="Reverse the transcript (r)">Oldest first</button>
-                <button class="chip" id="tx-focus" title="Bring the terminal forward">Reveal</button>
+                <!-- An arrow that points the way time runs, and it turns over when the order
+                     does: the words say which order this *is*, the arrow says it again in a
+                     shape, and the hover text says what pressing it will do. -->
+                <button class="chip" id="tx-order" type="button"><svg class="ico arrow" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M7 2.4v9.2M3.6 8.2 7 11.6l3.4-3.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg><span id="tx-order-label">Oldest first</span></button>
+                <!-- A screen, because what this does happens on one that is somewhere else. -->
+                <button class="chip" id="tx-focus" type="button"><svg class="ico" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><rect x="1.3" y="2.2" width="11.4" height="7.8" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.3"></rect><path d="M5 12.2h4M7 10v2.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg><span id="tx-focus-label">Show on Mac</span></button>
             </div>
         </div>
         <div class="scroller tx-scroll" id="tx-scroll"><div class="tx" id="tx"></div></div>
         <form class="composer" id="composer" data-write="off">
+            <!-- A session that has stopped to ask something, said where the eye already is:
+                 directly above the box, at the end of the transcript. -->
+            <div class="waiting" id="waiting" role="status" hidden></div>
             <div class="shots" id="shots"></div>
             <div class="box">
                 <button class="attach" id="attach" type="button" aria-label="Attach a picture" title="Attach a picture" disabled>+</button>
-                <textarea id="msg" rows="1" placeholder="Message Claude Code…" disabled></textarea>
+                <!-- See the note on `.composer .msg`. `role`/`aria-multiline` because the
+                     browser no longer knows what this is on its own, and the label carries the
+                     same words as the placeholder rather than a second wording of them. -->
+                <div class="msg blank" id="msg" role="textbox" aria-multiline="true"
+                     enterkeyhint="enter" data-placeholder="Message Claude Code…"></div>
                 <button class="send" id="send" type="submit" disabled>Send</button>
             </div>
             <!-- No `capture` attribute on purpose. With it, iOS opens the camera and nothing
@@ -919,6 +1303,27 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
             <dt><kbd>?</kbd></dt><dd>This card</dd>
         </dl>
         <div class="foot">Anything typed into a text box stays in the text box — the shortcuts stand down while you write.</div>
+    </div>
+</div>
+
+<!-- App-level settings, and nothing session-level: this is what is true of this *browser on
+     this device*, which is a different question from anything in the list behind it. -->
+<div class="overlay" id="settings" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" id="settings-sheet">
+        <h2 id="settings-title">Settings</h2>
+
+        <div class="block">
+            <b id="settings-notify-title">Notifications</b>
+            <p class="say" id="settings-notify-say"></p>
+            <div class="row">
+                <button class="chip" id="settings-notify-go" type="button" hidden></button>
+                <button class="chip" id="settings-notify-test" type="button" hidden></button>
+            </div>
+            <p class="said" id="settings-notify-said" role="status" aria-live="polite"></p>
+        </div>
+
+        <div class="foot"><span id="settings-version"></span></div>
+        <button class="chip wide" id="settings-close" type="button">Close</button>
     </div>
 </div>
 
@@ -1018,6 +1423,20 @@ var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: r
 var phone = function () { return window.matchMedia("(max-width: 899px)").matches; };
 
 /**
+ * Whether there is a keyboard to press Return on.
+ *
+ * Asked of the pointer rather than of the width, because the question is not how big the screen
+ * is: an iPad with a keyboard attached should behave like a desk, and a browser window dragged
+ * narrow on one should not start behaving like a phone. `hover` and `pointer: fine` together are
+ * the closest a browser comes to "there is a mouse and therefore probably a keyboard".
+ *
+ * Read each time rather than once: a keyboard can be attached to a tablet while the page is open.
+ */
+function hasKeyboard() {
+    return !!(window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
+}
+
+/**
  * How tall the page actually is, written into `--vvh` for the layout to use.
  *
  * `100dvh` is the right answer for the browser's own toolbars and the wrong one for the
@@ -1048,6 +1467,223 @@ var phone = function () { return window.matchMedia("(max-width: 899px)").matches
     window.addEventListener("orientationchange", apply);
     apply();
 })();
+
+/* ==========================================================================
+   Words
+   Every sentence this interface says, and none of them written here twice.
+   The values below are the English, baked in so that a page whose request for
+   the real ones failed is still a page somebody can read rather than a page of
+   blank labels. Everything else — thirteen other languages — arrives from
+   `GET /v1/strings` before the first render, chosen from this browser's own
+   `Accept-Language`, and is written straight over the top of them.
+
+   The page translates nothing and decides nothing about language. The Mac is
+   where the words live, and there is exactly one copy of them: see the web
+   section of `Sources/Strings.swift`.
+   ========================================================================== */
+
+var T = {
+    webConnLive: "live",
+    webConnConnecting: "connecting",
+    webConnRetrying: "retrying in {n}s",
+    webConnOffline: "offline",
+    webConnLocked: "not paired",
+    webConnTipLive: "Streaming from the app",
+    webConnTipLocked: "This browser has not been paired with the Mac",
+    webConnTipDown: "Not connected — click to try now",
+    webCountWorking: "{n} working",
+    webCountWaiting: "{n} waiting",
+    webCountUnreadable: "{n} unreadable",
+    webCountQuietOne: "{n} session, all quiet",
+    webCountQuietMany: "{n} sessions, all quiet",
+    webCountNone: "no sessions",
+    webFilterPlaceholder: "Filter by task, project or tty",
+    webFilterLabel: "Filter sessions",
+    webListLabel: "Claude Code sessions",
+    webPull: "Pull to refresh",
+    webPullRelease: "Release to refresh",
+    webPullBusy: "Refreshing…",
+    webEmptyFilterTitle: "Nothing matches “{q}”",
+    webEmptyFilterHint: "Esc clears the filter",
+    webEmptyLockedTitle: "This device is not paired",
+    webEmptyLockedHint: "The app answered 401 — pair it from Clawdline on the Mac",
+    webEmptyNoneHint: "Start one in a terminal and it appears here",
+    webEmptyWaitTitle: "Waiting for the app",
+    webEmptyWaitHint: "Nothing has arrived on the stream yet",
+    webStateUnreadable: "screen could not be read",
+    webStateWorking: "working",
+    webBack: "Sessions",
+    webBackLabel: "Back to the session list",
+    webNoSessionOpen: "No session open",
+    webOrderTip: "Reverse the transcript (r)",
+    webShowOnMac: "Show on Mac",
+    webShowOnMacTip: "Bring this session's terminal to the front on the Mac",
+    webShowOnMacOff: "The server reports write: false — nothing can be sent yet",
+    webShowOnMacAsked: "Asked the Mac to bring it forward",
+    webPickSession: "Pick a session on the left.",
+    webReading: "Reading…",
+    webLoading: "Loading…",
+    webTranscriptFailed: "Could not read the transcript",
+    webWhoYou: "you",
+    webWhoTool: "tool",
+    webSteps: "{n} steps",
+    webJustNow: "just now",
+    webMinutesAgo: "{n}m ago",
+
+    // A question Claude stopped to ask, and the state of a session that is still on one.
+    webAskLabel: "asked",
+    webAskAny: "Any number of these",
+    webWaitingTitle: "This session is waiting for an answer",
+    webWaitingSay: "Claude Code is showing a menu on the Mac. Clawdline cannot read a menu from here yet, so the choices are only on that screen.",
+    webWaitingSend: "*Sending from here will not type your answer into the menu.* It confirms whichever option the menu has highlighted — which is rarely the one you meant. Answer this one on the Mac.",
+    // The page has been open longer than the app it came from.
+    webStale: "Clawdline has been rebuilt on the Mac. This page is the older one.",
+    webStaleGo: "Reload",
+    webSend: "Send",
+    webAttach: "Attach a picture",
+    webRemoveShot: "Remove {name}",
+    webWriteOpen: "Open a session to write to it.",
+    webWriteOff: "*Sending is off* — the server reports `write: false`. The box is wired; it switches itself on when that changes.",
+    webShotsOnlyPictures: "Only pictures can go with a message",
+    webShotsTooMany: "{n} pictures is the most one message can carry",
+    webShotTooBig: "That picture is too big to send, even shrunk",
+    webShotsTooBig: "Those pictures are too big to send together",
+    webShotUnreadable: "That picture could not be read",
+    webShotNeedsSession: "Open a session to send a picture to it",
+    webHintMove: "move",
+    webHintOpen: "open",
+    webHintFilter: "filter",
+    webHintPane: "pane",
+    webKeysLabel: "Keyboard shortcuts",
+    webKeysTitle: "Keyboard",
+    webKeysMove: "Move through the list — `j` and `k` do the same",
+    webKeysOpen: "Open the selected session",
+    webKeysFilter: "Filter the list",
+    webKeysEscape: "Clear the filter, then step back",
+    webKeysList: "Focus the session list",
+    webKeysPane: "Show or hide the transcript",
+    webKeysEnds: "Top or bottom of the transcript",
+    webKeysReverse: "Reverse the transcript order",
+    webKeysThis: "This card",
+    webKeysFoot: "Anything typed into a text box stays in the text box — the shortcuts stand down while you write.",
+    webDoorLabel: "Pair this browser",
+    webDoorAskLede: "This browser has not been let in yet.",
+    webDoorAskFine: "Ask to pair and a six-digit code appears *on the Mac* — it is deliberately not in the reply to this page. Only somebody at that machine can finish this, and that is the point rather than the hurdle.",
+    webDoorName: "Call this device",
+    webDoorAsk: "Ask to pair",
+    webDoorToPassword: "Sign in with a password instead",
+    webDoorCodeLede: "Look at the Mac.",
+    webDoorCodeFine: "Clawdline is showing six digits for {left}. Type them here.",
+    webDoorTwoMinutes: "two minutes",
+    webDoorDigit: "Digit {n}",
+    webDoorConfirm: "Pair this device",
+    webDoorRestart: "Start again",
+    webDoorPasswordLede: "Sign in with the password.",
+    webDoorPasswordFine: "The one set in Clawdline on the Mac, under Settings → Remote. If none has been set, pairing is the way in.",
+    webDoorPassword: "Password",
+    webDoorPasswordGo: "Sign in",
+    webDoorToPair: "Use a pairing code instead",
+    webDoorAsking: "Asking the Mac…",
+    webDoorAskFailed: "Could not ask the Mac.",
+    webDoorRateLimited: "Each request puts an alert on the Mac, so there are only three every ten minutes.",
+    webDoorSixDigits: "Six digits.",
+    webDoorChecking: "Checking…",
+    webDoorFinished: "That pairing is finished — five wrong codes. Ask again when you are at the Mac.",
+    webDoorWrongCode: "That code is not right.",
+    webDoorNeedPassword: "The password, first.",
+    webDoorWrongPassword: "That is not the password.",
+    webDoorExpired: "That code has expired. Ask again and a fresh one appears on the Mac.",
+    webDoorPaired: "Paired — this browser is in",
+    webOffline: "Could not reach Clawdline. Is it still running on the Mac?",
+    webNotJSON: "The server sent something that is not JSON",
+    webRequestFailed: "Request failed",
+    webNotifyGo: "Notify me",
+    webNotifyAsking: "Asking…",
+    webNotifyStop: "Stop",
+    webNotifyStopping: "Stopping…",
+    webNotifyOff: "when a session is waiting for an answer",
+    webNotifyOn: "This device is subscribed. What it gets told about is set on the Mac.",
+    webNotifyBlocked: "Notifications are blocked for this site. That switch is in the browser's own settings, not here.",
+    webNotifyUnsupported: "This browser cannot show notifications.",
+    webNotifyHomeScreen: "Add clawdline to your home screen and open it from there — iOS only sends notifications to an app that lives there.",
+    webNotifyOnFailed: "Could not turn notifications on",
+    webNotifyOffFailed: "Could not turn notifications off",
+    webSettings: "Settings",
+    webSettingsNotify: "Notifications",
+    webSettingsVersion: "Version {v}",
+    webClose: "Close",
+    webNotifySheetOff: "This device is not told when a session is waiting.",
+    webNotifyTest: "Send a test",
+    webNotifyTestSent: "Sent — it should arrive on this device in a moment.",
+    webNotifyTestNone: "The Mac has no subscription for this device. Turn notifications off and on again, and this browser will register a fresh one.",
+    webNotifyTestFailed: "Could not send a test notification",
+    webSending: "Sending…",
+    webSendTip: "Return sends · Shift-Return starts a line",
+
+    // Said in both places, so said once — the bar's own words, arriving here too.
+    placeholder: "Message Claude Code…",
+    noSession: "No Claude Code session found",
+    noOutput: "Nothing to read from this session yet.",
+    sessionWaiting: "waiting for you",
+    sendFailed: "Could not send",
+    hintList: "list",
+    hintKeys: "keys",
+    hintOrder: "reverse",
+    webOrderNewest: "Newest first",
+    webOrderOldest: "Oldest first"
+};
+
+/**
+ * The strings, as the server sent them.
+ *
+ * Only keys this page already knows are taken. A payload is not a place to learn new names from
+ * — an unknown key is a version of the app that knows something this page does not, and the
+ * right thing to do with it is nothing.
+ */
+function applyStrings(data) {
+    if (!data) return;
+    for (var key in T) {
+        if (typeof data[key] === "string" && data[key]) T[key] = data[key];
+    }
+    // What a screen reader picks a voice from, and what a browser offers to translate against.
+    if (data.lang) document.documentElement.lang = data.lang;
+    // None of the fourteen is written right to left, so this is `ltr` every time today. It is
+    // set from the answer rather than left alone so that the day one is added, the page is
+    // already laying itself out the way that language is read.
+    if (data.dir) document.documentElement.dir = data.dir;
+}
+
+/**
+ * `{n}`, `{q}`, `{left}` — the holes in a string, filled in.
+ *
+ * **Order matters when the result is going into HTML.** Fill first and escape the whole thing
+ * afterwards — `esc(fill(s, …))` — and one pass covers both the copy and whatever went into it.
+ * Escaping first and filling second would put an unescaped value into an escaped string, which
+ * is the bug this note exists to prevent. A hole with nothing to put in it is left as it was
+ * written, so a missing value shows up as `{n}` rather than as a hole in a sentence.
+ */
+function fill(s, holes) {
+    return String(s == null ? "" : s).replace(/\{(\w+)\}/g, function (all, key) {
+        return holes && holes[key] != null ? String(holes[key]) : all;
+    });
+}
+
+/**
+ * Interface copy, ready to be written as HTML.
+ *
+ * Two markers and no more: `*emphasis*` and `` `something typed at a machine` ``. They are
+ * turned into tags **after** the string has been escaped, which is what makes them safe — by
+ * then the only `<` and `>` in the string are the ones put there on this line, and a translation
+ * that contains a tag has already had it turned into the text somebody typed.
+ *
+ * Only for strings that carry no filled-in value: a value is escaped, but it is not copy, and it
+ * has no business being read for markers. Those go through `esc(fill(…))` instead.
+ */
+function words(s) {
+    return esc(s)
+        .replace(/\*([^*]+)\*/g, "<b>$1</b>")
+        .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
 
 /* ==========================================================================
    1. State
@@ -1084,8 +1720,13 @@ var S = {
 var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
  "app", "pane-detail", "back", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
- "tx-order", "tx-focus", "composer", "msg", "send", "why", "hints", "keys", "toast", "brand-mark",
- "notify", "notify-go", "notify-say", "shots", "attach", "pick",
+ "tx-order", "tx-order-label", "tx-focus", "tx-focus-label",
+ "composer", "msg", "send", "why", "waiting", "stale", "stale-say", "stale-go",
+ "hints", "keys", "toast", "brand", "brand-mark",
+ "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
+ "settings-notify-go", "settings-notify-test", "settings-notify-said", "settings-version",
+ "settings-close",
+ "notify", "notify-go", "notify-go-label", "notify-say", "shots", "attach", "pick",
  "door", "door-mark", "door-name", "door-ask", "door-to-password", "door-digits", "door-confirm",
  "door-restart", "door-left", "door-password", "door-pw-name", "door-pw-go", "door-to-pair", "door-say"
 ].forEach(function (id) { els[id] = document.getElementById(id); });
@@ -1102,6 +1743,22 @@ function esc(s) {
 
 /** A path the width of a list row. The tail is the part that identifies the project,
  *  so the head is what gets dropped, not the other way round. */
+/**
+ * What `Transcript.askPayload` puts in front of a question's text.
+ *
+ * Every other tool's `text` is one line summarising what it was asked to do. A question's
+ * arguments *are* its content — the sentence and the options — so that one entry carries them
+ * as data, behind a marker no transcript can contain. See the note on `Transcript.askMarker`.
+ *
+ * The page unpacks it rather than the server, because what the page needs is the *structure*:
+ * one row per option, legible on its own, with the number the terminal's picker answers to. A
+ * string flattened at the other end would have to be taken apart again here to get that back.
+ *
+ * Up here rather than next to `parseAsk`, which is the only thing that reads it: the fixtures
+ * further down build a question out of it, and they run while the file is still being read.
+ */
+var ASK_MARK = "\u0001ask\u0001";
+
 function shortPath(p) {
     if (!p) return "";
     var s = p.replace(/^\/Users\/[^/]+/, "~").replace(/^\/home\/[^/]+/, "~");
@@ -1114,8 +1771,8 @@ function clockOf(unix) {
     if (!unix) return "";
     var d = new Date(unix * 1000);
     var age = Date.now() / 1000 - unix;
-    if (age < 60) return "just now";
-    if (age < 3600) return Math.round(age / 60) + "m ago";
+    if (age < 60) return T.webJustNow;
+    if (age < 3600) return fill(T.webMinutesAgo, { n: Math.round(age / 60) });
     var h = d.getHours(), m = d.getMinutes();
     return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
 }
@@ -1255,6 +1912,50 @@ setInterval(function () {
    below this section knows which one it is talking to.
    ========================================================================== */
 
+/**
+ * Whether the app on the Mac has moved on since this page was served.
+ *
+ * A standalone PWA is not a document somebody reloads; it is a window that sits in the app
+ * switcher for days. Nothing here caches — the service worker stores nothing — so the page is
+ * not stale in the browser's sense, it is simply *old*, and the browser has no reason to think
+ * anything is wrong. That is how a phone came to be running a build from an hour before while
+ * the Mac had been rebuilt twice, with no sign of it anywhere on screen.
+ *
+ * The check is the cheapest one available: `/v1/health` already answers on every connect and
+ * every reconnect, and the first answer of the session is the baseline. **Anything that changes
+ * when the app is rebuilt will do** — this reads `build` first and falls back to `version` and
+ * the protocol number, so the day the server carries a per-build stamp this starts working
+ * without another line here. (Today `version` is the string in `build.sh`, which two rebuilds of
+ * the same release do not change, so today this fires only across a version bump.)
+ *
+ * **Never a reload of its own.** Somebody may be mid-sentence in the composer, and a page that
+ * replaces itself to be newer has thrown that away to win an argument nobody was having.
+ */
+var Build = {
+    seen: null,
+    stale: false,
+
+    stamp: function (info) {
+        var parts = [info.build, info.version, info.protocol];
+        var out = [];
+        for (var i = 0; i < parts.length; i++) {
+            if (parts[i] === null || parts[i] === undefined) continue;
+            out.push(String(parts[i]));
+        }
+        return out.join("|");
+    },
+
+    saw: function (info) {
+        if (!info || this.stale) return;
+        var now = this.stamp(info);
+        if (!now) return;
+        if (this.seen === null) { this.seen = now; return; }
+        if (now === this.seen) return;
+        this.stale = true;
+        if (els.stale) els.stale.hidden = false;
+    }
+};
+
 var handlers = {
     sessions: function (list, at) {
         S.sessions = list || [];
@@ -1262,17 +1963,24 @@ var handlers = {
         // Anything arriving at all is proof this browser is allowed to ask, whatever an earlier
         // request was told — a pairing finished in another tab counts.
         S.locked = false;
+        // The first list to arrive is the end of the list's skeleton, if it ever went up.
+        Waits.list.settle(renderList);
         onSessions();
     },
     hello: function (info) {
         if (!info) return;
         if (typeof info.write === "boolean") S.write = info.write;
         if (info.version) S.version = info.version;
+        Build.saw(info);
         renderComposer();
     },
     conn: function (state, seconds) {
         S.conn = state;
         S.retryIn = seconds || 0;
+        // A connection that has stopped trying is no longer a wait; it is an answer, and one of
+        // the empty states says it in words. A skeleton with nothing coming is worse than the
+        // sentence it was standing in for, because it never admits that it has given up.
+        if (state !== "connecting") Waits.list.settle(renderList);
         renderConn();
     }
 };
@@ -1284,7 +1992,7 @@ function jsonFetch(path, options) {
         // `fetch` rejects with "Failed to fetch" and nothing else when there is no server at the
         // other end. That string ends up in front of somebody as an explanation, so it is turned
         // into one here rather than in each of the five places that show a message.
-        var dead = new Error("Could not reach Clawdline. Is it still running on the Mac?");
+        var dead = new Error(T.webOffline);
         dead.code = "offline";
         throw dead;
     }).then(function (res) {
@@ -1292,12 +2000,12 @@ function jsonFetch(path, options) {
             var data = null;
             try { data = body ? JSON.parse(body) : null; } catch (e) { /* below */ }
             if (!res.ok) {
-                var err = data && data.error ? data.error : { code: "http_" + res.status, message: res.statusText || "Request failed" };
+                var err = data && data.error ? data.error : { code: "http_" + res.status, message: res.statusText || T.webRequestFailed };
                 var e2 = new Error(err.message || err.code);
                 e2.code = err.code;
                 throw e2;
             }
-            if (!data) throw new Error("The server sent something that is not JSON");
+            if (!data) throw new Error(T.webNotJSON);
             return data;
         });
     });
@@ -1501,7 +2209,10 @@ var Live = {
     // credential wrong on the way past.
     pushKey: function () { return jsonFetch("/v1/push/key"); },
     pushSubscribe: function (subscription) { return jsonFetch("/v1/push/subscribe", post(subscription)); },
-    pushUnsubscribe: function (id) { return jsonFetch("/v1/push/unsubscribe", post({ id: id })); }
+    pushUnsubscribe: function (id) { return jsonFetch("/v1/push/unsubscribe", post({ id: id })); },
+    /// Reaches this device and nothing else — the server sends only to the subscriptions the
+    /// asking device owns, so pressing this on a phone buzzes that phone and nobody else's.
+    pushTest: function () { return jsonFetch("/v1/push/test", post({})); }
 };
 
 /* ---- fixtures ------------------------------------------------------------
@@ -1609,9 +2320,38 @@ var Mock = (function () {
     transcripts["8F3A-1C"] = script.map(function (e, i) {
         return { role: e[0], text: e[1], tool: e[2], at: now - (script.length - i) * 47 };
     });
+    // A question, in the shape the wire carries one: the marker, then the questions as data.
+    // See `ASK_MARK`. The fixture is also where the block's layout is worked on, so it has both
+    // kinds — one answer wanted, and any number of them.
+    function asked(questions, at) {
+        return { role: "tool", tool: "AskUserQuestion", text: ASK_MARK + JSON.stringify(questions), at: at };
+    }
+
     transcripts["2C71-90"] = [
         { role: "user", text: "run the migration on staging", tool: null, at: now - 220 },
-        { role: "assistant", text: "This drops `payments_legacy`. Before I run it: the table still has 12,041 rows and nothing in the repo reads it. Confirm and I will go.", tool: null, at: now - 180 }
+        { role: "assistant", text: "This drops `payments_legacy`. Before I run it: the table still has 12,041 rows and nothing in the repo reads it.", tool: null, at: now - 180 },
+        asked([{
+            h: "Migration",
+            q: "`0009_event_id_unique.sql` drops `payments_legacy`, which still holds 12,041 rows. How shall I run it?",
+            o: [
+                { l: "Copy the table first, then run it", d: "`payments_legacy_2026_08` beside it, then the migration. Nothing is lost and the copy can go next week." },
+                { l: "Run it as it is", d: "The table goes. Nothing in the repository reads it, and staging has last night's dump behind it." },
+                { l: "Stop here", d: "Leave staging as it is and I will write the copy step into the migration instead." }
+            ]
+        }], now - 170)
+    ];
+    transcripts["44D2-05"] = [
+        { role: "user", text: "get the release notes ready", tool: null, at: now - 900 },
+        asked([{
+            h: "Release notes",
+            m: true,
+            q: "Which of these are worth a line in the notes?",
+            o: [
+                { l: "The webhook fix", d: "One event, one row. The one somebody wrote in about." },
+                { l: "Faster session list", d: "A `ps` per comparison became a `ps` per file." },
+                { l: "New icons", d: "Cosmetic, and nobody asked." }
+            ]
+        }], now - 880)
     ];
     transcripts["A15E-77"] = [
         { role: "user", text: "read docs/devstack.md and tell me what is missing", tool: null, at: now - 3600 },
@@ -1827,7 +2567,7 @@ var Door = {
         var self = this;
         var name = els["door-name"].value.trim() || suggestName();
         els["door-ask"].disabled = true;
-        this.say("Asking the Mac…", true);
+        this.say(T.webDoorAsking, true);
         api.pair(name).then(function (d) {
             self.pairing = { id: d.pairing_id, expires: d.expires };
             self.wrong = 0;
@@ -1843,8 +2583,8 @@ var Door = {
             // the limit because each one puts an alert on somebody's screen, and "rate_limited"
             // on its own reads like a fault rather than like a door working correctly.
             self.say(e.code === "rate_limited"
-                ? e.message + " Each request puts an alert on the Mac, so there are only three every ten minutes."
-                : e.message || "Could not ask the Mac.");
+                ? e.message + " " + T.webDoorRateLimited
+                : e.message || T.webDoorAskFailed);
         }).then(function () { els["door-ask"].disabled = false; });
     },
 
@@ -1852,9 +2592,9 @@ var Door = {
         var self = this;
         if (!this.pairing) { this.step("ask"); return; }
         var code = this.code();
-        if (code.length !== 6) { this.say("Six digits."); return; }
+        if (code.length !== 6) { this.say(T.webDoorSixDigits); return; }
         els["door-confirm"].disabled = true;
-        this.say("Checking…", true);
+        this.say(T.webDoorChecking, true);
         api.confirmPair(this.pairing.id, code).then(function () {
             self.signedIn();
         }).catch(function (e) {
@@ -1871,10 +2611,10 @@ var Door = {
             if (self.wrong >= 5) {
                 self.pairing = null;
                 self.step("ask");
-                self.say("That pairing is finished — five wrong codes. Ask again when you are at the Mac.");
+                self.say(T.webDoorFinished);
                 return;
             }
-            self.say(e.message || "That code is not right.");
+            self.say(e.message || T.webDoorWrongCode);
             if (!phone()) els["door-digits"].firstElementChild.focus();
         }).then(function () { els["door-confirm"].disabled = false; });
     },
@@ -1882,17 +2622,17 @@ var Door = {
     password: function () {
         var self = this;
         var secret = els["door-password"].value;
-        if (!secret) { this.say("The password, first."); return; }
+        if (!secret) { this.say(T.webDoorNeedPassword); return; }
         // Return in either box asks for this, and so does the button; the box is in a form as
         // well now. One attempt at a time whichever of them it came from.
         if (els["door-pw-go"].disabled) return;
         els["door-pw-go"].disabled = true;
-        this.say("Checking…", true);
+        this.say(T.webDoorChecking, true);
         api.password(secret, els["door-pw-name"].value.trim() || suggestName()).then(function () {
             els["door-password"].value = "";
             self.signedIn();
         }).catch(function (e) {
-            self.say(e.message || "That is not the password.");
+            self.say(e.message || T.webDoorWrongPassword);
         }).then(function () { els["door-pw-go"].disabled = false; });
     },
 
@@ -1901,7 +2641,7 @@ var Door = {
         this.pairing = null;
         this.wrong = 0;
         this.hide();
-        toast("Paired — this browser is in");
+        toast(T.webDoorPaired);
         api.start();
     },
 
@@ -1929,7 +2669,7 @@ var Door = {
             if (left <= 0) {
                 self.pairing = null;
                 self.step("ask");
-                self.say("That code has expired. Ask again and a fresh one appears on the Mac.");
+                self.say(T.webDoorExpired);
                 return;
             }
             var m = Math.floor(left / 60), sec = left % 60;
@@ -1946,6 +2686,11 @@ var Door = {
  * What to call this device, guessed from the browser so that nobody has to think of a name for
  * a thing they are holding. Editable, because the guess is often "Chrome on Mac" when what
  * matters is "the work laptop".
+ *
+ * **Not translated, deliberately.** What comes out of here is stored on the Mac and read back in
+ * the paired-devices list in Settings — a list drawn in whatever language the *Mac* is set to.
+ * A name suggested in the phone's language would arrive there as a word out of place in a list
+ * of names, and it is a name: the reader can type whatever they like over it.
  */
 function suggestName() {
     var ua = navigator.userAgent || "";
@@ -2139,14 +2884,27 @@ function onSessions() {
 
     render();
 
+    // A session the URL asked for — a tapped notification — as soon as it is in the list. It is
+    // tried on every list rather than once, because a cold start routes before it knows what
+    // sessions exist.
+    var routed = openWanted();
+
     // The first list to arrive puts the highlight somewhere, so the arrow keys and Return mean
     // something without a click first. On a desk it also opens that session: a two-column layout
     // whose second column is empty on arrival is a layout apologising for itself. On a phone it
     // does not — there, opening is a whole screen, and nobody asked for it yet.
     if (firstList && S.sessions.length) {
         firstList = false;
-        var top = ordered()[0];
-        if (top) { if (phone()) { S.selectedId = top.id; render(); } else { openSession(top.id, true); } }
+        // Not when somebody asked for a particular one. Opening the top of the list first and
+        // theirs a moment later is two screens for one tap, and the first of them is wrong.
+        if (!routed && !wantedSession) {
+            var top = ordered()[0];
+            if (top) { if (phone()) { S.selectedId = top.id; render(); } else { openSession(top.id, true); } }
+        }
+        // The first list is the whole list, so a session that is not in it is gone — a
+        // notification about a tab somebody has since closed. Let go of it rather than hold the
+        // default open hostage to a session that is never coming.
+        wantedSession = null;
     }
 }
 
@@ -2155,19 +2913,20 @@ function render() {
     renderList();
     renderDetailHead();
     renderComposer();
+    renderWaiting();
     renderHints();
 }
 
 function renderConn() {
-    var label = { live: "live", connecting: "connecting", offline: "offline",
-                  locked: "not paired",
-                  retrying: "retrying in " + S.retryIn + "s" }[S.conn] || S.conn;
+    var label = { live: T.webConnLive, connecting: T.webConnConnecting, offline: T.webConnOffline,
+                  locked: T.webConnLocked,
+                  retrying: fill(T.webConnRetrying, { n: S.retryIn }) }[S.conn] || S.conn;
     els.conn.dataset.state = S.conn;
     els["conn-label"].textContent = label;
     els.conn.title = S.conn === "live"
-        ? "Streaming from the app" + (S.version ? " · " + S.version : "")
-        : S.conn === "locked" ? "This browser has not been paired with the Mac"
-        : "Not connected — click to try now";
+        ? T.webConnTipLive + (S.version ? " · " + S.version : "")
+        : S.conn === "locked" ? T.webConnTipLocked
+        : T.webConnTipDown;
 }
 
 function renderCounts() {
@@ -2178,18 +2937,24 @@ function renderCounts() {
         else if (s.state === "unknown") unknown++;
     });
     var bits = [];
-    if (working) bits.push('<span class="part">' + working + " working</span>");
-    if (waiting) bits.push('<span class="part waiting">' + waiting + " waiting</span>");
-    if (unknown) bits.push('<span class="part quiet">' + unknown + " unreadable</span>");
+    if (working) bits.push('<span class="part">' + esc(fill(T.webCountWorking, { n: working })) + "</span>");
+    if (waiting) bits.push('<span class="part waiting">' + esc(fill(T.webCountWaiting, { n: waiting })) + "</span>");
+    if (unknown) bits.push('<span class="part quiet">' + esc(fill(T.webCountUnreadable, { n: unknown })) + "</span>");
     if (!bits.length) {
-        bits.push('<span class="part quiet">' + (S.sessions.length
-            ? S.sessions.length + (S.sessions.length === 1 ? " session, all quiet" : " sessions, all quiet")
-            : "no sessions") + "</span>");
+        var quiet = S.sessions.length
+            ? fill(S.sessions.length === 1 ? T.webCountQuietOne : T.webCountQuietMany, { n: S.sessions.length })
+            : T.webCountNone;
+        bits.push('<span class="part quiet">' + esc(quiet) + "</span>");
     }
     els.counts.innerHTML = bits.join("");
 }
 
 function renderList() {
+    // Nothing has ever arrived and the wait has gone on long enough to be worth drawing. No rows
+    // are built: there are none to build, and the skeleton stands in for the empty state rather
+    // than sitting beside it.
+    if (Waits.list.visible) { drawListSkeleton(); return; }
+
     var list = ordered();
 
     // FLIP, first half: where every row is now, before the DOM is touched.
@@ -2251,15 +3016,20 @@ function renderList() {
     }
 
     var empty = !list.length;
+    els["list-empty"].className = "empty";
     els["list-empty"].hidden = !empty;
     if (empty) {
-        els["list-empty"].innerHTML = S.sessions.length
-            ? "<b>Nothing matches “" + esc(S.filter) + "”</b>Esc clears the filter"
+        // Four of them, and telling them apart is the whole job: nothing matches what was typed,
+        // this browser was refused, there are genuinely no sessions, or nothing has arrived yet.
+        // One of those is somebody's own doing and three are not.
+        var says = S.sessions.length
+            ? [fill(T.webEmptyFilterTitle, { q: S.filter }), T.webEmptyFilterHint]
             : (S.locked
-                ? "<b>This device is not paired</b>The app answered 401 — pair it from Clawdline on the Mac"
+                ? [T.webEmptyLockedTitle, T.webEmptyLockedHint]
                 : S.conn === "live"
-                    ? "<b>No Claude Code session found</b>Start one in a terminal and it appears here"
-                    : "<b>Waiting for the app</b>Nothing has arrived on the stream yet");
+                    ? [T.noSession, T.webEmptyNoneHint]
+                    : [T.webEmptyWaitTitle, T.webEmptyWaitHint]);
+        els["list-empty"].innerHTML = "<b>" + esc(says[0]) + "</b>" + esc(says[1]);
     }
 }
 
@@ -2304,13 +3074,13 @@ function fillRow(node, s) {
     if (state.dataset.shape !== s.state) {
         state.dataset.shape = s.state;
         if (s.state === "waiting") {
-            state.innerHTML = '<span class="wants">waiting for you</span>';
+            state.innerHTML = '<span class="wants">' + esc(T.sessionWaiting) + "</span>";
         } else if (s.state === "working") {
             state.innerHTML = '<canvas class="spin"></canvas><span class="line"></span>';
         } else if (s.state === "unknown") {
             // Not silence — a screen that could not be read is a different fact from "idle",
             // and drawing it as idle would be a confident wrong answer about someone's work.
-            state.innerHTML = '<span class="unread">screen could not be read</span>';
+            state.innerHTML = '<span class="unread">' + esc(T.webStateUnreadable) + "</span>";
         } else {
             state.innerHTML = "";
         }
@@ -2327,46 +3097,81 @@ function fillRow(node, s) {
 
 function renderDetailHead() {
     var s = S.openId ? byId(S.openId) : null;
-    els["detail-name"].textContent = s ? (s.label || s.tty || s.id) : "No session open";
+    els["detail-name"].textContent = s ? (s.label || s.tty || s.id) : T.webNoSessionOpen;
     els["detail-name"].style.color = s && s.icon ? tint(s.icon.accent) : "";
     var sub = [];
     if (s) {
         sub.push(shortPath(s.cwd));
         if (s.tty) sub.push(s.tty);
-        if (s.state === "waiting") sub.push("waiting for you");
-        else if (s.state === "working") sub.push("working");
-        else if (s.state === "unknown") sub.push("screen could not be read");
+        if (s.state === "waiting") sub.push(T.sessionWaiting);
+        else if (s.state === "working") sub.push(T.webStateWorking);
+        else if (s.state === "unknown") sub.push(T.webStateUnreadable);
     }
     els["detail-sub"].textContent = sub.join("  ·  ");
     drawIcon(els["detail-mark"], s && s.icon, 5);
-    els["tx-order"].textContent = S.newestFirst ? "Newest first" : "Oldest first";
+    els["tx-order-label"].textContent = S.newestFirst ? T.webOrderNewest : T.webOrderOldest;
     els["tx-order"].classList.toggle("on", S.newestFirst);
     els["tx-focus"].disabled = !s || !S.write;
-    els["tx-focus"].title = S.write ? "Bring this session's terminal forward"
-                                    : "The server reports write: false — nothing can be sent yet";
+    els["tx-focus"].title = S.write ? T.webShowOnMacTip : T.webShowOnMacOff;
 }
 
 function renderTranscript() {
     var box = els.tx;
-    if (!S.openId) { box.innerHTML = '<div class="tx-note">Pick a session on the left.</div>'; return; }
+    if (!S.openId) { box.innerHTML = '<div class="tx-note">' + esc(T.webPickSession) + "</div>"; return; }
     if (S.tx.error) { box.innerHTML = '<div class="tx-note err">' + esc(S.tx.error) + "</div>"; return; }
-    if (S.tx.loading && !S.tx.entries.length) { box.innerHTML = '<div class="tx-note">Reading…</div>'; return; }
-    if (!S.tx.entries.length) { box.innerHTML = '<div class="tx-note">Nothing to read from this session yet.</div>'; return; }
+    if (S.tx.loading && !S.tx.entries.length) {
+        // Nothing at all for the first breath, and then the skeleton — see `Waits`. A pane that
+        // shows a placeholder for eighty milliseconds and takes it away again reads as a fault.
+        box.innerHTML = Waits.tx.visible ? txSkeleton() : "";
+        return;
+    }
+    if (!S.tx.entries.length) { box.innerHTML = '<div class="tx-note">' + esc(T.noOutput) + "</div>"; return; }
 
     // Built a block at a time rather than an entry at a time, the way `Transcript.render` builds
     // it: one message, or one whole run of tool calls, per block. Reversing is then the order the
     // blocks go out in, and a run stays one thing whichever way round the transcript is read.
-    var entries = S.tx.entries;
+    var entries = S.tx.entries.filter(worthDrawing);
     var blocks = [];
     var i = 0;
     while (i < entries.length) {
         if (entries[i].role !== "tool") { blocks.push(entryHTML(entries[i])); i += 1; continue; }
+        // A question is its own block and breaks the run around it. Everything else a tool does
+        // is machinery that folds away; this one is a sentence somebody was asked, and it is the
+        // only thing in the pane that was ever addressed to the reader.
+        if (askOf(entries[i])) { blocks.push(askHTML(entries[i])); i += 1; continue; }
         var run = [];
-        while (i < entries.length && entries[i].role === "tool") { run.push(entries[i]); i += 1; }
-        blocks.push(runHTML(run, i >= entries.length));
+        while (i < entries.length && entries[i].role === "tool" && !askOf(entries[i])) {
+            run.push(entries[i]); i += 1;
+        }
+        blocks.push(runHTML(run));
     }
     if (S.newestFirst) blocks.reverse();
     box.innerHTML = blocks.join("");
+    // Said out loud so the keyboard-bar guard above can put the new buttons back out of the tab
+    // order. A custom event rather than a direct call: this function is the transcript's, and
+    // what somebody else needs to do afterwards is their business, not a line in here.
+    document.dispatchEvent(new CustomEvent("clawdline:rendered"));
+}
+
+/**
+ * Whether an entry is worth a place on the screen at all.
+ *
+ * The wire files a tool call and the first line of what it returned under the same role, and
+ * that first line is whatever the tool happened to print first. For a grep over Swift that is
+ * regularly `///` — a comment marker, matched, returned, and drawn here as a turn of its own
+ * with a timestamp beside it. It is not a small thing to skip: on a phone it is a whole block,
+ * indistinguishable at a glance from something somebody said.
+ *
+ * The test is deliberately narrow. **Anything with a letter or a digit in it stays**, so a result
+ * of `0`, `nil` or `[]` — all of which mean something — is drawn. What goes is punctuation on
+ * its own, which cannot mean anything without the line it was cut from.
+ */
+function worthDrawing(e) {
+    if (!e) return false;
+    if (e.role !== "tool") return true;      // prose is never dropped, whatever it says
+    if (e.tool) return true;                 // a call is a step, even one with no arguments
+    var text = String(e.text == null ? "" : e.text).trim();
+    return text.length > 0 && /[\p{L}\p{N}]/u.test(text);
 }
 
 /**
@@ -2380,16 +3185,145 @@ function renderTranscript() {
  * files a tool call and what it returned under the same role, and a run is every one of them in
  * a row. Only the calls are counted, because a call is the step — the one entry with a name on
  * it. Two of them is where folding starts to pay: a line reading "1 step" is longer than the
- * step it hid. And the run at the end never folds, because it is the one still happening, and
- * folding it would hide exactly the part that is changing.
+ * step it hid.
+ *
+ * **The run at the end folds like any other, and that is a change.** The bar exempts it, on the
+ * grounds that it is the one still happening — which is right on a Mac, where the pane is wide
+ * and the exemption costs two lines. On a phone it is the entire complaint: while an agent is
+ * working, every new call lands in the tail, so the tail *is* the screen, and what a reader gets
+ * is six greps where the sentence they were reading used to be. A count that climbs says the
+ * same thing about a live run and says it in one line — and the names beside it say what kind of
+ * work it is, which thirty wrapped command lines never quite manage to.
  */
-function runHTML(run, isTail) {
+function runHTML(run) {
     var names = [];
     run.forEach(function (e) { if (e.tool) names.push(e.tool); });
     var key = foldKey(run);
-    if (isTail || names.length < 2) return run.map(entryHTML).join("");
+    if (names.length < 2) return run.map(toolRowHTML).join("");
     var open = !!S.expanded[key];
-    return foldHTML(key, names, open) + (open ? run.map(entryHTML).join("") : "");
+    return foldHTML(key, names, open) + (open ? run.map(toolRowHTML).join("") : "");
+}
+
+/* --------------------------------------------------------------------------
+   A question Claude stopped to ask
+   ------------------------------------------------------------------------ */
+
+/**
+ * The questions in an entry, or null when it is an ordinary tool call.
+ *
+ * A marked entry that will not parse comes back as an **empty array, not null** — which still
+ * routes it into the block below. That is the whole point of a marker: whatever else goes
+ * wrong, a control character followed by JSON is never put on somebody's screen.
+ *
+ * Remembered on the entry, because this runs for every entry on every render and the answer is a
+ * property of text that does not change.
+ */
+function askOf(e) {
+    if (!e || e.role !== "tool" || !e.tool) return null;
+    if (e.ask === undefined) e.ask = parseAsk(e.text);
+    return e.ask;
+}
+
+function parseAsk(text) {
+    var s = String(text == null ? "" : text);
+    if (s.slice(0, ASK_MARK.length) !== ASK_MARK) return null;
+    var rows = null;
+    try { rows = JSON.parse(s.slice(ASK_MARK.length)); } catch (err) { rows = null; }
+    if (!rows || !rows.length) return [];
+
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+        var row = rows[i] || {};
+        var options = [];
+        var list = row.o && row.o.length ? row.o : [];
+        for (var j = 0; j < list.length; j++) {
+            var o = list[j] || {};
+            if (typeof o.l !== "string" || !o.l) continue;
+            options.push({ label: o.l, note: typeof o.d === "string" ? o.d : "" });
+        }
+        out.push({
+            header: typeof row.h === "string" ? row.h : "",
+            text: typeof row.q === "string" ? row.q : "",
+            multi: row.m === true,
+            options: options
+        });
+    }
+    return out;
+}
+
+/**
+ * A question, drawn in full and never folded.
+ *
+ * **Every option gets a row of its own.** The whole complaint this answers is that a decision
+ * somebody was asked to make was invisible on a phone — folded into a run of tool calls with
+ * nothing but the word `AskUserQuestion` showing — and a folded question is the same bug with a
+ * nicer border on it. So there is no fold key here and no handle: it is open because it is the
+ * one thing in the pane addressed to the person reading it.
+ *
+ * The numbers are the terminal's own. Option 3 here is what `3` selects in the picker on the
+ * Mac, which is worth having in front of somebody who is about to walk over to it.
+ *
+ * Nothing here is pressable, and that is deliberate rather than unfinished: see the note above
+ * `renderWaiting` for what a press would have to send and why this page cannot send it.
+ */
+function askHTML(e) {
+    var questions = askOf(e) || [];
+    var body = questions.map(function (q) {
+        var head = "";
+        if (q.header) head += '<div class="askhead">' + esc(q.header) + "</div>";
+        if (q.multi) head += '<div class="askany">' + esc(T.webAskAny) + "</div>";
+        var asked = q.text ? '<div class="askq">' + inlineMd(q.text) + "</div>" : "";
+        var options = q.options.map(function (o, n) {
+            return '<li class="askopt"><span class="n">' + (n + 1) + "</span>" +
+                '<span class="what"><b>' + inlineMd(o.label) + "</b>" +
+                (o.note ? '<span class="note">' + inlineMd(o.note) + "</span>" : "") +
+                "</span></li>";
+        }).join("");
+        return head + asked + (options ? '<ol class="askopts">' + options + "</ol>" : "");
+    }).join("");
+
+    return '<div class="entry ask" data-role="ask">' +
+        '<div class="who">' + esc(WHO.assistant) +
+        (e.at ? '<time data-at="' + e.at + '">' + esc(clockOf(e.at)) + "</time>" : "") + "</div>" +
+        '<div class="body"><div class="askbox">' +
+        '<div class="asktag">' + esc(T.webAskLabel) + "</div>" + body +
+        "</div></div></div>";
+}
+
+/**
+ * One tool call, or one thing a tool said back, as a single line that opens when it is pressed.
+ *
+ * A call's arguments are a shell command, a path, a regular expression — text with no sentence in
+ * it, written to be run rather than read. Drawn as prose it wraps to four lines and takes a
+ * quarter of a phone screen to say "it ran a grep". So the first line of it goes in a row that
+ * cannot wrap, with the tool's name in front, and the whole of it is one press away.
+ *
+ * The key is the entry's own content hash with a letter in front, so it cannot collide with the
+ * key of the run it sits inside — `S.expanded` is one map and both live in it.
+ */
+function toolRowHTML(e) {
+    var key = "e" + foldKey([e]);
+    var open = !!S.expanded[key];
+    var head = e.tool
+        ? '<span class="toolname">' + esc(e.tool) + "</span>"
+        : '<span class="caret">' + (open ? "⏷" : "⏵") + "</span>";
+    // No timestamp on these. A time beside every grep is a column of numbers nobody reads, and
+    // the turn above it is already stamped.
+    return '<div class="entry toolrow" data-role="tool">' +
+        '<div class="who">' + esc(WHO.tool) + "</div>" +
+        '<div class="body">' +
+        '<button type="button" class="toolline" data-fold="' + key +
+        '" aria-expanded="' + (open ? "true" : "false") + '">' +
+        head + '<span class="subject">' + esc(firstLine(e.text)) + "</span></button>" +
+        (open ? '<div class="toolbody">' + richText(e.text) + "</div>" : "") +
+        "</div></div>";
+}
+
+/** The first line of something, with its runs of whitespace closed up. What is left is what fits
+ *  on one row; the rest of the truncating is the browser's, which knows how wide the row is. */
+function firstLine(text) {
+    var line = String(text == null ? "" : text).split("\n")[0].replace(/\s+/g, " ").trim();
+    return line || "…";
 }
 
 /**
@@ -2402,14 +3336,14 @@ function runHTML(run, isTail) {
  */
 function foldHTML(key, names, open) {
     return '<div class="entry folded" data-role="tool">' +
-        '<div class="who">' + WHO.tool + "</div>" +
+        '<div class="who">' + esc(WHO.tool) + "</div>" +
         '<div class="body"><button type="button" class="pill" data-fold="' + key +
         '" aria-expanded="' + (open ? "true" : "false") + '">' +
         '<span class="caret">' + (open ? "⏷" : "⏵") + "</span>" +
         // The count is its own element so it cannot be broken across two lines by the names
         // beside it: a pill reading "9" above "steps" is the one part of this that has to be
         // legible at a glance.
-        '<span class="steps">' + names.length + " steps</span>" +
+        '<span class="steps">' + esc(fill(T.webSteps, { n: names.length })) + "</span>" +
         (open ? "" : '<span class="what">' + esc(distinct(names).join(" · ")) + "</span>") +
         "</button></div></div>";
 }
@@ -2473,13 +3407,15 @@ els.tx.addEventListener("keydown", function (ev) {
     ev.stopPropagation();
 });
 
+// Two of these three are copy and come from the server before the first render; the middle one
+// is a name, and a name is the same word in fourteen languages. See `paintStatic`.
 var WHO = { user: "you", assistant: "claude", tool: "tool" };
 
 function entryHTML(e) {
     var role = WHO[e.role] ? e.role : "assistant";
     var body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "") + richText(e.text);
     return '<div class="entry" data-role="' + role + '">' +
-        '<div class="who">' + WHO[role] +
+        '<div class="who">' + esc(WHO[role]) +
         (e.at ? '<time data-at="' + e.at + '">' + esc(clockOf(e.at)) + "</time>" : "") + "</div>" +
         '<div class="body">' + body + "</div></div>";
 }
@@ -2759,29 +3695,285 @@ function safeHref(href) {
 function renderComposer() {
     var on = S.write && !!S.openId;
     els.composer.dataset.write = S.write ? "on" : "off";
-    els.msg.disabled = !on;
+    els.composer.dataset.sending = sending ? "on" : "off";
+    // Editable only when there is somewhere for the words to go. Not switched off while a send
+    // is in flight, though — see the `beforeinput` guard below: taking the editability away from
+    // a focused element takes the focus with it, and on a phone that shuts the keyboard between
+    // every message.
+    els.msg.contentEditable = on ? "plaintext-only" : "false";
+    // What Return does differs by machine, and the soft keyboard's own key should say which.
+    els.msg.setAttribute("enterkeyhint", hasKeyboard() ? "send" : "enter");
     // A picture on its own is a message. The server takes text, images, or both, and refuses
     // only the one that is neither — so the button follows the same rule.
-    els.send.disabled = !on || sending || Shots.busy() || (!els.msg.value.trim() && !Shots.count());
-    els.attach.disabled = !on;
+    els.send.disabled = !on || sending || Shots.busy() || (!msgText() && !Shots.count());
+    els.send.textContent = sending ? T.webSending : T.webSend;
+    // Return means two different things on the two kinds of machine, so the explanation is only
+    // offered where there is a Return to explain. It is hover text and not a row of the screen:
+    // it was a permanent line under the box once, and a permanent line to teach something once
+    // is what a tooltip is for.
+    els.send.title = hasKeyboard() ? T.webSendTip : "";
+    els.attach.disabled = !on || sending;
     // Only ever the reason the box will not take what you type. There used to be a line here
     // saying that Return sends and Shift-Return starts a line, and it was true and it was in the
     // way: a row of every screen, forever, to teach something once. When there is nothing to
     // explain this is empty, and an empty one is not drawn at all.
     els.why.innerHTML = S.write
-        ? (S.openId ? "" : "Open a session to write to it.")
-        : "<b>Sending is off</b> — the server reports <code>write: false</code>. The box is wired; it switches itself on when that changes.";
+        ? (S.openId ? "" : esc(T.webWriteOpen))
+        : words(T.webWriteOff);
 }
+
+/**
+ * The line above the composer when the open session has stopped to ask something.
+ *
+ * **What this page can and cannot do about a question, established by trying it.**
+ *
+ * Claude Code's picker answers to one raw byte: the digit of the option, sent *outside* a
+ * bracketed paste, selects and confirms it in one press — and in a multi-select it toggles the
+ * row, with Tab then `1` to submit. `ITerm.keystroke` and `Tmux.keystroke` already send exactly
+ * that byte, and the bar on the Mac already uses them for Ctrl-V.
+ *
+ * There is no route to them. The only write this page has is `POST /v1/sessions/<id>/send`,
+ * which wraps what it is given in a bracketed paste and follows it with a Return — and a picker
+ * **swallows the paste and acts on the Return**. Measured, twice, against a real session: with
+ * the caret parked on the third option, sending the word "Tea" answered "Water". So the composer
+ * is not a way to type an answer; it is a way to confirm a highlighted row without meaning to,
+ * which is the whole reason this notice is loud rather than tidy.
+ *
+ * Nothing here pretends otherwise. There are no option buttons on this page, because the only
+ * press they could make is that one — and a wrong answer to "shall I force-push?" costs more
+ * than a missing button. What is offered instead is the true thing: the session is waiting, and
+ * here is the way to put it in front of you.
+ */
+var waitingDrawn = null;
+
+function renderWaiting() {
+    var box = els.waiting;
+    if (!box) return;
+    var open = S.openId ? byId(S.openId) : null;
+    var want = !open || open.state !== "waiting" ? "" :
+        '<div class="title">' + esc(T.webWaitingTitle) + "</div>" +
+        '<div class="say">' + words(T.webWaitingSay) + "</div>" +
+        '<div class="say">' + words(T.webWaitingSend) + "</div>" +
+        '<button type="button" class="go" data-focus="1">' + esc(T.webShowOnMac) + "</button>";
+    // Written only when it has changed. `render` runs on every beat of the stream, and throwing
+    // this away and building it again once a second would take the focus off the button in it
+    // every time somebody was about to press it.
+    if (want === waitingDrawn) return;
+    waitingDrawn = want;
+    box.innerHTML = want;
+    box.hidden = !want;
+    if (!want) return;
+    // A new button, drawn while somebody may be writing. Same reason the transcript says it:
+    // the keyboard-bar guard has to put it back out of the tab order.
+    document.dispatchEvent(new CustomEvent("clawdline:rendered"));
+}
+
+els.waiting.addEventListener("click", function (ev) {
+    if (!ev.target.closest || !ev.target.closest("[data-focus]")) return;
+    if (!S.openId) return;
+    api.focus(S.openId).then(function () { toast(T.webShowOnMacAsked); })
+        .catch(function (e) { toast(e.message, true); });
+});
 
 function renderHints() {
     if (phone()) { els.hints.innerHTML = ""; return; }
     var pairs = [
-        ["↑↓", "move"], ["⏎", "open"], ["/", "filter"],
-        ["⌘K", "list"], ["⌘J", "pane"], ["r", "reverse"], ["?", "keys"]
+        ["↑↓", T.webHintMove], ["⏎", T.webHintOpen], ["/", T.webHintFilter],
+        ["⌘K", T.hintList], ["⌘J", T.webHintPane], ["r", T.hintOrder], ["?", T.hintKeys]
     ];
     els.hints.innerHTML = '<span class="grow"></span>' + pairs.map(function (p) {
         return '<span class="pair"><kbd>' + esc(p[0]) + "</kbd>" + esc(p[1]) + "</span>";
     }).join("");
+}
+
+/* ---- the words that live in the markup ----------------------------------- */
+
+/**
+ * Everything written into the HTML above, written again in the language that came back.
+ *
+ * The English is left in the document rather than blanked out, because a page whose strings
+ * never arrived has to still be a page somebody can use — so the markup is the fallback and this
+ * is the correction, and it runs once, before the first render, rather than on every draw.
+ * Nothing below here is redrawn later: none of it changes while the page is open.
+ */
+function paintStatic() {
+    function text(el, s) { if (el) el.textContent = s; }
+    function attr(el, name, s) { if (el) el.setAttribute(name, s); }
+
+    els.filter.placeholder = T.webFilterPlaceholder;
+    attr(els.filter, "aria-label", T.webFilterLabel);
+    attr(els.rows, "aria-label", T.webListLabel);
+    text(els["ptr-label"], T.webPull);
+
+    // The chevron is drawn, not typed: it points the way back whichever language is beside it.
+    text(els.back, "‹ " + T.webBack);
+    attr(els.back, "aria-label", T.webBackLabel);
+    attr(els["tx-order"], "title", T.webOrderTip);
+    text(els["tx-focus-label"], T.webShowOnMac);
+
+    text(els["stale-say"], T.webStale);
+    text(els["stale-go"], T.webStaleGo);
+
+    attr(els.attach, "aria-label", T.webAttach);
+    attr(els.attach, "title", T.webAttach);
+    els.msg.setAttribute("data-placeholder", T.placeholder);
+    attr(els.msg, "aria-label", T.placeholder);
+    // The send button's words and its hover text belong to `renderComposer`: both of them change
+    // while a message is in flight, and one owner for a thing that moves.
+
+    // The wordmark, and the sheet behind it.
+    attr(els.brand, "aria-label", T.webSettings);
+    attr(els.brand, "title", T.webSettings);
+    attr(els["settings-sheet"], "aria-label", T.webSettings);
+    text(els["settings-title"], T.webSettings);
+    text(els["settings-notify-title"], T.webSettingsNotify);
+    text(els["settings-close"], T.webClose);
+
+    // The transcript's left margin. Claude's own name is not in the strings and is not
+    // translated — it is a name, and it is the same name in fourteen languages.
+    WHO.user = T.webWhoYou;
+    WHO.tool = T.webWhoTool;
+
+    // The shortcuts card. The keys themselves stay as they are — a symbol printed on a keyboard
+    // is not copy — and only the sentences beside them come from the server. `esc` is on the key
+    // as well, so it is left with the rest of them.
+    var sheet = els.keys.querySelector(".sheet");
+    attr(sheet, "aria-label", T.webKeysLabel);
+    text(sheet.querySelector("h2"), T.webKeysTitle);
+    var rows = [
+        [["↑", "↓"], T.webKeysMove], [["⏎"], T.webKeysOpen], [["/"], T.webKeysFilter],
+        [["esc"], T.webKeysEscape], [["⌘K"], T.webKeysList], [["⌘J"], T.webKeysPane],
+        [["g", "G"], T.webKeysEnds], [["r"], T.webKeysReverse], [["?"], T.webKeysThis]
+    ];
+    sheet.querySelector("dl").innerHTML = rows.map(function (row) {
+        return "<dt>" + row[0].map(function (key) { return "<kbd>" + esc(key) + "</kbd>"; }).join(" ") +
+            "</dt><dd>" + words(row[1]) + "</dd>";
+    }).join("");
+    text(sheet.querySelector(".foot"), T.webKeysFoot);
+
+    // The door, all three steps of it — including the two nobody sees until they need them.
+    var card = els.door.querySelector(".door-card");
+    attr(card, "aria-label", T.webDoorLabel);
+
+    var ask = card.querySelector('section[data-step="ask"]');
+    text(ask.querySelector(".lede"), T.webDoorAskLede);
+    ask.querySelector(".fine").innerHTML = words(T.webDoorAskFine);
+    text(ask.querySelector("label"), T.webDoorName);
+    text(els["door-ask"], T.webDoorAsk);
+    text(els["door-to-password"], T.webDoorToPassword);
+
+    var code = card.querySelector('section[data-step="code"]');
+    text(code.querySelector(".lede"), T.webDoorCodeLede);
+    // A clock in the middle of a sentence, rewritten every second. So the sentence is rebuilt
+    // *around* the span rather than over it: two text nodes and the element the clock owns,
+    // which keeps working wherever a translation puts the hole.
+    var fine = code.querySelector(".fine");
+    var halves = String(T.webDoorCodeFine).split("{left}");
+    fine.textContent = "";
+    fine.appendChild(document.createTextNode(halves[0]));
+    fine.appendChild(els["door-left"]);
+    fine.appendChild(document.createTextNode(halves.length > 1 ? halves[1] : ""));
+    text(els["door-left"], T.webDoorTwoMinutes);
+    var boxes = els["door-digits"].children;
+    for (var i = 0; i < boxes.length; i++) {
+        attr(boxes[i], "aria-label", fill(T.webDoorDigit, { n: i + 1 }));
+    }
+    text(els["door-confirm"], T.webDoorConfirm);
+    text(els["door-restart"], T.webDoorRestart);
+
+    var pw = card.querySelector('section[data-step="password"]');
+    text(pw.querySelector(".lede"), T.webDoorPasswordLede);
+    text(pw.querySelector(".fine"), T.webDoorPasswordFine);
+    var labels = pw.querySelectorAll("label");
+    text(labels[0], T.webDoorPassword);
+    text(labels[1], T.webDoorName);
+    text(els["door-pw-go"], T.webDoorPasswordGo);
+    text(els["door-to-pair"], T.webDoorToPair);
+}
+
+/* ---- waiting on the network ---------------------------------------------- */
+
+/**
+ * A wait, drawn only when it is a wait worth drawing.
+ *
+ * Two numbers, and both of them are about not making a glitch out of a fast answer:
+ *
+ * - **Nothing for the first 150ms.** A transcript that is already on this machine comes back
+ *   inside that, and a placeholder that arrives and leaves again in a tenth of a second is read
+ *   as a fault rather than as progress — the eye catches a change on screen and then finds
+ *   nothing that explains it. Below the threshold the pane simply stays empty, which is what it
+ *   was doing before and is over before anybody has looked at it.
+ * - **320ms once it is up.** Under about a third of a second a change on screen is a flicker
+ *   rather than a state. It costs nothing on the fast path, because the skeleton was never shown
+ *   there; the worst case is an answer that arrives at 160ms being held back until 470ms, and
+ *   that is the price of it never strobing. Paid on the slow path only, which is the one this is
+ *   for in the first place.
+ */
+function Waiting(onShow) {
+    var SHOW_AFTER = 150, MIN_SHOWN = 320;
+    return {
+        visible: false,
+        shown: 0,
+        timer: null,
+
+        start: function () {
+            var self = this;
+            if (this.visible || this.timer) return;
+            this.timer = setTimeout(function () {
+                self.timer = null;
+                self.visible = true;
+                self.shown = Date.now();
+                onShow();
+            }, SHOW_AFTER);
+        },
+
+        /** The answer is in. Take the skeleton down — but not before it has been up long enough
+         *  to have been a state — and then draw whatever really goes there. */
+        settle: function (then) {
+            var self = this;
+            clearTimeout(this.timer);
+            this.timer = null;
+            function finish() { self.visible = false; if (then) then(); }
+            if (!this.visible) { finish(); return; }
+            var left = MIN_SHOWN - (Date.now() - this.shown);
+            if (left <= 0) { finish(); return; }
+            setTimeout(finish, left);
+        }
+    };
+}
+
+var Waits = {
+    tx: Waiting(function () { renderTranscript(); }),
+    list: Waiting(function () { renderList(); })
+};
+
+/** Bars of uneven length, in the transcript's own grid, so the real entries land where these
+ *  were rather than somewhere near them. The widths are fixed rather than random: a skeleton
+ *  that reshuffles itself between two sessions is a second thing moving on screen. */
+function txSkeleton() {
+    var shapes = [[88, 54], [96, 78, 43], [71], [92, 61, 34]];
+    return '<div class="skel" role="status" aria-label="' + esc(T.webReading) + '">' +
+        shapes.map(function (widths) {
+            return '<div class="entry skel-entry"><div class="who"><span class="bar"></span></div>' +
+                '<div class="body">' + widths.map(function (w) {
+                    return '<span class="bar" style="width:' + w + '%"></span>';
+                }).join("") + "</div></div>";
+        }).join("") + "</div>";
+}
+
+/** The same idea for the list, in the shape of the rows about to replace it. It goes into the
+ *  empty state's own element: the rows below it are keyed by session id, and a placeholder with
+ *  no session behind it has no business in that collection. */
+function drawListSkeleton() {
+    var widths = [[64, 41], [78, 52], [49, 37], [71, 45]];
+    els["list-empty"].className = "skel";
+    els["list-empty"].hidden = false;
+    els["list-empty"].innerHTML = '<div role="status" aria-label="' + esc(T.webLoading) + '">' +
+        widths.map(function (pair) {
+            return '<div class="skel-row"><span class="bar mark"></span>' +
+                '<span class="bar line" style="width:' + pair[0] + '%"></span>' +
+                '<span class="bar sub" style="width:' + pair[1] + '%"></span></div>';
+        }).join("") + "</div>";
 }
 
 /* ==========================================================================
@@ -2791,21 +3983,30 @@ function renderHints() {
 function loadTranscript(id, quiet) {
     if (!quiet) {
         S.tx = { id: id, entries: [], signature: null, loading: true, error: null };
+        // Only the loud kind waits visibly. A refetch behind a transcript that is already on
+        // screen has nothing to stand in for — the reader is reading the last version of it.
+        Waits.tx.start();
         renderTranscript();
     }
     api.transcript(id).then(function (d) {
-        if (S.openId !== id) return;                    // the reader moved on while this was in flight
+        if (S.openId !== id) { Waits.tx.settle(); return; }   // the reader moved on mid-flight
         // The signature is the server's own answer to "is this the same transcript". Trusting it
         // is what keeps a refetch from throwing the reader's scroll position away every few seconds.
-        if (d.signature && d.signature === S.tx.signature) { S.tx.loading = false; return; }
+        if (d.signature && d.signature === S.tx.signature) {
+            S.tx.loading = false;
+            Waits.tx.settle(renderTranscript);
+            return;
+        }
         var stick = atBottom();
         S.tx = { id: id, entries: d.entries || [], signature: d.signature || null, loading: false, error: null };
-        renderTranscript();
-        if (stick) toBottom();
+        Waits.tx.settle(function () {
+            renderTranscript();
+            if (stick) toBottom();
+        });
     }).catch(function (e) {
-        if (S.openId !== id) return;
-        S.tx = { id: id, entries: [], signature: null, loading: false, error: e.message || "Could not read the transcript" };
-        renderTranscript();
+        if (S.openId !== id) { Waits.tx.settle(); return; }
+        S.tx = { id: id, entries: [], signature: null, loading: false, error: e.message || T.webTranscriptFailed };
+        Waits.tx.settle(renderTranscript);
     });
 }
 
@@ -2912,6 +4113,7 @@ document.addEventListener("keydown", function (ev) {
     }
 
     if (key === "Escape") {
+        if (!els.settings.hidden) { Settings.close(); return; }
         if (!els.keys.hidden) { els.keys.hidden = true; return; }
         if (document.activeElement === els.filter) {
             if (S.filter) { els.filter.value = ""; S.filter = ""; render(); }
@@ -2925,6 +4127,8 @@ document.addEventListener("keydown", function (ev) {
 
     if (typing(document.activeElement)) return;
     if (meta || ev.altKey) return;
+    // A sheet is over the page, so `j` is not "move down the list behind it".
+    if (!els.settings.hidden) return;
 
     switch (key) {
         case "ArrowDown": case "j": ev.preventDefault(); move(1); break;
@@ -2966,7 +4170,7 @@ els.conn.addEventListener("click", function () { if (api.refresh) api.refresh();
 
 els["tx-focus"].addEventListener("click", function () {
     if (!S.openId) return;
-    api.focus(S.openId).then(function () { toast("Asked the app to bring it forward"); })
+    api.focus(S.openId).then(function () { toast(T.webShowOnMacAsked); })
         .catch(function (e) { toast(e.message, true); });
 });
 
@@ -2974,6 +4178,156 @@ els["tx-focus"].addEventListener("click", function () {
 window.addEventListener("popstate", function () {
     if (phone() && els.app.dataset.view === "detail") closeDetail();
 });
+
+els["stale-go"].addEventListener("click", function () { location.reload(); });
+
+/* ---- arriving at a session from somewhere else ---------------------------
+ *
+ * A notification about a session carries `/#session=<id>`, and tapping it landed on the session
+ * list. Three things had to be true for it to land on the session; this file was the third.
+ *
+ * **A fragment is only read when a document loads.** Sending an already-open page to
+ * `/#session=abc` changes the address and navigates nothing — same document, no reload, and this
+ * page had no other opinion about the fragment, so the tap put the app in front of somebody at
+ * the screen they were already on. The service worker now sends a message as well, for the case
+ * where it cannot navigate the client at all; both roads end here.
+ *
+ * The id is held rather than acted on when the list has not arrived yet: a cold start routes
+ * before it knows what sessions exist, and `onSessions` tries again with every list.
+ */
+var wantedSession = null;
+
+function sessionInHash(hash) {
+    var found = /(?:^|[#&])session=([^&]*)/.exec(String(hash || ""));
+    if (!found || !found[1]) return null;
+    try { return decodeURIComponent(found[1]); } catch (e) { return found[1]; }
+}
+
+function routeTo(hash) {
+    var id = sessionInHash(hash);
+    if (!id) return;
+    wantedSession = id;
+    openWanted();
+}
+
+/** Open the session the URL asked for, if it is in the list yet. */
+function openWanted() {
+    if (!wantedSession) return false;
+    if (!byId(wantedSession)) return false;
+    var id = wantedSession;
+    wantedSession = null;
+    openSession(id);
+    return true;
+}
+
+window.addEventListener("hashchange", function () { routeTo(location.hash); });
+
+// The service worker's `{type: "navigate", url}`. It is sent to a focused client instead of
+// navigating it, because a client the worker does not control cannot be navigated at all and a
+// URL that differs only in its fragment would not reload one that it could.
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", function (ev) {
+        var data = ev && ev.data;
+        if (!data || data.type !== "navigate" || typeof data.url !== "string") return;
+        var cut = data.url.indexOf("#");
+        var hash = cut < 0 ? "" : data.url.slice(cut);
+        if (!sessionInHash(hash)) return;      // `/` — the test push, and nothing to route to
+        // Written into the address as well as acted on, so that a reload from here lands in the
+        // same place. Setting it fires `hashchange`, which routes; when it is already what we
+        // were sent, nothing fires and this does the routing itself.
+        if (hash === location.hash) routeTo(hash);
+        else location.hash = hash;
+    });
+}
+
+/* ---- the settings sheet -------------------------------------------------- */
+
+/**
+ * What is true of this browser on this device, which is a different question from anything in
+ * the list behind it — so it is somewhere else rather than louder.
+ *
+ * It came out of a footer that held a "Stop" button and a sentence, permanently, on every screen.
+ * Turning notifications off again is a once-a-year press and it was costing a row of a phone
+ * display for ever; what stays in the flow is the one state that is asking to be pressed, and
+ * everything else moved in here behind the wordmark.
+ */
+var Settings = (function () {
+    var testing = false;
+
+    /** What just happened, said in the sheet rather than in a toast. A toast has gone by the
+     *  time somebody has looked at their lock screen to see whether the test arrived. */
+    function say(words, calm) {
+        els["settings-notify-said"].textContent = words || "";
+        els["settings-notify-said"].className = "said" + (calm ? " calm" : "");
+    }
+
+    return {
+        busy: function () { return testing; },
+
+        open: function () {
+            els.settings.hidden = false;
+            say("");
+            els["settings-version"].textContent =
+                S.version ? fill(T.webSettingsVersion, { v: S.version }) : "";
+            Push.redraw();
+            els["settings-close"].focus({ preventScroll: true });
+        },
+
+        close: function () { els.settings.hidden = true; },
+        toggle: function () { if (els.settings.hidden) this.open(); else this.close(); },
+
+        /** The notifications block, drawn from the state Push worked out. */
+        drawNotify: function (state, busy) {
+            els["settings-notify-say"].textContent = {
+                homescreen: T.webNotifyHomeScreen,
+                unsupported: T.webNotifyUnsupported,
+                blocked: T.webNotifyBlocked,
+                on: T.webNotifyOn,
+                off: T.webNotifySheetOff
+            }[state] || "";
+
+            var go = els["settings-notify-go"];
+            go.hidden = !(state === "off" || state === "on");
+            go.disabled = busy;
+            go.textContent = state === "on" ? (busy ? T.webNotifyStopping : T.webNotifyStop)
+                                            : (busy ? T.webNotifyAsking : T.webNotifyGo);
+            go.classList.toggle("on", state === "on");
+
+            // Only offered where there is something subscribed for it to reach.
+            var test = els["settings-notify-test"];
+            test.hidden = state !== "on";
+            test.disabled = testing;
+            test.textContent = testing ? T.webSending : T.webNotifyTest;
+        },
+
+        test: function () {
+            if (testing || typeof api.pushTest !== "function") return;
+            testing = true;
+            say("");
+            Push.redraw();
+            api.pushTest().then(function () {
+                say(T.webNotifyTestSent, true);
+            }).catch(function (e) {
+                // A 409 is not a failure to apologise for: it means this browser believes
+                // notifications are on and the Mac has nothing to send to. That is a state with
+                // a one-sentence way out of it, and saying the sentence is more use than an
+                // error toast with a number in it.
+                say(e && e.code === "not_subscribed" ? T.webNotifyTestNone
+                    : (e && e.message) || T.webNotifyTestFailed);
+            }).then(function () {
+                testing = false;
+                Push.redraw();
+            });
+        }
+    };
+})();
+
+els.brand.addEventListener("click", function () { Settings.toggle(); });
+els.settings.addEventListener("click", function () { Settings.close(); });
+els["settings-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
+els["settings-close"].addEventListener("click", function () { Settings.close(); });
+els["settings-notify-go"].addEventListener("click", function () { Push.toggle(); });
+els["settings-notify-test"].addEventListener("click", function () { Settings.test(); });
 
 /* ---- notifications ------------------------------------------------------- */
 
@@ -3054,18 +4408,24 @@ var Push = (function () {
 
     function draw() {
         state = busy ? state : decide();
-        var say = els["notify-say"], go = els["notify-go"];
-        els.notify.classList.toggle("on", state === "on");
-        go.hidden = !(state === "off" || state === "on");
-        go.disabled = busy;
-        if (state === "off") go.textContent = busy ? "Asking…" : "Notify me";
-        if (state === "on") go.textContent = busy ? "Stopping…" : "Stop";
-        say.textContent =
-            state === "homescreen" ? "Add clawdline to your home screen and open it from there — iOS only sends notifications to an app that lives there."
-            : state === "unsupported" ? "This browser cannot show notifications."
-            : state === "blocked" ? "Notifications are blocked for this site. That switch is in the browser's own settings, not here."
-            : state === "on" ? "This device is told when a session is waiting."
-            : "when a session is waiting for an answer";
+        // **Only the two states somebody can act on from here keep a place in the flow.** Off is
+        // an offer and needs a button; on iOS in a tab there is no button to have, and the one
+        // sentence that gets somebody to a working notification is the whole feature until they
+        // have read it. Everything else — already on, blocked, this browser cannot — is a fact
+        // rather than a thing to do, and a fact does not get a permanent row of the screen.
+        var inFlow = state === "off" || state === "homescreen";
+        els.notify.hidden = !inFlow;
+        els.notify.dataset.state = state;
+        // The footer was paying the home indicator's inset for the scroller above it.
+        els.notify.parentNode.dataset.notify = inFlow ? "on" : "off";
+
+        els["notify-go"].hidden = state !== "off";
+        els["notify-go"].disabled = busy;
+        els["notify-go-label"].textContent = busy ? T.webNotifyAsking : T.webNotifyGo;
+        els["notify-say"].textContent =
+            state === "homescreen" ? T.webNotifyHomeScreen : T.webNotifyOff;
+
+        Settings.drawNotify(state, busy);
     }
 
     function enable() {
@@ -3086,11 +4446,14 @@ var Push = (function () {
                 subscribed = true;
                 remember(d && d.id);
                 busy = false; draw();
-                toast("This device will be told when a session is waiting");
+                // Straight to the sheet, because the moment permission has been granted is the
+                // moment somebody wants proof — and the test button is in there. A toast saying
+                // "this will work now" is the page asking to be taken on trust.
+                Settings.open();
             });
         }).catch(function (e) {
             busy = false; draw();
-            toast(e && e.message ? e.message : "Could not turn notifications on", true);
+            toast(e && e.message ? e.message : T.webNotifyOnFailed, true);
         });
     }
 
@@ -3111,11 +4474,12 @@ var Push = (function () {
             busy = false; draw();
         }).catch(function (e) {
             busy = false; draw();
-            toast(e && e.message ? e.message : "Could not turn notifications off", true);
+            toast(e && e.message ? e.message : T.webNotifyOffFailed, true);
         });
     }
 
     return {
+        redraw: draw,
         start: function () {
             draw();
             if (decide() === "unsupported" || decide() === "homescreen") return;
@@ -3229,7 +4593,7 @@ var Shots = (function () {
         els.shots.innerHTML = list.map(function (shot) {
             return '<div class="shot"><img src="' + shot.url + '" alt="' + esc(shot.name) + '">' +
                 '<button type="button" class="drop" data-shot="' + shot.id +
-                '" aria-label="Remove ' + esc(shot.name) + '">×</button></div>';
+                '" aria-label="' + esc(fill(T.webRemoveShot, { name: shot.name })) + '">×</button></div>';
         }).join("");
         renderComposer();
     }
@@ -3253,9 +4617,9 @@ var Shots = (function () {
                 // A HEIC sometimes arrives with an empty type, so the extension gets a say.
                 return /^image\//.test(f.type) || /\.(hei[cf]|jpe?g|png|gif|webp)$/i.test(f.name || "");
             });
-            if (!wanted.length) { toast("Only pictures can go with a message", true); return; }
+            if (!wanted.length) { toast(T.webShotsOnlyPictures, true); return; }
             if (list.length + wanted.length > MAX_COUNT) {
-                toast(MAX_COUNT + " pictures is the most one message can carry", true);
+                toast(fill(T.webShotsTooMany, { n: MAX_COUNT }), true);
                 wanted = wanted.slice(0, Math.max(0, MAX_COUNT - list.length));
                 if (!wanted.length) return;
             }
@@ -3264,16 +4628,16 @@ var Shots = (function () {
             wanted.forEach(function (file) {
                 shrink(file).then(function (shot) {
                     if (shot.url.length > MAX_EACH) {
-                        toast("That picture is too big to send, even shrunk", true);
+                        toast(T.webShotTooBig, true);
                         return;
                     }
                     if (total() + shot.url.length > MAX_TOTAL) {
-                        toast("Those pictures are too big to send together", true);
+                        toast(T.webShotsTooBig, true);
                         return;
                     }
                     list.push({ id: ++seq, url: shot.url, name: file.name || "picture" });
                 }).catch(function () {
-                    toast("That picture could not be read", true);
+                    toast(T.webShotUnreadable, true);
                 }).then(function () {
                     busy -= 1;
                     draw();
@@ -3329,16 +4693,79 @@ document.addEventListener("paste", function (ev) {
         pane.classList.remove("dropping");
         if (!carriesFiles(ev)) return;
         ev.preventDefault();
-        if (!S.openId || !S.write) { toast("Open a session to send a picture to it", true); return; }
+        if (!S.openId || !S.write) { toast(T.webShotNeedsSession, true); return; }
         Shots.add(ev.dataTransfer.files);
     });
 })();
 
 /* ---- the composer -------------------------------------------------------- */
 
+/**
+ * What is in the box, as text.
+ *
+ * `innerText` and never `textContent`: the second one strips the line breaks out, and being able
+ * to write a second line is the entire reason this is a `contenteditable` rather than a field.
+ * A non-breaking space becomes an ordinary one on the way out — a browser puts them in on its
+ * own, and one hiding in a shell command somebody pasted is a command that will not run.
+ */
+function msgText() {
+    return String(els.msg.innerText || "").replace(/\u00A0/g, " ").trim();
+}
+
+/** Whether the placeholder should be showing. See the note on `.composer .msg.blank`. */
+function blankness() {
+    els.msg.classList.toggle("blank", !msgText());
+}
+
+/** The caret at the end of whatever is in the box, for the times the page moves the focus
+ *  itself — the start is where it would otherwise land, and nobody wants to type there. */
+function caretToEnd() {
+    var range = document.createRange();
+    range.selectNodeContents(els.msg);
+    range.collapse(false);
+    var selection = window.getSelection();
+    if (!selection) return;
+    selection.removeAllRanges();
+    selection.addRange(range);
+}
+
+/** Text into the box at the caret, keeping the undo stack. `execCommand` is deprecated and is
+ *  still the only thing that does that; the range is the fallback for the day it goes. */
+function insertText(text) {
+    if (!text) return;
+    try {
+        if (document.execCommand && document.execCommand("insertText", false, text)) return;
+    } catch (e) { /* the range, then */ }
+    var selection = window.getSelection();
+    if (!selection || !selection.rangeCount) return;
+    var range = selection.getRangeAt(0);
+    range.deleteContents();
+    var node = document.createTextNode(text);
+    range.insertNode(node);
+    range.setStartAfter(node);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+}
+
 els.msg.addEventListener("input", function () {
-    els.msg.style.height = "auto";
-    els.msg.style.height = Math.min(140, els.msg.scrollHeight) + "px";
+    blankness();
+    renderComposer();
+});
+
+// Nothing goes in while a send is in flight. This rather than switching the editability off,
+// which would take the focus and the keyboard with it.
+els.msg.addEventListener("beforeinput", function (ev) { if (sending) ev.preventDefault(); });
+
+// Plain text, explicitly, even though `plaintext-only` covers most of it: what a browser does
+// with a rich paste is worth being sure about rather than nearly sure about. A pasted picture is
+// not text and is left to the document's own handler, which puts it in the attachments.
+els.msg.addEventListener("paste", function (ev) {
+    var files = ev.clipboardData && ev.clipboardData.files;
+    if (files && files.length) return;
+    ev.preventDefault();
+    insertText((ev.clipboardData || window.clipboardData).getData("text/plain") || "");
+    blankness();
     renderComposer();
 });
 els.msg.addEventListener("keydown", function (ev) {
@@ -3347,11 +4774,25 @@ els.msg.addEventListener("keydown", function (ev) {
     // how you accept the candidate the IME is offering — it is a keystroke aimed at the input
     // method, not at us, and acting on it sends whatever is in the box before the person has
     // finished the word they are writing. `isComposing` is the browser telling us which one this
-    // is; keyCode 229 is the same fact from browsers that predate it.
+    // is; keyCode 229 is the same fact from browsers that predate it. This one is checked on
+    // both paths, because on a touch screen the candidate picker is the whole of how Chinese is
+    // typed and a Return swallowed there is a word lost.
     if (ev.isComposing || ev.keyCode === 229) return;
+    // **On a touch screen Return is a new line and the button is how you send.** The other way
+    // round there is no way to write a second line at all — the on-screen keyboard has one
+    // Return and it was spending it on sending — which made this box worse than every messaging
+    // app on the same phone. Where there is a real keyboard, Return still sends and Shift-Return
+    // still breaks the line, because that is the muscle memory there and taking it away would be
+    // its own complaint.
+    if (!hasKeyboard()) return;
     ev.preventDefault();
     submit();
 });
+// Pressing a button takes the focus off whatever had it, and what had it is the box somebody is
+// typing in — so on a phone every message would close the keyboard and open it again. The click
+// still happens; only the focus change is refused.
+els.send.addEventListener("mousedown", function (ev) { ev.preventDefault(); });
+els.attach.addEventListener("mousedown", function (ev) { ev.preventDefault(); });
 els.composer.addEventListener("submit", function (ev) { ev.preventDefault(); submit(); });
 
 /// True from the moment a send starts until its answer comes back.
@@ -3369,14 +4810,18 @@ var sending = false;
 
 function submit() {
     if (sending || Shots.busy()) return;
-    var text = els.msg.value.trim();
+    var text = msgText();
     var pictures = Shots.urls();
     if ((!text && !pictures.length) || !S.openId || !S.write) return;
     sending = true;
-    els.send.disabled = true;
+    renderComposer();
     api.send(S.openId, text, pictures).then(function () {
-        els.msg.value = "";
-        els.msg.style.height = "auto";
+        // Every child node goes, not just the words: the placeholder is drawn from what
+        // `innerText` says, and a `<br>` the browser left behind would keep the box looking
+        // like it still had something in it.
+        els.msg.textContent = "";
+        blankness();
+        if (document.activeElement === els.msg) caretToEnd();
         // Cleared here and not before: a send that failed still has its pictures attached, and
         // the reader can press the button again rather than going back to the camera roll.
         Shots.clear();
@@ -3388,9 +4833,63 @@ function submit() {
             renderComposer();
             renderDetailHead();
         }
-        toast(e.message || "Could not send", true);
+        // The words are still in the box — they were never taken out of it — so the press can
+        // simply be repeated. A composer that clears itself and then fails is a composer that
+        // ate somebody's message.
+        toast(e.message || T.sendFailed, true);
     }).then(function () { sending = false; renderComposer(); });
 }
+
+/* ---- the strip above the keyboard ---------------------------------------- */
+
+/**
+ * The `^ v` half of the bar iOS draws over the keyboard.
+ *
+ * It is there because the document has other things to tab to — the filter box first of all, and
+ * the buttons in the header — and it is a pair of arrows that jump the writer out of the message
+ * they are writing and into a search field. While the composer has the focus there is nothing
+ * else on this page anybody wants to reach with them, so nothing else is in the tab order.
+ *
+ * **The `✓` is not ours and does not go.** There is no API for it: Safari draws it over every
+ * real text field, and the only technique that removes the bar entirely is to stop using one —
+ * a `contenteditable` div — which would put input-method composition, paste and the placeholder
+ * at risk to tidy up a button. `autocomplete="off"` does not do it either; that attribute is
+ * about autofill and has never had anything to say about this strip.
+ */
+(function keyboardBar() {
+    var moved = null;
+
+    function offstage() {
+        onstage();
+        moved = [];
+        var all = document.querySelectorAll("a[href], button, input, select, textarea, [tabindex]");
+        for (var i = 0; i < all.length; i++) {
+            var el = all[i];
+            if (el === els.msg || el.getAttribute("tabindex") === "-1") continue;
+            moved.push([el, el.getAttribute("tabindex")]);
+            el.setAttribute("tabindex", "-1");
+        }
+    }
+
+    function onstage() {
+        if (!moved) return;
+        moved.forEach(function (pair) {
+            if (pair[1] === null) pair[0].removeAttribute("tabindex");
+            else pair[0].setAttribute("tabindex", pair[1]);
+        });
+        moved = null;
+    }
+
+    els.msg.addEventListener("focus", offstage);
+    els.msg.addEventListener("blur", onstage);
+    // The transcript is rebuilt under the writer while they write — a session that is working
+    // sends a new one every few seconds — and every rebuild puts fresh buttons into the tab
+    // order behind their back. So it is done again after a render, while the box still has the
+    // focus. Cheap: it is a query and a few attribute writes.
+    document.addEventListener("clawdline:rendered", function () {
+        if (document.activeElement === els.msg) offstage();
+    });
+})();
 
 /* ---- pull to refresh, phones only ---------------------------------------- */
 
@@ -3415,7 +4914,7 @@ function submit() {
         if (raw <= 0) { distance = 0; pad.style.height = "0px"; return; }
         distance = Math.min(90, Math.pow(raw, 0.82));
         pad.style.height = distance + "px";
-        label.textContent = distance >= THRESHOLD ? "Release to refresh" : "Pull to refresh";
+        label.textContent = distance >= THRESHOLD ? T.webPullRelease : T.webPull;
     }, { passive: true });
 
     function end() {
@@ -3424,12 +4923,12 @@ function submit() {
         pad.classList.remove("dragging");
         if (distance >= THRESHOLD && !busy) {
             busy = true;
-            label.textContent = "Refreshing…";
+            label.textContent = T.webPullBusy;
             pad.style.height = "34px";
             Promise.resolve(api.refresh ? api.refresh() : null).then(function () {
                 setTimeout(function () {
                     pad.style.height = "0px";
-                    label.textContent = "Pull to refresh";
+                    label.textContent = T.webPull;
                     busy = false;
                 }, 260);
             });
@@ -3472,11 +4971,55 @@ var mark = {
 drawIcon(els["brand-mark"], mark, 3);
 drawIcon(els["door-mark"], mark, 3);
 
-renderConn();
-renderTranscript();
-render();
-api.start();
-Push.start();
+/**
+ * Nothing is drawn until the interface has its words.
+ *
+ * The strings are the one thing the page cannot start without and cannot get for itself: they
+ * decide what every label says, and repainting the furniture a moment after it has been read is
+ * how a page comes to look like it changed its mind. So the first render waits, and the head of
+ * this document holds the paint back while it does.
+ *
+ * Everything that can go wrong here ends the same way — the English already written into the
+ * markup stands, and the page comes up. That is what it is in the document for.
+ */
+var booted = false;
+function boot(data) {
+    if (booted) return;
+    booted = true;
+    // Off first, and before anything that can throw: a page that is visible and half in English
+    // is a page, and a page that is permanently invisible is not.
+    document.documentElement.classList.remove("booting");
+    try { applyStrings(data); } catch (e) { /* English, then */ }
+    paintStatic();
+
+    renderConn();
+    renderTranscript();
+    render();
+    // Read before the transport starts: `adoptToken` wipes the fragment when there is a token in
+    // it, and a URL can carry both.
+    routeTo(location.hash);
+    Waits.list.start();
+    api.start();
+    Push.start();
+}
+
+if (location.protocol === "file:") {
+    // A copy opened off a disk has no server to ask, and asking one that is not there is the
+    // failed request in an otherwise clean console that teaches somebody to stop reading it.
+    boot(null);
+} else {
+    // Not through `jsonFetch`: its own "could not reach Clawdline" is one of the strings being
+    // fetched here, and a page cannot explain a failure in words it has not been given yet.
+    // `no-store` because the answer depends on a header no cache is keyed on.
+    fetch("/v1/strings", { cache: "no-store" })
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .catch(function () { return null; })
+        .then(boot);
+    // And a page that is never drawn at all is worse than one drawn in English. A local answer
+    // takes a millisecond; something in front of a tunnel on a bad connection takes longer, and
+    // two seconds is well past the point where a dark rectangle stops reading as "loading".
+    setTimeout(function () { boot(null); }, 2000);
+}
 
 // A page left open all day: "2m ago" is only true for a minute. The timestamps are rewritten in
 // place rather than by rendering the transcript again — a re-render replaces the whole pane, and

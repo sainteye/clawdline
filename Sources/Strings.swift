@@ -225,11 +225,302 @@ protocol Copy {
     /// half that says what happened — short, because a lock screen truncates and the important
     /// word should not be the one that gets cut.
     var pushWaiting: String { get }
+    /// The body of `clawdline://push?test=1`. It has to be unmistakably a test — one that
+    /// reads like a real notification teaches somebody to distrust the real ones.
+    var pushTest: String { get }
+    /// The body of the "a long turn finished" notification, off by default. Past tense, because
+    /// by the time this arrives the thing is done — "finished" and "is finishing" are a lock
+    /// screen apart and only one of them means you can stop waiting.
+    var pushFinished: String { get }
+    /// The two ends of a deploy. Kept apart rather than one string with a word swapped in: the
+    /// languages this speaks do not all agree on where that word goes, and the failure is the one
+    /// that has to be unmistakable at a glance.
+    var pushDeployOk: String { get }
+    var pushDeployFail: String { get }
+    var settingsPushFinish: String { get }
+    var settingsPushFinishHint: String { get }
+    var settingsPushDeploy: String { get }
+    var settingsPushDeployHint: String { get }
     /// A number of seconds, as a settings row shows it.
     ///
     /// Here rather than as a bare "s" because it is the one unit in that window that reads as a
     /// foreign word: "1.8 s" is not how a duration is written in every language that this speaks.
     func settingsSeconds(_ value: Double) -> String
+
+    // The web interface — see Resources/web/index.html and Sources/RemoteServer.swift
+    //
+    // Every word the page says comes from here, fetched once from `GET /v1/strings` before the
+    // first render. The page holds an English copy of all of it as a fallback and translates
+    // nothing itself: the person holding the phone is not necessarily the person the Mac belongs
+    // to, and a second set of these sentences living in the HTML would be a second thing to
+    // translate and the first thing to forget.
+    //
+    // Three conventions, and between them they are all the markup these strings may carry:
+    //
+    // - **`{name}` is a hole the page fills in** — a count, the words somebody typed into the
+    //   filter, how long a pairing code has left. Keep every one that is in the English, and put
+    //   it where the sentence wants it; one that goes missing is a number that never arrives.
+    // - **`*asterisks*` mark the emphasised words**, drawn bold. Move the pair to whichever
+    //   words carry the weight in your language rather than to the same position.
+    // - **`` `backticks` `` mark something typed at a machine** — a flag, a key on a keyboard —
+    //   drawn in the page's code face. What is between them is not translated.
+    //
+    // Nothing else is markup. Every one of these is escaped on the way to the screen, so a tag
+    // written into a translation arrives as the tag somebody typed rather than as a tag.
+
+    /// The connection chip, top right. Four words for four states, and they are lower case
+    /// because the chip is furniture: it is read when something is wrong and ignored otherwise.
+    var webConnLive: String { get }
+    var webConnConnecting: String { get }
+    var webConnRetrying: String { get }
+    var webConnOffline: String { get }
+    var webConnLocked: String { get }
+    var webConnTipLive: String { get }
+    var webConnTipLocked: String { get }
+    var webConnTipDown: String { get }
+
+    /// The header's counts. Sentence fragments on purpose — they are joined with a separator
+    /// into one line, so none of them may end in a full stop.
+    var webCountWorking: String { get }
+    var webCountWaiting: String { get }
+    var webCountUnreadable: String { get }
+    /// Said when nothing is working, waiting or unreadable, which is the ordinary state of a
+    /// machine. Two of them because English counts one session differently from five; a language
+    /// that does not can write the same sentence twice.
+    var webCountQuietOne: String { get }
+    var webCountQuietMany: String { get }
+    var webCountNone: String { get }
+
+    var webFilterPlaceholder: String { get }
+    /// Read aloud rather than seen: the box beside it says what it is by being a search box.
+    var webFilterLabel: String { get }
+    var webListLabel: String { get }
+    var webPull: String { get }
+    var webPullRelease: String { get }
+    var webPullBusy: String { get }
+    /// The empty states, each a heading and a line under it. There are four, and telling them
+    /// apart is the whole point: no sessions, none that match what was typed, not paired yet,
+    /// and nothing has arrived yet — one of those is somebody's fault and three are not.
+    var webEmptyFilterTitle: String { get }
+    var webEmptyFilterHint: String { get }
+    var webEmptyLockedTitle: String { get }
+    var webEmptyLockedHint: String { get }
+    var webEmptyNoneHint: String { get }
+    var webEmptyWaitTitle: String { get }
+    var webEmptyWaitHint: String { get }
+    /// A row whose screen could not be read. Not "idle": a session that could not be looked at
+    /// is not a session doing nothing, and drawing it as one is a confident wrong answer.
+    var webStateUnreadable: String { get }
+    var webStateWorking: String { get }
+
+    /// The way back to the list on a phone. A chevron is drawn in front of it, so this is the
+    /// word alone.
+    var webBack: String { get }
+    var webBackLabel: String { get }
+    var webNoSessionOpen: String { get }
+    var webOrderTip: String { get }
+    /// The button that brings a session's terminal to the front **on the Mac**.
+    ///
+    /// It was called "Reveal", which is a Finder verb that does not survive being taken out of
+    /// Finder — and it sat next to a sort control, so the two read as the same kind of thing.
+    /// Name it after what it does, and say where it happens: the press has its effect on another
+    /// machine, which is the one fact somebody holding a phone needs before they press it.
+    var webShowOnMac: String { get }
+    var webShowOnMacTip: String { get }
+    var webShowOnMacOff: String { get }
+    var webShowOnMacAsked: String { get }
+    var webPickSession: String { get }
+    /// Read out where a skeleton is drawn, and never seen — the skeleton is the visible half.
+    var webReading: String { get }
+    var webLoading: String { get }
+    var webTranscriptFailed: String { get }
+    /// Who said a line, in the transcript's left margin. Drawn in small capitals, so: one short
+    /// word each. Claude's own name is not here — it is a name, and it is not translated.
+    var webWhoYou: String { get }
+    var webWhoTool: String { get }
+    /// How many tool calls a folded run stands for. The web's spelling of ``foldedTools``, which
+    /// cannot cross a JSON boundary as a function.
+    var webSteps: String { get }
+    var webJustNow: String { get }
+    var webMinutesAgo: String { get }
+
+    var webSend: String { get }
+    var webAttach: String { get }
+    var webRemoveShot: String { get }
+    var webWriteOpen: String { get }
+    /// Why the composer will not take what you type. `write: false` is the server's own answer,
+    /// quoted rather than described, so that somebody searching for it finds this sentence.
+    var webWriteOff: String { get }
+    var webShotsOnlyPictures: String { get }
+    var webShotsTooMany: String { get }
+    var webShotTooBig: String { get }
+    var webShotsTooBig: String { get }
+    var webShotUnreadable: String { get }
+    var webShotNeedsSession: String { get }
+
+    /// The key row along the bottom of a desktop window. Same rule as ``hintSend`` and the rest:
+    /// one row, no wrapping, so a long word here pushes another one off the end.
+    var webHintMove: String { get }
+    var webHintOpen: String { get }
+    var webHintFilter: String { get }
+    var webHintPane: String { get }
+
+    var webKeysLabel: String { get }
+    var webKeysTitle: String { get }
+    var webKeysMove: String { get }
+    var webKeysOpen: String { get }
+    var webKeysFilter: String { get }
+    var webKeysEscape: String { get }
+    var webKeysList: String { get }
+    var webKeysPane: String { get }
+    var webKeysEnds: String { get }
+    var webKeysReverse: String { get }
+    var webKeysThis: String { get }
+    var webKeysFoot: String { get }
+
+    // The door — the whole page until the server knows who is asking.
+    var webDoorLabel: String { get }
+    var webDoorAskLede: String { get }
+    /// The one paragraph that has to land. **The code is shown on the Mac and nowhere else**, and
+    /// that is not a hurdle to apologise for — it is the entire security property, so say it as
+    /// the reason it is.
+    var webDoorAskFine: String { get }
+    var webDoorName: String { get }
+    var webDoorAsk: String { get }
+    var webDoorToPassword: String { get }
+    var webDoorCodeLede: String { get }
+    /// `{left}` is a clock counting down, and it is replaced every second — so the words on
+    /// either side of it have to read with `1:58` in the middle as well as with the first
+    /// version of it, which is ``webDoorTwoMinutes``.
+    var webDoorCodeFine: String { get }
+    var webDoorTwoMinutes: String { get }
+    var webDoorDigit: String { get }
+    var webDoorConfirm: String { get }
+    var webDoorRestart: String { get }
+    var webDoorPasswordLede: String { get }
+    var webDoorPasswordFine: String { get }
+    var webDoorPassword: String { get }
+    var webDoorPasswordGo: String { get }
+    var webDoorToPair: String { get }
+    var webDoorAsking: String { get }
+    var webDoorAskFailed: String { get }
+    /// Added to the server's own refusal when somebody has asked three times. Without it,
+    /// "rate limited" reads as a fault rather than as a door working correctly.
+    var webDoorRateLimited: String { get }
+    var webDoorSixDigits: String { get }
+    var webDoorChecking: String { get }
+    var webDoorFinished: String { get }
+    var webDoorWrongCode: String { get }
+    var webDoorNeedPassword: String { get }
+    var webDoorWrongPassword: String { get }
+    var webDoorExpired: String { get }
+    var webDoorPaired: String { get }
+
+    /// What a request that never arrived says. The browser's own words for this are "Failed to
+    /// fetch", which is not an explanation anybody can act on.
+    var webOffline: String { get }
+    var webNotJSON: String { get }
+    var webRequestFailed: String { get }
+
+    // Notifications. Four states and only one of them is "on" — a button that has been pressed
+    // and did nothing is the worst of them, so each state says which one it is in words.
+    var webNotifyGo: String { get }
+    var webNotifyAsking: String { get }
+    var webNotifyStop: String { get }
+    var webNotifyStopping: String { get }
+    /// The line under the button while notifications are off. It finishes the sentence the
+    /// button starts — "Notify me" *when a session is waiting for an answer* — so it begins in
+    /// lower case and carries no full stop.
+    var webNotifyOff: String { get }
+    /// Shown in the settings sheet once this device is subscribed.
+    ///
+    /// **It deliberately does not say what a notification is for.** What sets one off is decided
+    /// on the Mac — a session waiting, a long turn finishing, a deploy ending, and more later —
+    /// and a page that lists them from memory is a page that will be wrong about it. Where the
+    /// switches are is the useful half, and it is the half this can be sure of.
+    var webNotifyOn: String { get }
+    var webNotifyBlocked: String { get }
+    var webNotifyUnsupported: String { get }
+    /// **On iOS this is the entire feature until it has been read.** The push API is absent from
+    /// a Safari tab — not broken, absent — so there is no button to press and nothing to explain
+    /// afterwards; this sentence is shown instead of one.
+    var webNotifyHomeScreen: String { get }
+    var webNotifyOnFailed: String { get }
+    var webNotifyOffFailed: String { get }
+
+    // The settings sheet, behind the wordmark in the top left.
+    //
+    // **Nothing app-level is allowed to charge rent on the list.** Turning notifications off is a
+    // once-a-year press, and as a permanent footer it was taking a row of every phone screen from
+    // the only thing the page is for. What is still in the flow is the one state that is asking
+    // to be pressed; everything else lives in here.
+    var webSettings: String { get }
+    var webSettingsNotify: String { get }
+    var webSettingsVersion: String { get }
+    var webClose: String { get }
+    /// The sheet's version of ``webNotifyOff``. That one finishes the button's sentence and is a
+    /// fragment; in here there is no button above it to finish, so it is a sentence of its own.
+    var webNotifySheetOff: String { get }
+    /// **The answer to "did that actually work".** The alternative was waiting for a real session
+    /// to need you, which is a long way to go to find out whether a key was minted correctly —
+    /// and the moment permission has just been granted is exactly when somebody wants proof.
+    var webNotifyTest: String { get }
+    var webNotifyTestSent: String { get }
+    /// What a 409 from `/v1/push/test` means, said plainly. It is not a failure to explain away:
+    /// this browser thinks notifications are on and the Mac has nothing to send to, and the way
+    /// out of that is one sentence long.
+    var webNotifyTestNone: String { get }
+    var webNotifyTestFailed: String { get }
+    /// On the send button while a message is in flight, and on the test button too. It used to
+    /// say "Send" throughout, which on a phone over a tunnel is a second of a page that looks
+    /// like it did nothing — and a second is long enough to press it again.
+    var webSending: String { get }
+    /// Hover text on the send button, and **only where there is a keyboard to do it with**. On a
+    /// touch screen Return is a new line and the button is how you send, the way it is in every
+    /// messaging app — so there is nothing to explain there and this is not shown.
+    var webSendTip: String { get }
+
+    // Starting a session from the page — see `GET /v1/places` and `POST /v1/places/:id/start`.
+    //
+    // The page never names a directory: it shows a list the Mac built and sends back an id. So
+    // these words are about *choosing among what is offered*, never about typing a path, and a
+    // translation that invites somebody to enter one is describing a thing that does not exist.
+    var webStart: String { get }
+    var webStartLabel: String { get }
+    var webStartPick: String { get }
+    /// Shown when the Mac has no projects to offer. It has to say what would put one there —
+    /// an empty list with no explanation reads as a broken feature rather than a new machine.
+    var webStartEmpty: String { get }
+    var webStartFilter: String { get }
+    var webStarting: String { get }
+    /// The gap between the tab existing and the session reporting in. **The tab is already open
+    /// by the time this shows**, so the words must not suggest the request is still in doubt —
+    /// somebody who reads this as "it might not have worked" presses the button again and gets a
+    /// second tab.
+    var webStartWaiting: String { get }
+    var webStartSlow: String { get }
+    var webStartFailed: String { get }
+    var webStartGone: String { get }
+    /// `{app}` is the terminal's macOS display name, substituted by the page.
+    var webStartTerminalClosed: String { get }
+    var webStartTerminalUnsupported: String { get }
+    var webStartOff: String { get }
+
+    // A question with a menu on it — see `Transcript.askPayload` and the ask block in the page.
+    //
+    // The important one is `webWaitingSend`. A picker throws away a bracketed paste and then acts
+    // on the Return after it, so typing from a phone **confirms whatever row is highlighted**.
+    // The server now refuses that outright; this is the sentence that says why, and its emphasis
+    // is load-bearing rather than decorative.
+    var webAskLabel: String { get }
+    var webAskAny: String { get }
+    var webWaitingTitle: String { get }
+    var webWaitingSay: String { get }
+    var webWaitingSend: String { get }
+    /// A page that has been open since before the Mac was rebuilt. It does not reload itself —
+    /// somebody may be mid-sentence in the composer.
+    var webStale: String { get }
+    var webStaleGo: String { get }
 
     // Menu bar
     var menuOpen: String { get }
@@ -247,6 +538,7 @@ protocol Copy {
     var loginFailed: String { get }
 }
 
+/// The reference values, for the extension below and for nothing else.
 enum L {
     /// The active language. Cached because it is read on every redraw.
     private(set) static var t: Copy = pick()
@@ -283,6 +575,28 @@ enum L {
         ("id", Indonesian()),
         ("tr", Turkish()),
     ]
+
+    /// The BCP-47 tag for a `Copy`, for the page's `<html lang>`.
+    ///
+    /// Read back out of ``catalog`` rather than carried on `Copy` itself: the catalog is already
+    /// the one list of what this app speaks, and a tag stored a second time on each translation
+    /// is a second thing that can disagree with it. The first entry for a script wins, which is
+    /// why `zh-Hant` comes before `zh-TW` up there — a browser can do more with the script than
+    /// with one region of it.
+    static func tag(of copy: Copy) -> String {
+        catalog.first(where: { type(of: $0.copy) == type(of: copy) })?.tag ?? "en"
+    }
+
+    /// `ltr` or `rtl`, for the page's `<html dir>`.
+    ///
+    /// Every language in the catalog today is written left to right, so this answers `ltr` every
+    /// time — but it answers it by asking rather than by assuming, because the day Arabic or
+    /// Hebrew is added the page should already be laying itself out the right way round rather
+    /// than waiting for somebody to notice.
+    static func direction(of tag: String) -> String {
+        let rightToLeft = ["ar", "he", "fa", "ur", "yi", "ps", "sd", "ckb"]
+        return rightToLeft.contains(where: { tag.hasPrefix($0) }) ? "rtl" : "ltr"
+    }
 
     private static func pick() -> Copy {
         let want = Config.shared.language

@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Runs whatever somebody put in `on_state_change`, and nothing at all when that is empty
         // — which it is until they do. See Sources/StateHook.swift.
         StateHook.observe()
+        DeployWatch.observe()
         NotificationCenter.default.addObserver(self, selector: #selector(configChanged),
                                                name: .clawdlineConfigChanged, object: nil)
 
@@ -284,6 +285,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch url.host ?? "" {
         case "toggle":
             PromptController.shared.toggle()
+        case "push":
+            // `clawdline://push?test=1` — send one, to everything subscribed.
+            //
+            // A notification feature you cannot fire on purpose is one nobody trusts: the only
+            // other way to see it is to make a session ask you a question and wait, which is a
+            // long way to go to find out whether a key was minted correctly. It says what it is
+            // in the notification itself, so a test that arrives is never mistaken for a session
+            // that needs you.
+            WebPush.send(title: "Clawdline", body: L.t.pushTest, url: "/", tag: "test")
+            Log.write("push: test sent to \(WebPush.subscriptions.count) subscription(s)")
         case "settings":
             SettingsWindow.shared.show()
         case "hooks":

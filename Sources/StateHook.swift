@@ -196,6 +196,21 @@ enum StateHook {
     /// only one thread ever touches would be a lock explaining nothing.
     private static var previous: [String: SessionState] = [:]
 
+    /// When each session started the turn it is in the middle of.
+    ///
+    /// Only exists to answer "was this one long enough to be worth a buzz". Keyed by session id
+    /// and cleared the moment the turn ends, so a machine that has been up for a week holds one
+    /// entry per session that is working right now and nothing else.
+    private static var startedWorking: [String: Date] = [:]
+
+    /// How long a turn has to have run before finishing it is news.
+    ///
+    /// Two minutes, because that is roughly the point where somebody stops watching. Under it you
+    /// were still looking at the screen — the notch already told you, and a second telling is the
+    /// same fact arriving late. Over it you had gone to do something else, which is the entire
+    /// case for a notification.
+    static let finishThreshold: TimeInterval = 120
+
     /// Start listening.
     ///
     /// Seeded from the reading that already happened, and that is the difference between switching
@@ -256,6 +271,20 @@ enum StateHook {
         for change in changes where change.to == .waiting {
             WebPush.send(title: projectName(for: change.session),
                          body: L.t.pushWaiting,
+                         url: "/#session=\(change.session.id)",
+                         tag: change.session.id)
+        }
+
+        // "It finished" — off unless asked for, and thresholded even then. See `finishThreshold`
+        // for why the unthresholded version is the mistake.
+        let now = Date()
+        for change in changes {
+            if case .working = change.to { startedWorking[change.session.id] = now; continue }
+            guard let began = startedWorking.removeValue(forKey: change.session.id) else { continue }
+            guard Config.shared.pushOnFinish, change.to == .idle else { continue }
+            guard now.timeIntervalSince(began) >= finishThreshold else { continue }
+            WebPush.send(title: projectName(for: change.session),
+                         body: L.t.pushFinished,
                          url: "/#session=\(change.session.id)",
                          tag: change.session.id)
         }

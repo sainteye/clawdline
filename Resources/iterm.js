@@ -4,7 +4,7 @@
 // TTY on modern macOS (TIOCSTI is gone). iTerm2's `write text` is supported, stable, and
 // does not require bringing the window forward — which is the entire point of this tool.
 //
-// Usage: osascript -l JavaScript iterm.js <list|current|send|key|capture|tails|reveal> [args...]
+// Usage: osascript -l JavaScript iterm.js <list|current|send|key|capture|tails|reveal|newtab> [args...]
 
 function run(argv) {
   const cmd = argv[0] || "list";
@@ -153,17 +153,22 @@ function run(argv) {
     return JSON.stringify(hit ? { ok: true } : { ok: false, error: "That session is gone" });
   }
 
-  // newtab <cwd> <command>
+  // newtab <line>
   //
-  // Open a tab and start something in it. Used by the remote API so a session can be started
+  // Open a tab and type one line into it. Used by the remote API so a session can be started
   // from a phone — the one operation that is not "talk to a session that already exists".
   //
-  // The command is typed, not exec'd: iTerm2 gives you a shell and this writes a line into it,
-  // which is why `cd` and the command go over as one line rather than as a working directory
-  // setting. Quoted the shell's way, because directories with spaces in them are ordinary.
+  // The line is typed, not exec'd: iTerm2 gives you a shell and this writes into it, which is why
+  // `cd` and the command arrive as one line rather than as a working directory setting. **It
+  // arrives already quoted.** It used to be assembled here out of a directory and a command, and
+  // that put the string that actually runs on the far side of an osascript call where nothing on
+  // the Swift side could look at it; it is built by StartPoints.itermLine now.
+  //
+  // Nothing here calls activate(). Whoever asked for this is holding a phone, and the person at
+  // the Mac — if there is one — is in the middle of something else.
   if (cmd === "newtab") {
-    const cwd = String(argv[1] || "");
-    const command = String(argv[2] || "");
+    const line = String(argv[1] || "");
+    if (!line) return JSON.stringify({ ok: false, error: "Nothing to run" });
     let w, t;
     try {
       w = it.currentWindow();
@@ -183,9 +188,6 @@ function run(argv) {
       return JSON.stringify({ ok: false, error: "The new tab has no session" });
     }
 
-    let line = "";
-    if (cwd) line += "cd " + quoted(cwd) + " && ";
-    line += command || "claude";
     try { s.write({ text: line, newline: true }); } catch (e) {
       return JSON.stringify({ ok: false, error: "Could not start it: " + e.message });
     }
@@ -204,11 +206,6 @@ function run(argv) {
   }
 
   return JSON.stringify({ ok: false, error: "Unknown command: " + cmd });
-}
-
-/// A path going into a shell command line, the only way that is always right.
-function quoted(path) {
-  return "'" + String(path).split("'").join("'\\''") + "'";
 }
 
 // Do not call this `delay` — JXA has a built-in global by that name, and shadowing it makes

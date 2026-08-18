@@ -256,13 +256,22 @@ enum ITerm {
         return out
     }
 
-    /// Open a tab and start something in it.
+    /// Open a tab and type one line into it.
     ///
     /// The one operation that is not "talk to a session that already exists", and the only reason
     /// it is here rather than being left to the person at the keyboard: from a phone there is no
-    /// keyboard to go to. Returns the new session's id and tty, or the reason it did not happen.
-    static func newTab(cwd: String, command: String) -> (id: String, tty: String)? {
-        let res = osa(["newtab", cwd, command])
+    /// keyboard to go to. Returns the new session's id and tty, or nil if it did not happen.
+    ///
+    /// **The line arrives built and quoted.** It used to arrive as a directory and a command and
+    /// be assembled inside `iterm.js`, which meant the string that actually ran only existed on
+    /// the far side of an `osascript` call — so the quoting could only be exercised by executing
+    /// it, which is the one thing a test must not do. It is built by
+    /// ``StartPoints/itermLine(cwd:)`` now, where it is an ordinary value.
+    ///
+    /// Nothing here brings iTerm2 forward: the tab is made and written into, and the app stays
+    /// wherever it was. Whoever asked for this is not at the keyboard.
+    static func newTab(line: String) -> (id: String, tty: String)? {
+        let res = osa(["newtab", line])
         guard res["ok"] as? Bool == true,
               let id = res["id"] as? String, !id.isEmpty else { return nil }
         return (id, res["tty"] as? String ?? "")

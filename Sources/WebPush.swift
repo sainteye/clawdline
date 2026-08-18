@@ -476,9 +476,16 @@ enum WebPush {
         return String(base64url(Data(digest)).prefix(32))
     }
 
+    /// Send to everything subscribed, or — with `device` — only to what that one device
+    /// subscribed with.
+    ///
+    /// The filter exists for the test button. **Pressing "send me one" on a phone should buzz
+    /// that phone**, not every device anybody has ever paired: a test whose blast radius is
+    /// larger than the thing being tested teaches you to be careful with it, which is the
+    /// opposite of what a test button is for.
     static func send(title: String, body: String, url: String?, tag: String? = nil,
-                     completion: (() -> Void)? = nil) {
-        let targets = subscriptions
+                     device: String? = nil, completion: (() -> Void)? = nil) {
+        let targets = device.map { id in subscriptions.filter { $0.device == id } } ?? subscriptions
         guard !targets.isEmpty else {
             // Nothing to do, and in particular no VAPID key minted: a machine that has never had a
             // browser subscribe should not be growing key material because a session changed state.

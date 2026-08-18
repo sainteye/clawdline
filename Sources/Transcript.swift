@@ -317,9 +317,11 @@ enum Transcript {
                                  text: text, tool: nil, time: time))
             case "tool_use":
                 let name = block["name"] as? String ?? "tool"
-                out.append(Entry(kind: .tool,
-                                 text: summarise(input: block["input"]),
-                                 tool: name, time: time))
+                // A question is the one tool call whose arguments are the whole point of it, so
+                // it carries them rather than a line describing them. See `askPayload`.
+                let text = (name == askTool ? askPayload(input: block["input"]) : nil)
+                    ?? summarise(input: block["input"])
+                out.append(Entry(kind: .tool, text: text, tool: name, time: time))
             case "tool_result":
                 let text = firstLine(of: block["content"])
                 guard !text.isEmpty else { continue }
@@ -375,6 +377,103 @@ enum Transcript {
             rest = rest[end.upperBound...]
         }
         return out + rest
+    }
+
+    // MARK: - The question tool
+
+    /// The tool Claude Code stops on when it wants a decision rather than a file.
+    static let askTool = "AskUserQuestion"
+
+    /// What an ``askTool`` entry's text starts with, so a reader can tell data from a summary.
+    ///
+    /// Every other tool's `text` is one line describing what it was asked to do — a command, a
+    /// path — because that is all a reader wants from a step that has already happened. **A
+    /// question is not a step that has already happened.** Its arguments *are* the content: the
+    /// sentence somebody has to answer and the options they may answer it with, and a one-line
+    /// summary of that is a question you cannot answer.
+    ///
+    /// So this one entry carries its arguments, and the marker is what stops a renderer that has
+    /// not been taught about it from drawing JSON at somebody. The character is `U+0001`, which
+    /// no transcript contains and no keyboard produces.
+    ///
+    /// It rides in `text` because that is the field there is. The wire between the Mac and the
+    /// web interface carries `role`, `text`, `tool` and a time and nothing else, and a second
+    /// field would have to be added at both ends at once.
+    static let askMarker = "\u{1}ask\u{1}"
+
+    /// One question as it was asked. Several can arrive in one call.
+    struct Question {
+        var header: String
+        var text: String
+        /// Several answers are wanted, not one. The terminal draws these with checkboxes and
+        /// does not close when one is pressed, which is a different thing to answer.
+        var multiSelect: Bool
+        var options: [Option]
+
+        struct Option {
+            var label: String
+            var note: String
+        }
+    }
+
+    /// The questions in an ``askTool`` call, ready to travel as an entry's text.
+    ///
+    /// `nil` for anything that is not recognisably a question, which sends the caller back to
+    /// ``summarise(input:)`` — the shape is not documented and a tool that has changed underneath
+    /// this should read as a plain tool call rather than as an empty box.
+    static func askPayload(input: Any?) -> String? {
+        guard let dict = input as? [String: Any],
+              let asked = dict["questions"] as? [[String: Any]] else { return nil }
+
+        var items: [[String: Any]] = []
+        for question in asked {
+            let text = clean(question["question"])
+            var row: [String: Any] = ["q": text]
+            let header = clean(question["header"])
+            if !header.isEmpty { row["h"] = header }
+            if question["multiSelect"] as? Bool == true { row["m"] = true }
+
+            var options: [[String: Any]] = []
+            for option in (question["options"] as? [[String: Any]] ?? []) {
+                let label = clean(option["label"])
+                guard !label.isEmpty else { continue }
+                var out: [String: Any] = ["l": label]
+                let note = clean(option["description"])
+                if !note.isEmpty { out["d"] = note }
+                options.append(out)
+            }
+            row["o"] = options
+            guard !text.isEmpty || !options.isEmpty else { continue }
+            items.append(row)
+        }
+        guard !items.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: items,
+                                                     options: [.withoutEscapingSlashes]),
+              let json = String(data: data, encoding: .utf8) else { return nil }
+        return askMarker + json
+    }
+
+    /// The other end of ``askPayload(input:)``. `nil` when this is an ordinary tool call.
+    static func askQuestions(in text: String) -> [Question]? {
+        guard text.hasPrefix(askMarker) else { return nil }
+        guard let data = String(text.dropFirst(askMarker.count)).data(using: .utf8),
+              let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        else { return nil }
+
+        let questions = rows.map { row in
+            Question(header: row["h"] as? String ?? "",
+                     text: row["q"] as? String ?? "",
+                     multiSelect: row["m"] as? Bool ?? false,
+                     options: (row["o"] as? [[String: Any]] ?? []).compactMap { option in
+                         guard let label = option["l"] as? String, !label.isEmpty else { return nil }
+                         return Question.Option(label: label, note: option["d"] as? String ?? "")
+                     })
+        }
+        return questions.isEmpty ? nil : questions
+    }
+
+    private static func clean(_ value: Any?) -> String {
+        (value as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func summarise(input: Any?) -> String {
@@ -480,6 +579,13 @@ extension Transcript {
                 .foregroundColor: NSColor.secondaryLabelColor,
                 .paragraphStyle: toolStyle,
             ])
+            if let questions = askQuestions(in: entry.text) {
+                // A question is the one tool call worth reading in full, so it gets the prose
+                // treatment the conversation gets rather than a truncated line of monospace.
+                add("\n", [.font: toolFont, .paragraphStyle: toolStyle])
+                block.append(prose(markdown(of: questions), body: body, mono: mono))
+                return
+            }
             if !entry.text.isEmpty {
                 add("  " + entry.text, [.font: toolFont,
                                         .foregroundColor: NSColor.tertiaryLabelColor,
@@ -529,7 +635,10 @@ extension Transcript {
                 // The run still going is the one worth watching, so the tail never folds —
                 // folding it would hide exactly the part that is changing.
                 let isTail = i >= entries.count
-                if isTail || names.count < 2 || expanded.contains(key) {
+                // A question never folds. Folding is for machinery nobody reads, and this is the
+                // one tool call that is a sentence addressed to the reader.
+                let asks = run.contains { $0.tool == askTool && askQuestions(in: $0.text) != nil }
+                if isTail || asks || names.count < 2 || expanded.contains(key) {
                     for e in run { e.kind == .tool ? renderTool(e) : renderResult(e) }
                 } else {
                     add("⏵ ", [.font: toolFont, .foregroundColor: Style.accent,
@@ -575,6 +684,31 @@ extension Transcript {
     static func distinct(_ names: [String]) -> [String] {
         var seen = Set<String>()
         return names.filter { seen.insert($0).inserted }
+    }
+
+    /// A question laid out as the Markdown the prose renderer already knows how to draw.
+    ///
+    /// **Data only, no sentences.** Everything in here came out of the transcript and is already
+    /// in whatever language the conversation is in; a line of this file's own English explaining
+    /// how to answer would be the one untranslated thing on the page. What that needs saying,
+    /// the surface drawing it says in its own words.
+    ///
+    /// The numbers are not decoration: they are what the terminal's own picker answers to, so an
+    /// option's number here is the key somebody presses there.
+    static func markdown(of questions: [Question]) -> String {
+        var lines: [String] = []
+        for question in questions {
+            if !lines.isEmpty { lines.append("") }
+            if !question.header.isEmpty { lines.append("#### " + question.header) }
+            if !question.text.isEmpty { lines.append(question.text) }
+            if !question.options.isEmpty { lines.append("") }
+            for (index, option) in question.options.enumerated() {
+                var line = "\(index + 1). **\(option.label)**"
+                if !option.note.isEmpty { line += " — " + option.note }
+                lines.append(line)
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 
     /// Body text goes through the Markdown renderer, because what Claude Code writes is

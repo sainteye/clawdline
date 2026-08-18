@@ -379,7 +379,7 @@ Two files, and they answer different questions.
 ```
 08-18 17:27:40.875  remote: listening on http://127.0.0.1:7717/
 08-18 17:35:12.857  remote: listener failed — The operation couldn’t be completed. (Network.NWError error 48 - Address already in use)
-08-18 18:07:47.243  remote: POST /v1/sessions by 8ce3a4bf-2a81-408a-b327-b4b8b6b96909 → 200
+08-18 18:07:47.243  remote: POST /v1/places/3b9e26c1587facfd/start by 0f3c1d92-7a44-4c18-9b30-2e6f5a81c407 → 200
 ```
 
 Error 48 is the common one and it means what it says: something else has `remote_port`. Change the
@@ -394,8 +394,8 @@ answer at all unless it was written down while it was happening.
 
 ```jsonl
 {"at":1787046782,"device":"scanner","event":"pair.begin"}
-{"at":1787047664,"device":"This Mac","event":"device.add","id":"8ce3a4bf-2a81-408a-b327-b4b8b6b96909"}
-{"at":1787047667,"command":"echo remote-created-this-tab","cwd":"/Users/you/code/clawdline","event":"session.create","id":"A29D71F4-CE00-46D0-888A-5F00109FDCFE"}
+{"at":1787047664,"device":"This Mac","event":"device.add","id":"0f3c1d92-7a44-4c18-9b30-2e6f5a81c407"}
+{"at":1787047667,"cwd":"/Users/you/code/clawdline","event":"place.start","id":"B71E04A9-3D52-4F6B-A118-7C0946DE2B33","ok":"1","place":"3b9e26c1587facfd"}
 ```
 
 Every line has `at` (Unix seconds) and `event`. The rest depends on the event:
@@ -411,7 +411,7 @@ Every line has `at` (Unix seconds) and `event`. The rest depends on the event:
 | `device.caps` | the write switch moved | `id`, `caps` — e.g. `read+send` |
 | `password.set` / `password.clear` / `password.fail` | | `device` on a failure |
 | `session.send` | **text typed into a session** | `id`, `tty`, `chars`, `ok` |
-| `session.create` | a session started from outside | `cwd`, `command`, `id` |
+| `place.start` | a session started from outside | `place`, `cwd`, `ok`, and `id` or `why` |
 | `session.focus` | a session brought to the front | `id` |
 
 `session.send` records the length of what was sent and not the text, and `ok` is `"1"` or `"0"` —
