@@ -2,14 +2,16 @@
 
 # Clawdline
 
-**One bar for every Claude Code session you have open.**
+**One bar for every Claude Code session already running on your Mac.**
 
 Type into it and the message lands in whichever session you point it at.
 Press <kbd>⌘</kbd><kbd>J</kbd> and that session reads back where you are already looking — laid
 out, not scraped. Press <kbd>⌘</kbd><kbd>K</kbd> and every session is a row that says what it is
 doing: **working, finished, or waiting for an answer.**
 
-Nothing is installed into Claude Code. iTerm2 directly, every other terminal through tmux.
+Nothing is installed into Claude Code — it reads the screen each session is already drawing, so
+**the four you opened by hand an hour ago are there too**, not only the ones something dispatched
+for you. iTerm2 directly, every other terminal through tmux.
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13%2B-black.svg)](#install)

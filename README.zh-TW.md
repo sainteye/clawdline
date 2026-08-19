@@ -2,14 +2,16 @@
 
 # Clawdline
 
-**一條輸入條，管你開著的每一個 Claude Code session。**
+**一條輸入條，管這台 Mac 上正在跑的每一個 Claude Code session。**
 
 打完字按 Enter，內容進到你指定的那個 session。
 按 <kbd>⌘</kbd><kbd>J</kbd>，那個 session 就在你眼睛已經在看的地方讀得回來——是**排版過的**，
 不是刮畫面。按 <kbd>⌘</kbd><kbd>K</kbd>，每個 session 都是一行，而那一行會說它在做什麼：
 **在跑、跑完了、還是在等你回答。**
 
-不會在 Claude Code 裡裝任何東西。iTerm2 直接支援，其餘終端機透過 tmux。
+不會在 Claude Code 裡裝任何東西——它讀的是每個 session 本來就在畫的螢幕，
+所以**你一小時前自己開的那四個也在裡面**，不只是被派出去的那些。
+iTerm2 直接支援，其餘終端機透過 tmux。
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13%2B-black.svg)](#安裝)
