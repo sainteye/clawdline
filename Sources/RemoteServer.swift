@@ -193,7 +193,27 @@ final class RemoteServer {
 
     /// Every route that answers with a body and closes. Split out from the connection handling so
     /// that a test can ask it a question without opening a socket.
+    /// Everything that leaves here, with a cache policy applied at the door.
+    ///
+    /// **A response with no `Cache-Control` is not uncached — it is cached by guesswork.** With no
+    /// header a browser applies heuristic freshness, and Safari on a home-screen web app is
+    /// particularly willing to keep a 200 indefinitely. That produced the worst possible pairing:
+    /// the page held an interface from an hour ago while `/v1/health` reported a newer build, so
+    /// it correctly told its reader they were out of date and then served them the same stale copy
+    /// every time they reloaded. **A warning nobody can act on is worse than no warning**, and the
+    /// check could not even see itself, because the health answer was cacheable too.
+    ///
+    /// So: `no-store` unless a route asked for something else. The only routes that do are the
+    /// drawn icons and splashes, which are the same picture for everybody and are worth a day.
     func route(_ request: Request) -> Response {
+        var response = dispatch(request)
+        if response.headers["Cache-Control"] == nil {
+            response.headers["Cache-Control"] = "no-store"
+        }
+        return response
+    }
+
+    private func dispatch(_ request: Request) -> Response {
         // Before anything else, and before authentication, because these two refusals are about
         // *who is allowed to be asking at all* rather than about who they are.
         if let refusal = crossOriginRefusal(request) { return refusal }

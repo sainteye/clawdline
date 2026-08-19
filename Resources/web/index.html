@@ -1567,6 +1567,12 @@ var phone = function () { return window.matchMedia("(max-width: 899px)").matches
  *
  * Read each time rather than once: a keyboard can be attached to a tablet while the page is open.
  */
+/// Whether this page is being read on the machine that is serving it.
+function atMac() {
+    var h = location.hostname;
+    return h === "127.0.0.1" || h === "localhost" || h === "::1" || h === "[::1]";
+}
+
 function hasKeyboard() {
     return !!(window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
 }
@@ -3381,6 +3387,19 @@ function renderDetailHead() {
     drawIcon(els["detail-mark"], s && s.icon, 5);
     els["tx-order-label"].textContent = S.newestFirst ? T.webOrderNewest : T.webOrderOldest;
     els["tx-order"].classList.toggle("on", S.newestFirst);
+    // **Hidden unless this page is being read on the Mac itself.**
+    //
+    // The button brings a session's terminal to the front over there. Pressed from a phone it
+    // does something real and entirely invisible to the person pressing it, which is the
+    // definition of a control that should not be on screen — and it is sitting in a two-chip
+    // header where the session's own name is what gets truncated to make room for it.
+    //
+    // The test is where the page was *loaded from*, not the screen width and not whether a
+    // keyboard is attached: an iPad with a Magic Keyboard is not at the Mac either, and a narrow
+    // window on the Mac still is. Loopback means the browser and the app are the same machine.
+    // Reaching it at a LAN address while sitting at the Mac hides a button that would have
+    // worked, which is a much smaller mistake than offering one that cannot be seen to work.
+    els["tx-focus"].hidden = !atMac();
     els["tx-focus"].disabled = !s || !S.write;
     els["tx-focus"].title = S.write ? T.webShowOnMacTip : T.webShowOnMacOff;
 }

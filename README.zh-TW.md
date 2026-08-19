@@ -725,7 +725,7 @@ CR                                     ← 再單獨送一個 Return 才送出
   "remote_tunnel": "off",                // off | quick | named
   "remote_tunnel_name": "",              // 要跑的 named tunnel；named 模式必填，沒有預設值
   "remote_hostname": "",                 // 你自己的網域，named tunnel 用
-  "push_on_finish": false,               // 超過兩分鐘的一輪結束時震一下
+  "push_on_finish": true,                // 超過兩分鐘的一輪結束時震一下
   "push_on_deploy": false,               // deploy 不再跑的時候震一下，成功失敗都送
 }
 ```

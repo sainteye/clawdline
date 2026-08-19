@@ -834,7 +834,7 @@ of the file â€” including settings from a version that knew about more of them â
   "remote_tunnel": "off",                // off | quick | named
   "remote_tunnel_name": "",              // the named tunnel to run; required for "named", no default
   "remote_hostname": "",                 // your own domain, for a named tunnel
-  "push_on_finish": false,               // buzz when a turn over two minutes ends
+  "push_on_finish": true,                // buzz when a turn over two minutes ends
   "push_on_deploy": false,               // buzz when a deploy stops running, either way
 }
 ```

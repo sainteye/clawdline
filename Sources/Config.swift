@@ -155,11 +155,18 @@ final class Config {
     /// a space in it is a path, not two arguments. See Sources/StateHook.swift.
     /// Buzz when a turn that took a while finishes, not when any turn finishes.
     ///
-    /// Off by default, and there is a threshold underneath even when it is on, because the
-    /// unthresholded version is the mistake: a turn ends dozens of times a day and missing one
-    /// costs nothing — it will still be finished when you look. What is worth a notification is
-    /// the one you walked away from. See `StateHook.finishThreshold`.
-    var pushOnFinish = false
+    /// **On by default, and the threshold underneath is what makes that defensible.** A turn ends
+    /// dozens of times a day and the unthresholded version would be unusable; over two minutes it
+    /// is a different event, because two minutes is roughly where somebody stops watching and goes
+    /// to do something else. See `StateHook.finishThreshold`.
+    ///
+    /// This was off when it shipped, on the argument that a notification you already knew about
+    /// trains you to ignore the ones you did not. The owner's call on 2026-08-19 was the other
+    /// way, and the reasoning is worth keeping: at this volume a notification arriving is itself
+    /// useful confirmation the thing works, and **a rule elaborate enough to suppress the
+    /// redundant ones is a rule nobody can debug when it goes quiet**. A feature that is off by
+    /// default is also a feature most people never find.
+    var pushOnFinish = true
     /// Buzz when a deploy stops running.
     ///
     /// A better candidate than the one above and for the opposite reason: deploys are rare, and
