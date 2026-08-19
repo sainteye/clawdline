@@ -22,8 +22,10 @@ VERSION="${1:-}"
 echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "!! not a version: $VERSION"; exit 2; }
 
 TAG="v$VERSION"
-WORK="$(mktemp -d)/clawdline"
-trap 'rm -rf "$(dirname "$WORK")"' EXIT
+TMP="$(mktemp -d)"
+WORK="$TMP/src"      # the worktree, removed as soon as the build is done
+OUT="$TMP/out"       # **outside it**, or removing the worktree takes the build with it
+trap 'rm -rf "$TMP"' EXIT
 
 # --- the checks, all of them before anything leaves this machine ------------------------------
 
@@ -46,15 +48,15 @@ echo "== tests"
 
 echo "== worktree at $(git rev-parse --short HEAD)"
 git worktree add --quiet --detach "$WORK" HEAD
-( cd "$WORK" && CLAWDLINE_APP="$WORK/out/Clawdline.app" ./build.sh >/dev/null )
+( cd "$WORK" && CLAWDLINE_APP="$OUT/Clawdline.app" ./build.sh >/dev/null )
 git worktree remove --force "$WORK" 2>/dev/null || true
 
-[ -d "$WORK/out/Clawdline.app" ] || { echo "!! nothing was built"; exit 1; }
-BUILT="$(defaults read "$WORK/out/Clawdline.app/Contents/Info" CFBundleShortVersionString)"
+[ -d "$OUT/Clawdline.app" ] || { echo "!! nothing was built"; exit 1; }
+BUILT="$(defaults read "$OUT/Clawdline.app/Contents/Info" CFBundleShortVersionString)"
 [ "$BUILT" = "$VERSION" ] || { echo "!! the built app says $BUILT, not $VERSION"; exit 1; }
 
-ZIP="$WORK/out/Clawdline-$VERSION.zip"
-( cd "$WORK/out" && ditto -c -k --keepParent "Clawdline.app" "Clawdline-$VERSION.zip" )
+ZIP="$OUT/Clawdline-$VERSION.zip"
+( cd "$OUT" && ditto -c -k --keepParent "Clawdline.app" "Clawdline-$VERSION.zip" )
 echo "== built $(du -h "$ZIP" | cut -f1)"
 
 # --- publish ------------------------------------------------------------------------------------
