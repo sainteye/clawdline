@@ -934,6 +934,32 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     margin-bottom: 9px;
 }
 .composer .waiting[hidden] { display: none; }
+
+/* The line Claude Code draws for itself, above the box you type in.
+   On a phone the session list is a different screen, so once you are inside a conversation
+   there is nothing at all saying whether it is still running — the Mac has the notch and the
+   footer for that and the phone has neither. Quiet on purpose: it is on screen for minutes at
+   a time, so it is dim and monospace rather than another coloured panel competing with the
+   warning above it, which is the one that actually needs somebody to stop. */
+.composer .live {
+    display: flex; align-items: center; gap: 7px;
+    padding: 0 2px 8px;
+    color: var(--dim);
+    font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden;
+}
+.composer .live[hidden] { display: none; }
+.composer .live .dot {
+    flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent); animation: livepulse 1.6s ease-in-out infinite;
+}
+.composer .live .said {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@keyframes livepulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.28 } }
+@media (prefers-reduced-motion: reduce) {
+    .composer .live .dot { animation: none; opacity: 0.8 }
+}
 .composer .waiting .title {
     color: var(--accent); font-size: 12.5px; font-weight: 600;
     margin-bottom: 3px;
@@ -1378,6 +1404,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
             <!-- A session that has stopped to ask something, said where the eye already is:
                  directly above the box, at the end of the transcript. -->
             <div class="waiting" id="waiting" role="status" hidden></div>
+            <div class="live" id="live" role="status" hidden></div>
             <div class="shots" id="shots"></div>
             <div class="box">
                 <button class="attach" id="attach" type="button" aria-label="Attach a picture" title="Attach a picture" disabled>+</button>
@@ -1878,7 +1905,7 @@ var S = {
 var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
  "app", "pane-detail", "back", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
- "tx-order", "tx-order-label", "tx-focus", "tx-focus-label",
+ "tx-order", "tx-order-label", "tx-focus", "tx-focus-label", "live",
  "composer", "msg", "send", "why", "waiting", "stale", "stale-say", "stale-go",
  "hints", "keys", "toast", "brand", "brand-mark",
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
@@ -3958,8 +3985,49 @@ function inlineMd(text) {
     });
 
     s = s
-        .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, function (all, label, href) {
-            return safeHref(href) ? '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + "</a>" : all;
+        // Written links and bare ones in **one pass, alternating**, and the order inside the
+        // pattern is the whole trick: at each position the `[label](href)` form is tried first,
+        // so it is consumed whole and the bare rule never sees the URL inside it. Two passes
+        // cannot do this — autolinking afterwards would match the `href="…"` the first pass just
+        // produced and nest an anchor inside an anchor, and autolinking first would eat the
+        // target out of every written link before the markdown rule could read it.
+        //
+        // Safe because `esc` has already run: what is matched here is escaped text, and what is
+        // put in the attribute is the same escaped text, so a `"` in the source is `&quot;` and
+        // cannot close the attribute.
+        .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)|(\bhttps?:\/\/[^\s<]+)/g,
+                 function (all, label, href, bare) {
+            if (!bare) {
+                return safeHref(href)
+                    ? '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + "</a>"
+                    : all;
+            }
+            // Punctuation that ends a sentence is not part of the address. A closing bracket is,
+            // but only if the URL opened one — which is what people writing about Wikipedia keep
+            // discovering. Anything trimmed goes back outside the link, where it was meant to be.
+            var url = bare, tail = "";
+            while (url.length) {
+                var last = url.charAt(url.length - 1);
+                if (")]}".indexOf(last) >= 0) {
+                    var open = "([{".charAt(")]}".indexOf(last));
+                    // `>=`, not `>`: one opened and one closed is balanced, and the closer
+                    // belongs to the address. `>` chopped the tail off `…/Foo_(bar)` — the
+                    // exact case this check was written for.
+                    if (url.split(open).length >= url.split(last).length) break;
+                } else if (".,;:!?'\u201d\u2019&".indexOf(last) < 0) {
+                    break;
+                }
+                // A quote at the end is punctuation around the address, not part of it — and by
+                // this point `esc` has turned it into an entity, so it is six characters.
+                if (/&quot;$/.test(url)) { tail = "&quot;" + tail; url = url.slice(0, -6); continue; }
+                // `&amp;` and friends end in `;`, and chopping the `;` off leaves `&amp` on the
+                // screen — so an entity at the end is left whole.
+                if (last === ";" && /&[a-z]+;$/i.test(url)) break;
+                tail = last + tail;
+                url = url.slice(0, -1);
+            }
+            if (!safeHref(url)) return all;
+            return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + "</a>" + tail;
         })
         // Lazy, and not "no marker inside": the bar recurses into what it finds between two
         // markers, so `**a *b* c**` is bold with an italic in it there. Refusing the whole thing
@@ -4034,6 +4102,7 @@ function renderComposer() {
  * here is the way to put it in front of you.
  */
 var waitingDrawn = null;
+var liveDrawn = null;
 
 function renderWaiting() {
     var box = els.waiting;
@@ -4051,6 +4120,27 @@ function renderWaiting() {
     waitingDrawn = want;
     box.innerHTML = want;
     box.hidden = !want;
+
+    // The live line, from the same reading. Mutually exclusive with the notice above by
+    // construction — a session is working or it is waiting, never both — so the two never
+    // stack. Written only when the text changes: it changes about once a second, and
+    // replacing the node that often would restart its own animation on every beat.
+    var live = els.live;
+    if (live) {
+        var say = open && open.state === "working" && open.line ? open.line : "";
+        if (say !== liveDrawn) {
+            liveDrawn = say;
+            live.textContent = "";
+            if (say) {
+                var d = document.createElement("span"); d.className = "dot";
+                var t = document.createElement("span"); t.className = "said";
+                t.textContent = say;
+                live.appendChild(d); live.appendChild(t);
+            }
+            live.hidden = !say;
+        }
+    }
+
     if (!want) return;
     // A new button, drawn while somebody may be writing. Same reason the transcript says it:
     // the keyboard-bar guard has to put it back out of the tab order.
