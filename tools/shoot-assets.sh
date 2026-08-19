@@ -67,24 +67,38 @@ shot() {  # shot <name> <query> [settle]
   echo "→ $1.png"
 }
 
-strip() {  # strip <name> <script> <seconds> <width> [extra query]
+strip() {  # strip <name> <script> <seconds> <width> [extra query] [fps]
+  local fps="${6:-24}"
   rm -rf "$TMP/$1"
-  open "clawdline://filmstrip?dir=$TMP/$1&script=$2&fps=24&seconds=$3${5:-}"
+  open "clawdline://filmstrip?dir=$TMP/$1&script=$2&fps=$fps&seconds=$3${5:-}"
   # Wait for the frames rather than guessing: a short clip on a loaded machine still takes as
   # long as the machine takes, and a sleep that is usually enough is a sleep that fails on the
   # day somebody is watching.
-  want_frames=$(python3 -c "print(int($3 * 24))")
+  want_frames=$(python3 -c "print(int($3 * $fps))")
   for _ in $(seq 1 60); do
     [ "$(ls "$TMP/$1" 2>/dev/null | grep -c '^f[0-9]*\.png$')" -ge "$want_frames" ] && break
     sleep 1
   done
   [ -f "$TMP/$1/f0000.png" ] || { echo "!! $1: no frames rendered"; exit 1; }
-  ffmpeg -v error -y -framerate 24 -i "$TMP/$1/f%04d.png" \
-    -vf "fps=24,scale=$4:-2:flags=lanczos,palettegen=stats_mode=diff" "$TMP/$1/pal.png"
-  ffmpeg -v error -y -framerate 24 -i "$TMP/$1/f%04d.png" -i "$TMP/$1/pal.png" \
-    -filter_complex "fps=24,scale=$4:-2:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3" \
+  # **Count the frames that came back, and do not accept fewer than were asked for.** This is
+  # what `picker-live.gif` needed and did not have: ffmpeg's image-sequence reader stopped part
+  # way through, wrote a GIF of the first half of the clip, and the run carried on. The file
+  # existed, its first frame was right, and the half of the clip in which the thing being
+  # demonstrated actually happens was simply not in it.
+  got=$(ls "$TMP/$1" | grep -c '^f[0-9]*\.png$')
+  [ "$got" -ge "$want_frames" ] || { echo "!! $1: $got frames, wanted $want_frames"; exit 1; }
+  ffmpeg -v error -y -framerate "$fps" -i "$TMP/$1/f%04d.png" \
+    -vf "fps=$fps,scale=$4:-2:flags=lanczos,palettegen=stats_mode=diff" "$TMP/$1/pal.png"
+  ffmpeg -v error -y -framerate "$fps" -i "$TMP/$1/f%04d.png" -i "$TMP/$1/pal.png" \
+    -filter_complex "fps=$fps,scale=$4:-2:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3" \
     -loop 0 "$OUT/$1.gif"
-  echo "→ $1.gif"
+  # And the same question asked of the GIF, because the two ffmpeg runs above are exactly where
+  # the frames went missing last time.
+  out_frames=$(ffprobe -v error -select_streams v -count_frames \
+    -show_entries stream=nb_read_frames -of csv=p=0 "$OUT/$1.gif")
+  [ "$out_frames" -ge "$want_frames" ] || {
+    echo "!! $1.gif has $out_frames of $want_frames frames — the encode dropped the rest"; exit 1; }
+  echo "→ $1.gif ($out_frames frames)"
 }
 
 # ---- the two pictures that are of a browser --------------------------------
@@ -178,8 +192,17 @@ if needs_app; then
   relaunch
 fi
 
-run_if sessions   shot sessions   "list=demo"          # the still, for the section
-run_if sessions   strip sessions-live sessions 5.2 760   # and the strip, for the top of the page
+# The session list, twice, and the difference between them is the argument each one is making.
+#
+# `sessions-live` is for the top of the page, where the claim is that the *terminal* follows the
+# selection — so it has a terminal drawn behind it with a tab bar and a status line to follow in.
+# `sessions` is for the section, where the claim is about the rows themselves: one answered and
+# going quiet, one finishing, one starting to ask. That was a still until it was pointed out that
+# a still is the one thing which cannot show a state changing, in a section that is entirely
+# about states changing. Same storyboard, same five made-up projects, no terminal — the furniture
+# there would be arguing with the subject.
+run_if sessions   strip sessions      rows     5.2 820
+run_if sessions   strip sessions-live sessions 5.2 760
 # The picker, still and moving. Any pack that did not ship with the app is moved aside first:
 # the picture is what a fresh install has, and somebody else's character does not belong in this
 # repository's README whatever it is doing on this machine.
@@ -194,7 +217,11 @@ if want picker; then
   trap 'restore_packs; restore' EXIT
   relaunch
   shot picker "list=mascots"
-  strip picker-live mascots 4.5 620
+  # Two packs ship, so the walk goes down the list and back up: three beats, two changes, in
+  # opposite directions. One change in the middle of a clip reads as a picture with two halves;
+  # the second change is what says the first one was a selection moving and not a cut. Longer
+  # beats than the other clips for the same reason — the whole claim is that you *look* at it.
+  strip picker-live mascots 5.4 620
   restore_packs
   trap restore EXIT
   relaunch
@@ -202,23 +229,15 @@ fi
 run_if transcript shot transcript "output=1&full=0&transcript=$T" 6
 run_if fullscreen shot fullscreen "output=1&full=1&transcript=$T" 7
 
-# The notch is three states and one strip, left-aligned so the stand-in cutout stays put while
-# the ears grow around it.
-if want island; then
-  for m in working2 waiting finished; do
-    rm -f "$TMP/island-$m.png"
-    open "clawdline://snapshot?path=$TMP/island-$m.png&island=$m"; sleep 3
-  done
-  W=$(for f in "$TMP"/island-*.png; do sips -g pixelWidth "$f" | tail -1 | awk '{print $2}'; done | sort -n | tail -1)
-  H=$(sips -g pixelHeight "$TMP/island-waiting.png" | tail -1 | awk '{print $2}')
-  ffmpeg -v error -y \
-    -loop 1 -t 1.8 -i "$TMP/island-working2.png" \
-    -loop 1 -t 2.4 -i "$TMP/island-waiting.png" \
-    -loop 1 -t 2.0 -i "$TMP/island-finished.png" \
-    -filter_complex "[0]pad=$W:$H:0:0:0x6b6b6b[a];[1]pad=$W:$H:0:0:0x6b6b6b[b];[2]pad=$W:$H:0:0:0x6b6b6b[c];[a][b][c]concat=n=3:v=1:a=0,fps=12,scale=760:-2:flags=lanczos,split[x][y];[y]palettegen=stats_mode=diff[p];[x][p]paletteuse=dither=bayer:bayer_scale=3" \
-    -loop 0 "$OUT/island.gif"
-  echo "→ island.gif"
-fi
+# The notch, demonstrating itself.
+#
+# It used to be three stills padded out with grey and concatenated, which put the shape in the
+# middle of a grey rectangle that read as nothing at all, and could not show the one verb the
+# caption ends on — it *dances* when a long job finishes. It is a clip now, drawn frame by frame
+# by the island itself: the menu bar with the hole in it, and the shape growing out of the hole
+# through the four states in the order the sentence goes. Twelve frames a second, because the
+# character is a pixel drawing in a thirty-eight point band and nobody is counting its legs.
+run_if island strip island island 8.6 1140 "&island=1" 12
 
 run_if demo    strip demo    demo    4.4 760 "&text=add retry with backoff to the upload handler"
 run_if dance   strip dance   dance   2   420

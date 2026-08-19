@@ -1,5 +1,63 @@
 import AppKit
 
+/// One frame of a clip, written to disk in a format that never varies.
+///
+/// **This exists because of a bug that made a picture lie, and the lie was invisible.** Frames
+/// used to be drawn into an `NSImage` and written out through `tiffRepresentation`, and an
+/// `NSImage` picks its depth and its colour space from what is drawn into it and from the screen
+/// it is drawn on — per frame. In `picker-live.gif` that changed halfway through: the frames
+/// before the mascot pack changed came out eight bits a sample tagged with this monitor's own
+/// profile, the ones after it came out sixteen bits tagged Display P3. ffmpeg's image-sequence
+/// reader cannot change format mid-stream, so it stopped at the last frame of the first format
+/// and wrote a GIF of precisely the half of the clip in which nothing happens — a clip captioned
+/// "the character on the bar changes" that had been cut off immediately before it changed. The
+/// file existed, its first frame was right, and nothing anywhere said it was half a clip.
+///
+/// So the buffer is described here instead: sRGB, eight bits a sample, two pixels to the point,
+/// the same for every frame of every clip. That also makes good on what `filmstrip` claims about
+/// itself — that it reproduces on every rerun — which it could not do while the colour space of
+/// the output came from whichever display the machine happened to have.
+enum FilmFrame {
+
+    /// Two, rather than the screen's own factor, for the same reason as everything else here: a
+    /// clip shot on a machine without a Retina display has to come out the same size as one shot
+    /// on a machine with one, or the README's images change size with the contributor.
+    static let scale: CGFloat = 2
+
+    static func write(size: NSSize, to path: String, _ paint: () -> Void) {
+        let w = Int((size.width * scale).rounded()), h = Int((size.height * scale).rounded())
+        guard w > 0, h > 0,
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let cg = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                                 bytesPerRow: 0, space: space,
+                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return }
+        cg.scaleBy(x: scale, y: scale)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: false)
+        paint()
+        NSGraphicsContext.restoreGraphicsState()
+        // **Every frame comes out opaque, and this is what makes sure of it.** Each script fills
+        // the whole canvas before it draws anything, so these frames are opaque by construction —
+        // except along an antialiased edge, where compositing left a hairline of alpha 192 down
+        // both sides of the island. That hairline was enough: `paletteuse` reserved a transparent
+        // entry for it, which changed the way the GIF encodes its inter-frame differences, and
+        // the clip stopped decoding as whole frames. A clip you cannot read frame by frame cannot
+        // be checked, and checking is the entire reason these are drawn rather than recorded.
+        //
+        // Painted *behind* what is already there rather than as a flag on the buffer: a context
+        // without an alpha channel takes a slow path through AppKit's image drawing, and the same
+        // storyboard went from a fifth of a second a frame to three and a half seconds.
+        cg.setBlendMode(.destinationOver)
+        cg.setFillColor(gray: 0, alpha: 1)
+        cg.fill(CGRect(origin: .zero, size: size))
+        guard let image = cg.makeImage(),
+              let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+        else { return }
+        try? png.write(to: URL(fileURLWithPath: path))
+    }
+}
+
 final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     static let shared = PromptController()
 
@@ -2879,13 +2937,19 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
         let fake = Self.standInTarget()
 
+        // Two clips are of the session list and they are about different things, so they are
+        // framed differently. `sessions` is the claim that the *terminal* follows the selection,
+        // and needs room above and below for a tab bar and a status line to follow it in.
+        // `rows` is the claim the list section itself makes — that the rows change state while
+        // you watch — and a terminal drawn behind that is furniture arguing with the subject.
+        let withTerminal = script == "sessions"
         // Room for the tab bar above and the status line below. The other strips are the card on
         // a wallpaper and want none of it.
-        let margin: CGFloat = script == "sessions" ? 108 : 64
+        let margin: CGFloat = withTerminal ? 108 : 64
         textView.clearText()
         // The list has to be up *before* the canvas is measured, or every frame is drawn at the
         // height of a bar with no list under it and the rows fall off the bottom.
-        let listStrip = script == "sessions"
+        let listStrip = withTerminal || script == "rows"
         // The mascot picker's claim is about motion — "the character on the bar changes while the
         // list is still open, so you pick by looking rather than by reading names" — which a still
         // of a list of names is the one thing that cannot show.
@@ -2904,10 +2968,16 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 showStandInSessions(at: t)
                 relayout()
             }
-            if packStrip, !mascotNames.isEmpty {
-                // A beat on each, long enough to look at, walking the list and coming back.
-                let beat = seconds / Double(mascotNames.count)
-                let want = min(mascotNames.count - 1, Int(t / beat))
+            if packStrip, mascotNames.count > 1 {
+                // Down the list and back to the top, which is what the comment here used to
+                // claim and the arithmetic underneath it never did. It matters most with the two
+                // packs that ship: walking down them once is a single change in the middle of
+                // the clip, which reads as a picture that happens to have two halves rather than
+                // as a list being walked. Down and back is two changes, in opposite directions,
+                // and the second one is what says the first was not a cut.
+                let stops = Array(0..<mascotNames.count) + Array((0..<(mascotNames.count - 1)).reversed())
+                let beat = seconds / Double(stops.count)
+                let want = stops[min(stops.count - 1, Int(t / beat))]
                 if want != mascotIndex { pickMascot(want, closeList: false) }
             }
             let step = Self.timeline(script: script, t: t, seconds: seconds, text: text)
@@ -2937,35 +3007,30 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             let panel = NSImage(size: panelSize)
             panel.addRepresentation(rep)
 
-            let out = NSImage(size: canvas)
-            out.lockFocus()
-            if listStrip {
-                Self.drawTerminal(NSRect(origin: .zero, size: canvas),
-                                  selected: Self.standInSelection(at: t))
-            } else {
-                Self.drawBackdrop(NSRect(origin: .zero, size: canvas))
-            }
+            FilmFrame.write(size: canvas,
+                            to: URL(fileURLWithPath: dir)
+                                .appendingPathComponent(String(format: "f%04d.png", i)).path) {
+                if withTerminal {
+                    Self.drawTerminal(NSRect(origin: .zero, size: canvas),
+                                      selected: Self.standInSelection(at: t))
+                } else {
+                    Self.drawBackdrop(NSRect(origin: .zero, size: canvas))
+                }
 
-            // The card itself (frosted glass cannot be captured, so approximate it)
-            let box = NSRect(x: margin, y: margin, width: panelSize.width, height: panelSize.height)
-            NSGraphicsContext.current?.saveGraphicsState()
-            let tf = NSAffineTransform()
-            tf.translateX(by: canvas.width / 2, yBy: canvas.height / 2)
-            tf.scaleX(by: step.scale, yBy: step.scale)
-            tf.translateX(by: -canvas.width / 2, yBy: -canvas.height / 2)
-            tf.concat()
-            NSColor(white: 0.10, alpha: 0.90 * step.alpha).setFill()
-            NSBezierPath(roundedRect: NSRect(x: box.minX, y: box.minY,
-                                             width: panelSize.width, height: self.cardHost.frame.height),
-                         xRadius: Style.corner, yRadius: Style.corner).fill()
-            panel.draw(in: box, from: .zero, operation: .sourceOver, fraction: step.alpha)
-            NSGraphicsContext.current?.restoreGraphicsState()
-            out.unlockFocus()
-
-            if let tiff = out.tiffRepresentation, let bmp = NSBitmapImageRep(data: tiff),
-               let png = bmp.representation(using: .png, properties: [:]) {
-                let name = String(format: "f%04d.png", i)
-                try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent(name))
+                // The card itself (frosted glass cannot be captured, so approximate it)
+                let box = NSRect(x: margin, y: margin, width: panelSize.width, height: panelSize.height)
+                NSGraphicsContext.current?.saveGraphicsState()
+                let tf = NSAffineTransform()
+                tf.translateX(by: canvas.width / 2, yBy: canvas.height / 2)
+                tf.scaleX(by: step.scale, yBy: step.scale)
+                tf.translateX(by: -canvas.width / 2, yBy: -canvas.height / 2)
+                tf.concat()
+                NSColor(white: 0.10, alpha: 0.90 * step.alpha).setFill()
+                NSBezierPath(roundedRect: NSRect(x: box.minX, y: box.minY,
+                                                 width: panelSize.width, height: self.cardHost.frame.height),
+                             xRadius: Style.corner, yRadius: Style.corner).fill()
+                panel.draw(in: box, from: .zero, operation: .sourceOver, fraction: step.alpha)
+                NSGraphicsContext.current?.restoreGraphicsState()
             }
         }
         mascot.frozenTime = nil
@@ -3081,7 +3146,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // gallery and the per-routine clips are shot.
         // The list strip is not about the character or the box: you have just pressed ⌘K and are
         // looking at the rows, so the box is empty and the mascot is doing what it does.
-        if script == "sessions" || script == "mascots" {
+        if script == "sessions" || script == "rows" || script == "mascots" {
             s.routine = "idle"
             s.mascotTime = t
             s.text = ""

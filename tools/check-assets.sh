@@ -20,7 +20,9 @@ rm -f "$TMP"/*.png
 command -v ffmpeg >/dev/null || { echo "ffmpeg not found — brew install ffmpeg"; exit 1; }
 
 # The footer is the line that names the project, so it is the band worth cropping out of a still.
-for f in sessions picker transcript fullscreen; do
+# The session list is no longer among them: what that section illustrates is states changing, so
+# it is a clip now and is checked with the clips below.
+for f in picker transcript fullscreen; do
   [ -f "$OUT/$f.png" ] || continue
   W=$(sips -g pixelWidth "$OUT/$f.png" | tail -1 | awk '{print $2}')
   H=$(sips -g pixelHeight "$OUT/$f.png" | tail -1 | awk '{print $2}')
@@ -51,10 +53,23 @@ for g in web web-push; do
     -frames:v 1 "$TMP/web-$g.png"
 done
 
-# One frame from the middle of every clip.
-for g in demo island dance mochi-dance stretch voice voice.zh; do
+# Two frames from every clip, side by side: an early one and a late one.
+#
+# **One frame cannot answer the question this sheet asks of a clip.** The picture that prompted
+# this rule was `picker-live.gif`, whose first frame was correct and whose second half was not in
+# the file at all — the encode had stopped part way through, so the GIF was two seconds of the
+# character that does not change. Anything read from the opening of a clip is a claim about the
+# opening of a clip. The late frame is where a state that was supposed to change has to have
+# changed, and it is also the half a leak is most likely to be hiding in, because it is the half
+# nobody looks at.
+for g in sessions sessions-live picker-live demo island dance mochi-dance stretch voice voice.zh; do
   [ -f "$OUT/$g.gif" ] || continue
-  ffmpeg -v error -y -i "$OUT/$g.gif" -vf "select='eq(n\,12)',scale=1100:-1" -frames:v 1 "$TMP/gif-$g.png"
+  n=$(ffprobe -v error -select_streams v -count_frames -show_entries stream=nb_read_frames \
+        -of csv=p=0 "$OUT/$g.gif")
+  late=$(( n * 4 / 5 ))
+  ffmpeg -v error -y -i "$OUT/$g.gif" \
+    -vf "select='eq(n\,8)+eq(n\,$late)',scale=548:-2,tile=2x1:padding=4:color=0x101010,pad=1100:ih:(ow-iw)/2:0:0x101010" \
+    -frames:v 1 "$TMP/gif-$g.png"
 done
 
 FILES=("$TMP"/*.png)

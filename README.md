@@ -95,7 +95,7 @@ finding out on its next look. It changes when a reading happens and never what o
   it looks is how much you have running. One word in the config turns it off.
   → [The notch](#the-notch)
 
-  <img src="docs/assets/island.gif" width="760" alt="The notch: the mascot leaning out while sessions run, then naming the one that is waiting, then the one that just finished.">
+  <img src="docs/assets/island.gif" width="760" alt="The menu bar, with the notch cut into it: the mascot leans out of the camera housing while one session runs, a count appears beside it when three do, then the shape stretches out to the right to name the session that is waiting, in the accent colour — and when a long job finishes, a green dot, the name of what finished, and the mascot dancing.">
 
 - **The terminal's tab follows.** Move through the list and iTerm2 moves with you — without
   coming to the front, because taking your keyboard is the one thing this exists to avoid. The
@@ -500,7 +500,7 @@ exactly the point you start needing it.
 <kbd>⌘</kbd><kbd>K</kbd> answers it instead:
 
 <div align="center">
-<img src="docs/assets/sessions.png" width="820" alt="Five sessions: one running with its live line, one waiting for an answer in the accent colour, three quiet — each with its project's own pixel mark.">
+<img src="docs/assets/sessions.gif" width="820" alt="Five sessions changing state while you watch: one running with the line Claude Code draws for itself, one waiting for an answer in the accent colour, three quiet — then the one that was waiting is answered and goes quiet, the long job finishes, and a session that had said nothing starts asking. Each row wears its project's own pixel mark, and the line underneath names whichever one the selection has walked to.">
 </div>
 
 - **Working** carries the line Claude Code draws for itself — *Crystallizing… (13m 46s)* — in
@@ -703,7 +703,7 @@ This one is play, and it says so in the source. It tells you nothing the menu ba
 it is the same reading, wearing a costume.
 
 <div align="center">
-<img src="docs/assets/island.gif" width="820" alt="The notch growing sideways: the mascot with a count while sessions run, then a name and a dot when one is waiting, then a dance when one finishes.">
+<img src="docs/assets/island.gif" width="820" alt="A menu bar and the notch cut into it, nothing else: the shape grows sideways out of the hole — first the mascot on its own while one session runs, then a count beside it when three do, then a task name and an accent dot when a session starts waiting, and last a green dot and the mascot dancing when a long job finishes.">
 </div>
 
 Your mascot lives in the menu bar band beside the camera housing. It leans out while something is

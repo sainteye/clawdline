@@ -446,66 +446,256 @@ final class NotchIsland: NSObject {
         return p
     }
 
-    /// Draw one state of the island into a PNG, without it having to be on screen.
+    // MARK: - Pictures
+    //
+    // Every picture of the island on the README pages comes out of here: the app drawing itself
+    // offscreen, so no Screen Recording permission is involved and nothing that is actually on
+    // the screen can find its way into a file that is about to be pushed. The same reason the
+    // card has this — without it, a shot of the top of the screen comes back as the wallpaper
+    // with every window stripped out, which is no way to tune something fourteen points tall.
+
+    /// How much menu bar is kept either side of the hole.
     ///
-    /// The same reason the card has this: `screencapture` needs Screen Recording permission, and
-    /// without it a shot of the top of the screen comes back as the wallpaper with every window
-    /// stripped out of it — which is no way to tune something that is fourteen points tall. This
-    /// paints our own layer and needs no permission at all.
-    func snapshot(to path: String, mode named: String) {
-        let mode: IslandMode
-        switch named {
-        case "waiting":  mode = .waiting("investigate the webhook")
-        case "finished": mode = .finished("port the Android feature")
-        case "working2": mode = .working(count: 3, line: nil)
-        default:         mode = .working(count: 1, line: nil)
+    /// **The frame is a menu bar, and that is the whole point of it.** These pictures used to be
+    /// the shape on a flat grey field with a black rectangle over the middle for the cutout, and
+    /// grey reads as *nothing* — not a bar, not a desktop, not a wall — so the island appeared to
+    /// float in the middle of an explanation of itself. What the design says is "menu bar space,
+    /// and the hole in the middle left strictly alone", which is not a claim a picture containing
+    /// neither of those things can make.
+    ///
+    /// Not symmetric, because the two sides are not. The left ear is one character wide and never
+    /// grows, so the room over there only has to hold the first menus of whatever is in front.
+    /// The right ear is a task name and reaches 250 points, and past *that* there still has to be
+    /// space for the things that live at that end of a bar — otherwise this is a strip with a
+    /// hole in it and nothing anywhere saying it is a *menu* bar.
+    private static let barLeft: CGFloat = 220
+    private static let barRight: CGFloat = 370
+
+    /// The bar a picture is drawn into: how tall it is, how wide the hole is, and whether this
+    /// machine has a hole at all. Measured from the screen rather than from a table of models,
+    /// the same way the live island measures it.
+    private struct Stage {
+        let bar: CGFloat
+        let core: CGFloat
+        let hasNotch: Bool
+        var size: NSSize {
+            NSSize(width: NotchIsland.barLeft + core + NotchIsland.barRight, height: bar)
         }
+    }
+
+    private func stage() -> Stage {
         let screen = Notch.screen()
         let notch = screen.flatMap { Notch.rect(of: $0) }
         let bar = (screen != nil && notch != nil)
             ? max(notch!.height, screen!.frame.maxY - screen!.visibleFrame.maxY)
             : NSStatusBar.system.thickness
-        let core = (notch?.width ?? 150) + Notch.overshoot
-        let (left, right) = ears(for: mode, bar: bar)
-        let size = NSSize(width: Notch.flare * 2 + left + core + right, height: bar)
+        return Stage(bar: bar, core: (notch?.width ?? 150) + Notch.overshoot, hasNotch: notch != nil)
+    }
 
-        let view = IslandView(frame: NSRect(origin: .zero, size: size))
-        view.notchWidth = core
-        view.leftEar = left
+    /// The states the pictures are made of, and the invented sessions they name.
+    ///
+    /// Read out of the card's own stand-in list rather than written down a second time here, so
+    /// two pictures on one page cannot end up describing two different pieces of work.
+    private static func demo(_ named: String) -> (mode: IslandMode, hue: Int) {
+        let rows = PromptController.standInSessions()
+        switch named {
+        case "waiting":  return (.waiting(rows[0].label), rows[0].hue)
+        case "finished": return (.finished(rows[1].label), rows[1].hue)
+        case "working2": return (.working(count: 3, line: nil), rows[0].hue)
+        default:         return (.working(count: 1, line: nil), rows[0].hue)
+        }
+    }
+
+    /// The bar itself, and just enough furniture on it to say what it is.
+    ///
+    /// Invented, like every other word in these scenes: an application's first menus at one end,
+    /// and at the other the things that live there — a couple of status items and a clock. None
+    /// of it is read from this machine, and the time is the one Apple has been putting on its own
+    /// pictures for forty years.
+    private func drawMenuBar(_ s: Stage) {
+        NSGradient(colors: [NSColor(white: 0.175, alpha: 1), NSColor(white: 0.125, alpha: 1)])?
+            .draw(in: NSRect(origin: .zero, size: s.size), angle: -90)
+
+        func run(_ str: String, size: CGFloat, weight: NSFont.Weight, alpha: CGFloat) -> NSAttributedString {
+            NSAttributedString(string: str, attributes: [
+                .font: NSFont.systemFont(ofSize: size, weight: weight),
+                .foregroundColor: NSColor.white.withAlphaComponent(alpha),
+            ])
+        }
+        func place(_ a: NSAttributedString, at x: CGFloat) {
+            a.draw(at: NSPoint(x: x, y: ((s.bar - a.size().height) / 2).rounded()))
+        }
+        func symbol(_ name: String, _ points: CGFloat) -> NSImage? {
+            let cfg = NSImage.SymbolConfiguration(pointSize: points, weight: .regular)
+                .applying(NSImage.SymbolConfiguration(
+                    paletteColors: [NSColor.white.withAlphaComponent(0.9)]))
+            return NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(cfg)
+        }
+        func place(_ image: NSImage, at x: CGFloat) {
+            image.draw(in: NSRect(x: x, y: ((s.bar - image.size.height) / 2).rounded(),
+                                  width: image.size.width, height: image.size.height))
+        }
+
+        // Left: the menus, stopping before the shape rather than running under it. On a real
+        // screen the island does cover menu-bar space and what is beneath it is simply not
+        // visible — but a menu title sliced down the middle in a *picture* reads as a drawing
+        // error rather than as that, so the last one that would not fit is left out instead.
+        let ceiling = Self.barLeft - Notch.flare - (s.bar + IslandView.inset * 2)
+        var x: CGFloat = 16
+        if let apple = symbol("apple.logo", 14) {
+            place(apple, at: x)
+            x += apple.size.width + 15
+        }
+        for (i, title) in ["Terminal", "Shell", "Edit", "View"].enumerated() {
+            let a = run(title, size: 13, weight: i == 0 ? .semibold : .regular,
+                        alpha: i == 0 ? 0.95 : 0.8)
+            guard x + a.size().width < ceiling else { break }
+            place(a, at: x)
+            x += a.size().width + 17
+        }
+
+        // Right: filled from the edge inwards, the way that end of a menu bar fills up.
+        let clock = run("Wed 9:41", size: 13, weight: .regular, alpha: 0.9)
+        var r = s.size.width - 16 - clock.size().width
+        place(clock, at: r)
+        for name in ["switch.2", "wifi", "battery.75"] {
+            guard let image = symbol(name, 14) else { continue }
+            r -= image.size.width + 14
+            place(image, at: r)
+        }
+    }
+
+    /// Paint one frame: the bar, the hole, and the shape over both.
+    private func paint(_ view: IslandView, on s: Stage) {
+        drawMenuBar(s)
+        // The hole, punched over the bar rather than left as a gap in it. There is a camera
+        // behind those pixels and they are the one part of this design that is never drawn on,
+        // so the picture has to have them too — a shot without it is a black bar with a gap of
+        // black in the middle, which is not what anybody sees.
+        if s.hasNotch {
+            NSColor.black.setFill()
+            NSRect(x: Self.barLeft, y: 0, width: s.core, height: s.bar).fill()
+        }
+        guard view.bounds.width > 1,
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        // Pinned to the hole, not to the frame: the shape grows around a cutout that does not
+        // move, which is what makes the growing read as growing rather than as sliding.
+        let box = NSRect(x: Self.barLeft - Notch.flare - view.leftEar, y: 0,
+                         width: view.bounds.width, height: view.bounds.height)
+        // **Clipped to the shape, because the shape does not fill its own bounds.** It has a
+        // concave flare at each shoulder, and the buffer `cacheDisplay` hands back is opaque
+        // white wherever the view drew nothing — so every picture ever taken of the island had a
+        // white hairline curling down both of its sides. It never showed up on screen, where the
+        // panel is transparent and only what is drawn exists; it only ever existed in the
+        // pictures. Same path the view fills itself with, so the two cannot disagree.
+        NSGraphicsContext.current?.saveGraphicsState()
+        Notch.path(in: box, pill: !s.hasNotch).addClip()
+        rep.draw(in: box)
+        NSGraphicsContext.current?.restoreGraphicsState()
+    }
+
+    /// Put the view into one state, at one instant, at one width.
+    private func pose(_ v: IslandView, mode: IslandMode, hue: Int,
+                      left: CGFloat, right: CGFloat, on s: Stage, at t: Double) {
+        v.setFrameSize(NSSize(width: Notch.flare * 2 + left + s.core + right, height: s.bar))
+        v.leftEar = left
         // A made-up project's mark, so the picture carries the same thing the real ear does.
-        view.projectGrid = ProjectIcon.demoGrid(hue: 9)
-        view.mode = mode
-        view.playRoutine(for: mode)
-        view.layoutSubtreeIfNeeded()
+        v.projectGrid = ProjectIcon.demoGrid(hue: hue)
+        v.mode = mode
+        v.poseMascot(for: mode, at: t)
+        // **Asked for by hand, because `leftEar` is a plain stored property.** Changing it does
+        // not mark the view as needing layout, and `layout()` is where the character is scaled to
+        // the band — so the frame in which the ear first opens was drawn with the character still
+        // at the size its pack was drawn for, twice the height of the menu bar and cut off by the
+        // top of the picture. It corrected itself one frame later, which is exactly the kind of
+        // thing that survives being looked at once.
+        v.needsLayout = true
+        v.layoutSubtreeIfNeeded()
+    }
 
+    /// Draw one state of the island into a PNG, without it having to be on screen. For tuning a
+    /// single state; the picture that ships is the clip below.
+    func snapshot(to path: String, mode named: String) {
+        let s = stage()
+        let (mode, hue) = Self.demo(named)
+        let want = ears(for: mode, bar: s.bar)
+        let view = IslandView(frame: NSRect(origin: .zero, size: NSSize(width: s.core, height: s.bar)))
+        view.notchWidth = s.core
         // A frame from the middle of the routine rather than its first instant, which for a jump
         // is the character standing perfectly still on the ground.
-        view.freezeMascot(at: 0.45)
-        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
-        view.cacheDisplay(in: view.bounds, to: rep)
-
-        // Drawn on a grey ground with a stand-in cutout over the middle of it, because on a real
-        // screen that middle is a hole and the whole design is about what happens either side of
-        // it. A shot without it would show a black bar with a gap of black in the middle, which
-        // is not what anybody sees.
-        let pad: CGFloat = 30
-        let img = NSImage(size: NSSize(width: size.width + pad * 2, height: size.height + pad))
-        img.lockFocus()
-        NSColor(white: 0.42, alpha: 1).setFill()
-        NSRect(origin: .zero, size: img.size).fill()
-        rep.draw(in: NSRect(x: pad, y: 0, width: size.width, height: size.height))
-        if notch != nil {
-            NSColor.black.setFill()
-            NSRect(x: pad + Notch.flare + left, y: 0, width: core, height: size.height).fill()
-        }
-        img.unlockFocus()
-
-        guard let tiff = img.tiffRepresentation,
-              let bmp = NSBitmapImageRep(data: tiff),
-              let png = bmp.representation(using: NSBitmapImageRep.FileType.png, properties: [:])
-        else { return }
-        try? png.write(to: URL(fileURLWithPath: path))
+        pose(view, mode: mode, hue: hue, left: want.left, right: want.right, on: s, at: 0.45)
+        FilmFrame.write(size: s.size, to: path) { self.paint(view, on: s) }
+        view.releaseMascot()
         Log.write("island snapshot → \(path) (\(named))")
+    }
+
+    /// The island demonstrating itself, one frame at a time.
+    ///
+    /// **Three stills concatenated could not make this section's argument.** What the page claims
+    /// is that the mascot leans out while something runs, names the session that wants you, and
+    /// *dances* when a long job finishes — three verbs, none of which a still can do. The old
+    /// picture held each state for two seconds and cut to the next, so the one thing it could not
+    /// show was the only thing it was captioned with.
+    ///
+    /// The order is the sentence: something is running, then more than one thing is and the
+    /// character is visibly working harder, then one of them wants you and is named in the
+    /// accent colour, then one finishes and it dances. The dance is last because it is the
+    /// ending. Beats are long enough to read rather than long enough to fit.
+    ///
+    /// The shape grows sideways into each beat instead of cutting, because growing sideways out
+    /// of the hole *is* the animation — the thing the section is named after — and a cut is the
+    /// one edit that hides it.
+    func filmstrip(dir: String, fps: Double, seconds: Double) {
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let s = stage()
+        let rows = PromptController.standInSessions()
+        let beats: [(mode: IslandMode, hue: Int, length: Double)] = [
+            (.working(count: 1, line: nil), rows[0].hue, 1.7),
+            (.working(count: 3, line: nil), rows[0].hue, 1.9),
+            (.waiting(rows[0].label), rows[0].hue, 2.4),
+            (.finished(rows[1].label), rows[1].hue, 2.6),
+        ]
+        // Stated as durations that read well and then stretched to whatever the caller asked
+        // for, so the shape of the storyboard survives somebody changing its length.
+        let span = beats.reduce(0) { $0 + $1.length }
+        let view = IslandView(frame: NSRect(origin: .zero, size: NSSize(width: s.core, height: s.bar)))
+        view.notchWidth = s.core
+
+        let total = Int(seconds * fps)
+        Log.write("island filmstrip: frames=\(total) stage=\(s.size) dir=\(dir)")
+        for i in 0..<total {
+            let t = Double(i) / fps * (span / max(0.1, seconds))
+            var start = 0.0, index = 0
+            for (k, beat) in beats.enumerated() {
+                index = k
+                if t < start + beat.length { break }
+                if k < beats.count - 1 { start += beat.length }
+            }
+            let beat = beats[index]
+            let local = t - start
+
+            // Opens from nothing, so the first thing the clip does is the thing it is about: the
+            // character leaning out of a menu bar that a moment ago was only a menu bar.
+            let want = ears(for: beat.mode, bar: s.bar)
+            let from = index == 0 ? (left: CGFloat(0), right: CGFloat(0))
+                                  : ears(for: beats[index - 1].mode, bar: s.bar)
+            let p = CGFloat(min(1, local / 0.28))
+            let e = 1 - pow(1 - p, 3)
+            pose(view, mode: beat.mode, hue: beat.hue,
+                 left: from.left + (want.left - from.left) * e,
+                 right: from.right + (want.right - from.right) * e,
+                 on: s, at: local)
+
+            FilmFrame.write(size: s.size,
+                            to: URL(fileURLWithPath: dir)
+                                .appendingPathComponent(String(format: "f%04d.png", i)).path) {
+                self.paint(view, on: s)
+            }
+        }
+        view.releaseMascot()
+        Log.write("island filmstrip → \(dir) (\(total) frames @ \(Int(fps))fps)")
     }
 
     /// The right ear goes to the session it names.
@@ -653,8 +843,32 @@ final class IslandView: NSView {
 
     private let mascot = MascotView(frame: .zero)
 
-    /// For snapshots: pin the character's clock so one specific frame is drawn.
-    func freezeMascot(at t: Double) { mascot.frozenTime = t }
+    /// Put the character where a live one would be `t` seconds into this mode.
+    ///
+    /// **The handover is the part that has to be done by hand.** A live view has a timer, and the
+    /// tick that notices a one-shot routine has run out is what hands it over to `idle`. A frozen
+    /// clock never reaches that tick, so a beat longer than the routine it opens with ends as a
+    /// character standing perfectly still — in a clip whose entire subject is that it moves. The
+    /// pace is folded in for the same reason: `working` says how busy it is by running the same
+    /// routine faster, and a frozen frame that ignored the rate would be the wrong frame.
+    func poseMascot(for mode: IslandMode, at t: Double) {
+        playRoutine(for: mode)
+        let local = t * mascot.rate
+        if let r = mascot.pack?.routines[mascot.routine], !(r.loop ?? false), local >= r.duration {
+            mascot.play("idle", then: "idle")
+            mascot.frozenTime = local - r.duration
+        } else {
+            mascot.frozenTime = local
+        }
+    }
+
+    /// Let the clock go again, and let go of the timer a posed routine started. A view built for
+    /// one picture is thrown away straight afterwards, and its timer is on the main run loop.
+    func releaseMascot() {
+        mascot.frozenTime = nil
+        mascot.stop()
+    }
+
     /// Read the pack again — the one on the card is not the only copy of it.
     func reloadMascot() {
         mascot.reload()
@@ -720,10 +934,19 @@ final class IslandView: NSView {
 
     override func layout() {
         super.layout()
-        guard bounds.height > 6, leftEar > 0 else { return }
+        guard bounds.height > 6 else { return }
         // Sized to the band rather than to a number picked by hand, so a pack drawn twice as tall
         // as the shipped one still stands in the menu bar rather than through it.
+        //
+        // Done before the ear is checked, not after. A clip of the shape opening draws this view
+        // while the ear is still shut, and the scale that had never been set is the one the pack
+        // was drawn for — so the first frame carried a character twice the height of the menu bar
+        // with the top of it cut off by the top of the picture.
         mascot.fit(height: bounds.height - 12)
+        // Nowhere, rather than wherever it was last. With no ear there is no strip to stand in,
+        // and a frame left over from the last time there was one puts the character on the
+        // camera housing.
+        guard leftEar > 0 else { mascot.frame = .zero; return }
         // Against the hole rather than against the outside edge: the character should look like
         // it is standing next to the notch, which is the thing it is leaning on.
         let side = bounds.height

@@ -334,6 +334,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             func q(_ n: String) -> String? { items.first(where: { $0.name == n })?.value }
             guard let dir = q("dir"), !dir.isEmpty else { return }
+            // The island paints itself rather than the card, so it forks here for the same
+            // reason `snapshot` does one case up: its storyboard is four states of a shape in
+            // the menu bar and has nothing in common with the card's beyond writing frames.
+            if q("island") != nil {
+                NotchIsland.shared.filmstrip(
+                    dir: dir,
+                    fps: q("fps").flatMap(Double.init) ?? 12,
+                    seconds: q("seconds").flatMap(Double.init) ?? 8.6)
+                return
+            }
             PromptController.shared.filmstrip(
                 dir: dir,
                 fps: q("fps").flatMap(Double.init) ?? 24,
