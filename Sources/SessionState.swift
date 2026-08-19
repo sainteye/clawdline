@@ -73,7 +73,17 @@ enum SessionState: Equatable {
             if isOption { options += 1 }
             if hasCaret { carets += 1 }
         }
-        return carets >= 1 && options >= 2
+        let yes = carets >= 1 && options >= 2
+        // **What made it think so.** A false reading here tells somebody a question is waiting
+        // and then tells them not to answer it from their phone, which leaves them nothing to
+        // do — so when this says yes, it records the lines it said yes about. Rare by nature: a
+        // real menu happens a few times an hour and the log line is two of them.
+        if yes {
+            let shown = lines.suffix(tailLines).filter { option($0).isOption }
+                .map { $0.trimmingCharacters(in: .whitespaces).prefix(60) }
+            Log.write("choosing: carets=\(carets) options=\(options) — " + shown.joined(separator: " ⏐ "))
+        }
+        return yes
     }
 
     /// The carets a terminal menu marks its current row with. Deliberately not `>`: a markdown

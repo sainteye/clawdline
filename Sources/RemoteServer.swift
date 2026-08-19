@@ -322,6 +322,20 @@ final class RemoteServer {
         case ("GET", "/v1/sessions"):
             return .json(sessionsPayload())
 
+        // Everything about this project that has an address.
+        //
+        // **A route rather than a field on the session.** The session list goes out on the event
+        // stream every time anything moves, and working these out costs a `git` invocation and a
+        // handful of file reads per project. Opening a menu is rare and paying for it then is
+        // free; paying for it on every beat of the stream is a subprocess per session per second.
+        case ("GET", let path) where path.hasSuffix("/links") && path.hasPrefix("/v1/sessions/"):
+            let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/links".count))
+            guard let session = self.session(withID: id.removingPercentEncoding ?? id),
+                  let cwd = Targets.workingDirectory(of: session) else {
+                return .error(404, "not_found", "No session named that")
+            }
+            return .json(["links": linksPayload(cwd: cwd)])
+
         case ("GET", let path) where path.hasPrefix("/v1/sessions/"):
             let rest = String(path.dropFirst("/v1/sessions/".count))
             let parts = rest.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
@@ -931,6 +945,51 @@ final class RemoteServer {
                 return row
             },
         ]
+    }
+
+    /// The addresses a project has, in the order somebody would want them.
+    ///
+    /// Nothing here is invented: every one of these is a URL some other tool already put in a
+    /// file this app reads — the health endpoint from the icon registry, the run from the deploy
+    /// status, the servers from the project's own `status` command, the backlog page from
+    /// whatever produced it. **Clawdline's contribution is that they are in one list on a phone**,
+    /// rather than four places on a Mac that is in another room.
+    ///
+    /// `kind` is for the client to pick an icon with. `local` says the address only resolves on
+    /// the Mac's own network, which is worth knowing before tapping it from a train.
+    private func linksPayload(cwd: String) -> [[String: Any]] {
+        var out: [[String: Any]] = []
+        let registry = ProjectIcon.row(forCwd: cwd)
+        let status = ProjectStatus.read(cwd: cwd, remote: Project.info(cwd: cwd)?.remote,
+                                        registry: registry?["health"] as? [String: Any])
+
+        if let health = status.health, let url = health.url, !url.isEmpty {
+            out.append(["label": health.label, "url": url, "kind": "site",
+                        "state": health.state, "local": false])
+        }
+        if let deploy = status.deploy, let url = deploy.url, !url.isEmpty {
+            out.append(["label": deploy.label, "url": url, "kind": "deploy",
+                        "state": deploy.state, "local": false])
+        }
+        // Only a project that declared a stack and was trusted to run its own status command.
+        // Neither is guessed: an untrusted one is silent rather than probed.
+        let stack = DevStack.find(fromCwd: cwd).flatMap { spec in
+            DevStack.isTrusted(spec) ? DevStack.read(spec) : nil
+        }
+        for process in stack?.processes ?? [] {
+            let url = process.url ?? process.port.map { "http://127.0.0.1:\($0)" }
+            guard let url, !url.isEmpty else { continue }
+            out.append(["label": process.name, "url": url, "kind": "server",
+                        "state": process.isUp ? "ok" : "down", "local": true])
+        }
+        if let backlog = status.backlog, let file = backlog.artifact, !file.isEmpty {
+            // A path, not a URL. The page cannot open it and says so rather than offering a link
+            // that does nothing — see the client. It is here because on the Mac it is the one
+            // thing in this list somebody actually wants to open.
+            out.append(["label": "backlog", "url": "file://" + file, "kind": "artifact",
+                        "state": "", "local": true])
+        }
+        return out
     }
 
     private func sessionsPayload() -> [String: Any] {
