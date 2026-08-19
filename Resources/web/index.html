@@ -1419,7 +1419,11 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
                 <!-- See the note on `.composer .msg`. `role`/`aria-multiline` because the
                      browser no longer knows what this is on its own, and the label carries the
                      same words as the placeholder rather than a second wording of them. -->
+                <!-- `autocapitalize="none"`: a phone keyboard capitalises the first letter of
+                     what it thinks is a sentence, and what gets typed in here is as often a path,
+                     a flag or a command as it is prose — and `Git status` is not `git status`. -->
                 <div class="msg blank" id="msg" role="textbox" aria-multiline="true"
+                     autocapitalize="none" autocorrect="off" spellcheck="false"
                      enterkeyhint="enter" data-placeholder="Message Claude Code…"></div>
                 <button class="send" id="send" type="submit" disabled>Send</button>
             </div>
@@ -4137,18 +4141,13 @@ function renderWaiting() {
         '<div class="say">' + words(T.webWaitingSay) + "</div>" +
         '<div class="say">' + words(T.webWaitingSend) + "</div>" +
         '<button type="button" class="go" data-focus="1">' + esc(T.webShowOnMac) + "</button>";
-    // Written only when it has changed. `render` runs on every beat of the stream, and throwing
-    // this away and building it again once a second would take the focus off the button in it
-    // every time somebody was about to press it.
-    if (want === waitingDrawn) return;
-    waitingDrawn = want;
-    box.innerHTML = want;
-    box.hidden = !want;
-
-    // The live line, from the same reading. Mutually exclusive with the notice above by
-    // construction — a session is working or it is waiting, never both — so the two never
-    // stack. Written only when the text changes: it changes about once a second, and
-    // replacing the node that often would restart its own animation on every beat.
+    // The live line, from the same reading, and **above the early return below** — that return
+    // exists because the *notice* rarely changes, and while a session is working the notice is
+    // empty every single time, so anything after it ran once and then never again. This line
+    // changes about once a second; it is the one thing here that has to be redrawn.
+    //
+    // Mutually exclusive with the notice by construction: a session is working or it is waiting,
+    // never both, so the two never stack.
     var live = els.live;
     if (live) {
         var say = open && open.state === "working" && open.line ? open.line : "";
@@ -4164,6 +4163,14 @@ function renderWaiting() {
             live.hidden = !say;
         }
     }
+
+    // Written only when it has changed. `render` runs on every beat of the stream, and throwing
+    // this away and building it again once a second would take the focus off the button in it
+    // every time somebody was about to press it.
+    if (want === waitingDrawn) return;
+    waitingDrawn = want;
+    box.innerHTML = want;
+    box.hidden = !want;
 
     if (!want) return;
     // A new button, drawn while somebody may be writing. Same reason the transcript says it:

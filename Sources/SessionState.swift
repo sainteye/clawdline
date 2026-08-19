@@ -94,9 +94,21 @@ enum SessionState: Equatable {
             i += 1
         }
 
+        // **A caret at column zero is the prompt, not a menu.**
+        //
+        // `❯` is both the glyph a dialog marks its current row with and the one Claude Code puts
+        // in front of the line you type. So a message that begins with a numbered list echoes as
+        // `❯ 1. …` with `2. …` under it — which is character for character the shape of a menu
+        // with its first row selected, and the phone was told a question was waiting every time
+        // somebody sent a list. It then told them not to answer from there, which left no way to
+        // do anything at all.
+        //
+        // A dialog's options are indented or inside a box — the comment on `boxes` says so and
+        // the capture bears it out. The prompt is flush left. So the caret only counts if
+        // something came before it.
         var caret = false
         if i < chars.count, carets.contains(chars[i]) {
-            caret = true
+            caret = i > 0
             i += 1
             while i < chars.count, chars[i] == " " { i += 1 }
         }

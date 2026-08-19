@@ -1929,7 +1929,16 @@ group("what a session is doing, from its screen") {
     // The order of the two tests is the whole of the correctness. Claude Code draws its dialog
     // below whatever came before it and does not always erase the spinner line above — so asking
     // "is it busy?" first finds that stale line and hides the one row that needed a person.
-    let stale = "✢ Generating… (9s)\n\n❯ 1. Yes\n  2. No, tell Claude what to do instead\n"
+    // Indented, because that is where it really sits. Claude Code draws its whole content area
+    // two columns in and keeps the input prompt flush left — checked against a real capture on
+    // 2026-08-19 — so a caret at column zero is the prompt and never a menu. These fixtures were
+    // written flush left as a simplification, which encoded a layout that does not occur.
+    //
+    // **The risk in this direction is worth stating**: if some dialog somewhere is drawn at
+    // column zero, its question stops being seen, and a phone stops being told that a session
+    // needs somebody. That is the trade against the other direction, where every numbered list
+    // anybody typed was announced as a question and the notice told them not to answer it.
+    let stale = "✢ Generating… (9s)\n\n  ❯ 1. Yes\n    2. No, tell Claude what to do instead\n"
     expect("a stale spinner above a menu does not win", SessionState.read(stale), .waiting)
 
     // Claude writes numbered lists in prose all day. What prose does not do is put a selection
@@ -1952,7 +1961,9 @@ group("what a session is doing, from its screen") {
     check("the wall the dialog is drawn in does not hide the caret",
           SessionState.isChoosing("│ ❯ 1. Yes            │\n│   2. No             │"))
     check("colours do not hide it either",
-          SessionState.read("\u{1b}[1m❯ 1. Yes\u{1b}[0m\n  2. No") == .waiting)
+          SessionState.read("  \u{1b}[1m❯ 1. Yes\u{1b}[0m\n    2. No") == .waiting)
+    check("and a caret at the very front is the prompt, not a menu",
+          !SessionState.isChoosing("❯ 1. tell me about this\n  2. and this"))
 
     // A menu that has scrolled off the top of the visible screen is not a menu you can answer.
     let scrolled = (["❯ 1. Yes", "  2. No"] + Array(repeating: "output", count: 40) + ["❯"])
@@ -3479,6 +3490,38 @@ group("ending a session is the one route that destroys something") {
 
     Config.shared.remoteWrite = true
     expect("a session that is not there is a 404", end(writer.token).status, 404)
+}
+
+group("a numbered list somebody typed is not a menu") {
+    // Taken from a real capture, 2026-08-19. `\u{276F}` is both the glyph a dialog marks its
+    // current row with and the one Claude Code puts in front of the line you type — so a message
+    // that opens with a numbered list echoes as exactly the shape of a menu whose first row is
+    // selected. The phone then said a question was waiting and told the reader not to answer
+    // from there, which left them no way to do anything.
+    let typed = """
+    \u{276F} 1. \u{4F60}\u{73FE}\u{5728}\u{662F}\u{5426}\u{8B93} web \u{7684}\u{8F38}\u{5165}bar
+      2. \u{8F38}\u{5165} bar \u{53EF}\u{4EE5}\u{4E0D}\u{8981}\u{7B2C}\u{4E00}\u{500B}\u{5B57}
+      3. \u{6211}\u{770B} web \u{7684}\u{8655}\u{7406}\u{72C0}\u{614B}
+    """
+    check("a list typed at the prompt is not a question", !SessionState.isChoosing(typed))
+
+    // And the thing it must still catch: a real dialog, drawn inside its box.
+    let menu = """
+    \u{2502} \u{276F} 1. Yes                  \u{2502}
+    \u{2502}   2. Yes, and don't ask again  \u{2502}
+    \u{2502}   3. No, tell Claude what to do\u{2502}
+    """
+    check("a dialog in its box still is", SessionState.isChoosing(menu))
+
+    // Indented but unboxed, which some prompts are.
+    let bare = """
+      \u{276F} 1. Keep going
+        2. Stop here
+    """
+    check("and an indented one with no box", SessionState.isChoosing(bare))
+
+    // The prompt on its own, which is every idle session on the machine.
+    check("a bare prompt is not a menu", !SessionState.isChoosing("\u{276F} "))
 }
 
 // MARK: - Result
