@@ -76,6 +76,13 @@ enum Compat {
 
     /// Newest first.
     static let releases: [Release] = [
+        Release(clawdline: "0.6.0", claudeCode: "2.1.235",
+                notes: "Answering a session from a phone, which adds two dependencies of a "
+                     + "different kind. The hook contract — five events written into "
+                     + "~/.claude/settings.json — replaces reading the screen when it is "
+                     + "installed. And answering a multiple-choice question sends the single "
+                     + "byte its picker reads, so if that picker stops taking a bare digit the "
+                     + "phone can still see the question and can no longer answer it."),
         Release(clawdline: "0.5.0", claudeCode: "2.1.234",
                 notes: "Reads every session's screen to say which is working, which has "
                      + "stopped and which is waiting — so it depends on the shape of the "
