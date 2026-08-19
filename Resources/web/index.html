@@ -1109,61 +1109,6 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .sheet .place[data-busy="1"] { opacity: 1; border-color: var(--accent-ed); }
 .sheet .place[data-busy="1"] .where { color: var(--accent); }
 
-/* Where this project can be opened. The same furniture a third time, with one difference that
-   is the whole reason the sheet exists: these rows are not all the same kind of thing. An `<a>`
-   opens; a `.file` row is a path and a copy button and never an anchor; and either can carry a
-   line underneath saying why it will not work from here. The difference is drawn on the row
-   rather than left to be found out by tapping it on a train. */
-.sheet .links { list-style: none; margin: 0; padding: 0; max-height: min(46vh, 340px); overflow-y: auto; }
-.sheet .links li { margin: 0; }
-.sheet .link {
-    display: grid;
-    grid-template-columns: 20px minmax(0, 1fr) auto;
-    column-gap: 10px; row-gap: 2px; align-items: center;
-    width: 100%; min-height: 44px;          /* a thumb's worth, as on the places list */
-    text-align: left;
-    padding: 8px 10px; margin-bottom: 2px;
-    border: 1px solid transparent; border-radius: 9px;
-    color: var(--ink); text-decoration: none;
-}
-a.link:hover { background: var(--card-hi); }
-a.link:active { background: var(--line); }
-/* A path is not a destination, so the row that holds one does not behave like one. */
-.sheet .link.file { cursor: default; }
-.sheet .link .kind { grid-column: 1; grid-row: 1 / span 2; width: 15px; height: 15px; color: var(--faint); }
-.sheet .link .name {
-    grid-column: 2; grid-row: 1;
-    display: flex; align-items: baseline; gap: 8px; min-width: 0;
-    font-size: 13.5px; font-weight: 500;
-}
-.sheet .link .name .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sheet .link .where {
-    grid-column: 2; grid-row: 2;
-    font-family: var(--mono); font-size: 11px; color: var(--faint);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.sheet .link .copy { grid-column: 3; grid-row: 1 / span 2; padding: 6px 10px; font-size: 11.5px; }
-/* Why this one will not open from here. Under the row rather than beside it: it is a sentence,
-   and it has to be able to be one on a phone. */
-.sheet .link .note {
-    grid-column: 1 / -1; grid-row: 3;
-    margin: 3px 0 0 0; font-size: 11.5px; line-height: 1.45; color: var(--faint);
-}
-/* That thing's own health, said quietly. A server that is down is worth knowing before it is
-   tapped; it is still not the loudest thing on the page, and nothing here outranks a session
-   that is waiting for you. */
-.sheet .link .ping {
-    display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
-    font-size: 11px; font-weight: 400; color: var(--faint);
-}
-.sheet .link .ping::before {
-    content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint);
-}
-.sheet .link .ping[data-state="ok"]::before { background: var(--ok); }
-.sheet .link .ping[data-state="running"]::before { background: var(--warn); }
-.sheet .link .ping[data-state="fail"]::before,
-.sheet .link .ping[data-state="down"]::before { background: var(--bad); }
-
 /* --------------------------------------------------------------------------
    The door
    The whole page, until the server knows who is asking. Not a banner and not a
@@ -1454,15 +1399,10 @@ a.link:active { background: var(--line); }
                 <div class="sub" id="detail-sub"></div>
             </div>
             <div class="tools">
-                <!-- Everywhere this project can be opened: its site, the deploy that is running
-                     or has failed, whatever its dev stack is serving, the backlog file. A chain
-                     link, because what is behind it is a list of addresses and not one of them.
-
-                     This slot used to hold the transcript's sort order. Which end a transcript
-                     reads from is a preference somebody sets once, and it was holding a place in
-                     the header of every session on a phone for ever; it is behind the wordmark
-                     now, with the rest of what is true of this browser. -->
-                <button class="chip" id="tx-links" type="button"><svg class="ico" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M5.9 8.1a2.3 2.3 0 0 0 3.2 0l2-2a2.3 2.3 0 0 0-3.2-3.2l-.9.9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path><path d="M8.1 5.9a2.3 2.3 0 0 0-3.2 0l-2 2a2.3 2.3 0 0 0 3.2 3.2l.9-.9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg><span id="tx-links-label">Links</span></button>
+                <!-- An arrow that points the way time runs, and it turns over when the order
+                     does: the words say which order this *is*, the arrow says it again in a
+                     shape, and the hover text says what pressing it will do. -->
+                <button class="chip" id="tx-order" type="button"><svg class="ico arrow" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M7 2.4v9.2M3.6 8.2 7 11.6l3.4-3.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg><span id="tx-order-label">Oldest first</span></button>
                 <!-- A screen, because what this does happens on one that is somewhere else. -->
                 <button class="chip" id="tx-focus" type="button"><svg class="ico" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><rect x="1.3" y="2.2" width="11.4" height="7.8" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.3"></rect><path d="M5 12.2h4M7 10v2.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg><span id="tx-focus-label">Show on Mac</span></button>
             </div>
@@ -1532,18 +1472,6 @@ a.link:active { background: var(--line); }
             <p class="said" id="settings-notify-said" role="status" aria-live="polite"></p>
         </div>
 
-        <!-- Which end the transcript reads from. It lived in the transcript header until the
-             header had something to say that changes with the session; this does not change
-             with anything, which is what makes it one of these and not one of those. The arrow
-             turns over with the order, the way it did up there. -->
-        <div class="block">
-            <b id="settings-order-title">Transcript</b>
-            <p class="say" id="settings-order-say"></p>
-            <div class="row">
-                <button class="chip" id="settings-order" type="button"><svg class="ico arrow" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M7 2.4v9.2M3.6 8.2 7 11.6l3.4-3.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg><span id="settings-order-label">Oldest first</span></button>
-            </div>
-        </div>
-
         <div class="foot"><span id="settings-version"></span></div>
         <button class="chip wide" id="settings-close" type="button">Close</button>
     </div>
@@ -1570,30 +1498,6 @@ a.link:active { background: var(--line); }
         </div>
 
         <button class="chip wide" id="start-close" type="button">Close</button>
-    </div>
-</div>
-
-<!-- Everything the open session's project has an address for. Its own sheet, and its own route:
-     working these out costs the Mac a `git` invocation and a handful of file reads, and the
-     session list goes out on the event stream every time anything moves. Opening a menu is rare
-     and paying for it then is free.
-
-     The three kinds of row here are three different promises. One opens in this browser. One
-     opens only from the Mac's own network, and saying so beats a tap that times out on mobile
-     data. One is a file, which no browser can open at all — that one is a path to be copied and
-     is deliberately not a link, because a link that does nothing when tapped is worse than a
-     line of text. -->
-<div class="overlay" id="links" hidden>
-    <div class="sheet" role="dialog" aria-modal="true" id="links-sheet" aria-label="Links">
-        <h2 id="links-title">Links</h2>
-
-        <div class="block">
-            <p class="say" id="links-say"></p>
-            <ul class="links" id="links-list"></ul>
-            <p class="said" id="links-said" role="status" aria-live="polite"></p>
-        </div>
-
-        <button class="chip wide" id="links-close" type="button">Close</button>
     </div>
 </div>
 
@@ -1886,10 +1790,6 @@ var T = {
     webNotifyOffFailed: "Could not turn notifications off",
     webSettings: "Settings",
     webSettingsNotify: "Notifications",
-    // The sort order, which is a preference of this browser and now sits where the rest of them
-    // do. `webOrderTip` is still the button's hover text — same words, same job, one row down.
-    webSettingsOrder: "Transcript",
-    webSettingsOrderSay: "Which end of a transcript to start reading from. It applies to every session, and `r` does the same from a keyboard.",
     webSettingsVersion: "Version {v}",
     webClose: "Close",
     webNotifySheetOff: "This device is not told when a session is waiting.",
@@ -1916,26 +1816,6 @@ var T = {
     webStartTerminalClosed: "{app} is not running on the Mac. Open it there and try again.",
     webStartTerminalUnsupported: "A session cannot be started in {app} from here. Run tmux in it and this works.",
     webStartOff: "Starting a session is switched off. Settings → Remote on the Mac turns it on.",
-
-    // Where this project can be opened. Three of these exist to be honest about a row that
-    // cannot be opened from wherever this page is being read — which is the only reason the
-    // list is worth having rather than a page of links that time out.
-    webLinks: "Links",
-    webLinksTip: "Where this project can be opened",
-    webLinksPick: "Everything this project has an address for.",
-    webLinksEmpty: "This project has nothing with an address — no site, no deploy, and no dev stack running.",
-    webLinksFailed: "Could not read this project's links.",
-    webLinksLocal: "On the Mac's own network only. It will not open from here.",
-    webLinksFile: "A file on the Mac. It opens there — a browser cannot open one from anywhere else.",
-    webLinksCopy: "Copy path",
-    webLinksCopied: "Copied.",
-    webLinksCopyFailed: "This browser would not let the page copy that.",
-    // That thing's own health, in its own words, because "ok" means a passing run and a serving
-    // port and there is one row type for both.
-    webLinkOk: "ok",
-    webLinkFail: "failing",
-    webLinkDown: "down",
-    webLinkRunning: "running",
 
     // Said in both places, so said once — the bar's own words, arriving here too.
     placeholder: "Message Claude Code…",
@@ -5744,13 +5624,10 @@ function submit() {
             busy = true;
             label.textContent = T.webPullBusy;
             pad.style.height = "34px";
-            // **When the page is behind, the gesture reloads it.**
-            //
-            // This used to re-fetch data and nothing else, which is right almost always and
-            // exactly wrong in the one case where somebody is being told to reload: the notice
-            // saying "this page is the older one" is cleared by a *document* reload, and pulling
-            // down is what a phone means by reloading. So the notice could not be dismissed by
-            // the gesture that appears to dismiss it, and the person pulls again, and again.
+            // **When the page is behind, the gesture reloads it.** Re-fetching data is right
+            // almost always and exactly wrong in the one case where somebody is being told to
+            // reload: pulling down is what a phone means by reloading, so without this the
+            // notice could not be dismissed by the gesture that appears to dismiss it.
             if (Build.stale) { location.reload(); return; }
             Promise.resolve(api.refresh ? api.refresh() : null).then(function () {
                 setTimeout(function () {
