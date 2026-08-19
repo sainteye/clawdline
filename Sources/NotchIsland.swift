@@ -120,8 +120,13 @@ enum Notch {
 
 /// What the island is showing. Ordered by who deserves the screen: a question beats a
 /// celebration, and a celebration beats a progress report.
+///
+/// `resting` is the floor rather than an absence, and it is the one the machine is in for most of
+/// the *day*: nothing is running, and the character is still up there, asleep. `hidden` is now
+/// only what the config asks for and what a screen with no cutout gets — see `refresh()`.
 enum IslandMode: Equatable {
     case hidden
+    case resting
     case working(count: Int, line: String?)
     case waiting(String)
     case finished(String)
@@ -196,12 +201,23 @@ final class NotchIsland: NSObject {
         } else {
             celebrating = nil
             let busy = watch.working
-            next = busy.isEmpty ? .hidden
+            // Nothing running is not nothing to show. The character stays and sleeps, because a
+            // mascot that only exists while a job does is a progress indicator wearing a costume,
+            // and the costume was the point.
+            //
+            // **Except on a screen with no cutout.** There the shape is a pill hanging under the
+            // menu bar rather than the notch having grown — fine for the half minute a job takes,
+            // and quite another thing parked over somebody's menu bar all day. A display without
+            // a camera housing behaves exactly as it did before this existed.
+            next = busy.isEmpty ? (onNotch ? .resting : .hidden)
                                 : .working(count: busy.count, line: watch.liveLine(of: busy[0].id))
             subject = busy.first
         }
         show(next)
     }
+
+    /// Whether the screen this would land on has a camera housing to grow out of.
+    private var onNotch: Bool { Notch.screen().flatMap { Notch.rect(of: $0) } != nil }
 
     // MARK: - Drawing it
 
@@ -301,7 +317,9 @@ final class NotchIsland: NSObject {
     /// nothing else on screen is showing while the panel is down.
     private func tip(for mode: IslandMode) -> String? {
         switch mode {
-        case .hidden:
+        case .hidden, .resting:
+            // Asleep says nothing, because there is nothing to say and a tip that fires every
+            // time the pointer crosses the menu bar is a flinch. See `hover(_:)`.
             return nil
         case .working(let count, let line):
             return [L.t.statusWorking(count), subject?.label, line]
@@ -384,6 +402,12 @@ final class NotchIsland: NSObject {
         switch mode {
         case .hidden:
             return (0, 0)
+        case .resting:
+            // The character and nothing else: no count, no name, no second ear. Deliberately the
+            // same measurements as one session working, so waking up moves the routine and not
+            // the shape — the thing you notice is the animal getting up, not the menu bar
+            // rearranging itself around it.
+            return (bar + IslandView.inset * 2, 0)
         case .working(let count, _):
             // The character, and a number only when there is more than one thing to count. This
             // is the state the machine is in most of the day, so it has to be able to sit in the
@@ -502,6 +526,7 @@ final class NotchIsland: NSObject {
         case "waiting":  return (.waiting(rows[0].label), rows[0].hue)
         case "finished": return (.finished(rows[1].label), rows[1].hue)
         case "working2": return (.working(count: 3, line: nil), rows[0].hue)
+        case "resting":  return (.resting, rows[0].hue)
         default:         return (.working(count: 1, line: nil), rows[0].hue)
         }
     }
@@ -617,7 +642,10 @@ final class NotchIsland: NSObject {
 
     /// Draw one state of the island into a PNG, without it having to be on screen. For tuning a
     /// single state; the picture that ships is the clip below.
-    func snapshot(to path: String, mode named: String) {
+    /// `at` is seconds into the routine, for the states where one instant is not enough: resting
+    /// breathes over five seconds and the interesting question about it is whether the whole
+    /// swing is small, which is two or three frames of the same routine rather than one.
+    func snapshot(to path: String, mode named: String, at t: Double? = nil) {
         let s = stage()
         let (mode, hue) = Self.demo(named)
         let want = ears(for: mode, bar: s.bar)
@@ -625,10 +653,10 @@ final class NotchIsland: NSObject {
         view.notchWidth = s.core
         // A frame from the middle of the routine rather than its first instant, which for a jump
         // is the character standing perfectly still on the ground.
-        pose(view, mode: mode, hue: hue, left: want.left, right: want.right, on: s, at: 0.45)
+        pose(view, mode: mode, hue: hue, left: want.left, right: want.right, on: s, at: t ?? 0.45)
         FilmFrame.write(size: s.size, to: path) { self.paint(view, on: s) }
         view.releaseMascot()
-        Log.write("island snapshot → \(path) (\(named))")
+        Log.write("island snapshot → \(path) (\(named) at \(t ?? 0.45)s)")
     }
 
     /// The island demonstrating itself, one frame at a time.
@@ -729,7 +757,7 @@ final class NotchIsland: NSObject {
         case .waiting:  return watch.waiting
         case .working:  return watch.working
         case .finished: return subject.map { [$0] } ?? []
-        case .hidden:   return []
+        case .hidden, .resting: return []
         }
     }
 
@@ -842,6 +870,9 @@ final class IslandView: NSView {
     var projectGrid: ProjectIcon.Grid? { didSet { needsDisplay = true } }
 
     private let mascot = MascotView(frame: .zero)
+    /// What was asked for last time a routine was chosen. Only `resting` is ever read out of it:
+    /// leaving that state is a beat, and every other change is a cut.
+    private var lastPlayed: IslandMode = .hidden
 
     /// Put the character where a live one would be `t` seconds into this mode.
     ///
@@ -890,7 +921,27 @@ final class IslandView: NSView {
     override var isFlipped: Bool { false }
 
     func playRoutine(for mode: IslandMode) {
+        // Getting up is not the same as arriving, and this is the only place that can tell the
+        // two apart: the shape does not move between resting and one session working, so without
+        // this the character would go from asleep to at-work between two frames.
+        let waking = lastPlayed == .resting && mode != .resting
+        lastPlayed = mode
+        // Eyes shut for the whole of resting, and only for the fallback. A pack with its own
+        // `sleep` routine said so in its keys and is left alone — an author who drew a squint for
+        // sleeping should get their squint.
+        mascot.eyesOverride = (mode == .resting && !mascot.has("sleep")) ? "blink" : nil
         switch mode {
+        case .resting:
+            // Nothing is running, and the character is asleep rather than gone.
+            //
+            // This is on screen all day, so the budget for how much it may do is not the budget
+            // the other states get: they last seconds and are allowed to be seen. A pack that
+            // has `sleep` states its own pace and is obeyed. A pack that does not — every pack
+            // written before this existed — gets its own `idle` at a little under half speed,
+            // which lands on roughly the same five-second breath, with the eyes held shut above.
+            let resting = mascot.has("sleep") ? "sleep" : "idle"
+            if mascot.routine != resting { mascot.play(resting, then: resting) }
+            mascot.rate = resting == "sleep" ? 1 : 0.45
         case .finished:
             mascot.rate = 1
             mascot.play(mascot.has("dance") ? "dance" : "cheer", then: "idle")
@@ -907,7 +958,15 @@ final class IslandView: NSView {
             // Capped, because past a point faster stops reading as busy and starts reading as
             // broken.
             let busy = count >= 3 && mascot.has("typing") ? "typing" : "idle"
-            if mascot.routine != busy { mascot.play(busy, then: busy) }
+            // Woken up, so it gets up: one pass of `stretch` and then straight into the work.
+            // Reusing the routine every pack already has rather than writing a transition —
+            // it is a yawn with its eyes opening on the first key, which is exactly the beat
+            // that was missing, and nothing has to be maintained for it.
+            if waking, mascot.has("stretch") {
+                mascot.play("stretch", then: busy)
+            } else if mascot.routine != busy, mascot.routine != "stretch" {
+                mascot.play(busy, then: busy)
+            }
             mascot.rate = min(2.6, 1 + Double(count - 1) * 0.35)
         case .hidden:
             break
@@ -1028,7 +1087,9 @@ final class IslandView: NSView {
 
         let r = right
         switch mode {
-        case .hidden:
+        case .hidden, .resting:
+            // Asleep is the character and the black shape and nothing else. No dot, no name, no
+            // count — there is nothing to count, and a mark on an empty ear is a thing to read.
             return
         case .working(let count, _):
             guard count > 1 else { return }

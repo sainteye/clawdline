@@ -1513,8 +1513,16 @@ final class RemoteServer {
         // Hello, then the current state — so a client that has just reconnected is level without
         // asking, and never has to replay anything it missed. That is the whole reason the stream
         // carries the entire list on every change rather than a diff.
+        // **The same fields `/v1/health` sends, and that is a requirement rather than a
+        // convenience.** The page identifies a build from `build|version|protocol` and compares
+        // one reading against the next; if the two sources disagree about which fields exist, the
+        // stamps differ by construction and every page decides it is out of date the moment the
+        // stream connects. `build` was added to health alone, and the result was a "this page is
+        // the older one" notice that reloading could not clear — because the fresh page computed
+        // the same mismatch again.
         write(event: "hello", data: [
             "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
+            "build": Self.buildStamp,
             "protocol": Self.protocolVersion,
             "write": Config.shared.remoteWrite,
         ], to: stream)

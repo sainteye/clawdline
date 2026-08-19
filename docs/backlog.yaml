@@ -57,6 +57,29 @@ version: 1
 artifact: artifacts/backlog.html
 
 items:
+  - id: B-NO-SELF-UPDATE
+    title: A downloaded app has no way to learn a newer one exists
+    problem: >-
+      Somebody who downloads a release is on that release forever. They will not watch the
+      repository, and nothing on their Mac ever mentions that a newer build shipped — so the
+      version they first installed is the version they keep. That is worse here than for most
+      apps, because what this reads is Claude Code's own screen, and Claude Code updates itself
+      constantly: a build checked against one release keeps working until the shape of a spinner
+      or a dialog moves, and then it stops reading sessions correctly and says nothing. The
+      failure is silent and looks like the sessions being idle.
+    evidence: >-
+      `Sources/Compat.swift` records which Claude Code version each release was checked against
+      precisely because that coupling is real; the 0.6.0 row names two dependencies that would
+      break quietly. Nothing in the app or in `build.sh` checks for a newer release, and the app
+      is ad-hoc signed, which is what makes the usual updater route hard rather than routine.
+    severity: degrades
+    cost: weeks
+    who_hurts: user
+    trigger: >-
+      The first release that breaks against a Claude Code update — after which everybody still on
+      an older build is broken and has no way to find out.
+    opened: 2026-08-19
+
   - id: B-API-ERRORS-ENGLISH
     title: API error messages are hardcoded English and the page shows them verbatim
     problem: >-

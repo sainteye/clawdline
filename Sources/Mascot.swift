@@ -299,6 +299,15 @@ final class MascotView: NSView {
     /// For snapshot verification: pin the clock and draw one specific frame of a routine.
     var frozenTime: Double?
 
+    /// Hold one expression whatever the routine says, and stop the random blink while it is held.
+    ///
+    /// There is exactly one caller and it is the island's resting state. A pack that has its own
+    /// `sleep` routine has already shut the eyes in its keys and this stays nil; a pack written
+    /// before resting existed falls back to its `idle`, and `idle` is a character that is awake
+    /// and — worse — blinking, which is the one thing a sleeping character must not do. Forcing
+    /// the expression is what makes that fallback read as asleep rather than as standing still.
+    var eyesOverride: String?
+
     /// How fast the clock runs, as a multiple.
     ///
     /// A pack states its own timings and everything else obeys them — so "look busier" cannot be
@@ -436,6 +445,9 @@ final class MascotView: NSView {
                 else { nextBlink = t + Double.random(in: blink.everyMin...blink.everyMax) }
             }
         }
+        // After the blink, not before it: the point of holding an expression is to override the
+        // routine *and* the random one on top of it.
+        if let held = eyesOverride { f.eyes = held }
 
         guard let grid = pack.poses[f.pose] ?? pack.poses.values.first else { return }
         let rect = spriteRect

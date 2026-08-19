@@ -314,12 +314,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let path = items.first(where: { $0.name == "path" })?.value ?? ""
             // The island paints itself rather than the card, so it forks here rather than
             // growing another argument onto a call that has plenty.
+            // Parsed before the fork, because the island wants it too: resting is a five-second
+            // breath and one frame from the middle of it says nothing about the swing.
+            let t = items.first(where: { $0.name == "t" })?.value.flatMap(Double.init)
             if let island = items.first(where: { $0.name == "island" })?.value, !path.isEmpty {
-                NotchIsland.shared.snapshot(to: path, mode: island)
+                NotchIsland.shared.snapshot(to: path, mode: island, at: t)
                 return
             }
             let routine = items.first(where: { $0.name == "routine" })?.value
-            let t = items.first(where: { $0.name == "t" })?.value.flatMap(Double.init)
             let list = items.first(where: { $0.name == "list" })?.value
             let out = items.first(where: { $0.name == "output" })?.value == "1"
             let session = items.first(where: { $0.name == "session" })?.value

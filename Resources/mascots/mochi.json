@@ -213,6 +213,17 @@
         }
       ]
     },
+    "sleep": {
+      "duration": 5.2,
+      "loop": true,
+      "keys": [
+        { "t": 0.00, "pose": "stand", "eyes": "blink", "sx": 1.000, "sy": 1.000, "dy": 0.0 },
+        { "t": 0.40, "sx": 0.991, "sy": 1.026, "dy": 1.3, "ease": "inout" },
+        { "t": 0.85, "sx": 1.005, "sy": 0.992, "dy": -0.4, "ease": "inout" },
+        { "t": 1.00, "sx": 1.000, "sy": 1.000, "dy": 0.0, "ease": "inout" }
+      ]
+    },
+
     "typing": {
       "duration": 0.46,
       "loop": true,
