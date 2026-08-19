@@ -4,7 +4,7 @@
 // TTY on modern macOS (TIOCSTI is gone). iTerm2's `write text` is supported, stable, and
 // does not require bringing the window forward — which is the entire point of this tool.
 //
-// Usage: osascript -l JavaScript iterm.js <list|current|send|key|capture|tails|reveal|newtab> [args...]
+// Usage: osascript -l JavaScript iterm.js <list|current|send|key|capture|tails|reveal|newtab|close> [args...]
 
 function run(argv) {
   const cmd = argv[0] || "list";
@@ -151,6 +151,27 @@ function run(argv) {
       try { it.activate(); } catch (e) {}
     }
     return JSON.stringify(hit ? { ok: true } : { ok: false, error: "That session is gone" });
+  }
+
+  // close <id>
+  //
+  // Close a session's tab. **The most destructive thing this file can do**, and the only one
+  // whose effect the person asking for it cannot see: they are holding a phone, and what closes
+  // is a window on a Mac that may have something else in it.
+  //
+  // So it closes the *session*, not the tab or the window. In iTerm2 a tab can be split, and
+  // `tab.close()` would take the panes beside it — which belong to work nobody asked about. If
+  // that session was the only one in its tab, iTerm2 removes the tab itself, which is the
+  // behaviour somebody expects; if it was not, the split it was in survives.
+  if (cmd === "close") {
+    const want = String(argv[1] || "").toUpperCase();
+    const hit = eachSession(function (s) {
+      if (safe(function () { return s.id(); }, "").toUpperCase() !== want) return undefined;
+      try { s.close(); } catch (e) { return "close failed: " + e.message; }
+      return true;
+    });
+    if (hit === true) return JSON.stringify({ ok: true });
+    return JSON.stringify({ ok: false, error: typeof hit === "string" ? hit : "That session is gone" });
   }
 
   // newtab <line>

@@ -86,9 +86,23 @@ codesign --force --sign - --identifier dev.sainteye.clawdline "$APP" >/dev/null 
 
 if [ "$WAS_RUNNING" = "1" ]; then
   open "$APP"
-  echo "✓ done (relaunched, since it was running before)"
+  # **Say it came back only if it came back.** This used to print "relaunched" the instant
+  # `open` returned, which says nothing: `open` hands the request to Launch Services and exits.
+  # A build that killed the app and failed to start it again reported success, and the person
+  # watching saw their bar vanish with no reason given — which reads as a crash, not as a build.
+  for _ in $(seq 1 50); do
+    pgrep -x Clawdline >/dev/null 2>&1 && break
+    sleep 0.1
+  done
+  if pgrep -x Clawdline >/dev/null 2>&1; then
+    echo "✓ done (relaunched, since it was running before)"
+  else
+    echo "!! it was running before and did not come back — start it with:"
+    echo "   open \"$APP\""
+    exit 1
+  fi
 else
-  echo "✓ done"
+  echo "✓ done (it was not running, so it was left closed)"
 fi
 echo "  run:    open \"$APP\""
 echo "  config: ~/.config/clawdline/config.json"

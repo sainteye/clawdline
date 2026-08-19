@@ -451,6 +451,27 @@ final class RemoteServer {
         // the allowlist that matters is the one in `Targets`, not this parse. A route that took
         // "any key" would be a way to write escape sequences into somebody's terminal from a
         // phone, and no amount of validating the *question* would make that not true.
+        // Ending a session, which is the only route here that destroys something.
+        //
+        // Write-level, idempotency-keyed like every other write, and **`send` rather than a
+        // capability of its own**: a device that may type into a session can already type
+        // `/exit` and then `exit`, so this is not new power — it is the same power with the two
+        // steps joined and named. What it does add is that the second step lands on a tab that
+        // has left the list, which is why doing it by hand from a phone was impossible.
+        case ("POST", let path) where path.hasSuffix("/end") && path.hasPrefix("/v1/sessions/"):
+            let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/end".count))
+            return writing(request) { _ in
+                guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
+                    return .error(404, "not_found", "No session named that")
+                }
+                RemoteAuth.audit("session.end", ["id": session.id])
+                if let failure = Targets.end(session) {
+                    return .error(502, "internal", failure)
+                }
+                SessionWatch.shared.nudge()
+                return .json(["ok": true])
+            }
+
         case ("POST", let path) where path.hasSuffix("/key") && path.hasPrefix("/v1/sessions/"):
             let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/key".count))
             return writing(request) { body in

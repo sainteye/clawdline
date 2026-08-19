@@ -156,6 +156,15 @@ enum Tmux {
         return run(["send-keys", "-t", paneID, "-H", hex]).ok ? nil : "that tmux pane is gone"
     }
 
+    /// Close a pane. The tmux half of ending a session from somewhere you cannot see it.
+    ///
+    /// `kill-pane`, not `kill-window`: a window can hold several panes and the others belong to
+    /// work nobody asked about. When the pane was the only one, tmux removes the window itself,
+    /// which is what somebody pressing this expects.
+    static func close(_ paneID: String) -> String? {
+        return run(["kill-pane", "-t", paneID]).ok ? nil : "that tmux pane is gone"
+    }
+
     static func submit(_ paneID: String) -> String? {
         run(["send-keys", "-t", paneID, "Enter"]).ok ? nil : "pasted, but Enter did not land"
     }

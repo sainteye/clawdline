@@ -949,6 +949,13 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     overflow: hidden;
 }
 .composer .live[hidden] { display: none; }
+
+.stale .shut {
+    margin-left: 2px; padding: 0 6px;
+    border: 0; background: none; color: inherit;
+    opacity: 0.55; font-size: 15px; line-height: 1; cursor: pointer;
+}
+.stale .shut:hover { opacity: 1; }
 .composer .live .dot {
     flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
     background: var(--accent); animation: livepulse 1.6s ease-in-out infinite;
@@ -1315,6 +1322,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 <div class="stale" id="stale" hidden>
     <span id="stale-say">Clawdline has been rebuilt on the Mac. This page is the older one.</span>
     <button class="go" id="stale-go" type="button">Reload</button>
+    <button class="shut" id="stale-shut" type="button" aria-label="Close">&times;</button>
 </div>
 
 <!-- A session has been started on the Mac and has not turned up in the list yet. The tab is
@@ -1905,7 +1913,7 @@ var S = {
 var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
  "app", "pane-detail", "back", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
- "tx-order", "tx-order-label", "tx-focus", "tx-focus-label", "live",
+ "tx-order", "tx-order-label", "tx-focus", "tx-focus-label", "live", "stale-shut",
  "composer", "msg", "send", "why", "waiting", "stale", "stale-say", "stale-go",
  "hints", "keys", "toast", "brand", "brand-mark",
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
@@ -2126,6 +2134,7 @@ setInterval(function () {
 var Build = {
     seen: null,
     stale: false,
+    rebase: false,
 
     stamp: function (info) {
         var parts = [info.build, info.version, info.protocol];
@@ -2141,10 +2150,25 @@ var Build = {
         if (!info || this.stale) return;
         var now = this.stamp(info);
         if (!now) return;
-        if (this.seen === null) { this.seen = now; return; }
+        if (this.seen === null || this.rebase) { this.rebase = false; this.seen = now; return; }
         if (now === this.seen) return;
         this.stale = true;
         if (els.stale) els.stale.hidden = false;
+    },
+
+    /// Told, and not reloading now.
+    ///
+    /// **Without this the notice cannot be got rid of.** It is correct — the page really is
+    /// behind — but somebody halfway through a sentence has no way to make it go, and reloading
+    /// to silence a banner is exactly what they are trying not to do. Dismissing re-bases on
+    /// what the server is saying now, so it stays quiet until the *next* rebuild rather than
+    /// until the end of time.
+    hush: function () {
+        this.stale = false;
+        // The next reading becomes the new baseline. Re-basing here instead would need the
+        // current answer at the moment of the click, and the click has no reason to have one.
+        this.rebase = true;
+        if (els.stale) els.stale.hidden = true;
     }
 };
 
@@ -4192,6 +4216,7 @@ function paintStatic() {
 
     text(els["stale-say"], T.webStale);
     text(els["stale-go"], T.webStaleGo);
+    if (els["stale-shut"]) els["stale-shut"].setAttribute("aria-label", T.webClose);
 
     attr(els.attach, "aria-label", T.webAttach);
     attr(els.attach, "title", T.webAttach);
@@ -4572,6 +4597,7 @@ window.addEventListener("popstate", function () {
 });
 
 els["stale-go"].addEventListener("click", function () { location.reload(); });
+els["stale-shut"].addEventListener("click", function () { Build.hush(); });
 
 /* ---- arriving at a session from somewhere else ---------------------------
  *

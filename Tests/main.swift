@@ -3447,6 +3447,40 @@ group("every word the page can draw is a word the page is sent") {
           "sent but not in Copy: " + orphans.sorted().joined(separator: ", "))
 }
 
+group("ending a session is the one route that destroys something") {
+    let wasWriting = Config.shared.remoteWrite
+    defer { Config.shared.remoteWrite = wasWriting }
+
+    let reader = RemoteAuth.addDevice(name: "a phone that may read", caps: [.read])
+    let writer = RemoteAuth.addDevice(name: "a phone that may send", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: reader.id); RemoteAuth.revoke(id: writer.id) }
+
+    // **Every case here is a refusal.** There is no test of the path that works, because the
+    // path that works closes a terminal tab, and a suite that occasionally ends somebody's
+    // session is a suite people stop running. What is asserted is that nothing reaches
+    // `Targets.end` without passing the same gate as every other write.
+    func end(_ token: String?, key: Bool = true) -> RemoteServer.Response {
+        var headers: [String: String] = [:]
+        if let token { headers["Authorization"] = "Bearer \(token)" }
+        if key { headers["Idempotency-Key"] = UUID().uuidString }
+        return RemoteServer.shared.route(
+            remoteRequest("POST", "/v1/sessions/%nope%/end", headers: headers))
+    }
+
+    Config.shared.remoteWrite = true
+    expect("no token is refused", end(nil).status, 401)
+    expect("a device that may only read cannot end one", end(reader.token).status, 403)
+    expect("and without an Idempotency-Key it is a bad request",
+           end(writer.token, key: false).status, 400)
+
+    Config.shared.remoteWrite = false
+    expect("the write switch is checked first",
+           remoteErrorCode(end(writer.token)), "write_disabled")
+
+    Config.shared.remoteWrite = true
+    expect("a session that is not there is a 404", end(writer.token).status, 404)
+}
+
 // MARK: - Result
 
 print("")

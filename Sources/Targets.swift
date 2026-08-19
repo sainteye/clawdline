@@ -160,6 +160,32 @@ enum Targets {
         return SessionState.isChoosing(screen)
     }
 
+    /// End a session and close the tab it was in.
+    ///
+    /// **Two steps, in this order, and the order is the whole of it.** `/exit` first, so Claude
+    /// Code leaves the way it would if somebody typed it — flushing its transcript rather than
+    /// being killed in the middle of writing one. Then the tab, after a pause long enough for it
+    /// to have gone.
+    ///
+    /// Closing straight away would work and would be worse: the session's own record of the
+    /// conversation is the thing you would still want tomorrow, and it is being appended to right
+    /// up to the moment the process ends.
+    ///
+    /// **The pause is not a guarantee.** If Claude Code is mid-answer it will not have finished
+    /// leaving, and the tab closes under it — the same outcome as closing the tab by hand, which
+    /// is what the person asking for this would otherwise do. Saying so is the point: this is
+    /// documented as ending a session, not as saving one.
+    static func end(_ session: TargetSession) -> String? {
+        // Typed as a line, not as a keystroke: `/exit` is text at a prompt, and `send` already
+        // knows how to put text in front of Claude Code and press Return.
+        if let failure = send("/exit", to: session) { return failure }
+        Thread.sleep(forTimeInterval: 1.2)
+        switch session.backend {
+        case .iterm: return ITerm.close(session.id)
+        case .tmux:  return Tmux.close(session.id)
+        }
+    }
+
     private static func keystroke(_ byte: UInt8, to session: TargetSession) -> String? {
         switch session.backend {
         case .iterm: return ITerm.keystroke(byte, to: session.id)
