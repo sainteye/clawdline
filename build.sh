@@ -16,6 +16,15 @@ echo "→ building into $APP"
 WAS_RUNNING=0
 pgrep -x Clawdline >/dev/null 2>&1 && WAS_RUNNING=1
 pkill -x Clawdline 2>/dev/null || true
+# **`pkill` asks; it does not wait.** The bundle is deleted on the next line, and a process on
+# its way out is still reading it — AppKit's teardown calls `DisableWindowServerConnection`,
+# which asks CoreFoundation for the bundle identifier. Delete the bundle in that window and it
+# reads freed memory and dies of SIGSEGV, leaving a crash report from a build that otherwise
+# looked fine. Observed 2026-08-19 08:23:18, in `CFBundleGetIdentifier` under `HIToolbox`.
+for _ in $(seq 1 60); do
+  pgrep -x Clawdline >/dev/null 2>&1 || break
+  sleep 0.1
+done
 
 rm -rf "$APP"
 mkdir -p "$(dirname "$BIN")" "$RES"
