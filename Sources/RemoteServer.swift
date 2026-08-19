@@ -1282,6 +1282,45 @@ final class RemoteServer {
     private func serviceWorker() -> Response {
         let js = #"""
         // Clawdline's service worker. Its whole job is to be awake when the page is not.
+        // **The one lever that can reach a page already stuck on an old copy.**
+        //
+        // For a long time no route set `Cache-Control`, and a browser with no header applies
+        // heuristic freshness — Safari on a home-screen web app especially. Serving `no-store`
+        // fixes it for every load after the fix, and does nothing for a device that already
+        // holds the old copy: it never asks again, so it never learns. Reloading does not help,
+        // because the reload is served from the same cache.
+        //
+        // A worker can break that, and it is the only thing that can. `sw.js` itself is sent
+        // `no-cache`, so a browser revalidates it on its own schedule; when this file changes it
+        // installs, `skipWaiting` stops it queuing behind open tabs, `clients.claim` takes those
+        // tabs over, and from that moment the handler below fetches the page itself instead of
+        // the cache. **One more reload after that and the device is out.**
+        self.addEventListener("install", function () { self.skipWaiting(); });
+
+        self.addEventListener("activate", function (event) {
+            event.waitUntil(
+                // Nothing here writes to Cache Storage, so normally there is nothing to delete.
+                // It is done anyway, because "nothing wrote to it" is a claim about every version
+                // of this file that has ever run on somebody's phone, and this is two lines.
+                caches.keys()
+                    .then(function (names) { return Promise.all(names.map(function (n) { return caches.delete(n); })); })
+                    .catch(function () {})
+                    .then(function () { return self.clients.claim(); })
+            );
+        });
+
+        self.addEventListener("fetch", function (event) {
+            // Only the page. Everything else on this origin is either an API answer, which is
+            // `no-store` already, or a drawn icon, which is worth its day of cache.
+            if (event.request.mode !== "navigate") { return; }
+            event.respondWith(
+                fetch(event.request.url, { cache: "reload", credentials: "include" })
+                    // Offline: hand back whatever the browser would have done on its own, which
+                    // is the stale copy. Stale and readable beats an error page.
+                    .catch(function () { return fetch(event.request); })
+            );
+        });
+
         self.addEventListener("push", function (event) {
             var payload = {};
             try { payload = event.data ? event.data.json() : {}; } catch (e) {}
