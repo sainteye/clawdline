@@ -1492,6 +1492,11 @@ group("the languages the interface speaks") {
         "it:stackActionLogs",   // as is "log"
         "id:stackActionLogs",   // and in Indonesian
         "de:settingsTunnelHostname", // "Hostname" is the German word for it as well
+        // A status label beside a green dot. French, German, Italian, Spanish and Portuguese
+        // interfaces all say "ok" there — `bon`, `gut`, `bene`, `bien` and `certo` mean *good*,
+        // which is a different claim and reads as a translation of a word nobody used. The
+        // instruction not to touch this file pushed a translator into inventing five of them.
+        "fr:webLinkOk", "de:webLinkOk", "it:webLinkOk", "es:webLinkOk", "pt:webLinkOk",
         "fr:webBack",           // "Sessions" is the French plural, and the button is a destination
         "fr:webSettingsNotify", // "Notifications" is what French macOS calls exactly this
         "fr:webSettingsVersion", // "Version {v}" — the alternatives all mean something else

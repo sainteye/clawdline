@@ -559,7 +559,7 @@ protocol Copy {
     var loginFailed: String { get }
 }
 
-/// The reference values, for the extension below and for nothing else.
+/// Which language the interface speaks, and the words themselves.
 enum L {
     /// The active language. Cached because it is read on every redraw.
     private(set) static var t: Copy = pick()
@@ -673,27 +673,4 @@ enum L {
         .sorted { $0.element.q == $1.element.q ? $0.offset < $1.offset : $0.element.q > $1.element.q }
         .map(\.element.tag)
     }
-}
-
-/// English, for the sixteen the Links sheet added, until the thirteen files have them.
-/// Same temporary shape as the ones before it — **delete once translated**.
-private let reference = English()
-
-extension Copy {
-    var webLinks: String { reference.webLinks }
-    var webLinksTip: String { reference.webLinksTip }
-    var webLinksPick: String { reference.webLinksPick }
-    var webLinksEmpty: String { reference.webLinksEmpty }
-    var webLinksFailed: String { reference.webLinksFailed }
-    var webLinksLocal: String { reference.webLinksLocal }
-    var webLinksFile: String { reference.webLinksFile }
-    var webLinksCopy: String { reference.webLinksCopy }
-    var webLinksCopied: String { reference.webLinksCopied }
-    var webLinksCopyFailed: String { reference.webLinksCopyFailed }
-    var webLinkOk: String { reference.webLinkOk }
-    var webLinkFail: String { reference.webLinkFail }
-    var webLinkDown: String { reference.webLinkDown }
-    var webLinkRunning: String { reference.webLinkRunning }
-    var webSettingsOrder: String { reference.webSettingsOrder }
-    var webSettingsOrderSay: String { reference.webSettingsOrderSay }
 }
