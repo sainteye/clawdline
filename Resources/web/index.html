@@ -1050,6 +1050,9 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .sheet .block { margin-bottom: 4px; }
 .sheet .block b { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
 .sheet .block .say { margin: 0 0 10px 0; color: var(--dim); font-size: 12.5px; line-height: 1.5; }
+/* A key named inside one of these sentences, drawn the way the shortcuts card draws one — the
+   strings mark it with backticks, and what is between them here is something to press. */
+.sheet .block .say code { font: 500 11px/1 var(--ui); border: 1px solid #2c2c35; border-radius: 5px; padding: 2px 5px; color: var(--ink); background: #191920; }
 .sheet .block .row { display: flex; flex-wrap: wrap; gap: 8px; }
 .sheet .block .row .chip { padding: 7px 12px; font-size: 12.5px; }
 /* What just happened, said where it happened rather than in a toast that has gone by the time
@@ -1108,6 +1111,61 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    somewhere else — what was pressed is what is happening. */
 .sheet .place[data-busy="1"] { opacity: 1; border-color: var(--accent-ed); }
 .sheet .place[data-busy="1"] .where { color: var(--accent); }
+
+/* Where this project can be opened. The same furniture a third time, with one difference that
+   is the whole reason the sheet exists: these rows are not all the same kind of thing. An `<a>`
+   opens; a `.file` row is a path and a copy button and never an anchor; and either can carry a
+   line underneath saying why it will not work from here. The difference is drawn on the row
+   rather than left to be found out by tapping it on a train. */
+.sheet .links { list-style: none; margin: 0; padding: 0; max-height: min(46vh, 340px); overflow-y: auto; }
+.sheet .links li { margin: 0; }
+.sheet .link {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    column-gap: 10px; row-gap: 2px; align-items: center;
+    width: 100%; min-height: 44px;          /* a thumb's worth, as on the places list */
+    text-align: left;
+    padding: 8px 10px; margin-bottom: 2px;
+    border: 1px solid transparent; border-radius: 9px;
+    color: var(--ink); text-decoration: none;
+}
+a.link:hover { background: var(--card-hi); }
+a.link:active { background: var(--line); }
+/* A path is not a destination, so the row that holds one does not behave like one. */
+.sheet .link.file { cursor: default; }
+.sheet .link .kind { grid-column: 1; grid-row: 1 / span 2; width: 15px; height: 15px; color: var(--faint); }
+.sheet .link .name {
+    grid-column: 2; grid-row: 1;
+    display: flex; align-items: baseline; gap: 8px; min-width: 0;
+    font-size: 13.5px; font-weight: 500;
+}
+.sheet .link .name .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet .link .where {
+    grid-column: 2; grid-row: 2;
+    font-family: var(--mono); font-size: 11px; color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sheet .link .copy { grid-column: 3; grid-row: 1 / span 2; padding: 6px 10px; font-size: 11.5px; }
+/* Why this one will not open from here. Under the row rather than beside it: it is a sentence,
+   and it has to be able to be one on a phone. */
+.sheet .link .note {
+    grid-column: 1 / -1; grid-row: 3;
+    margin: 3px 0 0 0; font-size: 11.5px; line-height: 1.45; color: var(--faint);
+}
+/* That thing's own health, said quietly. A server that is down is worth knowing before it is
+   tapped; it is still not the loudest thing on the page, and nothing here outranks a session
+   that is waiting for you. */
+.sheet .link .ping {
+    display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
+    font-size: 11px; font-weight: 400; color: var(--faint);
+}
+.sheet .link .ping::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint);
+}
+.sheet .link .ping[data-state="ok"]::before { background: var(--ok); }
+.sheet .link .ping[data-state="running"]::before { background: var(--warn); }
+.sheet .link .ping[data-state="fail"]::before,
+.sheet .link .ping[data-state="down"]::before { background: var(--bad); }
 
 /* --------------------------------------------------------------------------
    The door
@@ -1399,10 +1457,15 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
                 <div class="sub" id="detail-sub"></div>
             </div>
             <div class="tools">
-                <!-- An arrow that points the way time runs, and it turns over when the order
-                     does: the words say which order this *is*, the arrow says it again in a
-                     shape, and the hover text says what pressing it will do. -->
-                <button class="chip" id="tx-order" type="button"><svg class="ico arrow" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M7 2.4v9.2M3.6 8.2 7 11.6l3.4-3.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg><span id="tx-order-label">Oldest first</span></button>
+                <!-- Everywhere this project can be opened: its site, the deploy that is running
+                     or has failed, whatever its dev stack is serving, the backlog file. A chain
+                     link, because what is behind it is a list of addresses and not one of them.
+
+                     This slot used to hold the transcript's sort order. Which end a transcript
+                     reads from is a preference somebody sets once, and it was holding a place in
+                     the header of every session on a phone for ever; it is behind the wordmark
+                     now, with the rest of what is true of this browser. -->
+                <button class="chip" id="tx-links" type="button"><svg class="ico" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M5.9 8.1a2.3 2.3 0 0 0 3.2 0l2-2a2.3 2.3 0 0 0-3.2-3.2l-.9.9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path><path d="M8.1 5.9a2.3 2.3 0 0 0-3.2 0l-2 2a2.3 2.3 0 0 0 3.2 3.2l.9-.9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg><span id="tx-links-label">Links</span></button>
                 <!-- A screen, because what this does happens on one that is somewhere else. -->
                 <button class="chip" id="tx-focus" type="button"><svg class="ico" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><rect x="1.3" y="2.2" width="11.4" height="7.8" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.3"></rect><path d="M5 12.2h4M7 10v2.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg><span id="tx-focus-label">Show on Mac</span></button>
             </div>
@@ -1472,6 +1535,18 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
             <p class="said" id="settings-notify-said" role="status" aria-live="polite"></p>
         </div>
 
+        <!-- Which end the transcript reads from. It lived in the transcript header until the
+             header had something to say that changes with the session; this does not change
+             with anything, which is what makes it one of these and not one of those. The arrow
+             turns over with the order, the way it did up there. -->
+        <div class="block">
+            <b id="settings-order-title">Transcript</b>
+            <p class="say" id="settings-order-say"></p>
+            <div class="row">
+                <button class="chip" id="settings-order" type="button"><svg class="ico arrow" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M7 2.4v9.2M3.6 8.2 7 11.6l3.4-3.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg><span id="settings-order-label">Oldest first</span></button>
+            </div>
+        </div>
+
         <div class="foot"><span id="settings-version"></span></div>
         <button class="chip wide" id="settings-close" type="button">Close</button>
     </div>
@@ -1498,6 +1573,30 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
         </div>
 
         <button class="chip wide" id="start-close" type="button">Close</button>
+    </div>
+</div>
+
+<!-- Everything the open session's project has an address for. Its own sheet, and its own route:
+     working these out costs the Mac a `git` invocation and a handful of file reads, and the
+     session list goes out on the event stream every time anything moves. Opening a menu is rare
+     and paying for it then is free.
+
+     The three kinds of row here are three different promises. One opens in this browser. One
+     opens only from the Mac's own network, and saying so beats a tap that times out on mobile
+     data. One is a file, which no browser can open at all — that one is a path to be copied and
+     is deliberately not a link, because a link that does nothing when tapped is worse than a
+     line of text. -->
+<div class="overlay" id="links" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" id="links-sheet" aria-label="Links">
+        <h2 id="links-title">Links</h2>
+
+        <div class="block">
+            <p class="say" id="links-say"></p>
+            <ul class="links" id="links-list"></ul>
+            <p class="said" id="links-said" role="status" aria-live="polite"></p>
+        </div>
+
+        <button class="chip wide" id="links-close" type="button">Close</button>
     </div>
 </div>
 
@@ -1633,9 +1732,32 @@ function hasKeyboard() {
     var vv = window.visualViewport;
     if (!vv) return;
     var root = document.documentElement;
+
+    // **Only while the keyboard is up.**
+    //
+    // `visualViewport.height` is not the same as `100dvh` even with no keyboard: on iOS it
+    // reports what is visible, which already stops short of the home indicator, while the
+    // composer separately pads itself by `env(safe-area-inset-bottom)`. Applying both meant the
+    // same strip of screen was reserved twice, and the input sat in a band of dead space about
+    // two indicators tall — visible on a phone and invisible in any desktop browser, because
+    // there the inset is zero and the two measurements agree.
+    //
+    // So the override is applied when the view is *meaningfully* shorter than the page, which
+    // is the keyboard and nothing else. The threshold is well above any inset and well below
+    // any keyboard.
+    var KEYBOARD = 80;
     function apply() {
-        root.style.setProperty("--vvh", vv.height + "px");
-        root.style.setProperty("--vvt", vv.offsetTop + "px");
+        var shrunk = (window.innerHeight - vv.height) > KEYBOARD;
+        if (shrunk) {
+            root.style.setProperty("--vvh", vv.height + "px");
+            root.style.setProperty("--vvt", vv.offsetTop + "px");
+        } else {
+            // Removed rather than set to `100dvh`: the declaration's own fallback is that, and a
+            // property that is present but "the same as the fallback" is one somebody later has
+            // to reason about.
+            root.style.removeProperty("--vvh");
+            root.style.removeProperty("--vvt");
+        }
     }
     vv.addEventListener("resize", apply);
     vv.addEventListener("scroll", apply);
@@ -1790,6 +1912,10 @@ var T = {
     webNotifyOffFailed: "Could not turn notifications off",
     webSettings: "Settings",
     webSettingsNotify: "Notifications",
+    // The sort order, which is a preference of this browser and now sits where the rest of them
+    // do. `webOrderTip` is still the button's hover text — same words, same job, one row down.
+    webSettingsOrder: "Transcript",
+    webSettingsOrderSay: "Which end of a transcript to start reading from. It applies to every session, and `r` does the same from a keyboard.",
     webSettingsVersion: "Version {v}",
     webClose: "Close",
     webNotifySheetOff: "This device is not told when a session is waiting.",
@@ -1816,6 +1942,26 @@ var T = {
     webStartTerminalClosed: "{app} is not running on the Mac. Open it there and try again.",
     webStartTerminalUnsupported: "A session cannot be started in {app} from here. Run tmux in it and this works.",
     webStartOff: "Starting a session is switched off. Settings → Remote on the Mac turns it on.",
+
+    // Where this project can be opened. Three of these exist to be honest about a row that
+    // cannot be opened from wherever this page is being read — which is the only reason the
+    // list is worth having rather than a page of links that time out.
+    webLinks: "Links",
+    webLinksTip: "Where this project can be opened",
+    webLinksPick: "Everything this project has an address for.",
+    webLinksEmpty: "This project has nothing with an address — no site, no deploy, and no dev stack running.",
+    webLinksFailed: "Could not read this project's links.",
+    webLinksLocal: "On the Mac's own network only. It will not open from here.",
+    webLinksFile: "A file on the Mac. It opens there, not in this browser.",
+    webLinksCopy: "Copy path",
+    webLinksCopied: "Copied.",
+    webLinksCopyFailed: "This browser would not let the page copy that.",
+    // That thing's own health, in its own words, because "ok" means a passing run and a serving
+    // port and there is one row type for both.
+    webLinkOk: "ok",
+    webLinkFail: "failing",
+    webLinkDown: "down",
+    webLinkRunning: "running",
 
     // Said in both places, so said once — the bar's own words, arriving here too.
     placeholder: "Message Claude Code…",
@@ -1917,12 +2063,14 @@ var S = {
 var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
  "app", "pane-detail", "back", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
- "tx-order", "tx-order-label", "tx-focus", "tx-focus-label", "live", "stale-shut",
+ "tx-links", "tx-links-label", "tx-focus", "tx-focus-label", "live", "stale-shut",
  "composer", "msg", "send", "why", "waiting", "stale", "stale-say", "stale-go",
  "hints", "keys", "toast", "brand", "brand-mark",
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
  "settings-notify-go", "settings-notify-test", "settings-notify-said", "settings-version",
- "settings-close",
+ "settings-close", "settings-order", "settings-order-title", "settings-order-say",
+ "settings-order-label",
+ "links", "links-sheet", "links-title", "links-say", "links-list", "links-said", "links-close",
  "start-go", "start", "start-sheet", "start-title", "start-say", "start-filter", "start-list",
  "start-said", "start-close", "starting", "starting-spin", "starting-say", "starting-close",
  "notify", "notify-go", "notify-go-label", "notify-say", "shots", "attach", "pick",
@@ -2423,6 +2571,14 @@ var Live = {
                          post({}, { "Idempotency-Key": uuid() }));
     },
 
+    /// Everything this session's project has an address for. **Asked when the menu opens and
+    /// never with the session list**: this costs the Mac a `git` invocation and a handful of
+    /// file reads per project, and the list goes out on the event stream every time anything
+    /// moves — which is why it is a route of its own rather than a field on a session.
+    links: function (id) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/links");
+    },
+
     /// Where a session may be started. Asked afresh every time the sheet opens: the Mac drops
     /// directories that are no longer there while it builds this, and the answer is only as
     /// true as the moment it was given.
@@ -2621,6 +2777,30 @@ var Mock = (function () {
         { id: "7a2c9e46b1d05f38", label: "website", path: "/Users/you/code/website", icon: null },
         { id: "e51b7d02c4a86f19", label: "notes", path: "/Users/you/tmp/notes", icon: null }
     ];
+    // What a project has an address for, per session. Two of the six have anything at all,
+    // which is the honest proportion: a project with no CI and no dev stack has an empty list,
+    // and that is the case the sheet mostly has to be good at.
+    //
+    // Between them the rows cover every shape the sheet has to draw — a site that is up, a
+    // deploy that has failed, one that is still running, two dev-stack servers on the Mac's own
+    // network with one of them down, and a backlog that is a file no browser can open.
+    var links = {
+        "8F3A-1C": [
+            { label: "site", url: "https://clawdline.example.com", kind: "site", state: "ok", local: false },
+            { label: "ci", url: "https://github.com/example/clawdline/actions/runs/32206093368", kind: "deploy", state: "fail", local: false },
+            { label: "web", url: "http://127.0.0.1:5173", kind: "server", state: "ok", local: true },
+            { label: "api", url: "http://127.0.0.1:8787", kind: "server", state: "down", local: true },
+            { label: "backlog", url: "file:///Users/you/code/clawdline/artifacts/backlog.html", kind: "artifact", state: "", local: true }
+        ],
+        "2C71-90": [
+            { label: "staging", url: "https://staging.example.com", kind: "site", state: "down", local: false },
+            { label: "deploy", url: "https://github.com/example/atrium/actions/runs/32206093412", kind: "deploy", state: "running", local: false }
+        ]
+    };
+    // `?links=empty` is every project with nothing, and `?links=fail` is the route refusing —
+    // the two states that are otherwise hard to arrange on a machine that has both.
+    var MOCK_LINKS = params.get("links") || "";
+
     // How the fixture's start behaves: `?start=slow` never reports in, so the fifteen seconds
     // can be watched rather than described; `closed`, `unsupported` and `gone` are the three
     // refusals with a sentence of their own on the other end, and `empty` is a Mac with
@@ -2777,6 +2957,20 @@ var Mock = (function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Focus is not enabled on this server."), { code: "write_disabled" })); return; }
                     done({ ok: true });
                 }, 150);
+            });
+        },
+
+        /** Slower than it looks it should be, on purpose: the real one shells out to `git`, and
+         *  a sheet that has to say "loading" is a sheet that has to have somewhere to say it. */
+        links: function (id) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (MOCK_LINKS === "fail") {
+                        fail(Object.assign(new Error("No session named that"), { code: "not_found" }));
+                        return;
+                    }
+                    done({ links: MOCK_LINKS === "empty" ? [] : (links[id] || []).slice() });
+                }, 420);
             });
         },
 
@@ -3440,8 +3634,10 @@ function renderDetailHead() {
     }
     els["detail-sub"].textContent = sub.join("  ·  ");
     drawIcon(els["detail-mark"], s && s.icon, 5);
-    els["tx-order-label"].textContent = S.newestFirst ? T.webOrderNewest : T.webOrderOldest;
-    els["tx-order"].classList.toggle("on", S.newestFirst);
+    // Nothing to ask the Mac about with no session open, and the sheet would have no project
+    // to be about. The chip stays on screen: a control that comes and goes with the selection
+    // is a header that moves under whoever is reading it.
+    els["tx-links"].disabled = !s;
     // **Hidden unless this page is being read on the Mac itself.**
     //
     // The button brings a session's terminal to the front over there. Pressed from a phone it
@@ -4218,7 +4414,8 @@ function paintStatic() {
     // The chevron is drawn, not typed: it points the way back whichever language is beside it.
     text(els.back, "‹ " + T.webBack);
     attr(els.back, "aria-label", T.webBackLabel);
-    attr(els["tx-order"], "title", T.webOrderTip);
+    text(els["tx-links-label"], T.webLinks);
+    attr(els["tx-links"], "title", T.webLinksTip);
     text(els["tx-focus-label"], T.webShowOnMac);
 
     text(els["stale-say"], T.webStale);
@@ -4238,7 +4435,15 @@ function paintStatic() {
     attr(els["settings-sheet"], "aria-label", T.webSettings);
     text(els["settings-title"], T.webSettings);
     text(els["settings-notify-title"], T.webSettingsNotify);
+    text(els["settings-order-title"], T.webSettingsOrder);
+    els["settings-order-say"].innerHTML = words(T.webSettingsOrderSay);
+    attr(els["settings-order"], "title", T.webOrderTip);
     text(els["settings-close"], T.webClose);
+
+    // The links sheet. Its rows are drawn each time it opens; only the furniture is here.
+    attr(els["links-sheet"], "aria-label", T.webLinks);
+    text(els["links-title"], T.webLinks);
+    text(els["links-close"], T.webClose);
 
     // Starting one. The button carries the short words as its hover text and the long ones as
     // its name, because what a screen reader reads out is the only label a drawn `+` has.
@@ -4454,6 +4659,8 @@ function openSession(id, keepFocus) {
         S.expanded = {};
         // And a picture picked for one session is not a picture for the next one.
         Shots.clear();
+        // Nor is a list of one project's addresses a list of the next one's.
+        Links.follow();
         loadTranscript(id, false);
     }
     if (phone()) {
@@ -4476,6 +4683,7 @@ function closeDetail(silent) {
     S.tx = { id: null, entries: [], signature: null, loading: false, error: null };
     S.expanded = {};
     Shots.clear();
+    Links.follow();
     if (phone()) els.app.dataset.view = "list";
     renderTranscript();
     if (!silent) render();
@@ -4536,6 +4744,7 @@ document.addEventListener("keydown", function (ev) {
     }
 
     if (key === "Escape") {
+        if (!els.links.hidden) { Links.close(); return; }
         if (!els.start.hidden) { Start.close(); return; }
         if (!els.settings.hidden) { Settings.close(); return; }
         if (!els.keys.hidden) { els.keys.hidden = true; return; }
@@ -4552,7 +4761,7 @@ document.addEventListener("keydown", function (ev) {
     if (typing(document.activeElement)) return;
     if (meta || ev.altKey) return;
     // A sheet is over the page, so `j` is not "move down the list behind it".
-    if (!els.settings.hidden || !els.start.hidden) return;
+    if (!els.settings.hidden || !els.start.hidden || !els.links.hidden) return;
 
     switch (key) {
         case "ArrowDown": case "j": ev.preventDefault(); move(1); break;
@@ -4573,9 +4782,11 @@ document.addEventListener("keydown", function (ev) {
     }
 });
 
+/** Pressed in the settings sheet, or `r` from a keyboard. The sheet is redrawn as well as the
+ *  transcript: the button that was pressed is a button that says which order it is now. */
 function toggleOrder() {
     S.newestFirst = !S.newestFirst;
-    renderDetailHead();
+    Settings.drawOrder();
     renderTranscript();
     els["tx-scroll"].scrollTop = 0;
 }
@@ -4586,7 +4797,7 @@ els["list-scroll"].addEventListener("touchstart", freezeOrder, { passive: true }
 els["list-scroll"].addEventListener("touchend", function () { setTimeout(thawOrder, 1200); }, { passive: true });
 
 els.filter.addEventListener("input", function () { S.filter = els.filter.value; renderList(); });
-els["tx-order"].addEventListener("click", toggleOrder);
+els["tx-links"].addEventListener("click", function () { Links.open(); });
 els.back.addEventListener("click", function () { closeDetail(); });
 els.keys.addEventListener("click", function () { els.keys.hidden = true; });
 els.keys.querySelector(".sheet").addEventListener("click", function (ev) { ev.stopPropagation(); });
@@ -4695,11 +4906,23 @@ var Settings = (function () {
             els["settings-version"].textContent =
                 S.version ? fill(T.webSettingsVersion, { v: S.version }) : "";
             Push.redraw();
+            this.drawOrder();
             els["settings-close"].focus({ preventScroll: true });
         },
 
         close: function () { els.settings.hidden = true; },
         toggle: function () { if (els.settings.hidden) this.open(); else this.close(); },
+
+        /**
+         * The transcript's order, as it was drawn in the header it came from: the words say
+         * which order this *is*, the arrow says the same thing in a shape and turns over with
+         * it, and the hover text says what pressing it will do.
+         */
+        drawOrder: function () {
+            els["settings-order-label"].textContent =
+                S.newestFirst ? T.webOrderNewest : T.webOrderOldest;
+            els["settings-order"].classList.toggle("on", S.newestFirst);
+        },
 
         /** The notifications block, drawn from the state Push worked out. */
         drawNotify: function (state, busy) {
@@ -4753,6 +4976,7 @@ els["settings-sheet"].addEventListener("click", function (ev) { ev.stopPropagati
 els["settings-close"].addEventListener("click", function () { Settings.close(); });
 els["settings-notify-go"].addEventListener("click", function () { Push.toggle(); });
 els["settings-notify-test"].addEventListener("click", function () { Settings.test(); });
+els["settings-order"].addEventListener("click", toggleOrder);
 
 /* ---- starting a session -------------------------------------------------- */
 
@@ -5027,6 +5251,204 @@ els["start-list"].addEventListener("click", function (ev) {
     Start.press(row.dataset.id);
 });
 els["starting-close"].addEventListener("click", function () { Start.dismiss(); });
+
+/* ---- where this project can be opened ------------------------------------ */
+
+/**
+ * Everything the open session's project has an address for.
+ *
+ * **Asked for when this opens, and never with the session list.** Working these out costs the
+ * Mac a `git` invocation and a handful of file reads per project, and the list goes out on the
+ * event stream every time anything moves — a field on a session would be a subprocess per
+ * session per second to answer a question nobody had asked. So it is a route of its own, and
+ * the answer is held for exactly as long as this sheet is on screen: a deploy finishes and a
+ * server falls over, and the next open is a fresh question rather than the old answer again.
+ *
+ * **Three kinds of row, because three different things are true.** One opens in this browser.
+ * One is on the Mac's own network and will not open from a phone on mobile data, which is said
+ * on the row rather than found out by tapping it. One is a file, which no browser can open from
+ * anywhere — that one is a path and a copy button and is deliberately not a link, because a
+ * link that does nothing when tapped is worse than a line of text.
+ *
+ * **An empty list is the ordinary answer.** A project with no CI and no dev stack has nothing
+ * here, and that is a sentence rather than an empty box.
+ */
+var Links = (function () {
+    /* The four kinds, as four shapes. A globe for something on the web, an arrow leaving a
+       tray for a deploy, a rack for something serving, a page for a file. */
+    var KINDS = {
+        site: '<circle cx="7" cy="7" r="5.3"/><path d="M1.7 7h10.6M7 1.7c1.5 1.6 2.3 3.4 2.3 5.3S8.5 10.7 7 12.3C5.5 10.7 4.7 8.9 4.7 7S5.5 3.3 7 1.7Z"/>',
+        deploy: '<path d="M7 9.3V2.7M4.4 5.3 7 2.7l2.6 2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 8.9v2a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2"/>',
+        server: '<rect x="2.2" y="2.3" width="9.6" height="3.9" rx="1.1"/><rect x="2.2" y="7.8" width="9.6" height="3.9" rx="1.1"/>',
+        artifact: '<path d="M8.2 1.9H4.3a1.1 1.1 0 0 0-1.1 1.1v8.2a1.1 1.1 0 0 0 1.1 1.1h5.4a1.1 1.1 0 0 0 1.1-1.1V4.4z"/><path d="M8.2 1.9v2.5h2.5"/>'
+    };
+    /* That thing's own health, where it has one. An empty `state` is not a state — plenty of
+       these are addresses nobody measures — so it draws nothing rather than "unknown". */
+    var STATES = { ok: "webLinkOk", fail: "webLinkFail", down: "webLinkDown", running: "webLinkRunning" };
+
+    var forId = null;    // whose links these are
+    var rows = null;     // as the Mac sent them; null until an answer has arrived
+    var loading = false;
+    var ticket = 0;      // the answer that is still wanted, so a stale one can be dropped
+
+    function say(w) { els["links-say"].textContent = w || ""; }
+    function said(w, calm) {
+        els["links-said"].textContent = w || "";
+        els["links-said"].className = "said" + (calm ? " calm" : "");
+    }
+
+    function why(e) {
+        if (e && e.code === "offline") return e.message;   // already this page's own sentence
+        return T.webLinksFailed;
+    }
+
+    /**
+     * Whether this page may put the address in an `href`.
+     *
+     * A whitelist, rather than a test for the schemes that are wrong. These strings come out of
+     * a project's own `devstack.json` and out of a status file — which is to say out of a file
+     * in a repository — and `javascript:` in an `href` is script running on this page with this
+     * page's cookie. Anything that is not plainly `http` or `https` is drawn as text.
+     */
+    function openable(url) { return /^https?:\/\//i.test(url || ""); }
+    function isFile(url) { return /^file:\/\//i.test(url || ""); }
+
+    /** The path inside a `file://` URL, spelled the way it is spelled on the disk. */
+    function pathOf(url) {
+        var raw = String(url).replace(/^file:\/\/(localhost)?/i, "");
+        try { return decodeURIComponent(raw); } catch (e) { return raw; }
+    }
+
+    function icon(kind) {
+        return '<svg class="kind" viewBox="0 0 14 14" aria-hidden="true" focusable="false" ' +
+            'fill="none" stroke="currentColor" stroke-width="1.3">' +
+            (KINDS[kind] || KINDS.site) + "</svg>";
+    }
+
+    function rowHTML(l) {
+        var url = String(l.url || "");
+        var file = isFile(url);
+        var open = openable(url);
+        // `local` means the address resolves on the Mac's own network and nowhere else. Read on
+        // the Mac itself that is simply an address and there is nothing to say; reached over a
+        // tunnel, over a LAN address, or on mobile data it is the whole story about that row.
+        var far = l.local && !atMac();
+        var note = file ? T.webLinksFile : (far ? T.webLinksLocal : "");
+        var word = STATES[l.state] ? T[STATES[l.state]] : "";
+
+        var inner = icon(l.kind) +
+            '<span class="name"><span class="what">' + esc(l.label || url) + "</span>" +
+            (word ? '<span class="ping" data-state="' + esc(l.state) + '">' + esc(word) + "</span>" : "") +
+            "</span>" +
+            '<span class="where">' + esc(file ? shortPath(pathOf(url)) : url) + "</span>" +
+            (note ? '<span class="note">' + esc(note) + "</span>" : "") +
+            // Only where there is nothing to tap. The path is shortened to fit the row, so what
+            // gets copied is carried separately: it is the one somebody is going to paste.
+            (open ? "" : '<button class="chip copy" type="button" data-copy="' +
+                esc(file ? pathOf(url) : url) + '">' + esc(T.webLinksCopy) + "</button>");
+
+        return open
+            ? '<a class="link" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + inner + "</a>"
+            : '<div class="link file">' + inner + "</div>";
+    }
+
+    function draw() {
+        if (els.links.hidden) return;
+        say(loading && !rows ? T.webLoading
+            : (rows && !rows.length) ? T.webLinksEmpty
+            : T.webLinksPick);
+        els["links-list"].innerHTML = (rows || []).map(function (l) {
+            return "<li>" + rowHTML(l) + "</li>";
+        }).join("");
+    }
+
+    function load(id) {
+        if (typeof api.links !== "function") { rows = []; draw(); return; }
+        var mine = ++ticket;
+        loading = true;
+        draw();
+        api.links(id).then(function (d) {
+            if (mine !== ticket) return;      // closed, or opened again on another session
+            rows = (d && d.links) || [];
+            loading = false;
+            draw();
+        }).catch(function (e) {
+            if (mine !== ticket) return;
+            rows = [];
+            loading = false;
+            said(why(e));
+            draw();
+        });
+    }
+
+    /** `execCommand` is gone from the specification and is still the only thing that works
+     *  where `navigator.clipboard` is not there at all — which is any page served over plain
+     *  http at a LAN address, and that is exactly how a phone on the same Wi-Fi reaches this
+     *  one. The button has to work on the screen it is for. */
+    function legacyCopy(text) {
+        var box = document.createElement("textarea");
+        box.value = text;
+        box.setAttribute("readonly", "");
+        box.style.position = "fixed";
+        box.style.top = "-1000px";
+        document.body.appendChild(box);
+        var ok = false;
+        try {
+            box.select();
+            box.setSelectionRange(0, text.length);
+            ok = document.execCommand("copy");
+        } catch (e) { ok = false; }
+        document.body.removeChild(box);
+        return ok;
+    }
+
+    return {
+        open: function () {
+            if (!S.openId) return;
+            forId = S.openId;
+            rows = null;
+            said("");
+            els.links.hidden = false;
+            load(forId);
+            els["links-close"].focus({ preventScroll: true });
+        },
+
+        close: function () {
+            els.links.hidden = true;
+            // The cache is the sheet. Nothing is kept for the next open, and an answer still on
+            // its way is no longer wanted — see `ticket`.
+            ticket += 1;
+            loading = false;
+            rows = null;
+            forId = null;
+        },
+
+        /** The session under the sheet changed, so what is in it is about something else. */
+        follow: function () { if (!els.links.hidden && S.openId !== forId) this.close(); },
+
+        copy: function (text) {
+            if (!text) return;
+            said("");
+            var done = function () { said(T.webLinksCopied, true); };
+            var failed = function () { said(T.webLinksCopyFailed); };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(done).catch(function () {
+                    if (legacyCopy(text)) done(); else failed();
+                });
+                return;
+            }
+            if (legacyCopy(text)) done(); else failed();
+        }
+    };
+})();
+
+els.links.addEventListener("click", function () { Links.close(); });
+els["links-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
+els["links-close"].addEventListener("click", function () { Links.close(); });
+els["links-list"].addEventListener("click", function (ev) {
+    var button = ev.target.closest ? ev.target.closest(".copy") : null;
+    if (button) Links.copy(button.dataset.copy);
+});
 
 /* ---- notifications ------------------------------------------------------- */
 

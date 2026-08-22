@@ -1336,6 +1336,26 @@ final class RemoteServer {
             "webStaleGo": t.webStaleGo,
         ])
 
+        // The Links sheet.
+        add([
+            "webLinks": t.webLinks,
+            "webLinksTip": t.webLinksTip,
+            "webLinksPick": t.webLinksPick,
+            "webLinksEmpty": t.webLinksEmpty,
+            "webLinksFailed": t.webLinksFailed,
+            "webLinksLocal": t.webLinksLocal,
+            "webLinksFile": t.webLinksFile,
+            "webLinksCopy": t.webLinksCopy,
+            "webLinksCopied": t.webLinksCopied,
+            "webLinksCopyFailed": t.webLinksCopyFailed,
+            "webLinkOk": t.webLinkOk,
+            "webLinkFail": t.webLinkFail,
+            "webLinkDown": t.webLinkDown,
+            "webLinkRunning": t.webLinkRunning,
+            "webSettingsOrder": t.webSettingsOrder,
+            "webSettingsOrderSay": t.webSettingsOrderSay,
+        ])
+
         var response = Response.json(out)
         // The answer depends on a request header, so a cache that keyed on the URL alone would
         // hand the next reader somebody else's language.

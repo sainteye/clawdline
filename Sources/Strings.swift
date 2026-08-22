@@ -506,6 +506,27 @@ protocol Copy {
     var webStartTerminalUnsupported: String { get }
     var webStartOff: String { get }
 
+    // The addresses a project has — see `GET /v1/sessions/:id/links` and the sheet the Links
+    // chip opens. `webLinksLocal` and `webLinksFile` are the two that matter: one address only
+    // resolves on the Mac's network and the other is not a web address at all, and a link that
+    // silently does nothing when tapped is worse than a line of text that explains itself.
+    var webLinks: String { get }
+    var webLinksTip: String { get }
+    var webLinksPick: String { get }
+    var webLinksEmpty: String { get }
+    var webLinksFailed: String { get }
+    var webLinksLocal: String { get }
+    var webLinksFile: String { get }
+    var webLinksCopy: String { get }
+    var webLinksCopied: String { get }
+    var webLinksCopyFailed: String { get }
+    var webLinkOk: String { get }
+    var webLinkFail: String { get }
+    var webLinkDown: String { get }
+    var webLinkRunning: String { get }
+    var webSettingsOrder: String { get }
+    var webSettingsOrderSay: String { get }
+
     // A question with a menu on it — see `Transcript.askPayload` and the ask block in the page.
     //
     // The important one is `webWaitingSend`. A picker throws away a bracketed paste and then acts
@@ -652,4 +673,27 @@ enum L {
         .sorted { $0.element.q == $1.element.q ? $0.offset < $1.offset : $0.element.q > $1.element.q }
         .map(\.element.tag)
     }
+}
+
+/// English, for the sixteen the Links sheet added, until the thirteen files have them.
+/// Same temporary shape as the ones before it — **delete once translated**.
+private let reference = English()
+
+extension Copy {
+    var webLinks: String { reference.webLinks }
+    var webLinksTip: String { reference.webLinksTip }
+    var webLinksPick: String { reference.webLinksPick }
+    var webLinksEmpty: String { reference.webLinksEmpty }
+    var webLinksFailed: String { reference.webLinksFailed }
+    var webLinksLocal: String { reference.webLinksLocal }
+    var webLinksFile: String { reference.webLinksFile }
+    var webLinksCopy: String { reference.webLinksCopy }
+    var webLinksCopied: String { reference.webLinksCopied }
+    var webLinksCopyFailed: String { reference.webLinksCopyFailed }
+    var webLinkOk: String { reference.webLinkOk }
+    var webLinkFail: String { reference.webLinkFail }
+    var webLinkDown: String { reference.webLinkDown }
+    var webLinkRunning: String { reference.webLinkRunning }
+    var webSettingsOrder: String { reference.webSettingsOrder }
+    var webSettingsOrderSay: String { reference.webSettingsOrderSay }
 }

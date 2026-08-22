@@ -335,8 +335,21 @@ final class MascotView: NSView {
 
     // MARK: Pack
 
+    /// One entry per character in the palette: the colour it paints, and the key the cell paths
+    /// are grouped under. Nil for the ones that paint nothing.
+    ///
+    /// **Resolved per character rather than per cell.** `pack.color(for:accent:)` parses a hex
+    /// string into a fresh `NSColor` and the grouping below asks that colour to describe itself —
+    /// two allocations for every one of a couple of hundred cells, sixty times a second. That was
+    /// free when the only thing drawing was a card somebody had open for four seconds. The island
+    /// now sleeps up there all day, so the same loop runs whether or not anybody is looking, and
+    /// it is where the drawing time goes.
+    private var swatches: [Character: (color: NSColor, key: String)?] = [:]
+    private var swatchAccent: NSColor?
+
     @discardableResult
     func reload() -> String? {
+        swatches.removeAll()
         let result = MascotPack.load(named: Config.shared.mascot)
         if let p = result.pack {
             pack = p
@@ -453,6 +466,13 @@ final class MascotView: NSView {
         let rect = spriteRect
         let cell = rect.width / CGFloat(pack.grid.cols)
         let eyeChars = pack.eyeCharacterSet
+        // Thrown away if the tint ever differs. It is a constant today, and a cache that would
+        // silently outlive it becoming a setting is not worth the two lines it saves.
+        let accent = Style.accent
+        if swatchAccent != accent {
+            swatches.removeAll()
+            swatchAccent = accent
+        }
         let eyeTop = grid.firstIndex { $0.contains(where: { eyeChars.contains($0) }) } ?? 0
 
         NSGraphicsContext.saveGraphicsState()
@@ -478,8 +498,14 @@ final class MascotView: NSView {
                     let hide = (f.eyes == "blink" && r == eyeTop) || (f.eyes == "happy" && r != eyeTop)
                     if hide { ch = pack.skinCharacter }
                 }
-                guard let color = pack.color(for: ch, accent: Style.accent) else { continue }
-                let key = color.description
+                let swatch: (color: NSColor, key: String)?
+                if let hit = swatches[ch] {
+                    swatch = hit
+                } else {
+                    swatch = pack.color(for: ch, accent: accent).map { ($0, $0.description) }
+                    swatches[ch] = swatch
+                }
+                guard let (color, key) = swatch else { continue }
                 let path = paths[key] ?? { let p = NSBezierPath(); paths[key] = p; return p }()
                 path.appendRect(NSRect(x: rect.minX + CGFloat(c) * cell,
                                        y: rect.minY + rect.height - CGFloat(r + 1) * cell,

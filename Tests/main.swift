@@ -92,10 +92,29 @@ group("shipped packs decode and validate") {
             check("\(name) decodes", false); continue
         }
         check("\(name) validates", pack.validate() == nil, pack.validate() ?? "")
-        // The five routines the app actually triggers. Missing ones fall back to idle, so
+        // The routines the app actually triggers. Missing ones fall back to idle, so
         // this is a warning in spirit — but a shipped pack should carry all of them.
-        for routine in ["pop", "idle", "typing", "dance", "cheer"] {
+        for routine in ["pop", "idle", "typing", "dance", "cheer", "sleep"] {
             check("\(name) has routine \(routine)", pack.routines[routine] != nil)
+        }
+        // `sleep` is held to more than existing, because it is the one routine that is on
+        // screen all day rather than for the second and a half something takes.
+        if let sleep = pack.routines["sleep"] {
+            check("\(name) sleep loops", sleep.loop == true)
+            // A sleeping character does not blink, and a blink block here would make it.
+            check("\(name) sleep has no blink block", sleep.blink == nil)
+            let shut = stride(from: 0.0, through: 1.0, by: 0.05).allSatisfy {
+                pack.frame(routine: "sleep", at: $0 * sleep.duration).eyes == "blink"
+            }
+            check("\(name) sleep keeps its eyes shut throughout", shut)
+            // A loop whose last key disagrees with its first jumps once every cycle. On a
+            // two-second dance nobody would catch it; on a five-second breath in the menu bar
+            // it is a twitch, which is the exact thing this state may not do.
+            let first = pack.frame(routine: "sleep", at: 0)
+            let last = pack.frame(routine: "sleep", at: sleep.duration * 0.9999)
+            check("\(name) sleep ends where it starts",
+                  abs(first.sy - last.sy) < 0.002 && abs(first.dy - last.dy) < 0.01,
+                  "sy \(first.sy)→\(last.sy), dy \(first.dy)→\(last.dy)")
         }
     }
 }
@@ -137,6 +156,13 @@ group("routine sampling interpolates and steps") {
     let start = pack.frame(routine: "idle", at: 0)
     expectClose("t=0 takes the first key", start.dy, 0)
     expect("pose comes from the first key", start.pose, "stand")
+
+    // A pack written before the island had a resting state has no `sleep`, and asking for one
+    // must not come back empty — an unknown routine samples as `idle`, which is what lets the
+    // island slow that down and shut its eyes instead of drawing nothing.
+    expectClose("a routine the pack does not have samples as idle",
+                pack.frame(routine: "sleep", at: 1.0).dy,
+                pack.frame(routine: "idle", at: 1.0).dy)
 
     let peak = pack.frame(routine: "idle", at: 1.0)      // half of a 2s routine
     expectClose("midpoint reaches the second key", peak.dy, 10)

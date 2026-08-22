@@ -90,9 +90,10 @@ finding out on its next look. It changes when a reading happens and never what o
   another session's transcript, where a run of two tool calls sits folded to one line until it is
   opened; then a reply typed into the box at the bottom and sent.">
 
-- **Says it in the notch, too.** Your mascot lives in the camera housing: it leans out while
-  something runs, names the session that wants you, and dances when a long job finishes. How busy
-  it looks is how much you have running. One word in the config turns it off.
+- **Says it in the notch, too.** Your mascot lives in the camera housing: it sleeps there while
+  nothing is running, leans out while something is, names the session that wants you, and dances
+  when a long job finishes. How busy it looks is how much you have running. One word in the config
+  turns it off.
   → [The notch](#the-notch)
 
   <img src="docs/assets/island.gif" width="760" alt="The menu bar, with the notch cut into it: the mascot leans out of the camera housing while one session runs, a count appears beside it when three do, then the shape stretches out to the right to name the session that is waiting, in the accent colour — and when a long job finishes, a green dot, the name of what finished, and the mascot dancing.">
@@ -710,6 +711,11 @@ Your mascot lives in the menu bar band beside the camera housing. It leans out w
 running — **how hard it looks like it is working is how much you have running** — names the
 session that wants you when one does, and dances when a long job finishes.
 
+**When nothing is running it is still there, asleep.** Just the character, breathing slowly with
+its eyes shut: no ear, no name, no number. That is the state your machine is in for most of the
+day, so it is built to be forgotten rather than read — and when work starts it stretches, and gets
+on with it.
+
 - **Click the character** and the bar opens, already pointed at the session it was talking about.
 - **Click the words** and you land in that terminal tab.
 - **When the number stands for more than one session** it offers a menu rather than guessing,
@@ -718,7 +724,10 @@ session that wants you when one does, and dances when a long job finishes.
 Nothing is ever covered except menu bar space: the shape sits in the menu bar's own band and
 grows sideways, because the notch is a hole with a camera behind it and pixels drawn there are
 drawn on the back of a camera. On a display without a notch it becomes a pill under the menu bar,
-on whichever screen your pointer is on.
+on whichever screen your pointer is on — and there it does not sleep. A pill is fine for the
+minute a job takes and quite another thing parked over your menu bar all day, so a screen with no
+camera housing behaves exactly as it did before: it shows up when there is something to say and
+goes away again.
 
 ```jsonc
 { "notch": false }   // and none of it is created — no window, no observer, nothing drawn
@@ -761,8 +770,9 @@ The intended way is to let Claude Code do it. Save a reference image, then:
 >
 > Make it into a Clawdline mascot pack. The format is in `docs/mascots.md`, and
 > `~/.config/clawdline/mascots/clawd.json` is a working example. Grid no larger than 20×16.
-> Put the feet on the bottom row so it stands on the bar. Write the six routines: `pop`,
-> `idle`, `typing`, `dance`, `cheer`, `stretch`. Save it as
+> Put the feet on the bottom row so it stands on the bar. Write the routines: `pop`, `idle`,
+> `typing`, `dance`, `cheer`, `stretch`, and `sleep` — a long, looping, eyes-shut breath with
+> no blink block, for the notch when nothing is running. Save it as
 > `~/.config/clawdline/mascots/my-character.json` and point the config at it.
 >
 > Then check your work: run
@@ -773,7 +783,7 @@ That last instruction is the one that matters. `clawdline://snapshot` renders a 
 routine to a PNG **without needing Screen Recording permission**, so the agent can see what it
 drew and iterate. Pixel art written blind comes out as a blob.
 
-Full format reference, the six routine triggers, and notes on what reads well at this size:
+Full format reference, every routine trigger, and notes on what reads well at this size:
 **[docs/mascots.md](docs/mascots.md)**. Packs are pure data — a grid of characters, colours and
 numbers — so one cannot execute anything; the worst a bad one does is refuse to load and say
 why. `tools/validate-pack.py` checks a pack, and CI runs it on every pull request.
@@ -945,7 +955,7 @@ registered, whether the panel opened, what happened to every send.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 1215 checks, a couple of seconds
+./test.sh     # 1226 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code — see Package.swift
 ```

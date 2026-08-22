@@ -125,7 +125,7 @@ covers all three expressions.
 
 ### Routine names
 
-Five names are wired to real moments. Anything missing falls back to `idle`, which is the only
+Seven names are wired to real moments. Anything missing falls back to `idle`, which is the only
 one that is required.
 
 | routine  | fires when |
@@ -135,7 +135,8 @@ one that is required.
 | `typing` | you are typing |
 | `dance`  | idle for ~7 seconds, or you press ⌘D |
 | `cheer`  | you press Enter and the message goes out |
-| `stretch`| the window changes size (⌘F) |
+| `stretch`| the window changes size (⌘F), and when the notch mascot wakes up |
+| `sleep`  | nothing at all is running, and the character is asleep in the notch |
 
 <div align="center">
 <img src="assets/stretch.gif" width="420" alt="The stretch routine: squash wide, spring tall, settle back.">
@@ -144,6 +145,41 @@ one that is required.
 A pack written before a routine existed is not broken: `stretch` is asked for by name and
 falls back to `cheer` when the pack has none, so an older pack keeps working and simply does
 something else at that moment.
+
+### `sleep`, and what happens without it
+
+`sleep` is optional, and it is the only routine that is **on screen all day** rather than for the
+second and a half something takes. Nothing is running, so the notch holds the character and
+nothing else — no ear, no name, no count — and the bar for how quiet it has to be is a different
+bar: anything that catches your eye every few seconds is wrong.
+
+```jsonc
+"sleep": {
+  "duration": 4.8,          // long. this is a breath, not an animation
+  "loop": true,
+  // no "blink" block: a sleeping character does not blink
+  "keys": [
+    { "t": 0.00, "pose": "stand", "eyes": "blink", "sx": 1.000, "sy": 1.000, "dy":  0.0 },
+    { "t": 0.40, "sx": 0.991, "sy": 1.026, "dy":  1.2, "ease": "inout" },
+    { "t": 0.85, "sx": 1.005, "sy": 0.992, "dy": -0.4, "ease": "inout" },
+    { "t": 1.00, "sx": 1.000, "sy": 1.000, "dy":  0.0, "ease": "inout" }   // back where it began
+  ]
+}
+```
+
+Three things this is doing, none of them optional if you write your own:
+
+- **`eyes` is `blink` on the first key and never set again.** Expressions step and hold, so that
+  one word keeps them shut for the whole loop. There is no separate sleeping face to draw.
+- **No `blink` block.** A blink block on this routine would open and shut the eyes on a timer,
+  which is precisely the every-few-seconds movement the state exists to avoid.
+- **The last key agrees with the first.** A loop that ends somewhere else jumps once a cycle. On a
+  half-second dance nobody catches it; on a five-second breath in the menu bar it is a twitch.
+
+**A pack without `sleep` still works.** It falls back to that pack's own `idle` at a little under
+half speed, with the eyes held shut on top — which lands on roughly the same slow breath, so an
+older pack sleeps rather than standing there awake or drawing nothing at all. Writing `sleep`
+yourself is worth it only if your character should rest differently from how it idles.
 
 You can define extra routines and trigger them yourself with
 `open "clawdline://snapshot?routine=yourname&t=0.3&path=/tmp/x.png"`, which is mostly useful
@@ -158,6 +194,9 @@ This is the part that makes an agent able to do the work: it can look at its own
 ```bash
 # One frame of a routine, as a PNG
 open "clawdline://snapshot?path=/tmp/frame.png&routine=dance&t=0.30"
+
+# One state of the notch island, drawn into a menu bar: working, working2, waiting, finished, resting
+open "clawdline://snapshot?path=/tmp/i.png&island=resting&t=1.9"
 
 # A whole routine, frame by frame, ready for ffmpeg
 open "clawdline://filmstrip?dir=/tmp/dance&script=dance&fps=24&seconds=2"
@@ -202,7 +241,8 @@ Save a reference image somewhere, then say something like this to Claude Code:
 > - Put the feet on the bottom row so it stands on the bar instead of floating.
 > - Draw poses for: standing, both arms up, two dance poses (one arm up + the opposite
 >   foot lifted, then mirrored), and left/right stepping.
-> - Write the six routines: `pop`, `idle`, `typing`, `dance`, `cheer`, `stretch`.
+> - Write the routines: `pop`, `idle`, `typing`, `dance`, `cheer`, `stretch`, and `sleep` — a
+>   long, looping, eyes-shut breath with no blink block, for when nothing is running.
 > - Save it as `~/.config/clawdline/mascots/my-character.json` and set `"mascot": "my-character"` in
 >   `~/.config/clawdline/config.json`.
 >

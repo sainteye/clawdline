@@ -79,6 +79,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/sessions` | token | `read` |
 | `GET` | `/v1/sessions/:id` | token | `read` |
 | `GET` | `/v1/sessions/:id/transcript` | token | `read` |
+| `GET` | `/v1/sessions/:id/links` | token | `read` |
 | `GET` | `/v1/projects` | token | `read` |
 | `GET` | `/v1/places` | token | `read` |
 | `GET` | `/v1/events` | token | `read` |
@@ -202,6 +203,34 @@ $ curl -s http://127.0.0.1:7717/v1/projects -H "Authorization: Bearer $TOKEN" | 
 ```
 
 `path` and `label` always; `icon` only when the registry has one. Sorted by path.
+
+### `GET /v1/sessions/:id/links`
+
+Every address this project has, gathered from the files other tools already write.
+
+```console
+$ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/links
+{"links":[
+  {"label":"ci","url":"https://github.com/you/repo/actions/runs/123","kind":"deploy","state":"ok","local":false},
+  {"label":"web","url":"http://127.0.0.1:3000","kind":"server","state":"ok","local":true},
+  {"label":"backlog","url":"file:///Users/you/code/repo/artifacts/backlog.html","kind":"artifact","state":"","local":true}
+]}
+```
+
+| field | |
+|---|---|
+| `kind` | `site` · `deploy` · `server` · `artifact` — for choosing an icon |
+| `state` | that thing's own health where it has one, else empty. **Worth drawing**: a server that is down is worth knowing before it is tapped |
+| `local` | the address only resolves on the Mac's own network. A phone on mobile data cannot open it, and saying so beats a link that times out |
+
+**A route rather than a field on the session.** The session list goes out on the event stream
+whenever anything moves, and gathering these costs a `git` invocation plus a handful of file
+reads per project — free when a menu is opened, a subprocess per session per second on the stream.
+
+Nothing here is invented: the health endpoint comes from the icon registry, the run from the
+deploy status, the servers from the project's own `status` command, the backlog page from
+whatever produced it. An untrusted dev stack stays silent rather than being probed, and a
+`file://` entry is handed over as a path so a client can decline it honestly.
 
 ### `GET /v1/places`
 
