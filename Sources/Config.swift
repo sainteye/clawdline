@@ -186,6 +186,19 @@ final class Config {
     /// no login shell, which is the same reason ``Tmux/binary`` cannot look on `PATH`. Blank
     /// means the environment if it has one and `~/.codex` otherwise; `~` is expanded.
     var codexHome = ""
+    /// Give a new Codex conversation a short user-facing name from its first request.
+    ///
+    /// Off until somebody chooses it because this is not local bookkeeping: it starts one small
+    /// Codex turn, sends that request to the configured model and spends Codex usage. The helper
+    /// turn is ephemeral, so the act of naming a session never creates another session to name.
+    var codexAutoName = false
+    /// The deliberately small model used for that one narrow turn. Kept configurable because
+    /// model availability belongs to the account, not to this binary; the default is the current
+    /// low-cost Codex model documented for clear, repeatable work.
+    var codexAutoNameModel = "gpt-5.6-luna"
+    /// An escape hatch for a Finder-launched app whose running Codex process cannot yield its
+    /// executable path. Blank means use that process first, then the usual install locations.
+    var codexPath = ""
     /// Where the project status files are read from, and where the icon registry lives.
     ///
     /// Both default to what claude-bestiary writes, because that is what most people reading this
@@ -232,6 +245,11 @@ final class Config {
         if let v = obj["cloudflared_path"] as? String { cloudflaredPath = v }
         if let v = obj["tmux_path"] as? String { tmuxPath = v }
         if let v = obj["codex_home"] as? String { codexHome = v }
+        if let v = obj["codex_auto_name"] as? Bool { codexAutoName = v }
+        if let v = obj["codex_auto_name_model"] as? String, !v.isEmpty {
+            codexAutoNameModel = v
+        }
+        if let v = obj["codex_path"] as? String { codexPath = v }
         if let v = obj["status_dir"] as? String { statusDir = v }
         if let v = obj["icons_file"] as? String { iconsFile = v }
         if let v = obj["output_height"] as? Double, v >= 80, v <= 900 { outputHeight = CGFloat(v) }
@@ -280,6 +298,9 @@ final class Config {
             "cloudflared_path": cloudflaredPath,
             "tmux_path": tmuxPath,
             "codex_home": codexHome,
+            "codex_auto_name": codexAutoName,
+            "codex_auto_name_model": codexAutoNameModel,
+            "codex_path": codexPath,
             "status_dir": statusDir,
             "icons_file": iconsFile,
             "output_height": Double(outputHeight),

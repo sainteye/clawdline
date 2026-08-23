@@ -240,6 +240,11 @@ Codex ends on `/quit` where Claude Code ends on `/exit`, and each refuses the ot
 why *End* knows which it is talking to. If Codex lives somewhere other than `~/.codex`, set
 `codex_home` in the config; an app launched from Finder cannot see your `CODEX_HOME`.
 
+**Optional automatic names.** Turn on *Name new Codex sessions* in Settings and Clawdline asks the
+configured small Codex model for one title after the first request. The helper run is ephemeral,
+uses low reasoning with tools disabled, and never replaces a name you chose. It is off by default
+because each title is a real Codex turn and spends Codex usage.
+
 Built and used against **Codex 0.149.0** and **Claude Code 2.1.235**. Neither screen is a promised
 interface: [what is read, and what you would see if it changed →](docs/compatibility.md)
 
@@ -285,6 +290,9 @@ itself.
 | `mascot` · `notch` | `clawd` · `true` | the character, and whether it lives in the notch |
 | `follow_target` | `true` | the terminal's tab follows what the bar points at |
 | `tmux_path` | `""` | empty looks in the usual places |
+| `codex_auto_name` | `false` | name a new Codex session from its first request and show it in the session list |
+| `codex_auto_name_model` | `gpt-5.6-luna` | model for that one ephemeral, low-reasoning turn |
+| `codex_home` · `codex_path` | `""` | overrides for a nonstandard Codex home or executable |
 
 **Reading a session**
 
@@ -332,16 +340,17 @@ The global hotkey uses Carbon's `RegisterEventHotKey` rather than an `NSEvent` m
 to **avoid** the accessibility permission: a tool that opens a text box has no business being able
 to read every key you press.
 
-**Two things here can use the network, and both are switches you threw.** Remote access is one — off
+**Three things here can use the network, and all are switches you threw.** Remote access is one — off
 in a fresh install, loopback only until you point it at a tunnel, and it is your own `cloudflared`
 install that carries anything off the machine. Dictation is the other: macOS recognises speech
 locally for the dictation languages you have downloaded and sends audio to Apple for the ones you
 have not, and which of the two is happening is written across the bottom of the bar the whole time
 it is listening. Install the language in System Settings › Keyboard › Dictation if you would rather
-it never left the machine.
+it never left the machine. Codex automatic naming is the third: when enabled, the first request is
+sent once more through the configured Codex model to produce the title.
 
-With remote access off and the microphone untouched, nothing here talks to the network at all. Your
-prompt history lives in `~/.config/clawdline/config.json` and goes nowhere.
+With remote access and automatic naming off and the microphone untouched, nothing here talks to the
+network at all. Your prompt history lives in `~/.config/clawdline/config.json` and goes nowhere.
 
 ## Requirements and limitations
 
@@ -388,7 +397,7 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```sh
-./test.sh     # 1362 checks, a couple of seconds
+./test.sh     # 1375 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code
 ```

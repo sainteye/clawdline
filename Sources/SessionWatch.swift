@@ -189,7 +189,17 @@ final class SessionWatch {
         self.targets = targets
         self.states = states
         self.justFinished = finished
+        // Off by default and a no-op for Claude Code. Kept on the reading path because this is
+        // where a brand-new Codex rollout first becomes a concrete session rather than a guess.
+        CodexNaming.shared.consider(targets)
         guard changed || !finished.isEmpty else { return }
+        for observe in observers.values { observe() }
+    }
+
+    /// A Codex thread title arrived without the terminal list or screen state changing. Treat it
+    /// as a presentation update so every surface can redraw without another terminal round trip.
+    func labelsDidChange() {
+        dispatchPrecondition(condition: .onQueue(.main))
         for observe in observers.values { observe() }
     }
 

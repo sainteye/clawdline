@@ -193,10 +193,10 @@ final class NotchIsland: NSObject {
         // just *finished* is neither waiting nor working, so a click on its name went to some
         // third session that happened to be running.
         if let asking = watch.waiting.first {
-            next = .waiting(asking.label)
+            next = .waiting(asking.displayLabel)
             subject = asking
         } else if let done = celebrating, CFAbsoluteTimeGetCurrent() < celebrationUntil {
-            next = .finished(done.label)
+            next = .finished(done.displayLabel)
             subject = done
         } else {
             celebrating = nil
@@ -322,10 +322,10 @@ final class NotchIsland: NSObject {
             // time the pointer crosses the menu bar is a flinch. See `hover(_:)`.
             return nil
         case .working(let count, let line):
-            return [L.t.statusWorking(count), subject?.label, line]
+            return [L.t.statusWorking(count), subject?.displayLabel, line]
                 .compactMap { $0 }.joined(separator: "\n")
         case .waiting:
-            return L.t.statusWaiting(SessionWatch.shared.waiting.map(\.label))
+            return L.t.statusWaiting(SessionWatch.shared.waiting.map(\.displayLabel))
         case .finished(let who):
             return L.t.islandDone + " — " + who
         }
@@ -746,7 +746,7 @@ final class NotchIsland: NSObject {
             PromptController.shared.show()
             return
         }
-        Log.write("island: revealing \(wanted.label)")
+        Log.write("island: revealing \(wanted.displayLabel)")
         Targets.reveal(wanted)
     }
 
@@ -770,7 +770,7 @@ final class NotchIsland: NSObject {
         let menu = NSMenu()
         menu.font = NSFont.systemFont(ofSize: 13)
         for session in sessions {
-            let item = NSMenuItem(title: session.label, action: #selector(jump(_:)),
+            let item = NSMenuItem(title: session.displayLabel, action: #selector(jump(_:)),
                                   keyEquivalent: "")
             item.target = self
             item.representedObject = session.id
@@ -781,7 +781,7 @@ final class NotchIsland: NSObject {
             // What it is doing, after the name, dimmed — the same line the bar's own list shows,
             // so picking from here and picking from there are the same decision.
             if let line = SessionWatch.shared.liveLine(of: session.id) {
-                let title = NSMutableAttributedString(string: session.label + "  ", attributes: [
+                let title = NSMutableAttributedString(string: session.displayLabel + "  ", attributes: [
                     .font: NSFont.systemFont(ofSize: 13),
                 ])
                 title.append(NSAttributedString(string: String(line.prefix(38)), attributes: [
@@ -819,7 +819,7 @@ final class NotchIsland: NSObject {
     @objc private func jump(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String,
               let session = SessionWatch.shared.targets.first(where: { $0.id == id }) else { return }
-        Log.write("island: revealing \(session.label) (picked from \(sender.menu?.numberOfItems ?? 0))")
+        Log.write("island: revealing \(session.displayLabel) (picked from \(sender.menu?.numberOfItems ?? 0))")
         Targets.reveal(session)
     }
 }

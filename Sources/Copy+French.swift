@@ -97,6 +97,8 @@ struct French: Copy {
     let settingsReopenHint = "Quitter le terminal range la barre, y revenir la fait revenir. C'est Esc qui veut dire que vous en avez fini."
     let settingsFollow = "Le terminal montre ce que la barre vise"
     let settingsFollowHint = "Elle sélectionne l'onglet de cette session. Elle ne met pas le terminal au premier plan : sinon chaque appui sur Tab sortirait le clavier de la case dans laquelle vous écrivez."
+    let settingsCodexAutoName = "Nommer les nouvelles sessions Codex"
+    let settingsCodexAutoNameHint = "Lance un petit tour Codex Luna pour chaque session sans nom. Il utilise la première demande, consomme l’usage Codex et ne remplace jamais un nom choisi."
     let settingsNotch = "Habiter l’encoche"
     let settingsNotchHint = "Un personnage dans le boîtier de la caméra. Désactivé = rien n’est dessiné, aucune fenêtre créée."
     let settingsPosition = "Hauteur à l’écran"

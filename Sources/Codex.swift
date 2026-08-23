@@ -313,6 +313,28 @@ enum Codex {
         return Array(newestFirst.reversed().suffix(limit))
     }
 
+    /// The first human request in the early part of a rollout, for the optional session namer.
+    ///
+    /// Read from the front rather than by asking ``parse`` for a very large limit: the title is
+    /// about how a conversation began, and a long conversation should not cost a full-file read
+    /// merely because somebody turned naming on later. A partial last line is harmless — every
+    /// unrecognised row is skipped — and a brand-new rollout is reconsidered at the next reading.
+    static func firstUserMessage(of url: URL, bytes: Int = 2_000_000) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: bytes), !data.isEmpty else { return nil }
+        return firstUserMessage(in: String(decoding: data, as: UTF8.self))
+    }
+
+    static func firstUserMessage(in jsonl: String) -> String? {
+        for line in jsonl.split(separator: "\n") {
+            if let entry = entries(inRow: line).first(where: { $0.kind == .user }) {
+                return entry.text
+            }
+        }
+        return nil
+    }
+
     private static func entries(inRow line: Substring) -> [Transcript.Entry] {
         guard let data = line.data(using: .utf8),
               let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

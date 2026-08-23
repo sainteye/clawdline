@@ -97,6 +97,8 @@ struct Indonesian: Copy {
     let settingsReopenHint = "Berpindah menjauh dari terminal menyimpan bilahnya, dan kembali ke terminal memunculkannya lagi. Esc-lah yang berarti sudah selesai."
     let settingsFollow = "Terminal menampilkan apa pun yang sedang dibidik bilahnya"
     let settingsFollowHint = "Ia memilih tab sesi itu. Ia tidak membawa terminal ke depan — kalau tidak, setiap kali Tab ditekan papan ketik akan keluar dari kotak yang sedang kamu tulis."
+    let settingsCodexAutoName = "Namai sesi Codex baru"
+    let settingsCodexAutoNameHint = "Menjalankan satu turn kecil Codex Luna untuk setiap sesi tanpa nama. Menggunakan permintaan pertama, memakai kuota Codex, dan tidak mengganti nama pilihanmu."
     let settingsNotch = "Tinggal di poni layar"
     let settingsNotchHint = "Karakter di rumah kamera. Mati berarti mati — tidak digambar, tidak ada jendela."
     let settingsPosition = "Tinggi di layar"

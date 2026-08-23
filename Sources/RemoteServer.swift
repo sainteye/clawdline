@@ -1092,7 +1092,7 @@ final class RemoteServer {
             "id": session.id,
             "backend": session.backend.rawValue,
             "tty": session.tty.replacingOccurrences(of: "/dev/", with: ""),
-            "label": session.label,
+            "label": session.displayLabel,
             // Kept next to `assistant`, and it means what it always did. A page built against
             // the old field still draws a Claude Code session correctly; what it does with a
             // Codex one is show it as an ordinary terminal, which is wrong but not broken —

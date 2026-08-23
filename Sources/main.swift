@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HookBridge.onNote = { SessionWatch.shared.nudge() }
         HookBridge.start()
         SessionWatch.shared.start()
+        CodexNaming.shared.apply()
         // Reads the config and does nothing at all when it says off, which is what it says
         // until somebody changes it.
         RemoteServer.shared.apply()
@@ -213,7 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.attributedTitle = title
         button.toolTip = waiting.isEmpty
             ? (working.isEmpty ? nil : L.t.statusWorking(working.count))
-            : L.t.statusWaiting(waiting.map(\.label))
+            : L.t.statusWaiting(waiting.map(\.displayLabel))
     }
 
     private func buildMenu() -> NSMenu {
@@ -413,6 +414,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotchIsland.shared.install()
         RemoteServer.shared.apply()
         RemoteTunnel.shared.apply()
+        CodexNaming.shared.apply()
         refreshStatusItem()
     }
 
@@ -442,6 +444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotchIsland.shared.install()
         RemoteServer.shared.apply()
         RemoteTunnel.shared.apply()
+        CodexNaming.shared.apply()
         refreshStatusItem()
     }
 }

@@ -45,6 +45,13 @@ struct TargetSession: Equatable, Identifiable {
         return s.isEmpty ? "⌘\(windowIndex + 1)-\(tabIndex + 1)" : s
     }
 
+    /// The task name Clawdline should draw. Claude Code puts its task in the terminal title;
+    /// Codex persists it as thread metadata, so its optional bridge takes precedence here.
+    var displayLabel: String {
+        CodexNaming.displayLabel(threadName: CodexNaming.shared.title(for: self),
+                                 terminalLabel: label)
+    }
+
     /// Strip a leading status glyph and the space after it.
     ///
     /// Recognised by *shape* rather than by a list of characters, for the same reason everything

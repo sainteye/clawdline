@@ -4267,6 +4267,49 @@ group("a rollout reads as the same entries a transcript does") {
            Codex.parse(line("{\"type\":\"SomethingNew\",\"content\":\"…\"}")).count, 0)
 }
 
+group("a Codex session can be named from its first request") {
+    func completed(_ item: String) -> String {
+        "{\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"item\":"
+            + item + "}}"
+    }
+    let rollout = [
+        completed("{\"type\":\"AgentMessage\",\"content\":[{\"text\":\"Hello\"}]}"),
+        completed("{\"type\":\"UserMessage\",\"content\":[{\"text\":\"修正登入逾時問題\"}]}"),
+        completed("{\"type\":\"UserMessage\",\"content\":[{\"text\":\"and add tests\"}]}"),
+    ].joined(separator: "\n")
+    expect("the first human request is selected",
+           Codex.firstUserMessage(in: rollout), "修正登入逾時問題")
+
+    let prompt = CodexNaming.prompt(for: "修正登入逾時問題")
+    check("the request is marked as untrusted data", prompt.contains("untrusted data"))
+    check("the title turn is explicitly told not to use tools", prompt.contains("do not use tools"))
+    check("the request is delimited", prompt.contains("<request>\n修正登入逾時問題\n</request>"))
+    expect("long requests are bounded",
+           CodexNaming.prompt(for: String(repeating: "x", count: 5_000), limit: 10)
+                .components(separatedBy: "<request>\n").last?
+                .components(separatedBy: "\n</request>").first,
+           String(repeating: "x", count: 10))
+
+    expect("markdown and a label are removed from a model title",
+           CodexNaming.cleanTitle("# Title:  Fix login timeout.\nExtra explanation"),
+           "Fix login timeout")
+    expect("Chinese wrappers and punctuation are removed",
+           CodexNaming.cleanTitle("「修正登入逾時問題。」"), "修正登入逾時問題")
+    expect("a quoted title is unwrapped",
+           CodexNaming.cleanTitle("“Codex Session 自動命名”"), "Codex Session 自動命名")
+    check("an empty answer is refused", CodexNaming.cleanTitle("\n  \n") == nil)
+
+    let named: [String: Any] = ["result": ["thread": ["name": " Bug bash "]]]
+    let unnamed: [String: Any] = ["result": ["thread": ["name": NSNull()]]]
+    expect("a persisted thread name is recognised", CodexNaming.threadName(in: named), "Bug bash")
+    check("a null persisted name is unnamed", CodexNaming.threadName(in: unnamed) == nil)
+    expect("a persisted Codex name replaces the terminal tab label",
+           CodexNaming.displayLabel(threadName: "修正登入逾時", terminalLabel: "clawdline"),
+           "修正登入逾時")
+    expect("an absent Codex name keeps the terminal tab label",
+           CodexNaming.displayLabel(threadName: nil, terminalLabel: "clawdline"), "clawdline")
+}
+
 group("the fields of a rollout, one at a time") {
     expect("a login shell is unwrapped",
            Codex.command(["/bin/zsh", "-lc", "ls -la"]), "ls -la")

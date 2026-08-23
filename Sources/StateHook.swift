@@ -152,7 +152,7 @@ enum StateHook {
             "CLAWDLINE_STATE": name(change.to),
             "CLAWDLINE_SESSION_ID": change.session.id,
             "CLAWDLINE_TTY": change.session.tty,
-            "CLAWDLINE_LABEL": change.session.label
+            "CLAWDLINE_LABEL": change.session.displayLabel
         ]
         if let from = change.from { out["CLAWDLINE_PREV_STATE"] = name(from) }
         if let cwd = change.session.cwd, !cwd.isEmpty { out["CLAWDLINE_CWD"] = cwd }
@@ -257,7 +257,7 @@ enum StateHook {
     /// be checked without asking a terminal for its working directory.
     static func pushMessage(for session: TargetSession, project: String,
                             event: String) -> PushMessage {
-        PushMessage(title: session.label, body: "\(project) \(event)")
+        PushMessage(title: session.displayLabel, body: "\(project) \(event)")
     }
 
     private static func sendPush(for session: TargetSession, event: String) {
@@ -334,7 +334,7 @@ enum StateHook {
     private static func fire(_ change: Change, argv: [String]) {
         guard inFlight < concurrencyLimit else {
             dropped += 1
-            Log.write("statehook: dropped \(name(change.to)) for \(change.session.label)"
+            Log.write("statehook: dropped \(name(change.to)) for \(change.session.displayLabel)"
                 + " — \(inFlight) already running (\(dropped) dropped so far)")
             return
         }
@@ -426,7 +426,7 @@ enum StateHook {
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: killer)
 
         let was = change.from.map(name) ?? "?"
-        Log.write("statehook: \(was) → \(name(change.to)) \(change.session.label) — \(program)")
+        Log.write("statehook: \(was) → \(name(change.to)) \(change.session.displayLabel) — \(program)")
     }
 
     /// Where the program named in element 0 actually is.

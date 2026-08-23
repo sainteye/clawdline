@@ -170,6 +170,8 @@ protocol Copy {
     var settingsReopenHint: String { get }
     var settingsFollow: String { get }
     var settingsFollowHint: String { get }
+    var settingsCodexAutoName: String { get }
+    var settingsCodexAutoNameHint: String { get }
     var settingsNotch: String { get }
     var settingsNotchHint: String { get }
     var settingsPosition: String { get }

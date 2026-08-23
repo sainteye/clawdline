@@ -310,6 +310,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         pane.right.row(L.t.settingsFollow,
                        switchFor({ Config.shared.followTarget }, { Config.shared.followTarget = $0 }),
                        hint: L.t.settingsFollowHint)
+        pane.right.row(L.t.settingsCodexAutoName,
+                       switchFor({ Config.shared.codexAutoName },
+                                 { Config.shared.codexAutoName = $0 }),
+                       hint: L.t.settingsCodexAutoNameHint)
         pane.right.row(L.t.settingsNotch,
                        switchFor({ Config.shared.notch }, { Config.shared.notch = $0 }),
                        hint: L.t.settingsNotchHint)

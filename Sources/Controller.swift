@@ -129,6 +129,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var sessionStates: [String: SessionState] = [:]
     /// What the rows were last drawn against — see the guard in `applyWatchedStates`.
     private var sessionAgents: [String: [Subagents.Agent]] = [:]
+    private var sessionLabels: [String: String] = [:]
     private var mascotNames: [String] = []
     private var mascotIndex = 0
     /// Skills for the selected Claude Code session, and the subset matching what follows `/`.
@@ -1585,6 +1586,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             else { activityCache.removeValue(forKey: id) }
         }
         let agents = SessionWatch.shared.agents
+        let labels = Dictionary(uniqueKeysWithValues: targets.map { ($0.id, $0.displayLabel) })
         guard panel.isVisible else { return }
         // The strip follows the selected session even when the list is shut, because the pane is
         // open on its own account and its live line has to keep ticking.
@@ -1602,11 +1604,13 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // **The agents are in this guard too.** Without them a session that was already
         // `working` could start and finish three of them without the list redrawing once: the
         // states map would be identical each time, and this returned before the rows were built.
-        guard listMode == .sessions, states != sessionStates || agents != sessionAgents else {
+        guard listMode == .sessions,
+              states != sessionStates || agents != sessionAgents || labels != sessionLabels else {
             return
         }
         sessionStates = states
         sessionAgents = agents
+        sessionLabels = labels
         rebuildRows()
         syncSpinner()
         relayout()
@@ -1683,7 +1687,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         return s
     }
 
-    /// One session row: what the tab is called, and what its screen says it is doing.
+    /// One session row: the persisted task title when there is one, and what its screen is doing.
     ///
     /// Nil when there is nothing to add, so the row falls back to the plain title it has always
     /// drawn — an idle session and one whose screen could not be read both look exactly as they
@@ -1698,7 +1702,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                                         attributes: [.font: font, .foregroundColor: colour]))
         }
 
-        add(target.label, selected ? .labelColor : .secondaryLabelColor, base)
+        add(target.displayLabel, selected ? .labelColor : .secondaryLabelColor, base)
         // Only when the list is holding both kinds. On a machine running one assistant the mark
         // is on every row and distinguishes nothing, which is the definition of noise; the
         // moment Claude Code and Codex sit next to each other, their product marks make the split
@@ -1983,7 +1987,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         rows = targets.prefix(9).enumerated().map { i, target in
             let selected = (i == targetIndex)
             let state = sessionStates[target.id] ?? .unknown
-            let row = TargetRow(title: target.label, index: i,
+            let row = TargetRow(title: target.displayLabel, index: i,
                                 rich: sessionRowText(target, selected: selected))
             row.detail = sessionRowDetail(state, selected: selected,
                                           agents: runningAgents(of: target.id))
@@ -2873,7 +2877,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                     .font: NSFont.systemFont(ofSize: Style.hintSize, weight: .semibold),
                 ]))
             }
-            var name = t.label
+            var name = t.displayLabel
             let room = project == nil ? 40 : 28
             if name.count > room { name = String(name.prefix(room)) + "…" }
             // Full strength: this is the one thing on the card that says which conversation
@@ -3056,7 +3060,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 return
             }
             let err = Targets.send(body, to: target)
-            Log.write("sendDirect → \(target.label): \(err ?? "ok")")
+            Log.write("sendDirect → \(target.displayLabel): \(err ?? "ok")")
         }
     }
 
@@ -3074,7 +3078,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             // Naming a session makes a particular transcript reproducible to look at, which is
             // the only way to check how something rare — a table, a long code block — comes out.
             if let want = session, !want.isEmpty,
-               let i = self.targets.firstIndex(where: { $0.label.localizedCaseInsensitiveContains(want) }) {
+               let i = self.targets.firstIndex(where: { $0.displayLabel.localizedCaseInsensitiveContains(want) }) {
                 self.pick(i, closeList: false)
             }
             if output, !self.outputOpen { self.toggleOutput() }
@@ -3638,7 +3642,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     // MARK: - Used by the menu bar
 
-    var targetSummary: String { currentTarget?.label ?? L.t.menuNoTarget }
+    var targetSummary: String { currentTarget?.displayLabel ?? L.t.menuNoTarget }
 
     /// Used by the menu bar's mascot submenu.
     var mascotNamesForMenu: [String] { MascotPack.available() }

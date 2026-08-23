@@ -97,6 +97,8 @@ struct Turkish: Copy {
     let settingsReopenHint = "Terminalden başka bir yere geçince çubuk kalkar, terminale dönünce geri gelir. Bittiğini söyleyen şey Esc'tir."
     let settingsFollow = "Terminal, çubuğun nişan aldığı şeyi gösterir"
     let settingsFollowHint = "O oturumun sekmesini seçer. Terminali öne getirmez — getirseydi, her Tab'a basışta klavye yazmakta olduğun kutudan çıkardı."
+    let settingsCodexAutoName = "Yeni Codex oturumlarını adlandır"
+    let settingsCodexAutoNameHint = "Adsız her oturum için küçük bir Codex Luna turu çalıştırır. İlk isteği kullanır, Codex kullanımından harcar ve senin seçtiğin adı değiştirmez."
     let settingsNotch = "Çentikte yaşa"
     let settingsNotchHint = "Kamera yuvasında bir karakter. Kapalı gerçekten kapalı: hiçbir şey çizilmez, pencere açılmaz."
     let settingsPosition = "Ekrandaki yükseklik"
