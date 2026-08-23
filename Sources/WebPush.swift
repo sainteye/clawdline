@@ -21,8 +21,9 @@ import Foundation
 /// **Encryption does not help with what is on the screen.** The entire point of a push message is
 /// that it lights up a locked phone lying face-up on a table in a room with other people in it.
 /// So the encryption settles who may read it in transit and settles nothing about who reads it on
-/// arrival, and the payload is written for the second question: the project and the state, never
-/// the task text. See ``send(title:body:url:completion:)``.
+/// arrival. Session notifications therefore put the task in the title and the project and state
+/// in the body, so the useful detail is visible without opening the app. See
+/// ``send(title:body:url:completion:)``.
 ///
 /// **The VAPID key pair is an identity, not a session, and losing it is silent.** A push service
 /// binds a subscription to the application server key it was created with; mint a new pair and
@@ -448,11 +449,8 @@ enum WebPush {
     /// The transport is sealed end to end, so nothing here is a disclosure to Apple — and none of
     /// that matters for the thing that actually happens, which is text appearing on a phone lying
     /// on a table in a room with other people in it, quite possibly while its owner is in a
-    /// meeting. So the rule for callers is: **the project and the state, and nothing else.**
-    /// "clawdline — waiting for you" is the whole message. The task title is what would be
-    /// genuinely embarrassing — Claude Code puts the current task in the tab title, and those say
-    /// things like "fix the billing bug before the customer call" — and it is also the part that
-    /// adds nothing, because anybody who reads "waiting" is about to go and look anyway.
+    /// meeting. Callers should therefore send only the useful session summary: its task title,
+    /// project and state. Transcript text and prompt contents do not belong in a notification.
     ///
     /// `url` is a deep link the service worker opens on a tap. It carries a session id and no
     /// prose, for the same reason.

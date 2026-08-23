@@ -170,7 +170,7 @@ open ~/Applications/Clawdline.app
   `~/.config/clawdline/remote-audit.jsonl`。
 
 配對過的裝置還可以訂閱通知，在有 session 開始等你的時候震一下。訊息是對那台裝置加密封起來的，
-裡面只有專案和狀態，從來不含任務內容。打開送字之後，它也可以在這台 Mac 已經工作過的目錄裡開一個
+裡面會標出 session 任務標題、專案和狀態。打開送字之後，它也可以在這台 Mac 已經工作過的目錄裡開一個
 新的 session：用戶端從來不送路徑，只送一個 Mac 自己列出來的不透明 id。
 
 **[docs/remote.md](docs/remote.md)** 是完整的威脅模型，包含它**不**防什麼。

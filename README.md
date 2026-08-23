@@ -183,7 +183,7 @@ What stands in the way of a request, in the order it meets them:
   send is appended to `~/.config/clawdline/remote-audit.jsonl`.
 
 A paired device can also subscribe to notifications and buzz when a session starts waiting for you.
-The message is sealed to the device, and carries the project and the state — never the task text.
+The message is sealed to the device, and names the session task, project and state.
 With sending on, it can start a new session too, in a directory this Mac has already worked in: the
 client never sends a path, only an opaque id out of a list the Mac built for itself.
 
@@ -388,7 +388,7 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```sh
-./test.sh     # 1350 checks, a couple of seconds
+./test.sh     # 1353 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code
 ```

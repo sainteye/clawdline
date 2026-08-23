@@ -3157,6 +3157,21 @@ group("state hook: what a hook is told") {
     expect("including the one it left", bare["CLAWDLINE_PREV_STATE"], "waiting")
 }
 
+group("push notifications identify the session and its project") {
+    let session = hookTarget("A9F3", title: "✳ fix the webhook (claude)")
+    let waiting = StateHook.pushMessage(
+        for: session, project: "clawdline", event: "is waiting for an answer")
+
+    expect("the cleaned session task is the title", waiting.title, "fix the webhook")
+    expect("the project and event are the body", waiting.body,
+           "clawdline is waiting for an answer")
+
+    let deploy = StateHook.pushMessage(
+        for: session, project: "clawdline", event: "deploy failed")
+    expect("deploy notifications use the same informative shape", deploy,
+           StateHook.PushMessage(title: "fix the webhook", body: "clawdline deploy failed"))
+}
+
 group("state hook: finding the program") {
     // A GUI app has launchd's PATH, not a login shell's, so a bare name has to be looked for in
     // more places than PATH names — otherwise everything installed by Homebrew is unreachable.

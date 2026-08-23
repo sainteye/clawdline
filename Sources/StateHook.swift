@@ -231,20 +231,41 @@ enum StateHook {
         previous = [:]
     }
 
-    /// What to call a session on a lock screen.
-    ///
-    /// The project, never ``TargetSession/label`` — that is the *task*, and Claude Code writes
-    /// things like "fix the billing bug before the customer call" into it. Encryption settles who
-    /// can read a notification in transit and settles nothing about the screen it lights up, which
-    /// is a screen other people in the room can see.
+    /// What to call the project a session belongs to on a lock screen.
     static func projectName(for session: TargetSession) -> String {
-        guard let cwd = Targets.workingDirectory(of: session) else { return "Claude Code" }
+        let fallback = session.assistant?.label ?? "Clawdline"
+        guard let cwd = Targets.workingDirectory(of: session) else { return fallback }
         if let registry = ProjectIcon.row(forCwd: cwd), let label = registry["label"] as? String,
            !label.isEmpty {
             return label
         }
         let name = (cwd as NSString).lastPathComponent
-        return name.isEmpty ? "Claude Code" : name
+        return name.isEmpty ? fallback : name
+    }
+
+    /// The two lines a session notification shows.
+    ///
+    /// The task is the title because it is the quickest way to tell several sessions in the same
+    /// project apart. The project stays in the body beside the event, so the notification still
+    /// says both where the work lives and what just happened.
+    struct PushMessage: Equatable {
+        let title: String
+        let body: String
+    }
+
+    /// Pure formatting half, kept apart from ``projectName(for:)`` so the lock-screen wording can
+    /// be checked without asking a terminal for its working directory.
+    static func pushMessage(for session: TargetSession, project: String,
+                            event: String) -> PushMessage {
+        PushMessage(title: session.label, body: "\(project) \(event)")
+    }
+
+    private static func sendPush(for session: TargetSession, event: String) {
+        let message = pushMessage(for: session, project: projectName(for: session), event: event)
+        WebPush.send(title: message.title,
+                     body: message.body,
+                     url: "/#session=\(session.id)",
+                     tag: session.id)
     }
 
     private static func react() {
@@ -269,10 +290,7 @@ enum StateHook {
         // Above the guard below on purpose: sending to a phone has nothing to do with whether
         // this machine has a command configured to run.
         for change in changes where change.to == .waiting {
-            WebPush.send(title: projectName(for: change.session),
-                         body: L.t.pushWaiting,
-                         url: "/#session=\(change.session.id)",
-                         tag: change.session.id)
+            sendPush(for: change.session, event: L.t.pushWaiting)
         }
 
         // "It finished" — off unless asked for, and thresholded even then. See `finishThreshold`
@@ -283,10 +301,7 @@ enum StateHook {
             guard let began = startedWorking.removeValue(forKey: change.session.id) else { continue }
             guard Config.shared.pushOnFinish, change.to == .idle else { continue }
             guard now.timeIntervalSince(began) >= finishThreshold else { continue }
-            WebPush.send(title: projectName(for: change.session),
-                         body: L.t.pushFinished,
-                         url: "/#session=\(change.session.id)",
-                         tag: change.session.id)
+            sendPush(for: change.session, event: L.t.pushFinished)
         }
 
         let argv = Config.shared.onStateChange

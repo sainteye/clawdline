@@ -291,12 +291,12 @@ answer** — the one state that costs you something for every second it goes unn
 off unless asked for: `push_on_finish` for a turn that ran over two minutes and stopped, and
 `push_on_deploy` for a deploy that stopped running, whichever way it went.
 
-<img src="assets/web-push.gif" width="390" alt="A notification arriving on a phone: the banner drops over the home screen carrying the app's own mark, sits long enough to be read, and slides away. This one is the test the page can ask for; the ones that arrive unasked name the project that is waiting.">
+<img src="assets/web-push.gif" width="390" alt="A notification arriving on a phone: the banner drops over the home screen carrying the app's own mark, sits long enough to be read, and slides away. This one is the test the page can ask for; the ones that arrive unasked name the session task and project that are waiting.">
 
 The message is sealed to the device, so the push service carries ciphertext and learns only that
 something went to a subscription. Encryption settles who may read it in transit and settles nothing
 about who reads it off a locked phone lying face-up on a table, so what is inside is the project and
-the state and never the task text.
+the state together with the session's task title. Prompt and transcript contents stay out of it.
 
 **The Mac has to be running.** This is not a service somewhere; it is your machine, awake, noticing
 and posting. Asleep or quit, nothing goes out, and nothing is saved up to go out later. And on iOS

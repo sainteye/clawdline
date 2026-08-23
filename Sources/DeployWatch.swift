@@ -102,8 +102,12 @@ enum DeployWatch {
         let states = seen.mapValues { $0.state }
         for change in finished(from: previous, to: states) {
             guard let row = seen[change.repo] else { continue }
-            WebPush.send(title: StateHook.projectName(for: row.session),
-                         body: change.ok ? L.t.pushDeployOk : L.t.pushDeployFail,
+            let message = StateHook.pushMessage(
+                for: row.session,
+                project: StateHook.projectName(for: row.session),
+                event: change.ok ? L.t.pushDeployOk : L.t.pushDeployFail)
+            WebPush.send(title: message.title,
+                         body: message.body,
                          url: "/#session=\(row.session.id)",
                          tag: "deploy-\(change.repo)")
         }
