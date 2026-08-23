@@ -368,6 +368,23 @@ final class RemoteServer {
             }
             return .json(["links": linksPayload(cwd: cwd)])
 
+        // The file-backed Claude Code skills this session can invoke. Metadata only: neither a
+        // local path nor the body of a SKILL.md belongs on a paired phone, and reading a menu must
+        // never execute the dynamic commands a skill may contain.
+        case ("GET", let path) where path.hasSuffix("/skills") && path.hasPrefix("/v1/sessions/"):
+            let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/skills".count))
+            guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
+                return .error(404, "not_found", "No session named that")
+            }
+            guard session.assistant == .claude else { return .json(["skills": []]) }
+            guard let cwd = Targets.workingDirectory(of: session) else {
+                return .error(404, "not_found", "Could not find that session's working directory")
+            }
+            return .json(["skills": ClaudeSkills.available(cwd: cwd).map { skill in
+                ["name": skill.command, "description": skill.description,
+                 "source": skill.source.rawValue]
+            }])
+
         case ("GET", let path) where path.hasPrefix("/v1/sessions/"):
             let rest = String(path.dropFirst("/v1/sessions/".count))
             let parts = rest.split(separator: "/", omittingEmptySubsequences: false).map(String.init)

@@ -684,6 +684,9 @@ final class PromptTextView: NSTextView {
     var onPickIndex: ((Int) -> Void)?
     var onToggleDance: (() -> Void)?
     var onArrow: ((Int) -> Bool)?      // return true if the key was consumed
+    /// Tab or Return completes an open suggestion before they keep their ordinary meanings.
+    /// `true` means there was one and the key is spent.
+    var onAcceptSuggestion: (() -> Bool)?
     var onTextChanged: (() -> Void)?
     var onToggleFullscreen: (() -> Void)?
     var onToggleOrder: (() -> Void)?
@@ -750,13 +753,14 @@ final class PromptTextView: NSTextView {
 
         switch event.keyCode {
         case 36, 76:                                  // Return / Enter
-            if shift { super.keyDown(with: event) } else { onSubmit?() }
+            if shift { super.keyDown(with: event) }
+            else if onAcceptSuggestion?() != true { onSubmit?() }
             return
         case 53:                                      // Esc
             onCancel?()
             return
         case 48:                                      // Tab
-            onCycleTarget?(!shift)
+            if onAcceptSuggestion?() != true { onCycleTarget?(!shift) }
             return
         case 126:                                     // ↑
             if onArrow?(-1) == true { return }

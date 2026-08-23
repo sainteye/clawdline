@@ -102,8 +102,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var targets: [TargetSession] = []
     private var rows: [TargetRow] = []
     private var targetIndex = 0
-    /// Which list the panel is showing, if any. Sessions and mascots share the UI.
-    private enum ListMode { case none, sessions, mascots, stacks }
+    /// Which list the panel is showing, if any. They share the same nine-row surface and keys.
+    private enum ListMode { case none, sessions, mascots, stacks, skills }
     private var listMode: ListMode = .none {
         didSet {
             guard listMode != oldValue else { return }
@@ -131,6 +131,15 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var sessionAgents: [String: [Subagents.Agent]] = [:]
     private var mascotNames: [String] = []
     private var mascotIndex = 0
+    /// Skills for the selected Claude Code session, and the subset matching what follows `/`.
+    /// The catalog is cached per target: reading a handful of frontmatter files is cheap when a
+    /// session changes and still needless work on every letter somebody types.
+    private var skillCatalog: [ClaudeSkill] = []
+    private var skillMatches: [ClaudeSkill] = []
+    private var skillIndex = 0
+    private var skillTargetID: String?
+    private var skillLoadingTargetID: String?
+    private var skillLoadToken = 0
     private var scanning = false
 
     /// The target the user picked by hand, plus which session iTerm was on at that moment.
@@ -523,10 +532,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
         textView.onZoomOutput = { [weak self] step in self?.zoomOutput(step) }
         textView.onTextChanged = { [weak self] in
+            self?.updateSkillSuggestions()
             self?.relayout()
             self?.noteTyping()
         }
         textView.onArrow = { [weak self] delta in self?.handleArrow(delta) ?? false }
+        textView.onAcceptSuggestion = { [weak self] in self?.acceptSkill() ?? false }
     }
 
     // MARK: - Show and hide
@@ -1496,6 +1507,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             pendingFocusID = nil
         }
 
+        // A `/` may have been typed while the target scan was still in flight. The working
+        // directory, and therefore the skills, become knowable at exactly this point.
+        updateSkillSuggestions()
         rebuildRows()
         applyPendingList()
         updateTargetLabel()
@@ -1785,6 +1799,87 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         relayout()
     }
 
+    // MARK: - Claude Code skills
+
+    /// The incomplete slash command currently occupying the whole box. A space ends completion:
+    /// from then on the words are arguments, and the ordinary Return-to-send path owns them.
+    private var slashQuery: String? {
+        let text = textView.string
+        guard text.hasPrefix("/"), !text.contains("\n") else { return nil }
+        let query = String(text.dropFirst())
+        guard !query.contains(where: \.isWhitespace) else { return nil }
+        return query
+    }
+
+    private func updateSkillSuggestions() {
+        guard let query = slashQuery,
+              let target = currentTarget, target.assistant == .claude else {
+            if listMode == .skills {
+                listMode = .none
+                skillMatches = []
+                rebuildRows()
+            }
+            return
+        }
+
+        if skillTargetID == target.id {
+            showSkillMatches(query)
+            return
+        }
+        // One lookup per target while it is in flight. The callback rechecks both the token and
+        // the selection: a slow `lsof` for the previous tab must not paint its skills under the
+        // new one's prompt.
+        guard skillLoadingTargetID != target.id else {
+            if listMode != .skills { listMode = .skills; rebuildRows() }
+            return
+        }
+        skillLoadToken += 1
+        let token = skillLoadToken
+        skillLoadingTargetID = target.id
+        skillMatches = []
+        skillIndex = 0
+        listMode = .skills
+        rebuildRows()
+        relayout()
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let cwd = Targets.workingDirectory(of: target)
+            let found = cwd.map { ClaudeSkills.available(cwd: $0) } ?? []
+            DispatchQueue.main.async {
+                guard self.skillLoadToken == token else { return }
+                self.skillLoadingTargetID = nil
+                guard self.currentTarget?.id == target.id else { return }
+                self.skillTargetID = target.id
+                self.skillCatalog = found
+                if let latest = self.slashQuery { self.showSkillMatches(latest) }
+            }
+        }
+    }
+
+    private func showSkillMatches(_ query: String) {
+        skillMatches = Array(ClaudeSkills.matching(skillCatalog, query: query).prefix(9))
+        skillIndex = min(skillIndex, max(0, skillMatches.count - 1))
+        listMode = .skills
+        rebuildRows()
+        relayout()
+    }
+
+    /// Complete, do not execute. Many skills take arguments; a first Return chooses the command,
+    /// leaves a space after it, and the next Return sends the finished line through the same path
+    /// as every other prompt.
+    @discardableResult
+    private func acceptSkill() -> Bool {
+        guard listMode == .skills, skillMatches.indices.contains(skillIndex) else { return false }
+        let text = "/\(skillMatches[skillIndex].command) "
+        textView.setPlainText(text)
+        textView.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
+        listMode = .none
+        skillMatches = []
+        rebuildRows()
+        relayout()
+        return true
+    }
+
     private func rebuildRows() {
         rows.forEach { $0.removeFromSuperview() }
         if standInList {
@@ -1857,6 +1952,26 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             }
             return
         }
+        if listMode == .skills {
+            rows = skillMatches.enumerated().map { i, skill in
+                let row = TargetRow(title: "/" + skill.command, index: i)
+                if !skill.description.isEmpty {
+                    row.detail = NSAttributedString(string: skill.description, attributes: [
+                        .font: NSFont.systemFont(ofSize: Style.listSize - 1.5),
+                        .foregroundColor: NSColor.tertiaryLabelColor,
+                    ])
+                    row.toolTip = skill.description
+                }
+                row.isSelected = (i == skillIndex)
+                row.onClick = { [weak self] in
+                    self?.skillIndex = i
+                    _ = self?.acceptSkill()
+                }
+                listBox.addSubview(row)
+                return row
+            }
+            return
+        }
         rows = targets.prefix(9).enumerated().map { i, target in
             let selected = (i == targetIndex)
             let state = sessionStates[target.id] ?? .unknown
@@ -1897,6 +2012,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         switch listMode {
         case .mascots: pickMascot(i)
         case .stacks: actOnStack(i)
+        case .skills:
+            skillIndex = i
+            _ = acceptSkill()
         default: pick(i)
         }
     }
@@ -2825,6 +2943,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     // MARK: - Keyboard
 
     private func handleArrow(_ delta: Int) -> Bool {
+        if listMode == .skills {
+            guard !skillMatches.isEmpty else { return true }
+            skillIndex = max(0, min(skillMatches.count - 1, skillIndex + delta))
+            for (i, row) in rows.enumerated() { row.isSelected = (i == skillIndex) }
+            return true
+        }
         if listMode == .mascots {
             pickMascot(max(0, min(rows.count - 1, mascotIndex + delta)), closeList: false)
             return true

@@ -148,6 +148,102 @@ group("validation rejects malformed packs") {
     check("zero duration is caught", decodePack(zeroDuration)?.validate() != nil)
 }
 
+// MARK: - Claude Code skills
+
+group("the slash menu discovers the skills Claude Code keeps on disk") {
+    let fm = FileManager.default
+    let base = fm.temporaryDirectory.appendingPathComponent("clawdline-skills-\(UUID().uuidString)")
+    let home = base.appendingPathComponent("home")
+    let repo = base.appendingPathComponent("repo")
+    let cwd = repo.appendingPathComponent("Sources/Feature")
+    let plugin = base.appendingPathComponent("plugin")
+    defer { try? fm.removeItem(at: base) }
+
+    func write(_ text: String, _ path: URL) {
+        try! fm.createDirectory(at: path.deletingLastPathComponent(),
+                                withIntermediateDirectories: true)
+        try! Data(text.utf8).write(to: path)
+    }
+    func skill(_ text: String, under root: URL, named name: String) {
+        write(text, root.appendingPathComponent(".claude/skills/\(name)/SKILL.md"))
+    }
+
+    try! fm.createDirectory(at: cwd, withIntermediateDirectories: true)
+    try! fm.createDirectory(at: repo.appendingPathComponent(".git"), withIntermediateDirectories: true)
+
+    skill("""
+    ---
+    description: Deploy this project
+    ---
+    Do it.
+    """, under: repo, named: "deploy")
+    skill("""
+    ---
+    description: Hidden by this project's settings
+    ---
+    Do not list me.
+    """, under: repo, named: "hidden")
+    skill("""
+    ---
+    description: Project recap
+    ---
+    Project body.
+    """, under: repo, named: "recap")
+    skill("""
+    ---
+    description: Summarizes changes for a person
+    ---
+    Personal body.
+    """, under: home, named: "recap")
+    skill("""
+    ---
+    user-invocable: false
+    description: Background knowledge
+    ---
+    Private body.
+    """, under: home, named: "private-context")
+    skill("Instructions that must never become remote menu metadata.",
+          under: home, named: "body-only")
+    write("""
+    {"skillOverrides":{"hidden":"off"},
+     "enabledPlugins":{"design@market":true}}
+    """, repo.appendingPathComponent(".claude/settings.local.json"))
+
+    write("""
+    ---
+    name: visual
+    description: >
+      Designs a clear
+      interface
+    ---
+    Plugin body.
+    """, plugin.appendingPathComponent("skills/frontend/SKILL.md"))
+    let registry: [String: Any] = [
+        "version": 2,
+        "plugins": ["design@market": [["installPath": plugin.path, "scope": "user"]]],
+    ]
+    let registryData = try! JSONSerialization.data(withJSONObject: registry)
+    let registryPath = home.appendingPathComponent(".claude/plugins/installed_plugins.json")
+    try! fm.createDirectory(at: registryPath.deletingLastPathComponent(),
+                            withIntermediateDirectories: true)
+    try! registryData.write(to: registryPath)
+
+    let found = ClaudeSkills.available(cwd: cwd.path, home: home.path)
+    expect("project, personal and plugin skills are the effective list",
+           found.map(\.command), ["body-only", "deploy", "design:visual", "recap"])
+    expect("a skill body is never exposed as its menu description",
+           found.first(where: { $0.command == "body-only" })?.description, "")
+    expect("personal replaces a project skill with the same command",
+           found.first(where: { $0.command == "recap" })?.source, .personal)
+    expect("folded YAML descriptions become one line",
+           found.first(where: { $0.command == "design:visual" })?.description,
+           "Designs a clear interface")
+    expect("name matching beats description matching",
+           ClaudeSkills.matching(found, query: "vis").map(\.command), ["design:visual"])
+    expect("descriptions are searchable too",
+           ClaudeSkills.matching(found, query: "summarizes").map(\.command), ["recap"])
+}
+
 // MARK: - Keyframe sampling
 
 group("routine sampling interpolates and steps") {

@@ -869,6 +869,39 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     color: var(--faint);
     pointer-events: none;
 }
+/* Skills belong to the line being typed, so their menu sits immediately above that line rather
+   than in a sheet that covers the conversation. It is the same surface under a mouse and a
+   thumb: rows are buttons, arrows merely move the same highlight a tap chooses. */
+.composer .skill-menu {
+    max-height: min(250px, 34vh); overflow-y: auto;
+    border: 1px solid var(--line); border-radius: 11px;
+    background: var(--card);
+    padding: 5px; margin-bottom: 7px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+.composer .skill-menu[hidden] { display: none; }
+.skill-option {
+    width: 100%; min-height: 40px; padding: 6px 9px;
+    display: grid; grid-template-columns: minmax(120px, auto) 1fr;
+    align-items: center; gap: 12px; border-radius: 8px;
+    text-align: left; color: var(--dim);
+}
+.skill-option:hover, .skill-option[aria-selected="true"] {
+    background: var(--accent-in); color: var(--ink);
+}
+.skill-option .command {
+    color: var(--ink); font: 12.5px/1.35 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.skill-option[aria-selected="true"] .command { color: var(--accent); }
+.skill-option .description {
+    min-width: 0; font-size: 11.5px; color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@media (max-width: 520px) {
+    .skill-option { display: block; }
+    .skill-option .description { display: block; margin-top: 2px; }
+}
 /* What is attached, above the box, each one removable before it goes. Small: they are a
    reminder of what you picked, not a preview worth looking at. */
 .composer .shots { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 9px; }
@@ -1622,6 +1655,7 @@ a.link:active { background: var(--line); }
                  an agent is context for why a session is busy and never a thing that wants you. -->
             <div class="agents" id="agents" role="status" hidden></div>
             <div class="shots" id="shots"></div>
+            <div class="skill-menu" id="skill-menu" role="listbox" aria-label="Claude Code skills" hidden></div>
             <div class="box">
                 <button class="attach" id="attach" type="button" aria-label="Attach a picture" title="Attach a picture" disabled>+</button>
                 <!-- See the note on `.composer .msg`. `role`/`aria-multiline` because the
@@ -2222,7 +2256,7 @@ var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
  "app", "pane-detail", "back", "detail-focus", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
  "tx-links", "tx-links-label", "tx-focus", "tx-focus-label", "live", "stale-shut",
- "composer", "msg", "send", "why", "waiting", "agents", "stale", "stale-say", "stale-go",
+ "composer", "msg", "send", "why", "waiting", "agents", "skill-menu", "stale", "stale-say", "stale-go",
  "hints", "keys", "toast", "brand", "brand-mark",
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
  "settings-notify-go", "settings-notify-test", "settings-notify-said", "settings-version",
@@ -2716,6 +2750,10 @@ var Live = {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/transcript?limit=200");
     },
 
+    skills: function (id) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/skills");
+    },
+
     /// `text`, `images`, or both — the server refuses only the message that is neither. The key
     /// is minted here, once per send, so that a retry of *this* request is not a second prompt.
     send: function (id, text, images) {
@@ -3133,6 +3171,17 @@ var Mock = (function () {
                     if (!entries.length) { fail(Object.assign(new Error("Nothing to read from this session yet."), { code: "not_found" })); return; }
                     done({ entries: entries.slice(), signature: id + ":" + entries.length + ":" + (entries[entries.length - 1] || {}).at });
                 }, 220);
+            });
+        },
+        skills: function () {
+            return new Promise(function (done) {
+                setTimeout(function () {
+                    done({ skills: [
+                        { name: "recap", description: "Summarize the work in this session", source: "project" },
+                        { name: "frontend-design", description: "Build a distinctive production interface", source: "personal" },
+                        { name: "design:visual", description: "Review layout and visual hierarchy", source: "plugin" }
+                    ] });
+                }, 180);
             });
         },
         send: function (id, text, images) {
@@ -5070,6 +5119,7 @@ function openSession(id, keepFocus) {
         els.app.dataset.pane = "on";
     }
     render();
+    SkillPicker.changed();
     if (!keepFocus && !phone()) {
         var node = rowNodes[id];
         if (node) node.focus({ preventScroll: true });
@@ -5082,6 +5132,7 @@ function closeDetail(silent) {
     S.expanded = {};
     Shots.clear();
     Links.follow();
+    SkillPicker.close();
     if (phone()) els.app.dataset.view = "list";
     renderTranscript();
     if (!silent) render();
@@ -6281,9 +6332,10 @@ document.addEventListener("paste", function (ev) {
  * A non-breaking space becomes an ordinary one on the way out — a browser puts them in on its
  * own, and one hiding in a shell command somebody pasted is a command that will not run.
  */
-function msgText() {
-    return String(els.msg.innerText || "").replace(/\u00A0/g, " ").trim();
+function rawMsgText() {
+    return String(els.msg.innerText || "").replace(/\u00A0/g, " ");
 }
+function msgText() { return rawMsgText().trim(); }
 
 /** Whether the placeholder should be showing. See the note on `.composer .msg.blank`. */
 function blankness() {
@@ -6321,9 +6373,117 @@ function insertText(text) {
     selection.addRange(range);
 }
 
+/**
+ * Skills for the open session, fetched only when `/` makes them visible.
+ *
+ * Nothing from SKILL.md is interpreted here. The Mac hands over a name and one safe line of
+ * description; choosing one only writes `/name ` into the box. Claude Code remains the one that
+ * resolves, authorises and runs it when the ordinary send happens.
+ */
+var SkillPicker = (function () {
+    var cache = {};                    // session id → catalog
+    var loading = {};                  // session id → true
+    var matches = [];
+    var selected = 0;
+    var shown = false;
+
+    function query() {
+        var text = rawMsgText();
+        return /^\/[^\s/]*$/.test(text) ? text.slice(1).toLowerCase() : null;
+    }
+
+    function rank(skill, q) {
+        var name = String(skill.name || "").toLowerCase();
+        if (!q) return 0;
+        if (name.indexOf(q) === 0) return 0;
+        if (name.split(/[-_:]/).some(function (part) { return part.indexOf(q) === 0; })) return 1;
+        if (name.replace(/[-_:]/g, "").indexOf(q.replace(/[-_:]/g, "")) === 0) return 2;
+        if (String(skill.description || "").toLowerCase().indexOf(q) >= 0) return 3;
+        return null;
+    }
+
+    function filtered(items, q) {
+        return (items || []).map(function (skill) { return { skill: skill, rank: rank(skill, q) }; })
+            .filter(function (row) { return row.rank !== null; })
+            .sort(function (a, b) {
+                return a.rank - b.rank || String(a.skill.name).localeCompare(String(b.skill.name));
+            }).slice(0, 9).map(function (row) { return row.skill; });
+    }
+
+    function hide() {
+        shown = false; matches = []; selected = 0;
+        els["skill-menu"].hidden = true;
+        els["skill-menu"].textContent = "";
+    }
+
+    function draw(q) {
+        matches = filtered(cache[S.openId] || [], q);
+        selected = Math.min(selected, Math.max(0, matches.length - 1));
+        var menu = els["skill-menu"];
+        menu.textContent = "";
+        if (!matches.length) { hide(); return; }
+        shown = true; menu.hidden = false;
+        matches.forEach(function (skill, i) {
+            var row = document.createElement("button");
+            row.type = "button"; row.className = "skill-option"; row.setAttribute("role", "option");
+            row.setAttribute("aria-selected", i === selected ? "true" : "false");
+            var command = document.createElement("span");
+            command.className = "command"; command.textContent = "/" + skill.name;
+            var description = document.createElement("span");
+            description.className = "description"; description.textContent = skill.description || "";
+            row.appendChild(command); row.appendChild(description);
+            // Keep the soft keyboard open. The click still arrives; only the focus transfer goes.
+            row.addEventListener("mousedown", function (ev) { ev.preventDefault(); });
+            row.addEventListener("click", function () { selected = i; accept(); });
+            menu.appendChild(row);
+        });
+    }
+
+    function changed() {
+        var q = query(), id = S.openId;
+        if (q === null || !id) { hide(); return; }
+        if (cache[id]) { draw(q); return; }
+        hide();
+        if (loading[id]) return;
+        loading[id] = true;
+        api.skills(id).then(function (answer) {
+            cache[id] = answer.skills || [];
+        }).catch(function () {
+            // Autocomplete is a convenience, never a reason the composer should fail. Unknown
+            // slash commands may still be sent and Claude Code will give the authoritative answer.
+            cache[id] = [];
+        }).then(function () {
+            delete loading[id];
+            if (S.openId === id) changed();
+        });
+    }
+
+    function move(delta) {
+        if (!shown || !matches.length) return false;
+        selected = Math.max(0, Math.min(matches.length - 1, selected + delta));
+        Array.prototype.forEach.call(els["skill-menu"].children, function (row, i) {
+            row.setAttribute("aria-selected", i === selected ? "true" : "false");
+            if (i === selected) row.scrollIntoView({ block: "nearest" });
+        });
+        return true;
+    }
+
+    function accept() {
+        if (!shown || !matches[selected]) return false;
+        els.msg.textContent = "/" + matches[selected].name + " ";
+        blankness(); hide(); caretToEnd(); renderComposer();
+        return true;
+    }
+
+    return { changed: changed, move: move, accept: accept, close: function () {
+        if (!shown) return false; hide(); return true;
+    }, visible: function () { return shown; } };
+})();
+
 els.msg.addEventListener("input", function () {
     blankness();
     renderComposer();
+    SkillPicker.changed();
 });
 
 // Nothing goes in while a send is in flight. This rather than switching the editability off,
@@ -6340,8 +6500,14 @@ els.msg.addEventListener("paste", function (ev) {
     insertText((ev.clipboardData || window.clipboardData).getData("text/plain") || "");
     blankness();
     renderComposer();
+    SkillPicker.changed();
 });
 els.msg.addEventListener("keydown", function (ev) {
+    if (ev.isComposing || ev.keyCode === 229) return;
+    if (ev.key === "ArrowDown" && SkillPicker.move(1)) { ev.preventDefault(); return; }
+    if (ev.key === "ArrowUp" && SkillPicker.move(-1)) { ev.preventDefault(); return; }
+    if (ev.key === "Tab" && SkillPicker.accept()) { ev.preventDefault(); return; }
+    if (ev.key === "Escape" && SkillPicker.close()) { ev.preventDefault(); return; }
     if (ev.key !== "Enter" || ev.shiftKey) return;
     // **Not while an input method is mid-word.** Typing Chinese, Japanese or Korean, Return is
     // how you accept the candidate the IME is offering — it is a keystroke aimed at the input
@@ -6350,7 +6516,7 @@ els.msg.addEventListener("keydown", function (ev) {
     // is; keyCode 229 is the same fact from browsers that predate it. This one is checked on
     // both paths, because on a touch screen the candidate picker is the whole of how Chinese is
     // typed and a Return swallowed there is a word lost.
-    if (ev.isComposing || ev.keyCode === 229) return;
+    if (SkillPicker.accept()) { ev.preventDefault(); return; }
     // **On a touch screen Return is a new line and the button is how you send.** The other way
     // round there is no way to write a second line at all — the on-screen keyboard has one
     // Return and it was spending it on sending — which made this box worse than every messaging
@@ -6383,6 +6549,7 @@ var sending = false;
 
 function submit() {
     if (sending || Shots.busy()) return;
+    if (SkillPicker.accept()) return;
     var text = msgText();
     var pictures = Shots.urls();
     if ((!text && !pictures.length) || !S.openId || !S.write) return;
