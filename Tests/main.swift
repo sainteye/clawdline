@@ -442,6 +442,30 @@ group("the Codex subcommands that are not sessions are refused") {
           Assistant.reading(ofPS: both)["ttys006"] == nil)
 }
 
+group("a Codex session may run its own app server") {
+    // Current Codex starts this server below the interactive native process. It is not itself a
+    // session, but refusing the whole tty hid the real session above it — exactly what happened
+    // to the sugar-elite tab.
+    let interactive = """
+    ttys001  34667 34134 node /Users/me/bin/codex
+    ttys001  34668 34667 /Users/me/vendor/bin/codex
+    ttys001  48634 34668 /Applications/Codex.app/Resources/codex sandbox -- /bin/node worker.js
+    ttys001  48637 34668 /Applications/Codex.app/Resources/codex app-server --listen stdio://
+    """
+    let found = Assistant.reading(ofPS: interactive)
+    expect("the interactive parent remains a session", found["ttys001"]?.assistant, .codex)
+    expect("the native interactive process remains the useful pid", found["ttys001"]?.pid, 34668)
+
+    // The opposite tree: `exec` is the parent, so an argless native child does not turn the
+    // non-interactive command back into somewhere Clawdline offers to type.
+    let exec = """
+    ttys002  500 400 node /Users/me/bin/codex exec "do a thing"
+    ttys002  501 500 /Users/me/vendor/bin/codex
+    """
+    check("a child of codex exec is still not a session",
+          Assistant.reading(ofPS: exec)["ttys002"] == nil)
+}
+
 group("tmux pane listing parses") {
     let sep = "\u{1}"
     let rows = [
@@ -4269,6 +4293,15 @@ group("which assistant a process name stands for") {
     check("and so is a directory that merely contains one", Assistant.named("/Users/me/.codex") == nil)
     expect("each leaves on its own word", Assistant.claude.quitLine, "/exit")
     expect("and they are not the same word", Assistant.codex.quitLine, "/quit")
+}
+
+group("assistant product marks load at row size") {
+    for assistant in Assistant.allCases {
+        let image = assistant.logoImage(height: 11)
+        check("\(assistant.rawValue) has a vector mark", image != nil)
+        expectClose("\(assistant.rawValue) mark is square", image?.size.width ?? 0, 11)
+        expectClose("\(assistant.rawValue) mark has the requested height", image?.size.height ?? 0, 11)
+    }
 }
 
 group("the line a new tab is given names the assistant") {

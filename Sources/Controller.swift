@@ -1699,12 +1699,20 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
 
         add(target.label, selected ? .labelColor : .secondaryLabelColor, base)
-        // Only when the list is holding both kinds. On a machine running one assistant the word
+        // Only when the list is holding both kinds. On a machine running one assistant the mark
         // is on every row and distinguishes nothing, which is the definition of noise; the
-        // moment a Claude Code session and a Codex one are next to each other it is the only
-        // thing on the row that says which is which.
+        // moment Claude Code and Codex sit next to each other, their product marks make the split
+        // visible before the smaller word has even been read.
         if mixedAssistants, let assistant = target.assistant {
-            add("  " + assistant.short, .tertiaryLabelColor, small)
+            add("  ", .tertiaryLabelColor, small)
+            if let image = assistant.logoImage(height: 11) {
+                let attachment = NSTextAttachment()
+                attachment.image = image
+                attachment.bounds = NSRect(x: 0, y: -1.5, width: 11, height: 11)
+                s.append(NSAttributedString(attachment: attachment))
+                add(" ", .tertiaryLabelColor, small)
+            }
+            add(assistant.short, .tertiaryLabelColor, small)
         }
         return s
     }

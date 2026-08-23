@@ -130,7 +130,8 @@ enum ITerm {
         }
         pidLock.unlock()
 
-        let map = Assistant.reading(ofPS: shell("/bin/ps", ["-ax", "-o", "tty=,pid=,command="]))
+        let map = Assistant.reading(ofPS: shell("/bin/ps", ["-ax", "-o",
+                                                            "tty=,pid=,ppid=,command="]))
         pidLock.lock()
         pidCache = (CFAbsoluteTimeGetCurrent(), map)
         pidLock.unlock()

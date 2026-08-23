@@ -112,10 +112,10 @@ enum Assistant: String, CaseIterable {
     /// for these words anywhere in the line, and a prompt is a line — `codex "please exec this"`
     /// would then hide a real session, which is the worse of the two mistakes.
     static let notASession: Set<String> = [
-        "exec", "e", "mcp-server", "app-server", "exec-server", "review",
+        "exec", "e", "mcp-server", "app-server", "exec-server", "review", "sandbox",
     ]
 
-    /// What is running on each tty, from `ps -ax -o tty=,pid=,command=`.
+    /// What is running on each tty, from `ps -ax -o tty=,pid=,ppid=,command=`.
     ///
     /// Split out from the process that produces it so it can be tested against fixed output
     /// rather than against whatever happens to be running on the machine at the time — the
@@ -126,24 +126,62 @@ enum Assistant: String, CaseIterable {
     /// together. Either proves a session is there; the native one is preferred for the pid,
     /// because it is the process that holds the working directory anybody asks about later.
     static func reading(ofPS output: String) -> [String: Running] {
-        var found: [String: Running] = [:]
-        var denied = Set<String>()
+        struct Row {
+            let tty: String
+            let pid: Int32
+            let parent: Int32?
+            let assistant: Assistant
+            let viaShim: Bool
+            let denied: Bool
+        }
+
+        var rows: [Row] = []
 
         for line in output.split(separator: "\n") {
             let fields = line.split(separator: " ", omittingEmptySubsequences: true)
             guard fields.count >= 3, fields[0].hasPrefix("ttys"),
                   let pid = Int32(fields[1]) else { continue }
             let tty = String(fields[0])
-            guard let seen = read(tokens: fields.dropFirst(2).map(String.init)) else { continue }
-            if seen.denied { denied.insert(tty); continue }
+            // Old three-column fixtures are still understood. The real scan includes ppid,
+            // because ancestry is the only reliable way to distinguish `codex exec`'s native
+            // child from an interactive Codex session that happens to have an app-server child.
+            let parent = fields.count >= 4 ? Int32(fields[2]) : nil
+            let start = parent == nil ? 2 : 3
+            guard let seen = read(tokens: fields.dropFirst(start).map(String.init)) else { continue }
+            rows.append(Row(tty: tty, pid: pid, parent: parent, assistant: seen.assistant,
+                            viaShim: seen.viaShim, denied: seen.denied))
+        }
+
+        let byPID = Dictionary(uniqueKeysWithValues: rows.map { ($0.pid, $0) })
+        func hasDeniedAncestor(_ row: Row) -> Bool {
+            var next = row.parent
+            var visited = Set<Int32>()
+            while let pid = next, visited.insert(pid).inserted, let parent = byPID[pid] {
+                if parent.denied { return true }
+                next = parent.parent
+            }
+            return false
+        }
+
+        var found: [String: Running] = [:]
+        for tty in Set(rows.map(\.tty)) {
+            let onTTY = rows.filter { $0.tty == tty }
+            // With ppid present, refusal flows down the process tree, not sideways across the
+            // tty. Interactive Codex now starts `codex app-server --listen stdio://` beside its
+            // UI; that descendant is not a place to type, but its parent still is. Conversely,
+            // `codex exec` may spawn an argless native child that looks interactive on its own,
+            // and the refused ancestor keeps that child out.
+            let legacyDenied = onTTY.contains { $0.parent == nil && $0.denied }
+            let candidates = onTTY.filter {
+                !$0.denied && !legacyDenied && !hasDeniedAncestor($0)
+            }
             // A shim never displaces the native process it started. They are one session, and
             // only the native one can answer where it is working.
-            if seen.viaShim, found[tty] != nil { continue }
-            found[tty] = Running(assistant: seen.assistant, pid: pid)
+            guard let chosen = candidates.last(where: { !$0.viaShim }) ?? candidates.first else {
+                continue
+            }
+            found[tty] = Running(assistant: chosen.assistant, pid: chosen.pid)
         }
-        // Last, not inline: the line that refuses a tty can arrive after the line that claimed
-        // it — a shim and its child are two rows and `ps` does not promise which comes first.
-        for tty in denied { found.removeValue(forKey: tty) }
         return found
     }
 
