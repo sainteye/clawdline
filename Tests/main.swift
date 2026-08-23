@@ -4067,6 +4067,30 @@ group("the rollout a Codex process is holding open") {
           !Codex.isRollout("/Users/me/.codex/sessions/2026/08/24/notes.jsonl"))
 }
 
+group("a new Codex process never borrows an existing conversation") {
+    let fm = FileManager.default
+    let base = fm.temporaryDirectory.appendingPathComponent("clawdline-codex-\(UUID().uuidString)")
+    let day = base.appendingPathComponent("sessions/2026/08/24", isDirectory: true)
+    let file = day.appendingPathComponent("rollout-2026-08-24T00-16-32-existing.jsonl")
+    let oldHome = Config.shared.codexHome
+    defer {
+        Config.shared.codexHome = oldHome
+        try? fm.removeItem(at: base)
+    }
+    try! fm.createDirectory(at: day, withIntermediateDirectories: true)
+    try! Data("""
+    {"type":"session_meta","payload":{"session_id":"existing","cwd":"/w",\
+    "originator":"codex-tui","thread_source":"user"}}
+    """.utf8).write(to: file)
+    Config.shared.codexHome = base.path
+
+    check("the clock remains a fallback when there is no process to ask",
+          Codex.locate(cwd: "/w", startedAt: Date(), days: 3) == file)
+    check("a known process with no rollout returns nothing instead of the fallback",
+          Codex.locate(cwd: "/w", startedAt: Date(),
+                       pid: Int32(ProcessInfo.processInfo.processIdentifier), days: 3) == nil)
+}
+
 
 
 group("a rollout reads as the same entries a transcript does") {
