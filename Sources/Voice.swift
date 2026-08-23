@@ -309,6 +309,7 @@ final class Voice {
             }
             self?.record(buffer)
         }
+        tapped = true
         engine.prepare()
         do {
             try engine.start()
@@ -538,11 +539,30 @@ final class Voice {
         recordingLock.unlock()
     }
 
+    /// Whether there is a tap on the input to take off again.
+    ///
+    /// **`engine.inputNode` is not a getter.** Reaching for it makes AVAudioEngine build the
+    /// input node, which allocates render resources against the audio HAL — synchronously, on
+    /// whatever thread asked, and with no timeout. `stop()` runs every time the panel closes,
+    /// dictation or no dictation, so on a machine whose HAL had wedged the whole app stopped
+    /// with it: the main thread sat inside `AudioUnitInitialize` and never came out, and what
+    /// that looks like from the outside is an application that has simply stopped answering.
+    /// Seen twice on 2026-08-24, both times after a `clawdline://snapshot`, whose last act is to
+    /// put the panel away.
+    ///
+    /// So the node is only reached for when something was actually put on it.
+    private var tapped = false
+
     /// A stop arrived while a settle was still being transcribed. See `stop()`.
     private var stopAfterSettling = false
 
     func stop() {
-        engine.inputNode.removeTap(onBus: 0)
+        // See `tapped`. `isRunning` is a plain state read and safe either way; the node itself
+        // is only asked for when this session put something on it.
+        if tapped {
+            engine.inputNode.removeTap(onBus: 0)
+            tapped = false
+        }
         if engine.isRunning { engine.stop() }
         request?.endAudio()
         task?.cancel()

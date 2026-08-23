@@ -9,6 +9,15 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: the app could stop answering when the panel went away
+
+Putting the panel away asks the dictation engine to stop, and stopping it reached for
+`AVAudioEngine.inputNode` whether or not anything had ever been recorded. Reading that property
+is not free — it builds the input node and allocates render resources against the audio HAL, on
+the calling thread, with no timeout — so when the HAL was wedged the main thread went in and did
+not come back. The app kept its window and answered nothing: not the bar, not the hotkey, not
+HTTP. It now reaches for the node only when this session actually put a tap on it.
+
 ### Following a background agent into its own conversation
 
 The strip that says *three agents are out* was the end of the road: it named them, said what each
