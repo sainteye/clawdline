@@ -575,6 +575,11 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     padding: 6px 10px 6px 4px;
 }
 .detail-head canvas { display: block; image-rendering: pixelated; flex: 0 0 auto; }
+.detail-head .detail-mark {
+    flex: 0 0 auto;
+    border-radius: 4px;
+}
+.detail-head .detail-mark:disabled { cursor: default; }
 .detail-head .who { min-width: 0; flex: 1 1 auto; }
 .detail-head .name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .detail-head .sub {
@@ -1582,7 +1587,12 @@ a.link:active { background: var(--line); }
     <section class="pane pane-detail" id="pane-detail">
         <div class="detail-head">
             <button class="back" id="back" aria-label="Back to the session list">‹ Sessions</button>
-            <canvas id="detail-mark" width="0" height="0"></canvas>
+            <!-- The project mark is also the shortest road back to the terminal it belongs to.
+                 It is a button rather than a click handler on the canvas so the same action is
+                 available from a keyboard and has a name for assistive technology. -->
+            <button class="detail-mark" id="detail-focus" type="button">
+                <canvas id="detail-mark" width="0" height="0"></canvas>
+            </button>
             <div class="who">
                 <div class="name" id="detail-name">No session open</div>
                 <div class="sub" id="detail-sub"></div>
@@ -2210,7 +2220,7 @@ var S = {
 
 var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
- "app", "pane-detail", "back", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
+ "app", "pane-detail", "back", "detail-focus", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
  "tx-links", "tx-links-label", "tx-focus", "tx-focus-label", "live", "stale-shut",
  "composer", "msg", "send", "why", "waiting", "agents", "stale", "stale-say", "stale-go",
  "hints", "keys", "toast", "brand", "brand-mark",
@@ -2732,6 +2742,13 @@ var Live = {
                          post({}, { "Idempotency-Key": uuid() }));
     },
 
+    /// Leave through the assistant's own prompt, then close the terminal session it occupied.
+    /// The server knows whether that means `/exit` or `/quit`; the page never sends a command.
+    end: function (id) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/end",
+                         post({}, { "Idempotency-Key": uuid() }));
+    },
+
     /// Everything this session's project has an address for. **Asked when the menu opens and
     /// never with the session list**: this costs the Mac a `git` invocation and a handful of
     /// file reads per project, and the list goes out on the event stream every time anything
@@ -3155,6 +3172,17 @@ var Mock = (function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Focus is not enabled on this server."), { code: "write_disabled" })); return; }
                     done({ ok: true });
                 }, 150);
+            });
+        },
+
+        end: function (id) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
+                    sessions = sessions.filter(function (s) { return s.id !== id; });
+                    emit();
+                    done({ ok: true });
+                }, 300);
             });
         },
 
@@ -3890,6 +3918,12 @@ function renderDetailHead() {
     els["tx-focus"].hidden = !atMac();
     els["tx-focus"].disabled = !s || !S.write;
     els["tx-focus"].title = S.write ? T.webShowOnMacTip : T.webShowOnMacOff;
+    // The mark is the compact form of the same action. Unlike the labelled chip it remains on
+    // a remote browser: when somebody deliberately presses a project's icon, bringing that
+    // project's tab forward on the Mac is the visible meaning of the press.
+    els["detail-focus"].disabled = !s || !S.write;
+    els["detail-focus"].title = S.write ? T.webShowOnMacTip : T.webShowOnMacOff;
+    els["detail-focus"].setAttribute("aria-label", T.webShowOnMac);
 }
 
 function renderTranscript() {
@@ -5173,6 +5207,12 @@ els["tx-focus"].addEventListener("click", function () {
         .catch(function (e) { toast(e.message, true); });
 });
 
+els["detail-focus"].addEventListener("click", function () {
+    if (!S.openId) return;
+    api.focus(S.openId).then(function () { toast(T.webShowOnMacAsked); })
+        .catch(function (e) { toast(e.message, true); });
+});
+
 // Back on a phone: the pushState above put us here, so popping means "list".
 window.addEventListener("popstate", function () {
     if (phone() && els.app.dataset.view === "detail") closeDetail();
@@ -6346,9 +6386,18 @@ function submit() {
     var text = msgText();
     var pictures = Shots.urls();
     if ((!text && !pictures.length) || !S.openId || !S.write) return;
+    var session = byId(S.openId);
+    // A quit line is not a message. Sending it through the ordinary route does make the
+    // assistant leave, but the shell (and therefore the iTerm2 tab) immediately drops out of
+    // Clawdline's session list, leaving no way for this page to close it afterwards. Join those
+    // two steps while the terminal session id is still known. Exact and assistant-specific so a
+    // sentence mentioning `/exit`, or Claude being sent Codex's `/quit`, stays an ordinary prompt.
+    var quit = session && !pictures.length && text.trim() ===
+        (session.assistant === "codex" ? "/quit" : "/exit");
     sending = true;
     renderComposer();
-    api.send(S.openId, text, pictures).then(function () {
+    var request = quit ? api.end(S.openId) : api.send(S.openId, text, pictures);
+    request.then(function () {
         // Every child node goes, not just the words: the placeholder is drawn from what
         // `innerText` says, and a `<br>` the browser left behind would keep the box looking
         // like it still had something in it.
@@ -6358,7 +6407,8 @@ function submit() {
         // Cleared here and not before: a send that failed still has its pictures attached, and
         // the reader can press the button again rather than going back to the camera roll.
         Shots.clear();
-        loadTranscript(S.openId, true);
+        if (quit) closeDetail();
+        else loadTranscript(S.openId, true);
     }).catch(function (e) {
         if (e.code === "write_disabled") {
             // The flag and the truth have drifted apart — believe the answer, not the flag.
