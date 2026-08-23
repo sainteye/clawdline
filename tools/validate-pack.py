@@ -14,7 +14,7 @@ import re
 import sys
 
 REQUIRED_ROUTINES = {"idle"}
-KNOWN_ROUTINES = {"pop", "idle", "typing", "dance", "cheer", "stretch"}
+KNOWN_ROUTINES = {"pop", "idle", "typing", "dance", "cheer", "stretch", "sleep"}
 HEX = re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
 
 
