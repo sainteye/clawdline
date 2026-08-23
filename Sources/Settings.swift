@@ -414,9 +414,34 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         tunnelCard = card
         pane.right.block(label: nil, view: card, hint: nil)
 
+        // On this tab rather than in General because it gates the same thing the rest of the tab
+        // gates: something that is not the person at the keyboard getting a session started on
+        // this Mac. See Sources/Orchestrator.swift.
+        pane.right.head(L.t.settingsOrchestrator)
+        pane.right.row(L.t.settingsOrchestratorEnabled,
+                       switchFor({ Config.shared.orchestratorEnabled },
+                                 { Config.shared.orchestratorEnabled = $0 }),
+                       hint: L.t.settingsOrchestratorEnabledHint)
+        pane.right.row(L.t.settingsOrchestratorMax, childrenPopUp(),
+                       hint: L.t.settingsOrchestratorMaxHint)
+        pane.right.row(L.t.settingsOrchestratorNotify,
+                       switchFor({ Config.shared.orchestratorNotifyRoot },
+                                 { Config.shared.orchestratorNotifyRoot = $0 }),
+                       hint: L.t.settingsOrchestratorNotifyHint)
+
         pane.wide.block(label: L.t.settingsRemoteDevices, view: devicesControl(),
                         hint: L.t.settingsRemotePhoneHint)
         return pane
+    }
+
+    /// How many child sessions may run at once, 1 to 10 — the range `Config` accepts, so a number
+    /// picked here is a number the file will still hold after a reload. A popup rather than a
+    /// slider because ten stops is a list, and the value is the label.
+    private func childrenPopUp() -> NSView {
+        popUp((1...10).map { (String($0), String($0)) },
+              current: String(Config.shared.orchestratorMaxChildren)) {
+            Config.shared.orchestratorMaxChildren = Int($0) ?? Config.shared.orchestratorMaxChildren
+        }
     }
 
     /// The hooks, in and out.

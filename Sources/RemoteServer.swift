@@ -271,7 +271,18 @@ final class RemoteServer {
             || (request.path.hasPrefix("/splash-") && request.path.hasSuffix(".png"))
             || request.path == "/favicon.ico"
             || (request.path.hasPrefix("/icon-") && request.path.hasSuffix(".png"))
-        if !open.contains(request.path), !pairing, !icon {
+        // The orchestrator speaks with a credential of its own — a 0600 file only a local
+        // process running as the user can read — because through a tunnel every request arrives
+        // from 127.0.0.1, and a paired phone must never be able to start sessions. Reads without
+        // that token fall through to ordinary device auth, so the page can show the tasks; the
+        // complete route is gated inside its handler by the per-task secret instead, which is
+        // the only credential a child was ever handed.
+        let orchestrated = request.path.hasPrefix("/v1/orchestrator/")
+        let orchestratorAuthed = orchestrated
+            && Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"])
+        let taskSecretRoute = orchestrated && request.method == "POST"
+            && request.path.hasSuffix("/complete")
+        if !open.contains(request.path), !pairing, !icon, !orchestratorAuthed, !taskSecretRoute {
             if case .denied = permission(for: request) {
                 return .error(401, "unauthorized", "This needs a paired device.")
             }
@@ -368,19 +379,30 @@ final class RemoteServer {
             }
             return .json(["links": linksPayload(cwd: cwd)])
 
-        // The file-backed Claude Code skills this session can invoke. Metadata only: neither a
-        // local path nor the body of a SKILL.md belongs on a paired phone, and reading a menu must
-        // never execute the dynamic commands a skill may contain.
+        // The skills this particular assistant session can invoke. Metadata only: neither a local
+        // path nor the body of a SKILL.md belongs on a paired phone, and reading a menu must never
+        // execute the dynamic commands a skill may contain.
         case ("GET", let path) where path.hasSuffix("/skills") && path.hasPrefix("/v1/sessions/"):
             let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/skills".count))
             guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
                 return .error(404, "not_found", "No session named that")
             }
-            guard session.assistant == .claude else { return .json(["skills": []]) }
-            guard let cwd = Targets.workingDirectory(of: session) else {
-                return .error(404, "not_found", "Could not find that session's working directory")
+            let skills: [AssistantSkill]
+            switch session.assistant {
+            case .claude:
+                guard let cwd = Targets.workingDirectory(of: session) else {
+                    return .error(404, "not_found", "Could not find that session's working directory")
+                }
+                skills = ClaudeSkills.available(cwd: cwd)
+            case .codex:
+                guard let record = Transcript.record(of: session), record.assistant == .codex else {
+                    return .json(["skills": []])
+                }
+                skills = CodexSkills.available(in: record.url)
+            case nil:
+                skills = []
             }
-            return .json(["skills": ClaudeSkills.available(cwd: cwd).map { skill in
+            return .json(["skills": skills.map { skill in
                 ["name": skill.command, "description": skill.description,
                  "source": skill.source.rawValue]
             }])
@@ -400,6 +422,14 @@ final class RemoteServer {
             if parts.count == 2, parts[1] == "transcript" {
                 let limit = min(max(Int(request.query["limit"] ?? "") ?? 200, 1), 1000)
                 return transcriptPayload(for: session, limit: limit)
+            }
+            // One background agent's own conversation. The session list already says an agent
+            // exists and what it last reached for; this is the rest of it, and it is read the
+            // same way the session's transcript is because it is the same kind of file.
+            if parts.count == 3, parts[1] == "agents" {
+                let limit = min(max(Int(request.query["limit"] ?? "") ?? 200, 1), 1000)
+                let agent = parts[2].removingPercentEncoding ?? parts[2]
+                return agentPayload(for: session, agent: agent, limit: limit)
             }
             return .error(404, "not_found", "No such route")
 
@@ -523,6 +553,54 @@ final class RemoteServer {
 
         case ("POST", let path) where path.hasPrefix("/v1/places/"):
             return .error(404, "not_found", "No such route")
+
+        // Root sessions dispatching child sessions. See Sources/Orchestrator.swift and
+        // docs/orchestrator.md; who may call what is decided above, where `orchestratorAuthed`
+        // is computed.
+
+        case ("POST", "/v1/orchestrator/tasks"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden", "Dispatching needs the orchestrator token.")
+            }
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
+            guard let taskID = body["task_id"] as? String,
+                  let secret = body["secret"] as? String else {
+                return .error(400, "bad_request", "task_id and secret are required.")
+            }
+            return answer(Orchestrator.dispatch(taskID: taskID, secret: secret))
+
+        case ("GET", "/v1/orchestrator/tasks"):
+            return .json(["tasks": Orchestrator.records(),
+                          "at": Int(Date().timeIntervalSince1970)])
+
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
+            && path.hasSuffix("/complete"):
+            let id = String(path.dropFirst("/v1/orchestrator/tasks/".count)
+                .dropLast("/complete".count))
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
+            let secret = request.headers["x-clawdline-task-secret"]
+                ?? (body["secret"] as? String) ?? ""
+            return answer(Orchestrator.complete(taskID: id.removingPercentEncoding ?? id,
+                                                secret: secret,
+                                                status: body["status"] as? String ?? "",
+                                                summary: body["summary"] as? String ?? ""))
+
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
+            && path.hasSuffix("/cancel"):
+            let id = String(path.dropFirst("/v1/orchestrator/tasks/".count)
+                .dropLast("/cancel".count))
+            let cleaned = id.removingPercentEncoding ?? id
+            // The local credential may cancel outright; a paired device goes through the same
+            // three gates every other write does.
+            if orchestratorAuthed { return answer(Orchestrator.cancel(taskID: cleaned)) }
+            return writing(request) { _ in answer(Orchestrator.cancel(taskID: cleaned)) }
+
+        case ("GET", let path) where path.hasPrefix("/v1/orchestrator/tasks/"):
+            let id = String(path.dropFirst("/v1/orchestrator/tasks/".count))
+            guard let record = Orchestrator.record(id: id.removingPercentEncoding ?? id) else {
+                return .error(404, "not_found", "No task named that")
+            }
+            return .json(["task": record])
 
         // Answering a menu, which is a different act from typing — see `Targets.answer`.
         //
@@ -940,6 +1018,16 @@ final class RemoteServer {
 
     private var idempotent: [String: (at: Date, response: Response)] = [:]
 
+    /// An orchestrator reply, in the envelope everything else already uses.
+    private func answer(_ reply: Orchestrator.Reply) -> Response {
+        switch reply {
+        case .ok(let obj):
+            return .json(obj)
+        case .refused(let status, let code, let message, let extra):
+            return .error(status, code, message, extra: extra)
+        }
+    }
+
     /// Turn a message with pictures in it into the pieces the sender already understands.
     ///
     /// Each image arrives as a `data:` URL and leaves as a file, because that is what
@@ -1187,14 +1275,44 @@ final class RemoteServer {
             return .json(["entries": [], "signature": ""])
         }
         let file = record.url
-        let entries = Transcript.parse(text, assistant: record.assistant, limit: limit)
-            .map { entry -> [String: Any] in
+        let entries = rows(of: Transcript.parse(text, assistant: record.assistant, limit: limit))
+        return .json(["entries": entries, "signature": Transcript.signature(of: file)])
+    }
+
+    /// One agent's conversation, plus the agent itself so the page has something to put in the
+    /// header while it is reading it.
+    ///
+    /// Claude Code only, and there is nothing to check for that: a Codex session has no
+    /// `subagents` directory, so the lookup comes back empty and this is a 404 — the same answer
+    /// it gives for an id that was never one of this session's.
+    private func agentPayload(for session: TargetSession, agent id: String, limit: Int) -> Response {
+        guard let file = Subagents.transcript(of: session, agent: id) else {
+            return .error(404, "not_found", "No agent named that")
+        }
+        var out: [String: Any] = ["entries": [], "signature": ""]
+        // The strip's own row for it, so a reader who followed a link sees the same description,
+        // state and cost that the row they clicked was showing.
+        if let agent = SessionWatch.shared.agents(of: session.id).first(where: { $0.id == id }) {
+            out["agent"] = json(of: agent)
+        }
+        guard let text = Transcript.tail(of: file, bytes: 8 << 20) else { return .json(out) }
+        // `sidechains: true` — every row in an agent's file is marked as one, because from the
+        // session's point of view that is what an agent is. See `Transcript.parse`.
+        out["entries"] = rows(of: Transcript.parse(text, assistant: .claude, limit: limit,
+                                                   sidechains: true))
+        out["signature"] = Transcript.signature(of: file)
+        return .json(out)
+    }
+
+    /// Entries as the page reads them. One shape for both transcripts, because a reader following
+    /// an agent should meet the same pane they left.
+    private func rows(of entries: [Transcript.Entry]) -> [[String: Any]] {
+        entries.map { entry -> [String: Any] in
             var row: [String: Any] = ["role": name(of: entry.kind), "text": entry.text]
             if let tool = entry.tool { row["tool"] = tool }
             if let time = entry.time { row["at"] = Int(time.timeIntervalSince1970) }
             return row
         }
-        return .json(["entries": entries, "signature": Transcript.signature(of: file)])
     }
 
     private func name(of kind: Transcript.Entry.Kind) -> String {
@@ -1291,6 +1409,14 @@ final class RemoteServer {
             "webShowOnMacTip": t.webShowOnMacTip,
             "webShowOnMacOff": t.webShowOnMacOff,
             "webShowOnMacAsked": t.webShowOnMacAsked,
+            "webSessionActions": t.webSessionActions,
+            "webEndSession": t.webEndSession,
+            "webConfirmActionTitle": t.webConfirmActionTitle,
+            "webConfirmActionSay": t.webConfirmActionSay,
+            "webConfirmEndTitle": t.webConfirmEndTitle,
+            "webConfirmEndSay": t.webConfirmEndSay,
+            "webCancel": t.webCancel,
+            "webConfirm": t.webConfirm,
             "webPickSession": t.webPickSession,
             "webReading": t.webReading,
             "webLoading": t.webLoading,
@@ -1474,6 +1600,21 @@ final class RemoteServer {
             "webAgentsCount": t.webAgentsCount,
             "webAgentDone": t.webAgentDone,
             "webAgentFailed": t.webAgentFailed,
+            "agentRunning": t.agentRunning,
+            "agentTools": t.agentTools,
+            "agentEmpty": t.agentEmpty,
+            "agentBack": t.agentBack,
+            "webAgentOpen": t.webAgentOpen,
+        ])
+
+        // The chips on a root session and on the child it sent off — see `Orchestrator`.
+        add([
+            "webTaskRoot": t.webTaskRoot,
+            "webTaskChild": t.webTaskChild,
+            "webTaskTasks": t.webTaskTasks,
+            "webTaskDone": t.webTaskDone,
+            "webTaskFailed": t.webTaskFailed,
+            "webTaskRunning": t.webTaskRunning,
         ])
 
         // The Links sheet.
@@ -1688,7 +1829,14 @@ final class RemoteServer {
         ], to: stream)
         DispatchQueue.main.async {
             let payload = self.sessionsPayload()
-            self.queue.async { self.write(event: "sessions", data: payload, to: stream) }
+            // The task list rides the same stream: a page that reconnects is level on both
+            // without asking, for the same reason the whole session list goes out above.
+            let tasks: [String: Any] = ["tasks": Orchestrator.records(),
+                                        "at": Int(Date().timeIntervalSince1970)]
+            self.queue.async {
+                self.write(event: "sessions", data: payload, to: stream)
+                self.write(event: "orchestrator", data: tasks, to: stream)
+            }
         }
         startHeartbeat()
     }
@@ -1719,6 +1867,19 @@ final class RemoteServer {
         queue.async { [weak self] in
             guard let self, !self.streams.isEmpty else { return }
             for stream in self.streams.values { self.write(event: "sessions", data: payload, to: stream) }
+        }
+    }
+
+    /// Called by the orchestrator whenever any task record changes, from whichever thread it
+    /// changed on — `records()` does its own main-thread crossing.
+    func broadcastOrchestrator() {
+        let payload: [String: Any] = ["tasks": Orchestrator.records(),
+                                      "at": Int(Date().timeIntervalSince1970)]
+        queue.async { [weak self] in
+            guard let self, !self.streams.isEmpty else { return }
+            for stream in self.streams.values {
+                self.write(event: "orchestrator", data: payload, to: stream)
+            }
         }
     }
 

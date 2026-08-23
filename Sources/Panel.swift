@@ -1155,9 +1155,37 @@ final class TargetRow: NSView {
     }
 }
 
-// MARK: - The stack log's header
+// MARK: - The activity strip
 
-/// The project, the way out, and a tab per process — pinned to the top of the log pane.
+/// The "what is it doing right now" line, which is sometimes also a way into the pane.
+///
+/// A label rather than a button because it is a sentence — most of it is the live line, which
+/// leads nowhere and should not look as though it does. Only the half about background agents
+/// has anywhere to go, so the pointer is the one thing that can say "this is worth clicking"
+/// while it is true and nothing at all while it is not.
+final class ActivityLabel: NSTextField {
+    var clickable = false {
+        didSet {
+            guard clickable != oldValue else { return }
+            window?.invalidateCursorRects(for: self)
+        }
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if clickable { addCursorRect(bounds, cursor: .pointingHand) }
+    }
+}
+
+// MARK: - The pane's header
+
+/// A name, the way out, and a row of tabs — pinned to the top of the ⌘J pane.
+///
+/// **Two things use it, because they turned out to be the same shape.** A stack's log is a
+/// project, a tab per process and a way back to the transcript; a session's background agents
+/// are a count, a tab per agent and a way back to the same place. Written twice they would have
+/// been two views drifting apart at the edges — different paddings, different truncation, one of
+/// them remembering to invalidate its cursor rects.
 ///
 /// A real view rather than the first two lines of the text, because those scrolled away. The
 /// tabs are the only means of getting anywhere in this pane, and a control that leaves the
@@ -1165,7 +1193,7 @@ final class TargetRow: NSView {
 ///
 /// Added with `NSScrollView.addFloatingSubview(_:for:)`, which is AppKit's own answer to this
 /// and keeps it correct through live resize and elastic scrolling.
-final class StackLogHeader: NSView {
+final class PaneHeader: NSView {
     var title = ""
     var titleColor: NSColor = .labelColor
     var backLabel = ""
@@ -1181,6 +1209,9 @@ final class StackLogHeader: NSView {
     private var tabFont: NSFont { NSFont.systemFont(ofSize: Style.outputSize - 1) }
 
     override var isOpaque: Bool { true }
+
+    /// Whether this header has anywhere to go back to. See `draw`.
+    private var hasBack: Bool { !backLabel.isEmpty }
 
     private var backRect: NSRect {
         let w = ("← " + backLabel).size(withAttributes: [.font: tabFont]).width
@@ -1211,17 +1242,22 @@ final class StackLogHeader: NSView {
         title.draw(at: NSPoint(x: Style.padH, y: bounds.height - 22), withAttributes: [
             .font: titleFont, .foregroundColor: titleColor,
         ])
-        ("← " + backLabel).draw(in: backRect, withAttributes: [
-            .font: tabFont,
-            .foregroundColor: NSColor.secondaryLabelColor,
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
-        ])
+        // No label, no way back — and no arrow either. The agents' own strip is a list with
+        // nothing behind it: an arrow there would offer to return somewhere the reader has not
+        // been, and a control that does nothing is worse than one that is not drawn.
+        if hasBack {
+            ("← " + backLabel).draw(in: backRect, withAttributes: [
+                .font: tabFont,
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+            ])
+        }
 
         for (i, zone) in tabRects.enumerated() {
             let isCurrent = zone.value == current
             var attrs: [NSAttributedString.Key: Any] = [
                 .font: tabFont,
-                .foregroundColor: isCurrent ? NSColor.labelColor : NSColor.tertiaryLabelColor,
+                .foregroundColor: isCurrent ? NSColor.labelColor : NSColor.secondaryLabelColor,
             ]
             if isCurrent {
                 attrs[.underlineStyle] = NSUnderlineStyle.thick.rawValue
@@ -1239,7 +1275,7 @@ final class StackLogHeader: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        if backRect.contains(p) { onBack?(); return }
+        if hasBack, backRect.contains(p) { onBack?(); return }
         for zone in tabRects where zone.rect.insetBy(dx: -6, dy: -4).contains(p) {
             if zone.value != current { onTab?(zone.value) }
             return
@@ -1248,7 +1284,7 @@ final class StackLogHeader: NSView {
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        addCursorRect(backRect, cursor: .pointingHand)
+        if hasBack { addCursorRect(backRect, cursor: .pointingHand) }
         for zone in tabRects where zone.value != current {
             addCursorRect(zone.rect, cursor: .pointingHand)
         }

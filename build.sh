@@ -5,28 +5,20 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP="${CLAWDLINE_APP:-$HOME/Applications/Clawdline.app}"
-BIN="$APP/Contents/MacOS/Clawdline"
-RES="$APP/Contents/Resources"
+APP_PARENT="$(dirname "$APP")"
+APP_NAME="$(basename "$APP")"
 
-echo "→ building into $APP"
+mkdir -p "$APP_PARENT"
+# Build beside the installed app, on the same filesystem. The final rename is then quick and
+# cannot turn into a slow copy just when the running app has been stopped.
+STAGE_ROOT="$(mktemp -d "$APP_PARENT/.clawdline-build.XXXXXX")"
+STAGED_APP="$STAGE_ROOT/$APP_NAME"
+BIN="$STAGED_APP/Contents/MacOS/Clawdline"
+RES="$STAGED_APP/Contents/Resources"
+BACKUP="$STAGE_ROOT.previous"
+trap 'rm -rf "$STAGE_ROOT"' EXIT
 
-# Stop a running copy first, or overwriting the executable fails. Remember whether it was
-# running so it can be put back: a build that silently leaves you without the app is a
-# footgun everyone steps on exactly once, usually while wondering why the hotkey died.
-WAS_RUNNING=0
-pgrep -x Clawdline >/dev/null 2>&1 && WAS_RUNNING=1
-pkill -x Clawdline 2>/dev/null || true
-# **`pkill` asks; it does not wait.** The bundle is deleted on the next line, and a process on
-# its way out is still reading it — AppKit's teardown calls `DisableWindowServerConnection`,
-# which asks CoreFoundation for the bundle identifier. Delete the bundle in that window and it
-# reads freed memory and dies of SIGSEGV, leaving a crash report from a build that otherwise
-# looked fine. Observed 2026-08-19 08:23:18, in `CFBundleGetIdentifier` under `HIToolbox`.
-for _ in $(seq 1 60); do
-  pgrep -x Clawdline >/dev/null 2>&1 || break
-  sleep 0.1
-done
-
-rm -rf "$APP"
+echo "→ building staged app for $APP"
 mkdir -p "$(dirname "$BIN")" "$RES"
 
 swiftc \
@@ -44,7 +36,7 @@ cp -R Resources/mascots "$RES/"
 # The web interface, served by RemoteServer when it is switched on.
 [ -d Resources/web ] && cp -R Resources/web "$RES/"
 
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+cat > "$STAGED_APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -81,8 +73,48 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 
 # Ad-hoc signature. Unsigned, TCC forgets "may control iTerm2" on every rebuild.
-codesign --force --sign - --identifier dev.sainteye.clawdline "$APP" >/dev/null 2>&1 \
+codesign --force --sign - --identifier dev.sainteye.clawdline "$STAGED_APP" >/dev/null 2>&1 \
   || echo "  (codesign failed; harmless, but you may be re-asked to authorise iTerm2 after each rebuild)"
+
+# Nothing installed or running has been touched until here. Remember the state at the instant
+# of replacement — somebody who deliberately quit while a long build was running should not
+# have the app reopened against their wishes.
+echo "→ installing finished build"
+WAS_RUNNING=0
+pgrep -x Clawdline >/dev/null 2>&1 && WAS_RUNNING=1
+pkill -x Clawdline 2>/dev/null || true
+# **`pkill` asks; it does not wait.** Moving the bundle while a process on its way out is still
+# reading it can make AppKit teardown ask CoreFoundation for files that have just moved away.
+# Wait for the old process to be genuinely gone before the two quick renames below.
+for _ in $(seq 1 60); do
+  pgrep -x Clawdline >/dev/null 2>&1 || break
+  sleep 0.1
+done
+
+# Keep the old bundle recoverable until the staged one is in its final name. Both moves are on
+# the same filesystem; if the second one fails, put the first one back before reporting failure.
+HAD_OLD=0
+if [ -e "$APP" ]; then
+  if ! mv "$APP" "$BACKUP"; then
+    echo "!! could not move the existing app aside; it has not been changed"
+    [ "$WAS_RUNNING" = "1" ] && open "$APP"
+    exit 1
+  fi
+  HAD_OLD=1
+fi
+if ! mv "$STAGED_APP" "$APP"; then
+  echo "!! could not install the finished build"
+  if [ "$HAD_OLD" = "1" ]; then
+    if mv "$BACKUP" "$APP"; then
+      echo "   restored the previous app"
+    else
+      echo "   previous app is still recoverable at: $BACKUP"
+    fi
+  fi
+  [ "$WAS_RUNNING" = "1" ] && [ -d "$APP" ] && open "$APP"
+  exit 1
+fi
+[ "$HAD_OLD" = "1" ] && rm -rf "$BACKUP"
 
 if [ "$WAS_RUNNING" = "1" ]; then
   open "$APP"

@@ -5,11 +5,13 @@ import Foundation
 /// Only the menu metadata lives here. The body is Claude Code's to read when the command is
 /// invoked; loading it into Clawdline would make a prompt browser into a second skill runtime,
 /// with a second set of rules to get wrong.
-struct ClaudeSkill: Equatable {
+struct AssistantSkill: Equatable {
     enum Source: String {
         case project
         case personal
         case plugin
+        case admin
+        case system
     }
 
     let command: String
@@ -34,14 +36,14 @@ enum ClaudeSkills {
     /// a personal skill replaces a project skill of the same name, while plugin skills keep their
     /// namespace and therefore cannot collide with either.
     static func available(cwd: String, home: String = NSHomeDirectory(),
-                          fileManager fm: FileManager = .default) -> [ClaudeSkill] {
+                          fileManager fm: FileManager = .default) -> [AssistantSkill] {
         let work = URL(fileURLWithPath: cwd).standardizedFileURL
         let homeURL = URL(fileURLWithPath: home).standardizedFileURL
         let root = repositoryRoot(from: work, fileManager: fm)
         let settings = settingsFor(work: work, root: root, home: homeURL, fileManager: fm)
         let overrides = settings.skillOverrides
 
-        var effective: [String: ClaudeSkill] = [:]
+        var effective: [String: AssistantSkill] = [:]
 
         // Root first and the working directory last. A more specific project directory replaces
         // an ancestor if both publish the same command; personal replaces all of them below.
@@ -71,11 +73,11 @@ enum ClaudeSkills {
 
     /// Match the way the slash menu feels: the beginning of a name wins, then a component after
     /// `-`, `_` or `:`, then a separator-free spelling, and only then words in the description.
-    static func matching(_ skills: [ClaudeSkill], query: String) -> [ClaudeSkill] {
+    static func matching(_ skills: [AssistantSkill], query: String) -> [AssistantSkill] {
         let q = query.lowercased()
         guard !q.isEmpty else { return skills }
 
-        func rank(_ skill: ClaudeSkill) -> Int? {
+        func rank(_ skill: AssistantSkill) -> Int? {
             let name = skill.command.lowercased()
             if name.hasPrefix(q) { return 0 }
             if name.split(whereSeparator: { "-_:".contains($0) })
@@ -86,7 +88,7 @@ enum ClaudeSkills {
             return nil
         }
 
-        return skills.compactMap { skill -> (ClaudeSkill, Int)? in
+        return skills.compactMap { skill -> (AssistantSkill, Int)? in
             rank(skill).map { (skill, $0) }
         }.sorted {
             if $0.1 != $1.1 { return $0.1 < $1.1 }
@@ -120,8 +122,8 @@ enum ClaudeSkills {
         return out.reversed()
     }
 
-    private static func skills(in directory: URL, source: ClaudeSkill.Source, prefix: String?,
-                               fileManager fm: FileManager) -> [ClaudeSkill] {
+    private static func skills(in directory: URL, source: AssistantSkill.Source, prefix: String?,
+                               fileManager fm: FileManager) -> [AssistantSkill] {
         guard let entries = try? fm.contentsOfDirectory(at: directory,
                                                         includingPropertiesForKeys: [.isDirectoryKey],
                                                         options: [.skipsHiddenFiles]) else { return [] }
@@ -134,8 +136,8 @@ enum ClaudeSkills {
         }
     }
 
-    private static func skill(at file: URL, directoryName: String, source: ClaudeSkill.Source,
-                              prefix: String?, fileManager fm: FileManager) -> ClaudeSkill? {
+    private static func skill(at file: URL, directoryName: String, source: AssistantSkill.Source,
+                              prefix: String?, fileManager fm: FileManager) -> AssistantSkill? {
         guard fm.fileExists(atPath: file.path), let text = try? String(contentsOf: file, encoding: .utf8) else {
             return nil
         }
@@ -144,7 +146,7 @@ enum ClaudeSkills {
         let name = prefix == nil ? directoryName : (metadata.name ?? directoryName)
         guard validName(name) else { return nil }
         let command = prefix.map { "\($0):\(name)" } ?? name
-        return ClaudeSkill(command: command, description: metadata.description, source: source)
+        return AssistantSkill(command: command, description: metadata.description, source: source)
     }
 
     // MARK: - Settings and plugins
@@ -176,13 +178,13 @@ enum ClaudeSkills {
     }
 
     private static func pluginSkills(home: URL, enabled: [String: Bool],
-                                     fileManager fm: FileManager) -> [ClaudeSkill] {
+                                     fileManager fm: FileManager) -> [AssistantSkill] {
         let registry = home.appendingPathComponent(".claude/plugins/installed_plugins.json")
         guard let data = try? Data(contentsOf: registry),
               let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let plugins = json["plugins"] as? [String: Any] else { return [] }
 
-        var out: [ClaudeSkill] = []
+        var out: [AssistantSkill] = []
         for (identity, raw) in plugins {
             guard enabled[identity] != false,
                   let prefix = identity.split(separator: "@", maxSplits: 1).first.map(String.init),

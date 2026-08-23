@@ -255,6 +255,22 @@ protocol Copy {
     var settingsPushFinishHint: String { get }
     var settingsPushDeploy: String { get }
     var settingsPushDeployHint: String { get }
+
+    // Handing work to another session — see Sources/Orchestrator.swift and docs/orchestrator.md.
+    //
+    // These sit on the Remote tab rather than in General because what they gate is the same thing
+    // the rest of that tab gates: something outside this conversation getting to start a session
+    // on this Mac. The switch is worth saying plainly — turning it on means a session can open a
+    // terminal tab and run an assistant in it, which is code execution asked for by a machine.
+    var settingsOrchestrator: String { get }
+    var settingsOrchestratorEnabled: String { get }
+    var settingsOrchestratorEnabledHint: String { get }
+    /// The cap, 1 to 10. The hint names the default, because a number in a popup says nothing
+    /// about whether it is the one that was chosen for you.
+    var settingsOrchestratorMax: String { get }
+    var settingsOrchestratorMaxHint: String { get }
+    var settingsOrchestratorNotify: String { get }
+    var settingsOrchestratorNotifyHint: String { get }
     /// A number of seconds, as a settings row shows it.
     ///
     /// Here rather than as a bare "s" because it is the one unit in that window that reads as a
@@ -343,6 +359,14 @@ protocol Copy {
     var webShowOnMacTip: String { get }
     var webShowOnMacOff: String { get }
     var webShowOnMacAsked: String { get }
+    var webSessionActions: String { get }
+    var webEndSession: String { get }
+    var webConfirmActionTitle: String { get }
+    var webConfirmActionSay: String { get }
+    var webConfirmEndTitle: String { get }
+    var webConfirmEndSay: String { get }
+    var webCancel: String { get }
+    var webConfirm: String { get }
     var webPickSession: String { get }
     /// Read out where a skeleton is drawn, and never seen — the skeleton is the visible half.
     var webReading: String { get }
@@ -576,6 +600,44 @@ protocol Copy {
     var webAgentsCount: String { get }
     var webAgentDone: String { get }
     var webAgentFailed: String { get }
+
+    // Reading one agent's own conversation, which both the pane and the page can now do. No
+    // `web` prefix on the first four: they are said in the same words on the Mac and on a phone,
+    // and one string said twice is one thing to translate rather than two to keep in step.
+    //
+    /// Beside ``webAgentDone`` and ``webAgentFailed``, for the state those two do not cover.
+    var agentRunning: String { get }
+    /// How many tools an agent reached for before it finished, `{n}` for the number. Sits with
+    /// how long it took and what it cost, in the header above its transcript.
+    var agentTools: String { get }
+    /// An agent whose file exists and has nothing readable in it yet — the first second of its
+    /// life, and the whole of it for one that died before writing. Not an error: there is
+    /// nothing wrong here except that there is nothing to read.
+    var agentEmpty: String { get }
+    /// The way back out of an agent's transcript, after `‹` on the page and `←` in the pane.
+    /// **The word is the destination, not the act**: what is on the other side of it is the
+    /// session's own conversation, and "Back" alone would not say which of the two you land in.
+    var agentBack: String { get }
+    /// What the row in the composer does when it is clicked. Only the page needs this — the
+    /// pane's version is a link, and a link is self-evidently a thing you can follow.
+    var webAgentOpen: String { get }
+
+    // The chips on a session that dispatched work, and on the one doing it — see
+    // ``Orchestrator`` and the `orchestrator` event on the stream. Furniture, like the agent
+    // words above: a child session is somebody else's errand, and it must not shout louder than
+    // a session that is actually waiting for a person.
+    //
+    /// The session that asked. Followed by how many tasks it has out: `Root · 2`.
+    var webTaskRoot: String { get }
+    /// The session doing one, followed by ``webTaskRunning``, ``webTaskDone`` or
+    /// ``webTaskFailed``. Indented under its root in the list.
+    var webTaskChild: String { get }
+    /// Labels the tooltip that lists a root's task titles.
+    var webTaskTasks: String { get }
+    var webTaskDone: String { get }
+    var webTaskFailed: String { get }
+    var webTaskRunning: String { get }
+
     /// A page that has been open since before the Mac was rebuilt. It does not reload itself —
     /// somebody may be mid-sentence in the composer.
     var webStale: String { get }

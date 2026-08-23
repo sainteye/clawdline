@@ -22,6 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HookBridge.onNote = { SessionWatch.shared.nudge() }
         HookBridge.start()
         SessionWatch.shared.start()
+        // After the watch, because its beat rides the watch's observers; the timer inside is
+        // what notices a child finishing while nothing on screen moves.
+        Orchestrator.start()
         CodexNaming.shared.apply()
         // Reads the config and does nothing at all when it says off, which is what it says
         // until somebody changes it.
@@ -332,7 +335,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 PromptController.shared.snapshot(
                     to: path, routine: routine, at: t, list: list, output: out,
                     session: session, full: full,
-                    transcript: items.first(where: { $0.name == "transcript" })?.value)
+                    transcript: items.first(where: { $0.name == "transcript" })?.value,
+                    // `agent=<part of what it was asked to do>` opens one of the session's
+                    // background agents in the pane before the shot. Same reason `session=`
+                    // exists: the second room in that pane is otherwise reachable only by
+                    // clicking, which means it can never appear in a picture.
+                    agent: items.first(where: { $0.name == "agent" })?.value)
             }
         case "filmstrip":
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []

@@ -446,6 +446,33 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .row .meta .tty { flex: 0 0 auto; color: #4f4d47; }
 .row .meta .who { flex: 0 0 auto; color: var(--dim); }
 
+/* Work one session handed to another.
+   ---------------------------------------------------------------------------
+   The child sits under the session that asked for it, indented by the width of the mark it no
+   longer starts at, with the elbow drawn in the margin the indent opened up. Absolute, so it
+   costs the grid nothing and cannot push a title along; the row is already `position: relative`
+   for the waiting bar, which is the same trick.
+
+   The chip is the agent count's twin down to the border, and that is deliberate: the two say
+   the same *kind* of thing — context about where this row came from — and a second visual
+   language for it would suggest a second kind of importance that is not there. Only the one
+   still running gets its edge lit, and even that is the accent at a third of its strength. */
+.row[data-depth="1"] { margin-left: 22px; }
+.row .kid {
+    position: absolute; left: -15px; top: 50%; transform: translateY(-50%);
+    color: var(--faint); font: 12px/1 var(--mono);
+}
+.row .kid[hidden] { display: none; }
+.row .task-chip {
+    flex: 0 0 auto; white-space: nowrap;
+    color: var(--faint); font: 10.5px/1 var(--mono);
+    padding: 2px 5px; border: 1px solid var(--line); border-radius: 5px;
+}
+.row .task-chip[data-live="1"] { color: var(--dim); border-color: var(--accent-ed); }
+/* Same guard the agent chip carries, for the same reason: a `display` rule outranks `hidden`,
+   and a chip that cannot hide is a chip on every row in the list. */
+.row .task-chip[hidden] { display: none; }
+
 /* The state line. Three states get three weights, and that is the design:
    waiting shouts, working murmurs, idle and unknown keep quiet. */
 .row .state { grid-column: 2; display: flex; align-items: center; gap: 7px; min-width: 0; margin-top: 2px; }
@@ -580,6 +607,81 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     border-radius: 4px;
 }
 .detail-head .detail-mark:disabled { cursor: default; }
+.detail-head .detail-actions { position: relative; flex: 0 0 auto; }
+.detail-head .detail-who {
+    text-align: left; overflow: hidden; border-radius: 5px;
+    padding: 3px 5px; margin: -3px -5px;
+}
+.detail-head .detail-who:disabled { cursor: default; }
+.detail-head .detail-who:hover:not(:disabled) { background: var(--card); }
+/* **A rule that sets `display` outranks the `hidden` attribute.** The header above sets `flex`,
+   so without this the session's header stays on screen behind an agent's. Same trap the chip in
+   the list fell into, noted there too. */
+.detail-head[hidden] { display: none; }
+
+/* The same pane, one of the session's agents in it.
+   ---------------------------------------------------------------------------
+   Deliberately the session header's twin: same height, same hairline, same two lines of text in
+   the same places. Following a link should change what the pane is *about* and not where
+   anything on it sits — a header that is a different height moves the first line of the
+   transcript, which is exactly the thing the reader was looking at when they clicked. */
+.agent-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px calc(14px + var(--safe-r)) 10px 6px;
+    border-bottom: 1px solid var(--line);
+    min-height: 50px;
+}
+.agent-head[hidden] { display: none; }
+/* Always visible, unlike the list's back button — this one is the only way out of here on every
+   screen size, not just on a phone. */
+.agent-head .back {
+    flex: 0 0 auto;
+    color: var(--dim); font-size: 13px;
+    padding: 7px 9px; border-radius: 6px;
+}
+.agent-head .back:hover { background: var(--card); color: var(--ink); }
+.agent-head .who { min-width: 0; flex: 1 1 auto; overflow: hidden; }
+.agent-head .name {
+    font-size: 13.5px; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Monospace, because what it holds is a machine's account of itself: a state, a clock, a token
+   count, a number of tools. The session's subtitle is a path and reads the same way. */
+.agent-head .sub {
+    color: var(--faint); font: 11px/1.5 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.session-actions {
+    position: absolute; z-index: 45;
+    top: calc(100% + 9px); left: -7px;
+    width: 168px;
+    padding: 5px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: #1a1a20;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.48);
+}
+.session-actions[hidden] { display: none; }
+.session-actions::before {
+    content: ""; position: absolute; top: -5px; left: 14px;
+    width: 8px; height: 8px;
+    border-left: 1px solid var(--line); border-top: 1px solid var(--line);
+    background: #1a1a20; transform: rotate(45deg);
+}
+.session-actions button {
+    position: relative; width: 100%; min-height: 38px;
+    display: flex; align-items: center;
+    padding: 7px 10px; border-radius: 7px;
+    text-align: left; color: var(--ink); font: 12.5px/1.35 var(--mono);
+}
+.session-actions button:hover:not(:disabled),
+.session-actions button:focus-visible { background: var(--card-hi); }
+.session-actions button:disabled { opacity: 0.42; cursor: default; }
+.session-actions .end {
+    margin-top: 4px; padding-top: 9px;
+    border-top: 1px solid var(--line); border-radius: 0 0 7px 7px;
+    color: #d88f7b; font-family: var(--ui);
+}
 .detail-head .who { min-width: 0; flex: 1 1 auto; }
 .detail-head .name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .detail-head .sub {
@@ -1008,14 +1110,20 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    footer for that and the phone has neither. Quiet on purpose: it is on screen for minutes at
    a time, so it is dim and monospace rather than another coloured panel competing with the
    warning above it, which is the one that actually needs somebody to stop. */
-.composer .live {
+.live {
+    flex: 0 0 auto;
     display: flex; align-items: center; gap: 7px;
-    padding: 0 2px 8px;
+    padding: 7px calc(14px + var(--safe-r)) 0 14px;
     color: var(--dim);
     font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
     overflow: hidden;
 }
-.composer .live[hidden] { display: none; }
+.live[hidden] { display: none; }
+/* The two of them are one block: "is it running" and then "on what". When the live line is
+   there it carries the hairline and the strip drops its own, so the pair does not read as two
+   separate things stacked up. */
+.live + .agents { border-top: 0; padding-top: 4px; }
+.live:not([hidden]) { border-top: 1px solid var(--line); }
 
 .stale .shut {
     margin-left: 2px; padding: 0 6px;
@@ -1030,8 +1138,8 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    spinner in the session list, on one shared clock, and there was no reason for the composer to
    have invented a second vocabulary for the same sentence. It is the same canvas, the same eight
    phases, the same tick. */
-.composer .live canvas.spin { flex: 0 0 auto; display: block; }
-.composer .live .said {
+.live canvas.spin { flex: 0 0 auto; display: block; }
+.live .said {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* Nothing to switch off under reduced motion: `drawSpinner` is driven by the one interval at
@@ -1093,46 +1201,70 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 }
 .composer .menu .opt[disabled] .here { color: var(--faint); }
 
-/* What the session sent off to work somewhere else.
+/* The session and the agents it sent away, as one short tree.
    ---------------------------------------------------------------------------
-   The quietest thing in the composer, and that is the design rather than a shortage of effort.
-   An agent running is *context* — it answers "why has this been busy for four minutes" — and it
-   is never a thing that wants somebody. The one state on this page allowed to be loud is a
-   session waiting for an answer, and a row of orange chips under it would take that away.
+   Drawn the way the terminal draws it: `main` at the root with a filled dot, a ring per agent
+   under it, the kind of agent in a column of its own, then what that agent is doing. The shape
+   is the point. A list of descriptions says a session has three things happening; a tree says
+   they are happening *under* this conversation, which is the fact the pane could never show.
 
-   So: dim, small, monospace for the machine's half and prose for the human's, and no accent
-   anywhere except the one dot that says a thing is still going. */
-.composer .agents { padding: 0 2px 8px; }
-.composer .agents[hidden] { display: none; }
-.composer .agents .head {
+   Still the quietest thing on screen. The one state allowed to be loud on this page is a
+   session waiting for an answer, and a rank of bright rows under it would take that away — so:
+   small, dim, monospace for the machine's half, and no accent anywhere except the ring of
+   something still going and the tint under the row being read. */
+.agents {
+    flex: 0 0 auto;
+    padding: 7px calc(14px + var(--safe-r)) 8px 14px;
+    border-top: 1px solid var(--line);
+}
+.agents[hidden] { display: none; }
+.agents .head {
     display: flex; align-items: baseline; gap: 7px;
     color: var(--faint); font-size: 11px; letter-spacing: 0.02em;
-    margin-bottom: 5px;
+    margin-bottom: 4px;
 }
-.composer .agents .head .n { color: var(--dim); }
-.composer .agents .one {
-    display: flex; align-items: baseline; gap: 7px;
-    padding: 2px 0; min-width: 0;
+.agents .head .n { color: var(--dim); }
+.agents .one {
+    display: flex; align-items: baseline; gap: 8px;
+    width: 100%; min-width: 0; text-align: left;
+    padding: 2px 5px; margin: 0 -5px; border-radius: 5px;
 }
-.composer .agents .one .mark {
-    flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%;
-    background: var(--faint); align-self: center;
+.agents .one:hover { background: var(--card); }
+.agents .one:hover .what { color: var(--ink); }
+/* Where the reader is. `main` carries it while the pane is showing the session's own
+   conversation, which is the state the strip is in nearly all of the time. */
+.agents .one[aria-current="true"] { background: var(--card-hi); }
+.agents .one[aria-current="true"] .kind { color: var(--ink); }
+/* A ring for an agent, filled for the conversation all of them hang under. */
+.agents .one .mark {
+    flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%;
+    border: 1.5px solid var(--faint); align-self: center;
 }
-.composer .agents .one[data-state="running"] .mark { background: var(--accent); opacity: 0.75; }
-.composer .agents .one[data-state="done"] .mark { background: var(--ok); }
-.composer .agents .one[data-state="failed"] .mark { background: var(--bad); }
-.composer .agents .one .what {
+.agents .one.root .mark { background: var(--dim); border-color: var(--dim); }
+.agents .one[data-state="running"] .mark { border-color: var(--accent); }
+.agents .one[data-state="done"] .mark { border-color: var(--ok); }
+.agents .one[data-state="failed"] .mark { border-color: var(--bad); }
+/* What kind of agent it is, in a column of its own so the descriptions line up under each
+   other. Monospace and a fixed width for the reason the terminal uses one: these are names from
+   a small fixed set, and a ragged left edge on the column after them is what makes four rows
+   unreadable at a glance. */
+.agents .one .kind {
+    flex: 0 0 auto; width: 106px;
+    color: var(--dim); font: 11px/1.6 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.agents .one .what {
     flex: 0 1 auto; min-width: 0; color: var(--dim); font-size: 11.5px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* The tool it last reached for. The closest thing to a live line something with no screen has,
-   so it is set the way the live line is — monospace, dimmer than the words around it. */
-.composer .agents .one .doing {
+/* The tool it last reached for, or what it handed back once it has. Same slot, because they are
+   the same question asked at two different times — and set the way the live line is set. */
+.agents .one .doing {
     flex: 1 1 auto; min-width: 0; color: var(--faint);
-    font: 11px/1.4 var(--mono);
+    font: 11px/1.6 var(--mono);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.composer .agents .one .said { color: var(--faint); font-size: 11px; flex: 0 0 auto; }
+.agents .one .said { color: var(--faint); font-size: 11px; flex: 0 0 auto; }
 
 /* The list's own count. A number and nothing else: the row already has a state to say, and this
    is the second-quietest thing on it after the tty. */
@@ -1231,6 +1363,14 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 /* The way out. Esc and a tap outside both work and neither is discoverable on a phone, which is
    the screen this sheet is mostly opened on. */
 .sheet .chip.wide { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; }
+.confirm-sheet { width: min(390px, 100%); }
+.confirm-sheet .say { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.55; }
+.confirm-sheet .buttons {
+    display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;
+}
+.confirm-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
+.confirm-sheet .confirm-go { border-color: var(--accent-ed); color: var(--accent); }
+.confirm-sheet[data-kind="end"] .confirm-go { border-color: #57362e; color: #e09985; }
 
 /* Where a new session may be started — the same furniture again, with the Mac's own list of
    places in it. There is no path to type here and there is no route that would take one: what
@@ -1471,6 +1611,10 @@ a.link:active { background: var(--line); }
     .counts .quiet:not(:only-child) { display: none; }
 
     .detail-head .back { display: block; }
+    /* The kind column, narrowed. It is still worth its place — `Explore` and `general-purpose`
+       are different enough to matter — but a fixed 106px of a 390px screen is a quarter of the
+       row spent on a word that repeats down the whole list. */
+    .agents .one .kind { width: 74px; }
     .detail-head { padding-left: 8px; gap: 8px; }
     /* One line of header, and the name of the session is the part of it worth keeping. A control
        that cannot be pressed yet is the first thing to go. */
@@ -1618,18 +1762,28 @@ a.link:active { background: var(--line); }
     </section>
 
     <section class="pane pane-detail" id="pane-detail">
-        <div class="detail-head">
+        <div class="detail-head" id="detail-head">
             <button class="back" id="back" aria-label="Back to the session list">‹ Sessions</button>
-            <!-- The project mark is also the shortest road back to the terminal it belongs to.
-                 It is a button rather than a click handler on the canvas so the same action is
-                 available from a keyboard and has a name for assistive technology. -->
-            <button class="detail-mark" id="detail-focus" type="button">
-                <canvas id="detail-mark" width="0" height="0"></canvas>
-            </button>
-            <div class="who">
+            <!-- The project mark and the title beside it are both ways into this session's action
+                 menu. Buttons rather than click handlers on drawn pixels and text, so the menu is
+                 available from a keyboard and both handles have names for assistive technology. -->
+            <div class="detail-actions">
+                <button class="detail-mark" id="detail-focus" type="button"
+                        aria-haspopup="menu" aria-expanded="false">
+                    <canvas id="detail-mark" width="0" height="0"></canvas>
+                </button>
+                <div class="session-actions" id="session-actions" role="menu" hidden>
+                    <button id="session-focus" type="button" role="menuitem">Show on Mac</button>
+                    <button id="session-commit" type="button" role="menuitem" data-action="commit">commit</button>
+                    <button id="session-deploy" type="button" role="menuitem" data-action="deploy">deploy</button>
+                    <button class="end" id="session-end" type="button" role="menuitem">Close session</button>
+                </div>
+            </div>
+            <button class="who detail-who" id="detail-actions-title" type="button"
+                    aria-haspopup="menu" aria-expanded="false">
                 <div class="name" id="detail-name">No session open</div>
                 <div class="sub" id="detail-sub"></div>
-            </div>
+            </button>
             <div class="tools">
                 <!-- Everywhere this project can be opened: its site, the deploy that is running
                      or has failed, whatever its dev stack is serving, the backlog file. A chain
@@ -1644,16 +1798,32 @@ a.link:active { background: var(--line); }
                 <button class="chip" id="tx-focus" type="button"><svg class="ico" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><rect x="1.3" y="2.2" width="11.4" height="7.8" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.3"></rect><path d="M5 12.2h4M7 10v2.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg><span id="tx-focus-label">Show on Mac</span></button>
             </div>
         </div>
+        <!-- The same pane, reading one of the session's background agents instead of the session.
+             It replaces the header rather than stacking under it: two headers would leave the
+             reader looking at two names and having to work out which transcript is below them.
+             The way back is the first thing in it, and says where it goes rather than "back". -->
+        <div class="agent-head" id="agent-head" hidden>
+            <button class="back" id="agent-back" type="button">‹ <span id="agent-back-label">Session</span></button>
+            <div class="who">
+                <div class="name" id="agent-name"></div>
+                <div class="sub" id="agent-sub"></div>
+            </div>
+        </div>
         <div class="scroller tx-scroll" id="tx-scroll"><div class="tx" id="tx"></div></div>
+        <!-- The session and the work it sent away, as one short tree: `main` at the root and a
+             ring per agent under it, the way the terminal draws the same thing.
+
+             **Outside the composer, which is where it used to live.** As a line inside the box
+             it vanished the moment somebody followed one of its rows — the composer is hidden
+             while an agent is being read — so the list you navigate by disappeared exactly when
+             you were navigating by it. Out here it stays, and the row you are reading is the
+             one that is lit. -->
+        <div class="live" id="live" role="status" hidden></div>
+        <div class="agents" id="agents" role="status" hidden></div>
         <form class="composer" id="composer" data-write="off">
             <!-- A session that has stopped to ask something, said where the eye already is:
                  directly above the box, at the end of the transcript. -->
             <div class="waiting" id="waiting" role="status" hidden></div>
-            <div class="live" id="live" role="status" hidden></div>
-            <!-- What the session sent off to work elsewhere. Below the live line because it is
-                 the second question — first "is it running", then "on what" — and quiet, because
-                 an agent is context for why a session is busy and never a thing that wants you. -->
-            <div class="agents" id="agents" role="status" hidden></div>
             <div class="shots" id="shots"></div>
             <div class="skill-menu" id="skill-menu" role="listbox" aria-label="Claude Code skills" hidden></div>
             <div class="box">
@@ -1779,6 +1949,22 @@ a.link:active { background: var(--line); }
         </div>
 
         <button class="chip wide" id="links-close" type="button">Close</button>
+    </div>
+</div>
+
+<!-- One confirmation surface for the three actions that change a session. Opening the compact
+     menu is cheap and reversible; sending commit/deploy or ending the session is not, so those
+     cross a second, explicit button before anything reaches the Mac. -->
+<div class="overlay" id="action-confirm" hidden>
+    <div class="sheet confirm-sheet" id="action-confirm-sheet" role="alertdialog"
+         aria-modal="true" aria-labelledby="action-confirm-title"
+         aria-describedby="action-confirm-say">
+        <h2 id="action-confirm-title">Run commit?</h2>
+        <p class="say" id="action-confirm-say">This sends commit to the current session.</p>
+        <div class="buttons">
+            <button class="chip" id="action-confirm-cancel" type="button">Cancel</button>
+            <button class="chip confirm-go" id="action-confirm-go" type="button">Confirm</button>
+        </div>
     </div>
 </div>
 
@@ -2004,6 +2190,14 @@ var T = {
     webShowOnMacTip: "Bring this session's terminal to the front on the Mac",
     webShowOnMacOff: "The server reports write: false — nothing can be sent yet",
     webShowOnMacAsked: "Asked the Mac to bring it forward",
+    webSessionActions: "Session actions",
+    webEndSession: "Close session",
+    webConfirmActionTitle: "Run {action}?",
+    webConfirmActionSay: "This sends {action} to the current session.",
+    webConfirmEndTitle: "Close this session?",
+    webConfirmEndSay: "The assistant will quit, then its terminal tab will close.",
+    webCancel: "Cancel",
+    webConfirm: "Confirm",
     webPickSession: "Pick a session on the left.",
     webReading: "Reading…",
     webLoading: "Loading…",
@@ -2029,6 +2223,20 @@ var T = {
     webAgentsCount: "{n} running",
     webAgentDone: "done",
     webAgentFailed: "failed",
+    // Reading one of them. Said in the same words on the Mac, so these four have no `web` prefix.
+    agentRunning: "running",
+    agentTools: "{n} tools",
+    agentEmpty: "This agent has not written anything down yet.",
+    agentBack: "Session",
+    webAgentOpen: "See what this agent did",
+    // Work one session handed to another. A background agent lives inside its session; a task
+    // has a whole session of its own, which is why it gets a row rather than a chip in a strip.
+    webTaskRoot: "Root",
+    webTaskChild: "Child",
+    webTaskTasks: "Tasks",
+    webTaskDone: "done",
+    webTaskFailed: "failed",
+    webTaskRunning: "running",
     // The page has been open longer than the app it came from.
     webStale: "Clawdline has been rebuilt on the Mac. This page is the older one.",
     webStaleGo: "Reload",
@@ -2229,6 +2437,10 @@ function words(s) {
 
 var S = {
     sessions: [],           // as the server sent them, unmodified
+    // The app's own dispatched work: a root session that asked for something, and the child
+    // session it was given. Whole list every time, same as the sessions — see `handlers.tasks`.
+    // An app too old to have the route leaves this empty, and everything below reads as before.
+    tasks: [],
     at: 0,
     write: false,           // /v1/health and the hello event both carry it
     version: "",
@@ -2243,6 +2455,13 @@ var S = {
     newestFirst: false,
 
     tx: { id: null, entries: [], signature: null, loading: false, error: null },
+    // Which of the open session's agents is being read, if any. **The session stays open
+    // underneath**: `openId` is untouched while this is set, so the stream keeps updating the
+    // row, the list keeps its place, and leaving is putting this back to null rather than
+    // re-opening anything. `sid` is remembered with it because an agent belongs to a session,
+    // and a reader who followed a link and then switched sessions must not be left reading
+    // somebody else's background work under the new session's name.
+    agent: null,            // { sid, id, what, entries, signature, loading, error, meta }
     // Which folded runs of tool calls the reader has opened, by fold key. Kept beside the
     // transcript rather than in it: this pane redraws whenever the session moves, and a run
     // that closed itself under somebody who was reading it would be worse than never folding.
@@ -2255,8 +2474,13 @@ var S = {
 var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
  "app", "pane-detail", "back", "detail-focus", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
+ "session-actions", "session-focus", "session-commit", "session-deploy", "session-end",
+ "detail-actions-title",
+ "action-confirm", "action-confirm-sheet", "action-confirm-title", "action-confirm-say",
+ "action-confirm-cancel", "action-confirm-go",
  "tx-links", "tx-links-label", "tx-focus", "tx-focus-label", "live", "stale-shut",
  "composer", "msg", "send", "why", "waiting", "agents", "skill-menu", "stale", "stale-say", "stale-go",
+ "detail-head", "agent-head", "agent-back", "agent-back-label", "agent-name", "agent-sub",
  "hints", "keys", "toast", "brand", "brand-mark",
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
  "settings-notify-go", "settings-notify-test", "settings-notify-said", "settings-version",
@@ -2529,6 +2753,13 @@ var handlers = {
         Waits.list.settle(renderList);
         onSessions();
     },
+    /// The whole task list, every time one of them moves. Nothing here merges, for the same
+    /// reason `sessions` does not: half an update is a class of bug this page does not have.
+    /// A render only if the page has been built — the first list can arrive before `boot`.
+    tasks: function (list) {
+        S.tasks = list || [];
+        if (els.rows) render();
+    },
     hello: function (info) {
         if (!info) return;
         if (typeof info.write === "boolean") S.write = info.write;
@@ -2668,6 +2899,10 @@ var Live = {
         }).catch(function (e) {
             if (e.code === "unauthorized") { self.stop(); Door.show(); }
         });
+        // Once, here; the stream keeps it true afterwards and sends a frame of its own the
+        // moment it opens. **The refusal is swallowed on purpose**: an app without the route is
+        // a 404, and the honest answer to "this Mac has no orchestrator" is the list as it was.
+        this.tasks().then(function (d) { handlers.tasks(d.tasks); }).catch(function () { });
         if (!this.es) this.connect();
     },
 
@@ -2698,6 +2933,12 @@ var Live = {
             // fires for a socket that a proxy may still be holding open with nothing behind it.
             self.attempt = 0;
             handlers.conn("live");
+        });
+        // Dispatched work. Its own event because it moves on its own clock — a task is briefed
+        // and finishes without the session list changing at all — and an app that has never
+        // heard of it simply never sends one.
+        es.addEventListener("orchestrator", function (ev) {
+            try { handlers.tasks(JSON.parse(ev.data).tasks); } catch (e) { }
         });
         es.onopen = function () { handlers.conn("live"); };
         es.onerror = function () {
@@ -2748,6 +2989,18 @@ var Live = {
 
     transcript: function (id) {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/transcript?limit=200");
+    },
+
+    /// Every task the app knows about — what a session dispatched, and which session got it.
+    /// Read-only from here whatever this device is: dispatching needs a credential that never
+    /// leaves the Mac, so there is nothing this page could ask for that would start one.
+    tasks: function () { return jsonFetch("/v1/orchestrator/tasks"); },
+
+    /// One of that session's background agents: the row the strip is already showing, and the
+    /// conversation behind it. Same shape as a transcript, because it is one.
+    agent: function (id, agentId) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/agents/"
+                         + encodeURIComponent(agentId) + "?limit=200");
     },
 
     skills: function (id) {
@@ -2906,10 +3159,43 @@ var Mock = (function () {
           isClaude: true, assistant: "claude", sessionId: null, icon: clawdline },
         { id: "44D2-05", backend: "iterm", tty: "ttys017", label: "scratch",
           cwd: "/Users/x/tmp/notes", state: "idle", line: null,
-          isClaude: true, assistant: "claude", sessionId: null, icon: null },
+          isClaude: false, assistant: "codex", sessionId: null, icon: null },
         { id: "C0FF-3E", backend: "iterm", tty: "ttys021", label: "build box over ssh",
           cwd: "/Users/x", state: "unknown", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: null }
+    ];
+
+    // What the top session sent away. Both of them hang off `8F3A-1C`, and their children are
+    // two of the rows above — which is the only way to see the grouping work: the codex row is
+    // near the bottom of the list on its own merits and belongs directly under its root.
+    //
+    // One of each kind that matters. The codex one is still going and has no cost to show —
+    // that plan is not billed per token — and the Claude one has landed, which is what puts a
+    // figure in the header. A task that finished ten minutes ago stops moving its row; this one
+    // is three minutes old, so it is still drawn under the session that asked for it.
+    var tasks = [
+        { id: "6f1b3d84-2a17-4c95-91ce-70b5a4e2d011", state: "briefed", kind: "image",
+          title: "Draw the project portrait", assistant: "codex", projectDir: "/Users/x/tmp/notes",
+          created: now - 260, spawnedAt: now - 254, briefedAt: now - 248, finishedAt: null,
+          dir: "/tmp/.clawdline/6f1b3d84-2a17-4c95-91ce-70b5a4e2d011",
+          root: { sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38",
+                  label: "investigate the webhook", terminalId: "8F3A-1C" },
+          child: { terminalId: "44D2-05", backend: "iterm", sessionId: null },
+          artifacts: [],
+          usage: { input: 21400, output: 3100, cacheRead: 88000, cacheWrite: 1900,
+                   total: 114400, model: "gpt-5.1-codex", costUsd: null } },
+        { id: "b70e51c9-84af-4d2e-a6d1-1c2f9e330447", state: "success", kind: "code-review",
+          title: "Read the docs pass for holes", assistant: "claude",
+          projectDir: "/Users/x/code/clawdline/docs",
+          created: now - 900, spawnedAt: now - 894, briefedAt: now - 888, finishedAt: now - 180,
+          dir: "/tmp/.clawdline/b70e51c9-84af-4d2e-a6d1-1c2f9e330447",
+          root: { sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38",
+                  label: "investigate the webhook", terminalId: "8F3A-1C" },
+          child: { terminalId: "A15E-77", backend: "tmux", sessionId: "1f0c8a44-9d21-4b6e-8f30-2ab7c5e91d62" },
+          summary: "Three sentences say where the file goes and none of them agree.",
+          artifacts: ["artifacts/notes.md"],
+          usage: { input: 9600, output: 4200, cacheRead: 61000, cacheWrite: 800,
+                   total: 75600, model: "claude-sonnet-4-5", costUsd: 0.0913 } }
     ];
 
     // The line that cannot wrap, five hundred characters of it, because this is the shape that
@@ -3111,6 +3397,9 @@ var Mock = (function () {
                 handlers.hello({ version: "0.6.0-mock", protocol: 1, write: MOCK_WRITE, auth: true, authed: true });
                 handlers.conn("live");
                 emit();
+                // What the stream's own `orchestrator` frame carries, at the moment it carries
+                // it: right after the first list, so the rows are already there to be grouped.
+                handlers.tasks(JSON.parse(JSON.stringify(tasks)));
             }, 420);
             setInterval(tick, 1000);
             setInterval(step, 4200);
@@ -3123,6 +3412,14 @@ var Mock = (function () {
             }
         },
         refresh: function () { return new Promise(function (done) { setTimeout(function () { emit(); done(); }, 500); }); },
+
+        /// The same two records the fixture's stream sends, for the one fetch that happens
+        /// before the stream is open. A copy, for the reason `emit` makes one.
+        tasks: function () {
+            return new Promise(function (done) {
+                setTimeout(function () { done({ tasks: JSON.parse(JSON.stringify(tasks)) }); }, 200);
+            });
+        },
 
         // The door, fixtured. The code is 424242 and the password is "mock" — said out loud here
         // because a fixture that keeps secrets from the person testing it is only a nuisance, and
@@ -3173,9 +3470,39 @@ var Mock = (function () {
                 }, 220);
             });
         },
-        skills: function () {
+        // Enough of an agent's conversation to see the pane it lands in. The row itself comes
+        // from the session fixture, so what the header says here is what the strip said.
+        agent: function (id, agentId) {
             return new Promise(function (done) {
                 setTimeout(function () {
+                    var s = sessions.filter(function (x) { return x.id === id; })[0];
+                    var meta = ((s && s.agents) || []).filter(function (a) { return a.id === agentId; })[0] || null;
+                    var at = Math.floor(Date.now() / 1000) - 90;
+                    done({
+                        agent: meta,
+                        entries: [
+                            { role: "user", text: (meta && meta.what) || "Go and have a look.", at: at },
+                            { role: "tool", tool: "Grep", text: "retry_after", at: at + 3 },
+                            { role: "tool", tool: "Read", text: "app/webhooks/verify.rb", at: at + 9 },
+                            { role: "assistant", text: (meta && meta.result) || "Still going.", at: at + 44 }
+                        ],
+                        signature: agentId + ":mock"
+                    });
+                }, 200);
+            });
+        },
+        skills: function (id) {
+            return new Promise(function (done) {
+                setTimeout(function () {
+                    var session = sessions.filter(function (s) { return s.id === id; })[0];
+                    if (session && session.assistant === "codex") {
+                        done({ skills: [
+                            { name: "openai-docs", description: "Read official OpenAI documentation", source: "system" },
+                            { name: "chrome:control-chrome", description: "Control Chrome for local testing", source: "plugin" },
+                            { name: "deploy", description: "Deploy this repository safely", source: "project" }
+                        ] });
+                        return;
+                    }
                     done({ skills: [
                         { name: "recap", description: "Summarize the work in this session", source: "project" },
                         { name: "frontend-design", description: "Build a distinctive production interface", source: "personal" },
@@ -3620,16 +3947,123 @@ function ordered() {
     if (hold) {
         var at = {};
         hold.order.forEach(function (id, i) { at[id] = i; });
-        return list.sort(function (a, b) {
+        return grouped(list.sort(function (a, b) {
             var ai = at[a.id] == null ? 1e9 : at[a.id], bi = at[b.id] == null ? 1e9 : at[b.id];
             return (ai - bi) || (rankOf(a) - rankOf(b)) || (a.label || "").localeCompare(b.label || "");
-        });
+        }));
     }
-    return list.sort(function (a, b) {
+    return grouped(list.sort(function (a, b) {
         return (rankOf(a) - rankOf(b))
             || (a.label || "").localeCompare(b.label || "")
             || (a.id < b.id ? -1 : 1);
+    }));
+}
+
+/* ---- dispatched work ----------------------------------------------------
+   A task is a session the app started because another session asked it to.
+   Everything here reads `S.tasks` and nothing writes it, so an app with no
+   orchestrator — an empty list, or a 404 swallowed on the way in — leaves
+   every function below answering exactly what it answered before the feature
+   existed. That is the whole degradation story, and it is why these are
+   separate functions rather than lines inside the render.
+   -------------------------------------------------------------------------- */
+
+/** Still going. The three the app spends children on; everything else is over. */
+function taskLive(t) {
+    return !!t && (t.state === "queued" || t.state === "spawning" || t.state === "briefed");
+}
+
+/**
+ * Whether a task still gets to say where a row sits.
+ *
+ * A finished task does, for ten minutes. Without that, the row of a child that has just landed
+ * jumps out from under its root at the exact moment somebody looks over to read the result —
+ * and the answer to "where did that go" is a scroll through the list. After ten minutes it is
+ * history, and history has no business holding two rows together.
+ */
+function taskShaping(t) {
+    if (taskLive(t)) return true;
+    if (!t || !t.finishedAt) return false;
+    return (Math.floor(Date.now() / 1000) - t.finishedAt) < 600;
+}
+
+/** The task a session is the child of, live or long over — what the header reads. The freshest
+ *  one wins: a terminal id is reused, and the interesting task is never the older one. */
+function taskOfChild(id) {
+    var best = null;
+    for (var i = 0; i < S.tasks.length; i++) {
+        var t = S.tasks[i];
+        if (!t || !t.child || t.child.terminalId !== id) continue;
+        if (!best) { best = t; continue; }
+        if (taskLive(t) && !taskLive(best)) { best = t; continue; }
+        if (taskLive(best) && !taskLive(t)) continue;
+        if ((t.created || 0) >= (best.created || 0)) best = t;
+    }
+    return best;
+}
+
+/** The tasks a session is the root of, of the ones still shaping the list. */
+function tasksOfRoot(id) {
+    return S.tasks.filter(function (t) {
+        return taskShaping(t) && t.root && t.root.terminalId === id;
     });
+}
+
+/** One word for where a task got to, in the reader's language. Cancelled and timed out are
+ *  filed under failed on purpose: the row has one line, and neither of them succeeded. */
+function taskWord(t) {
+    if (taskLive(t)) return T.webTaskRunning;
+    return t && t.state === "success" ? T.webTaskDone : T.webTaskFailed;
+}
+
+/**
+ * The children, pulled up under the sessions that asked for them.
+ *
+ * Done after the sort rather than inside it, because it is not a sort: a child sits under its
+ * root wherever the root landed, whatever state the child is in. A waiting child still reaches
+ * the top of the list — it is carried there by its root, which is where somebody looking for it
+ * would start.
+ *
+ * A child whose root is not on screen — filtered out, or a session that has since closed — is
+ * left exactly where the sort put it. It is still somebody's session, and hiding it or floating
+ * it to the top would be this feature deciding something it was not asked to decide.
+ */
+function grouped(list) {
+    if (!S.tasks.length || list.length < 2) return list;
+
+    var childOf = {};                       // child row id → the root row it belongs under
+    var here = {};
+    list.forEach(function (s) { here[s.id] = true; });
+    S.tasks.forEach(function (t) {
+        if (!taskShaping(t) || !t.child || !t.root) return;
+        var kid = t.child.terminalId, root = t.root.terminalId;
+        if (!kid || !root || kid === root) return;
+        if (!here[kid] || !here[root]) return;
+        childOf[kid] = root;
+    });
+    // A root that is itself somebody's child cannot carry anyone: the app refuses to dispatch
+    // that deep, so it means a stale record, and moving a row under a row that is itself moving
+    // is how a list loses one. Depth stays one, here as well as over there.
+    Object.keys(childOf).forEach(function (kid) {
+        if (childOf[childOf[kid]]) delete childOf[kid];
+    });
+    var moved = Object.keys(childOf);
+    if (!moved.length) return list;
+
+    var kids = {};
+    list.forEach(function (s) {
+        var root = childOf[s.id];
+        if (root) (kids[root] || (kids[root] = [])).push(s);
+    });
+    var out = [];
+    list.forEach(function (s) {
+        if (childOf[s.id]) return;
+        out.push(s);
+        if (kids[s.id]) kids[s.id].forEach(function (k) { out.push(k); });
+    });
+    // Nothing this does is worth a row going missing. If the count moved, the grouping was
+    // wrong about something and the ungrouped list is the honest answer.
+    return out.length === list.length ? out : list;
 }
 
 function byId(id) {
@@ -3685,7 +4119,15 @@ function onSessions() {
         if (open && s.id === open.id && (!was || was.rev !== revisionOf(s))) {
             loadTranscript(s.id, true);
         }
-        S.seen[s.id] = { state: s.state, rev: revisionOf(s) };
+        // An agent being read has its own reason to refetch, and the session's revision cannot
+        // give it: a session sitting between turns with three agents out looks unchanged the
+        // whole time they work. `agentsRev` moves when any of them writes a line.
+        if (S.agent && S.agent.sid === s.id) {
+            var mine = agentRow(s.id, S.agent.id);
+            if (mine) { S.agent.meta = mine; renderAgentHead(); }
+            if (!was || was.agents !== agentsRev(s)) loadAgent(s.id, S.agent.id, true);
+        }
+        S.seen[s.id] = { state: s.state, rev: revisionOf(s), agents: agentsRev(s) };
     });
 
     // A session that has gone away takes its row, and its transcript, with it.
@@ -3730,6 +4172,10 @@ function render() {
     renderCounts();
     renderList();
     renderDetailHead();
+    // After the session's header and before the composer, because it hides both of them when an
+    // agent is being read, and hiding a thing that has just been drawn is cheaper than drawing
+    // one that is about to be hidden.
+    renderAgentHead();
     renderComposer();
     renderWaiting();
     renderAgents();
@@ -3858,11 +4304,13 @@ function buildRow(s) {
     li.setAttribute("role", "option");
     li.tabIndex = -1;
     li.innerHTML =
+        '<span class="kid" hidden aria-hidden="true">└</span>' +
         '<canvas class="mark"></canvas>' +
         '<div class="title"></div>' +
         '<div class="meta"><span class="path"></span><span class="tty"></span>' +
         '<span class="who" hidden></span>' +
-        '<span class="agents-chip" hidden><span class="dot"></span><span class="n"></span></span></div>' +
+        '<span class="agents-chip" hidden><span class="dot"></span><span class="n"></span></span>' +
+        '<span class="task-chip" hidden></span></div>' +
         '<div class="state"></div>';
     li.addEventListener("click", function () { openSession(s.id); });
     return li;
@@ -3906,6 +4354,45 @@ function fillRow(node, s) {
     chip.hidden = !out;
     if (out) chip.querySelector(".n").textContent = String(out);
 
+    // Where this row sits in somebody's work: a session that was started for another one, or
+    // one that did the starting. Both are drawn where the agent count is and in the same
+    // register, because they answer the same kind of question — this is context about a row,
+    // never a row asking for anything.
+    //
+    // Only the tasks still shaping the list count. A child whose task ended an hour ago is
+    // just a session again, and a chip that never goes away is furniture.
+    var task = S.tasks.length ? taskOfChild(s.id) : null;
+    var kid = task && taskShaping(task) ? task : null;
+    // The indent is a claim about the row above, so it is only drawn when that row is there.
+    // The chip is a claim about this session, which is true whether or not its root is on
+    // screen — a child whose root has closed is still a child, and still worth saying so.
+    var under = !!(kid && kid.root && kid.root.terminalId && kid.root.terminalId !== s.id
+                   && byId(kid.root.terminalId));
+    var roots = S.tasks.length && !kid ? tasksOfRoot(s.id) : [];
+    var mine = node.querySelector(".task-chip");
+    var glyph = node.querySelector(".kid");
+    if (kid) {
+        if (under) node.dataset.depth = "1"; else delete node.dataset.depth;
+        glyph.hidden = !under;
+        mine.hidden = false;
+        mine.dataset.live = taskLive(kid) ? "1" : "0";
+        mine.textContent = T.webTaskChild + " · " + taskWord(kid);
+        mine.title = kid.title || "";
+    } else {
+        delete node.dataset.depth;
+        glyph.hidden = true;
+        if (roots.length) {
+            mine.hidden = false;
+            mine.dataset.live = roots.some(taskLive) ? "1" : "0";
+            mine.textContent = T.webTaskRoot + " · " + roots.length;
+            mine.title = T.webTaskTasks + ": " + roots.map(function (t) { return t.title || t.id; }).join(" · ");
+        } else {
+            mine.hidden = true;
+            mine.textContent = "";
+            mine.title = "";
+        }
+    }
+
     // The state line is rebuilt only when the *shape* of it changes. A working session sends a
     // new line every second, and throwing away the spinner's canvas to write one string would
     // restart the animation once a second — which is exactly the thing that should look steady.
@@ -3945,6 +4432,21 @@ function renderDetailHead() {
         if (s.state === "waiting") sub.push(T.sessionWaiting);
         else if (s.state === "working") sub.push(T.webStateWorking);
         else if (s.state === "unknown") sub.push(T.webStateUnreadable);
+        // What this session was opened to do, if something opened it. Every known task and not
+        // only the fresh ones: the list stops grouping an old task's row because the grouping is
+        // about *where a row sits*, and a reader who has this session open has asked about this
+        // session — "what was this for" has an answer long after the row has gone back to normal.
+        var task = S.tasks.length ? taskOfChild(s.id) : null;
+        if (task) {
+            if (task.title) sub.push(task.title);
+            sub.push(taskWord(task));
+            var used = task.usage || {};
+            if (used.total) sub.push("↓ " + agentTokens(used.total));
+            // Only when there is a figure. Codex is billed by the plan rather than the token, so
+            // the Mac sends null rather than a zero, and a "$0.0000" beside real work is a lie
+            // that reads as a measurement.
+            if (typeof used.costUsd === "number") sub.push("$" + used.costUsd.toFixed(4));
+        }
     }
     els["detail-sub"].textContent = sub.join("  ·  ");
     drawIcon(els["detail-mark"], s && s.icon, 5);
@@ -3967,30 +4469,46 @@ function renderDetailHead() {
     els["tx-focus"].hidden = !atMac();
     els["tx-focus"].disabled = !s || !S.write;
     els["tx-focus"].title = S.write ? T.webShowOnMacTip : T.webShowOnMacOff;
-    // The mark is the compact form of the same action. Unlike the labelled chip it remains on
-    // a remote browser: when somebody deliberately presses a project's icon, bringing that
-    // project's tab forward on the Mac is the visible meaning of the press.
+    // The mark and title open the same compact action menu. Neither performs an action merely by
+    // opening it: bringing the terminal forward is one named choice beside commit and deploy.
     els["detail-focus"].disabled = !s || !S.write;
-    els["detail-focus"].title = S.write ? T.webShowOnMacTip : T.webShowOnMacOff;
-    els["detail-focus"].setAttribute("aria-label", T.webShowOnMac);
+    els["detail-focus"].title = S.write ? T.webSessionActions : T.webShowOnMacOff;
+    els["detail-focus"].setAttribute("aria-label", T.webSessionActions);
+    els["detail-actions-title"].disabled = !s || !S.write;
+    els["detail-actions-title"].title = S.write ? T.webSessionActions : T.webShowOnMacOff;
+    els["detail-actions-title"].setAttribute("aria-label", T.webSessionActions);
+    els["session-focus"].disabled = !s || !S.write;
+    els["session-commit"].disabled = !s || !S.write;
+    els["session-deploy"].disabled = !s || !S.write;
+    els["session-end"].disabled = !s || !S.write;
+    if (!s) SessionActions.close();
 }
 
 function renderTranscript() {
     var box = els.tx;
     if (!S.openId) { box.innerHTML = '<div class="tx-note">' + esc(T.webPickSession) + "</div>"; return; }
-    if (S.tx.error) { box.innerHTML = '<div class="tx-note err">' + esc(S.tx.error) + "</div>"; return; }
-    if (S.tx.loading && !S.tx.entries.length) {
+    // One pane, one of two conversations in it: the session's, or one of the agents it sent
+    // away. Everything below this line is the same either way — the same blocks, the same folds,
+    // the same reading order — because an agent's transcript is the same kind of record.
+    var view = S.agent || S.tx;
+    if (view.error) { box.innerHTML = '<div class="tx-note err">' + esc(view.error) + "</div>"; return; }
+    if (view.loading && !view.entries.length) {
         // Nothing at all for the first breath, and then the skeleton — see `Waits`. A pane that
         // shows a placeholder for eighty milliseconds and takes it away again reads as a fault.
         box.innerHTML = Waits.tx.visible ? txSkeleton() : "";
         return;
     }
-    if (!S.tx.entries.length) { box.innerHTML = '<div class="tx-note">' + esc(T.noOutput) + "</div>"; return; }
+    if (!view.entries.length) {
+        // An agent with nothing in its file is not the same absence as a session with nothing in
+        // its file, and it is common: the first second of every agent's life looks like this.
+        box.innerHTML = '<div class="tx-note">' + esc(S.agent ? T.agentEmpty : T.noOutput) + "</div>";
+        return;
+    }
 
     // Built a block at a time rather than an entry at a time, the way `Transcript.render` builds
     // it: one message, or one whole run of tool calls, per block. Reversing is then the order the
     // blocks go out in, and a run stays one thing whichever way round the transcript is read.
-    var entries = S.tx.entries.filter(worthDrawing);
+    var entries = view.entries.filter(worthDrawing);
     var blocks = [];
     var i = 0;
     while (i < entries.length) {
@@ -4595,6 +5113,16 @@ function safeHref(href) {
 
 function renderComposer() {
     var on = S.write && !!S.openId;
+    var session = S.openId ? byId(S.openId) : null;
+    var placeholder = T.placeholder;
+    if (session && session.assistant === "codex") {
+        placeholder = placeholder.replace("Claude Code", "Codex").replace("Claude", "Codex");
+        if (placeholder === T.placeholder) placeholder = "Codex…";
+    }
+    els.msg.setAttribute("data-placeholder", placeholder);
+    els.msg.setAttribute("aria-label", placeholder);
+    els["skill-menu"].setAttribute("aria-label",
+        (session && session.assistant === "codex" ? "Codex" : "Claude Code") + " skills");
     els.composer.dataset.write = S.write ? "on" : "off";
     els.composer.dataset.sending = sending ? "on" : "off";
     // Editable only when there is somewhere for the words to go. Not switched off while a send
@@ -4803,29 +5331,52 @@ function renderAgents() {
     var list = (open && open.agents) || [];
     var running = 0;
     for (var i = 0; i < list.length; i++) if (list[i].state === "running") running++;
+    var here = S.agent ? S.agent.id : "";
 
     var want = !list.length ? "" :
         '<div class="head"><span>' + esc(T.webAgents) + "</span>" +
         (running ? '<span class="n">' + esc(fill(T.webAgentsCount, { n: running })) + "</span>" : "") +
         "</div>" +
-        list.map(function (a) {
-            var said = a.state === "done" ? T.webAgentDone
-                     : a.state === "failed" ? T.webAgentFailed : "";
-            // Running: the tool it last reached for. Finished: what it handed back. Same slot,
-            // because they are the same question asked at two different times.
-            var trailing = a.state === "running" ? (a.doing || "") : (a.result || "");
-            return '<div class="one" data-state="' + esc(a.state) + '">' +
-                '<span class="mark"></span>' +
-                '<span class="what">' + esc(a.what || a.type || "") + "</span>" +
-                (trailing ? '<span class="doing">' + esc(trailing) + "</span>" : "") +
-                (said ? '<span class="said">' + esc(said) + "</span>" : "") +
-                "</div>";
-        }).join("");
+        // The root, and a row like the others because it is also the way back out of one of
+        // them. `main` is the terminal's own word for the conversation they all hang under, and
+        // it is not translated for the same reason `general-purpose` is not: it is the name of a
+        // thing in Claude Code, not a sentence about it.
+        agentRowHTML({ id: "", type: "main", what: open ? (open.label || open.tty || "") : "",
+                       root: true }, here) +
+        list.map(function (a) { return agentRowHTML(a, here); }).join("");
 
     if (want === agentsDrawn) return;
     agentsDrawn = want;
     box.innerHTML = want;
     box.hidden = !want;
+}
+
+/**
+ * One row of that tree.
+ *
+ * A button, because every row leads somewhere: an agent's row into its conversation, and the
+ * root back out to the session's. The id rides on the element rather than in a closure, so a
+ * repaint — which happens every time any agent reaches for a tool — rebinds nothing.
+ */
+function agentRowHTML(a, here) {
+    var root = !!a.root;
+    var said = a.state === "done" ? T.webAgentDone
+             : a.state === "failed" ? T.webAgentFailed : "";
+    // Running: the tool it last reached for. Finished: what it handed back. Same slot, because
+    // they are the same question asked at two different times.
+    var trailing = root ? "" : (a.state === "running" ? (a.doing || "") : (a.result || ""));
+    var current = (a.id || "") === here;
+    return '<button class="one' + (root ? " root" : "") + '" type="button"' +
+        ' data-agent="' + esc(a.id || "") + '"' +
+        (a.state ? ' data-state="' + esc(a.state) + '"' : "") +
+        ' aria-current="' + (current ? "true" : "false") + '"' +
+        (root ? "" : ' title="' + esc(T.webAgentOpen) + '"') + ">" +
+        '<span class="mark"></span>' +
+        '<span class="kind">' + esc(a.type || "") + "</span>" +
+        '<span class="what">' + esc(a.what || "") + "</span>" +
+        (trailing ? '<span class="doing">' + esc(trailing) + "</span>" : "") +
+        (said ? '<span class="said">' + esc(said) + "</span>" : "") +
+        "</button>";
 }
 
 function renderHints() {
@@ -4864,6 +5415,11 @@ function paintStatic() {
     text(els["tx-links-label"], T.webLinks);
     attr(els["tx-links"], "title", T.webLinksTip);
     text(els["tx-focus-label"], T.webShowOnMac);
+    attr(els["session-actions"], "aria-label", T.webSessionActions);
+    text(els["session-focus"], T.webShowOnMac);
+    text(els["session-end"], T.webEndSession);
+    text(els["action-confirm-cancel"], T.webCancel);
+    text(els["action-confirm-go"], T.webConfirm);
 
     text(els["stale-say"], T.webStale);
     text(els["stale-go"], T.webStaleGo);
@@ -5099,6 +5655,12 @@ function openSession(id, keepFocus) {
     if (!s) return;
     S.selectedId = id;
     if (S.openId !== id) {
+        SessionActions.close();
+        ActionConfirm.close();
+        // An agent belongs to the session that sent it away. Carrying one over into the next
+        // session would leave somebody reading one session's background work under another
+        // session's name, which is the one thing this pane must never do.
+        closeAgent(true);
         S.openId = id;
         // Which runs were open is where a reader had got to in that transcript, not a setting.
         // Fold keys come from content and so would not collide across sessions, but carrying
@@ -5127,7 +5689,9 @@ function openSession(id, keepFocus) {
 }
 
 function closeDetail(silent) {
+    ActionConfirm.close();
     S.openId = null;
+    S.agent = null;
     S.tx = { id: null, entries: [], signature: null, loading: false, error: null };
     S.expanded = {};
     Shots.clear();
@@ -5136,6 +5700,149 @@ function closeDetail(silent) {
     if (phone()) els.app.dataset.view = "list";
     renderTranscript();
     if (!silent) render();
+}
+
+/* ==========================================================================
+   Reading one background agent
+   The strip in the composer says a session has work happening somewhere with no screen. This is
+   the rest of that sentence: the agent's own conversation, in the pane the session's was in.
+
+   **The session does not close to show it.** `S.openId` stays exactly where it was, so the
+   stream keeps the row live, the list keeps its place, and coming back is putting `S.agent`
+   down rather than opening anything again. What changes is which header is on screen and which
+   list of entries the transcript draws.
+
+   The composer goes away with the header, and that is honesty rather than a shortcut: there is
+   nothing to type at an agent. It was given its instructions when it was spawned and it is not
+   listening for more. A box that took a sentence and had nowhere to send it would be worse than
+   no box at all.
+   ========================================================================== */
+
+/** The strip's own row for an agent, which is what the header reads while a fetch is in flight. */
+function agentRow(sid, agentId) {
+    var s = byId(sid);
+    var list = (s && s.agents) || [];
+    for (var i = 0; i < list.length; i++) if (list[i].id === agentId) return list[i];
+    return null;
+}
+
+/**
+ * Everything about a session's agents that would change what is on screen.
+ *
+ * `at` is the mtime of an agent's own transcript, so this moves every time one writes a line —
+ * which is the signal this pane needs and the session's own revision cannot give it: a session
+ * sitting still with three agents out reports no change at all while all three are working.
+ */
+function agentsRev(s) {
+    return ((s && s.agents) || []).map(function (a) {
+        return a.id + ":" + a.state + ":" + (a.at || "") + ":" + (a.doing || "");
+    }).join("|");
+}
+
+function openAgent(agentId) {
+    var sid = S.openId;
+    if (!sid || !agentId) return;
+    if (S.agent && S.agent.id === agentId) return;
+    S.agent = {
+        sid: sid, id: agentId, meta: agentRow(sid, agentId),
+        entries: [], signature: null, loading: true, error: null
+    };
+    // Which runs a reader had opened is a place in the session's transcript, not in this one.
+    S.expanded = {};
+    SkillPicker.close();
+    loadAgent(sid, agentId, false);
+    // A phone's back gesture already means "out of the thing I just opened", and this is a thing
+    // that was just opened. Without this it would mean "out of the session" from in here, which
+    // undoes a step the reader never asked to undo.
+    if (phone()) {
+        try { history.pushState({ view: "agent", id: sid, agent: agentId }, ""); } catch (e) { }
+    }
+    render();
+}
+
+function closeAgent(silent) {
+    if (!S.agent) return;
+    S.agent = null;
+    S.expanded = {};
+    if (silent) return;
+    // The session's own entries never left `S.tx`, so going back is a repaint and not a fetch.
+    renderTranscript();
+    render();
+}
+
+function loadAgent(sid, agentId, quiet) {
+    if (!quiet) { Waits.tx.start(); renderTranscript(); }
+    api.agent(sid, agentId).then(function (d) {
+        var a = S.agent;
+        if (!a || a.id !== agentId || a.sid !== sid) { Waits.tx.settle(); return; }
+        a.loading = false;
+        if (d.agent) a.meta = d.agent;
+        // The same bargain the session's transcript strikes: the server's signature answers "is
+        // this still the same file", and trusting it is what stops a refetch behind a reader
+        // from throwing their scroll position away every second.
+        if (d.signature && d.signature === a.signature) {
+            Waits.tx.settle(renderAgentHead);
+            return;
+        }
+        var stick = atBottom();
+        a.entries = d.entries || [];
+        a.signature = d.signature || null;
+        Waits.tx.settle(function () {
+            renderAgentHead();
+            renderTranscript();
+            if (stick) toBottom();
+        });
+    }).catch(function (e) {
+        var a = S.agent;
+        if (!a || a.id !== agentId || a.sid !== sid) { Waits.tx.settle(); return; }
+        a.entries = [];
+        a.loading = false;
+        a.error = e.message || T.webTranscriptFailed;
+        Waits.tx.settle(renderTranscript);
+    });
+}
+
+/** Seconds the way the terminal says them: `44s`, `1m 50s`. Not translated — it is a clock. */
+function agentClock(seconds) {
+    var s = Math.max(0, Math.round(seconds));
+    return s < 60 ? s + "s" : Math.floor(s / 60) + "m " + (s % 60) + "s";
+}
+
+/** And tokens the way the assistant counts them out loud: `840`, `9.3k`, `84.4k`, `120k`. */
+function agentTokens(n) {
+    if (n < 1000) return String(n);
+    var k = n / 1000;
+    return (k < 100 ? k.toFixed(1) : String(Math.round(k))) + "k";
+}
+
+/**
+ * The agent's header, and the swap that puts it on screen.
+ *
+ * One header at a time, by hiding the other: two would leave a reader looking at two names with
+ * a single transcript underneath and nothing saying which name it belongs to.
+ */
+function renderAgentHead() {
+    var a = S.agent;
+    var on = !!a;
+    if (els["detail-head"]) els["detail-head"].hidden = on;
+    els["agent-head"].hidden = !on;
+    els.composer.hidden = on;
+    if (!on) return;
+
+    var m = a.meta || {};
+    els["agent-back-label"].textContent = T.agentBack;
+    els["agent-name"].textContent = m.what || m.type || a.id;
+    // Type first, because it says what kind of thing this was; then the state; then what it
+    // cost. Those last three are the numbers the terminal prints when an agent lands and
+    // nothing in this app was showing anywhere: how long, how many tokens, how many tools.
+    var sub = [];
+    if (m.type) sub.push(m.type);
+    sub.push(m.state === "done" ? T.webAgentDone
+           : m.state === "failed" ? T.webAgentFailed : T.agentRunning);
+    if (m.seconds) sub.push(agentClock(m.seconds));
+    if (m.tokens) sub.push("↓ " + agentTokens(m.tokens));
+    if (m.tools) sub.push(fill(T.agentTools, { n: m.tools }));
+    els["agent-sub"].textContent = sub.join("  ·  ");
 }
 
 function select(id) {
@@ -5176,6 +5883,15 @@ document.addEventListener("keydown", function (ev) {
     // door is not a dialog you dismiss. There is no page under it to go back to.
     if (!els.door.hidden) return;
 
+    // A confirmation is a decision about one action, not another layer of the page. While it is
+    // open, no list or pane shortcut behind it runs; Escape is the one way out from anywhere.
+    if (!els["action-confirm"].hidden) {
+        if (key === "Escape") {
+            ev.preventDefault(); ActionConfirm.close(true);
+        }
+        return;
+    }
+
     // The two that work from anywhere, including out of a text box, because they are how you
     // get out of the text box.
     if (meta && (key === "k" || key === "K")) {
@@ -5203,6 +5919,9 @@ document.addEventListener("keydown", function (ev) {
             return;
         }
         if (typing(document.activeElement)) { document.activeElement.blur(); return; }
+        // An agent is a step inside a session, so Escape gives that step back before it gives
+        // the session back. Anything else would close two things for one press.
+        if (S.agent) { closeAgent(); return; }
         if (S.openId) { closeDetail(); return; }
         return;
     }
@@ -5248,6 +5967,18 @@ els["list-scroll"].addEventListener("touchend", function () { setTimeout(thawOrd
 els.filter.addEventListener("input", function () { S.filter = els.filter.value; renderList(); });
 els["tx-links"].addEventListener("click", function () { Links.open(); });
 els.back.addEventListener("click", function () { closeDetail(); });
+// One listener on the box rather than one per row: the strip repaints every time an agent
+// reaches for a tool, and rebinding half a dozen buttons a second to do nothing new is work
+// nobody would get back.
+els.agents.addEventListener("click", function (ev) {
+    var row = ev.target.closest ? ev.target.closest("[data-agent]") : null;
+    if (!row) return;
+    // An empty id is the root row: the way back to the session, which is what closing an agent
+    // is. Clicking it while the session is already what the pane is showing does nothing.
+    var id = row.getAttribute("data-agent");
+    if (id) openAgent(id); else closeAgent();
+});
+els["agent-back"].addEventListener("click", function () { closeAgent(); });
 els.keys.addEventListener("click", function () { els.keys.hidden = true; });
 els.keys.querySelector(".sheet").addEventListener("click", function (ev) { ev.stopPropagation(); });
 els.conn.addEventListener("click", function () { if (api.refresh) api.refresh(); });
@@ -5260,13 +5991,178 @@ els["tx-focus"].addEventListener("click", function () {
 
 els["detail-focus"].addEventListener("click", function () {
     if (!S.openId) return;
-    api.focus(S.openId).then(function () { toast(T.webShowOnMacAsked); })
-        .catch(function (e) { toast(e.message, true); });
+    SessionActions.toggle(els["detail-focus"]);
 });
+
+els["detail-actions-title"].addEventListener("click", function () {
+    if (!S.openId) return;
+    SessionActions.toggle(els["detail-actions-title"]);
+});
+
+function actionTriggerKey(ev) {
+    if (ev.key !== "ArrowDown") return;
+    ev.preventDefault(); ev.stopPropagation();
+    SessionActions.open(ev.currentTarget);
+    var first = els["session-actions"].querySelector("button:not(:disabled)");
+    if (first) first.focus({ preventScroll: true });
+}
+els["detail-focus"].addEventListener("keydown", actionTriggerKey);
+els["detail-actions-title"].addEventListener("keydown", actionTriggerKey);
+
+/**
+ * The project mark and its title are two handles for the same menu. Bringing the terminal
+ * forward is a menu action of its own, so opening the menu never moves focus away from the
+ * browser. `commit` and `deploy` are ordinary prompts, while ending uses the server's named
+ * two-step route so the assistant quits cleanly before its terminal tab is closed.
+ */
+var SessionActions = {
+    opener: null,
+
+    open: function (opener) {
+        if (!S.openId || !S.write) return;
+        this.opener = opener || this.opener || els["detail-focus"];
+        els["session-actions"].hidden = false;
+        els["detail-focus"].setAttribute("aria-expanded", "true");
+        els["detail-actions-title"].setAttribute("aria-expanded", "true");
+    },
+
+    close: function (restore) {
+        if (els["session-actions"].hidden) return;
+        els["session-actions"].hidden = true;
+        els["detail-focus"].setAttribute("aria-expanded", "false");
+        els["detail-actions-title"].setAttribute("aria-expanded", "false");
+        if (restore && this.opener && document.contains(this.opener)) {
+            this.opener.focus({ preventScroll: true });
+        }
+        this.opener = null;
+    },
+
+    toggle: function (opener) {
+        if (els["session-actions"].hidden) this.open(opener); else this.close();
+    },
+
+    focusMac: function () {
+        var id = S.openId;
+        if (!id || !S.write) return;
+        this.close();
+        api.focus(id).then(function () { toast(T.webShowOnMacAsked); })
+            .catch(function (e) { toast(e.message, true); });
+    },
+
+    prompt: function (action, sessionID) {
+        var id = sessionID || S.openId;
+        if (!id || !S.write) return;
+        this.close();
+        api.send(id, action, []).then(function () { toast(action + " ✓"); })
+            .catch(function (e) { toast(e.message, true); });
+    },
+
+    end: function (sessionID) {
+        var id = sessionID || S.openId;
+        if (!id || !S.write) return;
+        this.close();
+        api.end(id).then(function () {
+            if (S.openId === id) closeDetail();
+            toast(T.webEndSession + " ✓");
+        }).catch(function (e) { toast(e.message, true); });
+    }
+};
+
+/** The second press before a session-changing action reaches the transport. */
+var ActionConfirm = {
+    pending: null,
+
+    open: function (kind) {
+        var id = S.openId;
+        if (!id || !S.write) return;
+        var action = kind === "end" ? T.webEndSession : kind;
+        var returnFocus = SessionActions.opener || els["detail-focus"];
+        SessionActions.close();
+        this.pending = { id: id, kind: kind, action: action, opener: returnFocus };
+        els["action-confirm-sheet"].dataset.kind = kind;
+        els["action-confirm-title"].textContent = kind === "end"
+            ? T.webConfirmEndTitle : fill(T.webConfirmActionTitle, { action: action });
+        els["action-confirm-say"].textContent = kind === "end"
+            ? T.webConfirmEndSay : fill(T.webConfirmActionSay, { action: action });
+        els["action-confirm"].hidden = false;
+        els["action-confirm-go"].focus({ preventScroll: true });
+    },
+
+    close: function (restore) {
+        if (els["action-confirm"].hidden) return;
+        var opener = this.pending && this.pending.opener;
+        this.pending = null;
+        els["action-confirm"].hidden = true;
+        if (restore && opener && document.contains(opener)) {
+            opener.focus({ preventScroll: true });
+        }
+    },
+
+    run: function () {
+        var pending = this.pending;
+        if (!pending) return;
+        this.close(false);
+        if (pending.kind === "end") SessionActions.end(pending.id);
+        else SessionActions.prompt(pending.action, pending.id);
+    }
+};
+
+els["session-actions"].addEventListener("click", function (ev) {
+    var action = ev.target.closest ? ev.target.closest("[data-action]") : null;
+    if (action) { ActionConfirm.open(action.dataset.action); return; }
+    if (ev.target.closest && ev.target.closest("#session-focus")) {
+        SessionActions.focusMac(); return;
+    }
+    if (ev.target.closest && ev.target.closest("#session-end")) ActionConfirm.open("end");
+});
+
+els["action-confirm-cancel"].addEventListener("click", function () {
+    ActionConfirm.close(true);
+});
+els["action-confirm-go"].addEventListener("click", function () { ActionConfirm.run(); });
+els["action-confirm"].addEventListener("click", function () { ActionConfirm.close(true); });
+els["action-confirm-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
+els["action-confirm"].addEventListener("keydown", function (ev) {
+    if (ev.key !== "Tab") return;
+    var items = [els["action-confirm-cancel"], els["action-confirm-go"]];
+    var at = items.indexOf(document.activeElement);
+    if ((!ev.shiftKey && at === items.length - 1) || (ev.shiftKey && at <= 0)) {
+        ev.preventDefault(); items[ev.shiftKey ? items.length - 1 : 0].focus();
+    }
+});
+
+els["session-actions"].addEventListener("keydown", function (ev) {
+    if (["ArrowDown", "ArrowUp", "Home", "End"].indexOf(ev.key) < 0) return;
+    ev.preventDefault(); ev.stopPropagation();
+    var items = Array.prototype.slice.call(
+        els["session-actions"].querySelectorAll("button:not(:disabled)"));
+    if (!items.length) return;
+    var at = items.indexOf(document.activeElement), next;
+    if (ev.key === "Home") next = 0;
+    else if (ev.key === "End") next = items.length - 1;
+    else if (ev.key === "ArrowDown") next = (at + 1 + items.length) % items.length;
+    else next = (at - 1 + items.length) % items.length;
+    items[next].focus({ preventScroll: true });
+});
+
+document.addEventListener("pointerdown", function (ev) {
+    if (els["session-actions"].hidden ||
+        ev.target.closest(".detail-actions, #detail-actions-title")) return;
+    SessionActions.close();
+});
+
+document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape" || els["session-actions"].hidden) return;
+    ev.preventDefault(); ev.stopPropagation(); SessionActions.close(true);
+}, true);
 
 // Back on a phone: the pushState above put us here, so popping means "list".
 window.addEventListener("popstate", function () {
-    if (phone() && els.app.dataset.view === "detail") closeDetail();
+    if (!phone()) return;
+    // Innermost first, and only one step per gesture: the entry pushed when an agent was opened
+    // is the one being popped, so it gives back the agent and leaves the session where it was.
+    if (S.agent) { closeAgent(); return; }
+    if (els.app.dataset.view === "detail") closeDetail();
 });
 
 els["stale-go"].addEventListener("click", function () { location.reload(); });
@@ -6374,11 +7270,11 @@ function insertText(text) {
 }
 
 /**
- * Skills for the open session, fetched only when `/` makes them visible.
+ * Skills for the open session, fetched only when `/` (or Codex's native `$`) makes them visible.
  *
  * Nothing from SKILL.md is interpreted here. The Mac hands over a name and one safe line of
- * description; choosing one only writes `/name ` into the box. Claude Code remains the one that
- * resolves, authorises and runs it when the ordinary send happens.
+ * description; choosing one only writes the assistant's real invocation into the box. The
+ * assistant remains the one that resolves, authorises and runs it when the ordinary send happens.
  */
 var SkillPicker = (function () {
     var cache = {};                    // session id → catalog
@@ -6387,9 +7283,17 @@ var SkillPicker = (function () {
     var selected = 0;
     var shown = false;
 
+    function prefix() {
+        var session = S.openId ? byId(S.openId) : null;
+        return session && session.assistant === "codex" ? "$" : "/";
+    }
+
     function query() {
         var text = rawMsgText();
-        return /^\/[^\s/]*$/.test(text) ? text.slice(1).toLowerCase() : null;
+        var session = S.openId ? byId(S.openId) : null;
+        var pattern = session && session.assistant === "codex"
+            ? /^[\/$][^\s\/$]*$/ : /^\/[^\s/]*$/;
+        return pattern.test(text) ? text.slice(1).toLowerCase() : null;
     }
 
     function rank(skill, q) {
@@ -6428,7 +7332,7 @@ var SkillPicker = (function () {
             row.type = "button"; row.className = "skill-option"; row.setAttribute("role", "option");
             row.setAttribute("aria-selected", i === selected ? "true" : "false");
             var command = document.createElement("span");
-            command.className = "command"; command.textContent = "/" + skill.name;
+            command.className = "command"; command.textContent = prefix() + skill.name;
             var description = document.createElement("span");
             description.className = "description"; description.textContent = skill.description || "";
             row.appendChild(command); row.appendChild(description);
@@ -6450,7 +7354,7 @@ var SkillPicker = (function () {
             cache[id] = answer.skills || [];
         }).catch(function () {
             // Autocomplete is a convenience, never a reason the composer should fail. Unknown
-            // slash commands may still be sent and Claude Code will give the authoritative answer.
+            // commands may still be sent and the assistant will give the authoritative answer.
             cache[id] = [];
         }).then(function () {
             delete loading[id];
@@ -6470,7 +7374,7 @@ var SkillPicker = (function () {
 
     function accept() {
         if (!shown || !matches[selected]) return false;
-        els.msg.textContent = "/" + matches[selected].name + " ";
+        els.msg.textContent = prefix() + matches[selected].name + " ";
         blankness(); hide(); caretToEnd(); renderComposer();
         return true;
     }

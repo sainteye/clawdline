@@ -1,6 +1,6 @@
 import AppKit
 
-/// The product mark beside an assistant's name in a mixed session list.
+/// The product mark beside an assistant's name in the session list.
 ///
 /// Kept as SVG rather than a bundled bitmap so a 12-point mark stays sharp on every display.
 /// The paths come from Lobe Icons' Claude and OpenAI marks (https://github.com/lobehub/lobe-icons),

@@ -85,7 +85,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var outputView: NSTextView!
     private var outputLine: NSView!
     /// What the session is doing right now. Hidden when it is not doing anything.
-    private var activityLabel: NSTextField!
+    private var activityLabel: ActivityLabel!
     /// The heading's own ground, so it reads as the top of the pane rather than as the bottom
     /// of the input row — which is what it looked like sitting on the card's own colour.
     private var paneHeader: NSView!
@@ -132,11 +132,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var sessionLabels: [String: String] = [:]
     private var mascotNames: [String] = []
     private var mascotIndex = 0
-    /// Skills for the selected Claude Code session, and the subset matching what follows `/`.
-    /// The catalog is cached per target: reading a handful of frontmatter files is cheap when a
+    /// Skills for the selected assistant session, and the subset matching what follows `/` or `$`.
+    /// The catalog is cached per target: reading frontmatter or a rollout header is cheap when a
     /// session changes and still needless work on every letter somebody types.
-    private var skillCatalog: [ClaudeSkill] = []
-    private var skillMatches: [ClaudeSkill] = []
+    private var skillCatalog: [AssistantSkill] = []
+    private var skillMatches: [AssistantSkill] = []
     private var skillIndex = 0
     private var skillTargetID: String?
     private var skillLoadingTargetID: String?
@@ -187,10 +187,21 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// `process-compose process logs` costs a flat second per call however little you ask it
     /// for, so paying that per tab made switching feel broken.
     private var stackLogRaw: String?
-    /// Pinned to the top of the log pane. See StackLogHeader for why it is a view and not the
+    /// Pinned to the top of the log pane. See PaneHeader for why it is a view and not the
     /// first two lines of the text.
-    private var stackLogHeader: StackLogHeader?
+    private var floatingHeaderView: PaneHeader?
     private var savedOutputInset: NSSize?
+    /// Which of the current session's background agents the pane is reading, if any.
+    ///
+    /// **The session it belongs to is not put down to read it.** The target does not move, the
+    /// bar keeps saying what the session is doing, and coming back is this going to nil rather
+    /// than anything being opened again. Cleared whenever the target changes: an agent belongs
+    /// to the session that sent it away, and carrying one across would put another session's
+    /// background work under the wrong name.
+    private var agentID: String?
+    /// What the strip above the transcript last drew, so a beat that changes nothing costs
+    /// nothing. See `updateAgentStrip`.
+    private var agentStripState = ""
     /// When each session was last looked up, so a summon repaints from what is known and asks
     /// again in the background rather than showing nothing while it waits.
     private var projectSeen: [String: CFAbsoluteTime] = [:]
@@ -417,11 +428,21 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         paneHeader.isHidden = true
         card.addSubview(paneHeader)
 
-        activityLabel = NSTextField(labelWithString: "")
+        // `ActivityLabel` rather than a plain field: it is the only label in the bar that
+        // is sometimes a control, and it carries its own pointer for the times it is.
+        activityLabel = ActivityLabel(labelWithString: "")
         activityLabel.font = NSFont.monospacedSystemFont(ofSize: Style.hintSize, weight: .regular)
         activityLabel.textColor = Style.accent
         activityLabel.lineBreakMode = .byTruncatingTail
         activityLabel.isHidden = true
+        // **"2 in the background" is the only thing in the bar that answers "on what", and until
+        // now it was the end of the road**: the agents themselves live in the ⌘J pane, and a
+        // reader who had never opened that pane had no way to know it. Clicking the line opens
+        // it. Only when there is something to open — on a session with no agents this is the
+        // live line and nothing else, and a line that swallows clicks for no reason is worse
+        // than one that ignores them.
+        activityLabel.addGestureRecognizer(
+            NSClickGestureRecognizer(target: self, action: #selector(activityClicked)))
         card.addSubview(activityLabel)
 
         outputHost = NSScrollView()
@@ -702,6 +723,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             // only ever asked for on behalf of something on screen, and both are keyed on files
             // that a shut panel has no opinion about.
             Subagents.forget()
+            // And which agent was being read. A panel that comes back up should come back to the
+            // conversation, not to the middle of somebody else's errand from an hour ago.
+            self.agentID = nil
             self.hideBackdrop(animated: false)
             self.listMode = .none
             self.dismissing = false
@@ -1115,6 +1139,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             clearStackLog()
             return
         }
+        // Same door, for the same reason: an agent's transcript is another room inside the pane,
+        // and the key that got you in should give the conversation back before it shuts the pane.
+        if agentID != nil, outputOpen {
+            clearAgent()
+            return
+        }
         let from = currentFrameState()
         // Full screen exists to read in. Closing the pane and leaving a screen-sized card with
         // one input line in it would be a state nobody asked for — so ⌘J on a full-screen pane
@@ -1277,6 +1307,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     /// Show or clear the "what is it doing right now" strip.
     private func setActivity(_ text: String?) {
+        // Whether the line leads anywhere, which is not the same question as what it says: a
+        // session working on its own has a live line and nowhere to go from it.
+        activityLabel.clickable = currentTarget.map {
+            !SessionWatch.shared.agents(of: $0.id).isEmpty
+        } ?? false
         let next = text ?? ""
         guard next != activityLabel.stringValue else { return }
         activityLabel.stringValue = next
@@ -1294,6 +1329,13 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private func refreshOutput() {
         guard cannedTranscript == nil, stackLog == nil else { return }
         guard outputOpen, panel.isVisible, let target = currentTarget else { return }
+        // The agents this session has out, above whatever the pane is showing — and, when one of
+        // them is open, the pane is showing that agent instead of the session.
+        updateAgentStrip(for: target)
+        if let id = agentID {
+            refreshAgentTranscript(for: target, agent: id)
+            return
+        }
         // Not `.utility`. This runs because somebody pressed ↓, and on a machine with nine
         // sessions on it — which is the machine this is for — background priority is the
         // difference between the pane keeping up with the key and lagging a beat behind it.
@@ -1703,11 +1745,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
 
         add(target.displayLabel, selected ? .labelColor : .secondaryLabelColor, base)
-        // Only when the list is holding both kinds. On a machine running one assistant the mark
-        // is on every row and distinguishes nothing, which is the definition of noise; the
-        // moment Claude Code and Codex sit next to each other, their product marks make the split
-        // visible before the smaller word has even been read.
-        if mixedAssistants, let assistant = target.assistant {
+        // Always name the assistant. A list containing only one kind is still ambiguous at a
+        // glance — especially when several tabs share the same project name and therefore the
+        // same project mark on the left. The product mark answers "Claude or Codex?" while that
+        // left-hand pixel mark continues to answer "which project?".
+        if let assistant = target.assistant {
             add("  ", .tertiaryLabelColor, small)
             if let image = assistant.logoImage(height: 11) {
                 let attachment = NSTextAttachment()
@@ -1719,17 +1761,6 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             add(assistant.short, .tertiaryLabelColor, small)
         }
         return s
-    }
-
-    /// Whether the sessions on screen are running more than one kind of assistant.
-    private var mixedAssistants: Bool {
-        var seen: Assistant?
-        for target in targets {
-            guard let assistant = target.assistant else { continue }
-            if let seen, seen != assistant { return true }
-            seen = assistant
-        }
-        return false
     }
 
     /// What the row says after its label. Split from the label so the row can put the spinner
@@ -1811,21 +1842,24 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         relayout()
     }
 
-    // MARK: - Claude Code skills
+    // MARK: - Assistant skills
 
-    /// The incomplete slash command currently occupying the whole box. A space ends completion:
+    /// The incomplete skill mention currently occupying the whole box. `/` is Clawdline's common
+    /// opener for both assistants; Codex's native `$` spelling works too. A space ends completion:
     /// from then on the words are arguments, and the ordinary Return-to-send path owns them.
-    private var slashQuery: String? {
+    private var skillQuery: String? {
+        guard let assistant = currentTarget?.assistant else { return nil }
         let text = textView.string
-        guard text.hasPrefix("/"), !text.contains("\n") else { return nil }
+        let opens = text.hasPrefix("/") || (assistant == .codex && text.hasPrefix("$"))
+        guard opens, !text.contains("\n") else { return nil }
         let query = String(text.dropFirst())
         guard !query.contains(where: \.isWhitespace) else { return nil }
         return query
     }
 
     private func updateSkillSuggestions() {
-        guard let query = slashQuery,
-              let target = currentTarget, target.assistant == .claude else {
+        guard let query = skillQuery,
+              let target = currentTarget, target.assistant != nil else {
             if listMode == .skills {
                 listMode = .none
                 skillMatches = []
@@ -1855,15 +1889,26 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         relayout()
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let cwd = Targets.workingDirectory(of: target)
-            let found = cwd.map { ClaudeSkills.available(cwd: $0) } ?? []
+            let found: [AssistantSkill]
+            switch target.assistant {
+            case .claude:
+                let cwd = Targets.workingDirectory(of: target)
+                found = cwd.map { ClaudeSkills.available(cwd: $0) } ?? []
+            case .codex:
+                let record = Transcript.record(of: target)
+                found = record.flatMap {
+                    $0.assistant == .codex ? CodexSkills.available(in: $0.url) : nil
+                } ?? []
+            case nil:
+                found = []
+            }
             DispatchQueue.main.async {
                 guard self.skillLoadToken == token else { return }
                 self.skillLoadingTargetID = nil
                 guard self.currentTarget?.id == target.id else { return }
                 self.skillTargetID = target.id
                 self.skillCatalog = found
-                if let latest = self.slashQuery { self.showSkillMatches(latest) }
+                if let latest = self.skillQuery { self.showSkillMatches(latest) }
             }
         }
     }
@@ -1882,7 +1927,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     @discardableResult
     private func acceptSkill() -> Bool {
         guard listMode == .skills, skillMatches.indices.contains(skillIndex) else { return false }
-        let text = "/\(skillMatches[skillIndex].command) "
+        let prefix = currentTarget?.assistant?.skillInvocationPrefix ?? "/"
+        let text = "\(prefix)\(skillMatches[skillIndex].command) "
         textView.setPlainText(text)
         textView.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
         listMode = .none
@@ -1966,7 +2012,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
         if listMode == .skills {
             rows = skillMatches.enumerated().map { i, skill in
-                let row = TargetRow(title: "/" + skill.command, index: i)
+                let prefix = currentTarget?.assistant?.skillInvocationPrefix ?? "/"
+                let row = TargetRow(title: prefix + skill.command, index: i)
                 if !skill.description.isEmpty {
                     row.detail = NSAttributedString(string: skill.description, attributes: [
                         .font: NSFont.systemFont(ofSize: Style.listSize - 1.5),
@@ -2247,14 +2294,222 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         stackLogSpec = nil
         stackLogProcess = nil
         stackLogRaw = nil
-        stackLogHeader?.removeFromSuperview()
-        stackLogHeader = nil
+        dropFloatingHeader()
+        lastOutput = ""
+        refreshOutput()
+    }
+
+    // MARK: - The pane's header, whichever mode is using it
+
+    /// Made once and handed to whoever is filling the pane.
+    ///
+    /// **One header, because there is one inset.** Both the log and a session's agents want a
+    /// strip pinned above the text, and two views installed over one another would each push the
+    /// text down by their own height — leaving a gap the size of the one that is not on screen.
+    private func floatingHeader() -> PaneHeader {
+        if let existing = floatingHeaderView { return existing }
+        let header = PaneHeader()
+        floatingHeaderView = header
+        // AppKit's own answer to "stay put while the content scrolls" — correct through
+        // live resize and elastic scrolling in a way that repositioning by hand is not.
+        outputHost.addFloatingSubview(header, for: .vertical)
+        if savedOutputInset == nil { savedOutputInset = outputView.textContainerInset }
+        outputView.textContainerInset = NSSize(
+            width: outputView.textContainerInset.width,
+            height: PaneHeader.height + 6)
+        return header
+    }
+
+    private func dropFloatingHeader() {
+        guard let header = floatingHeaderView else { return }
+        header.removeFromSuperview()
+        floatingHeaderView = nil
+        agentStripState = ""
         if let saved = savedOutputInset {
             outputView.textContainerInset = saved
             savedOutputInset = nil
         }
+    }
+
+    /// Sized to the pane it floats over, and asked to draw itself again.
+    private func layoutFloatingHeader(_ header: PaneHeader) {
+        header.frame = NSRect(x: 0, y: 0, width: outputHost.contentSize.width,
+                              height: PaneHeader.height)
+        header.needsDisplay = true
+        header.window?.invalidateCursorRects(for: header)
+    }
+
+    // MARK: - Reading one of the session's background agents
+
+    /// The strip above the transcript: how many agents are out, a tab per agent, and — once one
+    /// is open — its name and the way back to the conversation that sent it.
+    ///
+    /// Runs on every beat of the pane and does nothing on nearly all of them: the fast path is a
+    /// session with no agents, which is one dictionary lookup and a `guard`.
+    private func updateAgentStrip(for target: TargetSession) {
+        let agents = SessionWatch.shared.agents(of: target.id)
+        guard !agents.isEmpty else {
+            // The last of them settled while somebody was reading it. Put the pane back rather
+            // than leave a header with nothing behind it.
+            if agentID != nil { agentID = nil; lastOutput = "" }
+            dropFloatingHeader()
+            return
+        }
+        // An agent quiet long enough to leave the strip takes its transcript with it. Landing
+        // back in the session is the only honest answer: there is no longer a row to return to.
+        if let id = agentID, !agents.contains(where: { $0.id == id }) {
+            agentID = nil
+            lastOutput = ""
+        }
+
+        let header = floatingHeader()
+        header.onBack = { [weak self] in self?.clearAgent() }
+        header.onTab = { [weak self] value in
+            guard let value else { self?.clearAgent(); return }
+            self?.showAgent(value)
+        }
+        let open = agentID.flatMap { id in agents.first(where: { $0.id == id }) }
+        // Reading one: its own description, the only string here somebody wrote to explain what
+        // they wanted. Reading none: what this strip *is*, and deliberately not how many are out
+        // — the activity line directly above it already says that, and a header repeating the
+        // line above it spends a row of the pane saying nothing new. `webAgents` carries a `web`
+        // prefix because the page asked for it first; the words in it are these words.
+        header.title = open.map { Self.agentLabel($0.description, limit: 40) } ?? L.t.webAgents
+        header.titleColor = .labelColor
+        // Empty until there is somewhere to go back to — the list itself is the top of this
+        // pane, and an arrow on it would point at nothing. See `PaneHeader.draw`.
+        header.backLabel = open == nil ? "" : L.t.agentBack
+        header.current = agentID
+        // `main` first, the way the terminal draws the same tree: the conversation all of them
+        // hang under, and the row that takes you back out of one. `nil` is already this
+        // header's word for "no tab in particular", which is exactly what going back means.
+        var tabs: [(label: String, value: String?)] = [("main", nil)]
+        tabs += agents.map { (Self.agentLabel($0.description, limit: 22), $0.id) }
+        header.tabs = tabs
+
+        // Laid out only when something about it changed. This runs on every beat of the pane,
+        // and a header told to redraw once a second for the whole time an agent is out is a
+        // second of drawing per second of nothing happening.
+        let state = "\(agentID ?? "-")|\(header.title)|\(header.backLabel)|"
+            + header.tabs.map { $0.label }.joined(separator: ",")
+        if state != agentStripState || header.frame.width != outputHost.contentSize.width {
+            agentStripState = state
+            layoutFloatingHeader(header)
+        }
+    }
+
+    /// A tab is a strip of a panel that is 720 points wide with five other tabs on it, so what
+    /// somebody wrote to describe a whole piece of work has to fit in a few words. Cut on a
+    /// space when there is one near the end, because half a word reads as a rendering fault.
+    private static func agentLabel(_ text: String, limit: Int) -> String {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard clean.count > limit else { return clean }
+        let cut = String(clean.prefix(limit))
+        if let space = cut.lastIndex(of: " "), cut.distance(from: space, to: cut.endIndex) < 8 {
+            return String(cut[cut.startIndex..<space]) + "…"
+        }
+        return cut + "…"
+    }
+
+    /// The activity strip was clicked. See where it is built for why this is a gesture on a
+    /// label rather than a button.
+    @objc private func activityClicked() {
+        guard let id = currentTarget?.id,
+              !SessionWatch.shared.agents(of: id).isEmpty,
+              !outputOpen else { return }
+        toggleOutput()
+    }
+
+    /// The first agent whose description contains `text`, opened. For `clawdline://snapshot`.
+    private func showAgent(matching text: String) {
+        guard let target = currentTarget else { return }
+        let agents = SessionWatch.shared.agents(of: target.id)
+        guard let hit = agents.first(where: {
+            $0.description.localizedCaseInsensitiveContains(text)
+        }) else { return }
+        showAgent(hit.id)
+    }
+
+    private func showAgent(_ id: String) {
+        guard agentID != id else { return }
+        agentID = id
+        lastOutput = ""
+        if !outputOpen { toggleOutput() }
+        refreshOutput()
+    }
+
+    private func clearAgent() {
+        guard agentID != nil else { return }
+        agentID = nil
         lastOutput = ""
         refreshOutput()
+    }
+
+    /// One agent's conversation, in the pane the session's was in.
+    ///
+    /// The same three lines the session's transcript is built from — tail the file, parse it,
+    /// render it — because it is the same kind of file. What is not the same is where the file
+    /// comes from and that there is no terminal fallback: an agent has no screen to scrape, and
+    /// this pane is the only place its work has ever been visible.
+    private func refreshAgentTranscript(for target: TargetSession, agent id: String) {
+        let size = Config.shared.outputSize
+        let newestFirst = Config.shared.outputNewestFirst
+        let folds = expandedFolds
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            guard let file = Subagents.transcript(of: target, agent: id) else {
+                DispatchQueue.main.async { self.setAgentNote(L.t.agentEmpty, for: id, of: target) }
+                return
+            }
+            let signature = "agent-\(id)-" + Transcript.signature(of: file)
+                + "-\(size)-\(newestFirst)-\(folds.sorted().joined(separator: ","))"
+            // `sidechains: true` — an agent's file is nothing but sidechain, which is what the
+            // session's own transcript drops. See `Transcript.parse`.
+            let entries = Transcript.tail(of: file, bytes: 8_000_000)
+                .map { Transcript.parse($0, assistant: .claude, sidechains: true) } ?? []
+            guard !entries.isEmpty else {
+                DispatchQueue.main.async { self.setAgentNote(L.t.agentEmpty, for: id, of: target) }
+                return
+            }
+            let rendered = Transcript.render(entries, size: size, mono: Style.outputFont,
+                                             expanded: folds, newestFirst: newestFirst)
+            DispatchQueue.main.async {
+                // Whoever this was read for may not be who is on screen by the time it lands —
+                // the same race the session's own transcript runs, with one more way to lose it:
+                // the reader can have gone back to the session while this was in flight.
+                guard self.agentID == id, self.currentTarget?.id == target.id,
+                      self.outputOpen, self.stackLog == nil, self.cannedTranscript == nil,
+                      signature != self.lastOutput else { return }
+                self.lastOutput = signature
+                let following = self.outputView.string.isEmpty || self.outputIsAtNewestEdge
+                let clip = self.outputHost.contentView
+                let saved = clip.bounds.origin
+                self.outputView.textStorage?.setAttributedString(rendered)
+                if let tc = self.outputView.textContainer {
+                    self.outputView.layoutManager?.ensureLayout(for: tc)
+                }
+                if following {
+                    self.scrollOutputToNewest()
+                } else {
+                    clip.setBoundsOrigin(saved)
+                    self.outputHost.reflectScrolledClipView(clip)
+                }
+            }
+        }
+    }
+
+    /// An agent whose file has nothing readable in it. Not an error and not an empty pane: the
+    /// first second of every agent's life looks like this, and so does the whole of one that
+    /// died before it wrote anything.
+    private func setAgentNote(_ text: String, for id: String, of target: TargetSession) {
+        guard agentID == id, currentTarget?.id == target.id, outputOpen else { return }
+        let signature = "agent-note-\(id)"
+        guard signature != lastOutput else { return }
+        lastOutput = signature
+        outputView.textStorage?.setAttributedString(NSAttributedString(
+            string: text,
+            attributes: [.font: NSFont.systemFont(ofSize: Config.shared.outputSize),
+                         .foregroundColor: NSColor.secondaryLabelColor]))
     }
 
     /// The log button. No confirmation and no armed state — it is the only one of the three
@@ -2305,24 +2560,15 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// Tabs are links because the pane is a read-only text view — a link is the only thing in it
     /// that can be clicked at all, which is the same reason the transcript's folds are links.
     private func setStackLog(_ text: String, spec: DevStack.Spec) {
-        let header = stackLogHeader ?? {
-            let h = StackLogHeader()
-            h.onBack = { [weak self] in self?.clearStackLog() }
-            h.onTab = { [weak self] value in
-                guard let self, let spec = self.stackLogSpec else { return }
-                self.showStackLog(spec, process: value)
-            }
-            stackLogHeader = h
-            // AppKit's own answer to "stay put while the content scrolls" — correct through
-            // live resize and elastic scrolling in a way that repositioning by hand is not.
-            outputHost.addFloatingSubview(h, for: .vertical)
-            if savedOutputInset == nil { savedOutputInset = outputView.textContainerInset }
-            outputView.textContainerInset = NSSize(
-                width: outputView.textContainerInset.width,
-                height: StackLogHeader.height + 6)
-            return h
-        }()
-
+        let header = floatingHeader()
+        // Set every time rather than once at birth: the same view is handed back and forth
+        // between the log and an agent, and a stale closure here would send the back button to
+        // whichever of the two was in the pane first.
+        header.onBack = { [weak self] in self?.clearStackLog() }
+        header.onTab = { [weak self] value in
+            guard let self, let spec = self.stackLogSpec else { return }
+            self.showStackLog(spec, process: value)
+        }
         header.title = spec.name
         header.titleColor = ProjectIcon.grid(forCwd: spec.root)?.accent ?? .labelColor
         header.backLabel = L.t.stackLogBack
@@ -2330,10 +2576,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         var tabs: [(label: String, value: String?)] = [(L.t.stackLogAll, nil)]
         for p in (stackCache[spec.root]?.processes ?? []) { tabs.append((p.name, p.name)) }
         header.tabs = tabs
-        header.frame = NSRect(x: 0, y: 0, width: outputHost.contentSize.width,
-                              height: StackLogHeader.height)
-        header.needsDisplay = true
-        header.window?.invalidateCursorRects(for: header)
+        layoutFloatingHeader(header)
 
         let body = StackLog.render(text, mono: Style.outputFont,
                                    showNames: stackLogProcess == nil,
@@ -2485,7 +2728,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         guard targets.indices.contains(i) else { return }
         // Fold keys are derived from content, so they would not collide across sessions — but
         // carrying them over means arriving in a new transcript with something already open.
-        if targetIndex != i { expandedFolds.removeAll() }
+        // An agent goes for the stronger reason: it belongs to the session that sent it away,
+        // and carrying one across would put its work under another session's name.
+        if targetIndex != i { expandedFolds.removeAll(); agentID = nil }
         targetIndex = i
         stickyID = targets[i].id
         stickyBase = lastKnownCurrentID
@@ -2856,6 +3101,12 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     }
 
     private func updateTargetLabel() {
+        let assistant = currentTarget?.assistant ?? .claude
+        let placeholder = assistant.promptPlaceholder(from: L.t.placeholder)
+        if textView.placeholder != placeholder {
+            textView.placeholder = placeholder
+            textView.needsDisplay = true
+        }
         iconView?.grid = currentTarget.flatMap { iconCache[$0.id] }
         guard !usingStandInLabel else {
             iconView?.grid = standInRow.map { ProjectIcon.demoGrid(hue: $0.hue) }
@@ -3070,7 +3321,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// tuning layout. This path only paints our own layers, so it needs no permission at all.
     func snapshot(to path: String, routine: String? = nil, at time: Double? = nil, list: String? = nil,
                   output: Bool = false, session: String? = nil, full: Bool? = nil,
-                  transcript: String? = nil) {
+                  transcript: String? = nil, agent: String? = nil) {
         // Opening the pane has to happen before the wait, not inside the render: the transcript
         // arrives asynchronously, so a pane opened at draw time is always drawn empty.
         let arrange = { [weak self] in
@@ -3082,6 +3333,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 self.pick(i, closeList: false)
             }
             if output, !self.outputOpen { self.toggleOutput() }
+            // And one of that session's agents in the pane, named by any part of what it was
+            // asked to do. The pane's second room has no URL of its own and no keystroke — it is
+            // entered by clicking a tab — so without this it could never be photographed.
+            if let want = agent, !want.isEmpty { self.showAgent(matching: want) }
             // A canned transcript, for the pictures on the README. Shooting a real session
             // would publish whatever the machine happened to be working on that afternoon.
             if let file = transcript, !file.isEmpty { self.showCannedTranscript(at: file) }

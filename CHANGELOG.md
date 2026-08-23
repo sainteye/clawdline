@@ -9,6 +9,35 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Following a background agent into its own conversation
+
+The strip that says *three agents are out* was the end of the road: it named them, said what each
+had last reached for, and stopped there. What an agent actually did was on disk the whole time —
+Claude Code writes each one a transcript beside the session's own — and nothing in the app or on
+the page could open it.
+
+- **Every row leads somewhere now.** Click an agent in the composer's strip on the page, or its
+  tab above the ⌘J pane on the Mac, and the pane you are already reading swaps to that agent's
+  conversation: same blocks, same folds, same reading order, because it is the same kind of
+  record. `‹ Session` on the page and `← Session` in the pane come back; so do Escape, ⌘J and a
+  phone's back gesture, one step each.
+- **The session does not close to show it.** It stays open underneath — the row keeps updating,
+  the list keeps its place — and an agent that is still working refreshes while you read it.
+- **The strip is a tree, and it moved.** `main` at the root with a filled dot, a ring per agent
+  under it, the kind of agent in a column of its own; the row you are reading is the lit one. It
+  now sits above the composer rather than inside it, with the live line, so it is still there
+  while an agent is on screen — as a line inside the box it vanished at exactly the moment you
+  were navigating by it.
+- **What it cost, which nothing was showing.** The header above an agent's transcript carries how
+  long it ran, the tokens it drew and how many tools it used. The app has read those numbers since
+  agents first appeared in the strip and had nowhere to put them.
+- **`GET /v1/sessions/:id/agents/:agentId`**, the same shape as `…/transcript` plus the agent's
+  own row. The id is checked before it names a file: anything that is not one of Claude Code's is
+  a `404`, including anything shaped like a path.
+- **Fixed: an agent's transcript read as empty.** Every record in one is marked as a sidechain,
+  which is precisely what the session's own reader drops — so a busy agent came back with nothing
+  at all. `Transcript.parse` now takes which of the two files it is reading.
+
 ### Codex sessions, in the same list
 
 `isClaude` was a boolean for as long as there was only one thing it could be about. Codex draws a

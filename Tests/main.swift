@@ -244,6 +244,45 @@ group("the slash menu discovers the skills Claude Code keeps on disk") {
            ClaudeSkills.matching(found, query: "summarizes").map(\.command), ["recap"])
 }
 
+group("the slash menu reads the exact skills a Codex session started with") {
+    let instructions = """
+    <skills_instructions>
+    ### Available skills
+    - openai-docs: Read official OpenAI documentation. (file: /Users/me/.codex/skills/.system/openai-docs/SKILL.md)
+    - chrome:control-chrome: Control Chrome for local testing. (file: /Users/me/.codex/plugins/cache/chrome/skills/control-chrome/SKILL.md)
+    - deploy: Deploy this repository safely. (file: /work/repo/.agents/skills/deploy/SKILL.md)
+    </skills_instructions>
+    """
+    let parsed = CodexSkills.parse(instructions)
+    expect("Codex names, including plugin namespaces, are preserved",
+           parsed.map(\.command), ["openai-docs", "chrome:control-chrome", "deploy"])
+    expect("the rollout's locator never becomes part of the visible description",
+           parsed.map(\.description), ["Read official OpenAI documentation.",
+                                       "Control Chrome for local testing.",
+                                       "Deploy this repository safely."])
+    expect("Codex skill scopes come from the catalog it was given",
+           parsed.map(\.source), [.system, .plugin, .project])
+
+    let base = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-codex-skills-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: base) }
+    try! FileManager.default.createDirectory(at: base.deletingLastPathComponent(),
+                                             withIntermediateDirectories: true)
+    let payload: [String: Any] = ["payload": ["role": "developer", "content": instructions]]
+    try! JSONSerialization.data(withJSONObject: payload).write(to: base)
+    expect("the rollout reader finds that catalog without reading the conversation body",
+           CodexSkills.available(in: base), parsed)
+}
+
+group("the prompt names the assistant on the other end") {
+    expect("a Codex target changes the Traditional Chinese placeholder",
+           Assistant.codex.promptPlaceholder(from: "跟 Claude 說⋯⋯"), "跟 Codex 說⋯⋯")
+    expect("Claude keeps its translated placeholder",
+           Assistant.claude.promptPlaceholder(from: "Message Claude Code…"), "Message Claude Code…")
+    expect("skills are completed with each assistant's real invocation",
+           [Assistant.claude.skillInvocationPrefix, Assistant.codex.skillInvocationPrefix], ["/", "$"])
+}
+
 // MARK: - Keyframe sampling
 
 group("routine sampling interpolates and steps") {
@@ -4029,6 +4068,32 @@ group("what a background agent is doing right now") {
                                                                             atomically: true,
                                                                             encoding: .utf8)
     check("an agent that has not used a tool says nothing", Subagents.doing(in: fresh) == nil)
+}
+
+group("following an agent to its own transcript") {
+    // The id in `/v1/sessions/<id>/agents/<agentId>` and in the pane's own tabs is about to
+    // become a path component, so it is checked rather than trusted. Everything Claude Code
+    // writes is hex; everything that could leave the directory is not.
+    check("an ordinary id is one", Subagents.isID("a44b12139eff09dd4"))
+    check("and so is a dashed one", Subagents.isID("a42cc4cf-998a-3ae3"))
+    check("nothing is not", !Subagents.isID(""))
+    check("a parent directory is refused", !Subagents.isID(".."))
+    check("a path is refused", !Subagents.isID("../../../etc/passwd"))
+    check("a dot is enough to refuse", !Subagents.isID("agent.jsonl"))
+    check("a separator is refused", !Subagents.isID("a1/a2"))
+    check("and a name nobody could have written is refused",
+          !Subagents.isID(String(repeating: "a", count: 200)))
+
+    // **Every row in an agent's file is marked as a sidechain** — that is what an agent is, from
+    // the session's point of view — and a sidechain is exactly what the session's own transcript
+    // drops. Read with the session's rule, a busy agent reads as one that has written nothing.
+    let row = #"{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"had a look, nothing in the logs"}]}}"#
+    expect("a session's transcript drops sidechains",
+           Transcript.parse(row, assistant: .claude).count, 0)
+    let asAgent = Transcript.parse(row, assistant: .claude, sidechains: true)
+    expect("an agent's own transcript is nothing else", asAgent.count, 1)
+    expect("and it reads as what the agent said",
+           asAgent.first?.text, "had a look, nothing in the logs")
 }
 
 // MARK: - Codex

@@ -199,6 +199,22 @@ final class Config {
     /// An escape hatch for a Finder-launched app whose running Codex process cannot yield its
     /// executable path. Blank means use that process first, then the usual install locations.
     var codexPath = ""
+    /// Let a root session ask this app to open child sessions and brief them. See
+    /// Sources/Orchestrator.swift and docs/orchestrator.md.
+    ///
+    /// On by default, and that is defensible where `remote` being off is not: dispatching already
+    /// requires a credential that only a local process can read — the 0600 token file — so this
+    /// switch is a preference, not the boundary. Off refuses dispatch outright while leaving the
+    /// task records readable.
+    var orchestratorEnabled = true
+    /// How many child sessions may be alive at once.
+    ///
+    /// The cap is most of the safety story: a runaway root, a retry loop, or a child that found a
+    /// way to dispatch cannot open terminals past this number, whatever else goes wrong.
+    var orchestratorMaxChildren = 3
+    /// Type one line into the root session when a task it dispatched finishes, so the
+    /// conversation that asked for the work is the one that hears it is done.
+    var orchestratorNotifyRoot = true
     /// Where the project status files are read from, and where the icon registry lives.
     ///
     /// Both default to what claude-bestiary writes, because that is what most people reading this
@@ -250,6 +266,11 @@ final class Config {
             codexAutoNameModel = v
         }
         if let v = obj["codex_path"] as? String { codexPath = v }
+        if let v = obj["orchestrator_enabled"] as? Bool { orchestratorEnabled = v }
+        if let v = obj["orchestrator_max_children"] as? Int, v >= 1, v <= 10 {
+            orchestratorMaxChildren = v
+        }
+        if let v = obj["orchestrator_notify_root"] as? Bool { orchestratorNotifyRoot = v }
         if let v = obj["status_dir"] as? String { statusDir = v }
         if let v = obj["icons_file"] as? String { iconsFile = v }
         if let v = obj["output_height"] as? Double, v >= 80, v <= 900 { outputHeight = CGFloat(v) }
@@ -301,6 +322,9 @@ final class Config {
             "codex_auto_name": codexAutoName,
             "codex_auto_name_model": codexAutoNameModel,
             "codex_path": codexPath,
+            "orchestrator_enabled": orchestratorEnabled,
+            "orchestrator_max_children": orchestratorMaxChildren,
+            "orchestrator_notify_root": orchestratorNotifyRoot,
             "status_dir": statusDir,
             "icons_file": iconsFile,
             "output_height": Double(outputHeight),

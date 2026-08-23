@@ -79,6 +79,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/sessions` | token | `read` |
 | `GET` | `/v1/sessions/:id` | token | `read` |
 | `GET` | `/v1/sessions/:id/transcript` | token | `read` |
+| `GET` | `/v1/sessions/:id/agents/:agentId` | token | `read` |
 | `GET` | `/v1/sessions/:id/links` | token | `read` |
 | `GET` | `/v1/sessions/:id/skills` | token | `read` |
 | `GET` | `/v1/projects` | token | `read` |
@@ -95,6 +96,11 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/auth/password` | — | — |
 | `POST` | `/v1/auth/adopt` | a token in the body | — |
 | `POST` | `/v1/auth/logout` | — | — |
+| `POST` | `/v1/orchestrator/tasks` | orchestrator token | — |
+| `GET` | `/v1/orchestrator/tasks` | orchestrator token, **or** token | `read` |
+| `GET` | `/v1/orchestrator/tasks/:id` | orchestrator token, **or** token | `read` |
+| `POST` | `/v1/orchestrator/tasks/:id/complete` | that task's secret | — |
+| `POST` | `/v1/orchestrator/tasks/:id/cancel` | orchestrator token, **or** token + key | `send` **and** the write switch |
 | `GET` | `/`, `/index.html`, `/manifest.webmanifest` | — | — |
 | `GET` | `/favicon.ico`, `/icon-<size>.png` | — | — |
 
@@ -103,6 +109,16 @@ Settings → Remote → **Let paired devices type**, and taken back from all of 
 no per-device grant. `admin` is defined, and the local `This Mac` device holds it, and **no route
 requires it today**; it is there so that adding one later does not mean handing out a capability
 nobody asked for.
+
+**The `/v1/orchestrator/*` rows name two credentials that are not device tokens, and neither is a
+capability.** The *orchestrator token* is `~/.config/clawdline/orchestrator-token`, mode `0600`,
+minted alongside the one above and **never served over HTTP** — it proves "a process running as
+this user on this Mac", which is a different claim from "a device somebody paired", and it is the
+only thing that may dispatch. No device token dispatches: not with `send`, not with `admin`, not
+over a tunnel. The *task secret* is narrower still — one task, made by whoever dispatched it, and
+the only thing it can do is report that task finished. What each one can and cannot do is
+[`docs/orchestrator.md`](orchestrator.md#what-it-costs-before-anything-else); this page is the
+wire.
 
 ### `GET /v1/health`
 
@@ -197,6 +213,37 @@ meaning into either half.
 back with `200`, because a session that has not spoken yet and a session that could not be found are
 different things and only the second is a `404`. A shell that is not running an assistant answers
 the same way, and so does a session whose record could not be matched to it.
+
+### `GET /v1/sessions/:id/agents/:agentId?limit=200`
+
+One of that session's background agents: the row `GET /v1/sessions` already showed for it, and the
+conversation behind that row.
+
+An agent has no screen. Claude Code gives each one its own transcript beside the session's —
+`~/.claude/projects/…/<session>/subagents/agent-<id>.jsonl` — and nothing else in this API can
+reach it, which is why the session list can say *three agents are out* and could never say what
+any of them did.
+
+```console
+$ curl -s "http://127.0.0.1:7717/v1/sessions/1FECB67D-9344-4728-8F09-5844C3BE658E/agents/a44b12139eff09dd4?limit=1" \
+    -H "Authorization: Bearer $TOKEN"
+{"agent":{"id":"a44b12139eff09dd4","what":"Map the web page sections","type":"general-purpose",
+          "state":"done","depth":1,"at":1787510342,"tokens":80649,"tools":9,"seconds":70.5},
+ "signature":"24101-1787510342",
+ "entries":[{"role":"assistant","text":"…","at":1787510342}]}
+```
+
+`entries` and `signature` are exactly what `…/transcript` returns and mean the same things —
+same shape, same `limit`, same "ask again only if the signature moved".
+
+`agent` is the same object the session carries in its own `agents` array, so a client that
+followed a link has the description, the state and the cost without a second request. It is
+**absent** when the agent's files are on disk but it has dropped out of the session's list —
+about half an hour after it last wrote anything. The transcript still reads.
+
+**Claude Code only.** A Codex session has no `subagents` directory, so every agent id under one
+is a `404` — the same answer as an id that was never this session's, and as an id shaped like a
+path. The id is checked before it is used to name a file.
 
 ### `GET /v1/projects`
 
@@ -537,6 +584,185 @@ idempotent either. Each is its own kind of one-shot: a retried pairing is a new 
 code on the Mac's screen, and there is no request here whose repeat could quietly do something
 twice.
 
+### `POST /v1/orchestrator/tasks`
+
+**Dispatch.** One session asks for a task to be run by another one: Clawdline opens a terminal tab
+in the task's directory, starts the assistant the task named, types a first message into it, and
+watches for the answer. The concept, the trust model and the file formats are
+[`docs/orchestrator.md`](orchestrator.md); what follows is the request.
+
+The body is two fields and neither of them is the work:
+
+```console
+$ TASK=$(uuidgen | tr 'A-Z' 'a-z'); SECRET=$(openssl rand -hex 32)
+$ umask 077; mkdir -p /tmp/.clawdline/$TASK/artifacts   # …and write task.json into it
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
+    -H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)" \
+    -H 'Content-Type: application/json' \
+    -d "{\"task_id\":\"$TASK\",\"secret\":\"$SECRET\"}"
+{"ok":true,"task":{"id":"3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","state":"spawning","kind":"image","title":"Project portrait","assistant":"codex","projectDir":"/Users/you/code/clawdline","created":1787100000,"spawnedAt":1787100002,"dir":"/tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","root":{"sessionId":"841cbb8d-58b1-4765-9a71-bcdba19bcfef","label":"clawdline main"},"child":{"terminalId":"9A1F…","backend":"iterm"}}}
+```
+
+*(Example. The orchestrator routes are newer than the server this page's other transcripts were run
+against, so the replies in this section are written to the contract rather than pasted out of a
+run. The shapes are the contract either way.)*
+
+**The instructions are in a file, not in this body.** `/tmp/.clawdline/<task_id>/task.json` is
+written by the caller before it asks, `0700` on the directory, and the server reads and validates it
+at dispatch — the [schema is over there](orchestrator.md#taskjson--written-by-the-root-before-it-asks-for-anything).
+The `task_id` has to be the same string in three places: the directory name, the file, and this
+body. Two of them agreeing is not enough, because the interesting failure is a body pointing at
+somebody else's directory.
+
+Auth is the header and only the header:
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks -d '{"task_id":"…","secret":"…"}'
+{"error":{"code":"forbidden","message":"Dispatching needs the orchestrator token.","request_id":"c1e0b7a4-2f5d-4a19-8b0e-71c93d5ea882"}}
+```
+
+`403` rather than `401`, and the difference is not cosmetic: `401 unauthorized` is this server's
+answer to *no paired device*, and pairing a device would not help here. This route is not reachable
+with a device token at all. It is also **not behind the write switch** and takes **no
+`Idempotency-Key`** — two exceptions with one reason between them. The write switch is a decision
+about what *paired devices* may do, and the orchestrator token is not a device; and idempotency is
+already carried by `task_id`, which is the caller's own identifier for the work rather than a
+per-attempt header. Send the same `task_id` twice and the second call answers `200` with the
+existing record, having opened nothing.
+
+Six refusals, and a client should branch on all of them:
+
+| `code` | status | |
+|---|---|---|
+| `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
+| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range. `message` names the field |
+| `depth_exceeded` | 409 | **the caller is itself a child.** A task registered under a session or tty that is currently running somebody's task cannot register another one. Not a retry — stop |
+| `over_capacity` | 429 | `orchestrator_max_children` are already running. The error object carries `retry_after` in seconds |
+| `rate_limited` | 429 | more than ten dispatches in ten minutes |
+| `not_found` | 404 | this build has no orchestrator |
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
+    -H "X-Clawdline-Orchestrator: $ORCH" -d "{\"task_id\":\"$TASK\",\"secret\":\"$SECRET\"}"
+{"error":{"code":"over_capacity","retry_after":60,"message":"Three child sessions are already running. Wait for one to finish.","request_id":"7b2c19d0-6e44-4a2f-9c31-0d5e8ab41f77"}}
+```
+
+A `200` means *registered and being opened*, not *running*. `state` is `queued` or `spawning` when
+this answers and the child has typed nothing yet; watch the record, or wait to be told.
+
+### `GET /v1/orchestrator/tasks`, `GET /v1/orchestrator/tasks/:id`
+
+Every task this Mac knows about, newest first, capped at the most recent 200 records — or one of
+them alone under `task`. `404 not_found` for an id that was never registered or has been cleaned up.
+
+```console
+$ curl -s http://127.0.0.1:7717/v1/orchestrator/tasks \
+    -H "X-Clawdline-Orchestrator: $ORCH" | jq '[.tasks[] | {id, state, title, assistant}]'
+[
+  {"id":"3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","state":"briefed","title":"Project portrait","assistant":"codex"},
+  {"id":"a70c5e11-3b28-4d6f-8e10-2c94b7f0d3aa","state":"success","title":"Run the suite","assistant":"claude"}
+]
+```
+
+**Reading is the one thing a paired device may do here.** Send the orchestrator header and it is
+used; leave it off and the request falls through to the ordinary token check, so a phone with `read`
+sees the same list. That is deliberate — the list is what a session is doing and where, which is the
+same class of thing `/v1/sessions` already discloses to a paired device, and a dashboard that could
+not show the child rows would be showing a lie about what this Mac is busy with.
+
+The record:
+
+```jsonc
+{
+  "id": "3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234",
+  "state": "briefed",           // queued | spawning | briefed | success | failure
+                                // | timeout | cancelled | spawn_failed
+  "kind": "image",              // image | code-review | test | custom
+  "title": "Project portrait",
+  "assistant": "codex",
+  "projectDir": "/Users/you/code/clawdline",
+  "created": 1787100000,        // integer unix seconds, like every time in this API
+  "spawnedAt": 1787100002,      // absent until a tab exists
+  "briefedAt": 1787100014,      // absent until the first message landed
+  "finishedAt": null,
+  "dir": "/tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234",
+  "root":  {"sessionId": "841cbb8d-…", "label": "clawdline main", "terminalId": "27439AEE-…"},
+  "child": {"terminalId": "9A1F…", "backend": "iterm", "sessionId": "0f2b91ac-…"},
+  "summary": "…",               // finished tasks; the child's own sentence
+  "artifacts": ["artifacts/project-portrait.svg"],
+  "usage": {"input": 48210, "output": 9330, "cacheRead": 412880, "cacheWrite": 31200,
+            "total": 501620, "model": "claude-sonnet-4-5", "costUsd": 0.4243}
+}
+```
+
+**The secret is not in here and never will be** — the app keeps its SHA-256 and nothing else, so
+there is no shape of this reply that could disclose it.
+
+`child.terminalId` is in the same space as every `id` in `/v1/sessions`, which is what makes the
+child row in a session list joinable to the task that opened it. `root.terminalId` is resolved live
+from the root's session id and is absent when that session has gone. `usage` appears at finalize and
+is best-effort: `costUsd` is `null` for any model without a published per-token price, which is
+every OpenAI one, since Codex bills against a plan. Tokens are still counted. Null fields are
+omitted the way they are everywhere else on this API — read by name, and treat absent as unknown.
+
+The same payload goes out on [the event stream](#the-event-stream) as an `orchestrator` frame
+whenever any record changes, and once when a stream opens, right after `hello` and `sessions`.
+
+### `POST /v1/orchestrator/tasks/:id/complete`
+
+How a child says it is done, if it would rather not write a file. Auth is that task's secret, in a
+header or in the body, compared in constant time against the stored hash:
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/complete \
+    -H "X-Clawdline-Task-Secret: $SECRET" -H 'Content-Type: application/json' \
+    -d '{"status":"success","summary":"Wrote a 1024×1024 SVG portrait; no raster."}'
+{"ok":true}
+```
+
+**This route is optional and the file is not.** Writing `/tmp/.clawdline/<id>/result.json` — with
+the same secret inside it — is the completion signal, and the app finds it whether or not anything
+was posted. A child in a sandbox with no outbound network finishes correctly; this exists for one
+that would rather not wonder how often the directory is being read. When a task is finalized this
+way the app still opens `result.json` if it is there, for the artifact list.
+
+| `code` | status | |
+|---|---|---|
+| `forbidden` | 403 | wrong secret. The same answer for an id that exists with a different secret and for one nobody could guess |
+| `not_found` | 404 | no task with that id |
+| `already_done` | 409 | that task already reached a terminal state. **A retry is not idempotent here** — the first report wins, and the second is told so rather than quietly overwriting a summary somebody has already read |
+| `bad_request` | 400 | `status` is not `success` or `failure` |
+
+No `Idempotency-Key`: `already_done` is the honest answer to a repeat, and a stored-reply header
+would turn "you are too late" into a silent success.
+
+### `POST /v1/orchestrator/tasks/:id/cancel`
+
+Stop it. The task goes to `cancelled` and the child's terminal is ended the polite way
+[`/v1/sessions/:id/end`](#post-v1sessionsidend) does it — the assistant is asked to leave through its
+own word, then the tab closes. A task that is already finished answers `200` with its record
+unchanged; there is nothing to cancel and nothing went wrong.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/cancel \
+    -H "X-Clawdline-Orchestrator: $ORCH"
+{"ok":true,"task":{"id":"3f9a21bc-…","state":"cancelled","finishedAt":1787101880, …}}
+```
+
+**Two doors, and they are gated differently.** With the orchestrator token this is the same local
+credential that opened the task and it needs nothing else. From a paired device it is a write like
+any other and goes through [all three gates](#writing-three-gates-in-this-order) — the write switch,
+the `send` capability, and an `Idempotency-Key`:
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/cancel \
+    -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: e41b0a77-92cd' -d '{}'
+{"error":{"code":"write_disabled","message":"Sending is switched off. Settings → Remote turns it on, and it is off by default because typing into a session runs code on this Mac.","request_id":"1a9f7b3c-0d52-4e88-b6a1-3f7c25d09e14"}}
+```
+
+A device may stop work; it may not start any. That asymmetry is the whole shape of this feature's
+authorization, and cancel is where it is easiest to see.
+
 ### `GET /`, and the things a browser asks for on its own
 
 The web interface, which ships inside the app rather than being fetched from anywhere.
@@ -680,7 +906,11 @@ it draws them, and that is a drawing decision which does not travel over the wir
 | `not_found` | 404 | no such session, no such place, or no such route |
 | `terminal_closed` | 409 | the terminal a session would start in is not running |
 | `terminal_unsupported` | 409 | the terminal in Settings is not one a session can be started in |
+| `depth_exceeded` | 409 | a Clawdline child session tried to dispatch a task of its own |
+| `already_done` | 409 | that task has already reported; the first report wins |
+| `bad_task` | 422 | a `task.json` that is missing, unparseable, or out of range. `message` names the field |
 | `rate_limited` | 429 | too many pairing attempts |
+| `over_capacity` | 429 | as many child sessions are running as `orchestrator_max_children` allows. `retry_after` is seconds. (`rate_limited` covers the other orchestrator limit: ten dispatches in ten minutes) |
 | `internal` | 500, 502 | a tab that would not open; a terminal that would not take the text |
 
 A client that has handled one of these has handled all of them. Branch on `code` — the status is

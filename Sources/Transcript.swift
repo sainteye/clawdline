@@ -48,9 +48,17 @@ enum Transcript {
     }
 
     /// A record as entries, whoever wrote it.
-    static func parse(_ jsonl: String, assistant: Assistant, limit: Int = 400) -> [Entry] {
+    ///
+    /// **`sidechains` is what tells the two kinds of Claude file apart.** A session's own
+    /// transcript carries its agents' turns inline, marked as sidechains, and those are not what
+    /// anybody opened the session to read — so they are dropped. An *agent's* transcript is
+    /// nothing but sidechain: every row in it is marked, because from the session's point of
+    /// view that is exactly what it is. Reading one with the session's rule leaves a pane
+    /// reporting that a busy agent has written nothing at all.
+    static func parse(_ jsonl: String, assistant: Assistant, limit: Int = 400,
+                      sidechains: Bool = false) -> [Entry] {
         switch assistant {
-        case .claude: return parse(jsonl, limit: limit)
+        case .claude: return parse(jsonl, limit: limit, sidechains: sidechains)
         case .codex:  return Codex.parse(jsonl, limit: limit)
         }
     }
@@ -294,13 +302,15 @@ enum Transcript {
     /// anyway. Lines that are skipped — sidechains, bookkeeping — still cost their own parse, so
     /// the worst case is what this used to cost every time and the ordinary case is a few
     /// hundred lines.
-    static func parse(_ jsonl: String, limit: Int = 400) -> [Entry] {
+    static func parse(_ jsonl: String, limit: Int = 400, sidechains: Bool = false) -> [Entry] {
         var newestFirst: [Entry] = []
 
         forEachLineFromEnd(jsonl) { line in
             // Each row is appended newest-block-first so the whole buffer stays in one order,
             // and is turned back the right way round once.
-            for entry in entries(inRow: line).reversed() { newestFirst.append(entry) }
+            for entry in entries(inRow: line, sidechains: sidechains).reversed() {
+                newestFirst.append(entry)
+            }
             return newestFirst.count < limit
         }
         return Array(newestFirst.reversed().suffix(limit))
@@ -336,7 +346,7 @@ enum Transcript {
 
     /// The entries one JSONL row yields, in the order they were written. Empty for anything
     /// that is not a message worth reading.
-    private static func entries(inRow line: Substring) -> [Entry] {
+    private static func entries(inRow line: Substring, sidechains: Bool = false) -> [Entry] {
         guard let data = line.data(using: .utf8),
               let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return [] }
@@ -344,8 +354,9 @@ enum Transcript {
         let type = row["type"] as? String
         guard type == "user" || type == "assistant" else { return [] }
         // Sidechains are subagents talking among themselves, and meta records are
-        // bookkeeping. Neither is the conversation you opened the pane to read.
-        if row["isSidechain"] as? Bool == true { return [] }
+        // bookkeeping. Neither is the conversation you opened the pane to read — unless the
+        // conversation you opened *is* an agent's, in which case sidechain is all there is.
+        if !sidechains, row["isSidechain"] as? Bool == true { return [] }
         if row["isMeta"] as? Bool == true { return [] }
 
         let time = (row["timestamp"] as? String).flatMap { iso.date(from: $0) }

@@ -106,9 +106,9 @@ enum Subagents {
     /// transcript lookup and a single `stat` that fails. Only a session that has actually sent
     /// work out ever reads a file.
     static func agents(of session: TargetSession) -> [Agent] {
-        guard let transcript = transcript(of: session) else { return [] }
-        let folder = transcript.deletingPathExtension().appendingPathComponent("subagents",
-                                                                               isDirectory: true)
+        guard let transcript = transcript(of: session), let folder = folder(of: session) else {
+            return []
+        }
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { return [] }
 
@@ -175,6 +175,40 @@ enum Subagents {
             return a.at > b.at
         }
         return Array(agents.prefix(shown))
+    }
+
+    // MARK: - One agent, on its own
+
+    /// Where a session keeps its agents' files, whether or not any are in there.
+    private static func folder(of session: TargetSession) -> URL? {
+        transcript(of: session).map {
+            $0.deletingPathExtension().appendingPathComponent("subagents", isDirectory: true)
+        }
+    }
+
+    /// The transcript one agent wrote, if it is one of this session's.
+    ///
+    /// This is what "click through to the agent" reads. An agent's conversation is in the same
+    /// format as the session's own — same records, same ``Transcript`` parser — so there is
+    /// nothing here but finding the file: the difference between the two panes is which path
+    /// they were pointed at.
+    ///
+    /// **The id is checked rather than trusted.** It arrives from a URL — the web route's path
+    /// and the pane's own links both carry one — and is about to become a path component. An
+    /// id Claude Code wrote is hex; anything with a dot or a slash in it is somebody asking for
+    /// a file somewhere else on the disk, and the answer to that is nothing at all.
+    static func transcript(of session: TargetSession, agent id: String) -> URL? {
+        guard isID(id), let folder = folder(of: session) else { return nil }
+        let file = folder.appendingPathComponent("agent-\(id).jsonl")
+        return FileManager.default.fileExists(atPath: file.path) ? file : nil
+    }
+
+    /// Whether a string could be one of Claude Code's agent ids. Deliberately narrower than
+    /// "does not escape the directory": a name that cannot be an id is not worth a `stat`.
+    static func isID(_ id: String) -> Bool {
+        !id.isEmpty && id.count <= 128 && id.allSatisfy {
+            $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_")
+        }
     }
 
     // MARK: - Where a session's transcript is
