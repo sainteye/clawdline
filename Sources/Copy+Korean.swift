@@ -56,6 +56,7 @@ struct Korean: Copy {
     func stackTip(up: Int, total: Int) -> String { "서버 \(total)개 중 \(up)개 실행 중 — ⌘S로 목록 보기" }
     let stackTipUnknown = "이 프로젝트에는 서버가 있지만 status 명령이 아직 신뢰되지 않았습니다 — ⌘S"
     let stackUntrusted = "미승인"
+    let stackExit = "종료 코드"
     let stackActionStart = "시작"
     let stackActionRestart = "재시작"
     let stackActionStop = "중지"
@@ -66,6 +67,7 @@ struct Korean: Copy {
     let stackActionAgain = "다시 누르기"
     func sessionTip(index: Int, total: Int) -> String { "\(total)개 중 \(index)번째 세션 — ⌘K로 전환" }
     let sessionWaiting = "답변 대기 중"
+    let sessionAgents = "백그라운드에 {n}개"
     let islandDone = "완료"
     let islandAllSessions = "모든 세션…"
     func statusWaiting(_ labels: [String]) -> String {
@@ -330,6 +332,13 @@ struct Korean: Copy {
     let webWaitingTitle = "이 세션이 답을 기다리고 있습니다"
     let webWaitingSay = "Claude Code가 Mac에 메뉴를 띄우고 있습니다. Clawdline은 아직 여기서 메뉴를 읽지 못해서, 고를 것들은 그 화면에만 있습니다."
     let webWaitingSend = "*여기서 보내도 답이 메뉴에 입력되지 않습니다* — 메뉴에서 지금 선택되어 있는 항목을 그대로 확정할 뿐이고, 그건 대개 뜻한 것이 아닙니다. 이건 Mac에서 답하세요."
+    let webMenuSay = "답을 누르면 그대로 세션으로 갑니다."
+    let webMenuHighlighted = "선택됨"
+    let webMenuSent = "답을 보냈습니다."
+    let webAgents = "백그라운드 에이전트"
+    let webAgentsCount = "{n}개 실행 중"
+    let webAgentDone = "완료"
+    let webAgentFailed = "실패"
     let webStale = "Mac에서 Clawdline을 다시 빌드했습니다. 이 페이지는 그 전 것입니다."
     let webStaleGo = "새로고침"
 

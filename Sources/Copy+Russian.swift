@@ -58,6 +58,7 @@ struct Russian: Copy {
     func stackTip(up: Int, total: Int) -> String { "Запущено \(up) из \(total) серверов — ⌘S для списка" }
     let stackTipUnknown = "У проекта есть серверы, но его команда состояния ещё не доверена — ⌘S"
     let stackUntrusted = "не доверено"
+    let stackExit = "код выхода"
     let stackActionStart = "запустить"
     let stackActionRestart = "перезапуск"
     let stackActionStop = "остановить"
@@ -68,6 +69,7 @@ struct Russian: Copy {
     let stackActionAgain = "ещё раз"
     func sessionTip(index: Int, total: Int) -> String { "Сессия \(index) из \(total) — ⌘K для переключения" }
     let sessionWaiting = "ждёт вашего ответа"
+    let sessionAgents = "{n} в фоне"
     let islandDone = "готово"
     let islandAllSessions = "Все сессии…"
     func statusWaiting(_ labels: [String]) -> String {
@@ -332,6 +334,13 @@ struct Russian: Copy {
     let webWaitingTitle = "Эта сессия ждёт ответа"
     let webWaitingSay = "Claude Code показывает меню на Mac. Clawdline пока не умеет читать меню отсюда, так что варианты есть только на том экране."
     let webWaitingSend = "*Отправка отсюда не впечатает ваш ответ в меню* — она подтвердит тот пункт, который в меню сейчас подсвечен, а это редко тот, что вы имели в виду. На этот вопрос ответьте на Mac."
+    let webMenuSay = "Нажмите на ответ — он уйдёт прямо в сессию."
+    let webMenuHighlighted = "выделен"
+    let webMenuSent = "Ответ отправлен."
+    let webAgents = "Фоновые агенты"
+    let webAgentsCount = "{n} работают"
+    let webAgentDone = "готово"
+    let webAgentFailed = "не удалось"
     let webStale = "Clawdline на Mac пересобрали. Эта страница осталась от прежней сборки."
     let webStaleGo = "Перезагрузить"
 

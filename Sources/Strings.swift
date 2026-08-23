@@ -77,6 +77,14 @@ protocol Copy {
     /// looking for an outage that did not exist. Untrusted is not a health state; it must not
     /// look like one.
     var stackUntrusted: String { get }
+    /// The word before an exit code — "exit 127".
+    ///
+    /// Only ever shown for a process that died with **nothing else to say**. When it left a
+    /// message, the message leads and the number goes in the hover: "bash: npm: command not
+    /// found" is the sentence a person can act on, and "exit 127" is the same fact written for a
+    /// log. But a process that exits silently — the ones waiting on a build that never finished
+    /// do exactly that — has only the number, and a bare ✗ beside a name explains nothing at all.
+    var stackExit: String { get }
     /// The words on a row's action button.
     ///
     /// **A row must not be an invisible button.** The first version made the whole row pressable
@@ -108,6 +116,10 @@ protocol Copy {
     /// its own is the wrong word: everything in that list is waiting for something. This one is
     /// waiting for *you*, and that is the whole of what the row has to get across.
     var sessionWaiting: String { get }
+
+    /// How many agents a session has working in the background, `{n}` for the number. The bar's
+    /// version of ``webAgentsCount``, said in the one place the bar has room for it.
+    var sessionAgents: String { get }
     /// What the island says when a session that had been running stops.
     ///
     /// **One word.** It is drawn in small capitals above a task name in a strip about as wide as
@@ -538,6 +550,27 @@ protocol Copy {
     var webWaitingTitle: String { get }
     var webWaitingSay: String { get }
     var webWaitingSend: String { get }
+
+    // The same menu, once it can be read — which is now the ordinary case rather than the
+    // hoped-for one. `webWaitingSay` and `webWaitingSend` above are what is said when it cannot
+    // be, and they are still reachable: a dialog drawn in a shape the parser does not recognise
+    // is a screen this end has to be honest about rather than guess at.
+    //
+    // `webMenuHighlighted` marks the row the caret is parked on. It is the one thing a person
+    // cannot see from a phone and needs to know before they tap: it is what a bare Return over
+    // on the Mac would confirm, so it is also what somebody else in front of that screen is
+    // about to answer.
+    var webMenuSay: String { get }
+    var webMenuHighlighted: String { get }
+    var webMenuSent: String { get }
+
+    // The agents a session sent off to work — see ``Subagents``. Deliberately quiet words:
+    // background work is context for why a session is busy, never a thing that wants somebody,
+    // and it must not read as loudly as a session that is actually waiting.
+    var webAgents: String { get }
+    var webAgentsCount: String { get }
+    var webAgentDone: String { get }
+    var webAgentFailed: String { get }
     /// A page that has been open since before the Mac was rebuilt. It does not reload itself —
     /// somebody may be mid-sentence in the composer.
     var webStale: String { get }

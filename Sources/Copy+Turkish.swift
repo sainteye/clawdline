@@ -58,6 +58,7 @@ struct Turkish: Copy {
     func stackTip(up: Int, total: Int) -> String { "\(total) sunucudan \(up) tanesi çalışıyor — liste için ⌘S" }
     let stackTipUnknown = "Bu projenin sunucuları var ama durum komutu henüz güvenilir değil — ⌘S"
     let stackUntrusted = "onaylanmadı"
+    let stackExit = "çıkış"
     let stackActionStart = "başlat"
     let stackActionRestart = "yeniden başlat"
     let stackActionStop = "durdur"
@@ -68,6 +69,7 @@ struct Turkish: Copy {
     let stackActionAgain = "tekrar bas"
     func sessionTip(index: Int, total: Int) -> String { "\(total) oturumdan \(index). — değiştirmek için ⌘K" }
     let sessionWaiting = "yanıtını bekliyor"
+    let sessionAgents = "arka planda {n}"
     let islandDone = "bitti"
     let islandAllSessions = "Tüm oturumlar…"
     func statusWaiting(_ labels: [String]) -> String {
@@ -332,6 +334,13 @@ struct Turkish: Copy {
     let webWaitingTitle = "Bu oturum yanıt bekliyor"
     let webWaitingSay = "Claude Code Mac'te bir menü gösteriyor. Clawdline buradan bir menüyü henüz okuyamıyor, seçenekler yalnızca o ekranda."
     let webWaitingSend = "*Buradan göndermek yanıtını menüye yazmaz* — menüde o an hangi satır seçiliyse onu onaylar, o da nadiren senin kastettiğindir. Bunu Mac'te yanıtla."
+    let webMenuSay = "Bir yanıta dokun, doğrudan oturuma gider."
+    let webMenuHighlighted = "seçili"
+    let webMenuSent = "Yanıt gönderildi."
+    let webAgents = "Arka plandaki ajanlar"
+    let webAgentsCount = "{n} çalışıyor"
+    let webAgentDone = "bitti"
+    let webAgentFailed = "başarısız"
     let webStale = "Clawdline Mac'te yeniden derlendi. Bu sayfa eski olanı."
     let webStaleGo = "Yeniden yükle"
 

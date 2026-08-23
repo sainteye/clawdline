@@ -2174,6 +2174,103 @@ group("devstack: a state document missing its verdict still lights the dot") {
     expect("derived from the processes", s?.state, "partial")
 }
 
+group("devstack: the line worth showing out of a process's dying words") {
+    // Every fixture here is real. These are the shapes three projects on this machine handed
+    // back on the morning the row was found to be unreadable — one of them a JSON envelope, one
+    // a success message under a red mark, one a tail that stopped in the middle of a brace.
+
+    // Sixty characters of bookkeeping in front of the answer. Cut at seventy, as the row used
+    // to, and it stopped two characters into the part that meant anything.
+    let wrapped = DevStack.parseState(Data(#"""
+    {"processes": [{"name": "build-web", "state": "exited", "exit_code": 127,
+      "error": "{\"level\":\"error\",\"process\":\"build-web\",\"replica\":0,\"message\":\"bash: npm: command not found\"}"}]}
+    """#.utf8))
+    expect("the sentence, not the envelope around it",
+           wrapped?.processes.first?.reason, "bash: npm: command not found")
+
+    // A web server prints request logs until the moment it dies, so the last line of the tail is
+    // routinely a success. Offering that as the explanation for a crash is worse than silence.
+    let noisy = DevStack.parseState(Data(#"""
+    {"processes": [{"name": "api", "state": "exited", "exit_code": 1,
+      "error": "{\"level\":\"error\",\"message\":\"ERROR: address already in use\"}\n{\"level\":\"info\",\"message\":\"INFO: GET /health 200 OK\"}"}]}
+    """#.utf8))
+    expect("the failure, not the last thing it happened to print",
+           noisy?.processes.first?.reason, "ERROR: address already in use")
+
+    // And when nothing in the tail announces itself, say nothing. An exit code with no
+    // explanation is a smaller claim than a wrong explanation.
+    let quiet = DevStack.parseState(Data(#"""
+    {"processes": [{"name": "api", "state": "exited", "exit_code": 1,
+      "error": "{\"level\":\"info\",\"message\":\"INFO: GET /health 200 OK\"}"}]}
+    """#.utf8))
+    check("a tail with nothing loud in it explains nothing rather than guessing",
+          quiet?.processes.first?.reason == nil)
+
+    // The tail is cut to a byte budget by whoever wrote it, so it often ends mid-envelope.
+    let cut = DevStack.parseState(Data(#"""
+    {"processes": [{"name": "tunnel", "state": "exited", "exit_code": 1,
+      "error": "{\"level\":\"error\",\"message\":\"ERR failed to accept incoming stream\"}\n{\"level\":"}]}
+    """#.utf8))
+    expect("half an envelope is dropped, not shown",
+           cut?.processes.first?.reason, "ERR failed to accept incoming stream")
+
+    // cloudflared, uvicorn and next all colour their own output, and it survives into the tail.
+    let coloured = DevStack.parseState(Data(#"""
+    {"processes": [{"name": "web", "state": "exited", "exit_code": 1,
+      "error": "\u001b[31mERROR\u001b[0m  build failed"}]}
+    """#.utf8))
+    expect("colour codes come off", coloured?.processes.first?.reason, "ERROR  build failed")
+
+    check("and a process that left nothing behind has no reason to give",
+          DevStack.parseState(Data(#"{"processes":[{"name":"web","state":"exited","exit_code":1}]}"#.utf8))?
+            .processes.first?.reason == nil)
+}
+
+group("devstack: which broken process the row names") {
+    // atrium, as its status command printed it. `blog` is first alphabetically and says nothing
+    // — it exits silently because the build it waits on never completed. `build-blog` is the one
+    // that actually failed, and the only entry in the whole document that says why. The row
+    // named `blog` and drew no explanation at all, which is how three stacks stayed broken.
+    let atrium = DevStack.parseState(Data(#"""
+    {"state": "partial", "processes": [
+      {"name": "api", "state": "healthy", "port": 8004},
+      {"name": "blog", "state": "exited", "port": 4324, "exit_code": 1},
+      {"name": "build-blog", "state": "exited", "exit_code": 127,
+       "error": "{\"level\":\"error\",\"message\":\"bash: npm: command not found\"}"},
+      {"name": "web", "state": "exited", "port": 3004, "exit_code": 1}]}
+    """#.utf8))
+    expect("three are down", atrium?.brokenNames.count, 3)
+    expect("and the one named is the cause, not the first casualty",
+           atrium?.rootCause?.name, "build-blog")
+
+    // What the phone is told about a row it can actually see. `build-blog` listens on nothing,
+    // so it never appears in a list of addresses; `blog` does, and answers for both.
+    expect("a silent casualty is told what took it down",
+           atrium.flatMap { s in s.processes.first { $0.name == "blog" }.flatMap(s.why) },
+           "build-blog: bash: npm: command not found")
+    expect("and the cause speaks for itself",
+           atrium.flatMap { s in s.processes.first { $0.name == "build-blog" }.flatMap(s.why) },
+           "bash: npm: command not found")
+
+    // 127 is a shell saying "command not found" and is almost always a cause; 1 is the code
+    // everything uses for everything, and says nothing about who started it.
+    let codes = DevStack.parseState(Data(#"""
+    {"processes": [{"name": "web", "state": "exited", "exit_code": 1},
+                   {"name": "build", "state": "exited", "exit_code": 127}]}
+    """#.utf8))
+    expect("a specific exit code outranks a generic one", codes?.rootCause?.name, "build")
+
+    // A tie keeps the document's own order, so the row does not reshuffle itself every read.
+    let tied = DevStack.parseState(Data(#"""
+    {"processes": [{"name": "a", "state": "exited", "exit_code": 1},
+                   {"name": "b", "state": "exited", "exit_code": 1}]}
+    """#.utf8))
+    expect("nothing to choose between them keeps the first", tied?.rootCause?.name, "a")
+    check("and a stack with nothing down names nobody",
+          DevStack.parseState(Data(#"{"processes":[{"name":"api","state":"healthy"}]}"#.utf8))?
+            .rootCause == nil)
+}
+
 group("devstack: commands substitute rather than concatenate") {
     // Where the process name goes is the project's decision: `make stack-restart P=api` and
     // `overmind restart api` do not put it in the same place.
@@ -2231,6 +2328,18 @@ group("stack logs: unwrapping the supervisor's envelope") {
     expect("so does something JSON-shaped but not an envelope",
            StackLog.unwrap(#"{"a":1}"#), "")
     expect("and a brace that starts a sentence", StackLog.unwrap("{not json"), "{not json")
+}
+
+group("stack logs: the pipe a line came down, kept for the post-mortem") {
+    // Worthless for colouring — process-compose calls everything written to stderr an error, and
+    // believing it paints a healthy stack red. Worth a great deal in the tail of a process that
+    // has *already exited*, where "the last thing it wrote to stderr" is a much better guess at
+    // what killed it than "the last thing it wrote".
+    let e = StackLog.envelope(#"{"level":"error","process":"api","message":"bash: npm: command not found"}"#)
+    expect("the message", e.message, "bash: npm: command not found")
+    expect("and the level it was logged at", e.level, "error")
+    check("a line that was never wrapped has no level",
+          StackLog.envelope("just a line").level == nil)
 }
 
 group("stack logs: severity comes from the text, not the pipe") {
@@ -3553,6 +3662,131 @@ group("a numbered list somebody typed is not a menu") {
 
     // The prompt on its own, which is every idle session on the machine.
     check("a bare prompt is not a menu", !SessionState.isChoosing("\u{276F} "))
+}
+
+group("a menu read as options a finger can hit") {
+    // The shape a permission request actually arrives in: inside its box, one row carrying the
+    // caret, the far wall of the dialog jammed against the longest label.
+    let screen = """
+    \u{2502} \u{276F} 1. Yes                          \u{2502}
+    \u{2502}   2. Yes, and don't ask again           \u{2502}
+    \u{2502}   3. No, tell Claude what to do instead \u{2502}
+    """
+    guard let menu = SessionState.menu(screen) else {
+        check("a dialog is read as a menu", false); return
+    }
+    expect("every option is there", menu.options.count, 3)
+    expect("the numbers are the ones printed", menu.options.map(\.number), [1, 2, 3])
+    expect("the caret says which one is on screen", menu.selected, 1)
+
+    // **The wall is not part of the answer.** Everything before the number is skipped on the way
+    // in, and nothing used to be looking at the end — so the label arrived with a `\u{2502}` on it
+    // and the phone drew a button with the side of a box in its name.
+    expect("the box is not part of the label", menu.options[1].label, "Yes, and don't ask again")
+    expect("nor of the last one",
+           menu.options[2].label, "No, tell Claude what to do instead")
+
+    // Every one of these is reachable by a keystroke, which is what makes it pressable.
+    check("all three can be answered", menu.options.allSatisfy(\.answerable))
+
+    // The two are the same reading. `isChoosing` exists because most callers only want the yes
+    // or no, and a second parser would be a second thing to be wrong.
+    check("and the old question is the same question", SessionState.isChoosing(screen))
+}
+
+group("a menu row no keystroke can reach is shown and not offered") {
+    // Ten options is not a shape Claude Code draws today, and the failure if it ever does must
+    // not be a button that answers a different question: `Targets.answer` carries 1...9, so the
+    // tenth row is drawn and refused rather than quietly renumbered.
+    var rows = "\u{2502} \u{276F} 1. first  \u{2502}\n"
+    for n in 2...10 { rows += "\u{2502}   \(n). option \(n) \u{2502}\n" }
+    guard let menu = SessionState.menu(rows, tailLines: 40) else {
+        check("ten options is still a menu", false); return
+    }
+    expect("all ten are read", menu.options.count, 10)
+    check("the first nine can be answered",
+          menu.options.prefix(9).allSatisfy(\.answerable))
+    check("and the tenth cannot", !menu.options[9].answerable)
+}
+
+group("what a background agent left on disk") {
+    // The one record that says an agent ended. There is nothing that says one *started* — see
+    // `Subagents` — so this is the whole of how "still running" is decided: by its absence.
+    let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-agents-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+
+    let note = "<task-notification>\\n<task-id>a42cc4cf998a3ae33</task-id>\\n"
+        + "<status>completed</status>\\n<summary>Agent \\\"Probe\\\" finished</summary>\\n"
+        + "<result>52 files, and the three markers ran in order.</result>\\n"
+        + "<usage><subagent_tokens>23771</subagent_tokens><tool_uses>7</tool_uses>"
+        + "<duration_ms>79946</duration_ms></usage>\\n</task-notification>"
+
+    let transcript = folder.appendingPathComponent("session.jsonl")
+    let lines = [
+        #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"off it goes"}]}}"#,
+        "{\"type\":\"queue-operation\",\"operation\":\"enqueue\",\"content\":\"\(note)\"}",
+    ].joined(separator: "\n") + "\n"
+    try? lines.write(to: transcript, atomically: true, encoding: .utf8)
+
+    let found = Subagents.notices(in: transcript)
+    expect("the ending is found", found["a42cc4cf998a3ae33"]?.status, "completed")
+    expect("with what it came back with",
+           found["a42cc4cf998a3ae33"]?.result, "52 files, and the three markers ran in order.")
+    expect("and what it cost", found["a42cc4cf998a3ae33"]?.tokens, 23771)
+    expect("in tool calls", found["a42cc4cf998a3ae33"]?.tools, 7)
+
+    // **Read forward, not from the end**, so a second look does not re-read the file and does
+    // not lose what the first one learned. Appending a line nothing cares about must leave the
+    // verdict exactly where it was.
+    if let handle = try? FileHandle(forWritingTo: transcript) {
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(#"{"type":"user","message":{"role":"user","content":"ok"}}"# .utf8 + Data("\n".utf8)))
+        try? handle.close()
+    }
+    let again = Subagents.notices(in: transcript)
+    expect("a later read keeps what the first one found", again["a42cc4cf998a3ae33"]?.status,
+           "completed")
+
+    // A transcript with no endings in it leaves every agent it mentions running, which is the
+    // state this is all in aid of.
+    let quiet = folder.appendingPathComponent("quiet.jsonl")
+    try? #"{"type":"user","message":{"role":"user","content":"hello"}}"# .write(to: quiet,
+                                                                               atomically: true,
+                                                                               encoding: .utf8)
+    check("a transcript with no endings has no verdicts", Subagents.notices(in: quiet).isEmpty)
+
+    // And the file that is not there at all, which is the ordinary state for a session that has
+    // never sent anything off.
+    check("a missing transcript is not an error",
+          Subagents.notices(in: folder.appendingPathComponent("nope.jsonl")).isEmpty)
+}
+
+group("what a background agent is doing right now") {
+    let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-doing-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+
+    // The **last** tool it reached for, not the first: this is the closest thing to a live line
+    // that something without a screen has.
+    let jsonl = folder.appendingPathComponent("agent-a1.jsonl")
+    let rows = [
+        #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"Sources/Panel.swift"}}]}}"#,
+        #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"…"}]}}"#,
+        #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"swift build","description":"Build"}}]}}"#,
+    ].joined(separator: "\n") + "\n"
+    try? rows.write(to: jsonl, atomically: true, encoding: .utf8)
+
+    expect("the newest tool call wins", Subagents.doing(in: jsonl), "Bash: swift build")
+
+    // A transcript that has not reached for anything yet says nothing rather than guessing.
+    let fresh = folder.appendingPathComponent("agent-a2.jsonl")
+    try? #"{"type":"user","message":{"role":"user","content":"go"}}"# .write(to: fresh,
+                                                                            atomically: true,
+                                                                            encoding: .utf8)
+    check("an agent that has not used a tool says nothing", Subagents.doing(in: fresh) == nil)
 }
 
 // MARK: - Result

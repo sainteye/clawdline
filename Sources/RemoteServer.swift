@@ -157,7 +157,30 @@ final class RemoteServer {
                 return
             }
             let bodyStart = headEnd.upperBound
-            let want = min(request.contentLength, 1 << 20)
+            // **Refuse a body that is too big; never trim one to fit.**
+            //
+            // This used to be `min(contentLength, 1 << 20)`, which is not a limit — it is a pair
+            // of scissors. A larger request was cut to a megabyte and handed on, so what reached
+            // the route was the first megabyte of a JSON document, `JSONSerialization` returned
+            // nil, the parsed body became `[:]`, and `/send` answered **"That needs some text or
+            // an image."** about a message that had both. Which is the worst kind of wrong
+            // answer: it describes the request rather than the limit, so the person retries with
+            // the same picture and gets the same sentence.
+            //
+            // It also disagreed with the page by a factor of twenty. `Shots` in index.html sizes
+            // its own limits against a comment saying the server refuses a body over 20MB — so a
+            // phone photograph was shrunk to something the client believed was comfortable and
+            // then silently beheaded here. A 1600px screenshot kept as PNG, which is what the
+            // attach button produces for anything text-shaped, clears a megabyte on its own.
+            //
+            // So: the number the page already assumes, and a 413 that says which limit was hit.
+            if request.contentLength > Self.bodyLimit {
+                self.send(.error(413, "too_large",
+                                 "That was \(request.contentLength) bytes and the limit is "
+                                 + "\(Self.bodyLimit). Send fewer or smaller pictures."), on: conn)
+                return
+            }
+            let want = request.contentLength
             let have = buffer.count - (bodyStart - buffer.startIndex)
             if have < want {
                 if done { conn.cancel(); return }
@@ -168,6 +191,15 @@ final class RemoteServer {
             self.handle(request, on: conn)
         }
     }
+
+    /// The largest request body this will assemble in memory.
+    ///
+    /// Twenty megabytes because that is what the page was already written against, and because
+    /// the thing on the other end of the number is a photograph: `Shots` shrinks to a 1600px long
+    /// edge and allows six of them, which lands well inside this and nowhere near a megabyte.
+    /// It listens on loopback, but "on loopback" is not a reason to let anything on the machine
+    /// hand it a gigabyte — the cap is about memory, and the refusal above is about honesty.
+    static let bodyLimit = 20 << 20
 
     private static func range(of needle: Data, in haystack: Data) -> Range<Data.Index>? {
         haystack.range(of: needle)
@@ -979,8 +1011,16 @@ final class RemoteServer {
         for process in stack?.processes ?? [] {
             let url = process.url ?? process.port.map { "http://127.0.0.1:\($0)" }
             guard let url, !url.isEmpty else { continue }
+            // **Why, not just that.** Only processes with an address appear in a list of
+            // addresses, and the one that actually broke usually has neither — a front-end build
+            // listens on nothing. So a phone saw `web · down` and had no way to reach the reason,
+            // which was sitting two entries away in a process it was never shown. `why` carries
+            // the process's own last words, or the stack's root cause named, so the row that is
+            // visible can answer for the one that is not.
+            let why = process.isUp ? nil : stack?.why(process)
             out.append(["label": process.name, "url": url, "kind": "server",
-                        "state": process.isUp ? "ok" : "down", "local": true])
+                        "state": process.isUp ? "ok" : "down", "local": true,
+                        "why": why ?? ""])
         }
         if let backlog = status.backlog, let file = backlog.artifact, !file.isEmpty {
             // A path, not a URL. The page cannot open it and says so rather than offering a link
@@ -1020,6 +1060,13 @@ final class RemoteServer {
             "state": name(of: state),
         ]
         if case .working(let line) = state { out["line"] = line }
+        // The question itself, so a phone can answer it instead of being told to go and find a
+        // Mac. Only ever present on a waiting session, and absent when the menu could not be
+        // read — which the page has to handle anyway, because that is the old behaviour and it
+        // is still what happens when a dialog is drawn in a shape this does not recognise.
+        if let menu = watch.menu(of: session.id) { out["menu"] = json(of: menu) }
+        let agents = watch.agents(of: session.id)
+        if !agents.isEmpty { out["agents"] = agents.map { json(of: $0) } }
         if let cwd = Targets.workingDirectory(of: session) { out["cwd"] = cwd }
         if let sessionID = HookBridge.note(for: session)?.session { out["sessionId"] = sessionID }
         if let grid = watch.grid(of: session.id) { out["icon"] = json(of: grid) }
@@ -1033,6 +1080,47 @@ final class RemoteServer {
         case .idle:    return "idle"
         case .unknown: return "unknown"
         }
+    }
+
+    /// A menu as rows a finger can hit.
+    ///
+    /// **`n` is the keystroke and not the position**, which is the only part of this worth being
+    /// careful about: the page sends that number straight to `/key`, and renumbering the rows
+    /// here to make them tidy would produce buttons that answer a different question than the one
+    /// they are labelled with. `can` is false for a row no keystroke reaches — it is drawn, and it
+    /// is not offered, because a button that cannot work is worse than a line of text.
+    private func json(of menu: SessionState.Menu) -> [String: Any] {
+        var out: [String: Any] = [
+            "options": menu.options.map { option -> [String: Any] in
+                ["n": option.number, "label": option.label,
+                 "selected": option.selected, "can": option.answerable]
+            },
+        ]
+        if let selected = menu.selected { out["selected"] = selected }
+        return out
+    }
+
+    /// One background agent.
+    ///
+    /// `at` goes over as an instant rather than an age: the page already knows how to draw a
+    /// clock from one, and an age computed here would be wrong by however long the beat took to
+    /// arrive — which on a phone over a tunnel is the interesting case rather than the rare one.
+    private func json(of agent: Subagents.Agent) -> [String: Any] {
+        var out: [String: Any] = [
+            "id": agent.id,
+            "what": agent.description,
+            "type": agent.type,
+            "state": agent.state.rawValue,
+            "depth": agent.depth,
+            "at": Int(agent.at.timeIntervalSince1970),
+        ]
+        if let doing = agent.doing { out["doing"] = doing }
+        if let result = agent.result { out["result"] = result }
+        if let tokens = agent.tokens { out["tokens"] = tokens }
+        if let tools = agent.tools { out["tools"] = tools }
+        if let seconds = agent.seconds { out["seconds"] = seconds }
+        if let model = agent.model { out["model"] = model }
+        return out
     }
 
     /// The mark as colours rather than as a picture.
@@ -1332,8 +1420,19 @@ final class RemoteServer {
             "webWaitingTitle": t.webWaitingTitle,
             "webWaitingSay": t.webWaitingSay,
             "webWaitingSend": t.webWaitingSend,
+            "webMenuSay": t.webMenuSay,
+            "webMenuHighlighted": t.webMenuHighlighted,
+            "webMenuSent": t.webMenuSent,
             "webStale": t.webStale,
             "webStaleGo": t.webStaleGo,
+        ])
+
+        // What a session has going in the background.
+        add([
+            "webAgents": t.webAgents,
+            "webAgentsCount": t.webAgentsCount,
+            "webAgentDone": t.webAgentDone,
+            "webAgentFailed": t.webAgentFailed,
         ])
 
         // The Links sheet.
@@ -1700,6 +1799,7 @@ extension RemoteServer {
             case 404: return "Not Found"
             case 409: return "Conflict"
             case 429: return "Too Many Requests"
+            case 413: return "Payload Too Large"
             case 431: return "Request Header Fields Too Large"
             default:  return "Error"
             }

@@ -28,6 +28,14 @@ final class SessionWatch {
     /// What each of them is doing, by session id.
     private(set) var states: [String: SessionState] = [:]
 
+    /// The menu a waiting session is showing, by session id — its options and which one the
+    /// caret is on. Only the sessions that have one, which is a handful at most.
+    ///
+    /// Read out of the same screen capture as the state above, so it costs nothing extra. It is
+    /// here rather than folded into `.waiting` because that case is compared against in twenty
+    /// places and none of them care what the question was — see ``Targets/reading(of:)``.
+    private(set) var menus: [String: SessionState.Menu] = [:]
+
     /// Sessions that were working a moment ago and are not now — the ones that just finished.
     ///
     /// Kept because it is the one thing a reading cannot say on its own: "idle" is the same word
@@ -43,6 +51,15 @@ final class SessionWatch {
     /// one session. It is also the most stable thing about a session — Claude Code is started in
     /// a directory and stays there — so a session that already has one is never asked again.
     private(set) var grids: [String: ProjectIcon.Grid] = [:]
+
+    /// The background agents each session has running, by session id.
+    ///
+    /// **The one thing here that is not read off a screen.** A session that has sent three agents
+    /// off to work looks exactly like one thinking hard about a single sentence: the terminal
+    /// shows one spinner either way, because the agents are not drawn there. So this is read from
+    /// the transcripts Claude Code keeps, and it is the only answer to "what is it actually doing"
+    /// that the capture could never have given.
+    private(set) var agents: [String: [Subagents.Agent]] = [:]
 
     /// Called on the main thread after every reading. Keyed so a consumer that registers twice
     /// replaces itself rather than being called twice.
@@ -114,10 +131,21 @@ final class SessionWatch {
             let anyClaude = !ITerm.claudePIDs().isEmpty
             let snap = anyClaude ? Targets.snapshot() : Targets.Snapshot()
             let sessions = snap.claudeSessions.isEmpty ? snap.sessions : snap.claudeSessions
-            let screen = anyClaude ? Targets.states(of: sessions) : [:]
+            // Named `screens` and not `reading`: there is a `reading` flag on `self` guarding
+            // this whole function, and shadowing it here is a trap for the next edit.
+            let screens = anyClaude ? Targets.reading(of: sessions) : Targets.Reading()
             // What was read, with what Claude Code said about itself folded in. A no-op when
             // nothing is installed, which is the state every reading has to be right in.
-            let states = HookBridge.merge(notes, into: screen, sessions: sessions)
+            let states = HookBridge.merge(notes, into: screens.states, sessions: sessions)
+            // Dropped for any session the merge moved off `waiting`: a note can settle that a
+            // turn ended before the terminal has repainted, and a menu left behind from the
+            // capture would be a set of buttons for a question nobody is asking any more.
+            let menus = screens.menus.filter { states[$0.key] == .waiting }
+
+            // Every background agent these sessions have going, which is a question the screen
+            // cannot answer at all — a subagent leaves no mark on the terminal. Files only, so
+            // it adds no round trip to the reading it rides along with.
+            let agents = Subagents.reading(of: sessions)
 
             // Only the ones nothing is known about yet.
             var grids: [String: ProjectIcon.Grid] = [:]
@@ -130,10 +158,18 @@ final class SessionWatch {
             DispatchQueue.main.async {
                 self.reading = false
                 self.grids.merge(grids) { _, new in new }
+                self.menus = menus
+                self.agents = agents
                 self.apply(targets: sessions, states: states)
             }
         }
     }
+
+    /// What the last round told the observers, so a menu opening or an agent finishing counts as
+    /// a change. Without these the panel redrew only when a *state* moved, and a session that was
+    /// already `working` could start and finish three agents without the pane noticing.
+    private var lastMenus: [String: SessionState.Menu] = [:]
+    private var lastAgents: [String: [Subagents.Agent]] = [:]
 
     private func apply(targets: [TargetSession], states: [String: SessionState]) {
         // Working → not working, and still there. A session that has gone away has not finished
@@ -147,6 +183,9 @@ final class SessionWatch {
         }
 
         let changed = targets.map(\.id) != self.targets.map(\.id) || states != self.states
+            || menus != lastMenus || agents != lastAgents
+        lastMenus = menus
+        lastAgents = agents
         self.targets = targets
         self.states = states
         self.justFinished = finished
@@ -166,6 +205,12 @@ final class SessionWatch {
 
     /// The project mark for a session, if its project has one.
     func grid(of id: String) -> ProjectIcon.Grid? { grids[id] }
+
+    /// The menu a session is showing, if it is showing one.
+    func menu(of id: String) -> SessionState.Menu? { menus[id] }
+
+    /// The background agents a session has running right now.
+    func agents(of id: String) -> [Subagents.Agent] { agents[id] ?? [] }
 
     /// The live line a session last showed, if it is showing one.
     func liveLine(of id: String) -> String? {

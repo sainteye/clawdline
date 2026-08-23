@@ -60,6 +60,7 @@ struct TraditionalChinese: Copy {
     func stackTip(up: Int, total: Int) -> String { "\(total) 個伺服器，\(up) 個活著——⌘S 打開清單" }
     let stackTipUnknown = "這個專案有伺服器，但它的狀態指令還沒被信任——⌘S"
     let stackUntrusted = "尚未信任"
+    let stackExit = "離開碼"
     let stackActionStart = "啟動"
     let stackActionRestart = "重啟"
     let stackActionStop = "停止"
@@ -70,6 +71,7 @@ struct TraditionalChinese: Copy {
     let stackActionAgain = "再按一次"
     func sessionTip(index: Int, total: Int) -> String { "第 \(index) 個 session，共 \(total) 個——⌘K 切換" }
     let sessionWaiting = "在等你回答"
+    let sessionAgents = "{n} 個在背景"
     let islandDone = "跑完了"
     let islandAllSessions = "所有 session⋯"
     func statusWaiting(_ labels: [String]) -> String {
@@ -333,6 +335,13 @@ struct TraditionalChinese: Copy {
     let webWaitingTitle = "這個 session 在等你回答"
     let webWaitingSay = "Claude Code 正在 Mac 上顯示一個選單。Clawdline 還沒辦法從這裡讀選單，所以那些選項只在那個畫面上。"
     let webWaitingSend = "*從這裡送出，不會把你的回答打進選單裡*——它只會確認選單上反白的那一個，而那很少是你要的。這一題請在 Mac 上回答。"
+    let webMenuSay = "點一個答案，它會直接送到那個 session。"
+    let webMenuHighlighted = "反白中"
+    let webMenuSent = "答案送出了。"
+    let webAgents = "背景 agent"
+    let webAgentsCount = "{n} 個在跑"
+    let webAgentDone = "完成"
+    let webAgentFailed = "失敗"
     let webStale = "Clawdline 在 Mac 上重新編過了。這一頁是舊的那一版。"
     let webStaleGo = "重新載入"
 
@@ -414,6 +423,7 @@ struct SimplifiedChinese: Copy {
     func stackTip(up: Int, total: Int) -> String { "\(total) 个服务器，\(up) 个活着——⌘S 打开列表" }
     let stackTipUnknown = "这个项目有服务器，但它的状态命令还没被信任——⌘S"
     let stackUntrusted = "尚未信任"
+    let stackExit = "退出码"
     let stackActionStart = "启动"
     let stackActionRestart = "重启"
     let stackActionStop = "停止"
@@ -424,6 +434,7 @@ struct SimplifiedChinese: Copy {
     let stackActionAgain = "再按一次"
     func sessionTip(index: Int, total: Int) -> String { "第 \(index) 个 session，共 \(total) 个——⌘K 切换" }
     let sessionWaiting = "在等你回答"
+    let sessionAgents = "{n} 个在后台"
     let islandDone = "跑完了"
     let islandAllSessions = "所有 session……"
     func statusWaiting(_ labels: [String]) -> String {
@@ -687,6 +698,13 @@ struct SimplifiedChinese: Copy {
     let webWaitingTitle = "这个 session 在等你回答"
     let webWaitingSay = "Claude Code 正在 Mac 上显示一个菜单。Clawdline 还没法从这里读菜单，所以那些选项只在那个屏幕上。"
     let webWaitingSend = "*从这里发出去，不会把你的回答打进菜单里*——它只会确认菜单上高亮的那一个，而那很少是你要的。这一题请在 Mac 上回答。"
+    let webMenuSay = "点一个答案，它会直接发到那个 session。"
+    let webMenuHighlighted = "高亮中"
+    let webMenuSent = "答案发出去了。"
+    let webAgents = "后台 agent"
+    let webAgentsCount = "{n} 个在跑"
+    let webAgentDone = "完成"
+    let webAgentFailed = "失败"
     let webStale = "Clawdline 在 Mac 上重新编过了。这一页是旧的那一版。"
     let webStaleGo = "重新加载"
 

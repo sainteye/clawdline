@@ -127,6 +127,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// row that says a session is waiting for you when it has long since been answered — and a
     /// mark that is confidently wrong is worse than the plain row this replaces.
     private var sessionStates: [String: SessionState] = [:]
+    /// What the rows were last drawn against — see the guard in `applyWatchedStates`.
+    private var sessionAgents: [String: [Subagents.Agent]] = [:]
     private var mascotNames: [String] = []
     private var mascotIndex = 0
     private var scanning = false
@@ -203,10 +205,27 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// The keycap row costs most of the footer's width to say things you learn once. Collapsed
     /// to a single ⌘/ until asked for.
     private var keysShown = false
-    /// Set when the panel goes away because the user switched apps rather than dismissed it.
+    /// When the panel went away because the user switched apps rather than dismissed it.
     /// Only what was hidden this way comes back — Esc and sending mean closed, and something
     /// you shut on purpose reappearing on its own is the app arguing with you.
-    private var hiddenByAppSwitch = false
+    ///
+    /// **A moment, not a flag.** This was a `Bool`, and a `Bool` has no way to go stale: leave
+    /// the panel open, click into a browser, and spend the afternoon there, and it was still
+    /// armed hours later. Nothing cleared it but the terminal coming forward — so the next time
+    /// that happened, on a trip that had nothing to do with the panel and long after anyone had
+    /// forgotten it was open, the panel let itself in. Which reads, correctly, as "switching to
+    /// iTerm2 summons Clawdline", and is the opposite of what this is for.
+    ///
+    /// Stepping away is a short thing. Past `returnWindow` it is not a return, it is a new
+    /// visit, and a window that shows up uninvited on a new visit is the app arguing with you.
+    private var hiddenByAppSwitch: Date?
+
+    /// How long "I am looking at something for a moment" lasts.
+    ///
+    /// Long enough to check a browser tab or read a message and come back with the thing you
+    /// left half-typed still there; short enough that it has clearly expired by the time you
+    /// have started doing something else.
+    private static let returnWindow: TimeInterval = 60
     /// True while a system permission sheet is up, so losing the key window is not read as the
     /// user going elsewhere. Set from `Voice.onPermissionPrompt`.
     private var awaitingPermission = false
@@ -613,8 +632,16 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         guard Config.shared.reopenOnReturn else { return }
         let scope = Config.shared.scopeApp
         let isTerminal = !scope.isEmpty && bundleID.map { scope.contains($0) } == true
-        guard isTerminal, hiddenByAppSwitch, !panel.isVisible else { return }
-        hiddenByAppSwitch = false
+        guard isTerminal, let since = hiddenByAppSwitch, !panel.isVisible else { return }
+        hiddenByAppSwitch = nil
+        // Cleared either way: whether or not this trip counts as coming back, the arming has now
+        // been answered. Leaving it set is what let one forgotten switch reopen the panel on
+        // every visit to the terminal thereafter.
+        let away = Date().timeIntervalSince(since)
+        guard away < Self.returnWindow else {
+            Log.write("reopen declined: away \(Int(away))s, longer than a moment")
+            return
+        }
         // Not on this turn of the loop. The notification arrives while macOS is still raising
         // the terminal's windows, and showing here calls NSApp.activate in the middle of that:
         // the menu bar says iTerm2 and the screen still shows whatever you were just in. Let the
@@ -642,7 +669,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // the commonest being coming back while the last dismissal is still animating out —
         // used to leave the flag set for the rest of the session, and the next time you closed
         // the panel by hand it would let itself back in.
-        if returnFocus { hiddenByAppSwitch = false }
+        if returnFocus { hiddenByAppSwitch = nil }
         dismissing = true
         voice.stop()        // a microphone left open behind a hidden window is not acceptable
         resizeTimer?.invalidate()
@@ -659,6 +686,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             self.syncSpinner()
             self.prefetchWork?.cancel()
             Transcript.forgetRenders()
+            // Where each session's transcript is, and what each agent was last doing. Both are
+            // only ever asked for on behalf of something on screen, and both are keyed on files
+            // that a shut panel has no opinion about.
+            Subagents.forget()
             self.hideBackdrop(animated: false)
             self.listMode = .none
             self.dismissing = false
@@ -686,7 +717,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
         // Losing focus is the app-switch path; Esc and sending come through hide() directly and
         // must not arm the return, or dismissing it would only postpone it.
-        hiddenByAppSwitch = true
+        hiddenByAppSwitch = Date()
         // Whoever took focus keeps it. This is the path where the user chose to be elsewhere.
         hide(returnFocus: false)
     }
@@ -1213,6 +1244,25 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         outputTimer = t
     }
 
+    /// How many agents this session has out right now.
+    private func runningAgents(of id: String) -> Int {
+        SessionWatch.shared.agents(of: id).filter(\.isRunning).count
+    }
+
+    /// What the strip above the transcript says: the live line, and what is happening away from
+    /// the screen it was read off.
+    ///
+    /// **Either half can be the whole of it.** A session between turns with two agents still out
+    /// has no live line at all — the terminal is showing a prompt — and that is precisely the
+    /// state where the strip saying nothing was a lie by omission.
+    private func activityLine(for id: String) -> String? {
+        let live = activityCache[id]
+        let out = runningAgents(of: id)
+        guard out > 0 else { return live }
+        guard let live, !live.isEmpty else { return agentsSaid(out) }
+        return live + "  ·  " + agentsSaid(out)
+    }
+
     /// Show or clear the "what is it doing right now" strip.
     private func setActivity(_ text: String?) {
         let next = text ?? ""
@@ -1524,6 +1574,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             if case .working(let line) = state { activityCache[id] = line }
             else { activityCache.removeValue(forKey: id) }
         }
+        let agents = SessionWatch.shared.agents
         guard panel.isVisible else { return }
         // The strip follows the selected session even when the list is shut, because the pane is
         // open on its own account and its live line has to keep ticking.
@@ -1531,15 +1582,21 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // Except over a canned transcript: that is a picture of a stand-in, and a live line from
         // whatever this machine is really doing has no business being in it.
         if let id = currentTarget?.id, outputOpen, cannedTranscript == nil {
-            setActivity(activityCache[id])
+            setActivity(activityLine(for: id))
         }
 
         // Rows are rebuilt only when something actually moved. A list that rebuilds once a second
         // discards the view under the pointer every second with it, and an unchanged screen is
         // the common case: most of the time three of the four sessions are doing exactly what
         // they were doing a second ago.
-        guard listMode == .sessions, states != sessionStates else { return }
+        // **The agents are in this guard too.** Without them a session that was already
+        // `working` could start and finish three of them without the list redrawing once: the
+        // states map would be identical each time, and this returned before the rows were built.
+        guard listMode == .sessions, states != sessionStates || agents != sessionAgents else {
+            return
+        }
         sessionStates = states
+        sessionAgents = agents
         rebuildRows()
         syncSpinner()
         relayout()
@@ -1637,12 +1694,17 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     /// What the row says after its label. Split from the label so the row can put the spinner
     /// between the two and lay the three of them out itself.
-    private func sessionRowDetail(_ state: SessionState, selected: Bool) -> NSAttributedString? {
+    private func sessionRowDetail(_ state: SessionState, selected: Bool,
+                                  agents: Int = 0) -> NSAttributedString? {
         let s = NSMutableAttributedString()
         let small = NSFont.systemFont(ofSize: Style.listSize - 1.5)
         func add(_ text: String, _ colour: NSColor, _ font: NSFont) {
             s.append(NSAttributedString(string: text,
                                         attributes: [.font: font, .foregroundColor: colour]))
+        }
+        func addAgents(_ count: Int, _ colour: NSColor, _ font: NSFont, leading: Bool = true) {
+            guard count > 0 else { return }
+            add((leading ? "  ·  " : "") + agentsSaid(count), colour, font)
         }
         switch state {
         case .working(let line):
@@ -1654,15 +1716,35 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             let quiet: NSColor = selected ? .secondaryLabelColor : .tertiaryLabelColor
             // Cut with a mark on it. The row clips whatever runs past its edge, and a sentence
             // that stops mid-word with nothing to say so reads as a bug rather than as a limit.
-            add(line.count > 44 ? line.prefix(43) + "…" : line, quiet, small)
+            // Shorter when something has to go after it. The row clips at its own edge either
+            // way; what changes is which half survives, and "three agents are out" is worth more
+            // than the last eleven characters of a sentence that is already ellipsised.
+            let room = agents > 0 ? 28 : 44
+            add(line.count > room ? line.prefix(room - 1) + "…" : line, quiet, small)
+            addAgents(agents, quiet, small)
         case .waiting:
             // The one loud thing in the list, because it is the only state that costs you
             // something for every second it goes unnoticed.
             add("● " + L.t.sessionWaiting, Style.accent, small)
+            // Underneath it in the reading order and in the colour. A session can be waiting on
+            // a permission dialog while three agents keep working, and the question is still the
+            // only part of that anybody has to act on.
+            addAgents(agents, .tertiaryLabelColor, small)
         case .idle, .unknown:
-            return nil
+            // **Not nil any more, if agents are out.** An idle-looking session with three agents
+            // still running is the exact case the screen gets wrong — the main agent is between
+            // turns, nothing is on the terminal, and the work is elsewhere. That row said
+            // nothing at all before.
+            guard agents > 0 else { return nil }
+            addAgents(agents, .tertiaryLabelColor, small, leading: false)
         }
         return s
+    }
+
+    /// "· 3 in the background", or nothing. Quiet in every state it can appear in: background
+    /// work explains a session, it never asks anything of you.
+    private func agentsSaid(_ count: Int) -> String {
+        L.t.sessionAgents.replacingOccurrences(of: "{n}", with: "\(count)")
     }
 
     /// Fill the list with invented sessions and pin it there, for the README picture.
@@ -1766,7 +1848,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             let state = sessionStates[target.id] ?? .unknown
             let row = TargetRow(title: target.label, index: i,
                                 rich: sessionRowText(target, selected: selected))
-            row.detail = sessionRowDetail(state, selected: selected)
+            row.detail = sessionRowDetail(state, selected: selected,
+                                          agents: runningAgents(of: target.id))
             if case .working = state { row.isBusy = true }
             row.icon = rowIcons[target.id]
             row.isSelected = selected
@@ -1869,7 +1952,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let base = NSFont.systemFont(ofSize: Style.listSize, weight: selected ? .medium : .regular)
         let small = NSFont.systemFont(ofSize: Style.listSize - 1.5)
         func add(_ text: String, _ colour: NSColor, _ font: NSFont = NSFont.systemFont(ofSize: 12),
-                 link: String? = nil) {
+                 link: String? = nil, tip: String? = nil) {
             var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: colour]
             // Underlined, the way the footer marks its health link: a link that does not look
             // like one is a link nobody presses.
@@ -1878,6 +1961,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
                 attrs[.underlineColor] = colour.withAlphaComponent(0.4)
             }
+            if let tip, !tip.isEmpty { attrs[.clawdlineTip] = tip }
             s.append(NSAttributedString(string: text, attributes: attrs))
         }
 
@@ -1925,13 +2009,43 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             add("  ↗ ", .tertiaryLabelColor, small)
             add(host, .secondaryLabelColor, small, link: url)
         }
-        if let broken = state.processes.first(where: { $0.isDown }) {
-            add("  ✗ " + broken.name, .systemRed, small)
-            if let e = broken.error?.split(separator: "\n").last {
-                add("  " + String(e.prefix(70)), .secondaryLabelColor, small)
+        // **The one that broke, not the first one listed** — see `DevStack.State.rootCause`, and
+        // `+n` for how many others went down with it. The old row named whichever failure came
+        // first alphabetically and showed seventy characters of the JSON envelope around its
+        // last log line, which on all three projects here was either a truncated brace or a
+        // `200 OK` from before the crash. The whole hover is the rest of them.
+        if let broken = state.rootCause {
+            let tip = stackFailureTip(state)
+            let others = state.brokenNames.count - 1
+            add("  ✗ " + broken.name + (others > 0 ? " +\(others)" : ""), .systemRed, small, tip: tip)
+            if let reason = broken.reason {
+                // Cut long, not short: the row clips whatever will not fit, and a limit chosen
+                // here only decides how much the hover has left to add.
+                add("  " + String(reason.prefix(160)), .secondaryLabelColor, small, tip: tip)
+            } else if let code = broken.exitCode, code != 0 {
+                // Nothing was said, so the number is all there is — and a lone ✗ beside a name
+                // is the row saying "something is wrong" and refusing to say what.
+                add("  \(L.t.stackExit) \(code)", .secondaryLabelColor, small, tip: tip)
             }
         }
         return s
+    }
+
+    /// Every broken process, one per line, for the hover.
+    ///
+    /// A row has space for one name and one explanation. `haven` had six processes down at once,
+    /// with three separate causes among them — a missing `npm`, a Docker daemon that was not
+    /// running, and a tunnel that had lost its connection — and a row can only ever have shown
+    /// one of the three. This is where the other five go: a hover away rather than a trip to the
+    /// log pane, which is the difference between seeing the second cause and fixing the first
+    /// one twice.
+    private func stackFailureTip(_ state: DevStack.State) -> String {
+        state.processes.filter { $0.isDown }.map { p in
+            var line = p.name
+            if let code = p.exitCode, code != 0 { line += "  \(L.t.stackExit) \(code)" }
+            if let reason = p.reason { line += "  " + reason }
+            return line
+        }.joined(separator: "\n")
     }
 
     /// The word on a row's button, and the hover that says what pressing it will do.
@@ -2165,6 +2279,21 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                     self.textView.setPlainText(
                         "\(spec.name): \(command) failed\n\n" + result.output.suffix(3000))
                     self.relayout()
+                } else if state.rootCause != nil,
+                          self.textView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    // **The command can succeed while the stack does not**, and this is the case
+                    // that looked like nothing happening at all. `make stack-up` returns as soon
+                    // as its supervisor is daemonised — long before the processes under it have
+                    // finished starting — so a front-end build that fails a minute later exits
+                    // into a command that already reported success. The press appeared to work,
+                    // the spinner stopped, and the site was down.
+                    //
+                    // The state read a line above already knows better, so say so. Only into an
+                    // empty box: the failure is worth putting where it can be sent, and never at
+                    // the cost of a message somebody was part way through writing.
+                    self.textView.setPlainText(
+                        "\(spec.name): \(command)\n\n" + self.stackFailureTip(state))
+                    self.relayout()
                 }
             }
         }
@@ -2226,7 +2355,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // Before the pane is asked for anything. The strip changes the card's height, so it has
         // to be right *now* rather than whenever the terminal answers: put it up late and the
         // conversation gets painted first and then shoved down by a line arriving above it.
-        setActivity(activityCache[targets[i].id])
+        setActivity(activityLine(for: targets[i].id))
         updateTargetLabel()
         refreshProjectInfo()
         refreshOutput()
@@ -2367,9 +2496,16 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private func appendStackChip(_ state: DevStack.State?, to s: NSMutableAttributedString) {
         guard let state else { return }
         let font = NSFont.systemFont(ofSize: Style.hintSize - 0.5)
-        let tip = state.processes.isEmpty
+        var tip = state.processes.isEmpty
             ? L.t.stackTipUnknown
             : L.t.stackTip(up: state.upCount, total: state.processes.count)
+        // With something down, the count is the least of what the hover can say. This is the
+        // footer's only route to *why*, and without it the mark says "two of eight" and leaves
+        // the person to open the panel to find out which two and what happened to them.
+        if state.state == "partial" || state.state == "stopped" {
+            let failures = stackFailureTip(state)
+            if !failures.isEmpty { tip += "\n\n" + failures }
+        }
         func chip(_ text: String, _ colour: NSColor) {
             s.append(NSAttributedString(string: text, attributes: [
                 .font: font, .foregroundColor: colour, .clawdlineTip: tip,
@@ -2384,7 +2520,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             chip("   ▮ \(state.upCount)", .systemGreen)
         case "partial":
             chip("   ▮ \(state.upCount)/\(state.processes.count)", .systemRed)
-            if let broken = state.brokenNames.first { chip(" " + broken, .systemRed) }
+            // The cause, not the alphabetically first casualty — the same choice the row makes,
+            // and for the same reason. One word fits here, so it had better be the right word.
+            if let broken = state.rootCause { chip(" " + broken.name, .systemRed) }
         case "stopped":
             chip("   ▯", .tertiaryLabelColor)
         default:

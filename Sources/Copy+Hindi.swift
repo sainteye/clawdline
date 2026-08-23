@@ -62,6 +62,7 @@ struct Hindi: Copy {
     func stackTip(up: Int, total: Int) -> String { "\(total) में से \(up) सर्वर चालू — सूची के लिए ⌘S" }
     let stackTipUnknown = "इस प्रोजेक्ट में सर्वर हैं, पर इसकी status कमांड पर अभी भरोसा नहीं किया गया — ⌘S"
     let stackUntrusted = "अभी अनुमति नहीं"
+    let stackExit = "एग्ज़िट कोड"
     let stackActionStart = "शुरू"
     let stackActionRestart = "रीस्टार्ट"
     let stackActionStop = "रोकें"
@@ -72,6 +73,7 @@ struct Hindi: Copy {
     let stackActionAgain = "फिर दबाएँ"
     func sessionTip(index: Int, total: Int) -> String { "\(total) में से \(index) वाँ सेशन — बदलने के लिए ⌘K" }
     let sessionWaiting = "आपके जवाब का इंतज़ार"
+    let sessionAgents = "बैकग्राउंड में {n}"
     let islandDone = "हो गया"
     let islandAllSessions = "सभी सेशन…"
     func statusWaiting(_ labels: [String]) -> String {
@@ -336,6 +338,13 @@ struct Hindi: Copy {
     let webWaitingTitle = "यह session जवाब का इंतज़ार कर रहा है"
     let webWaitingSay = "Claude Code उस Mac पर एक मेन्यू दिखा रहा है। Clawdline अभी यहाँ से मेन्यू पढ़ नहीं सकता, इसलिए विकल्प सिर्फ़ उसी स्क्रीन पर हैं।"
     let webWaitingSend = "*यहाँ से भेजने पर आपका जवाब मेन्यू में टाइप नहीं होगा* — मेन्यू में इस समय जो विकल्प चुना हुआ है, यह उसी को पक्का कर देगा, और वह शायद ही वह होता है जो आप चाहते थे। इसका जवाब Mac पर दीजिए।"
+    let webMenuSay = "किसी जवाब पर टैप करें, वह सीधे session में चला जाएगा।"
+    let webMenuHighlighted = "चुना हुआ"
+    let webMenuSent = "जवाब भेज दिया।"
+    let webAgents = "बैकग्राउंड एजेंट"
+    let webAgentsCount = "{n} चल रहे हैं"
+    let webAgentDone = "हो गया"
+    let webAgentFailed = "विफल"
     let webStale = "Mac पर Clawdline फिर से बनाया गया है। यह पन्ना पुराना वाला है।"
     let webStaleGo = "फिर से लोड करें"
 

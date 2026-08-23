@@ -61,6 +61,7 @@ struct Portuguese: Copy {
     func stackTip(up: Int, total: Int) -> String { "\(up) de \(total) servidores ativos — ⌘S para a lista" }
     let stackTipUnknown = "Este projeto tem servidores; o seu comando de estado ainda não é fiável — ⌘S"
     let stackUntrusted = "sem aprovação"
+    let stackExit = "saída"
     let stackActionStart = "iniciar"
     let stackActionRestart = "reiniciar"
     let stackActionStop = "parar"
@@ -71,6 +72,7 @@ struct Portuguese: Copy {
     let stackActionAgain = "de novo"
     func sessionTip(index: Int, total: Int) -> String { "Sessão \(index) de \(total) — ⌘K para mudar" }
     let sessionWaiting = "aguarda a sua resposta"
+    let sessionAgents = "{n} em segundo plano"
     let islandDone = "concluído"
     let islandAllSessions = "Todas as sessões…"
     func statusWaiting(_ labels: [String]) -> String {
@@ -335,6 +337,13 @@ struct Portuguese: Copy {
     let webWaitingTitle = "Esta sessão está esperando uma resposta"
     let webWaitingSay = "O Claude Code está mostrando um menu no Mac. O Clawdline ainda não consegue ler um menu daqui, então as opções estão só naquela tela."
     let webWaitingSend = "*Enviar daqui não digita a sua resposta no menu* — confirma a opção que estiver destacada no menu, que quase nunca é a que você queria. Esta aqui, responda no Mac."
+    let webMenuSay = "Toque numa resposta e ela vai direto para a sessão."
+    let webMenuHighlighted = "destacada"
+    let webMenuSent = "Resposta enviada."
+    let webAgents = "Agentes em segundo plano"
+    let webAgentsCount = "{n} em execução"
+    let webAgentDone = "concluído"
+    let webAgentFailed = "falhou"
     let webStale = "O Clawdline foi recompilado no Mac. Esta página é a antiga."
     let webStaleGo = "Recarregar"
 

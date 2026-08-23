@@ -226,17 +226,45 @@ enum Targets {
     /// in for every session asked about rather than only the ones that answered — a missing key
     /// and a session that is doing nothing must not look the same to the caller.
     static func states(of sessions: [TargetSession]) -> [String: SessionState] {
-        var out: [String: SessionState] = [:]
+        reading(of: sessions).states
+    }
+
+    /// What was on each screen, keyed by session id: the state, and the menu if there was one.
+    ///
+    /// **The menu comes out of the same capture, which is the only reason it is affordable.**
+    /// Reading a menu used to mean a second round trip to the terminal — `isChoosing(_ session:)`
+    /// still is one, and is still right for the single question `/send` asks before it refuses.
+    /// But the phone needs the options on *every* beat, for every waiting session, and paying an
+    /// osascript per session per second for that would have been the most expensive thing in the
+    /// app. These screens have already been fetched. Parsing them twice costs nothing.
+    struct Reading {
+        var states: [String: SessionState] = [:]
+        /// Only the sessions actually showing one, so a missing key means "no menu" and never
+        /// "not looked at" — every session asked about gets a state, and most get no menu.
+        var menus: [String: SessionState.Menu] = [:]
+    }
+
+    static func reading(of sessions: [TargetSession]) -> Reading {
+        var out = Reading()
+
+        func note(_ id: String, _ screen: String?) {
+            out.states[id] = SessionState.read(screen)
+            // Only when the state says so. `read` has already decided a menu is up — asking the
+            // parser again on an idle screen would be work done to be told nothing, once per
+            // session per beat, which is the shape of cost this whole file is careful about.
+            guard out.states[id] == .waiting, let screen else { return }
+            out.menus[id] = SessionState.menu(Ansi.plain(screen))
+        }
 
         let iterm = sessions.filter { $0.backend == .iterm }
         if !iterm.isEmpty {
             let tails = ITerm.tails(ids: iterm.map { $0.id })
-            for session in iterm { out[session.id] = SessionState.read(tails[session.id]) }
+            for session in iterm { note(session.id, tails[session.id]) }
         }
         // Only the visible pane: `-S -0` starts at the top of the screen rather than in the
         // scrollback, which is both cheaper and the right question — what is on screen *now*.
         for session in sessions where session.backend == .tmux {
-            out[session.id] = SessionState.read(Tmux.capture(session.id, scrollback: 0))
+            note(session.id, Tmux.capture(session.id, scrollback: 0))
         }
         return out
     }

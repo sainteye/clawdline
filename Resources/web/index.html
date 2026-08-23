@@ -907,16 +907,44 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    saying so. There was nothing at all here before: on a phone over a tunnel, tapping Send and
    watching nothing change for a second is indistinguishable from a page that is broken, and it
    is exactly long enough to press again. */
+/* **A sweep across it, not a blink of the whole thing.**
+   The first version faded the entire button between full and half opacity once a second. It did
+   say something was happening and it said it the way a broken control does — the label goes with
+   it, so on a phone the whole button appears to flicker, and the eye reads a flicker as a fault
+   rather than as progress. Worse, the label swaps from "Send" to "Sending…" at the same moment,
+   so the button changes width mid-press and the box under it jumps. (The width is pinned in
+   `renderComposer` now; this is the other half.)
+
+   A light passing over a button that has otherwise not moved is the ordinary way to draw work in
+   flight, and it leaves the label alone at full contrast the whole time. */
 .composer[data-sending="on"] .send:disabled {
     background: var(--accent); color: #17110e;
-    animation: pulse 1.1s var(--ease) infinite;
     cursor: default;
+    position: relative; overflow: hidden;
 }
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+.composer[data-sending="on"] .send:disabled::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(100deg,
+        rgba(255, 255, 255, 0) 20%,
+        rgba(255, 255, 255, 0.42) 50%,
+        rgba(255, 255, 255, 0) 80%);
+    background-size: 220% 100%;
+    animation: sweep 1.15s var(--ease) infinite;
+}
+@keyframes sweep { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+/* Under reduced motion the sweep goes and the button holds one dimmer wash — still visibly a
+   different state from the one you pressed, with nothing moving. */
+@media (prefers-reduced-motion: reduce) {
+    .composer[data-sending="on"] .send:disabled::after { animation: none; opacity: 0.5; }
+}
 /* The words stay on screen and stay unsent-looking. `readonly` rather than `disabled`, which
    would take the focus out of the box — and on a phone that closes the keyboard, so every
-   message would cost the whole keyboard dance again. */
-.composer[data-sending="on"] textarea { color: var(--dim); }
+   message would cost the whole keyboard dance again.
+
+   **`.msg`, not `textarea`.** This box stopped being a `<textarea>` when it became a
+   `contenteditable` div — see the note on `.composer .msg` — and the rule was left pointing at
+   the old element, so the one piece of feedback it describes has never once fired. */
+.composer[data-sending="on"] .msg { color: var(--dim); }
 .composer[data-write="off"] .box { opacity: 0.55; }
 /* The session has stopped and is waiting for somebody. Above the box rather than under it: this
    is the last thing in the conversation, and it is read on the way to the place you would type.
@@ -956,17 +984,20 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     opacity: 0.55; font-size: 15px; line-height: 1; cursor: pointer;
 }
 .stale .shut:hover { opacity: 1; }
-.composer .live .dot {
-    flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
-    background: var(--accent); animation: livepulse 1.6s ease-in-out infinite;
-}
+/* **A turning mark, not a fading one.**
+   This was a 6px dot breathing between full and a quarter opacity, and on a phone it read as a
+   dot: the thing it was supposed to say — *this is still going* — needed somebody to watch it
+   for a second and a half to see. What the rest of the app uses for exactly this is the pixel
+   spinner in the session list, on one shared clock, and there was no reason for the composer to
+   have invented a second vocabulary for the same sentence. It is the same canvas, the same eight
+   phases, the same tick. */
+.composer .live canvas.spin { flex: 0 0 auto; display: block; }
 .composer .live .said {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-@keyframes livepulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.28 } }
-@media (prefers-reduced-motion: reduce) {
-    .composer .live .dot { animation: none; opacity: 0.8 }
-}
+/* Nothing to switch off under reduced motion: `drawSpinner` is driven by the one interval at
+   the top, and that interval already returns without advancing when `reduced` is set — so the
+   mark is drawn once, in its first phase, and simply stays there. */
 .composer .waiting .title {
     color: var(--accent); font-size: 12.5px; font-weight: 600;
     margin-bottom: 3px;
@@ -981,6 +1012,103 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     font-size: 11.5px; padding: 4px 10px;
 }
 .composer .waiting .go:hover { background: var(--card-hi); color: var(--ink); }
+
+/* The menu itself, as things a finger can hit.
+   ---------------------------------------------------------------------------
+   This is the half that was missing. The box above it has always known a session was waiting;
+   what it could say about it was "go and find the Mac", which on a phone in another room is not
+   advice, it is a dead end. The options were being parsed on the Mac the whole time and thrown
+   away — see `SessionState.menu`.
+
+   Buttons rather than a list, and the number is the point: it is what gets sent, so it is drawn
+   as the key it is rather than as a bullet. A row that no keystroke reaches is drawn without one
+   and cannot be pressed, because a control that looks live and is not is worse than a line of
+   text. */
+.composer .menu { display: flex; flex-direction: column; gap: 6px; margin-top: 9px; }
+.composer .menu .opt {
+    display: flex; align-items: flex-start; gap: 9px; width: 100%;
+    padding: 9px 11px; text-align: left;
+    background: var(--card); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 9px;
+    font-size: 13px; line-height: 1.4;
+    /* Comfortably past the 44px a thumb wants, without setting a height that a two-line
+       option would then have to break out of. */
+    min-height: 44px;
+}
+.composer .menu .opt:hover:not(:disabled) { background: var(--card-hi); border-color: var(--accent-ed); }
+.composer .menu .opt:active:not(:disabled) { background: var(--accent-in); }
+.composer .menu .opt:disabled { cursor: default; opacity: 0.6; }
+/* The row the caret is parked on over there. Marked rather than pre-selected: it is what a bare
+   Return on the Mac would confirm, which is a fact about that screen and not a recommendation. */
+.composer .menu .opt[data-here="1"] { border-color: var(--accent-ed); background: var(--accent-in); }
+.composer .menu .opt .n {
+    flex: 0 0 auto; min-width: 18px; padding: 1px 0;
+    font: 600 11.5px/1.5 var(--mono); text-align: center;
+    color: var(--accent); opacity: 0.9;
+}
+.composer .menu .opt[data-can="0"] .n { color: var(--faint); }
+.composer .menu .opt .what { flex: 1 1 auto; min-width: 0; }
+.composer .menu .opt .here {
+    display: block; margin-top: 2px;
+    color: var(--faint); font-size: 11px; letter-spacing: 0.02em;
+}
+.composer .menu .opt[disabled] .here { color: var(--faint); }
+
+/* What the session sent off to work somewhere else.
+   ---------------------------------------------------------------------------
+   The quietest thing in the composer, and that is the design rather than a shortage of effort.
+   An agent running is *context* — it answers "why has this been busy for four minutes" — and it
+   is never a thing that wants somebody. The one state on this page allowed to be loud is a
+   session waiting for an answer, and a row of orange chips under it would take that away.
+
+   So: dim, small, monospace for the machine's half and prose for the human's, and no accent
+   anywhere except the one dot that says a thing is still going. */
+.composer .agents { padding: 0 2px 8px; }
+.composer .agents[hidden] { display: none; }
+.composer .agents .head {
+    display: flex; align-items: baseline; gap: 7px;
+    color: var(--faint); font-size: 11px; letter-spacing: 0.02em;
+    margin-bottom: 5px;
+}
+.composer .agents .head .n { color: var(--dim); }
+.composer .agents .one {
+    display: flex; align-items: baseline; gap: 7px;
+    padding: 2px 0; min-width: 0;
+}
+.composer .agents .one .mark {
+    flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--faint); align-self: center;
+}
+.composer .agents .one[data-state="running"] .mark { background: var(--accent); opacity: 0.75; }
+.composer .agents .one[data-state="done"] .mark { background: var(--ok); }
+.composer .agents .one[data-state="failed"] .mark { background: var(--bad); }
+.composer .agents .one .what {
+    flex: 0 1 auto; min-width: 0; color: var(--dim); font-size: 11.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The tool it last reached for. The closest thing to a live line something with no screen has,
+   so it is set the way the live line is — monospace, dimmer than the words around it. */
+.composer .agents .one .doing {
+    flex: 1 1 auto; min-width: 0; color: var(--faint);
+    font: 11px/1.4 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.composer .agents .one .said { color: var(--faint); font-size: 11px; flex: 0 0 auto; }
+
+/* The list's own count. A number and nothing else: the row already has a state to say, and this
+   is the second-quietest thing on it after the tty. */
+.row .agents-chip {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+    color: var(--faint); font: 10.5px/1 var(--mono);
+    padding: 2px 5px; border: 1px solid var(--line); border-radius: 5px;
+}
+.row .agents-chip .dot {
+    width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: 0.7;
+}
+/* **A rule that sets `display` outranks the `hidden` attribute**, which is how a chip meant to
+   appear on two rows out of nine ends up on all nine reading "0". Same guard the live line
+   already carries, for the same reason. */
+.row .agents-chip[hidden] { display: none; }
 
 .composer .why { color: var(--faint); font-size: 11.5px; margin-top: 7px; }
 /* Nothing to explain, no row. The line under the box now only ever says why the box will not
@@ -1476,6 +1604,10 @@ a.link:active { background: var(--line); }
                  directly above the box, at the end of the transcript. -->
             <div class="waiting" id="waiting" role="status" hidden></div>
             <div class="live" id="live" role="status" hidden></div>
+            <!-- What the session sent off to work elsewhere. Below the live line because it is
+                 the second question — first "is it running", then "on what" — and quiet, because
+                 an agent is context for why a session is busy and never a thing that wants you. -->
+            <div class="agents" id="agents" role="status" hidden></div>
             <div class="shots" id="shots"></div>
             <div class="box">
                 <button class="attach" id="attach" type="button" aria-label="Attach a picture" title="Attach a picture" disabled>+</button>
@@ -1838,6 +1970,15 @@ var T = {
     webWaitingTitle: "This session is waiting for an answer",
     webWaitingSay: "Claude Code is showing a menu on the Mac. Clawdline cannot read a menu from here yet, so the choices are only on that screen.",
     webWaitingSend: "*Sending from here will not type your answer into the menu.* It confirms whichever option the menu has highlighted — which is rarely the one you meant. Answer this one on the Mac.",
+    // The same menu, once it could be read. The two above are what is said when it could not.
+    webMenuSay: "Tap an answer and it goes straight to the session.",
+    webMenuHighlighted: "highlighted",
+    webMenuSent: "Answer sent.",
+    // What a session has going in the background — see `Subagents` on the Mac.
+    webAgents: "Background agents",
+    webAgentsCount: "{n} running",
+    webAgentDone: "done",
+    webAgentFailed: "failed",
     // The page has been open longer than the app it came from.
     webStale: "Clawdline has been rebuilt on the Mac. This page is the older one.",
     webStaleGo: "Reload",
@@ -2064,7 +2205,7 @@ var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
  "app", "pane-detail", "back", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
  "tx-links", "tx-links-label", "tx-focus", "tx-focus-label", "live", "stale-shut",
- "composer", "msg", "send", "why", "waiting", "stale", "stale-say", "stale-go",
+ "composer", "msg", "send", "why", "waiting", "agents", "stale", "stale-say", "stale-go",
  "hints", "keys", "toast", "brand", "brand-mark",
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
  "settings-notify-go", "settings-notify-test", "settings-notify-said", "settings-version",
@@ -2252,10 +2393,11 @@ var spinners = [];        // the list's own, thrown away and rebuilt by every re
 // — two spinners on one screen turning at their own speeds is the thing this note is about.
 var bandSpin = null;
 setInterval(function () {
-    if (reduced || (!spinners.length && !bandSpin)) return;
+    if (reduced || (!spinners.length && !bandSpin && !liveSpin)) return;
     spinPhase = (spinPhase + 1) % 8;
     for (var i = 0; i < spinners.length; i++) drawSpinner(spinners[i], spinPhase);
     if (bandSpin) drawSpinner(bandSpin, spinPhase);
+    if (liveSpin) drawSpinner(liveSpin, spinPhase);
 }, SPIN.step);
 
 /* ==========================================================================
@@ -2566,6 +2708,17 @@ var Live = {
                          post(body, { "Idempotency-Key": uuid() }));
     },
 
+    /// Answer a menu with the keystroke it is numbered with.
+    ///
+    /// **Not `send`.** Claude Code's picker discards a bracketed paste and acts on the Return
+    /// that follows it, so words posted to a session showing a menu confirm whichever row is
+    /// highlighted rather than typing anything — the server refuses that outright. A digit is
+    /// the only thing that answers the question that was actually asked.
+    key: function (id, press) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/key",
+                         post({ key: String(press) }, { "Idempotency-Key": uuid() }));
+    },
+
     focus: function (id) {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/focus",
                          post({}, { "Idempotency-Key": uuid() }));
@@ -2653,12 +2806,33 @@ var Mock = (function () {
 
     var now = Math.floor(Date.now() / 1000);
     var sessions = [
+        // Working, with three agents out — the case the terminal cannot show at all, and the
+        // reason `Subagents` exists. One of them has just landed and is saying what it found.
         { id: "8F3A-1C", backend: "iterm", tty: "ttys004", label: "investigate the webhook",
           cwd: "/Users/x/code/clawdline", state: "working", line: "Gallivanting… (2m 4s · ↓ 6.4k tokens)",
-          isClaude: true, sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38", icon: clawdline },
+          isClaude: true, sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38", icon: clawdline,
+          agents: [
+              { id: "a1", what: "Search the delivery logs", type: "general-purpose",
+                state: "running", depth: 1, at: now - 8, doing: "Grep: retry_after" },
+              { id: "a2", what: "Read the signing middleware", type: "general-purpose",
+                state: "running", depth: 1, at: now - 31, doing: "Read: app/webhooks/verify.rb" },
+              { id: "a3", what: "Check the queue depth", type: "general-purpose",
+                state: "done", depth: 1, at: now - 12,
+                result: "Depth is flat at 0 — nothing is backing up.",
+                tokens: 18420, tools: 5, seconds: 44.2 }
+          ] },
+        // Waiting, **with the question in it**. This is what the phone could never see: the
+        // options were parsed on the Mac and thrown away, so the box could only say "go and
+        // find the Mac". The caret is on the second row, which is what a bare Return confirms.
         { id: "2C71-90", backend: "iterm", tty: "ttys011", label: "the signup flow keeps 500ing",
           cwd: "/Users/x/code/atrium", state: "waiting", line: null,
-          isClaude: true, sessionId: null, icon: atrium },
+          isClaude: true, sessionId: null, icon: atrium,
+          menu: { selected: 2, options: [
+              { n: 1, label: "Yes", selected: false, can: true },
+              { n: 2, label: "Yes, and don't ask again for rails commands in atrium",
+                selected: true, can: true },
+              { n: 3, label: "No, tell Claude what to do instead", selected: false, can: true }
+          ] } },
         { id: "9B04-2D", backend: "iterm", tty: "ttys002", label: "rewrite the CSV importer",
           cwd: "/Users/x/code/notebook", state: "idle", line: null,
           isClaude: true, sessionId: null, icon: creature },
@@ -2789,7 +2963,7 @@ var Mock = (function () {
             { label: "site", url: "https://clawdline.example.com", kind: "site", state: "ok", local: false },
             { label: "ci", url: "https://github.com/example/clawdline/actions/runs/32206093368", kind: "deploy", state: "fail", local: false },
             { label: "web", url: "http://127.0.0.1:5173", kind: "server", state: "ok", local: true },
-            { label: "api", url: "http://127.0.0.1:8787", kind: "server", state: "down", local: true },
+            { label: "api", url: "http://127.0.0.1:8787", kind: "server", state: "down", local: true, why: "build-web: bash: npm: command not found" },
             { label: "backlog", url: "file:///Users/you/code/clawdline/artifacts/backlog.html", kind: "artifact", state: "", local: true }
         ],
         "2C71-90": [
@@ -2951,6 +3125,20 @@ var Mock = (function () {
                 }, 300);
             });
         },
+        /** Answering moves the session off `waiting`, which is the whole thing worth seeing
+         *  from a file:// copy: the menu goes, the buttons go, and the composer comes back. */
+        key: function (id) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
+                    var s = find(id);
+                    if (s) { s.state = "working"; s.line = "Deciding\u2026 (1s)"; s.menu = null; }
+                    emit();
+                    done({ ok: true });
+                }, 200);
+            });
+        },
+
         focus: function () {
             return new Promise(function (done, fail) {
                 setTimeout(function () {
@@ -3439,6 +3627,7 @@ function render() {
     renderDetailHead();
     renderComposer();
     renderWaiting();
+    renderAgents();
     renderHints();
 }
 
@@ -3566,7 +3755,8 @@ function buildRow(s) {
     li.innerHTML =
         '<canvas class="mark"></canvas>' +
         '<div class="title"></div>' +
-        '<div class="meta"><span class="path"></span><span class="tty"></span></div>' +
+        '<div class="meta"><span class="path"></span><span class="tty"></span>' +
+        '<span class="agents-chip" hidden><span class="dot"></span><span class="n"></span></span></div>' +
         '<div class="state"></div>';
     li.addEventListener("click", function () { openSession(s.id); });
     return li;
@@ -3591,6 +3781,16 @@ function fillRow(node, s) {
 
     node.querySelector(".path").textContent = shortPath(s.cwd);
     node.querySelector(".tty").textContent = s.tty || s.backend || "";
+
+    // How many agents this session has out. **A number and nothing else**, sitting with the path
+    // and the tty rather than with the state: the state line answers "does this want me", and
+    // background work never does. It is also the only place in the list that says anything the
+    // terminal could not have been asked — an agent leaves no mark on a screen.
+    var chip = node.querySelector(".agents-chip");
+    var out = 0, list = s.agents || [];
+    for (var a = 0; a < list.length; a++) if (list[a].state === "running") out++;
+    chip.hidden = !out;
+    if (out) chip.querySelector(".n").textContent = String(out);
 
     // The state line is rebuilt only when the *shape* of it changes. A working session sends a
     // new line every second, and throwing away the spinner's canvas to write one string would
@@ -4287,7 +4487,22 @@ function renderComposer() {
     // A picture on its own is a message. The server takes text, images, or both, and refuses
     // only the one that is neither — so the button follows the same rule.
     els.send.disabled = !on || sending || Shots.busy() || (!msgText() && !Shots.count());
-    els.send.textContent = sending ? T.webSending : T.webSend;
+    // **The width is pinned before the word changes.** "Send" and "Sending…" are different
+    // lengths in every language, and swapping them mid-press moved the button, which moved the
+    // box under it — so the press that started a send also made the thing you pressed jump. The
+    // width is measured while it says the shorter word and held while it says the longer one,
+    // rather than guessed at with a `min-width` that would be wrong in thirteen languages.
+    if (sending) {
+        if (sendWidth) els.send.style.minWidth = sendWidth + "px";
+        els.send.textContent = T.webSending;
+    } else {
+        els.send.style.minWidth = "";
+        els.send.textContent = T.webSend;
+        // Re-measured when the words themselves change, which happens once, when `/v1/strings`
+        // lands and the page stops speaking its built-in English.
+        if (sendMeasured !== T.webSend) { sendMeasured = T.webSend; sendWidth = 0; }
+        if (!sendWidth) sendWidth = els.send.offsetWidth;
+    }
     // Return means two different things on the two kinds of machine, so the explanation is only
     // offered where there is a Return to explain. It is hover text and not a row of the screen:
     // it was a permanent line under the box once, and a permanent line to teach something once
@@ -4327,15 +4542,29 @@ function renderComposer() {
  */
 var waitingDrawn = null;
 var liveDrawn = null;
+var agentsDrawn = null;
+/// The composer's own spinner. Kept out of `spinners`, which the list throws away and rebuilds
+/// on every render — this one belongs to the pane and outlives that.
+var liveSpin = null;
+/// The button's resting width, and the words it was measured against.
+var sendWidth = 0;
+var sendMeasured = null;
 
 function renderWaiting() {
     var box = els.waiting;
     if (!box) return;
     var open = S.openId ? byId(S.openId) : null;
+    // The options, when the Mac managed to read them. When it did not — a dialog drawn in a
+    // shape the parser does not know — the two sentences underneath are what this box has always
+    // said, and they are still the honest answer for that case.
+    var menu = open && open.state === "waiting" && open.menu ? open.menu : null;
+    var rows = menu && menu.options && menu.options.length ? menu.options : null;
     var want = !open || open.state !== "waiting" ? "" :
         '<div class="title">' + esc(T.webWaitingTitle) + "</div>" +
-        '<div class="say">' + words(T.webWaitingSay) + "</div>" +
-        '<div class="say">' + words(T.webWaitingSend) + "</div>" +
+        (rows
+            ? '<div class="say">' + words(T.webMenuSay) + "</div>" + menuHTML(rows)
+            : '<div class="say">' + words(T.webWaitingSay) + "</div>" +
+              '<div class="say">' + words(T.webWaitingSend) + "</div>") +
         '<button type="button" class="go" data-focus="1">' + esc(T.webShowOnMac) + "</button>";
     // The live line, from the same reading, and **above the early return below** — that return
     // exists because the *notice* rarely changes, and while a session is working the notice is
@@ -4350,11 +4579,17 @@ function renderWaiting() {
         if (say !== liveDrawn) {
             liveDrawn = say;
             live.textContent = "";
+            liveSpin = null;
             if (say) {
-                var d = document.createElement("span"); d.className = "dot";
+                // The same mark the list draws, on the same clock. It replaced a dot that
+                // breathed between full and quarter opacity — which said "still going" only to
+                // somebody already watching it, and said nothing at a glance.
+                var d = document.createElement("canvas"); d.className = "spin";
                 var t = document.createElement("span"); t.className = "said";
                 t.textContent = say;
                 live.appendChild(d); live.appendChild(t);
+                liveSpin = d;
+                drawSpinner(d, spinPhase);
             }
             live.hidden = !say;
         }
@@ -4374,12 +4609,104 @@ function renderWaiting() {
     document.dispatchEvent(new CustomEvent("clawdline:rendered"));
 }
 
+/**
+ * A menu's options, as buttons.
+ *
+ * **`n` is the keystroke, not the position.** It is drawn as the number the row carries and sent
+ * as that same number, because Claude Code's picker acts on the digit — renumbering these to run
+ * 1..n would produce buttons whose label and effect disagree, which is the failure this whole
+ * feature exists to stop somebody hitting from another room.
+ *
+ * A row is offered only when a keystroke can reach it *and* this device may send. Otherwise it is
+ * drawn and disabled: the question is still worth reading when you cannot answer it, and a button
+ * that looks live and does nothing is worse than a line of text.
+ */
+function menuHTML(rows) {
+    return '<div class="menu">' + rows.map(function (o) {
+        var can = o.can !== false && S.write;
+        return '<button type="button" class="opt" data-key="' + esc(String(o.n)) + '"' +
+            ' data-can="' + (o.can === false ? "0" : "1") + '"' +
+            (o.selected ? ' data-here="1"' : "") + (can ? "" : " disabled") + ">" +
+            '<span class="n">' + esc(String(o.n)) + "</span>" +
+            '<span class="what">' + esc(o.label || "") +
+            (o.selected ? '<span class="here">' + esc(T.webMenuHighlighted) + "</span>" : "") +
+            "</span></button>";
+    }).join("") + "</div>";
+}
+
 els.waiting.addEventListener("click", function (ev) {
-    if (!ev.target.closest || !ev.target.closest("[data-focus]")) return;
+    if (!ev.target.closest) return;
+
+    var opt = ev.target.closest("[data-key]");
+    if (opt) {
+        if (!S.openId || opt.disabled) return;
+        // Every option goes dead on the first press, not just the one pressed. They are answers
+        // to one question: a second tap while the first is in flight would arrive as a stray
+        // keystroke in whatever the session moved on to.
+        Array.prototype.forEach.call(els.waiting.querySelectorAll(".opt"), function (b) {
+            b.disabled = true;
+        });
+        api.key(S.openId, opt.dataset.key)
+            .then(function () { toast(T.webMenuSent); })
+            .catch(function (e) {
+                toast(e.message, true);
+                // Drawn again from scratch, and the cache has to be cleared to allow it: the
+                // markup has not changed, so the guard in `renderWaiting` would keep the dead
+                // buttons on screen and leave nothing to press.
+                waitingDrawn = null;
+                renderWaiting();
+            });
+        return;
+    }
+
+    if (!ev.target.closest("[data-focus]")) return;
     if (!S.openId) return;
     api.focus(S.openId).then(function () { toast(T.webShowOnMacAsked); })
         .catch(function (e) { toast(e.message, true); });
 });
+
+/**
+ * What this session has working somewhere that is not a screen.
+ *
+ * **The quietest thing in the composer, on purpose.** An agent running is the answer to "why has
+ * this been busy for four minutes" — it is context, and it never wants anybody. The one state on
+ * this page allowed to be loud is a session waiting for an answer, and a stack of bright rows
+ * under it would take that away.
+ *
+ * A finished agent stays for a few minutes with what it came back with, then goes. The record is
+ * the transcript; this is the notice.
+ */
+function renderAgents() {
+    var box = els.agents;
+    if (!box) return;
+    var open = S.openId ? byId(S.openId) : null;
+    var list = (open && open.agents) || [];
+    var running = 0;
+    for (var i = 0; i < list.length; i++) if (list[i].state === "running") running++;
+
+    var want = !list.length ? "" :
+        '<div class="head"><span>' + esc(T.webAgents) + "</span>" +
+        (running ? '<span class="n">' + esc(fill(T.webAgentsCount, { n: running })) + "</span>" : "") +
+        "</div>" +
+        list.map(function (a) {
+            var said = a.state === "done" ? T.webAgentDone
+                     : a.state === "failed" ? T.webAgentFailed : "";
+            // Running: the tool it last reached for. Finished: what it handed back. Same slot,
+            // because they are the same question asked at two different times.
+            var trailing = a.state === "running" ? (a.doing || "") : (a.result || "");
+            return '<div class="one" data-state="' + esc(a.state) + '">' +
+                '<span class="mark"></span>' +
+                '<span class="what">' + esc(a.what || a.type || "") + "</span>" +
+                (trailing ? '<span class="doing">' + esc(trailing) + "</span>" : "") +
+                (said ? '<span class="said">' + esc(said) + "</span>" : "") +
+                "</div>";
+        }).join("");
+
+    if (want === agentsDrawn) return;
+    agentsDrawn = want;
+    box.innerHTML = want;
+    box.hidden = !want;
+}
 
 function renderHints() {
     if (phone()) { els.hints.innerHTML = ""; return; }
@@ -5333,7 +5660,11 @@ var Links = (function () {
         // the Mac itself that is simply an address and there is nothing to say; reached over a
         // tunnel, over a LAN address, or on mobile data it is the whole story about that row.
         var far = l.local && !atMac();
-        var note = file ? T.webLinksFile : (far ? T.webLinksLocal : "");
+        // A reason beats a hint. "reachable on the Mac only" is worth saying about a server that
+        // is up; about one that is down it is beside the point, and the line the process printed
+        // as it died is the only thing anybody opened this sheet to find out.
+        var note = l.why ? String(l.why)
+            : (file ? T.webLinksFile : (far ? T.webLinksLocal : ""));
         var word = STATES[l.state] ? T[STATES[l.state]] : "";
 
         var inner = icon(l.kind) +

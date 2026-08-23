@@ -58,6 +58,7 @@ struct Indonesian: Copy {
     func stackTip(up: Int, total: Int) -> String { "\(up) dari \(total) server aktif — ⌘S untuk daftarnya" }
     let stackTipUnknown = "Proyek ini punya server, tetapi perintah status-nya belum dipercaya — ⌘S"
     let stackUntrusted = "belum dipercaya"
+    let stackExit = "keluar"
     let stackActionStart = "mulai"
     let stackActionRestart = "mulai ulang"
     let stackActionStop = "hentikan"
@@ -68,6 +69,7 @@ struct Indonesian: Copy {
     let stackActionAgain = "tekan lagi"
     func sessionTip(index: Int, total: Int) -> String { "Sesi \(index) dari \(total) — ⌘K untuk berpindah" }
     let sessionWaiting = "menunggu jawabanmu"
+    let sessionAgents = "{n} di latar belakang"
     let islandDone = "selesai"
     let islandAllSessions = "Semua sesi…"
     func statusWaiting(_ labels: [String]) -> String {
@@ -332,6 +334,13 @@ struct Indonesian: Copy {
     let webWaitingTitle = "Sesi ini sedang menunggu jawaban"
     let webWaitingSay = "Claude Code sedang menampilkan menu di Mac. Clawdline belum bisa membaca menu dari sini, jadi pilihannya hanya ada di layar itu."
     let webWaitingSend = "*Mengirim dari sini tidak akan mengetikkan jawabanmu ke menu itu* — yang disahkan adalah pilihan yang sedang tersorot di menu, dan itu jarang yang kamu maksud. Yang satu ini jawab di Mac."
+    let webMenuSay = "Ketuk satu jawaban, langsung dikirim ke sesi itu."
+    let webMenuHighlighted = "disorot"
+    let webMenuSent = "Jawaban terkirim."
+    let webAgents = "Agen di latar belakang"
+    let webAgentsCount = "{n} berjalan"
+    let webAgentDone = "selesai"
+    let webAgentFailed = "gagal"
     let webStale = "Clawdline sudah dibangun ulang di Mac. Halaman ini yang lama."
     let webStaleGo = "Muat ulang"
 
