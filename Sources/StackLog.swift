@@ -61,14 +61,30 @@ enum StackLog {
     ///
     /// Returns the line unchanged when it is not an envelope — a project whose `logs` command is
     /// plain `tail` must not come out empty just because it was not JSON.
-    static func unwrap(_ line: String) -> String {
+    static func unwrap(_ line: String) -> String { envelope(line).message }
+
+    /// The same unwrapping, keeping the pipe the line came down.
+    ///
+    /// **`level` is worthless for colouring and valuable for post-mortems**, which is why it is
+    /// carried here rather than thrown away. Live, it says only "this went to stderr", and
+    /// uvicorn, mkdocs, next and cloudflared all report ordinary progress there — colouring by
+    /// it paints a healthy stack red (see the note at the top of this file). But in the tail of
+    /// a process that has *already exited*, "the last thing it wrote to stderr" is a far better
+    /// guess at what killed it than "the last thing it wrote at all". `DevStack.Process.reason`
+    /// is the one caller, and that is the question it is asking.
+    ///
+    /// - Returns: the message, and the envelope's `level` when there was an envelope. A line
+    ///   that was never wrapped comes back with a `nil` level — unwrapped is not the same as
+    ///   "logged at no particular level", and a caller ranking lines must be able to tell.
+    static func envelope(_ line: String) -> (message: String, level: String?) {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard trimmed.hasPrefix("{"), trimmed.hasSuffix("}"),
               let data = trimmed.data(using: .utf8),
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        else { return line }
-        guard let message = obj["message"] as? String else { return "" }
-        return message
+        else { return (line, nil) }
+        let level = (obj["level"] as? String)?.lowercased()
+        guard let message = obj["message"] as? String else { return ("", level) }
+        return (message, level)
     }
 
     /// How loud a line is, judged by what it says rather than by which pipe it came down.
@@ -77,6 +93,7 @@ enum StackLog {
     private static let errorWords: Set<String> =
         ["ERROR", "FATAL", "CRITICAL", "EXCEPTION", "TRACEBACK", "ERR", "PANIC"]
     private static let warnWords: Set<String> = ["WARNING", "WARN", "WRN"]
+    private static let calmWords: Set<String> = ["INFO", "INF", "DEBUG", "DBG", "TRACE", "NOTICE"]
 
     private static func token(_ s: Substring) -> String {
         s.trimmingCharacters(in: CharacterSet(charactersIn: "[](){}<>:;,.-|")).uppercased()
@@ -94,6 +111,27 @@ enum StackLog {
             if warnWords.contains(t) { return .warning }
         }
         return .normal
+    }
+
+    /// Whether the line names its own severity, and names an ordinary one.
+    ///
+    /// **The counterweight to the envelope's `level`.** process-compose stamps everything a
+    /// process writes to stderr as `error`, and cloudflared writes its startup chatter there:
+    /// `2026-08-22T13:03:55Z INF Tunnel connection curve preferences…`. Believing the envelope
+    /// about a line like that offers a connection notice as the reason a tunnel died — which is
+    /// the same wrong answer, arrived at from the other direction, as trusting the last line.
+    ///
+    /// So where the text says what it is, the text wins, and the envelope only gets to speak for
+    /// lines that never said. Nothing here decides a line *is* an error; it only takes the
+    /// envelope's word away. See `DevStack.Process.reason`, the one caller.
+    static func declaresCalm(_ message: String) -> Bool {
+        for t in message.split(separator: " ", omittingEmptySubsequences: true).prefix(5).map(token) {
+            if calmWords.contains(t) { return true }
+            // A line that leads with a real severity has already answered a different question,
+            // and must not be read as calm because "info" turns up later in the sentence.
+            if errorWords.contains(t) || warnWords.contains(t) { return false }
+        }
+        return false
     }
 
     /// How many characters of leading timestamp a line starts with, if any.

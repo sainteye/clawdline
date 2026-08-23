@@ -51,6 +51,52 @@ enum DevStack {
 
         var isDown: Bool { state == "exited" }
         var isUp: Bool { state == "healthy" || state == "running" || state == "completed" }
+
+        /// The one line of this process's dying words worth putting on a row.
+        ///
+        /// `error` is a *tail*, not a message, and three things stood between it and something
+        /// readable. The row used to solve none of them — it took the last line and cut it at
+        /// seventy characters — and each one was caught by a different project on this machine.
+        ///
+        /// - **The envelope.** What a supervisor stores is `{"level":"error","process":
+        ///   "build-web","replica":0,"message":"bash: npm: command not found"}`: sixty characters
+        ///   of bookkeeping in front of the twenty-eight that are the answer. Cut at seventy, the
+        ///   row read `…"message":"bash: np` and stopped exactly where the diagnosis started.
+        /// - **Last is not loudest.** The tail holds everything the process printed, and a web
+        ///   server prints request logs until the moment it dies. The last line of that was
+        ///   `INFO: GET /api/v1/health 200 OK` — a success message offered, under a red ✗, as the
+        ///   explanation for a crash.
+        /// - **It can end mid-JSON.** The tail is cut to a byte budget by whoever wrote it, so
+        ///   the final line is often half an envelope: `{"level":` and nothing after it.
+        ///
+        /// So: unwrap every line, throw away the halves and the blanks, and prefer the last line
+        /// that *reads* like a failure over the last line that merely *is* last. When nothing
+        /// reads like one, this is `nil` rather than the last ordinary line — an exit code with
+        /// no explanation is a smaller claim than a wrong explanation, and the log is one press
+        /// away for anyone who wants the rest.
+        var reason: String? {
+            guard let error, !error.isEmpty else { return nil }
+            var lines: [(text: String, loud: Bool)] = []
+            for raw in error.split(separator: "\n", omittingEmptySubsequences: true) {
+                let envelope = StackLog.envelope(String(raw))
+                let text = Ansi.plain(envelope.message)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                // A truncated envelope unwraps to itself, because it is not parseable JSON. It is
+                // recognisable by the shape it kept, and it is never worth showing.
+                if text.isEmpty || text.hasPrefix("{\"") { continue }
+                // Loud if the text says so, or if it came down stderr *and* did not say
+                // otherwise. The second half is what keeps cloudflared's `INF` startup lines —
+                // which process-compose files under `level: error` like everything else on that
+                // pipe — from being offered as the reason a tunnel went down.
+                lines.append((text, StackLog.level(of: text) == .error
+                                    || (envelope.level == "error"
+                                        && !StackLog.declaresCalm(text))))
+            }
+            // Loud by the text it printed, or by the pipe it came down — a shell's
+            // `command not found` announces itself as neither ERROR nor FATAL, and a rule that
+            // only reads words would lose the one line that mattered here.
+            return lines.last(where: { $0.loud })?.text
+        }
     }
 
     /// Everything a project's stack is doing right now.
@@ -77,6 +123,51 @@ enum DevStack {
         /// young again — after a two-second `restart api` the honest answer is still "up since
         /// this morning".
         var since: Double? { processes.compactMap(\.since).min() }
+
+        /// The broken process worth naming, out of however many are broken.
+        ///
+        /// **Not the first one.** A status command prints its processes in whatever order it
+        /// likes — alphabetical, for the projects here — and the first name in that order is as
+        /// likely to be a casualty as a cause. `atrium` showed `✗ blog`: a process that exits
+        /// silently, with no output at all, because the build it waits on never completed. The
+        /// build that actually failed, and the only line in the entire document that said why,
+        /// was `build-blog`, two rows further down and never drawn.
+        ///
+        /// That is the shape of every dependency failure, not a quirk of one project: the thing
+        /// that broke says something, and the things waiting on it die quietly. So prefer one
+        /// that left an explanation behind, then one whose exit code is specific — 127 is a
+        /// shell's "command not found" and is almost always a cause rather than an effect,
+        /// where 1 is the code everything uses for everything — and only then fall back to the
+        /// order they arrived in.
+        var rootCause: Process? {
+            let down = processes.filter { $0.isDown }
+            guard var best = down.first else { return nil }
+            func rank(_ p: Process) -> Int {
+                (p.reason != nil ? 2 : 0) + ((p.exitCode ?? 0) > 1 ? 1 : 0)
+            }
+            // First among equals, so a tie keeps the project's own order rather than reshuffling
+            // the row every time the same two processes are down.
+            var bestRank = rank(best)
+            for p in down.dropFirst() where rank(p) > bestRank {
+                best = p
+                bestRank = rank(p)
+            }
+            return best
+        }
+
+        /// Why this process is not up, in one line, for a reader who can only be shown one.
+        ///
+        /// Its own last words when it left any; otherwise the stack's root cause, named. The
+        /// second half is the part that matters: `web` is down and has nothing to say, and
+        /// "build-web: bash: npm: command not found" is both true of `web` and the only useful
+        /// thing anybody can tell it. Answering "no idea" there, when the document three lines
+        /// up knows exactly, is the whole complaint this method exists to answer.
+        func why(_ p: Process) -> String? {
+            if let reason = p.reason { return reason }
+            guard let cause = rootCause, cause.name != p.name, let reason = cause.reason
+            else { return nil }
+            return "\(cause.name): \(reason)"
+        }
     }
 
     /// The `.devstack.json` itself.
@@ -346,7 +437,8 @@ enum DevStack {
         }
         guard let template else { return (false, "unsupported") }
         let cmd = expand(template, process: process, lines: lines)
-        guard let out = shell(cmd, cwd: spec.root, timeout: timeout, wantStatus: true) else {
+        guard let out = shell(cmd, cwd: spec.root, timeout: timeout,
+                              wantStatus: true, interactive: true) else {
             return (false, "")
         }
         // shell() marks the exit status on the first line when asked; see below.
@@ -385,8 +477,27 @@ enum DevStack {
     /// Through a login shell, because these commands are the project's own — `make`,
     /// `process-compose`, `npm` — and an app inherits none of the PATH a terminal has. Without
     /// it every one of them fails as "command not found" on a machine where they all work.
+    ///
+    /// - Parameter interactive: also read the interactive rc file (`-i`). **This is where `npm`
+    ///   lives, and a login shell alone does not find it.** zsh reads `.zshenv`, `.zprofile` and
+    ///   `.zlogin` when it is a login shell, and `.zshrc` only when it is interactive — and
+    ///   every version manager in common use installs itself into `.zshrc`, because that is what
+    ///   nvm's own installer appends to. So `zsh -l -c 'which npm'` comes back empty on a
+    ///   machine where `npm` has worked in every terminal for years.
+    ///
+    ///   That cost three projects here at once, and it cost them for days rather than for a
+    ///   command: `up` does not merely run `npm`, it hands its environment to a supervisor that
+    ///   then outlives the shell. Every process started under that daemon inherited the PATH
+    ///   with no node in it, so `build-web` exited 127 with `bash: npm: command not found`, and
+    ///   `web` — which waits on that build completing — exited silently behind it.
+    ///
+    ///   Not the default, because it is not free: an interactive shell sources a real rc file
+    ///   and measured ~0.7s here against ~0.03s. Reading state runs on a timer for every known
+    ///   project and stays on the cheap shell, which is enough for it — `make` and `python3` are
+    ///   in the login PATH. Acting already takes a minute for a front-end build, so a second of
+    ///   shell start-up is invisible there and buys the whole PATH.
     private static func shell(_ command: String, cwd: String, timeout: Double,
-                              wantStatus: Bool = false) -> String? {
+                              wantStatus: Bool = false, interactive: Bool = false) -> String? {
         let task = Foundation.Process()
         // The user's own shell, as a login shell, because these commands are the project's own —
         // `make`, `process-compose`, `npm` — and an app inherits none of the PATH a terminal has.
@@ -397,7 +508,7 @@ enum DevStack {
             FileManager.default.isExecutableFile(atPath: shellPath) ? shellPath : "/bin/sh")
         // With a status wanted, the exit code goes on the first line and the output follows —
         // one read, and no second channel to keep in sync.
-        task.arguments = ["-l", "-c", wantStatus
+        task.arguments = (interactive ? ["-i", "-l", "-c"] : ["-l", "-c"]) + [wantStatus
             ? "out=$(\(command) 2>&1); code=$?; printf '%s\\n%s' \"$code\" \"$out\""
             : command]
         task.currentDirectoryURL = URL(fileURLWithPath: cwd)

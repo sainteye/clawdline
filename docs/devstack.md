@@ -153,6 +153,29 @@ Put the last few lines of the failed process's log in `error`. It is carried her
 for a follow-up `logs` call because the reader always wants it next — and because that one field
 is the difference between an agent that reports a red mark and one that fixes it.
 
+**Send the tail, not a summary.** It is read as a tail, and nothing is asked of its formatting:
+
+- A JSON envelope per line — `{"level":"error","process":"web","message":"…"}`, which is what a
+  supervisor's own log files hold — is unwrapped, and so are ANSI colour codes. You do not have to
+  strip either, and stripping them costs nothing if you already have.
+- **The last line is not assumed to be the reason.** A web server prints request logs until the
+  moment it dies, so the end of the tail is routinely a `200 OK`. The line preferred is the last
+  one that *reads* like a failure — announced by its own text, or by an envelope that put it on
+  stderr — and when nothing in the tail does, the panel shows the exit code and no explanation
+  rather than offering the last ordinary line as one.
+- A tail cut off mid-envelope is discarded rather than shown, so cutting to a byte budget is safe.
+
+### The row names one process, and picks which
+
+A stack can have six things down for three different reasons, and a row has space for one name.
+The one it names is the process that **left an explanation behind**, preferring a specific exit
+code (127 is a shell's "command not found") over the generic 1 — because that is nearly always the
+cause, while the processes waiting on it exit silently and are only the effect.
+
+So the ordering of `processes` does not decide what gets blamed, and a dependency that fails is
+named ahead of the things it took down with it. The rest are a hover away, and every one of them
+is on the phone's own list.
+
 ---
 
 ## Three ways to adopt this

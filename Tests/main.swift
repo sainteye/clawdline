@@ -2214,6 +2214,22 @@ group("devstack: the line worth showing out of a process's dying words") {
     expect("half an envelope is dropped, not shown",
            cut?.processes.first?.reason, "ERR failed to accept incoming stream")
 
+    // process-compose files everything written to stderr under `level: error`, and cloudflared
+    // writes its startup chatter there. Believing the envelope about a line that says `INF` in
+    // its own text offers a connection notice as the reason a tunnel died — the same wrong
+    // answer as trusting the last line, arrived at from the other direction.
+    let chatter = DevStack.parseState(Data(#"""
+    {"processes": [{"name": "tunnel", "state": "exited", "exit_code": 1,
+      "error": "{\"level\":\"error\",\"message\":\"2026-08-22T13:03:55Z ERR failed to accept QUIC stream\"}\n{\"level\":\"error\",\"message\":\"2026-08-22T13:03:55Z INF Tunnel connection curve preferences\"}"}]}
+    """#.utf8))
+    expect("a line that calls itself INF is not the reason, whatever the envelope says",
+           chatter?.processes.first?.reason, "2026-08-22T13:03:55Z ERR failed to accept QUIC stream")
+    check("and the text is what settles it",
+          StackLog.declaresCalm("2026-08-22T13:03:55Z INF Tunnel connection")
+            && !StackLog.declaresCalm("bash: npm: command not found"))
+    check("a line leading with a real severity is not calm for mentioning info later",
+          !StackLog.declaresCalm("ERROR: could not read info file"))
+
     // cloudflared, uvicorn and next all colour their own output, and it survives into the tail.
     let coloured = DevStack.parseState(Data(#"""
     {"processes": [{"name": "web", "state": "exited", "exit_code": 1,

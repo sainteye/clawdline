@@ -85,6 +85,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/events` | token | `read` |
 | `POST` | `/v1/places/:id/start` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/send` | token + key | `send` **and** the write switch |
+| `POST` | `/v1/sessions/:id/key` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/focus` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/auth/pair` | — | — |
 | `POST` | `/v1/auth/pair/confirm` | — | — |
@@ -381,6 +382,30 @@ With the switch on it answers `{"ok":true,"at":<unix seconds>}`. `text` must be 
 anything else is `400 bad_request`. Failure to reach the terminal is `502` with code `internal` and
 whatever the terminal said as the message.
 
+### `POST /v1/sessions/:id/key`
+
+Answers a menu with a single keystroke. `{"key":"1"}`…`{"key":"9"}`, or `{"key":"tab"}`. Anything
+else is `400 bad_request`, and the allowlist is checked before anything goes looking for a terminal.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/key \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: 41c0a7e5-9b23' \
+    -d '{"key":"2"}'
+{"ok":true}
+```
+
+**This, and not `/send`, is how a question gets answered.** Claude Code's picker discards a
+bracketed paste and then acts on the Return that follows it, so text posted to a session showing a
+menu does not type anything — it confirms whichever row is highlighted. Measured: with the caret on
+the third option, sending the word "Tea" answered "Water", silently. `/send` refuses outright with
+`409 showing_a_menu` when it finds one, and points here.
+
+The number to send is the option's own `n` from [`menu`](#the-session-object) above. A retried
+`Idempotency-Key` answers with the stored reply rather than pressing again, which matters more here
+than anywhere else: the same digit arriving twice answers a question and then types a stray
+character into whatever replaced it.
+
 ### `POST /v1/sessions/:id/focus`
 
 Brings that session's window to the front. No body.
@@ -454,6 +479,8 @@ app, and an open-ended size is an open-ended cache.
   "isClaude": true,                              // is this a Claude Code session or just a shell
   "state": "working",                            // "working" | "waiting" | "idle" | "unknown"
   "line": "Crafting… (2m 45s · ↓ 6.0k tokens)",  // only when state is "working"
+  "menu": { "selected": 2, "options": [ … ] },   // only when state is "waiting", and readable
+  "agents": [ … ],                               // only when this session has agents out
   "cwd": "/Users/you/code/atrium",          // absent if the terminal would not say
   "sessionId": "841cbb8d-58b1-…",                // Claude Code's own id — only with hooks installed
   "icon": { "accent": "#5CBBA1", "cells": [ … ] } // absent when the project has no icon
@@ -479,6 +506,42 @@ any more.
 `sessionId` appears only when Claude Code's hooks are installed ([`docs/hooks.md`](hooks.md)). It is
 Claude Code's id for the conversation and the name of its transcript file; `id` is the terminal's id
 for the tab, and they are different things. Use `id` everywhere in this API.
+
+`menu` is the question a `waiting` session is showing, read off the same screen capture the state
+came from. Each option is `{"n":1,"label":"Yes","selected":false,"can":true}` — and **`n` is a
+keystroke, not a position**. It is what `POST /key` takes, so a client must draw the number it was
+given rather than renumbering the rows to run 1…n: renumbering produces a button whose label and
+effect disagree. `selected` marks the row the caret is parked on over on the Mac, which is what a
+bare Return there would confirm. `can` is false for a row no keystroke reaches — draw it, do not
+offer it. The whole field is **absent when the menu could not be read**, which is a real state and
+not an error: the dialog is undocumented terminal drawing, and a shape this end does not recognise
+has to be admitted to rather than guessed at. A client that sees `waiting` with no `menu` should
+say so and offer nothing to press.
+
+`agents` is what that session sent off to work in the background, newest first, at most six.
+
+```jsonc
+{
+  "id": "a42cc4cf998a3ae33",              // Claude Code's id for the agent
+  "what": "Search the delivery logs",     // the description whoever spawned it wrote
+  "type": "general-purpose",              // the agent type asked for
+  "state": "running",                     // "running" | "done" | "failed"
+  "depth": 1,                             // 1 for one the session spawned, 2 for one an agent did
+  "at": 1787049596,                       // when its transcript was last written to
+  "doing": "Bash: swift build",           // the tool it last reached for — running ones only
+  "result": "Depth is flat at 0.",        // what it handed back — finished ones only
+  "tokens": 18420, "tools": 5, "seconds": 44.2,
+  "model": "…"                            // when the sidecar named one
+}
+```
+
+**This is the one thing in this API that is not read off a screen.** A subagent leaves no mark on
+the terminal — a session with three of them out draws exactly the spinner of one thinking hard — so
+it comes from the transcripts Claude Code keeps beside the session's own. There is no record that
+says an agent *started* and none that says it is still going, so `running` means no ending has been
+written yet. A finished one stays in the list for about three minutes with what it returned, then
+goes; the record is the transcript, this is the notice. `doing` and `result` are the same slot asked
+at two different times, and both can be absent.
 
 ## The transcript Entry
 

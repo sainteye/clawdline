@@ -990,6 +990,17 @@ final class TargetRow: NSView {
         return TextZones.of(rich, key: .link, x0: textX, height: bounds.height)
     }
 
+    /// Where each run that has something to explain landed.
+    ///
+    /// The same measurement as `linkZones`, for the other thing a run can carry. A row is one
+    /// line wide and a stack's failure is not: six processes can be down, for three different
+    /// reasons, and only the first of them fits. Reaching the rest had meant opening the log
+    /// pane — which is a place you go once you already suspect there is more to see.
+    private var tipZones: [(rect: NSRect, value: String)] {
+        guard let rich else { return [] }
+        return TextZones.of(rich, key: .clawdlineTip, x0: textX, height: bounds.height)
+    }
+
     private func draw(_ b: Button, in r: NSRect) {
         let path = NSBezierPath(roundedRect: r, xRadius: 6, yRadius: 6)
         (b.armed ? Style.accent.withAlphaComponent(0.22) : Style.chipFill).setFill()
@@ -1065,6 +1076,18 @@ final class TargetRow: NSView {
             let owner = buttons[i].tip as NSString
             tipOwners.append(owner)
             _ = addToolTip(r, owner: owner, userData: nil)
+        }
+        // And the row's own words, where they have more to say than fits. Clipped at the
+        // buttons for the same reason the text is drawn clipped there: a run that continues on
+        // underneath them is not on screen, and a tool tip hanging off a button that belongs to
+        // a word hidden behind it is more confusing than no tool tip at all.
+        let room = NSRect(x: 0, y: 0, width: buttonsLeftEdge, height: bounds.height)
+        for zone in tipZones {
+            let rect = zone.rect.intersection(room)
+            guard rect.width > 4 else { continue }
+            let owner = zone.value as NSString
+            tipOwners.append(owner)
+            _ = addToolTip(rect, owner: owner, userData: nil)
         }
     }
 
