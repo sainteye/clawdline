@@ -11,7 +11,49 @@ import AppKit
 /// **This format is not documented and can change.** Everything here treats a missing or
 /// unexpected field as "skip this record", never as a reason to fail, and the pane falls back
 /// to the terminal capture when no transcript can be found.
+///
+/// Codex keeps a record of its own, in a different place and a different shape — that is
+/// ``Codex``, and ``record(of:)`` below is the one door both go through, so that everything
+/// downstream reads one kind of ``Entry`` and never asks whose conversation it is.
 enum Transcript {
+
+    // MARK: - Whichever assistant
+
+    /// The file a session is writing, and who is writing it.
+    ///
+    /// The two callers of this — the pane and the phone — had the same four lines of "find the
+    /// working directory, find the file" copied between them, and adding a second assistant
+    /// would have made it the same eight lines twice. It is one function now, and the only place
+    /// that knows there is more than one kind of record.
+    static func record(of session: TargetSession) -> (url: URL, assistant: Assistant)? {
+        guard let assistant = session.assistant,
+              let cwd = Targets.workingDirectory(of: session) else { return nil }
+        let started = Targets.processStart(of: session)
+        switch assistant {
+        case .claude:
+            // The session id, when a hook has told us one, skips all the guessing underneath.
+            guard let url = locate(cwd: cwd, tabTitle: session.name, startedAt: started,
+                                   sessionID: HookBridge.note(for: session)?.session)
+            else { return nil }
+            return (url, .claude)
+        case .codex:
+            // No hooks and no tab title to match on: Codex records neither. What it does do is
+            // hold its rollout open, so the pid is worth more here than either — see
+            // ``Codex/locate(cwd:startedAt:pid:days:)``, where the directory and the clock are
+            // the fallback for when there is no process to ask.
+            guard let url = Codex.locate(cwd: cwd, startedAt: started,
+                                         pid: Targets.pid(of: session)) else { return nil }
+            return (url, .codex)
+        }
+    }
+
+    /// A record as entries, whoever wrote it.
+    static func parse(_ jsonl: String, assistant: Assistant, limit: Int = 400) -> [Entry] {
+        switch assistant {
+        case .claude: return parse(jsonl, limit: limit)
+        case .codex:  return Codex.parse(jsonl, limit: limit)
+        }
+    }
 
     struct Entry {
         enum Kind {
@@ -275,7 +317,10 @@ enum Transcript {
     /// The scan is over the UTF-8 view because the separator is one ASCII byte, and a byte
     /// comparison does not care about grapheme breaking. Its indices are `String.Index`, so the
     /// slice handed over is a real `Substring` of the original with nothing copied.
-    private static func forEachLineFromEnd(_ text: String, _ body: (Substring) -> Bool) {
+    ///
+    /// Not private, because ``Codex`` reads a different program's JSONL with exactly the same
+    /// problem and there is no version of this worth having twice.
+    static func forEachLineFromEnd(_ text: String, _ body: (Substring) -> Bool) {
         let utf8 = text.utf8
         var end = utf8.endIndex
         while end > utf8.startIndex {

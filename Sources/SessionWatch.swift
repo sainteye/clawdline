@@ -128,12 +128,12 @@ final class SessionWatch {
             // Cheapest possible answer to "is any of this worth doing": one `ps`, already cached
             // for a couple of seconds, and nothing at all follows it on a machine with no Claude
             // Code running. tmux panes are in here too — they are ordinary processes on a tty.
-            let anyClaude = !ITerm.claudePIDs().isEmpty
-            let snap = anyClaude ? Targets.snapshot() : Targets.Snapshot()
-            let sessions = snap.claudeSessions.isEmpty ? snap.sessions : snap.claudeSessions
+            let anyAssistant = !ITerm.assistantPIDs().isEmpty
+            let snap = anyAssistant ? Targets.snapshot() : Targets.Snapshot()
+            let sessions = snap.assistantSessions.isEmpty ? snap.sessions : snap.assistantSessions
             // Named `screens` and not `reading`: there is a `reading` flag on `self` guarding
             // this whole function, and shadowing it here is a trap for the next edit.
-            let screens = anyClaude ? Targets.reading(of: sessions) : Targets.Reading()
+            let screens = anyAssistant ? Targets.reading(of: sessions) : Targets.Reading()
             // What was read, with what Claude Code said about itself folded in. A no-op when
             // nothing is installed, which is the state every reading has to be right in.
             let states = HookBridge.merge(notes, into: screens.states, sessions: sessions)

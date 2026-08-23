@@ -303,6 +303,7 @@ struct Russian: Copy {
     let webStart = "Начать сессию"
     let webStartLabel = "Начать сессию в проекте"
     let webStartPick = "Где её начать?"
+    let webStartWith = "Чем её начать?"
     let webStartEmpty = "Пока негде начинать. Запустите Claude Code на Mac один раз — и проект появится здесь."
     let webStartFilter = "Фильтр проектов"
     let webStarting = "Открываем вкладку…"

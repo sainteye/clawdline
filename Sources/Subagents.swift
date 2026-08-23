@@ -86,6 +86,11 @@ enum Subagents {
     static let shown = 6
 
     /// Every session's background agents, keyed by session id. Sessions with none are absent.
+    ///
+    /// Claude Code only, and `isClaude` rather than `isAssistant` says so on purpose. This whole
+    /// file reads `~/.claude/projects/…/subagents`, a directory Claude Code writes and nothing
+    /// else does — a Codex session has no such thing, so asking would be a stat that can only
+    /// come back empty, once per session per beat.
     static func reading(of sessions: [TargetSession]) -> [String: [Agent]] {
         var out: [String: [Agent]] = [:]
         for session in sessions where session.isClaude {

@@ -444,6 +444,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 }
 .row .meta .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .meta .tty { flex: 0 0 auto; color: #4f4d47; }
+.row .meta .who { flex: 0 0 auto; color: var(--dim); }
 
 /* The state line. Three states get three weights, and that is the design:
    waiting shouts, working murmurs, idle and unknown keep quiet. */
@@ -1224,6 +1225,8 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .sheet .place:hover:not(:disabled) { background: var(--card-hi); }
 .sheet .place:active:not(:disabled) { background: var(--line); }
 .sheet .place:disabled { opacity: 0.45; cursor: default; }
+.sheet #start-with { align-items: center; gap: 6px; margin: 2px 0 10px 0; flex-wrap: wrap; }
+.sheet #start-with .with-label { font-size: 11.5px; color: var(--dim); margin-right: 2px; }
 .sheet .place canvas { grid-row: 1 / span 2; align-self: center; justify-self: start; display: block; image-rendering: pixelated; opacity: 0.9; }
 .sheet .place canvas.none { width: 16px; height: 12px; border-radius: 2px; background: #202028; }
 .sheet .place .name {
@@ -1696,6 +1699,9 @@ a.link:active { background: var(--line); }
             <p class="say" id="start-say"></p>
             <!-- Same defence as the two boxes above: a field that filters a list of project
                  names has no business being offered somebody's saved logins. -->
+            <!-- Which assistant the press opens. Hidden on a Mac that has only one of them,
+                 where it would be a control with nothing to choose between. -->
+            <div class="row" id="start-with" hidden></div>
             <input class="find" id="start-filter" type="search" name="p2k" placeholder="Filter projects" hidden
                    autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
                    data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
@@ -2072,6 +2078,7 @@ var T = {
     webStart: "Start a session",
     webStartLabel: "Start a session in a project",
     webStartPick: "Where should it start?",
+    webStartWith: "Start with",
     webStartEmpty: "Nowhere to start yet. Run Claude Code on the Mac once and it will be here.",
     webStartFilter: "Filter projects",
     webStarting: "Opening a tab…",
@@ -2212,7 +2219,8 @@ var els = {};
  "settings-close", "settings-order", "settings-order-title", "settings-order-say",
  "settings-order-label",
  "links", "links-sheet", "links-title", "links-say", "links-list", "links-said", "links-close",
- "start-go", "start", "start-sheet", "start-title", "start-say", "start-filter", "start-list",
+ "start-go", "start", "start-sheet", "start-title", "start-say", "start-with", "start-filter",
+ "start-list",
  "start-said", "start-close", "starting", "starting-spin", "starting-say", "starting-close",
  "notify", "notify-go", "notify-go-label", "notify-say", "shots", "attach", "pick",
  "door", "door-mark", "door-name", "door-ask", "door-to-password", "door-digits", "door-confirm",
@@ -2737,17 +2745,19 @@ var Live = {
     /// true as the moment it was given.
     places: function () { return jsonFetch("/v1/places"); },
 
-    /// The id is the whole request. There is no body on this route — not "an optional body",
-    /// none is read — so there is nothing this page could send that would widen what gets
-    /// started, and the command at the other end is the literal `claude`. The key is minted
-    /// once per press, which is what makes a retry of *this* request the same start rather
-    /// than a second tab.
+    /// The id and the assistant are the whole request, and **both of them are in the path**.
+    /// There is no body on this route — not "an optional body", none is read — so there is
+    /// nothing this page could send that would widen what gets started, and the command at the
+    /// other end is a literal off a two-case enum. An assistant this page invented is a 404 at
+    /// the Mac rather than a string that reaches a shell. The key is minted once per press,
+    /// which is what makes a retry of *this* request the same start rather than a second tab.
     ///
     /// Named for what it starts. `start` on this object is the transport's own — the one `boot`
     /// calls to open the stream — and a second one would have quietly replaced it.
-    startPlace: function (id) {
-        return jsonFetch("/v1/places/" + encodeURIComponent(id) + "/start",
-                         post({}, { "Idempotency-Key": uuid() }));
+    startPlace: function (id, assistant) {
+        var path = "/v1/places/" + encodeURIComponent(id) + "/start";
+        if (assistant) path += "/" + encodeURIComponent(assistant);
+        return jsonFetch(path, post({}, { "Idempotency-Key": uuid() }));
     },
 
     // The three doors. None of them carries the code: it is shown on the Mac, and this page is
@@ -2810,7 +2820,7 @@ var Mock = (function () {
         // reason `Subagents` exists. One of them has just landed and is saying what it found.
         { id: "8F3A-1C", backend: "iterm", tty: "ttys004", label: "investigate the webhook",
           cwd: "/Users/x/code/clawdline", state: "working", line: "Gallivanting… (2m 4s · ↓ 6.4k tokens)",
-          isClaude: true, sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38", icon: clawdline,
+          isClaude: true, assistant: "claude", sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38", icon: clawdline,
           agents: [
               { id: "a1", what: "Search the delivery logs", type: "general-purpose",
                 state: "running", depth: 1, at: now - 8, doing: "Grep: retry_after" },
@@ -2826,7 +2836,7 @@ var Mock = (function () {
         // find the Mac". The caret is on the second row, which is what a bare Return confirms.
         { id: "2C71-90", backend: "iterm", tty: "ttys011", label: "the signup flow keeps 500ing",
           cwd: "/Users/x/code/atrium", state: "waiting", line: null,
-          isClaude: true, sessionId: null, icon: atrium,
+          isClaude: true, assistant: "claude", sessionId: null, icon: atrium,
           menu: { selected: 2, options: [
               { n: 1, label: "Yes", selected: false, can: true },
               { n: 2, label: "Yes, and don't ask again for rails commands in atrium",
@@ -2835,16 +2845,16 @@ var Mock = (function () {
           ] } },
         { id: "9B04-2D", backend: "iterm", tty: "ttys002", label: "rewrite the CSV importer",
           cwd: "/Users/x/code/notebook", state: "idle", line: null,
-          isClaude: true, sessionId: null, icon: creature },
+          isClaude: true, assistant: "claude", sessionId: null, icon: creature },
         { id: "A15E-77", backend: "tmux", tty: "tmux:%12", label: "docs pass before the release",
           cwd: "/Users/x/code/clawdline/docs", state: "idle", line: null,
-          isClaude: true, sessionId: null, icon: clawdline },
+          isClaude: true, assistant: "claude", sessionId: null, icon: clawdline },
         { id: "44D2-05", backend: "iterm", tty: "ttys017", label: "scratch",
           cwd: "/Users/x/tmp/notes", state: "idle", line: null,
-          isClaude: true, sessionId: null, icon: null },
+          isClaude: true, assistant: "claude", sessionId: null, icon: null },
         { id: "C0FF-3E", backend: "iterm", tty: "ttys021", label: "build box over ssh",
           cwd: "/Users/x", state: "unknown", line: null,
-          isClaude: true, sessionId: null, icon: null }
+          isClaude: true, assistant: "claude", sessionId: null, icon: null }
     ];
 
     // The line that cannot wrap, five hundred characters of it, because this is the shape that
@@ -3170,6 +3180,9 @@ var Mock = (function () {
                         at: now,
                         // `?start=empty` empties the list, which is the other thing this screen
                         // has to be able to say: a Mac that has never run Claude Code anywhere.
+                        // Both, so the chooser is on screen in a demo. A real Mac answers with
+                        // whichever of them it actually has a home directory for.
+                        assistants: [{ id: "claude", label: "Claude Code" }, { id: "codex", label: "Codex" }],
                         places: MOCK_START === "empty" ? [] : places.map(function (p, i) {
                             return { id: p.id, label: p.label, path: p.path, icon: p.icon, at: now - i * 900 };
                         })
@@ -3180,7 +3193,7 @@ var Mock = (function () {
 
         /** The real one answers before the session exists, so this does too — and the row turns
          *  up a couple of seconds later, which is the gap the band above the list is for. */
-        startPlace: function (id) {
+        startPlace: function (id, assistant) {
             return new Promise(function (done, fail) {
                 setTimeout(function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
@@ -3201,17 +3214,19 @@ var Mock = (function () {
                         return;
                     }
                     var made = "N" + Math.floor(Math.random() * 9000 + 1000) + "-" + Math.floor(Math.random() * 90 + 10);
-                    done({ ok: true, id: made, backend: "iterm", place: place.id, cwd: place.path,
-                           at: Math.floor(Date.now() / 1000) });
+                    done({ ok: true, id: made, backend: "iterm", assistant: assistant || "claude",
+                           place: place.id, cwd: place.path, at: Math.floor(Date.now() / 1000) });
                     // Not with the reply: the whole point is that the id is answered before
                     // there is a session to go with it. `?start=slow` is the one that never does.
                     if (MOCK_START === "slow") return;
                     setTimeout(function () {
                         sessions.push({ id: made, backend: "iterm", tty: "ttys0" + Math.floor(Math.random() * 90 + 10),
                                         label: place.label, cwd: place.path, state: "idle", line: null,
-                                        // False for a moment on the real thing too — a shell has
-                                        // to start before `claude` is a process anything can see.
-                                        isClaude: false, sessionId: null, icon: place.icon });
+                                        // Absent for a moment on the real thing too — a shell has
+                                        // to start before the assistant is a process anything
+                                        // can see, whichever one was asked for.
+                                        isClaude: false, assistant: null,
+                                        sessionId: null, icon: place.icon });
                         emit();
                     }, 2600);
                 }, 320);
@@ -3545,6 +3560,19 @@ function byId(id) {
     return null;
 }
 
+/** Whether the sessions on screen are running more than one kind of assistant. What decides
+ *  whether a row says which one it is — see `fillRow`. */
+function mixedAssistants() {
+    var seen = null;
+    for (var i = 0; i < S.sessions.length; i++) {
+        var a = S.sessions[i].assistant;
+        if (!a) continue;
+        if (seen && seen !== a) return true;
+        seen = a;
+    }
+    return false;
+}
+
 /** What has to be the same for a transcript to still be current. The line is in it because a
  *  session that is still working is still writing. */
 function revisionOf(s) { return s ? s.state + "|" + (s.line || "") + "|" + (s.label || "") : ""; }
@@ -3756,6 +3784,7 @@ function buildRow(s) {
         '<canvas class="mark"></canvas>' +
         '<div class="title"></div>' +
         '<div class="meta"><span class="path"></span><span class="tty"></span>' +
+        '<span class="who" hidden></span>' +
         '<span class="agents-chip" hidden><span class="dot"></span><span class="n"></span></span></div>' +
         '<div class="state"></div>';
     li.addEventListener("click", function () { openSession(s.id); });
@@ -3781,6 +3810,14 @@ function fillRow(node, s) {
 
     node.querySelector(".path").textContent = shortPath(s.cwd);
     node.querySelector(".tty").textContent = s.tty || s.backend || "";
+
+    // Which assistant, and **only when the list is holding more than one kind**. On a phone
+    // watching a Mac that runs one of them the word is on every row and separates nothing;
+    // the moment a Claude Code session and a Codex one are next to each other it is the only
+    // thing on the row that says which is which.
+    var who = node.querySelector(".who");
+    who.hidden = !(s.assistant && mixedAssistants());
+    who.textContent = who.hidden ? "" : s.assistant;
 
     // How many agents this session has out. **A number and nothing else**, sitting with the path
     // and the tty rather than with the state: the state line answers "does this want me", and
@@ -5336,6 +5373,8 @@ var Start = (function () {
     var MANY = 8;        // places, past which a box to filter them earns its row
 
     var places = null;   // as the Mac sent them; null until an answer has arrived
+    var assistants = [];  // what the Mac will start — [{ id, label }], its list and not this one
+    var with_ = null;     // which of them the next press opens; null until the list arrives
     var loading = false;
     var pressing = null; // the place being started, while that one request is in flight
     var find = "";       // what has been typed into the sheet's filter
@@ -5374,6 +5413,38 @@ var Start = (function () {
         });
     }
 
+    /**
+     * The two chips that say what a press opens.
+     *
+     * **Only when there is a choice.** One assistant on the Mac and this is a control with
+     * nothing to control — so it is not drawn at all, and the sheet is exactly what it was
+     * before Codex existed. The list comes from the Mac; this page does not know what is
+     * installed and does not guess.
+     */
+    function drawWith() {
+        var row = els["start-with"];
+        row.hidden = assistants.length < 2;
+        if (row.hidden) { row.innerHTML = ""; return; }
+        row.innerHTML = "";
+        var label = document.createElement("span");
+        label.className = "with-label";
+        label.textContent = T.webStartWith;
+        row.appendChild(label);
+        assistants.forEach(function (a) {
+            var chip = document.createElement("button");
+            chip.type = "button";
+            chip.className = "chip" + (a.id === with_ ? " on" : "");
+            chip.textContent = a.label || a.id;
+            // Shut while a start is in flight, for the same reason every row is: the press that
+            // is already on its way is the one that decides, and changing this under it would
+            // only mislead about what opened.
+            chip.disabled = !!pressing || !!wait;
+            chip.setAttribute("aria-pressed", a.id === with_ ? "true" : "false");
+            chip.onclick = function () { with_ = a.id; draw(); };
+            row.appendChild(chip);
+        });
+    }
+
     function draw() {
         if (els.start.hidden) return;
         var list = els["start-list"];
@@ -5385,9 +5456,12 @@ var Start = (function () {
         if (!S.write) {
             say(T.webStartOff);
             box.hidden = true;
+            els["start-with"].hidden = true;
             list.innerHTML = "";
             return;
         }
+
+        drawWith();
 
         say(wait ? T.webStartWaiting
             : (loading && !places) ? T.webLoading
@@ -5438,6 +5512,13 @@ var Start = (function () {
         draw();
         api.places().then(function (d) {
             places = (d && d.places) || [];
+            // The Mac's list, not this page's. Whether Codex is installed is a question only
+            // that end can answer, and a chip for something that is not there opens a tab
+            // saying "command not found".
+            assistants = (d && d.assistants) || [];
+            if (!with_ || !assistants.some(function (a) { return a.id === with_; })) {
+                with_ = assistants.length ? assistants[0].id : null;
+            }
         }).catch(function (e) {
             places = places || [];
             said(why(e));
@@ -5452,7 +5533,7 @@ var Start = (function () {
         pressing = id;
         said("");
         draw();
-        api.startPlace(id).then(function (d) {
+        api.startPlace(id, with_).then(function (d) {
             pressing = null;
             // From here the tab exists on the Mac. Nothing after this line is allowed to read
             // as "it might not have worked", and nothing after it presses this again.

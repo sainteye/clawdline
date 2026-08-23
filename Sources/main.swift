@@ -239,10 +239,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if case .ready = status {} else { dictation.target = self }
         menu.addItem(dictation)
 
-        // Only when the Claude Code in front of us is older than the one this was built against.
-        // Newer is the normal state — it updates itself and this does not — and a line that is
-        // there every week is one nobody reads on the week it matters. See Sources/Compat.swift.
-        if let note = Compat.note(installed: Compat.installedClaudeVersion()) {
+        // Only when an assistant in front of us is older than the one this was built against.
+        // Newer is the normal state — they update themselves and this does not — and a line that
+        // is there every week is one nobody reads on the week it matters. Usually none of them,
+        // occasionally one, and both only on a machine that is behind twice. See Compat.swift.
+        for note in Compat.notes() {
             let item = NSMenuItem(title: note, action: #selector(openCompatibility),
                                   keyEquivalent: "")
             item.target = self

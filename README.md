@@ -1,6 +1,6 @@
 # Clawdline
 
-**One bar for every Claude Code session already running on your Mac.**
+**One bar for every Claude Code and Codex session already running on your Mac.**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13%2B-black.svg)](#install)
@@ -22,11 +22,14 @@ Clawdline is one place for all of them. Press <kbd>⌥</kbd><kbd>Space</kbd>, ty
 lands in the session you point it at. Press <kbd>⌘</kbd><kbd>K</kbd> and every session becomes a row
 that says what it is doing: **working, finished, or waiting for an answer.**
 
-**Nothing is installed into Claude Code.** No hooks, no MCP server, no wrapper around the `claude`
-command, no edits to your settings. Clawdline reads the screens your sessions are already drawing
-and the transcripts they are already writing — which is why the four sessions you started by hand an
-hour ago appear in the list too, not just the ones something dispatched for you. iTerm2 is supported
-directly; every other terminal works through tmux.
+**Nothing is installed into Claude Code or Codex.** No hooks, no MCP server, no wrapper around
+the `claude` or `codex` command, no edits to your settings. Clawdline reads the screens your sessions
+are already drawing and the records they are already writing — which is why the four sessions you
+started by hand an hour ago appear in the list too, not just the ones something dispatched for you.
+iTerm2 is supported directly; every other terminal works through tmux.
+
+**Codex sessions are in the same list**, on the same terms: what each is doing, what it has said,
+what you send it, and opening a new one. [The whole of what that means →](#codex-in-the-same-bar)
 
 Nothing to migrate, nothing to undo. Quit it and your setup is exactly as it was.
 
@@ -60,6 +63,10 @@ Also:
 - **Images and files** — drop a file on the window or paste an image. Images arrive in Claude Code
   as `[Image #3]`, exactly as a paste does; anything else goes as a path.
   [How →](docs/interface.md#dropping-in-a-file-or-an-image)
+- **Claude Code and Codex, side by side** — both appear in the same list, are read the same way
+  and take the same prompts. A row says which it is only when the list is holding both, because on
+  a Mac running one of them the word would be on every row and separate nothing.
+  [What it takes →](#codex-in-the-same-bar)
 - **Prompt history** — <kbd>↑</kbd> and <kbd>↓</kbd> walk back through what you have sent, and those
   same words are what dictation is told to expect.
 - **Bring your own mascot** — the character is one JSON file: a pixel grid, a palette and seven
@@ -187,10 +194,10 @@ every session, every transcript, an event stream, and `curl` as the only SDK.
 ## How it works
 
 **Reading.** Clawdline lists every iTerm2 session and tmux pane, checks each one's TTY against
-`ps`, and keeps the ones actually running `claude`. State comes from each session's own screen — a
-spinner line means working, a menu with a caret parked on it means waiting, and a screen that could
-not be read reports *unknown* rather than *idle*, because drawing "no idea" as "idle" would be a
-confident wrong answer about somebody's work. Where a transcript file exists, the
+`ps`, and keeps the ones actually running `claude` or `codex`. State comes from each session's own
+screen — a spinner line means working, a menu with a caret parked on it means waiting, and a screen
+that could not be read reports *unknown* rather than *idle*, because drawing "no idea" as "idle"
+would be a confident wrong answer about somebody's work. Where a record exists on disk, the
 <kbd>⌘</kbd><kbd>J</kbd> pane reads that instead of the screen.
 
 **Writing.** Text is not sent as synthetic keystrokes and is not written to the terminal's pty —
@@ -211,6 +218,30 @@ in `~/.claude/settings.json`; after that, a note lands the moment a turn starts,
 answer, and the reading happens in under a second instead. A note only says *when* to look — never
 what the screen says — so the screen remains the authority. Removing the hooks leaves nothing
 behind. [The full contract →](docs/hooks.md)
+
+## Codex in the same bar
+
+Codex sessions sit in the same list as Claude Code ones and take the same four things: **you can
+see them, read what they have said, send them work, and open a new one.** Nothing is installed into
+Codex either — it is read the same way, off what it already draws and already writes.
+
+| | |
+| --- | --- |
+| **Seen** | A tty running `codex` is a session, whether that is the native binary or the published Node shim, which spawns it. `codex exec` and the two servers are the same binary doing something you cannot type into, so they are left out of the list rather than offered as somewhere to send work. |
+| **Read** | <kbd>⌘</kbd><kbd>J</kbd> reads the rollout Codex is writing — `~/.codex/sessions/YYYY/MM/DD/rollout-….jsonl` — and lays it out as the same conversation a Claude Code transcript becomes. **Which file belongs to which session is a fact, not a guess:** a Codex process holds its own rollout open, so it is asked outright, which is what keeps two sessions in one directory from showing each other's work. Its subagents write files of their own in the same folder, and those are told apart by what Codex writes in the first line. |
+| **Sent** | The same bracketed paste and the same single Return. A question on screen is read the same way too — numbered rows under a caret — and a bare digit answers it from the phone, which was checked against a real dialog rather than assumed. |
+| **Started** | *Start a session* offers whichever of the two this Mac has, and the row you press opens it there. From a phone the assistant is a **name** in the path — `POST /v1/places/:id/start/codex` — resolved against a two-case list, never a command that travels. |
+
+One difference worth naming: **background agents are a Claude Code row only.** Codex sends
+subagents off too, but Clawdline's count comes from a directory Claude Code writes and nothing else
+does, so a Codex session that has three out looks like one thinking hard.
+
+Codex ends on `/quit` where Claude Code ends on `/exit`, and each refuses the other's — which is
+why *End* knows which it is talking to. If Codex lives somewhere other than `~/.codex`, set
+`codex_home` in the config; an app launched from Finder cannot see your `CODEX_HOME`.
+
+Built and used against **Codex 0.149.0** and **Claude Code 2.1.235**. Neither screen is a promised
+interface: [what is read, and what you would see if it changed →](docs/compatibility.md)
 
 ## Other terminals: run Claude Code in tmux
 
@@ -321,9 +352,11 @@ prompt history lives in `~/.config/clawdline/config.json` and goes nowhere.
 - **One direction.** Claude's replies still live in the terminal — <kbd>⌘</kbd><kbd>J</kbd> reads
   them back, but the bar is for what you send. That half scrolls upward anyway; this fixes the half
   nailed to the bottom-left corner.
-- **Claude Code's screen and transcript format are not a promised interface.** Every field is
-  optional on the way in and anything unrecognised is skipped.
+- **Neither assistant's screen or record is a promised interface.** Every field is optional on
+  the way in and anything unrecognised is skipped.
   [Which versions this was run against →](docs/compatibility.md)
+- **Background agents are counted for Claude Code only.** A Codex session with subagents out looks
+  like one thinking hard about a sentence.
 
 ## Troubleshooting
 
@@ -348,14 +381,14 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 | [Hooks](docs/hooks.md) | the five events, and why the screen still decides |
 | [Whisper](docs/whisper.md) | dictating in more than one language |
 | [Mascot packs](docs/mascots.md) · [gallery](docs/gallery.md) | the format, and where packs get posted |
-| [Versions](docs/compatibility.md) | which Claude Code releases this was run against |
+| [Versions](docs/compatibility.md) | which Claude Code and Codex releases this was run against |
 
 ## Contributing
 
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```sh
-./test.sh     # 1264 checks, a couple of seconds
+./test.sh     # 1342 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code
 ```

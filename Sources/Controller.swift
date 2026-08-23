@@ -1382,12 +1382,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// which is the signal to fall back to scraping the terminal.
     private func renderTranscript(for target: TargetSession)
         -> (text: NSAttributedString, signature: String)? {
-        guard target.isClaude,
-              let cwd = Targets.workingDirectory(of: target),
-              let file = Transcript.locate(cwd: cwd, tabTitle: target.name,
-                                           startedAt: Targets.processStart(of: target),
-                                           sessionID: HookBridge.note(for: target)?.session)
-        else { return nil }
+        guard let record = Transcript.record(of: target) else { return nil }
+        let file = record.url
 
         let folds = expandedFolds
         let newestFirst = Config.shared.outputNewestFirst
@@ -1405,7 +1401,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // 400KB this used to read, a busy session yielded sixteen records and the reader
         // hit the top of the pane almost immediately.
         guard let text = Transcript.tail(of: file, bytes: 8_000_000) else { return nil }
-        let entries = Transcript.parse(text)
+        let entries = Transcript.parse(text, assistant: record.assistant)
         guard !entries.isEmpty else { return nil }
         let rendered = Transcript.render(entries, size: size, mono: Style.outputFont,
                                          expanded: folds, newestFirst: newestFirst)
@@ -1474,7 +1470,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private func apply(_ snap: Targets.Snapshot) {
         scanning = false
         lastKnownCurrentID = snap.currentID
-        var list = snap.claudeSessions
+        var list = snap.assistantSessions
         // With no Claude Code running, fall back to every session so text can still reach some shell.
         if list.isEmpty { list = snap.sessions }
         targets = list
@@ -1679,7 +1675,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// drawn — an idle session and one whose screen could not be read both look exactly as they
     /// did before, which is the honest drawing for "nothing to say" and for "no idea".
     private func sessionRowText(_ target: TargetSession, selected: Bool) -> NSAttributedString? {
-        guard let state = sessionStates[target.id] else { return nil }
+        guard sessionStates[target.id] != nil else { return nil }
         let s = NSMutableAttributedString()
         let base = NSFont.systemFont(ofSize: Style.listSize, weight: selected ? .medium : .regular)
         let small = NSFont.systemFont(ofSize: Style.listSize - 1.5)
@@ -1689,7 +1685,25 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
 
         add(target.label, selected ? .labelColor : .secondaryLabelColor, base)
+        // Only when the list is holding both kinds. On a machine running one assistant the word
+        // is on every row and distinguishes nothing, which is the definition of noise; the
+        // moment a Claude Code session and a Codex one are next to each other it is the only
+        // thing on the row that says which is which.
+        if mixedAssistants, let assistant = target.assistant {
+            add("  " + assistant.short, .tertiaryLabelColor, small)
+        }
         return s
+    }
+
+    /// Whether the sessions on screen are running more than one kind of assistant.
+    private var mixedAssistants: Bool {
+        var seen: Assistant?
+        for target in targets {
+            guard let assistant = target.assistant else { continue }
+            if let seen, seen != assistant { return true }
+            seen = assistant
+        }
+        return false
     }
 
     /// What the row says after its label. Split from the label so the row can put the spinner
@@ -2721,7 +2735,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let s = NSMutableAttributedString()
         if let t = currentTarget {
             s.append(NSAttributedString(string: "● ", attributes: [
-                .foregroundColor: t.isClaude ? Style.accent : NSColor.tertiaryLabelColor,
+                .foregroundColor: t.isAssistant ? Style.accent : NSColor.tertiaryLabelColor,
                 .font: NSFont.systemFont(ofSize: 10),
             ]))
             let project = projectCache[t.id]
@@ -2897,7 +2911,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         guard !body.isEmpty else { return }
         DispatchQueue.global(qos: .userInitiated).async {
             let snap = Targets.snapshot()
-            var list = snap.claudeSessions
+            var list = snap.assistantSessions
             if list.isEmpty { list = snap.sessions }
             // An explicit target is searched across every session, not just the Claude ones:
             // naming one means you know what you are doing.

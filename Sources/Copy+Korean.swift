@@ -301,6 +301,7 @@ struct Korean: Copy {
     let webStart = "세션 시작"
     let webStartLabel = "프로젝트에서 세션 시작"
     let webStartPick = "어디서 시작할까요?"
+    let webStartWith = "무엇으로 시작할까요?"
     let webStartEmpty = "아직 시작할 곳이 없습니다. Mac에서 Claude Code를 한 번 돌리면 여기에 나타납니다."
     let webStartFilter = "프로젝트 거르기"
     let webStarting = "탭을 여는 중…"

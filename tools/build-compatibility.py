@@ -55,6 +55,7 @@ def render():
     releases = structs("Release")
     deps = structs("Dependency")
     built = next((r["claudeCode"] for r in releases if r["claudeCode"][:1].isdigit()), "?")
+    built_codex = next((r["codex"] for r in releases if r["codex"][:1].isdigit()), None)
     floors = [d["since"] for d in deps if d["since"][:1].isdigit()]
     minimum = max(floors, key=lambda v: [int(n) for n in v.split(".")]) if floors else None
 
@@ -63,15 +64,17 @@ def render():
         "",
         "<!-- Generated from Sources/Compat.swift by tools/build-compatibility.py. Do not edit. -->",
         "",
-        "Clawdline reads things Claude Code was never obliged to keep still: a transcript file, a",
-        "spinner drawn on a terminal, a process name, a clipboard convention. That is a reasonable",
-        "way to build this and an unreasonable thing to leave unwritten, because **each of those",
-        "changing looks exactly like Clawdline being broken.** This page is what it was run",
-        "against, and what you would see if that stopped being true.",
+        "Clawdline reads things the assistants it drives were never obliged to keep still: a",
+        "transcript file, a spinner drawn on a terminal, a process name, a clipboard convention,",
+        "the shape of a dialog. That is a reasonable way to build this and an unreasonable thing",
+        "to leave unwritten, because **each of those changing looks exactly like Clawdline being",
+        "broken.** This page is what it was run against, and what you would see if that stopped",
+        "being true.",
         "",
         "## The short version",
         "",
         f"- Built and used against Claude Code **{built}**.",
+        *([f"- And against Codex **{built_codex}**."] if built_codex else []),
         (f"- The oldest that everything here works with is **{minimum}**, and only one feature "
          "cares." if minimum else "- No feature here has a known floor."),
         "- Nothing refuses to run on an older one. What you lose is the one feature whose floor",
@@ -80,17 +83,18 @@ def render():
         "",
         "## Tested against",
         "",
-        "| Clawdline | Claude Code | |",
-        "|---|---|---|",
+        "| Clawdline | Claude Code | Codex | |",
+        "|---|---|---|---|",
     ]
     for r in releases:
-        lines.append(f"| {r['clawdline']} | {r['claudeCode']} | {r['notes']} |")
+        lines.append(f"| {r['clawdline']} | {r['claudeCode']} | {r['codex']} | {r['notes']} |")
 
     lines += [
         "",
-        "The Claude Code column is the version somebody actually had installed while using that",
+        "The two version columns are what somebody actually had installed while using that",
         "release — not a supported range. A range nobody tried is how a compatibility table starts",
-        "saying things that are not true.",
+        "saying things that are not true. \"Not applicable\" is a release that predates this being",
+        "able to see Codex at all, which is a different thing from nobody having written it down.",
         "",
         "**A newer Claude Code is the normal state of the world.** It updates itself and this does",
         f"not, so nothing warns about it. Older than {built} does get a line in the menu bar, because",
@@ -98,11 +102,12 @@ def render():
         "",
         "## What it depends on, and how you would know",
         "",
-        "| What | Where | Works since | If it changes |",
-        "|---|---|---|---|",
+        "| Whose | What | Where | Works since | If it changes |",
+        "|---|---|---|---|---|",
     ]
     for d in deps:
-        lines.append(f"| {d['what']} | `{d['where_']}` | {d['since']} | {d['symptom']} |")
+        lines.append(f"| {d['program']} | {d['what']} | `{d['where_']}` | {d['since']} "
+                     f"| {d['symptom']} |")
 
     lines += [
         "",

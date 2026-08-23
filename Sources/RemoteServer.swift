@@ -458,10 +458,23 @@ final class RemoteServer {
         case ("GET", "/v1/places"):
             return .json(placesPayload())
 
-        case ("POST", let path) where path.hasSuffix("/start") && path.hasPrefix("/v1/places/"):
-            let id = String(path.dropFirst("/v1/places/".count).dropLast("/start".count))
-            // The body is not read at all, and that is the design rather than an omission: there
-            // is no field on this route a directory or a command could be written into.
+        // `/start` opens Claude Code; `/start/codex` opens Codex. **Which assistant is a path
+        // segment and not a field**, and that is the whole of why it looks like this: the body on
+        // this route is still not read at all, so there remains nowhere on it a directory or a
+        // command could be written. The segment is resolved by exact match against a two-case
+        // enum and anything else is a 404 — it names a choice, it does not carry one.
+        case ("POST", let path) where path.hasPrefix("/v1/places/")
+            && (path.hasSuffix("/start") || path.contains("/start/")):
+            let rest = String(path.dropFirst("/v1/places/".count))
+            let parts = rest.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+            guard parts.count == 2 || parts.count == 3, parts[1] == "start" else {
+                return .error(404, "not_found", "No such route")
+            }
+            let id = parts[0]
+            let named = parts.count == 3 ? parts[2] : Assistant.claude.rawValue
+            guard let assistant = Assistant(rawValue: named) else {
+                return .error(404, "not_found", "No assistant named that")
+            }
             return writing(request) { _ in
                 guard let place = StartPoints.place(withID: id.removingPercentEncoding ?? id) else {
                     // Written down as well, and this is the one worth having: an id nobody was
@@ -471,18 +484,21 @@ final class RemoteServer {
                                                      "why": "not_found"])
                     return .error(404, "not_found", "No place named that")
                 }
-                switch StartPoints.start(place) {
+                switch StartPoints.start(place, assistant: assistant) {
                 case .refused(let status, let code, let message, let app):
                     RemoteAuth.audit("place.start", ["place": place.id, "cwd": place.path,
+                                                     "assistant": assistant.rawValue,
                                                      "ok": "0", "why": code])
                     return .error(status, code, message, extra: app.map { ["app": $0] } ?? [:])
                 case .started(let made, let backend):
                     RemoteAuth.audit("place.start", ["place": place.id, "cwd": place.path,
+                                                     "assistant": assistant.rawValue,
                                                      "ok": "1", "id": made])
                     // Read it back on the next beat, so whatever asked sees the new row arrive
                     // the same way every other client does rather than through a special case.
                     DispatchQueue.main.async { SessionWatch.shared.nudge() }
                     return .json(["ok": true, "id": made, "backend": backend.rawValue,
+                                  "assistant": assistant.rawValue,
                                   "place": place.id, "cwd": place.path,
                                   "at": Int(Date().timeIntervalSince1970)])
                 }
@@ -964,6 +980,10 @@ final class RemoteServer {
     private func placesPayload() -> [String: Any] {
         [
             "at": Int(Date().timeIntervalSince1970),
+            // What may be started, from this end rather than from a list baked into the page.
+            // Whether Codex is on this Mac is something only this side can answer, and a button
+            // for an assistant that is not installed opens a tab saying "command not found".
+            "assistants": Assistant.available.map { ["id": $0.rawValue, "label": $0.label] },
             "places": StartPoints.places().map { place -> [String: Any] in
                 var row: [String: Any] = [
                     "id": place.id,
@@ -1056,9 +1076,14 @@ final class RemoteServer {
             "backend": session.backend.rawValue,
             "tty": session.tty.replacingOccurrences(of: "/dev/", with: ""),
             "label": session.label,
+            // Kept next to `assistant`, and it means what it always did. A page built against
+            // the old field still draws a Claude Code session correctly; what it does with a
+            // Codex one is show it as an ordinary terminal, which is wrong but not broken —
+            // and the alternative was every existing client losing its session list at once.
             "isClaude": session.isClaude,
             "state": name(of: state),
         ]
+        if let assistant = session.assistant { out["assistant"] = assistant.rawValue }
         if case .working(let line) = state { out["line"] = line }
         // The question itself, so a phone can answer it instead of being told to go and find a
         // Mac. Only ever present on a waiting session, and absent when the menu could not be
@@ -1138,17 +1163,15 @@ final class RemoteServer {
     }
 
     private func transcriptPayload(for session: TargetSession, limit: Int) -> Response {
-        guard session.isClaude,
-              let cwd = Targets.workingDirectory(of: session),
-              let file = Transcript.locate(cwd: cwd, tabTitle: session.name,
-                                           startedAt: Targets.processStart(of: session),
-                                           sessionID: HookBridge.note(for: session)?.session),
-              let text = Transcript.tail(of: file, bytes: 8 << 20) else {
+        guard let record = Transcript.record(of: session),
+              let text = Transcript.tail(of: record.url, bytes: 8 << 20) else {
             // Not an error. A session that has not spoken yet has an empty transcript, and that
             // is a different thing from a session that could not be found.
             return .json(["entries": [], "signature": ""])
         }
-        let entries = Transcript.parse(text, limit: limit).map { entry -> [String: Any] in
+        let file = record.url
+        let entries = Transcript.parse(text, assistant: record.assistant, limit: limit)
+            .map { entry -> [String: Any] in
             var row: [String: Any] = ["role": name(of: entry.kind), "text": entry.text]
             if let tool = entry.tool { row["tool"] = tool }
             if let time = entry.time { row["at"] = Int(time.timeIntervalSince1970) }
@@ -1284,6 +1307,7 @@ final class RemoteServer {
             "webStart": t.webStart,
             "webStartLabel": t.webStartLabel,
             "webStartPick": t.webStartPick,
+            "webStartWith": t.webStartWith,
             "webStartEmpty": t.webStartEmpty,
             "webStartFilter": t.webStartFilter,
             "webStarting": t.webStarting,

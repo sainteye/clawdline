@@ -9,6 +9,41 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Codex sessions, in the same list
+
+`isClaude` was a boolean for as long as there was only one thing it could be about. Codex draws a
+different screen, keeps its record somewhere else and leaves on a different word, so what a session
+is running became something it **has** rather than something the app assumes.
+
+- **They are just sessions.** A tty running `codex` is in ⌘K next to the Claude Code ones, says
+  what it is doing, takes a prompt, answers a question with a digit, and can be ended. Nothing is
+  installed into Codex; it is read off what it already draws and already writes.
+- **A row says which only when it matters.** With one assistant on the machine the word would be
+  on every row and separate nothing, so it appears the moment the list is holding both.
+- **⌘J reads the rollout**, `~/.codex/sessions/YYYY/MM/DD/rollout-….jsonl`, and lays it out as the
+  same conversation a transcript becomes. Codex's own vocabulary comes through: `shell` for a
+  command, `edit` for a file change, `web.search` for a plugin, `server.tool` for MCP.
+- **Which file belongs to which session is a fact rather than a guess.** A Codex process holds its
+  rollout open, so `lsof` names it outright. This was not theoretical: two sessions started seconds
+  apart in this repository were shown each other's conversation by the version that matched on the
+  directory and the clock. Its subagents write rollouts in the same folder within the same second,
+  and `thread_source` in the first line is what tells those apart.
+- **What it reads, observed rather than assumed.** Codex's live line is `• Working (10s • esc to
+  interrupt)` — a bullet and a clock, where the bullet alone proves nothing because Codex prefixes
+  everything it says with one. Its dialogs put the caret in **column zero**, which is also where it
+  draws the composer's, so the rule the Claude Code reader leans on says nothing here; what
+  separates them is that a dialog takes the composer away, so the last caret on the screen decides.
+- **`codex exec`, `mcp-server` and the two servers are left out.** Same binary, and not somewhere
+  you can type — a row that accepts your sentence and drops it is worse than no row.
+- **Start either one.** *Start a session* offers whichever of the two this Mac has a home directory
+  for. From a phone the assistant is a name in the path — `POST /v1/places/:id/start/codex` —
+  matched against a two-case list; the body on that route is still not read at all.
+- **`/quit`, not `/exit`.** Each refuses the other's word, so *End* asks the session which it is.
+- Background agents stay a Claude Code row: the count comes from a directory only Claude Code
+  writes, so a Codex session with three out looks like one thinking hard.
+- `codex_home` in the config, for a Codex that does not live in `~/.codex` — an app launched from
+  Finder inherits no login shell and cannot see your `CODEX_HOME`.
+
 ### Claude Code can say so itself
 
 Everything here works by looking, and looking has one cost it cannot avoid: it only knows what it

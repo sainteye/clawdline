@@ -34,7 +34,12 @@ enum SessionState: Equatable {
     ///
     /// `nil` means the capture failed — iTerm2 not answering, a pane that has gone away, a
     /// permission not granted yet — and it is deliberately not folded into `idle`.
-    static func read(_ screen: String?) -> SessionState {
+    ///
+    /// Which assistant is on the other end changes both halves of this. They draw their menus
+    /// differently — see ``menu(_:assistant:tailLines:)`` — and they draw their live line
+    /// differently, so a reader told the wrong one reports every session as idle rather than
+    /// reporting something wrong, which is the failure mode this shape keeps.
+    static func read(_ screen: String?, assistant: Assistant = .claude) -> SessionState {
         guard let screen, !screen.isEmpty else { return .unknown }
         let text = Ansi.plain(screen)
 
@@ -42,8 +47,8 @@ enum SessionState: Equatable {
         // draws its dialog *below* whatever came before it, and the spinner line above it is not
         // always erased — so a reader that asked "is it busy?" first would find that stale line,
         // report the session as working, and hide the one row that needed a person.
-        if isChoosing(text) { return .waiting }
-        if let line = Activity.parse(text) { return .working(line) }
+        if isChoosing(text, assistant: assistant) { return .waiting }
+        if let line = Activity.parse(text, assistant: assistant) { return .working(line) }
         return .idle
     }
 
@@ -66,18 +71,30 @@ enum SessionState: Equatable {
     /// — steps, findings, options in a paragraph. What prose does not do is put a selection caret
     /// on one of them, and a menu never offers fewer than two things to choose between. Either
     /// test alone lets ordinary output through; together they do not.
-    static func menu(_ screen: String, tailLines: Int = 30) -> Menu? {
+    ///
+    /// Codex draws the same idea and breaks the one rule this relies on, which is why the
+    /// assistant has to be known: **its caret is flush left**, in the same column as the caret
+    /// in front of the box you type into. See ``codexMenu(_:)``.
+    static func menu(_ screen: String, assistant: Assistant = .claude,
+                     tailLines: Int = 30) -> Menu? {
         let lines = screen
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { String($0) }
             .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        if assistant == .codex { return codexMenu(Array(lines.suffix(tailLines))) }
 
         var options: [Menu.Option] = []
         var carets = 0
         for line in lines.suffix(tailLines) {
             guard let row = option(line) else { continue }
-            if row.caret { carets += 1 }
-            options.append(Menu.Option(number: row.number, label: row.label, selected: row.caret))
+            // **A caret at column zero is the prompt, not a menu** — see ``option(_:)``, which
+            // reports where the caret was rather than ruling on it. `❯` is both the glyph a
+            // dialog marks its current row with and the one Claude Code puts in front of the
+            // line you type, so a message that begins with a numbered list echoes as `❯ 1. …`
+            // with `2. …` under it. The row is still listed; it is just not a selection.
+            let selected = row.caret && row.indented
+            if selected { carets += 1 }
+            options.append(Menu.Option(number: row.number, label: row.label, selected: selected))
         }
         guard carets >= 1, options.count >= 2 else { return nil }
 
@@ -91,8 +108,58 @@ enum SessionState: Equatable {
     }
 
     /// Whether a menu is on screen at all. The shape every existing caller wanted.
-    static func isChoosing(_ screen: String, tailLines: Int = 30) -> Bool {
-        menu(screen, tailLines: tailLines) != nil
+    static func isChoosing(_ screen: String, assistant: Assistant = .claude,
+                           tailLines: Int = 30) -> Bool {
+        menu(screen, assistant: assistant, tailLines: tailLines) != nil
+    }
+
+    // MARK: - Codex
+
+    /// The menu Codex is showing, if it is showing one.
+    ///
+    /// Same numbered rows, same caret, one difference that changes everything: **Codex marks the
+    /// selected row with a caret in column zero**, which is exactly where it also draws the caret
+    /// in front of the composer. The rule the Claude Code side leans on — a caret at the left
+    /// margin is a prompt, not a menu — says nothing here, because both of them are.
+    ///
+    /// What does separate them is position. Codex draws a dialog at the bottom of the screen and
+    /// takes the composer away while it is up; every other caret on screen belongs to a message
+    /// somebody already sent, with the composer sitting below it. So **the last caret on the
+    /// screen is the one that decides**: if it heads a numbered row there is a dialog, and if it
+    /// is the composer there is not. A message that happened to begin "1. …" cannot fool this,
+    /// because the composer is still underneath it.
+    ///
+    /// From there the run of rows is walked outward in both directions, because the caret is on
+    /// whichever row you have arrowed to and not necessarily the first.
+    private static func codexMenu(_ lines: [String]) -> Menu? {
+        guard let caret = lines.lastIndex(where: { hasCaret($0) }),
+              let head = option(lines[caret]), head.caret else { return nil }
+
+        var options = [Menu.Option(number: head.number, label: head.label, selected: true)]
+        var i = caret - 1
+        while i >= 0, let row = option(lines[i]) {
+            options.insert(Menu.Option(number: row.number, label: row.label, selected: false), at: 0)
+            i -= 1
+        }
+        i = caret + 1
+        while i < lines.count, let row = option(lines[i]) {
+            options.append(Menu.Option(number: row.number, label: row.label, selected: false))
+            i += 1
+        }
+        guard options.count >= 2 else { return nil }
+        Log.write("choosing (codex): options=\(options.count) — "
+                  + options.map { "\($0.number). \($0.label.prefix(60))" }.joined(separator: " ⏐ "))
+        return Menu(options: options, selected: options.first(where: \.selected)?.number)
+    }
+
+    /// Whether this line is marked with a caret at all, wherever it sits. The padding and the
+    /// wall of a box are skipped first, for the same reason ``option(_:)`` skips them.
+    private static func hasCaret(_ raw: String) -> Bool {
+        for char in raw {
+            if char == " " || char == "\t" || boxes.contains(char) { continue }
+            return carets.contains(char)
+        }
+        return false
     }
 
     /// A menu as something other than a picture of one.
@@ -123,9 +190,16 @@ enum SessionState: Equatable {
     /// captured is `│ ❯ 1. Yes …│` and the caret is not at the front of it.
     private static let boxes: Set<Character> = ["│", "┃", "|", "▌", "▏", "╎", "┆", "┊"]
 
-    /// This line as a menu option — its number, its words, and whether the caret is on it.
-    /// `nil` for every other line on the screen, which is nearly all of them.
-    private static func option(_ raw: String) -> (number: Int, label: String, caret: Bool)? {
+    /// This line as a menu option — its number, its words, whether the caret is on it, and
+    /// whether the line was indented. `nil` for every other line on the screen, which is nearly
+    /// all of them.
+    ///
+    /// **The indentation is reported rather than judged.** It used to be folded into `caret`
+    /// here, which was right while Claude Code was the only thing being read and wrong the day
+    /// Codex was: one assistant's dialog is indented and the other's is flush left, so the two
+    /// callers need the same two facts and different rules about them.
+    private static func option(_ raw: String)
+        -> (number: Int, label: String, caret: Bool, indented: Bool)? {
         let chars = Array(raw)
         var i = 0
 
@@ -146,9 +220,10 @@ enum SessionState: Equatable {
         // A dialog's options are indented or inside a box — the comment on `boxes` says so and
         // the capture bears it out. The prompt is flush left. So the caret only counts if
         // something came before it.
+        let indented = i > 0
         var caret = false
         if i < chars.count, carets.contains(chars[i]) {
-            caret = i > 0
+            caret = true
             i += 1
             while i < chars.count, chars[i] == " " { i += 1 }
         }
@@ -172,6 +247,6 @@ enum SessionState: Equatable {
             label.removeLast()
         }
         guard !label.isEmpty else { return nil }
-        return (number, label, caret)
+        return (number, label, caret, indented)
     }
 }

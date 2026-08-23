@@ -233,9 +233,9 @@ protocol Copy {
     var settingsRemotePhone: String { get }
     var settingsRemotePhoneHint: String { get }
     var pairingScanTitle: String { get }
-    /// The body of the one notification this app sends. The title is the project, so this is the
-    /// half that says what happened — short, because a lock screen truncates and the important
-    /// word should not be the one that gets cut.
+    /// The event half of the one notification this app sends. The body prefixes it with the
+    /// project, while the title names the session — short, because a lock screen truncates and the
+    /// important word should not be the one that gets cut.
     var pushWaiting: String { get }
     /// The body of `clawdline://push?test=1`. It has to be unmistakably a test — one that
     /// reads like a real notification teaches somebody to distrust the real ones.
@@ -500,6 +500,9 @@ protocol Copy {
     var webStart: String { get }
     var webStartLabel: String { get }
     var webStartPick: String { get }
+    /// Which assistant a press should open. Only ever on screen when the Mac has more than
+    /// one of them installed, which is what makes it a question worth asking.
+    var webStartWith: String { get }
     /// Shown when the Mac has no projects to offer. It has to say what would put one there —
     /// an empty list with no explanation reads as a broken feature rather than a new machine.
     var webStartEmpty: String { get }

@@ -61,20 +61,25 @@ enum Tmux {
             + "\u{1}#{pane_current_path}"
         let (out, ok) = run(["list-panes", "-a", "-F", fmt])
         guard ok else { return [] }
-        return parsePanes(out, claudeTTYs: Set(ITerm.claudePIDs().keys))
+        return parsePanes(out, running: ITerm.assistantPIDs())
     }
 
     /// Split out from `panes()` so it can be tested without a tmux server running.
     /// The parsing is where the bugs live; running the binary is not.
     ///
-    /// `claudeTTYs` is the second opinion, and on the current installer it is the only one that
-    /// is right. tmux reports the *process name* the kernel holds, which is the basename of the
+    /// `running` is the second opinion, and on the current installers it is the only one that is
+    /// right. tmux reports the *process name* the kernel holds, which is the basename of the
     /// executable — and `claude` is a symlink onto `~/.local/share/claude/versions/2.1.233`, so
     /// the pane running Claude Code announces itself as `2.1.233`. Every tmux session was
     /// therefore listed as an ordinary shell: the one path the README promises for Terminal.app,
     /// Ghostty, Warp and the rest, finding nothing to send to. `ps` reads argv, which still says
     /// `claude`, so the tty is asked as well as the name.
-    static func parsePanes(_ output: String, claudeTTYs: Set<String> = []) -> [TargetSession] {
+    ///
+    /// Codex is the same story from the other end: it ships as a Node shim, so the pane's process
+    /// name is `node` and the tty is the only thing that knows better. The name is still asked
+    /// first because it costs nothing and is right for a native install of either.
+    static func parsePanes(_ output: String,
+                           running: [String: Assistant.Running] = [:]) -> [TargetSession] {
         output.split(separator: "\n").compactMap { line in
             let f = line.components(separatedBy: "\u{1}")
             guard f.count >= 7 else { return nil }
@@ -91,8 +96,8 @@ enum Tmux {
                 tty: f[1],
                 windowIndex: Int(f[4]) ?? 0,
                 tabIndex: Int(f[5]) ?? 0,
-                isClaude: command == "claude" || command.hasSuffix("/claude")
-                    || claudeTTYs.contains(f[1].replacingOccurrences(of: "/dev/", with: "")),
+                assistant: Assistant.named(command)
+                    ?? running[f[1].replacingOccurrences(of: "/dev/", with: "")]?.assistant,
                 cwd: f.count > 7 ? f[7] : nil
             )
         }
@@ -115,7 +120,7 @@ enum Tmux {
     static func newWindow(cwd: String, command: String) -> String? {
         var args = ["new-window", "-P", "-F", "#{pane_id}"]
         if !cwd.isEmpty { args += ["-c", cwd] }
-        args.append(command.isEmpty ? "claude" : command)
+        args.append(command.isEmpty ? Assistant.claude.command : command)
         let result = run(args)
         guard result.ok else { return nil }
         let id = result.out.trimmingCharacters(in: .whitespacesAndNewlines)

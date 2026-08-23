@@ -303,6 +303,7 @@ struct Indonesian: Copy {
     let webStart = "Mulai sesi"
     let webStartLabel = "Mulai sesi di sebuah proyek"
     let webStartPick = "Mulai di mana?"
+    let webStartWith = "Mulai dengan apa?"
     let webStartEmpty = "Belum ada tempat untuk memulai. Jalankan Claude Code sekali di Mac dan tempatnya muncul di sini."
     let webStartFilter = "Saring proyek"
     let webStarting = "Membuka tab…"

@@ -84,6 +84,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/places` | token | `read` |
 | `GET` | `/v1/events` | token | `read` |
 | `POST` | `/v1/places/:id/start` | token + key | `send` **and** the write switch |
+| `POST` | `/v1/places/:id/start/:assistant` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/send` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/key` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/focus` | token + key | `send` **and** the write switch |
@@ -172,7 +173,10 @@ Key order is not stable between replies — it comes out of a dictionary. Read b
 
 ### `GET /v1/sessions/:id/transcript?limit=200`
 
-What was actually said, out of Claude Code's own `~/.claude/projects/…` file.
+What was actually said, out of the assistant's own record — Claude Code's
+`~/.claude/projects/…` transcript, or Codex's `~/.codex/sessions/YYYY/MM/DD/rollout-….jsonl`.
+Which of the two is decided by what is running in that session and is not a parameter; the shape
+that comes back is the same either way, which is the point of reading them at all.
 
 ```console
 $ curl -s "http://127.0.0.1:7717/v1/sessions/B3ACDE0D-DE72-4E58-A99A-AB845A539C90/transcript?limit=1" \
@@ -189,8 +193,8 @@ meaning into either half.
 
 **A session with no transcript is not an error.** An empty `entries` and an empty `signature` come
 back with `200`, because a session that has not spoken yet and a session that could not be found are
-different things and only the second is a `404`. A shell that is not running Claude Code answers the
-same way.
+different things and only the second is a `404`. A shell that is not running an assistant answers
+the same way, and so does a session whose record could not be matched to it.
 
 ### `GET /v1/projects`
 
@@ -237,7 +241,11 @@ whatever produced it. An untrusted dev stack stays silent rather than being prob
 
 **Where a new session may be started**, which is a different list from `/v1/projects` and exists
 for a different reason. `/v1/projects` is "directories somebody drew an icon for"; this is
-"directories `claude` has actually been run in, and that are still there".
+"directories an assistant has actually been run in, and that are still there".
+
+Both assistants' records go in and the list says nothing about which of them has been run where.
+A directory is a directory: a folder you have only ever opened Claude Code in is a perfectly good
+place to open Codex.
 
 ```console
 $ curl -s http://127.0.0.1:7717/v1/places -H "Authorization: Bearer $TOKEN" \
@@ -266,6 +274,20 @@ $ curl -s http://127.0.0.1:7717/v1/places -H "Authorization: Bearer $TOKEN" \
   ]
 }
 ```
+
+Alongside `places`, the reply carries **`assistants`** — what this Mac will actually start, as
+`{"id","label"}` rows in the order they should be offered:
+
+```json
+{"assistants":[{"id":"claude","label":"Claude Code"},{"id":"codex","label":"Codex"}]}
+```
+
+It is the Mac's list rather than a list a client bakes in, because whether Codex is installed is
+something only that end can answer — and a button for an assistant that is not there opens a tab
+that says `command not found`. The test is the home directory (`~/.claude`, `~/.codex`) rather
+than the binary on `PATH`: an app launched from Finder inherits no login shell, so `PATH` is not a
+question it can ask, and a directory full of sessions is better proof anyway. A Mac with neither
+gets the whole list, because answering "nothing" there would leave no way to start the first one.
 
 `icon` is left out there so the reply fits on this page; it is on every row and it is the same
 shape as a session's.
@@ -306,9 +328,11 @@ shape as a session's.
 It is not a filesystem browser and will not become one. There is no way to ask it about a directory
 it did not already offer.
 
-### `POST /v1/places/:id/start`
+### `POST /v1/places/:id/start`, `POST /v1/places/:id/start/:assistant`
 
-Opens a terminal tab in that place and runs `claude` in it.
+Opens a terminal tab in that place and runs an assistant in it. Without the last segment that is
+`claude`, which is what this route did before there was anything else to run — an existing client
+keeps working and does not have to know Codex exists.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/start \
@@ -316,14 +340,27 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/start \
 {"error":{"code":"write_disabled","message":"Sending is switched off. Settings → Remote turns it on, and it is off by default because typing into a session runs code on this Mac.","request_id":"2fd356e8-bef8-4f54-a312-851c0cfa8045"}}
 ```
 
-With the switch on: `{"ok":true,"id":"…","backend":"iterm","place":"…","cwd":"…","at":…}`.
+With the switch on: `{"ok":true,"id":"…","backend":"iterm","assistant":"claude","place":"…","cwd":"…","at":…}`.
+
+To open Codex instead, name it:
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/start/codex \
+    -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 6f1c9d3a-41b3' -d '{}'
+{"ok":true,"id":"…","backend":"iterm","assistant":"codex","place":"…","cwd":"…","at":…}
+```
 
 **There is no request body.** Not "the body is optional" — it is not read, and there is no field
 anywhere on this route that a directory or a command could be written into. The `id` in the path is
 resolved against a list the server builds at that moment and the server's own copy of the path is
-what gets used, so an id nobody was handed is `404 not_found` and never a directory. The command is
-the literal `claude`, with no arguments. If `claude --resume` is wanted one day it will be a second
-named action with its own literal, not a field on this one.
+what gets used, so an id nobody was handed is `404 not_found` and never a directory.
+
+**The assistant is a path segment for the same reason.** It is matched against the two names in
+`/v1/places`' `assistants` and nothing else — `…/start/emacs` is `404 not_found` with
+`"No assistant named that"`, decided before the place is even looked up — and what runs is a
+literal picked out of a closed list, never a string that reaches a shell. Each of them runs with
+no arguments. If `claude --resume` is wanted one day it will be a second named action with its own
+literal, not a field on this one.
 
 Three refusals are specific to this route and worth branching on:
 
@@ -360,7 +397,8 @@ What a client should do:
    nudged as soon as the tab opens, so it normally lands within a second or two — but a shell has
    to start and `claude` has to be running before `ps` can see it, and on a cold start that can be
    longer.
-3. `isClaude` is `false` until `claude` is actually up, so wait for the id, not for the flag.
+3. `assistant` is absent (and `isClaude` is `false`) until the assistant is actually up, so wait
+   for the id, not for the flag.
 4. Give up after about fifteen seconds and say the tab was opened but has not reported in. Do not
    retry the start — the tab exists, and a second one is not what anybody wanted. (Retrying the
    *same* `Idempotency-Key` within ten minutes is safe and answers with the stored reply; that is
@@ -477,6 +515,7 @@ app, and an open-ended size is an open-ended cache.
   "tty": "ttys006",                              // no /dev/ prefix
   "label": "IG 設定指引改進",                      // the tab title, cleaned up — see below
   "isClaude": true,                              // is this a Claude Code session or just a shell
+  "assistant": "claude",                         // "claude" or "codex"; absent for a plain shell
   "state": "working",                            // "working" | "waiting" | "idle" | "unknown"
   "line": "Crafting… (2m 45s · ↓ 6.0k tokens)",  // only when state is "working"
   "menu": { "selected": 2, "options": [ … ] },   // only when state is "waiting", and readable
@@ -557,6 +596,11 @@ at two different times, and both can be absent.
 Oldest first, `limit` counting back from the newest. **A tool call and the result it returned are
 both `role: "tool"`**, and the way to tell them apart is `tool`: the call names the tool, the result
 does not.
+
+`tool` is whatever the assistant calls it, so the vocabularies differ: Claude Code's are `Bash`,
+`Edit`, `Read` and the rest; Codex's are `shell` for a command, `edit` for a file change,
+`server.tool` for an MCP call and the extension's own kind — `web.search` — for a plugin. Treat it
+as a label to show, not as a set to switch on.
 
 ```console
 $ curl -s "http://127.0.0.1:7717/v1/sessions/$ID/transcript?limit=2" -H "Authorization: Bearer $TOKEN"

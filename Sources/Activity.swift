@@ -1,6 +1,7 @@
 import Foundation
 
-/// The line Claude Code draws while it is working — "Generating… (21s · thinking)".
+/// The line an assistant draws while it is working — "Generating… (21s · thinking)" in Claude
+/// Code, "• Working (10s • esc to interrupt)" in Codex.
 ///
 /// It is not in the transcript. The transcript records messages once they exist; this is a
 /// spinner painted straight onto the terminal and erased again, so the only place to read it
@@ -10,6 +11,14 @@ import Foundation
 /// Nothing about the format is documented and all of it can change, so this reads like the
 /// transcript parser: recognise a shape, and return nothing at all rather than a guess.
 enum Activity {
+
+    /// The live line, whoever is drawing it.
+    static func parse(_ screen: String, assistant: Assistant, tailLines: Int = 25) -> String? {
+        switch assistant {
+        case .claude: return parse(screen, tailLines: tailLines)
+        case .codex:  return codex(screen, tailLines: tailLines)
+        }
+    }
 
     /// The glyphs the spinner cycles through. Observed, not documented — and deliberately the
     /// discriminator, because a terminal is full of other lines that end in "(3s)": tool
@@ -47,6 +56,38 @@ enum Activity {
         return nil
     }
 
+    // MARK: - Codex
+
+    /// The bullets Codex puts in front of a line of its own. Observed, not documented — and,
+    /// unlike Claude Code's, they do not cycle: the animation is in the word, not the glyph.
+    private static let bullets: Set<Character> = ["•", "‣", "▪", "·", "*"]
+
+    /// Codex's live line: a bullet, a word, and a clock in brackets.
+    ///
+    /// **The clock is the whole discriminator.** Codex prefixes everything it says with the same
+    /// bullet — "• Running sleep 25", "• Created notes.txt containing hello." — so the glyph
+    /// proves nothing on its own. What only exists while something is being waited on is the
+    /// counter: "(10s • esc to interrupt)". `hasElapsed` is the same test the Claude Code side
+    /// uses, and finding it is what makes this a live line rather than a sentence.
+    ///
+    /// Cut at the closing bracket. What follows it is advice for somebody at the keyboard —
+    /// "· 1 background terminal running · /ps to view" — and this line is drawn on a phone.
+    static func codex(_ screen: String, tailLines: Int = 25) -> String? {
+        let lines = Ansi.plain(screen)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        for line in lines.suffix(tailLines).reversed() {
+            guard let glyph = line.first, bullets.contains(glyph) else { continue }
+            let rest = String(line.dropFirst()).trimmingCharacters(in: .whitespaces)
+            guard hasElapsed(rest) else { continue }
+            guard let close = rest.firstIndex(of: ")") else { return rest }
+            return String(rest[rest.startIndex...close])
+        }
+        return nil
+    }
+
     /// True when the line carries an elapsed counter — "(21s", "(5m 52s · ↓ 15.3k tokens)".
     ///
     /// This is what separates the live line from anything else that starts with a bullet: the
@@ -55,7 +96,7 @@ enum Activity {
     /// It has to survive the minutes form. The first version of this only understood "(21s",
     /// which was the whole of one sample — and everything past a minute went unrecognised,
     /// meaning the strip vanished exactly when a long wait made it worth having.
-    private static func hasElapsed(_ text: String) -> Bool {
+    static func hasElapsed(_ text: String) -> Bool {
         let chars = Array(text)
         var i = 0
         while i < chars.count {

@@ -8,8 +8,23 @@ struct TargetSession: Equatable, Identifiable {
     let tty: String         // /dev/ttysNNN
     let windowIndex: Int
     let tabIndex: Int
-    let isClaude: Bool
+    /// Which assistant is running here, or nothing when it is an ordinary shell.
+    ///
+    /// This was `isClaude`, a boolean, for as long as there was only one thing it could be
+    /// about. It is still asked as one — see ``isAssistant`` — everywhere the question is
+    /// "can I send work to this", because that answer has not changed; what changed is that
+    /// how to read its screen, where to find its record and what word ends it are now three
+    /// answers rather than three assumptions. See ``Assistant``.
+    let assistant: Assistant?
     var cwd: String?
+
+    /// Somewhere work can be sent, as opposed to a shell somebody left open.
+    var isAssistant: Bool { assistant != nil }
+
+    /// Kept because Claude Code genuinely is a special case in two places — the Ctrl-V paste
+    /// that turns a clipboard image into `[Image #3]`, and the transcripts under `~/.claude`.
+    /// Everywhere else that used to ask this wanted ``isAssistant`` and now says so.
+    var isClaude: Bool { assistant == .claude }
 
     /// A short label for display: the task, and only the task.
     ///
@@ -92,41 +107,22 @@ enum ITerm {
         return obj
     }
 
-    // MARK: - Who is running Claude Code
-
-    /// Pull the TTYs whose process name is exactly `claude`.
-    /// Matching the whole command line also catches statusline scripts and Claude.app, so only the first token counts.
-    private static func claudeTTYs() -> Set<String> {
-        parseClaudeTTYs(shell("/bin/ps", ["-ax", "-o", "tty=,command="]))
-    }
-
-    /// Split out so it can be tested against fixed `ps` output rather than whatever
-    /// happens to be running on the machine at the time.
-    static func parseClaudeTTYs(_ psOutput: String) -> Set<String> {
-        var set = Set<String>()
-        for line in psOutput.split(separator: "\n") {
-            let parts = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
-            guard parts.count == 2 else { continue }
-            let tty = String(parts[0])
-            guard tty.hasPrefix("ttys") else { continue }
-            let cmd = parts[1].trimmingCharacters(in: .whitespaces)
-            let head = cmd.split(separator: " ").first.map(String.init) ?? ""
-            if head == "claude" || head.hasSuffix("/claude") { set.insert(tty) }
-        }
-        return set
-    }
+    // MARK: - Who is running an assistant
 
     private static let pidLock = NSLock()
-    private static var pidCache: (at: CFAbsoluteTime, map: [String: Int32])?
+    private static var pidCache: (at: CFAbsoluteTime, map: [String: Assistant.Running])?
 
-    /// tty → pid for the claude processes. Needed because the working directory is the only
-    /// way into the transcript, and only the process knows it.
+    /// tty → what is running on it. The one process listing everything else on this path shares.
+    ///
+    /// Needed because the working directory is the only way into a session's record, and only
+    /// the process knows it. The parsing is ``Assistant/reading(ofPS:)``, which is where the
+    /// mistakes live and where the tests are.
     ///
     /// Held for a couple of seconds. The scan is a full `ps` — 104 ms measured, by far the most
     /// expensive thing on this path — and the pane asks for it once a second while it is open,
     /// which put a tenth of a second of process listing behind every refresh. A session that
     /// starts or dies is picked up on the next expiry, which is what a status display needs.
-    static func claudePIDs() -> [String: Int32] {
+    static func assistantPIDs() -> [String: Assistant.Running] {
         pidLock.lock()
         if let c = pidCache, CFAbsoluteTimeGetCurrent() - c.at < 2 {
             defer { pidLock.unlock() }
@@ -134,14 +130,7 @@ enum ITerm {
         }
         pidLock.unlock()
 
-        var map: [String: Int32] = [:]
-        let out = shell("/bin/ps", ["-ax", "-o", "tty=,pid=,command="])
-        for line in out.split(separator: "\n") {
-            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
-            guard parts.count >= 3, parts[0].hasPrefix("ttys"), let pid = Int32(parts[1]) else { continue }
-            let head = String(parts[2])
-            if head == "claude" || head.hasSuffix("/claude") { map[String(parts[0])] = pid }
-        }
+        let map = Assistant.reading(ofPS: shell("/bin/ps", ["-ax", "-o", "tty=,pid=,command="]))
         pidLock.lock()
         pidCache = (CFAbsoluteTimeGetCurrent(), map)
         pidLock.unlock()
@@ -184,6 +173,22 @@ enum ITerm {
         return nil
     }
 
+    /// Every file that process has open, by path.
+    ///
+    /// The same tool and the same argument as the working directory above, without the `-d cwd`
+    /// that narrows it to one. It exists because **a Codex session holds its own rollout open**,
+    /// which turns "which of these files belongs to that session" from a guess about clocks into
+    /// a fact about a file descriptor — see ``Codex/locate(cwd:startedAt:pid:days:)``.
+    ///
+    /// `-Fn` so the answer is one path per line with an `n` in front of it, rather than a table
+    /// whose columns a path with a space in it walks straight through.
+    static func openFiles(ofPID pid: Int32) -> [String] {
+        shell("/usr/sbin/lsof", ["-p", "\(pid)", "-Fn"])
+            .split(separator: "\n")
+            .filter { $0.hasPrefix("n/") }
+            .map { String($0.dropFirst()) }
+    }
+
     // MARK: - API
 
     static func snapshot() -> Targets.Snapshot {
@@ -195,7 +200,7 @@ enum ITerm {
             return snap
         }
 
-        let claude = claudeTTYs()
+        let running = assistantPIDs()
         snap.sessions = rows.map { row in
             let tty = row["tty"] as? String ?? ""
             let bare = tty.replacingOccurrences(of: "/dev/", with: "")
@@ -206,7 +211,7 @@ enum ITerm {
                 tty: tty,
                 windowIndex: row["win"] as? Int ?? 0,
                 tabIndex: row["tab"] as? Int ?? 0,
-                isClaude: claude.contains(bare)
+                assistant: running[bare]?.assistant
             )
         }
 

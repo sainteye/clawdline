@@ -180,6 +180,12 @@ final class Config {
     var remoteHostname = ""
     var cloudflaredPath = ""
     var tmuxPath = ""
+    /// Where Codex keeps its sessions, when it is not `~/.codex`.
+    ///
+    /// Codex honours `CODEX_HOME`, and this app cannot see it: launched from Finder it inherits
+    /// no login shell, which is the same reason ``Tmux/binary`` cannot look on `PATH`. Blank
+    /// means the environment if it has one and `~/.codex` otherwise; `~` is expanded.
+    var codexHome = ""
     /// Where the project status files are read from, and where the icon registry lives.
     ///
     /// Both default to what claude-bestiary writes, because that is what most people reading this
@@ -225,6 +231,7 @@ final class Config {
         if let v = obj["remote_hostname"] as? String { remoteHostname = v }
         if let v = obj["cloudflared_path"] as? String { cloudflaredPath = v }
         if let v = obj["tmux_path"] as? String { tmuxPath = v }
+        if let v = obj["codex_home"] as? String { codexHome = v }
         if let v = obj["status_dir"] as? String { statusDir = v }
         if let v = obj["icons_file"] as? String { iconsFile = v }
         if let v = obj["output_height"] as? Double, v >= 80, v <= 900 { outputHeight = CGFloat(v) }
@@ -272,6 +279,7 @@ final class Config {
             "remote_hostname": remoteHostname,
             "cloudflared_path": cloudflaredPath,
             "tmux_path": tmuxPath,
+            "codex_home": codexHome,
             "status_dir": statusDir,
             "icons_file": iconsFile,
             "output_height": Double(outputHeight),

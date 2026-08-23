@@ -301,6 +301,7 @@ struct Japanese: Copy {
     let webStart = "セッションを始める"
     let webStartLabel = "プロジェクトでセッションを始める"
     let webStartPick = "どこで始めますか"
+    let webStartWith = "どれで始めますか"
     let webStartEmpty = "始められる場所がまだありません。Mac で Claude Code を一度動かせば、ここに出てきます。"
     let webStartFilter = "プロジェクトを絞り込む"
     let webStarting = "タブを開いています…"

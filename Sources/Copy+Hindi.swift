@@ -307,6 +307,7 @@ struct Hindi: Copy {
     let webStart = "session शुरू करें"
     let webStartLabel = "किसी प्रोजेक्ट में session शुरू करें"
     let webStartPick = "कहाँ शुरू करें?"
+    let webStartWith = "किससे शुरू करें?"
     let webStartEmpty = "अभी शुरू करने की कोई जगह नहीं। Mac पर एक बार Claude Code चला लीजिए, फिर वह यहाँ होगी।"
     let webStartFilter = "प्रोजेक्ट छाँटें"
     let webStarting = "tab खोल रहे हैं…"

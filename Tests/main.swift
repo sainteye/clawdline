@@ -272,7 +272,7 @@ group("hotkey specs parse") {
 group("iTerm session labels drop the job name and the status glyph") {
     func label(_ name: String) -> String {
         TargetSession(backend: .iterm, id: "x", name: name, tty: "/dev/ttys1",
-                      windowIndex: 0, tabIndex: 0, isClaude: true).label
+                      windowIndex: 0, tabIndex: 0, assistant: .claude).label
     }
     // Both ends come off: iTerm appends the job name, Claude Code prefixes a status glyph that
     // is now a frame of an animation rather than a fixed mark.
@@ -282,25 +282,68 @@ group("iTerm session labels drop the job name and the status glyph") {
     expect("an empty name falls back to coordinates", label("   "), "⌘1-1")
 }
 
-group("ps output picks out real claude processes") {
+group("ps output picks out real assistant processes") {
     let ps = """
-    ttys006  claude
-    ttys013  /opt/homebrew/bin/claude --resume
-    ttys023  bash /Users/me/.claude/statusline-command.sh
-    ttys031  node /Users/me/project/claude-helper.js
-    ttys044  -zsh
-    ??       /Applications/Claude.app/Contents/MacOS/Claude
-    ttys055  vim claude.md
+    ttys006  101 claude
+    ttys013  102 /opt/homebrew/bin/claude --resume
+    ttys023  103 bash /Users/me/.claude/statusline-command.sh
+    ttys031  104 node /Users/me/project/claude-helper.js
+    ttys044  105 -zsh
+    ??       106 /Applications/Claude.app/Contents/MacOS/Claude
+    ttys055  107 vim claude.md
     """
-    let found = ITerm.parseClaudeTTYs(ps)
-    check("a bare claude counts", found.contains("ttys006"))
-    check("an absolute path to claude counts", found.contains("ttys013"))
-    check("a script living under .claude does not", !found.contains("ttys023"))
-    check("a program merely named claude-something does not", !found.contains("ttys031"))
-    check("a shell does not", !found.contains("ttys044"))
-    check("a process with no tty is skipped", !found.contains("??"))
-    check("an argument that mentions claude does not count", !found.contains("ttys055"))
+    let found = Assistant.reading(ofPS: ps)
+    expect("a bare claude counts", found["ttys006"]?.assistant, .claude)
+    expect("an absolute path to claude counts", found["ttys013"]?.assistant, .claude)
+    check("a script living under .claude does not", found["ttys023"] == nil)
+    check("a program merely named claude-something does not", found["ttys031"] == nil)
+    check("a shell does not", found["ttys044"] == nil)
+    check("a process with no tty is skipped", found["??"] == nil)
+    check("an argument that mentions claude does not count", found["ttys055"] == nil)
     expect("exactly two matches", found.count, 2)
+    expect("the pid comes back with it", found["ttys013"]?.pid, 102)
+}
+
+group("ps output picks out Codex, shim and all") {
+    // What the published CLI actually looks like: a Node shim and the native binary it spawns,
+    // both on one tty. Either proves the session is there; the native one holds the working
+    // directory, so it is the pid worth having.
+    let ps = """
+    ttys006  201 node /Users/me/.nvm/versions/node/v24.1.0/bin/codex
+    ttys006  202 /Users/me/.nvm/.../@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex
+    ttys009  203 codex
+    ttys011  204 codexctl watch
+    ttys012  205 /opt/homebrew/bin/codex resume --last
+    ttys013  206 vim ~/.codex/config.toml
+    """
+    let found = Assistant.reading(ofPS: ps)
+    expect("the shim's tty is a Codex session", found["ttys006"]?.assistant, .codex)
+    expect("and the native process is the one named", found["ttys006"]?.pid, 202)
+    expect("a native install counts on its own", found["ttys009"]?.assistant, .codex)
+    check("a program merely named codex-something does not", found["ttys011"] == nil)
+    expect("resume is still a session", found["ttys012"]?.assistant, .codex)
+    check("an argument that mentions codex does not count", found["ttys013"] == nil)
+    expect("exactly three ttys", found.count, 3)
+}
+
+group("the Codex subcommands that are not sessions are refused") {
+    func read(_ line: String) -> Assistant? {
+        Assistant.reading(ofPS: line)["ttys006"]?.assistant
+    }
+    check("codex exec is not somewhere to send work", read("ttys006 1 codex exec \"do a thing\"") == nil)
+    check("nor is the MCP server", read("ttys006 1 codex mcp-server") == nil)
+    check("nor is the app server", read("ttys006 1 codex app-server") == nil)
+    expect("a flag before the prompt is not a subcommand",
+           read("ttys006 1 codex -s read-only -a on-request"), .codex)
+    expect("and a bare prompt is still a session", read("ttys006 1 codex fix the tests"), .codex)
+    // The refusal is per tty, and it has to survive the shim's own argless child appearing on
+    // the same one — which `ps` may print either side of it.
+    let both = """
+    ttys006  301 /Users/me/.../vendor/aarch64-apple-darwin/bin/codex
+    ttys006  300 node /Users/me/bin/codex exec "do a thing"
+    """
+    check("a refused tty stays refused whichever row came first",
+          Assistant.reading(ofPS: both)["ttys006"] == nil)
 }
 
 group("tmux pane listing parses") {
@@ -317,7 +360,7 @@ group("tmux pane listing parses") {
     expect("backend is tmux", panes[0].backend, Backend.tmux)
     expect("tty is kept", panes[0].tty, "/dev/ttys080")
     check("a claude pane is flagged", panes[0].isClaude)
-    check("a shell pane is not", !panes[1].isClaude)
+    check("a shell pane is not", !panes[1].isAssistant)
     expect("a pane title is used as the label", panes[0].label, "writing tests")
     // When the title is just the command name it says nothing, so tmux coordinates are better.
     expect("a title equal to the command falls back", panes[1].label, "work:0.2")
@@ -334,10 +377,26 @@ group("tmux pane listing parses") {
         .joined(separator: sep)
     check("a versioned binary is not recognised by name alone",
           !Tmux.parsePanes(versioned)[0].isClaude)
+    let onTTY = ["ttys061": Assistant.Running(assistant: .claude, pid: 9)]
     check("but the tty says what the name does not",
-          Tmux.parsePanes(versioned, claudeTTYs: ["ttys061"])[0].isClaude)
+          Tmux.parsePanes(versioned, running: onTTY)[0].isClaude)
     check("and a shell on a tty nobody claimed is still a shell",
-          !Tmux.parsePanes(rows, claudeTTYs: ["ttys080"])[1].isClaude)
+          !Tmux.parsePanes(rows, running: ["ttys080": Assistant.Running(assistant: .claude,
+                                                                       pid: 9)])[1].isAssistant)
+
+    // Codex ships as a Node shim, so the pane's process name is `node` and the tty is the only
+    // thing that knows better — the same problem as the versioned Claude Code binary, arriving
+    // from the other end.
+    let shim = ["%11", "/dev/ttys070", "node", "work", "1", "0", "node"]
+        .joined(separator: sep)
+    check("a node pane is not an assistant by name", !Tmux.parsePanes(shim)[0].isAssistant)
+    expect("but the tty names it",
+           Tmux.parsePanes(shim, running: ["ttys070": Assistant.Running(assistant: .codex,
+                                                                        pid: 9)])[0].assistant,
+           .codex)
+    expect("a native codex pane is recognised by name alone",
+           Tmux.parsePanes(["%12", "/dev/ttys071", "codex", "w", "1", "1", ""]
+                            .joined(separator: sep))[0].assistant, .codex)
 }
 
 // MARK: - Terminal escapes
@@ -1280,6 +1339,10 @@ group("which versions this was run against") {
     expect("the version comes out of what claude prints",
            Compat.version(from: "2.1.233 (Claude Code)\n"), "2.1.233")
     expect("with no trimming needed", Compat.version(from: "2.1.233"), "2.1.233")
+    // `codex --version` puts the number last rather than first, which is why this looks for the
+    // first word starting with a digit rather than at the first word.
+    expect("and Codex puts its number after its name",
+           Compat.version(from: "codex-cli 0.149.0\n"), "0.149.0")
     check("and nothing comes out of something that is not one",
           Compat.version(from: "claude: command not found") == nil)
     check("or of nothing at all", Compat.version(from: "") == nil)
@@ -2521,7 +2584,7 @@ group("a tool result is what a command printed, not how it wanted to be coloured
 
 private func hookSession(_ id: String, tty: String) -> TargetSession {
     TargetSession(backend: .iterm, id: id, name: "x", tty: tty,
-                  windowIndex: 0, tabIndex: 0, isClaude: true)
+                  windowIndex: 0, tabIndex: 0, assistant: .claude)
 }
 
 group("hooks: reading a note") {
@@ -2887,7 +2950,7 @@ group("the tunnel refuses, and every reason is a pure function of its inputs") {
 private func hookTarget(_ id: String, title: String = "fix the webhook",
                         tty: String = "/dev/ttys004", cwd: String? = nil) -> TargetSession {
     TargetSession(backend: .iterm, id: id, name: title, tty: tty,
-                  windowIndex: 0, tabIndex: 0, isClaude: true, cwd: cwd)
+                  windowIndex: 0, tabIndex: 0, assistant: .claude, cwd: cwd)
 }
 
 group("state hook: a reading is not an event") {
@@ -3219,6 +3282,13 @@ func remoteErrorCode(_ response: RemoteServer.Response) -> String {
     return ((body?["error"] as? [String: Any])?["code"] as? String) ?? ""
 }
 
+/// The `message` out of one. Only worth asking when two refusals share a code and differ in
+/// what they were about — which is the case for the two 404s on the start route.
+func remoteErrorMessage(_ response: RemoteServer.Response) -> String {
+    let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
+    return ((body?["error"] as? [String: Any])?["message"] as? String) ?? ""
+}
+
 group("a project folder says which directory it is, and is not taken at its word") {
     // Claude Code names the folder after the working directory with every character that is not
     // a letter or a digit turned into a dash. That map is many-to-one, so the name can never be
@@ -3355,7 +3425,8 @@ group("starting a session is behind the write gate, like everything else that ru
         if let key { headers["Idempotency-Key"] = key }
         return RemoteServer.shared.route(remoteRequest("POST", target, headers: headers))
     }
-    let bogus = "/v1/places/0123456789abcdef/start"
+    let bogusID = "0123456789abcdef"
+    let bogus = "/v1/places/\(bogusID)/start"
 
     // No token at all, and this one is checked before anything else knows the route exists.
     let anonymous = post(bogus, token: nil, key: UUID().uuidString)
@@ -3389,6 +3460,26 @@ group("starting a session is behind the write gate, like everything else that ru
     expect("and says nothing else about it", remoteErrorCode(unknown), "not_found")
     let empty = post("/v1/places//start", token: writer.token, key: UUID().uuidString)
     expect("nor is an empty one", empty.status, 404)
+
+    // **Which assistant is a path segment, and it is a name rather than a command.** The body on
+    // this route is still not read at all, so the last segment is the only thing that decides
+    // what gets run — and it is resolved against a two-case enum before anything else happens.
+    let invented = post("/v1/places/\(bogusID)/start/emacs", token: writer.token,
+                        key: UUID().uuidString)
+    expect("an assistant nobody has heard of is a 404", invented.status, 404)
+    expect("and it is refused before the place is even looked up",
+           remoteErrorMessage(invented), "No assistant named that")
+    let sneaky = post("/v1/places/\(bogusID)/start/codex;rm%20-rf%20~", token: writer.token,
+                      key: UUID().uuidString)
+    expect("and so is a name with a command stuck to it", sneaky.status, 404)
+    // A real one gets past the name and lands on the same missing place as the plain route,
+    // which is the proof that the segment chooses and does not carry.
+    let codex = post("/v1/places/\(bogusID)/start/codex", token: writer.token,
+                     key: UUID().uuidString)
+    expect("a named assistant gets as far as the place", remoteErrorCode(codex), "not_found")
+    let tooDeep = post("/v1/places/\(bogusID)/start/codex/now", token: writer.token,
+                       key: UUID().uuidString)
+    expect("and nothing deeper than that is a route", tooDeep.status, 404)
 
     // The route this replaced took a `cwd` and a `command` out of the body and ran the second in
     // the first, which behind a tunnel is "run anything anywhere" with a token in front of it.
@@ -3493,7 +3584,7 @@ group("answering a menu is a byte, and only ever one of ten") {
     // allowlist is the whole security argument. It lives in `Targets.answer`, not at the route:
     // a second route added later would otherwise have to remember to repeat it.
     let session = TargetSession(backend: .tmux, id: "%nope%", name: "x", tty: "/dev/ttys99",
-                                windowIndex: 0, tabIndex: 0, isClaude: true)
+                                windowIndex: 0, tabIndex: 0, assistant: .claude)
 
     for bad: UInt8 in [0x1b, 0x0d, 0x0a, 0x03, 0x30, 0x41, 0x7f, 0x00] {
         check("byte \(bad) is refused before it reaches a terminal",
@@ -3803,6 +3894,259 @@ group("what a background agent is doing right now") {
                                                                             atomically: true,
                                                                             encoding: .utf8)
     check("an agent that has not used a tool says nothing", Subagents.doing(in: fresh) == nil)
+}
+
+// MARK: - Codex
+
+// Every screen in this section is a real capture off a real Codex TUI, not a sketch of one.
+// The point of these tests is that the shapes are what was actually drawn — a fixture somebody
+// wrote from memory would agree with the parser and with nothing else.
+
+group("Codex's live line is the one with a clock in it") {
+    let working = """
+    • Running sleep 25 now.
+
+    • Working (10s • esc to interrupt) · 1 background terminal running · /ps to view · /stop to close
+
+    › Ask Codex to do anything
+
+      gpt-5.6-sol default · ~/code/clawdline
+    """
+    expect("the working line is found and cut at the bracket",
+           Activity.codex(working), "Working (10s • esc to interrupt)")
+
+    // Codex prefixes everything it says with the same bullet, so the glyph proves nothing.
+    let quiet = """
+    • Ran printf '%s\\n' hello > notes.txt
+      └ (no output)
+
+    • Created notes.txt containing hello.
+
+    › Ask Codex to do anything
+    """
+    check("a sentence with the same bullet is not a live line", Activity.codex(quiet) == nil)
+
+    expect("an approval being reviewed is still work",
+           Activity.codex("• Reviewing approval request (3s • esc to interrupt)"),
+           "Reviewing approval request (3s • esc to interrupt)")
+
+    // The two live lines are not interchangeable, and reading one with the other's parser is
+    // how a session comes back idle while it is plainly busy.
+    check("Claude Code's parser does not read Codex's line",
+          Activity.parse(working) == nil)
+    check("and Codex's does not read Claude Code's",
+          Activity.codex("✳ Generating… (21s · thinking)") == nil)
+    expect("each read by the right one",
+           Activity.parse("✳ Generating… (21s · thinking)", assistant: .claude),
+           "Generating… (21s · thinking)")
+}
+
+group("Codex's dialogs are read by what is under them, not by the margin") {
+    // The trust dialog, captured on a first run in an untrusted directory. Note the caret in
+    // column zero — exactly where Codex also draws the composer's.
+    let trust = """
+    › Ask Codex to do anything
+
+      ? for shortcuts
+    > You are in /private/tmp/scratch/probe
+
+      Do you trust the contents of this directory? Working with untrusted contents comes with
+      injection. Trusting the directory allows project-local config, hooks, and exec policies.
+
+    › 1. Yes, continue
+      2. No, quit
+
+      Press enter to continue
+    """
+    let menu = SessionState.menu(trust, assistant: .codex)
+    expect("both options are read", menu?.options.count, 2)
+    expect("the caret's row is the selection", menu?.selected, 1)
+    expect("and the words come with it", menu?.options.first?.label, "Yes, continue")
+    check("so the session reads as waiting",
+          SessionState.read(trust, assistant: .codex) == .waiting)
+
+    // The model picker, where the caret is on the first of six and the question sits above it.
+    let models = """
+      Select Model and Effort
+      Access legacy models by running codex -m <model_name> or in your config.toml
+
+    › 1. gpt-5.6-sol (current)  Latest frontier agentic coding model.
+      2. gpt-5.6-terra          Balanced agentic coding model for everyday work.
+      3. gpt-5.6-luna           Fast and affordable agentic coding model.
+
+      Press enter to confirm or esc to go back
+    """
+    expect("a longer picker is read the same way",
+           SessionState.menu(models, assistant: .codex)?.options.count, 3)
+
+    // **The one that matters.** A message that begins with a numbered list echoes with the same
+    // caret in the same column. What tells them apart is that the composer is still underneath
+    // it — a dialog takes the composer away.
+    let echoed = """
+    › 1. rename the field
+      2. update the callers
+      3. run the tests
+
+    • Working (4s • esc to interrupt)
+
+    › Ask Codex to do anything
+
+      gpt-5.6-sol default · ~/code/clawdline
+    """
+    check("a numbered list somebody sent is not a dialog",
+          SessionState.menu(echoed, assistant: .codex) == nil)
+    check("and the session reads as working, which is what it is",
+          SessionState.read(echoed, assistant: .codex) == .working("Working (4s • esc to interrupt)"))
+
+    // Arrowing down moves the caret off the first row; the rows above it are still the menu.
+    let moved = """
+      Select Model and Effort
+
+      1. gpt-5.6-sol
+    › 2. gpt-5.6-terra
+      3. gpt-5.6-luna
+    """
+    let picked = SessionState.menu(moved, assistant: .codex)
+    expect("the rows above the caret are still options", picked?.options.count, 3)
+    expect("and the caret says which is selected", picked?.selected, 2)
+
+    // An idle screen is not a menu, however many carets are on it.
+    let idle = """
+    › Run the shell command: sleep 25
+
+    • Ran sleep 25
+
+    › Ask Codex to do anything
+    """
+    check("an idle Codex session is idle", SessionState.read(idle, assistant: .codex) == .idle)
+}
+
+group("a rollout says where its session is working") {
+    let head = """
+    {"timestamp":"2026-08-23T15:30:26.612Z","ordinal":0,"type":"session_meta","payload":\
+    {"session_id":"01a02f3e-8f2c-7011-bb6d-49d2aaabd2a8","cwd":"/Users/me/code/thing",\
+    "originator":"codex-tui","cli_version":"0.149.0"}}
+    """
+    expect("the working directory comes out", Codex.head(inText: head)?.cwd, "/Users/me/code/thing")
+    expect("and the session's own id", Codex.head(inText: head)?.id,
+           "01a02f3e-8f2c-7011-bb6d-49d2aaabd2a8")
+    check("a line with no cwd is not a head", Codex.head(inText: "{\"type\":\"event_msg\"}") == nil)
+
+    // A Codex process writes more than one rollout: its own conversation, and one per subagent
+    // it sends off. Same directory, same minute, same everything — except this.
+    let mine = """
+    {"type":"session_meta","payload":{"session_id":"a","cwd":"/w","originator":"codex-tui",\
+    "source":"cli","thread_source":"user"}}
+    """
+    let theirs = """
+    {"type":"session_meta","payload":{"session_id":"b","cwd":"/w","originator":"codex-tui",\
+    "source":{"subagent":{"other":"guardian"}},"thread_source":"subagent"}}
+    """
+    check("a person's thread says so", Codex.head(inText: mine)?.isUser == true)
+    check("and a subagent's says otherwise", Codex.head(inText: theirs)?.isUser == false)
+    // The field is newer than the format. Absent means nobody wrote it down, which is not the
+    // same as "this is a subagent" — and reading it that way would empty the pane for anyone
+    // whose sessions predate it.
+    check("a rollout that does not say counts as a person's",
+          Codex.head(inText: head)?.isUser == true)
+}
+
+group("the rollout a Codex process is holding open") {
+    // What `lsof -p` actually answers with: a hundred files, nearly all of them SQLite.
+    let open = [
+        "/Users/me/.codex/state_5.sqlite",
+        "/Users/me/.codex/thread-writer-locks/01a02f68-ccd4.lock",
+        "/Users/me/code/thing/.git/index",
+        "/Users/me/.codex/sessions/2026/08/24/rollout-2026-08-24T00-16-32-01a02f68-ccd4.jsonl",
+    ]
+    check("a rollout is picked out of it by shape", Codex.isRollout(open[3]))
+    check("a lock file beside it is not one", !Codex.isRollout(open[1]))
+    check("nor is a jsonl somewhere else",
+          !Codex.isRollout("/Users/me/.claude/projects/-Users-me/rollout-x.jsonl"))
+    check("and the name has to be a rollout's",
+          !Codex.isRollout("/Users/me/.codex/sessions/2026/08/24/notes.jsonl"))
+}
+
+
+
+group("a rollout reads as the same entries a transcript does") {
+    func line(_ item: String) -> String {
+        "{\"timestamp\":\"2026-08-23T15:43:06.283Z\",\"type\":\"event_msg\",\"payload\":"
+            + "{\"type\":\"item_completed\",\"item\":" + item + "}}"
+    }
+    let rollout = [
+        line("{\"type\":\"UserMessage\",\"content\":[{\"type\":\"text\",\"text\":\"fix the tests\"}]}"),
+        line("{\"type\":\"Reasoning\",\"summary_text\":[],\"raw_content\":[]}"),
+        line("{\"type\":\"AgentMessage\",\"phase\":\"commentary\","
+             + "\"content\":[{\"type\":\"Text\",\"text\":\"Looking now.\"}]}"),
+        line("{\"type\":\"CommandExecution\",\"command\":[\"/bin/zsh\",\"-lc\",\"./test.sh\"],"
+             + "\"aggregated_output\":\"1281 checks passed\\nfine\",\"exit_code\":0}"),
+        line("{\"type\":\"FileChange\",\"changes\":{\"/Users/me/a/Thing.swift\":{\"type\":\"update\"}}}"),
+        // Not an item_completed at all — the same conversation, as it went to the model.
+        "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"developer\","
+            + "\"content\":[{\"type\":\"input_text\",\"text\":\"<skills_instructions>…\"}]}}",
+    ].joined(separator: "\n")
+
+    let entries = Codex.parse(rollout)
+    expect("the machinery is left out and the conversation is not", entries.count, 5)
+    expect("the person spoke first", entries[0].kind, Transcript.Entry.Kind.user)
+    expect("and what they said", entries[0].text, "fix the tests")
+    expect("thinking with nothing in it is not a row",
+           entries.filter { $0.text.contains("Reasoning") }.count, 0)
+    expect("the assistant answered", entries[1].kind, Transcript.Entry.Kind.assistant)
+    expect("a command is a tool call", entries[2].tool, "shell")
+    expect("with the login shell taken off the front", entries[2].text, "./test.sh")
+    expect("and its first line of output under it", entries[3].kind,
+           Transcript.Entry.Kind.toolResult)
+    expect("which is the first line and not all of it", entries[3].text, "1281 checks passed")
+    expect("an edit names the file", entries[4].text, "Thing.swift")
+    expect("the timestamp is read", entries[0].time?.timeIntervalSince1970,
+           1787499786.283)
+
+    expect("a truncated line is skipped rather than fatal", Codex.parse("{\"type\":").count, 0)
+    expect("and so is an item nobody has taught this about",
+           Codex.parse(line("{\"type\":\"SomethingNew\",\"content\":\"…\"}")).count, 0)
+}
+
+group("the fields of a rollout, one at a time") {
+    expect("a login shell is unwrapped",
+           Codex.command(["/bin/zsh", "-lc", "ls -la"]), "ls -la")
+    expect("bash counts too", Codex.command(["/bin/bash", "-c", "make"]), "make")
+    expect("anything else is left as it was",
+           Codex.command(["git", "status", "--short"]), "git status --short")
+    expect("a failure with no output says so",
+           Codex.outcome(of: ["exit_code": 3, "aggregated_output": ""]), "exit 3")
+    expect("and a success with no output says nothing",
+           Codex.outcome(of: ["exit_code": 0, "aggregated_output": ""]), "")
+    expect("an MCP call shows the title its plugin wrote",
+           Codex.arguments(["title": "open the run page", "code": "await browser.open()"]),
+           "open the run page")
+    expect("four files are three and a count",
+           Codex.changed(["/a/one.swift": 1, "/b/two.swift": 1, "/c/three.swift": 1,
+                          "/d/four.swift": 1]),
+           "one.swift, two.swift, three.swift +1")
+}
+
+group("which assistant a process name stands for") {
+    expect("a bare name", Assistant.named("codex"), .codex)
+    expect("a path to one", Assistant.named("/opt/homebrew/bin/claude"), .claude)
+    check("a longer name is somebody else's program", Assistant.named("codexctl") == nil)
+    check("and so is a directory that merely contains one", Assistant.named("/Users/me/.codex") == nil)
+    expect("each leaves on its own word", Assistant.claude.quitLine, "/exit")
+    expect("and they are not the same word", Assistant.codex.quitLine, "/quit")
+}
+
+group("the line a new tab is given names the assistant") {
+    expect("Claude Code, as it always was",
+           StartPoints.itermLine(cwd: "/Users/me/code/thing"),
+           "cd '/Users/me/code/thing' && claude")
+    expect("Codex, by the same route",
+           StartPoints.itermLine(cwd: "/Users/me/code/thing", assistant: .codex),
+           "cd '/Users/me/code/thing' && codex")
+    // The quoting is the same quoting, which is the point of it being one function.
+    expect("and a directory with a quote in it survives",
+           StartPoints.itermLine(cwd: "/Users/me/it's", assistant: .codex),
+           "cd '/Users/me/it'\\''s' && codex")
 }
 
 // MARK: - Result

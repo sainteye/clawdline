@@ -303,6 +303,7 @@ struct Turkish: Copy {
     let webStart = "Oturum başlat"
     let webStartLabel = "Bir projede oturum başlat"
     let webStartPick = "Nerede başlasın?"
+    let webStartWith = "Hangisiyle başlasın?"
     let webStartEmpty = "Henüz başlanacak bir yer yok. Mac'te bir kez Claude Code çalıştır, burada belirir."
     let webStartFilter = "Projeleri süz"
     let webStarting = "Sekme açılıyor…"

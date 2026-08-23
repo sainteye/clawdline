@@ -15,12 +15,13 @@ import Foundation
 ///   field anywhere on this route that a directory can be written into, which is a stronger
 ///   statement than "the directory is validated": validation is a thing the next person to touch
 ///   this file can weaken by accident, and an absent parameter is not.
-/// - **The command is fixed.** `claude`, no arguments, assembled here out of a string literal.
-///   If `claude --resume` is wanted one day it is a second named action with its own literal, not
-///   a field.
-/// - **The list cannot name somewhere you have never been.** It is built from Claude Code's own
-///   record of where it has run and from the sessions clawdline can already see — both of which
-///   are places this Mac has already run `claude` in.
+/// - **The command is fixed.** `claude` or `codex`, no arguments, and both of them literals in
+///   ``Assistant``. Which of the two is a named choice out of a closed list — an unknown name is
+///   a `400` — and not a string that reaches a shell. If `claude --resume` is wanted one day it
+///   is a second named action with its own literal, not a field.
+/// - **The list cannot name somewhere you have never been.** It is built from each assistant's
+///   own record of where it has run and from the sessions clawdline can already see — all of
+///   which are places this Mac has already run one of them in.
 ///
 /// The gate itself is `RemoteServer.writing`, the same one sending goes through. Listing is
 /// read-level; starting is not.
@@ -73,9 +74,10 @@ enum StartPoints {
     /// `osascript` call — means the quoting is only ever exercised by running it, which is the
     /// one thing a test must not do.
     ///
-    /// `claude` is a literal. `cwd` is quoted with the same `shellQuoted` the git plumbing uses.
-    static func itermLine(cwd: String) -> String {
-        "cd " + Project.shellQuoted(cwd) + " && claude"
+    /// The command is a literal on ``Assistant``. `cwd` is quoted with the same `shellQuoted`
+    /// the git plumbing uses.
+    static func itermLine(cwd: String, assistant: Assistant = .claude) -> String {
+        "cd " + Project.shellQuoted(cwd) + " && " + assistant.command
     }
 
     // MARK: - Which terminal
@@ -143,21 +145,22 @@ enum StartPoints {
         case refused(status: Int, code: String, message: String, app: String?)
     }
 
-    /// Open a tab where that place is and run `claude` in it.
+    /// Open a tab where that place is and run an assistant in it.
     ///
     /// **No focus is taken.** The person who asked for this is holding a phone; the person at the
     /// Mac, if there is one, is in the middle of something else. `iterm.js` opens the tab without
     /// calling `activate`, so iTerm2 stays wherever it was in the window order. A window is only
     /// created when there is not one already, and that is the one case where something may come
     /// forward — there is no way to make a window and not have it be a window.
-    static func start(_ place: Place) -> Outcome {
+    static func start(_ place: Place, assistant: Assistant = .claude) -> Outcome {
         guard usable(place.path), isDirectory(place.path) else {
             return .refused(status: 404, code: "not_found",
                             message: "No place named that", app: nil)
         }
         switch plan(scope: Config.shared.scopeApp, running: runningApps(), hasTmux: tmuxIsUp()) {
         case .iterm:
-            guard let made = ITerm.newTab(line: itermLine(cwd: place.path)) else {
+            guard let made = ITerm.newTab(line: itermLine(cwd: place.path,
+                                                          assistant: assistant)) else {
                 return .refused(status: 502, code: "internal",
                                 message: "iTerm2 would not open a tab.", app: nil)
             }
@@ -167,7 +170,8 @@ enum StartPoints {
             // Nothing is quoted here and nothing needs to be: tmux is given a working directory
             // and a command as separate arguments of a subprocess, so there is no line for a
             // directory name to break out of.
-            guard let pane = Tmux.newWindow(cwd: place.path, command: "claude") else {
+            guard let pane = Tmux.newWindow(cwd: place.path,
+                                            command: assistant.command) else {
                 return .refused(status: 502, code: "internal",
                                 message: "tmux would not open a window.", app: nil)
             }
@@ -191,8 +195,20 @@ enum StartPoints {
     // MARK: - The list
 
     /// Every place, newest first. Built fresh on each call, off a cache of the expensive half.
+    ///
+    /// Both assistants' records go in, and the result says nothing about which of them has been
+    /// run where. That is deliberate: a directory is a directory, and a folder you have only ever
+    /// opened Claude Code in is a perfectly good place to open Codex. Offering two lists would
+    /// have been two lists to scroll for one answer.
     static func places(limit: Int = 40) -> [Place] {
-        tidy(recorded() + live(), limit: limit)
+        tidy(recorded() + codexRecorded() + live(), limit: limit)
+    }
+
+    /// Where Codex has been run, out of its own record of it. See ``Codex/workedIn(days:limit:)``.
+    static func codexRecorded() -> [Place] {
+        Codex.workedIn().map {
+            Place(id: id(for: $0.path), path: $0.path, label: label(for: $0.path), at: $0.at)
+        }
     }
 
     /// The place with that id, or nothing.
@@ -224,8 +240,9 @@ enum StartPoints {
     /// The directories clawdline can already see a session in.
     ///
     /// These are trusted enough to type into — the send route does it all day — so they are
-    /// trusted enough to start another one in. They also cover the case the recorded list cannot:
-    /// a directory somebody opened `claude` in five seconds ago, before anything was written down.
+    /// trusted enough to start another one in. They also cover the case the recorded lists cannot:
+    /// a directory somebody opened an assistant in five seconds ago, before anything was written
+    /// down.
     static func live(now: Date = Date()) -> [Place] {
         let sessions = Thread.isMainThread
             ? SessionWatch.shared.targets

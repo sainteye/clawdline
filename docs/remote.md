@@ -93,6 +93,13 @@ from all of them at once. Per-device grants would be the finer control and the w
 as the only one: the moment somebody wants sending off they want it off everywhere, and walking a
 list is how one gets missed.
 
+The same switch covers **starting** a session, and a device that may start one may start either
+assistant: *Start with* on the sheet says which, and it is offered only where this Mac has both.
+What travels is a name out of a two-case list — `POST /v1/places/:id/start/codex` — resolved on the
+Mac against its own copy of the directory. There is still no field anywhere on that route a
+directory or a command could be written into, which is the property that mattered before there was
+anything to choose between. [The route in full →](api.md#post-v1placesidstart-post-v1placesidstartassistant)
+
 ### The same four things in `~/.config/clawdline/config.json`
 
 The settings window writes this file and hand-editing it takes the same path, so the two cannot
@@ -437,7 +444,7 @@ Every line has `at` (Unix seconds) and `event`. The rest depends on the event:
 | `device.caps` | the write switch moved | `id`, `caps` — e.g. `read+send` |
 | `password.set` / `password.clear` / `password.fail` | | `device` on a failure |
 | `session.send` | **text typed into a session** | `id`, `tty`, `chars`, `ok` |
-| `place.start` | a session started from outside | `place`, `cwd`, `ok`, and `id` or `why` |
+| `place.start` | a session started from outside | `place`, `cwd`, `assistant`, `ok`, and `id` or `why` |
 | `session.focus` | a session brought to the front | `id` |
 
 `session.send` records the length of what was sent and not the text, and `ok` is `"1"` or `"0"` —

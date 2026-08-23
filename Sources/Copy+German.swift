@@ -303,6 +303,7 @@ struct German: Copy {
     let webStart = "Sitzung starten"
     let webStartLabel = "Eine Sitzung in einem Projekt starten"
     let webStartPick = "Wo soll sie starten?"
+    let webStartWith = "Womit soll sie starten?"
     let webStartEmpty = "Noch nirgends zu starten. Lass Claude Code einmal auf dem Mac laufen, dann steht es hier."
     let webStartFilter = "Projekte filtern"
     let webStarting = "Tab wird geöffnet…"

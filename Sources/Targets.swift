@@ -20,7 +20,8 @@ enum Targets {
         var currentID: String?
         var error: String?
 
-        var claudeSessions: [TargetSession] { sessions.filter { $0.isClaude } }
+        /// The ones with an assistant in them, whichever assistant that is.
+        var assistantSessions: [TargetSession] { sessions.filter { $0.isAssistant } }
     }
 
     static func snapshot() -> Snapshot {
@@ -34,11 +35,11 @@ enum Targets {
         let panes = Tmux.panes()
         // tmux first: when a pane and its host terminal both appear, the pane is the one that
         // can actually receive text, so it should win the tty.
-        for pane in panes where pane.isClaude {
+        for pane in panes where pane.isAssistant {
             seenTTYs.insert(pane.tty)
             snap.sessions.append(pane)
         }
-        for pane in panes where !pane.isClaude {
+        for pane in panes where !pane.isAssistant {
             guard !seenTTYs.contains(pane.tty) else { continue }
             seenTTYs.insert(pane.tty)
             snap.sessions.append(pane)
@@ -69,7 +70,9 @@ enum Targets {
     /// Two conditions, both of them about not making things worse:
     ///
     /// - **Only into a Claude Code session.** In a shell, Ctrl-V is readline's quoted-insert and
-    ///   would put a control character in the command line. `isClaude` already knows.
+    ///   would put a control character in the command line. `isClaude` already knows — and it is
+    ///   Claude Code specifically rather than any assistant, because `[Image #3]` is its
+    ///   convention and nothing says Codex reads the same byte the same way.
     /// - **Only when the image loads.** Anything that fails falls back to its path, which is
     ///   what this did before and is never wrong, only plainer.
     ///
@@ -138,6 +141,9 @@ enum Targets {
     /// byte rather than a string: `send` wraps its text in a bracketed paste, and **the picker
     /// throws the whole paste away and then acts on the Return that follows it**.
     ///
+    /// Codex's dialogs answer the same way, which was checked rather than assumed: `2` on its
+    /// trust dialog picks "No, quit" and the process is gone before the next capture.
+    ///
     /// **Allowlisted here rather than at the route**, because the danger is not that somebody
     /// answers the wrong question — it is that a byte channel into a tty is an escape-sequence
     /// channel into a tty. `1`–`9` and `Tab` answer a menu and can do nothing else; `ESC` alone
@@ -157,7 +163,7 @@ enum Targets {
     /// happens to be highlighted.
     static func isChoosing(_ session: TargetSession) -> Bool {
         guard let screen = capture(session) else { return false }
-        return SessionState.isChoosing(screen)
+        return SessionState.isChoosing(screen, assistant: session.assistant ?? .claude)
     }
 
     /// End a session and close the tab it was in.
@@ -176,9 +182,12 @@ enum Targets {
     /// is what the person asking for this would otherwise do. Saying so is the point: this is
     /// documented as ending a session, not as saving one.
     static func end(_ session: TargetSession) -> String? {
-        // Typed as a line, not as a keystroke: `/exit` is text at a prompt, and `send` already
-        // knows how to put text in front of Claude Code and press Return.
-        if let failure = send("/exit", to: session) { return failure }
+        // Typed as a line, not as a keystroke: the word is text at a prompt, and `send` already
+        // knows how to put text in front of an assistant and press Return. Which word depends on
+        // which assistant — Claude Code leaves on `/exit`, Codex on `/quit`, and each refuses the
+        // other's, which would leave the session open with the tab closing under it.
+        let word = (session.assistant ?? .claude).quitLine
+        if let failure = send(word, to: session) { return failure }
         Thread.sleep(forTimeInterval: 1.2)
         switch session.backend {
         case .iterm: return ITerm.close(session.id)
@@ -247,24 +256,25 @@ enum Targets {
     static func reading(of sessions: [TargetSession]) -> Reading {
         var out = Reading()
 
-        func note(_ id: String, _ screen: String?) {
-            out.states[id] = SessionState.read(screen)
+        func note(_ session: TargetSession, _ screen: String?) {
+            let assistant = session.assistant ?? .claude
+            out.states[session.id] = SessionState.read(screen, assistant: assistant)
             // Only when the state says so. `read` has already decided a menu is up — asking the
             // parser again on an idle screen would be work done to be told nothing, once per
             // session per beat, which is the shape of cost this whole file is careful about.
-            guard out.states[id] == .waiting, let screen else { return }
-            out.menus[id] = SessionState.menu(Ansi.plain(screen))
+            guard out.states[session.id] == .waiting, let screen else { return }
+            out.menus[session.id] = SessionState.menu(Ansi.plain(screen), assistant: assistant)
         }
 
         let iterm = sessions.filter { $0.backend == .iterm }
         if !iterm.isEmpty {
             let tails = ITerm.tails(ids: iterm.map { $0.id })
-            for session in iterm { note(session.id, tails[session.id]) }
+            for session in iterm { note(session, tails[session.id]) }
         }
         // Only the visible pane: `-S -0` starts at the top of the screen rather than in the
         // scrollback, which is both cheaper and the right question — what is on screen *now*.
         for session in sessions where session.backend == .tmux {
-            note(session.id, Tmux.capture(session.id, scrollback: 0))
+            note(session, Tmux.capture(session.id, scrollback: 0))
         }
         return out
     }
@@ -289,7 +299,7 @@ enum Targets {
         cwdLock.unlock()
 
         let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
-        guard let pid = ITerm.claudePIDs()[bare],
+        guard let pid = ITerm.assistantPIDs()[bare]?.pid,
               let path = ITerm.workingDirectory(ofPID: pid) else { return nil }
         cwdLock.lock()
         cwdCache[session.id] = (CFAbsoluteTimeGetCurrent(), path)
@@ -297,8 +307,8 @@ enum Targets {
         return path
     }
 
-    /// When the Claude Code process in this session started. Used to tell its transcript from
-    /// the transcripts of every other session in the same project.
+    /// When the assistant in this session started. Used to tell its record from the records of
+    /// every other session in the same project.
     ///
     /// Remembered for the same reason and the same while as the working directory: it is asked
     /// once per session on every move through the list, it costs a `ps` of its own on top of the
@@ -306,6 +316,16 @@ enum Targets {
     /// started. Held rather than kept forever, because a tab whose session is restarted keeps its
     /// id and gets a new start time.
     private static var startCache: [String: (at: CFAbsoluteTime, started: Date?)] = [:]
+
+    /// The process running in this session, when there is one this can see.
+    ///
+    /// The tty is the only link between a pane and a process, which is why this exists at all
+    /// and why it answers nothing for a session in a shell. Read off the same cached `ps` as
+    /// everything else on this path.
+    static func pid(of session: TargetSession) -> Int32? {
+        let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
+        return ITerm.assistantPIDs()[bare]?.pid
+    }
 
     static func processStart(of session: TargetSession) -> Date? {
         cwdLock.lock()
@@ -316,7 +336,7 @@ enum Targets {
         cwdLock.unlock()
 
         let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
-        let started = ITerm.claudePIDs()[bare].flatMap { ITerm.processStart(ofPID: $0) }
+        let started = ITerm.assistantPIDs()[bare].flatMap { ITerm.processStart(ofPID: $0.pid) }
         cwdLock.lock()
         startCache[session.id] = (CFAbsoluteTimeGetCurrent(), started)
         cwdLock.unlock()

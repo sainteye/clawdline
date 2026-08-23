@@ -303,6 +303,7 @@ struct Spanish: Copy {
     let webStart = "Nueva sesión"
     let webStartLabel = "Empezar una sesión nueva en un proyecto"
     let webStartPick = "¿Dónde la empezamos?"
+    let webStartWith = "¿Con cuál la empezamos?"
     let webStartEmpty = "Todavía no hay dónde empezar. Ejecuta Claude Code una vez en el Mac y aparecerá aquí."
     let webStartFilter = "Filtrar proyectos"
     let webStarting = "Abriendo una pestaña…"

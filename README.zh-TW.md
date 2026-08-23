@@ -1,6 +1,6 @@
 # Clawdline
 
-**一條輸入條，管這台 Mac 上正在跑的每一個 Claude Code session。**
+**一條輸入條，管這台 Mac 上正在跑的每一個 Claude Code 與 Codex session。**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13%2B-black.svg)](#安裝)
@@ -21,9 +21,13 @@ Clawdline 把它們收在同一個地方。按 <kbd>⌥</kbd><kbd>Space</kbd>、
 session。按 <kbd>⌘</kbd><kbd>K</kbd>，每個 session 都是一行，而那一行會說它在做什麼：
 **在跑、跑完了、還是在等你回答。**
 
-**它不會在 Claude Code 裡裝任何東西。** 沒有 hook、沒有 MCP server、不會包一層 `claude` 指令、
-也不會動你的設定檔。它讀的是你的 session 本來就在畫的螢幕、本來就在寫的逐字稿——所以你一小時前
-自己開的那四個也在清單裡，不只是被派出去的那些。iTerm2 直接支援，其餘終端機透過 tmux。
+**它不會在 Claude Code 或 Codex 裡裝任何東西。** 沒有 hook、沒有 MCP server、不會包一層
+`claude` 或 `codex` 指令、也不會動你的設定檔。它讀的是你的 session 本來就在畫的螢幕、本來就在
+寫的紀錄——所以你一小時前自己開的那四個也在清單裡，不只是被派出去的那些。iTerm2 直接支援，
+其餘終端機透過 tmux。
+
+**Codex session 就在同一份清單裡**，條件一模一樣：看得到它在做什麼、讀得到它說過什麼、送得出
+指令、也開得了新的一個。[這句話的完整內容 →](#codex-也在同一條輸入條裡)
 
 沒有東西要搬、也沒有東西要復原。關掉它，你的環境就跟原本一模一樣。
 
@@ -54,6 +58,9 @@ session。按 <kbd>⌘</kbd><kbd>K</kbd>，每個 session 都是一行，而那�
 - **圖片與檔案** —— 視窗上任何地方都能丟檔案、也能貼圖。圖片進到 Claude Code 是 `[Image #3]`，
   跟你自己貼一張進去一模一樣；不是圖片的東西則以路徑送出。
   [怎麼做到的 →](docs/interface.md#dropping-in-a-file-or-an-image)
+- **Claude Code 與 Codex 並排** —— 兩種都在同一份清單裡，用同一套方式判讀、收同樣的 prompt。
+  只有清單裡兩種都有的時候，那一行才會標出自己是哪一種——因為在只跑其中一種的機器上，那個字會
+  出現在每一行，等於什麼都沒分辨。[這需要什麼 →](#codex-也在同一條輸入條裡)
 - **記得你送過什麼** —— <kbd>↑</kbd> <kbd>↓</kbd> 翻自己送過的字，而同一批字就是語音辨識被告知
   要預期的詞。
 - **換上你自己的吉祥物** —— 那隻角色就是一份 JSON：像素網格、色盤、七段動作。換一隻不必 fork
@@ -173,9 +180,9 @@ open ~/Applications/Clawdline.app
 ## 它是怎麼運作的
 
 **讀。** Clawdline 把每一個 iTerm2 session 與 tmux pane 列出來，拿每一個的 TTY 去對 `ps`，
-留下真的在跑 `claude` 的那些。狀態來自每個 session 自己的螢幕——有轉圈那行就是在跑、選單上停著
-游標就是在等回答，而**讀不到的螢幕回報的是「不知道」而不是「閒置」**，因為把「不知道」畫成
-「閒置」，是對別人的工作下一個很有信心的錯誤判斷。有逐字稿檔案的時候，
+留下真的在跑 `claude` 或 `codex` 的那些。狀態來自每個 session 自己的螢幕——有轉圈那行就是在跑、
+選單上停著游標就是在等回答，而**讀不到的螢幕回報的是「不知道」而不是「閒置」**，因為把「不知道」
+畫成「閒置」，是對別人的工作下一個很有信心的錯誤判斷。磁碟上有紀錄檔的時候，
 <kbd>⌘</kbd><kbd>J</kbd> 那塊讀的是檔案而不是螢幕。
 
 **寫。** 不是模擬鍵盤，也不是寫進終端機的 pty——現代 macOS 上你寫不進別的行程的 TTY。走的是
@@ -194,6 +201,29 @@ CR                                     ← 再單獨送一個 Return 才送出
 設定；之後只要一輪對話開始、結束或需要回答，通知當下就到，判讀在**一秒內**發生。一則通知只說
 「什麼時候該去看」，從來不說螢幕上寫了什麼，所以說了算的仍然是螢幕。把 hook 移除不會留下任何
 東西。[完整的約定 →](docs/hooks.md)
+
+## Codex 也在同一條輸入條裡
+
+Codex 的 session 跟 Claude Code 的在同一份清單裡，四件事都一樣：**看得到、讀得到、送得出去、
+開得起來。** Codex 裡面同樣沒有安裝任何東西——一樣是讀它本來就在畫的、本來就在寫的。
+
+| | |
+| --- | --- |
+| **看得到** | TTY 上在跑 `codex` 的就是一個 session，不管那是原生的執行檔，還是官方那層會再生一個原生行程的 Node 包裝。`codex exec` 跟那兩個 server 是同一個執行檔在做你打不進去的事，所以它們不會進清單，而不是被當成一個可以派工作的地方。 |
+| **讀得到** | <kbd>⌘</kbd><kbd>J</kbd> 讀的是 Codex 正在寫的 rollout——`~/.codex/sessions/YYYY/MM/DD/rollout-….jsonl`——並排成跟 Claude Code 逐字稿一樣的一段對話。**哪個檔屬於哪個 session 是事實，不是猜的：** Codex 的行程會一直開著自己那個 rollout，所以直接去問它就好，這正是同一個目錄裡兩個 session 不會互相顯示對方內容的原因。它派出去的 subagent 也會在同一個資料夾寫自己的檔，那些靠 Codex 寫在第一行的欄位分辨。 |
+| **送得出去** | 同一套括號貼上、同一個單獨的 Return。螢幕上有問題在等的時候判讀方式也一樣——游標底下的編號選項——手機上按一個數字就能回答，這是拿真的對話框試出來的，不是假設的。 |
+| **開得起來** | *開一個新的 session* 會依這台 Mac 實際裝了哪幾種來給選項，按下的那一列就開在那裡。從手機來的時候，要開哪一種是路徑上的一個**名字**——`POST /v1/places/:id/start/codex`——比對一份只有兩個值的清單，永遠不是一段會被送出去執行的指令。 |
+
+有一件事要講清楚：**背景 agent 的數字只有 Claude Code 那邊有。** Codex 一樣會派 subagent 出去，
+但 Clawdline 的計數來自一個只有 Claude Code 會寫的目錄，所以一個派了三個出去的 Codex session，
+看起來就像在想一句話想很久。
+
+Codex 用 `/quit` 結束，Claude Code 用 `/exit`，而且兩邊都不吃對方那個字——這就是「結束」得先知道
+自己在跟誰講話的原因。如果你的 Codex 不在 `~/.codex`，在設定裡填 `codex_home`；從 Finder 啟動的
+app 看不到你的 `CODEX_HOME`。
+
+實際跑過並拿來用的版本是 **Codex 0.149.0** 與 **Claude Code 2.1.235**。兩邊的螢幕都不是承諾過的
+介面：[讀了哪些東西、變了你會看到什麼 →](docs/compatibility.md)
 
 ## 其他終端機：把 Claude Code 跑在 tmux 裡
 
@@ -295,8 +325,10 @@ macOS 對你下載過的聽寫語言在本機辨識，沒下載的則把聲音�
 - **iTerm2，其餘終端機需要 tmux。**
 - **單向。** Claude 的回覆還是在終端機裡——<kbd>⌘</kbd><kbd>J</kbd> 讀得回來，但輸入條管的是你
   送出去的那半。那半本來就是往上捲的；這個工具修的是被釘在左下角的那一半。
-- **Claude Code 的螢幕與逐字稿格式都不是承諾過的介面。** 每個欄位進來時都是選填，認不得的一律
-  跳過。[跑過哪些版本 →](docs/compatibility.md)
+- **兩邊的螢幕與紀錄格式都不是承諾過的介面。** 每個欄位進來時都是選填，認不得的一律跳過。
+  [跑過哪些版本 →](docs/compatibility.md)
+- **背景 agent 的數字只算 Claude Code。** 一個派了 subagent 出去的 Codex session，看起來就像在
+  想一句話想很久。
 
 ## 出事的時候
 
@@ -320,7 +352,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 | [Hook](docs/hooks.md) | 那五個事件，以及為什麼說了算的仍然是螢幕 |
 | [Whisper](docs/whisper.md) | 一句話裡不只一種語言的時候 |
 | [吉祥物格式](docs/mascots.md) · [圖庫](docs/gallery.md) | 格式，以及大家把 pack 貼在哪 |
-| [版本](docs/compatibility.md) | 這東西跑過哪些 Claude Code 版本 |
+| [版本](docs/compatibility.md) | 這東西跑過哪些 Claude Code 與 Codex 版本 |
 
 ## 參與開發
 
