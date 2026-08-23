@@ -44,6 +44,214 @@ is running became something it **has** rather than something the app assumes.
 - `codex_home` in the config, for a Codex that does not live in `~/.codex` — an app launched from
   Finder inherits no login shell and cannot see your `CODEX_HOME`.
 
+### A Codex session can name itself
+
+A Codex row was the directory it was opened in and nothing else, which is fine until three of them
+are open in one repository and the list stops distinguishing anything.
+
+- **Off by default, and it says why.** *Settings → Name new Codex sessions*. Each title is a real
+  Codex turn against your account, so this is not something to switch on for somebody.
+- **One turn, after the first request.** The helper run is ephemeral, uses low reasoning with tools
+  disabled, and asks `codex_auto_name_model` — `gpt-5.6-luna` unless you name another.
+- **A name you chose is never overwritten.** Only a session that has never been titled is titled.
+- **It is the third thing here that can use the network**, and the privacy section says so now
+  rather than leaving the count at two.
+
+### The `/` menu, in the bar and on the phone
+
+Typing `/` in the bar used to be typing a character. It now opens the same nine-row surface the
+session and stack lists use, filtered as you type, with <kbd>↑</kbd><kbd>↓</kbd> and <kbd>Tab</kbd>
+to accept.
+
+- **The list is what that working directory can actually reach** — project skills, personal skills
+  and installed plugin skills, in the precedence a typed command would get: a personal skill
+  replaces a project one of the same name, and a plugin skill keeps its namespace and so collides
+  with neither. Skills switched off in settings are not offered.
+- **Read off `SKILL.md`, not asked for.** Claude Code has no read-only way to ask a running session
+  for its slash menu; its Agent SDK publishes one while starting a *new* session, and doing that on
+  every `/` would be a model-shaped side effect for an autocomplete. The stable local half is enough
+  to be useful and honest.
+- **Metadata only.** The name and the description; never the body of a `SKILL.md`. Reading a menu
+  must not execute the dynamic commands a skill is allowed to contain, and a prompt box that loaded
+  skill bodies would be a second skill runtime with a second set of rules to get wrong.
+- **A space ends completion.** From there the words are arguments and the ordinary Return-to-send
+  path owns them.
+- **The catalog is read once per session**, not once per keystroke, and a slow lookup for the tab
+  you just left can never paint its skills under the new one's prompt.
+- **The phone gets the same list** — `GET /v1/sessions/:id/skills`, `read` capability, metadata
+  only, no local path in the reply. A Codex session answers it with an empty list for now.
+
+### A notification says which session, not just which project
+
+A push carried the project and the state — *"clawdline — waiting for you"* — on the reasoning that
+the task title is the embarrassing half on a lock screen somebody else can read. That holds until
+three sessions are open in one repository, which is the normal way this gets used: every
+notification then reads the same and none of them says which tab to go to.
+
+So the task becomes the title and the project moves down beside the state: **"fix the webhook"**
+over *"clawdline is waiting for an answer"*. **This is a deliberate reversal of a documented privacy
+decision**, and the prose that argued the old way has been rewritten rather than left standing — the
+README, `docs/remote.md` and the comment on `WebPush.send` all say what is actually sent now. The
+line that has not moved is the one under it: prompt text and transcript contents still never leave
+the machine in a notification.
+
+### The agents a session sent away
+
+Everything here is learned by looking at a screen, and that stops working the moment the work moves
+somewhere Claude Code does not draw. A session with three agents out searching a codebase painted
+exactly the same spinner as one thinking about a sentence.
+
+- **The conversations are already on disk** — `subagents/agent-<id>.meta.json` beside the
+  transcript, written at the spawn — so they are read rather than guessed at. There is no record
+  saying "started" and none saying "still going": an ending is a `<task-notification>` in the
+  parent's transcript, so **running is the absence of one**, and the work is in establishing that
+  absence cheaply enough to ask once a second. A session that has never spawned one costs a cached
+  lookup and a single failed `stat`.
+- The list row gets a count, the strip above the transcript gets what is happening away from it,
+  and the phone gets a row per agent.
+- **Quiet in all three.** An agent explains why a session is busy and never asks anything of you,
+  and the one state allowed to be loud here is a session waiting for an answer.
+
+### Everywhere a project opens
+
+`GET /v1/sessions/:id/links` gathers the health endpoint from the icon registry, the run from the
+deploy status, the servers from the project's own status command, and the backlog page. **None of it
+is invented** — each is a URL some other tool already wrote into a file this app reads. The
+contribution is that they are in one list on a phone, rather than four places on a Mac in another
+room. On the Mac it is a Links sheet in the transcript header, in all fourteen languages; sort moved
+into the settings sheet, where the rare controls live.
+
+- **A route rather than a field on the session.** Working these out costs a `git` invocation plus a
+  handful of file reads, and the session list goes out on the event stream every time anything
+  moves — free when a menu is opened, a subprocess per session per second on the stream.
+- **Rows are anchors only for `http(s)`**, a whitelist rather than a blacklist: those strings come
+  out of a repository's own `devstack.json`, and `javascript:` in an `href` is script on that page
+  with that page's cookie.
+- **A `file://` row is not a link at all** — a path, a copy button, and a sentence saying it opens
+  on the Mac. A link that does nothing when tapped is worse than text that explains itself.
+- An untrusted dev stack stays silent rather than being probed.
+
+### The notch, all day
+
+`IslandMode` gains `.resting` as its floor: the character alone, breathing with its eyes shut, ears
+the same width as one running session so waking moves the animation and not the shape. A `sleep`
+routine is authored for both shipped packs, and a pack without one falls back to its own `idle`,
+slowed, with the eyes held shut — which also suppresses `idle`'s random blink, since a sleeper does
+not blink.
+
+Because it is on screen all day, the bar is different from the states that last seconds: anything
+catching the eye every few seconds is wrong. The breath is a sub-pixel swell over five seconds and
+the loop closes exactly. `notch: false` still means nothing in the notch, and a screen with no
+camera housing is left alone — the pill under a menu bar is fine for the minute a job runs and quite
+another thing parked there all day.
+
+**Drawing all day cost 3.6% of a core, continuously.** Throttling the redraw to 10fps measured no
+difference at all and was reverted rather than shipped with a confident comment. The real cost was
+building an `NSColor` from a hex string once per pixel cell per frame; memoised, 3.82% → 0.67%, with
+the rendered frame byte-identical.
+
+### From the page
+
+- **End a session.** `exit` sent from the page never worked and could not have: it arrives at the
+  prompt as a *message*, and once the assistant has gone the tab drops off the list, so the shell
+  that could have taken it was unreachable from the moment it became a shell.
+  `POST /v1/sessions/:id/end` sends the assistant's own word, waits, then closes — **in that order**,
+  because the transcript is appended to right up to the moment the process ends and it is the thing
+  you would still want tomorrow. It closes the *session*, not the tab: an iTerm2 tab can be split
+  and the panes beside it belong to work nobody asked about; when it was the only one, iTerm2
+  removes the tab, which is what the person pressing this expects. tmux gets `kill-pane` for the
+  same reason. **No new capability** — a device that may type could already send `/exit` and then
+  `exit`. Audited as `session.end`, and every test of it is a refusal, because a suite that
+  occasionally ends somebody's session is a suite people stop running.
+- **Bring a session's tab to the front**, without the page having to say where it is.
+- **Answer a menu from the phone.** `isChoosing` parsed every option in order to count them and then
+  returned a `Bool`, so a phone could be told a question was waiting and never told what it was. It
+  returns the options now. `POST /key` had existed the whole time; what was missing was seeing what
+  you were answering. **The number drawn is the number sent, never the position** — renumbering rows
+  to make them tidy is how a button comes to answer a different question than its label.
+- **A bare URL is a link.** Written links already worked; an address on its own did not, which is
+  most of them. Both are handled in one pass with `[label](href)` first in the pattern, and the
+  order is the whole trick — it is consumed whole, so the bare rule never sees the URL inside it.
+  Trailing punctuation goes outside the link, and a closing bracket only if the address did not open
+  one: `…/Foo_(bar)` keeps its paren, `(https://example.com)` does not.
+- **A conversation says whether it is still running.** The Mac has the notch and the footer; a phone
+  has neither once the list is a different screen. The live line now sits above the composer while a
+  session works — dim and monospace, not another coloured panel competing with the warning that
+  sometimes sits beside it.
+### Fixed
+
+- **Codex sessions had started disappearing from the list.** Interactive Codex now runs
+  `codex app-server --listen stdio://` beside its own UI, and the rule that keeps `codex exec` and
+  the servers out of the list was refusing the whole tty on account of the child. Refusal now flows
+  **down the process tree** on `ppid` instead of sideways across the tty, so a server descendant no
+  longer disqualifies the interactive parent that spawned it — while `codex exec`'s own native child
+  is still kept out by its refused ancestor. `codex sandbox` joined the list of subcommands that are
+  not somewhere you can type.
+- **Each row wears the assistant's product mark**, Claude's coral and OpenAI's green, drawn as SVG
+  so an 11-point mark stays sharp. It still appears only when the list is holding both — but when it
+  does, the split is visible before the word beside it has been read.
+- **A new Codex session no longer borrows the previous one's transcript.** A rollout that predates
+  the process holding it is not that process's rollout.
+- **A numbered list you typed was read as a menu.** `❯` is both the glyph a dialog marks its
+  current row with and the one Claude Code puts in front of the line you type, so a message opening
+  with a numbered list echoed back as character-for-character the shape of a menu with its first row
+  selected. The session went to *waiting*, the phone raised "this session is waiting for an answer",
+  and that notice says sending from here confirms the highlighted option rather than typing — so
+  somebody who sends lists, which is most people, was told a question existed and warned off
+  answering it, leaving nothing they could do.
+- **Every page decided it was out of date the moment the stream connected.** A page identifies a
+  build from `build|version|protocol`; `build` had been added to `/v1/health` and not to the `hello`
+  event, so the two sources disagreed about which fields exist and the stamps differed *by
+  construction*, immediately, on every page. Reloading could not clear it, because the fresh page
+  computed the same mismatch a second later. Both send the same fields now.
+- **A phone already holding a stale page had no way to learn otherwise.** Serving `no-store` fixed
+  every load after the fix and did nothing for a device that already had the old copy — it never
+  asks again, so it never finds out. The service worker now claims open tabs and fetches the page
+  with `cache: "reload"` rather than letting the HTTP cache answer.
+- **A black screen shipped**, from `git add -A` in a worktree shared with other agents: it picked up
+  an `index.html` that was midway through having its sort control removed, so the markup was gone
+  and the listener binding to it was not. The script died on the first line that touched it.
+- **Every rebuild was a coin flip on leaving a crash report behind.** `pkill` asks; it does not
+  wait, and the next line deleted the bundle a process on its way out was still reading — AppKit's
+  teardown asks CoreFoundation for the bundle identifier, which then reads freed memory. `build.sh`
+  waits now, and it stopped printing "relaunched" the instant `open` returned, which said nothing:
+  a build that killed the app and failed to restart it used to report success while the person
+  watching saw their bar vanish with no reason given.
+- **The release script deleted the build before checking it** — it removed the worktree and then
+  looked for the app inside it, so the check meant to catch an empty build was the thing
+  guaranteeing one. The build lands beside the worktree now.
+- **The "this page is older" notice can be dismissed.** It was correct and unclearable, and
+  reloading to silence a banner is what somebody halfway through a sentence is trying not to do.
+- The sleepy-tuna mascot pack failed its own validator.
+
+## 0.6.0 — 2026-08-19
+
+The release the README had been describing. 0.5.0 was cut by hand two hours before the remote half
+landed, so for a day the only build you could download did not contain the thing half the README is
+about — which is why [tools/release.sh](tools/release.sh) exists and why nothing is cut by hand any
+more: it builds from a clean worktree at HEAD, runs the tests, checks the built app's own version
+string, and does not publish anything until every one of those has passed.
+
+### Answer a session from your phone
+
+Your Mac serves a page; your phone opens it on your own domain through your own Cloudflare tunnel.
+Every session with its state and its transcript, a box to type into, and Web Push when one starts
+waiting for you — signed on your Mac with CryptoKit. **There is no account, no relay and no server
+of mine in the path**, which also means it works when your Claude account uses an API key.
+
+It is not a terminal in a browser and deliberately not. It answers one question: which session
+wants you, and can you answer it from here.
+
+- **Off until you switch it on**, and typing into a session is a second switch after that.
+- Pairing is a six-digit code shown on the Mac; a device gets read, or read-and-send.
+- Loopback only. `Host` headers are validated so a hostile page cannot reach it by DNS rebinding,
+  and cross-site requests are refused.
+- A multiple-choice question can be answered from the phone, by the option's own number — the
+  picker discards a typed answer, so `/send` refuses one outright rather than answering the wrong
+  thing quietly.
+- Start a new session in any project this Mac has worked in — the client sends an opaque id, never
+  a path, and the command is the literal `claude`.
+
 ### Claude Code can say so itself
 
 Everything here works by looking, and looking has one cost it cannot avoid: it only knows what it
@@ -78,9 +286,32 @@ dialog to sit there through a whole train of thought.
   there are no hooks.
 - `clawdline://hooks?install=1` and `install=0`, for setting a machine up from a script.
 - `"hooks": false` in the config ignores the notes without touching anybody's settings file.
+- **And the Mac tells you.** Notifications when a session starts waiting, when a turn over two
+  minutes ends, and — if you switch it on — when a deploy stops running.
 
 The contract, including what a note is and is not allowed to change, is in
 [docs/hooks.md](docs/hooks.md).
+
+### Everywhere else
+
+Fourteen languages, on the Mac and on the page. A transcript pane that folds a finished run of tool
+calls to one line. On-device dictation through Whisper. A settings window that looks like it belongs
+to this project, and an app icon. A backlog the status line can draw.
+
+### Security
+
+A route that took a directory and a command out of the request body and ran the second in the first
+has been removed, along with the code behind it. **It was never in a release** — 0.5.0 predates the
+whole remote feature — but it was on `main` for a day, and it is named here rather than left in a
+diff. What replaces it has no field a path or a command can be written into.
+[docs/remote.md](docs/remote.md) has the threat model in full, including what it does not defend
+against.
+
+### Requires
+
+macOS 13+, Apple silicon. iTerm2 directly, every other terminal through tmux. Built against Claude
+Code 2.1.235 — see [docs/compatibility.md](docs/compatibility.md). Swift and AppKit, no
+dependencies, no package manager. 1205 tests.
 
 ## 0.5.0 — 2026-08-18
 

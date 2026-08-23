@@ -80,6 +80,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/sessions/:id` | token | `read` |
 | `GET` | `/v1/sessions/:id/transcript` | token | `read` |
 | `GET` | `/v1/sessions/:id/links` | token | `read` |
+| `GET` | `/v1/sessions/:id/skills` | token | `read` |
 | `GET` | `/v1/projects` | token | `read` |
 | `GET` | `/v1/places` | token | `read` |
 | `GET` | `/v1/events` | token | `read` |
@@ -88,6 +89,7 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/sessions/:id/send` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/key` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/focus` | token + key | `send` **and** the write switch |
+| `POST` | `/v1/sessions/:id/end` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/auth/pair` | — | — |
 | `POST` | `/v1/auth/pair/confirm` | — | — |
 | `POST` | `/v1/auth/password` | — | — |
@@ -236,6 +238,38 @@ Nothing here is invented: the health endpoint comes from the icon registry, the 
 deploy status, the servers from the project's own `status` command, the backlog page from
 whatever produced it. An untrusted dev stack stays silent rather than being probed, and a
 `file://` entry is handed over as a path so a client can decline it honestly.
+
+### `GET /v1/sessions/:id/skills`
+
+The file-backed skills a Claude Code session can invoke.
+
+```console
+$ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/skills
+{"skills":[
+  {"name":"code-review","description":"Review the current diff for correctness","source":"personal"},
+  {"name":"deploy","description":"Ship the current branch","source":"project"}
+]}
+```
+
+| field | |
+|---|---|
+| `name` | the command without its leading `/` |
+| `description` | one line, the skill's own |
+| `source` | `project` · `personal` · `plugin` · `admin` · `system` — for grouping, not for precedence, which has already been applied |
+
+This is the `SKILL.md` files that session's working directory can reach, after the same precedence
+a typed command would get: a personal skill replaces a project one of the same name, and a plugin
+skill keeps its namespace and so can collide with neither. Claude Code has no read-only way to ask
+a running session for its own slash menu, so this is read off disk rather than asked for — which
+means it covers the file-backed half and not whatever a plugin adds at runtime.
+
+**A Codex session answers `{"skills":[]}`.** Draw the menu from what came back, not from the
+session's `assistant`, and a Codex session that starts answering with a list will need no change.
+
+**Metadata only, and deliberately.** Neither a local path nor the body of a `SKILL.md` is in the
+reply. A skill body may contain dynamic commands, and a menu that had to be executed to be read
+would make every autocomplete a side effect. A session whose skills cannot be determined answers
+`{"skills":[]}` rather than an error — an empty menu is a true statement about what can be offered.
 
 ### `GET /v1/places`
 
@@ -456,6 +490,24 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/focus \
 
 It only moves a window, and it is behind the same gate as sending anyway — one switch, so there is
 never a question about which of them a device has.
+
+### `POST /v1/sessions/:id/end`
+
+Ends the session and closes the terminal tab it occupied. No body.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/end \
+    -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 3d9b7c14-55e2' -d '{}'
+{"ok":true}
+```
+
+**Not a capability of its own.** A device that may type into a session can already send `/exit` and
+then `exit`; this is the same power with the two steps joined and named. What it adds is that the
+second step lands on a tab that has already left the session list — which is exactly why doing it
+by hand from a phone was impossible. The assistant is asked to leave through its own word, `/quit`
+for Codex and `/exit` for Claude Code, because each refuses the other's.
+
+`502 internal` carries what actually failed; the session is left as it was found.
 
 ### `POST /v1/auth/*`
 

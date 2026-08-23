@@ -65,8 +65,13 @@ Also:
   [How →](docs/interface.md#dropping-in-a-file-or-an-image)
 - **Claude Code and Codex, side by side** — both appear in the same list, are read the same way
   and take the same prompts. A row says which it is only when the list is holding both, because on
-  a Mac running one of them the word would be on every row and separate nothing.
+  a Mac running one of them the word would be on every row and separate nothing — and when it does,
+  it wears that assistant's own product mark beside the word. A Codex session can name itself, too.
   [What it takes →](#codex-in-the-same-bar)
+- **Your skills, from the box** — type `/` in a Claude Code session and the bar lists the skills
+  that working directory can actually reach, filtered as you type: project, personal and plugin
+  skills, in the precedence a typed command would get. Names and descriptions only, read off
+  `SKILL.md` — opening a menu never opens a skill's body. The same list is on the phone.
 - **Prompt history** — <kbd>↑</kbd> and <kbd>↓</kbd> walk back through what you have sent, and those
   same words are what dictation is told to expect.
 - **Bring your own mascot** — the character is one JSON file: a pixel grid, a palette and seven
@@ -187,6 +192,12 @@ The message is sealed to the device, and names the session task, project and sta
 With sending on, it can start a new session too, in a directory this Mac has already worked in: the
 client never sends a path, only an opaque id out of a list the Mac built for itself.
 
+With sending on it can also **close a session** — the assistant leaves through its own `/quit` or
+`/exit` and the terminal tab it occupied closes behind it, joined into one action because the moment
+the assistant leaves, the bare shell drops off the list and the page has nothing left to close — and
+**bring a session's tab to the front** on the Mac without saying where it is. Typing `/` on the page
+opens the same skill menu the bar has, over the same metadata-only route.
+
 **[docs/remote.md](docs/remote.md)** has the threat model in full, including what this does *not*
 defend against. **[docs/api.md](docs/api.md)** is the HTTP surface a script or a plugin talks to:
 every session, every transcript, an event stream, and `curl` as the only SDK.
@@ -227,7 +238,7 @@ Codex either — it is read the same way, off what it already draws and already 
 
 | | |
 | --- | --- |
-| **Seen** | A tty running `codex` is a session, whether that is the native binary or the published Node shim, which spawns it. `codex exec` and the two servers are the same binary doing something you cannot type into, so they are left out of the list rather than offered as somewhere to send work. |
+| **Seen** | A tty running `codex` is a session, whether that is the native binary or the published Node shim, which spawns it. `codex exec`, `codex sandbox` and the servers are the same binary doing something you cannot type into, so they are left out rather than offered as somewhere to send work. **Being left out travels down the process tree, not across the tty:** interactive Codex now starts `codex app-server` beside its own UI, and a refused child must not disqualify the parent that spawned it. |
 | **Read** | <kbd>⌘</kbd><kbd>J</kbd> reads the rollout Codex is writing — `~/.codex/sessions/YYYY/MM/DD/rollout-….jsonl` — and lays it out as the same conversation a Claude Code transcript becomes. **Which file belongs to which session is a fact, not a guess:** a Codex process holds its own rollout open, so it is asked outright, which is what keeps two sessions in one directory from showing each other's work. Its subagents write files of their own in the same folder, and those are told apart by what Codex writes in the first line. |
 | **Sent** | The same bracketed paste and the same single Return. A question on screen is read the same way too — numbered rows under a caret — and a bare digit answers it from the phone, which was checked against a real dialog rather than assumed. |
 | **Started** | *Start a session* offers whichever of the two this Mac has, and the row you press opens it there. From a phone the assistant is a **name** in the path — `POST /v1/places/:id/start/codex` — resolved against a two-case list, never a command that travels. |
