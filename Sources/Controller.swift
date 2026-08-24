@@ -1853,7 +1853,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let opens = text.hasPrefix("/") || (assistant == .codex && text.hasPrefix("$"))
         guard opens, !text.contains("\n") else { return nil }
         let query = String(text.dropFirst())
-        guard !query.contains(where: \.isWhitespace) else { return nil }
+        guard !query.contains(where: { $0.isWhitespace }) else { return nil }
         return query
     }
 

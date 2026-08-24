@@ -216,7 +216,7 @@ final class CodexNaming {
             line.removeLast()
             break
         }
-        line = line.split(whereSeparator: \Character.isWhitespace).joined(separator: " ")
+        line = line.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
         line = line.trimmingCharacters(in: CharacterSet(charactersIn: ".。!！?？:：;；"))
         line = String(line.prefix(limit)).trimmingCharacters(in: .whitespacesAndNewlines)
         guard line.count >= 2 else { return nil }
