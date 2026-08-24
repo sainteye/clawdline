@@ -191,7 +191,9 @@ final class CodexNaming {
     }
 
     static func cleanTitle(_ raw: String, limit: Int = 80) -> String? {
-        guard var line = raw.split(whereSeparator: \Character.isNewline)
+        // A closure rather than `\Character.isNewline`: the key path reads fine to Swift 6, and
+        // CI's Swift 5.10 cannot type it, which turned every run red for a fortnight.
+        guard var line = raw.split(whereSeparator: { $0.isNewline })
             .map({ String($0).trimmingCharacters(in: .whitespaces) })
             .first(where: { !$0.isEmpty }) else { return nil }
 
