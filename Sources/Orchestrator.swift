@@ -387,10 +387,11 @@ enum Orchestrator {
 
     /// The live tasks a root session dispatched, oldest first.
     ///
-    /// Apart from the cascade because it is the half worth testing on its own: *live* only — a
-    /// task that already ended is ended, and a reported child's tab belongs to the linger in
-    /// `closeChild` rather than to this — and matched on `root_session`, which is the assistant's
-    /// own id for itself and not any name this app has for a tab.
+    /// Apart from the cascade because it is the half worth testing on its own, and *live* only:
+    /// what a root's leaving does to work still running is not what it does to work that
+    /// finished, so the two are chosen separately — `lingeringTasks` is the other half. Matched
+    /// on `root_session`, which is the assistant's own id for itself and not any name this app
+    /// has for a tab.
     static func liveTasks(dispatchedBy rootSessionId: String) -> [String] {
         load()
         lock.lock(); defer { lock.unlock() }
@@ -400,8 +401,35 @@ enum Orchestrator {
             .map { $0.id }
     }
 
-    /// Ending a root session ends the work it dispatched: every live task of its own is cancelled
-    /// and every child's tab closed with it. Answers with the tasks it cancelled.
+    /// The finished tasks a root dispatched that still name a child tab, oldest first.
+    ///
+    /// A finished child's tab is kept for a while so somebody can read what it did. The somebody
+    /// was the root, and when it goes the tab is a window onto a conversation that has ended —
+    /// still drawn indented under a session no longer in the list.
+    ///
+    /// **Keyed on the tab, not on `closeAt`.** The linger deadline lives only in memory, so every
+    /// task that outlived a restart of the app has none, while its tab is still very much on
+    /// screen: closing the root would then walk straight past exactly the rows somebody is
+    /// looking at. `child_terminal` is written down, which is also what the page reads to decide
+    /// a row still belongs under its root — the same rule on both sides, so what a close takes is
+    /// what a reader sees.
+    ///
+    /// Whether the tab is really still there is `closeChildTab`'s question; it answers false when
+    /// the tab has gone, or has become somebody else's since.
+    static func lingeringTasks(dispatchedBy rootSessionId: String) -> [String] {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        return tasks.values
+            .filter { $0.state.isTerminal && $0.childTerminalId != nil
+                        && $0.rootSessionId == rootSessionId }
+            .sorted { $0.created < $1.created }
+            .map { $0.id }
+    }
+
+    /// Ending a root session ends the work it dispatched. Two things happen, and they are not the
+    /// same thing: a task still running is cancelled and its child's tab ended, while a task that
+    /// already finished keeps its record — `success` is a fact about work that happened — and
+    /// loses only the linger holding its tab open. Answers with both sets.
     ///
     /// **Runs before the root's own tab goes, and the ordering is the whole of it.** A task knows
     /// its root by the session id in that session's hook note, and the note is reached through
@@ -422,6 +450,12 @@ enum Orchestrator {
     /// patience. Those are different moments: one is tidying up after work that finished, this is
     /// somebody pressing close, and making them wait on a child they cannot see is not the thing
     /// they asked for.
+    ///
+    /// **A finished child's tab goes too.** It is standing there because somebody might still
+    /// want to read what it did, and the page draws it indented under the root that asked for it.
+    /// Leave it and closing a root leaves its children on screen, filed under a session that is
+    /// no longer in the list — which is the shape of the bug this was written to fix, and reads
+    /// as the close having done nothing at all.
     @discardableResult
     static func cancelChildren(ofRoot session: TargetSession) -> [String] {
         guard let rootSession = rootIdentity(of: session) else { return [] }
@@ -434,7 +468,60 @@ enum Orchestrator {
                                                      "root": session.id])
             cancelInPlace(task)
         }
-        return live
+        var closed: [String] = []
+        for id in lingeringTasks(dispatchedBy: rootSession) where closeChildTab(ofTask: id, root: session.id) {
+            closed.append(id)
+        }
+        if !closed.isEmpty {
+            save()
+            RemoteServer.shared.broadcastOrchestrator()
+        }
+        return live + closed
+    }
+
+    /// End a finished task's linger now, leaving the record exactly as it stands. True when the
+    /// tab was still ours to take.
+    ///
+    /// Deliberately not `cancelInPlace`: that writes `cancelled` over the record, and a task that
+    /// succeeded still succeeded — the result file is there and worth keeping. What the root's
+    /// leaving takes away is the reason to hold the tab open, not the work.
+    ///
+    /// The courtesy is `closeChild`'s: a quit word when there is an assistant in there to hear
+    /// it, the tab alone when the child is mid-turn or has already left. What it does not inherit
+    /// is the ten minutes of patience — that is for a linger running out on its own, and this is
+    /// somebody pressing close.
+    private static func closeChildTab(ofTask id: String, root: String) -> Bool {
+        guard var task = held(id), let childID = task.childTerminalId,
+              let child = target(withID: childID),
+              child.assistant == nil || child.assistant == task.assistant,
+              task.childTTY == nil || child.tty == task.childTTY else { return false }
+        let justTheTab = childIsBusy(child) || child.assistant == nil
+        task.closeAt = nil
+        lock.lock(); tasks[id] = task; lock.unlock()
+        RemoteAuth.audit("orchestrator.close", ["task": id, "child": childID,
+                                                "how": justTheTab ? "tab" : "exit",
+                                                "why": "root_ended", "root": root])
+        if let failure = endChildTab(child, justTheTab: justTheTab) {
+            Log.write("orchestrator: could not close the child — \(failure)")
+        }
+        return true
+    }
+
+    /// Whether there is a turn running in the child, read the way `closeChild` reads it.
+    ///
+    /// The screen reading is left where it is called from — it is the slow half, and neither
+    /// caller is on the main thread by accident — but the states table belongs to main, so that
+    /// half takes the same hop `target(withID:)` takes.
+    private static func childIsBusy(_ child: TargetSession) -> Bool {
+        if Targets.isChoosing(child) { return true }
+        if Thread.isMainThread {
+            if case .working? = SessionWatch.shared.states[child.id] { return true }
+            return false
+        }
+        return DispatchQueue.main.sync { () -> Bool in
+            if case .working? = SessionWatch.shared.states[child.id] { return true }
+            return false
+        }
     }
 
     /// What a session calls itself, which is what `rootSessionId` was written from — the terminal
@@ -658,8 +745,7 @@ enum Orchestrator {
         // patience, then the tab goes without the courtesy of `/exit`, because typing into a
         // menu confirms whatever is highlighted. An assistant that already left on its own
         // gets the same treatment: there is nobody in that tab to say the word to.
-        var busy = Targets.isChoosing(child)
-        if case .working? = SessionWatch.shared.states[childID] { busy = true }
+        let busy = childIsBusy(child)
         let overdue = now.timeIntervalSince(closeAt) > 600
         if busy, !overdue { return false }
         let justTheTab = busy || child.assistant == nil
@@ -670,19 +756,28 @@ enum Orchestrator {
         // Off the main thread: `end` types the quit word, waits for it to land, then closes the
         // tab, and a second of that on the main thread is a second the panel does not draw.
         DispatchQueue.global(qos: .utility).async {
-            let failure: String?
-            if justTheTab {
-                switch child.backend {
-                case .iterm: failure = ITerm.close(child.id)
-                case .tmux:  failure = Tmux.close(child.id)
-                }
-            } else {
-                failure = Targets.end(child)
+            if let failure = endChildTab(child, justTheTab: justTheTab) {
+                Log.write("orchestrator: could not close the child — \(failure)")
             }
-            if let failure { Log.write("orchestrator: could not close the child — \(failure)") }
             DispatchQueue.main.async { SessionWatch.shared.nudge() }
         }
         return true
+    }
+
+    /// Take a child's tab away: the quit word first when there is an assistant in there to hear
+    /// it, otherwise the tab on its own.
+    ///
+    /// Shared by the linger and by the cascade so the two cannot drift into closing a tab two
+    /// different ways. Blocks for over a second in the polite case — `Targets.end` types the word
+    /// and waits for it to land — so both callers are somewhere that can afford it.
+    private static func endChildTab(_ child: TargetSession, justTheTab: Bool) -> String? {
+        if justTheTab {
+            switch child.backend {
+            case .iterm: return ITerm.close(child.id)
+            case .tmux:  return Tmux.close(child.id)
+            }
+        }
+        return Targets.end(child)
     }
 
     private struct ChildResult {

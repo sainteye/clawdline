@@ -293,13 +293,21 @@ reporting into a conversation that ended. Both ways write `orchestrator.cancel` 
 and the cascade carries `why=root_ended` — a task cancelled *for* you should not read like one you
 cancelled.
 
+A task that had already **finished** keeps its record — `success` stays `success`, the result file
+is still there — and loses only the tab. Those tabs are the linger described below: a finished
+child is left on screen for a while so somebody can read what it did, and the page draws it
+indented under the root that asked for it. When that root leaves, the reader the linger was for
+has gone, and a row filed under a session no longer in the list is not a courtesy. Those closures
+are `orchestrator.close`, also with `why=root_ended`. The tab is what this is keyed on, not the
+linger deadline — that deadline lives only in memory, so every task older than the app's last
+restart has none while its tab is plainly still there, and the page decides the same way.
+
 **Only an explicit close cascades.** Closing the tab by hand does not. The app never watches a root
 for signs of death, because "not in this reading" is a sentence that is also true of a terminal that
 lost its accessibility permission for a moment, and the cost of being wrong there is somebody's work
-killed mid-turn. Two more things it deliberately leaves alone: a task that already finished, whose
-tab belongs to the linger described below rather than to this, and a second level, which does not
-exist — a child may not dispatch (`depth_exceeded`), so one root's children are all the children
-there are. A busy child gets no grace period either; somebody pressed a button that says close.
+killed mid-turn. Nor is there a second level to reach: a child may not dispatch
+(`depth_exceeded`), so one root's children are all the children there are. A busy child gets no
+grace period either; somebody pressed a button that says close.
 
 **spawn_failed** — the tab never happened, or never got briefed inside two minutes, or the app was
 restarted while the task was still in `queued`/`spawning`. That last one is not a bug: the plaintext

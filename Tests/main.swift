@@ -4888,13 +4888,15 @@ group("closing a root session takes the work it dispatched with it") {
     let root = "8967a1ee-9718-45ed-94d5-c81178870072"
     let stranger = "1c9a4d55-6f31-4b02-8d77-0a2e3c4b5d61"
     let born = Date().timeIntervalSince1970
-    func row(_ id: String, _ state: String, rootSession: String?, at: Double) -> [String: Any] {
+    func row(_ id: String, _ state: String, rootSession: String?, at: Double,
+             child: String? = nil) -> [String: Any] {
         var out: [String: Any] = ["id": id, "state": state, "kind": "custom", "title": "a task",
                                   "assistant": "claude", "project_dir": "/tmp",
                                   "timeout_minutes": 30, "created": at,
                                   "secret_hash": Orchestrator.hash(ofSecret: String(repeating: "a1", count: 32)),
                                   "artifacts": []]
         if let rootSession { out["root_session"] = rootSession }
+        if let child { out["child_terminal"] = child }
         return out
     }
     let live = "0f8fad5b-d9cb-469f-a165-70867728950e"
@@ -4902,12 +4904,16 @@ group("closing a root session takes the work it dispatched with it") {
     let done = "33333333-4444-5555-6666-777777777777"
     let elsewhere = "44444444-5555-6666-7777-888888888888"
     let orphan = "55555555-6666-7777-8888-999999999999"
+    let alsoDone = "66666666-7777-8888-9999-aaaaaaaaaaaa"
+    let noTab = "77777777-8888-9999-aaaa-bbbbbbbbbbbb"
     let rows: [[String: Any]] = [
         row(alsoLive, "queued", rootSession: root, at: born + 1),
         row(live, "briefed", rootSession: root, at: born),
-        row(done, "success", rootSession: root, at: born + 2),
+        row(done, "success", rootSession: root, at: born + 2, child: "%tab-done%"),
         row(elsewhere, "briefed", rootSession: stranger, at: born + 3),
         row(orphan, "briefed", rootSession: nil, at: born + 4),
+        row(alsoDone, "failure", rootSession: root, at: born + 5, child: "%tab-also%"),
+        row(noTab, "spawn_failed", rootSession: root, at: born + 6),
     ]
     let stored = (try? JSONSerialization.data(withJSONObject: ["version": 1, "tasks": rows])) ?? Data()
     try? FileManager.default.createDirectory(at: store.deletingLastPathComponent(),
@@ -4916,15 +4922,29 @@ group("closing a root session takes the work it dispatched with it") {
 
     expect("every live task of this root goes, oldest first",
            Orchestrator.liveTasks(dispatchedBy: root), [live, alsoLive])
-    check("a task that already finished is left where it is — its tab is the linger's business",
+    check("a task that already finished is not cancelled — `success` is a fact about work that happened",
           !Orchestrator.liveTasks(dispatchedBy: root).contains(done))
+
+    // The other half: the work is over, but the tab it left behind is still indented under this
+    // root on the page, and closing the root has to take those with it or it reads as having done
+    // nothing. Keyed on the tab rather than on the linger deadline, which does not survive a
+    // restart of the app while the tab plainly does.
+    expect("a finished task's tab goes with the root too, oldest first",
+           Orchestrator.lingeringTasks(dispatchedBy: root), [done, alsoDone])
+    check("a task that never got a tab has nothing left to close",
+          !Orchestrator.lingeringTasks(dispatchedBy: root).contains(noTab))
+    check("and work still running is not collected twice",
+          !Orchestrator.lingeringTasks(dispatchedBy: root).contains(live)
+              && !Orchestrator.lingeringTasks(dispatchedBy: root).contains(alsoLive))
+    expect("another root's tabs are still nobody else's to close",
+           Orchestrator.lingeringTasks(dispatchedBy: stranger), [])
     expect("another root's child is nobody else's to cancel",
            Orchestrator.liveTasks(dispatchedBy: stranger), [elsewhere])
     check("and a task with no root named is not swept up with them",
           !Orchestrator.liveTasks(dispatchedBy: root).contains(orphan)
               && !Orchestrator.liveTasks(dispatchedBy: stranger).contains(orphan))
     expect("a session nobody dispatched from cancels nothing",
-           Orchestrator.liveTasks(dispatchedBy: "77777777-8888-9999-aaaa-bbbbbbbbbbbb"), [])
+           Orchestrator.liveTasks(dispatchedBy: "88888888-9999-aaaa-bbbb-cccccccccccc"), [])
 
     // The identity half. A session that never left a hook note cannot be matched to a task, and
     // the answer to that is *nothing* — the failure worth guarding against is a nil id quietly

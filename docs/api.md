@@ -628,12 +628,14 @@ second step lands on a tab that has already left the session list — which is e
 by hand from a phone was impossible. The assistant is asked to leave through its own word, `/quit`
 for Codex and `/exit` for Claude Code, because each refuses the other's.
 
-**It takes the session's children with it.** If the session is the root of live
-[orchestrator](orchestrator.md) tasks, those are cancelled and their child tabs closed *before* this
-one is — a task is matched to its root through the hook note on the tty of the tab about to go, so
-after the fact there is nothing left to match. Tasks that already finished are untouched, and
-closing a tab by hand cascades to nothing: only this route does. The cancellations appear in the
-audit log as `orchestrator.cancel` with `why=root_ended`.
+**It takes the session's children with it.** Every child tab of an
+[orchestrator](orchestrator.md) task this session dispatched is closed *before* this one is — a
+task is matched to its root through the hook note on the tty of the tab about to go, so after the
+fact there is nothing left to match. A task still running is cancelled with its tab; one that
+already finished keeps its record and loses only the tab, because `success` is a fact about work
+that happened and the tab was being held for a reader who is leaving. Closing a tab by hand
+cascades to nothing: only this route does. The audit log carries `orchestrator.cancel` for the
+first kind and `orchestrator.close` for the second, both with `why=root_ended`.
 
 `502 internal` carries what actually failed; the session is left as it was found.
 
