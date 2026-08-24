@@ -11,8 +11,9 @@
 #   ./tools/shoot-assets.sh sessions            # one of them, by name
 #   ./tools/shoot-assets.sh web web-wide        # or several, which costs one restart and not two
 #
-# The browser ones are `web`, `web-wide`, `fleet-phone`, `fleet-wide` and `web-push`; see the
-# note further down.
+# The browser ones are `web`, `web-wide`, `fleet-phone`, `fleet-wide`, `tabs` and `web-push`; see
+# the note further down. `tabs` is the odd one out and says so where it is defined: it is the only
+# picture on the page that is a drawing rather than a shot of something running.
 #
 # Everything is drawn by the app itself, offscreen, so **no Screen Recording permission is
 # needed** and nothing depends on what is on your screen at the time. Needs: the app built
@@ -133,7 +134,19 @@ webstrip() {  # webstrip <name> <url> <script> <width> <fps> [extra args for sho
   ffmpeg -v error -y -framerate "$fps" -i "$TMP/$name/f%04d.png" \
     -filter_complex "fps=$fps,scale=$width:-2:flags=lanczos,split[x][y];[y]palettegen=stats_mode=diff[p];[x][p]paletteuse=dither=none" \
     -loop 0 "$OUT/$name.gif"
-  echo "→ $name.gif"
+  # And the same question `strip` asks of its own output, for the same reason — with one word
+  # changed. **A GIF encoder drops a frame identical to the one before it and does not hand the
+  # time back**, so a clip whose page holds still for a beat comes out shorter than it was played,
+  # with the pauses eaten unevenly. That is a fault in the page rather than in the encode: give it
+  # something that moves and the frames come back. So this says the number rather than stopping on
+  # it, and the difference is the thing to go and look at.
+  local want out
+  want=$(ls "$TMP/$name"/f*.png | wc -l | tr -d ' ')
+  out=$(ffprobe -v error -count_frames -select_streams v:0 \
+        -show_entries stream=nb_read_frames -of csv=p=0 "$OUT/$name.gif")
+  echo "→ $name.gif ($out frames)"
+  [ "$out" -lt "$want" ] && echo "   ·· $((want - out)) of $want held frames were dropped as duplicates — the clip plays short"
+  true
 }
 
 webshot() {  # webshot <name> <url> <script> [extra args…]
@@ -159,7 +172,7 @@ want() {
 needs_app() {
   local w
   for w in "${WANT[@]}"; do
-    case "$w" in web|web-wide|fleet-phone|fleet-wide) ;; *) return 0 ;; esac
+    case "$w" in web|web-wide|fleet-phone|fleet-wide|tabs) ;; *) return 0 ;; esac
   done
   return 1
 }
@@ -276,6 +289,24 @@ run_if fleet-phone webshot fleet-phone "$WEB_PAGE" fleet --dwell 1400 \
                                        --width 390 --height 844 --scale 2
 run_if fleet-wide  webshot fleet-wide  "$WEB_PAGE" fleet-wide --dwell 2000 \
                                        --desktop --width 1180 --height 760 --scale 2
+
+# **The other side of the comparison, and the only picture here that is a drawing.**
+#
+# The README opens by saying a terminal cannot show you the shape of a fleet — that it offers tab
+# titles, and a tab title is a task. That was prose standing next to a picture of the app doing
+# the opposite, which asks the reader to imagine the thing being argued with. This draws it:
+# eleven sessions as a terminal has them, every title clipped from the left until nothing is left
+# but the process in parentheses.
+#
+# It is a drawing, and it is allowed to be one because of what it draws. Nothing about Clawdline
+# is staged in it — no list, no states, no tree — so the rule the rest of this file keeps, that a
+# picture of a feature is taken from the feature, is not bent. tools/tabs/index.html has the same
+# note at the top of it.
+#
+# Shot narrow on purpose: a bar of eleven tabs is only an argument if the tabs are legible, and
+# 940 points scaled down to 760 keeps the type where the screenshot this was drawn from had it.
+run_if tabs        webstrip tabs "file://$PWD/tools/tabs/index.html" tabs 760 12 \
+                                       --desktop --width 940 --height 215 --scale 2
 
 # The notification.
 #

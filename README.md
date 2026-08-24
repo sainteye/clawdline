@@ -20,6 +20,21 @@ window cannot show you any of that. It offers tab titles, and a tab title is a *
 projects can be working on tasks that read alike — and no plugin can fix it, because plugins add
 commands, agents, hooks, MCP servers and skills, not TUI layout.
 
+<img src="docs/assets/tabs.gif" width="760" alt="A terminal window with eleven sessions in it, switched through tab by tab. Every tab title has been clipped from the left until nothing survives but the process in brackets, so the bar reads the same four characters over and over — dots-n3, dots-de, dots-sh — and the only session that says what it is, is the one in front.">
+
+Eleven sessions, as a terminal has them. Every title is clipped from the left until all that
+survives is the process in brackets, so the bar reads `…n3)` `…de)` `…sh)` eleven times over — and
+one of those is a Codex session, which the bar has no way of saying either. The only one that
+tells you what it is, is the tab already in front of you. Finding out about the other ten means
+visiting them, one at a time, while they carry on without you.
+
+None of that is a failure of the terminal: a tab is a process, and a process is all a tab ever
+promised to be. It is simply not the shape the work has. **What a fleet looks like with its shape
+drawn is the picture at the top of this page** — not more information, the same information
+arranged, so
+which one is working, which one is stuck, and which one is another session's errand is something
+you see rather than something you go and look for.
+
 Clawdline draws the shape and lets you act on it. Press <kbd>⌘</kbd><kbd>K</kbd> and every session
 is a row that says what it is doing — **working, finished, or waiting for an answer** — with the
 sessions a session sent away indented underneath it. Press <kbd>⌥</kbd><kbd>Space</kbd>, type, and

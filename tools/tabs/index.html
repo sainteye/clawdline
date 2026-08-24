@@ -1,0 +1,296 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>clawdline — a terminal's tab bar, for the picture that argues with it</title>
+<!--
+    A drawn terminal, so that the sentence about tab titles has something to point at.
+
+    The README's first paragraph says a terminal cannot show you the shape of a fleet: that it
+    offers tab titles, that a tab title is a *task*, and that two projects can be working on tasks
+    which read alike. That is an argument, and until now it was made entirely in prose, next to a
+    picture of Clawdline doing the opposite. This is the other half — the thing being argued with,
+    drawn rather than described.
+
+    **It is a drawing and it is only ever allowed to draw the problem.** Nothing about Clawdline
+    is faked in here: no session list, no states, no tree. The rule the phone mockup keeps — a
+    staged picture of a feature is a claim made by a person rather than by the code — is kept by
+    staying on this side of the comparison. Every picture of the app is still shot from the app.
+
+    What it is a drawing *of* is one real screenshot: fifteen tabs, every title truncated from the
+    left until all that survives is the process in parentheses, so a bar of `…hon)` `…zsh)` `…n)`
+    is the whole of what a fleet of sessions looks like from the outside. The truncation here is
+    not typed out — the full titles are in the DOM and the boxes clip them — so it stays honest
+    when the tab count or the window width changes.
+
+        node tools/shoot-web.js --url "file://$PWD/tools/tabs/index.html" --script tabs \
+             --desktop --width 940 --height 215 --scale 2
+
+    Usually through tools/shoot-assets.sh, which has a `tabs` target. The beats live in the
+    storyboard, not here: this page holds the drawing and one entry point, `window.TabsMock`.
+-->
+<style>
+:root {
+    /* iTerm2 in a dark theme, measured off the screenshot rather than invented: the chrome is
+       warmer and lighter than the terminal it holds, and the active tab is the *darker* one —
+       it is a window onto the black behind, not a raised button. */
+    --chrome: #3a3a3c;
+    --bar: #323234;
+    --seam: #454547;
+    --tab-on: #1a1a1c;   /* the same black as the screen: the front tab is a hole, not a button */
+    --ink: #e9e9ec;
+    --dim: #9c9ca1;
+    --faint: #6f6f75;
+    --screen: #1a1a1c;
+    --wire: #2f9e44;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+    font: 13px/1 -apple-system, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+    background: #0d0d0e;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+}
+
+#window { height: 100%; display: flex; flex-direction: column; background: var(--screen); }
+
+/* ---- the title bar ------------------------------------------------------- */
+
+/* The one place a title is not truncated, and the reason the clip works: the front tab says what
+   it is, in full, at the top of the window — and it is the only one that does. Everything the
+   other ten are doing is behind a `…n)`. */
+.title {
+    position: relative;
+    flex: 0 0 36px;
+    display: flex; align-items: center;
+    padding: 0 12px;
+    background: var(--chrome);
+    border-bottom: 1px solid #2b2b2d;
+}
+.lights { display: flex; gap: 8px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.lights i:nth-child(1) { background: #ff5f57; }
+.lights i:nth-child(2) { background: #febc2e; }
+.lights i:nth-child(3) { background: #28c840; }
+.title .name {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    max-width: 56%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    font-size: 13px; font-weight: 500; color: var(--ink);
+}
+.title .name .mark { color: var(--dim); margin-right: 5px; }
+.title .split { margin-left: auto; color: var(--faint); font-size: 12px; letter-spacing: 0.4px; }
+
+/* ---- the tab bar --------------------------------------------------------- */
+
+.tabs { flex: 0 0 30px; display: flex; background: var(--bar); }
+.tab {
+    flex: 1 1 0; min-width: 0;
+    display: flex; align-items: center; gap: 5px;
+    padding: 0 9px;
+    border-right: 1px solid var(--seam);
+    color: var(--dim);
+    font-size: 12.5px;
+}
+.tab:last-child { border-right: 0; }
+.tab.on {
+    background: var(--tab-on); color: #f6f6f8;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* **The truncation is done by the box, not by hand.** The full title is in the element; the
+   element is not wide enough for it; the text is pushed to the right so what falls off is the
+   front. That is the whole complaint drawn in three declarations — what survives is the end of
+   the string, and the end of the string is `(python3)`. */
+.tab .label { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; }
+/* The `…` is **outside** the box that clips, or it is the first thing to fall out of it — which
+   is what the first shoot came back with: eleven tabs reading `hon3)` with nothing to say they
+   had ever been longer. */
+.tab .label .cut { flex: 0 0 auto; }
+.tab .label .clip {
+    flex: 1 1 auto; min-width: 0;
+    display: flex; justify-content: flex-end;
+    overflow: hidden; white-space: nowrap;
+}
+.tab .label .clip span { flex: 0 0 auto; }
+/* iTerm2's own marks, on the right of the label: a spinner where output is still arriving, a dot
+   where something has been printed since you last looked. Neither of them says *what*, and both
+   are on half the bar at any moment, so neither picks anything out. */
+.tab .mark { flex: 0 0 auto; width: 9px; text-align: center; font-size: 11px; color: #7f7f85; }
+.tab .mark.dot { color: #4a8cff; }
+.tab .hint { flex: 0 0 auto; color: var(--faint); font-size: 11.5px; letter-spacing: 0.2px; }
+.tab.on .hint { color: var(--dim); }
+
+/* ---- the screen ---------------------------------------------------------- */
+
+.wire { flex: 0 0 2px; background: var(--wire); }
+.screen {
+    flex: 1 1 auto; overflow: hidden;
+    padding: 9px 13px;
+    font: 11.5px/1.62 ui-monospace, "SF Mono", Menlo, monospace;
+    color: #8e8e94;
+    white-space: pre;
+}
+.screen .said { color: #b9b9bf; }
+.screen .tool { color: #6f6f75; }
+.screen .run { color: #d1a06f; }
+.caret { display: inline-block; width: 6px; background: #b9b9bf; color: transparent; }
+.caret.off { background: transparent; }
+</style>
+
+<div id="window">
+    <div class="title">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div class="name"><span class="mark">◐</span><span id="front"></span></div>
+        <div class="split">⌥⌘2</div>
+    </div>
+    <div class="tabs" id="tabs"></div>
+    <div class="wire"></div>
+    <div class="screen" id="screen"></div>
+</div>
+
+<script>
+/**
+ * Eleven sessions, as a terminal has them.
+ *
+ * `title` is what the terminal was told to call the tab — a task, and the process that is running
+ * it, which is the part that survives being clipped. `mark` is iTerm2's, not the session's.
+ * `screen` is what you get *after* you have switched, which is the point being made: it is the
+ * only way to find out, it costs a beat, and it answers for one tab out of eleven.
+ *
+ * The projects and the tasks are the same made-up ones the rest of the pictures use — atrium,
+ * notebook, clawdline and a build box — and five of the six sessions in the page's own fixtures
+ * are among them, including the Codex one, which the bar has no way of telling from the ten
+ * Claude Code tabs beside it.
+ */
+var TABS = [
+    { title: "atrium — the signup flow keeps 500ing (python3)", mark: "dot",
+      screen: [["tool", "● Read(app/auth/session.py)"],
+               ["tool", "  ⎿  read 240 lines"],
+               ["said", "The 500 comes from the second call, not the first — the session row is"],
+               ["said", "written before the transaction commits, so the read after it finds"],
+               ["run",  "? Should I move the write inside the transaction, or add the retry"]] },
+    { title: "notebook — rewrite the CSV importer (python3)", mark: "spin",
+      screen: [["run",  "✻ Untangling… (9s · ↓ 3.5k tokens · esc to interrupt)"],
+               ["tool", "● Bash(python -m pytest tests/import -q)"],
+               ["tool", "  ⎿  14 passed, 2 failed in 3.41s"],
+               ["said", "Both failures are the same header row being counted as data. Fixing"],
+               ["said", "the sniffer rather than the two tests."]] },
+    { title: "clawdline — investigate the webhook (node)", mark: "spin",
+      screen: [["run",  "✳ Reticulating… (2m 14s · ↑ 1.2k tokens · esc to interrupt)"],
+               ["tool", "● Grep(pattern: \"x-signature\", path: \"src\")"],
+               ["tool", "  ⎿  found 6 files"],
+               ["tool", "● Read(src/webhook/verify.ts)"],
+               ["said", "The signature is compared with ===, which is not constant time."]] },
+    { title: "clawdline/docs — docs pass before the release (zsh)", mark: "",
+      screen: [["tool", "● Edit(docs/interface.md)"],
+               ["tool", "  ⎿  updated 3 lines"],
+               ["said", "Two of the three headings said the old name for the pane. Both are"],
+               ["said", "changed and the link that pointed at the second one still resolves."],
+               ["", "$ "]] },
+    { title: "atrium — the retry needs backoff (python3)", mark: "dot",
+      screen: [["tool", "● Read(worker/queue.py)"],
+               ["said", "It retries five times with no gap at all, so a service that is down"],
+               ["said", "for a second is asked five times inside that second."],
+               ["run",  "? Exponential from 200ms, or a fixed second — which do you want"],
+               ["", ""]] },
+    { title: "notes — scratch (codex)", mark: "",
+      screen: [["tool", "› Read tests/fixtures/rows.csv"],
+               ["said", "The fixture has a trailing newline the importer counts as a row. That"],
+               ["said", "is the whole of the difference between the two runs."],
+               ["", ""],
+               ["", "› "]] },
+    { title: "clawdline — the panel forgets its width (node)", mark: "spin",
+      screen: [["run",  "✽ Pondering… (41s · ↓ 880 tokens · esc to interrupt)"],
+               ["tool", "● Read(Sources/Panel.swift)"],
+               ["tool", "  ⎿  read 1,180 lines"],
+               ["said", "The width is saved on close and the close happens after the frame has"],
+               ["said", "already been zeroed, so what gets saved is zero."]] },
+    { title: "atrium — add the search index (python3)", mark: "dot",
+      screen: [["tool", "● Bash(psql -c '\\d+ documents')"],
+               ["tool", "  ⎿  12 rows"],
+               ["said", "There is no index on the column the query filters by, which is why it"],
+               ["said", "reads the whole table for a search that returns four rows."],
+               ["", "$ "]] },
+    { title: "~ — build box over ssh (ssh)", mark: "",
+      screen: [["tool", "● Bash(uname -a && sw_vers -productVersion)"],
+               ["tool", "  ⎿  Darwin build-01 23.6.0 arm64"],
+               ["said", "This is the build box, not your laptop — the checkout here is four"],
+               ["said", "commits behind and the branch is the release one, not main."],
+               ["", "$ "]] },
+    { title: "notebook — read the diff for me (python3)", mark: "dot",
+      screen: [["tool", "● Bash(git diff --stat main...HEAD)"],
+               ["tool", "  ⎿  9 files changed, 412 insertions(+), 88 deletions(-)"],
+               ["said", "The interesting one is the migration: it drops a column in the same"],
+               ["run",  "? This is not reversible. Do you want me to keep reading, or stop here"],
+               ["", ""]] },
+    { title: "clawdline — the notch loses the mascot (zsh)", mark: "spin",
+      screen: [["run",  "✢ Deliberating… (1m 02s · ↑ 2.1k tokens · esc to interrupt)"],
+               ["tool", "● Read(Sources/Island.swift)"],
+               ["said", "It is drawn against the screen that had the mouse on it, and the mouse"],
+               ["said", "is not always on the screen with the notch."],
+               ["", ""]] },
+];
+
+/* iTerm2 shows the shortcut on the first nine and nothing after — which is its own small version
+   of the same problem: past the ninth session there is not even a number to aim at. */
+var SPIN = ["✳", "✻", "✽", "✢"];
+
+var elTabs = document.getElementById("tabs");
+var elFront = document.getElementById("front");
+var elScreen = document.getElementById("screen");
+var at = 0;
+
+TABS.forEach(function (tab, i) {
+    var node = document.createElement("div");
+    node.className = "tab";
+    node.innerHTML =
+        '<div class="label"><b class="cut">…</b><div class="clip"><span></span></div></div>' +
+        '<div class="mark' + (tab.mark === "dot" ? " dot" : "") + '">' +
+        (tab.mark === "dot" ? "●" : tab.mark === "spin" ? SPIN[0] : "") + "</div>" +
+        '<div class="hint">' + (i < 9 ? "⌘" + (i + 1) : "") + "</div>";
+    node.querySelector(".clip span").textContent = tab.title;
+    elTabs.appendChild(node);
+});
+
+function draw() {
+    var tab = TABS[at];
+    elFront.textContent = tab.title;
+    var rows = elTabs.children;
+    for (var i = 0; i < rows.length; i++) rows[i].classList.toggle("on", i === at);
+    elScreen.innerHTML = tab.screen.map(function (line) {
+        return '<span class="' + line[0] + '">' + line[1].replace(/</g, "&lt;") + "</span>";
+    }).join("\n") + '<span class="caret" id="caret">_</span>';
+}
+
+// Two small motions, and no more than two. A tab bar that holds perfectly still between switches
+// reads as a still image somebody has looped, and a bar with everything moving is a different
+// picture from the one being taken. So: the spinners turn, and the caret blinks.
+//
+// **The spinner is faster than it looks like it needs to be, and that is deliberate.** A GIF
+// encoder drops a frame that is identical to the one before it and does not give the time back,
+// so a page that holds perfectly still for a beat comes out with that beat shortened — the first
+// version of this clip was seven seconds of storyboard in six seconds of file, with the pauses
+// eaten unevenly. Something has to move on every frame. A terminal spinner at roughly eleven a
+// second is the honest thing to move, because that is about what one does.
+var frame = 0;
+setInterval(function () {
+    frame += 1;
+    var glyph = SPIN[frame % SPIN.length];
+    for (var i = 0; i < TABS.length; i++) {
+        if (TABS[i].mark !== "spin") continue;
+        elTabs.children[i].querySelector(".mark").textContent = glyph;
+    }
+}, 90);
+setInterval(function () {
+    var caret = document.getElementById("caret");
+    if (caret) caret.classList.toggle("off");
+}, 560);
+
+draw();
+
+/** The storyboard's whole vocabulary here: which tab is in front. */
+window.TabsMock = {
+    select: function (n) { at = ((n % TABS.length) + TABS.length) % TABS.length; draw(); return at; },
+    count: TABS.length,
+};
+</script>
