@@ -1,0 +1,184 @@
+import { phone } from "../core/env.js";
+import { T, fill } from "../core/i18n.js";
+import { S } from "../core/state.js";
+import { els } from "../core/dom.js";
+import { confirmSpin, drawSpinner, setConfirmSpin, spinPhase } from "../core/pixels.js";
+import { Build } from "../net/build.js";
+import { Waits } from "../view/waits.js";
+import { closeDetail } from "../session/open.js";
+import { closeAgent } from "../session/agent.js";
+import { SessionActions } from "./detail-actions.js";
+import { GitPanel } from "./git-panel.js";
+import { Info } from "./info.js";
+
+/** The second press before a session-changing action reaches the transport. */
+export var ActionConfirm = {
+    pending: null,
+    busy: false,
+
+    open: function (kind, sessionID, opener) {
+        var id = sessionID || S.openId;
+        if (!id || !S.write) return;
+        var action = kind === "end" ? T.webEndSession : kind;
+        var returnFocus = opener || SessionActions.opener || els["detail-focus"];
+        SessionActions.close();
+        this.pending = { id: id, kind: kind, action: action, opener: returnFocus };
+        this.busy = false;
+        els["action-confirm-sheet"].dataset.kind = kind;
+        els["action-confirm-title"].textContent = kind === "end"
+            ? T.webConfirmEndTitle : fill(T.webConfirmActionTitle, { action: action });
+        els["action-confirm-say"].textContent = kind === "end"
+            ? T.webConfirmEndSay : fill(T.webConfirmActionSay, { action: action });
+        els["action-confirm"].hidden = false;
+        this.sync();
+        els["action-confirm-go"].focus({ preventScroll: true });
+    },
+
+    close: function (restore) {
+        if (els["action-confirm"].hidden || this.busy) return;
+        var opener = this.pending && this.pending.opener;
+        this.pending = null;
+        this.sync();
+        els["action-confirm"].hidden = true;
+        if (restore && opener && document.contains(opener)) {
+            opener.focus({ preventScroll: true });
+        }
+    },
+
+    run: function () {
+        var pending = this.pending;
+        if (!pending || this.busy) return;
+        if (pending.kind === "end") {
+            // The decision stays on screen until the Mac has answered. Disabling both ways out
+            // makes the one request the only action in flight; the spinner itself waits for the
+            // shared 150ms threshold, so a genuinely fast close still looks instant.
+            this.busy = true;
+            this.sync();
+            // A refusal — the write switch went off under this sheet, or a close is already in
+            // flight — leaves nothing in flight to release these buttons, and both ways out of
+            // the sheet are now disabled. So the sheet undoes itself rather than sitting there
+            // spinning at somebody who cannot leave it.
+            if (!SessionActions.end(pending.id)) {
+                this.busy = false;
+                this.sync();
+                this.close(false);
+            }
+            return;
+        }
+        this.close(false);
+        SessionActions.prompt(pending.action, pending.id);
+    },
+
+    sync: function () {
+        setConfirmSpin(null);
+        els["action-confirm-sheet"].setAttribute("aria-busy", this.busy ? "true" : "false");
+        els["action-confirm-cancel"].disabled = this.busy;
+        els["action-confirm-go"].disabled = this.busy;
+        if (this.busy && Waits.end.visible) {
+            els["action-confirm-go"].innerHTML = '<span class="busy"><canvas></canvas><span></span></span>';
+            els["action-confirm-go"].querySelector(".busy span").textContent = T.webClosing;
+            setConfirmSpin(els["action-confirm-go"].querySelector("canvas"));
+            drawSpinner(confirmSpin, spinPhase);
+        } else {
+            els["action-confirm-go"].textContent = T.webConfirm;
+        }
+    },
+
+    finish: function () {
+        this.busy = false;
+        this.sync();
+        this.close(false);
+    }
+};
+
+els["session-actions"].addEventListener("click", function (ev) {
+    var action = ev.target.closest ? ev.target.closest("[data-action]") : null;
+    if (action) { ActionConfirm.open(action.dataset.action); return; }
+    if (ev.target.closest && ev.target.closest("#session-focus")) {
+        SessionActions.focusMac(); return;
+    }
+    // A read, not an action: nothing is sent, so there is no confirmation to cross. The menu
+    // closes and the card opens over the transcript.
+    if (ev.target.closest && ev.target.closest("#session-info")) {
+        SessionActions.close(); Info.open(); return;
+    }
+    if (ev.target.closest && ev.target.closest("#session-git-more")) {
+        SessionActions.level("git", true); return;
+    }
+    if (ev.target.closest && ev.target.closest("#session-actions-back")) {
+        SessionActions.level("main", false);
+        els["session-git-more"].focus({ preventScroll: true });
+        return;
+    }
+    if (ev.target.closest && ev.target.closest("#session-git")) {
+        GitPanel.open(); return;
+    }
+    if (ev.target.closest && ev.target.closest("#session-end")) ActionConfirm.open("end");
+});
+
+els["git-refresh"].addEventListener("click", function () { GitPanel.refresh(); });
+els["git-close"].addEventListener("click", function () { GitPanel.close(true); });
+els["git-panel"].addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape") return;
+    ev.preventDefault(); ev.stopPropagation(); GitPanel.close(true);
+});
+
+els["action-confirm-cancel"].addEventListener("click", function () {
+    ActionConfirm.close(true);
+});
+els["action-confirm-go"].addEventListener("click", function () { ActionConfirm.run(); });
+els["action-confirm"].addEventListener("click", function () { ActionConfirm.close(true); });
+els["action-confirm-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
+els["action-confirm"].addEventListener("keydown", function (ev) {
+    if (ev.key !== "Tab") return;
+    if (ActionConfirm.busy) { ev.preventDefault(); return; }
+    var items = [els["action-confirm-cancel"], els["action-confirm-go"]];
+    var at = items.indexOf(document.activeElement);
+    if ((!ev.shiftKey && at === items.length - 1) || (ev.shiftKey && at <= 0)) {
+        ev.preventDefault(); items[ev.shiftKey ? items.length - 1 : 0].focus();
+    }
+});
+
+els["session-actions"].addEventListener("keydown", function (ev) {
+    if ((ev.key === "ArrowLeft" || ev.key === "Escape") &&
+        SessionActions.onGit()) {
+        ev.preventDefault(); ev.stopPropagation();
+        SessionActions.level("main", false);
+        els["session-git-more"].focus({ preventScroll: true });
+        return;
+    }
+    if (["ArrowDown", "ArrowUp", "Home", "End"].indexOf(ev.key) < 0) return;
+    ev.preventDefault(); ev.stopPropagation();
+    var items = SessionActions.items();
+    if (!items.length) return;
+    var at = items.indexOf(document.activeElement), next;
+    if (ev.key === "Home") next = 0;
+    else if (ev.key === "End") next = items.length - 1;
+    else if (ev.key === "ArrowDown") next = (at + 1 + items.length) % items.length;
+    else next = (at - 1 + items.length) % items.length;
+    items[next].focus({ preventScroll: true });
+});
+
+document.addEventListener("pointerdown", function (ev) {
+    if (els["session-actions"].hidden ||
+        ev.target.closest(".detail-actions, #detail-actions-title")) return;
+    SessionActions.close();
+});
+
+document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape" || els["session-actions"].hidden) return;
+    if (SessionActions.onGit()) return;
+    ev.preventDefault(); ev.stopPropagation(); SessionActions.close(true);
+}, true);
+
+// Back on a phone: the pushState above put us here, so popping means "list".
+window.addEventListener("popstate", function () {
+    if (!phone()) return;
+    // Innermost first, and only one step per gesture: the entry pushed when an agent was opened
+    // is the one being popped, so it gives back the agent and leaves the session where it was.
+    if (S.agent) { closeAgent(); return; }
+    if (els.app.dataset.view === "detail") closeDetail();
+});
+
+els["stale-go"].addEventListener("click", function () { location.reload(); });
+els["stale-shut"].addEventListener("click", function () { Build.hush(); });
