@@ -392,6 +392,8 @@ protocol Copy {
     var webConfirmActionSay: String { get }
     var webConfirmEndTitle: String { get }
     var webConfirmEndSay: String { get }
+    /// The session after its close was confirmed, while the Mac is still carrying it out.
+    var webClosing: String { get }
     var webCancel: String { get }
     var webConfirm: String { get }
     var webPickSession: String { get }
@@ -403,6 +405,11 @@ protocol Copy {
     /// word each. Claude's own name is not here — it is a name, and it is not translated.
     var webWhoYou: String { get }
     var webWhoTool: String { get }
+    /// A sent message that the Mac has not picked up yet.
+    var webPending: String { get }
+    /// Attached-image counts for pending messages. `{n}` is replaced by the web client.
+    var webAttachedImage: String { get }
+    var webAttachedImages: String { get }
     /// How many tool calls a folded run stands for. The web's spelling of ``foldedTools``, which
     /// cannot cross a JSON boundary as a function.
     var webSteps: String { get }

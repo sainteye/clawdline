@@ -264,12 +264,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .stale .go:hover { background: rgba(224, 139, 110, 0.12); }
 
 /* The gap between a tab being opened on the Mac and the session turning up in the list.
-   The same row, under the same header, for a reason: **the tab already exists by the time this
-   is on screen**. It is news about something that has happened and is settling, not a request
-   that might still fail — so it does not sit in the sheet looking like a button being pressed,
-   and it does not put a fake row in the list either. A row that is not a session is worse than
-   a spinner. It is up here rather than in the list column so that it is still on screen after
-   the reader has walked off into a transcript. */
+   This line survives even though the list now also carries the project-shaped placeholder:
+   somebody may have walked into another transcript after pressing Start, and the news that the
+   tab exists still has to remain visible there. The placeholder answers a different question —
+   where the new row will land — and disappears when this gives up after fifteen seconds. */
 .starting {
     flex: 0 0 auto;
     display: flex; align-items: center; gap: 9px;
@@ -423,6 +421,17 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .row:hover { background: var(--card-hi); }
 .row.selected { border-color: #33333d; background: var(--card-hi); }
 .row.open { border-color: var(--accent-ed); }
+
+/* A row may be on its way into or out of the list without yet being a session-shaped answer.
+   Starting owns no id that the list can select, while closing keeps its id only so every route
+   back into that session can refuse the press. Both keep the ordinary row geometry: the real
+   row lands where the placeholder stood, and a closing row does not collapse before the Mac
+   has answered. */
+.row.starting-row { cursor: default; border-color: var(--line); }
+.row.starting-row:hover { background: var(--card); }
+.row.starting-row .title { color: var(--dim); }
+.row[data-closing="1"] { opacity: 0.5; cursor: default; }
+.row[data-closing="1"]:hover { background: var(--card); }
 
 /* The mark, and the title tinted with the mark's own colour. Two sessions in the same
    project read as the same project before either title has been read. */
@@ -617,13 +626,13 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     flex: 0 0 auto;
     border-radius: 4px;
 }
-.detail-head .detail-mark:disabled { cursor: default; }
+.detail-head .detail-mark:disabled { opacity: 0.45; cursor: default; }
 .detail-head .detail-actions { position: relative; flex: 0 0 auto; }
 .detail-head .detail-who {
     text-align: left; overflow: hidden; border-radius: 5px;
     padding: 3px 5px; margin: -3px -5px;
 }
-.detail-head .detail-who:disabled { cursor: default; }
+.detail-head .detail-who:disabled { opacity: 0.45; cursor: default; }
 .detail-head .detail-who:hover:not(:disabled) { background: var(--card); }
 /* **A rule that sets `display` outranks the `hidden` attribute.** The header above sets `flex`,
    so without this the session's header stays on screen behind an agent's. Same trap the chip in
@@ -803,6 +812,19 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     padding: 8px 11px;
     color: var(--ink);
 }
+.entry.pending { opacity: 0.7; }
+.entry.pending .body {
+    background: var(--card-hi);
+    border-style: dashed;
+}
+.entry.pending .pending-images,
+.entry.pending .pending-state {
+    display: flex; align-items: center; gap: 7px;
+    color: var(--faint); font-size: 11px;
+}
+.entry.pending .pending-images { margin-top: 7px; }
+.entry.pending .pending-state { margin-top: 6px; }
+.entry.pending .pending-state canvas { flex: 0 0 auto; display: block; }
 .entry[data-role="assistant"] .body { color: var(--ink); }
 .entry[data-role="tool"] .body { color: var(--dim); font-size: 13px; }
 .entry .toolname {
@@ -1147,6 +1169,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    the old element, so the one piece of feedback it describes has never once fired. */
 .composer[data-sending="on"] .msg { color: var(--dim); }
 .composer[data-write="off"] .box { opacity: 0.55; }
+.composer[data-closing="on"] .box { opacity: 0.55; }
 /* The session has stopped and is waiting for somebody. Above the box rather than under it: this
    is the last thing in the conversation, and it is read on the way to the place you would type.
 
@@ -1433,6 +1456,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .confirm-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
 .confirm-sheet .confirm-go { border-color: var(--accent-ed); color: var(--accent); }
 .confirm-sheet[data-kind="end"] .confirm-go { border-color: #57362e; color: #e09985; }
+.confirm-sheet .confirm-go .busy {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+}
+.confirm-sheet .confirm-go canvas { flex: 0 0 auto; display: block; }
 
 /* Where a new session may be started — the same furniture again, with the Mac's own list of
    places in it. There is no path to type here and there is no route that would take one: what
@@ -1482,6 +1509,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    somewhere else — what was pressed is what is happening. */
 .sheet .place[data-busy="1"] { opacity: 1; border-color: var(--accent-ed); }
 .sheet .place[data-busy="1"] .where { color: var(--accent); }
+.sheet .place[data-busy="1"] .where {
+    display: flex; align-items: center; gap: 7px;
+}
+.sheet .place[data-busy="1"] .where canvas { flex: 0 0 auto; display: block; }
 
 /* Where this project can be opened. The same furniture a third time, with one difference that
    is the whole reason the sheet exists: these rows are not all the same kind of thing. An `<a>`
@@ -2458,6 +2489,7 @@ var T = {
     webConfirmActionSay: "This sends {action} to the current session.",
     webConfirmEndTitle: "Close this session?",
     webConfirmEndSay: "The assistant will quit, then its terminal tab will close.",
+    webClosing: "Closing…",
     webCancel: "Cancel",
     webConfirm: "Confirm",
     webPickSession: "Pick a session on the left.",
@@ -2466,6 +2498,9 @@ var T = {
     webTranscriptFailed: "Could not read the transcript",
     webWhoYou: "you",
     webWhoTool: "tool",
+    webPending: "Waiting for the Mac…",
+    webAttachedImage: "{n} image attached",
+    webAttachedImages: "{n} images attached",
     webSteps: "{n} steps",
     webJustNow: "just now",
     webMinutesAgo: "{n}m ago",
@@ -2659,7 +2694,7 @@ var T = {
     webInfoTokens: "tokens",
     webInfoSwitchModel: "Switch model",
     webInfoModelOther: "another model\u2026",
-    webInfoModelSent: "Sent /model {model}. The card shows it after the next reply.",
+    webInfoModelSent: "Sent /model {model}. Confirming\u2026",
     webInfoModelBusy: "Switching waits until the session is idle.",
     webInfoLimitsClaude: "Claude Code only writes a window down once it is spent, so nothing is known until then.",
     webInfoCopied: "Session id copied.",
@@ -2786,6 +2821,11 @@ var S = {
     // is refetched when its session moves, and a row that has just stopped gets its pulse.
     seen: {}
 };
+
+// A successful send belongs to the browser until the Mac writes the same turn into its own
+// transcript. It cannot live in `S.tx`: every fetch replaces that object, including the quiet
+// fetch made immediately after a send, which is exactly when this entry most needs to survive.
+var optimisticBySession = {};
 
 var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
@@ -3007,15 +3047,27 @@ function drawSpinner(canvas, phase) {
 // list would look like eight machines rather than one.
 var spinPhase = 0;
 var spinners = [];        // the list's own, thrown away and rebuilt by every render
+// Transcript echoes are redrawn independently of the session list, but turn on the same clock.
+// Keeping their canvases separate prevents an unrelated list render from silently stopping them.
+var optimisticSpinners = [];
 // The one outside the list: the band that waits for a started session to appear. It is kept on
 // its own because no render owns it, and it rides this clock rather than starting a second one
 // — two spinners on one screen turning at their own speeds is the thing this note is about.
 var bandSpin = null;
+// These two live in sheets rather than in the list. They are named separately because each
+// sheet redraw owns its canvas, but they still take their phase from the same clock as every
+// row: opening or closing a session should look like part of this page, not a tiny second app.
+var startSpin = null;
+var confirmSpin = null;
 setInterval(function () {
-    if (reduced || (!spinners.length && !bandSpin && !liveSpin)) return;
+    if (reduced || (!spinners.length && !optimisticSpinners.length &&
+                    !bandSpin && !startSpin && !confirmSpin && !liveSpin)) return;
     spinPhase = (spinPhase + 1) % 8;
     for (var i = 0; i < spinners.length; i++) drawSpinner(spinners[i], spinPhase);
+    for (var j = 0; j < optimisticSpinners.length; j++) drawSpinner(optimisticSpinners[j], spinPhase);
     if (bandSpin) drawSpinner(bandSpin, spinPhase);
+    if (startSpin) drawSpinner(startSpin, spinPhase);
+    if (confirmSpin) drawSpinner(confirmSpin, spinPhase);
     if (liveSpin) drawSpinner(liveSpin, spinPhase);
 }, SPIN.step);
 
@@ -3937,15 +3989,21 @@ var Mock = (function () {
                 setTimeout(function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
                     var t = transcripts[id] || (transcripts[id] = []);
-                    // The real thing hands the picture to Claude Code and it comes back as
-                    // `[Image #1]` in the transcript. The fixture says the same, so that what a
-                    // sent photograph looks like afterwards can be seen with no server at all.
                     var carried = (images || []).map(function (_, i) { return "[Image #" + (i + 1) + "]"; }).join(" ");
-                    t.push({ role: "user", text: [carried, text].filter(Boolean).join(" "), tool: null, at: Math.floor(Date.now() / 1000) });
                     var s = find(id);
-                    if (s) { s.state = "working"; }
+                    var alreadyWorking = s && s.state === "working";
+                    if (s) { s.state = "working"; s.line = "Accepting your message…"; }
                     emit();
                     done({ ok: true, at: Math.floor(Date.now() / 1000), audit_id: uuid() });
+                    // The HTTP answer means the keystrokes reached the Mac, not that the
+                    // assistant has written them into its transcript. Keeping that gap in the
+                    // fixture makes the browser exercise the same optimistic/reconcile path as
+                    // the real app; a busy session makes the gap conspicuously longer.
+                    setTimeout(function () {
+                        t.push({ role: "user", text: [carried, text].filter(Boolean).join(" "), tool: null, at: Math.floor(Date.now() / 1000) });
+                        if (s) s.line = "Reading your message…";
+                        emit();
+                    }, alreadyWorking ? 7000 : 4000);
                 }, 300);
             });
         },
@@ -3979,7 +4037,10 @@ var Mock = (function () {
                     sessions = sessions.filter(function (s) { return s.id !== id; });
                     emit();
                     done({ ok: true });
-                }, 300);
+                // The real route waits for the assistant to quit before it closes the tab. A
+                // short fixture made the confirmation disappear before its waiting state could
+                // be read, so keep this honest enough to inspect from a file:// copy.
+                }, 1200);
             });
         },
 
@@ -4559,6 +4620,10 @@ function revisionOf(s) { return s ? s.state + "|" + (s.line || "") + "|" + (s.la
    ========================================================================== */
 
 var rowNodes = {};   // id → <li>
+// An end request has already crossed the confirmation boundary. Kept outside `S.sessions`
+// because it is browser-side progress rather than a fact from the stream; the stream may remove
+// the session before the request that caused it has made the osascript round trip back.
+var closingID = null;
 
 var firstList = true;
 
@@ -4596,7 +4661,13 @@ function onSessions() {
     // A session that has gone away takes its row, and its transcript, with it.
     Object.keys(S.seen).forEach(function (id) { if (!byId(id)) delete S.seen[id]; });
     if (S.selectedId && !byId(S.selectedId)) S.selectedId = null;
-    if (S.openId && !byId(S.openId)) closeDetail(true);
+    if (S.openId && !byId(S.openId)) {
+        // The stream is the stronger answer: if the row vanished while its end request is still
+        // in flight, the session is already closed. Let the visible wait finish naturally and
+        // make the later HTTP reply harmless instead of tearing the confirmation away mid-spin.
+        if (closingID === S.openId) SessionActions.gone(S.openId);
+        else closeDetail(true);
+    }
 
     render();
 
@@ -4685,7 +4756,7 @@ function renderList() {
     // than sitting beside it.
     if (Waits.list.visible) { drawListSkeleton(); return; }
 
-    var list = ordered();
+    var list = Start.arrange(ordered());
 
     // FLIP, first half: where every row is now, before the DOM is touched.
     var before = {};
@@ -4703,7 +4774,7 @@ function renderList() {
         if (!node) {
             node = buildRow(s);
             rowNodes[s.id] = node;
-            if (!reduced) {
+            if (!reduced && !Start.arriving(s.id)) {
                 node.classList.add("entering");
                 setTimeout(function (n) { return function () { n.classList.remove("entering"); }; }(node), 300);
             }
@@ -4719,6 +4790,12 @@ function renderList() {
         if (node.parentNode) node.parentNode.removeChild(node);
         delete rowNodes[id];
     });
+
+    // Not a session and deliberately not in `rowNodes`: it cannot be selected, filtered or
+    // counted. It lives in the same container solely so the real row replaces the same shape at
+    // the top, instead of arriving as an unexplained reorder after the band has been spinning.
+    var starting = Start.placeholder();
+    if (starting) els.rows.insertBefore(starting, els.rows.firstChild);
 
     // FLIP, second half: start each row where it used to be and let it travel to where it now is.
     //
@@ -4745,7 +4822,7 @@ function renderList() {
         });
     }
 
-    var empty = !list.length;
+    var empty = !list.length && !starting;
     els["list-empty"].className = "empty";
     els["list-empty"].hidden = !empty;
     if (empty) {
@@ -4776,16 +4853,23 @@ function buildRow(s) {
         '<span class="agents-chip" hidden><span class="dot"></span><span class="n"></span></span>' +
         '<span class="task-chip" hidden></span></div>' +
         '<div class="state"></div>';
-    li.addEventListener("click", function () { openSession(s.id); });
+    li.addEventListener("click", function () {
+        if (closingID === s.id) return;
+        openSession(s.id);
+    });
     return li;
 }
 
 function fillRow(node, s) {
+    var closing = closingID === s.id;
+    var closingVisible = closing && Waits.end.visible;
     node.dataset.id = s.id;
     node.dataset.state = s.state;
+    if (closingVisible) node.dataset.closing = "1"; else delete node.dataset.closing;
     node.classList.toggle("selected", s.id === S.selectedId);
     node.classList.toggle("open", s.id === S.openId);
     node.setAttribute("aria-selected", s.id === S.selectedId ? "true" : "false");
+    node.setAttribute("aria-disabled", closing ? "true" : "false");
 
     var mark = node.querySelector(".mark");
     if (!drawIcon(mark, s.icon, 4)) mark.classList.add("none"); else mark.classList.remove("none");
@@ -4860,9 +4944,13 @@ function fillRow(node, s) {
     // new line every second, and throwing away the spinner's canvas to write one string would
     // restart the animation once a second — which is exactly the thing that should look steady.
     var state = node.querySelector(".state");
-    if (state.dataset.shape !== s.state) {
-        state.dataset.shape = s.state;
-        if (s.state === "waiting") {
+    var shape = closingVisible ? "closing" : s.state;
+    if (state.dataset.shape !== shape) {
+        state.dataset.shape = shape;
+        if (shape === "closing") {
+            state.innerHTML = '<canvas class="spin"></canvas><span class="line">' +
+                esc(T.webClosing) + "</span>";
+        } else if (s.state === "waiting") {
             state.innerHTML = '<span class="wants">' + esc(T.sessionWaiting) + "</span>";
         } else if (s.state === "working") {
             state.innerHTML = '<canvas class="spin"></canvas><span class="line"></span>';
@@ -4874,8 +4962,8 @@ function fillRow(node, s) {
             state.innerHTML = "";
         }
     }
-    if (s.state === "working") {
-        state.querySelector(".line").textContent = s.line || "";
+    if (shape === "working" || shape === "closing") {
+        state.querySelector(".line").textContent = shape === "closing" ? T.webClosing : (s.line || "");
         var canvas = state.querySelector(".spin");
         drawSpinner(canvas, spinPhase);
         spinners.push(canvas);
@@ -4886,6 +4974,9 @@ function fillRow(node, s) {
 
 function renderDetailHead() {
     var s = S.openId ? byId(S.openId) : null;
+    var ending = !!(s && closingID === s.id);
+    els["detail-head"].dataset.closing = ending ? "on" : "off";
+    els.back.disabled = ending;
     els["detail-name"].textContent = s ? (s.label || s.tty || s.id) : T.webNoSessionOpen;
     els["detail-name"].style.color = s && s.icon ? tint(s.icon.accent) : "";
     var sub = [];
@@ -4916,7 +5007,7 @@ function renderDetailHead() {
     // Nothing to ask the Mac about with no session open, and the sheet would have no project
     // to be about. The chip stays on screen: a control that comes and goes with the selection
     // is a header that moves under whoever is reading it.
-    els["tx-links"].disabled = !s;
+    els["tx-links"].disabled = !s || ending;
     // **Hidden unless this page is being read on the Mac itself.**
     //
     // The button brings a session's terminal to the front over there. Pressed from a phone it
@@ -4930,29 +5021,30 @@ function renderDetailHead() {
     // Reaching it at a LAN address while sitting at the Mac hides a button that would have
     // worked, which is a much smaller mistake than offering one that cannot be seen to work.
     els["tx-focus"].hidden = !atMac();
-    els["tx-focus"].disabled = !s || !S.write;
+    els["tx-focus"].disabled = !s || !S.write || ending;
     els["tx-focus"].title = S.write ? T.webShowOnMacTip : T.webShowOnMacOff;
     // The mark and title open the same compact action menu. The Git row is read-only, so the
     // menu remains reachable when sending is off; its mutating rows each keep their own gate.
-    els["detail-focus"].disabled = !s;
+    els["detail-focus"].disabled = !s || ending;
     els["detail-focus"].title = T.webSessionActions;
     els["detail-focus"].setAttribute("aria-label", T.webSessionActions);
-    els["detail-actions-title"].disabled = !s;
+    els["detail-actions-title"].disabled = !s || ending;
     els["detail-actions-title"].title = T.webSessionActions;
     els["detail-actions-title"].setAttribute("aria-label", T.webSessionActions);
-    els["session-focus"].disabled = !s || !S.write;
+    els["session-focus"].disabled = !s || !S.write || ending;
     // Reading needs no write switch; the menu it sits in already does, and the day the menu
     // opens for a read-only device this row is the one that should still work.
-    els["session-info"].disabled = !s;
-    els["session-commit"].disabled = !s || !S.write;
-    els["session-deploy"].disabled = !s || !S.write;
-    els["session-git"].disabled = !s;
-    els["session-end"].disabled = !s || !S.write;
+    els["session-info"].disabled = !s || ending;
+    els["session-commit"].disabled = !s || !S.write || ending;
+    els["session-deploy"].disabled = !s || !S.write || ending;
+    els["session-git"].disabled = !s || ending;
+    els["session-end"].disabled = !s || !S.write || ending;
     if (!s) { SessionActions.close(); GitPanel.follow(); }
 }
 
 function renderTranscript() {
     var box = els.tx;
+    optimisticSpinners = [];
     if (!S.openId) { box.innerHTML = '<div class="tx-note">' + esc(T.webPickSession) + "</div>"; return; }
     // The speaker belongs to the open session. Keeping this beside the transcript render means a
     // Codex answer cannot inherit the page's historical Claude default while sessions switch.
@@ -4962,14 +5054,22 @@ function renderTranscript() {
     // away. Everything below this line is the same either way — the same blocks, the same folds,
     // the same reading order — because an agent's transcript is the same kind of record.
     var view = S.agent || S.tx;
-    if (view.error) { box.innerHTML = '<div class="tx-note err">' + esc(view.error) + "</div>"; return; }
-    if (view.loading && !view.entries.length) {
+    // The merge is for drawing only. A quiet fetch replaces `S.tx`, while this separate tail
+    // survives until that fetch contains the corresponding real entry. Agent files never get a
+    // tail: they are read-only conversations and have no composer to originate one.
+    var viewEntries = view.entries.slice();
+    if (!S.agent) viewEntries = viewEntries.concat(Optimistic.entries(S.openId));
+    if (view.error && !viewEntries.length) { box.innerHTML = '<div class="tx-note err">' + esc(view.error) + "</div>"; return; }
+    var transcriptNotice = view.error
+        ? '<div class="tx-note err">' + esc(view.error) + "</div>"
+        : "";
+    if (view.loading && !viewEntries.length) {
         // Nothing at all for the first breath, and then the skeleton — see `Waits`. A pane that
         // shows a placeholder for eighty milliseconds and takes it away again reads as a fault.
         box.innerHTML = Waits.tx.visible ? txSkeleton() : "";
         return;
     }
-    if (!view.entries.length) {
+    if (!viewEntries.length) {
         // An agent with nothing in its file is not the same absence as a session with nothing in
         // its file, and it is common: the first second of every agent's life looks like this.
         box.innerHTML = '<div class="tx-note">' + esc(S.agent ? T.agentEmpty : T.noOutput) + "</div>";
@@ -4979,7 +5079,7 @@ function renderTranscript() {
     // Built a block at a time rather than an entry at a time, the way `Transcript.render` builds
     // it: one message, or one whole run of tool calls, per block. Reversing is then the order the
     // blocks go out in, and a run stays one thing whichever way round the transcript is read.
-    var entries = view.entries.filter(worthDrawing);
+    var entries = viewEntries.filter(worthDrawing);
     var blocks = [];
     var i = 0;
     while (i < entries.length) {
@@ -4995,7 +5095,12 @@ function renderTranscript() {
         blocks.push(runHTML(run));
     }
     if (S.newestFirst) blocks.reverse();
-    box.innerHTML = blocks.join("");
+    box.innerHTML = transcriptNotice + blocks.join("");
+    var pending = box.querySelectorAll(".entry.pending canvas.spin");
+    for (var p = 0; p < pending.length; p++) {
+        drawSpinner(pending[p], spinPhase);
+        optimisticSpinners.push(pending[p]);
+    }
     // Said out loud so the keyboard-bar guard above can put the new buttons back out of the tab
     // order. A custom event rather than a direct call: this function is the transcript's, and
     // what somebody else needs to do afterwards is their business, not a line in here.
@@ -5273,7 +5378,15 @@ function whoHTML(role, at) {
 function entryHTML(e) {
     var role = WHO[e.role] ? e.role : "assistant";
     var body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "") + richText(e.text);
-    return '<div class="entry" data-role="' + role + '">' +
+    if (e.pending) {
+        var attached = e.imageCount
+            ? '<div class="pending-images">' + esc(fill(e.imageCount === 1
+                ? T.webAttachedImage : T.webAttachedImages, { n: e.imageCount })) + "</div>"
+            : "";
+        body += attached + '<div class="pending-state" role="status"><canvas class="spin"></canvas><span>' +
+            esc(T.webPending) + "</span></div>";
+    }
+    return '<div class="entry' + (e.pending ? ' pending' : '') + '" data-role="' + role + '">' +
         whoHTML(role, e.at) +
         '<div class="body">' + body + "</div></div>";
 }
@@ -5592,7 +5705,7 @@ function safeHref(href) {
 }
 
 function renderComposer() {
-    var on = S.write && !!S.openId;
+    var on = S.write && !!S.openId && closingID !== S.openId;
     var session = S.openId ? byId(S.openId) : null;
     var placeholder = T.placeholder;
     if (session && session.assistant === "codex") {
@@ -5605,6 +5718,7 @@ function renderComposer() {
         (session && session.assistant === "codex" ? "Codex" : "Claude Code") + " skills");
     els.composer.dataset.write = S.write ? "on" : "off";
     els.composer.dataset.sending = sending ? "on" : "off";
+    els.composer.dataset.closing = closingID === S.openId ? "on" : "off";
     // Editable only when there is somewhere for the words to go. Not switched off while a send
     // is in flight, though — see the `beforeinput` guard below: taking the editability away from
     // a focused element takes the focus with it, and on a phone that shuts the keyboard between
@@ -6032,8 +6146,9 @@ function paintStatic() {
  *   that is the price of it never strobing. Paid on the slow path only, which is the one this is
  *   for in the first place.
  */
-function Waiting(onShow) {
-    var SHOW_AFTER = 150, MIN_SHOWN = 320;
+function Waiting(onShow, showAfter, minShown) {
+    var SHOW_AFTER = typeof showAfter === "number" ? showAfter : 150;
+    var MIN_SHOWN = typeof minShown === "number" ? minShown : 320;
     return {
         visible: false,
         shown: 0,
@@ -6067,7 +6182,111 @@ function Waiting(onShow) {
 
 var Waits = {
     tx: Waiting(function () { renderTranscript(); }),
-    list: Waiting(function () { renderList(); })
+    list: Waiting(function () { renderList(); }),
+    startPress: Waiting(function () { Start.sync(); }),
+    end: Waiting(function () { render(); ActionConfirm.sync(); })
+};
+
+/**
+ * Browser-local turns that have crossed the HTTP boundary but not appeared in the Mac's file.
+ *
+ * Matching is one-to-one and forward-looking. An identical sentence from five minutes before
+ * this send must not make the new one look delivered; a transcript timestamp a few seconds
+ * before the browser's clock is allowed because the two machines are the same machine but the
+ * request and repaint do not land on the same tick. The ten-minute upper bound is also the
+ * lifetime of an echo: after that, keeping a faded promise on screen forever is less honest than
+ * letting the next transcript fetch speak for itself.
+ */
+var Optimistic = {
+    add: function (id, text, imageCount) {
+        var entry = {
+            role: "user", text: text, at: Math.floor(Date.now() / 1000),
+            pending: true, imageCount: imageCount || 0, token: uuid(), wait: null,
+            known: this.known(S.tx.entries)
+        };
+        entry.wait = Waiting(function () { Optimistic.expire(id, entry.token); }, 10 * 60 * 1000, 0);
+        (optimisticBySession[id] || (optimisticBySession[id] = [])).push(entry);
+        entry.wait.start();
+        return entry;
+    },
+
+    entries: function (id) { return optimisticBySession[id] || []; },
+
+    key: function (entry) {
+        return String(entry.at || 0) + "\u0001" + String(entry.text == null ? "" : entry.text);
+    },
+
+    known: function (entries) {
+        var self = this, found = {};
+        entries.forEach(function (entry) {
+            if (!entry || entry.role !== "user") return;
+            var key = self.key(entry);
+            found[key] = (found[key] || 0) + 1;
+        });
+        return found;
+    },
+
+    matches: function (pending, actual) {
+        if (!actual || actual.role !== "user") return false;
+        var at = Number(actual.at || 0);
+        if (!at || at < pending.at - 10 || at > pending.at + 10 * 60) return false;
+        var text = String(actual.text == null ? "" : actual.text);
+        if (!pending.imageCount) return text === pending.text;
+        var marks = text.match(/\[Image #\d+\]/g) || [];
+        if (marks.length !== pending.imageCount) return false;
+        return text.replace(/\[Image #\d+\]\s*/g, "").trim() === pending.text;
+    },
+
+    reconcile: function (id, actual) {
+        var pending = optimisticBySession[id];
+        if (!pending || !pending.length) return false;
+        var used = {}, kept = [], matched = false;
+        for (var i = 0; i < pending.length; i++) {
+            var found = -1;
+            for (var j = 0; j < actual.length; j++) {
+                if (used[j] || !this.matches(pending[i], actual[j])) continue;
+                var key = this.key(actual[j]), occurrence = 0;
+                for (var k = 0; k <= j; k++) if (this.key(actual[k]) === key) occurrence += 1;
+                if ((pending[i].known[key] || 0) >= occurrence) continue;
+                found = j;
+                break;
+            }
+            if (found < 0) { kept.push(pending[i]); continue; }
+            used[found] = true;
+            matched = true;
+            // A later identical local turn must not claim this same real occurrence on the next
+            // fetch, after the earlier pending turn has already left the container.
+            var matchedKey = this.key(actual[found]), matchedOccurrence = 0;
+            for (var n = 0; n <= found; n++) if (this.key(actual[n]) === matchedKey) matchedOccurrence += 1;
+            for (var q = i + 1; q < pending.length; q++) {
+                pending[q].known[matchedKey] = Math.max(pending[q].known[matchedKey] || 0, matchedOccurrence);
+            }
+            pending[i].wait.settle();
+        }
+        if (kept.length) optimisticBySession[id] = kept;
+        else delete optimisticBySession[id];
+        return matched;
+    },
+
+    clear: function (id) {
+        var pending = optimisticBySession[id] || [];
+        for (var i = 0; i < pending.length; i++) pending[i].wait.settle();
+        delete optimisticBySession[id];
+    },
+
+    clearAll: function () {
+        var self = this;
+        Object.keys(optimisticBySession).forEach(function (id) { self.clear(id); });
+    },
+
+    expire: function (id, token) {
+        var pending = optimisticBySession[id] || [];
+        var kept = pending.filter(function (entry) { return entry.token !== token; });
+        if (kept.length === pending.length) return;
+        if (kept.length) optimisticBySession[id] = kept;
+        else delete optimisticBySession[id];
+        if (S.openId === id && !S.agent) renderTranscript();
+    }
 };
 
 /** Bars of uneven length, in the transcript's own grid, so the real entries land where these
@@ -6113,15 +6332,21 @@ function loadTranscript(id, quiet) {
     }
     api.transcript(id).then(function (d) {
         if (S.openId !== id) { Waits.tx.settle(); return; }   // the reader moved on mid-flight
+        var received = d.entries || [];
+        // Reconcile before trusting the signature. The common first fetch after a send quite
+        // correctly says the file is unchanged; that must preserve the echo, while an eventual
+        // matching entry must retire it even if an older server reports a stale signature.
+        var reconciled = Optimistic.reconcile(id, received);
         // The signature is the server's own answer to "is this the same transcript". Trusting it
         // is what keeps a refetch from throwing the reader's scroll position away every few seconds.
         if (d.signature && d.signature === S.tx.signature) {
             S.tx.loading = false;
+            if (reconciled) S.tx.entries = received;
             Waits.tx.settle(renderTranscript);
             return;
         }
         var stick = atBottom();
-        S.tx = { id: id, entries: d.entries || [], signature: d.signature || null, loading: false, error: null };
+        S.tx = { id: id, entries: received, signature: d.signature || null, loading: false, error: null };
         Waits.tx.settle(function () {
             renderTranscript();
             if (stick) toBottom();
@@ -6144,9 +6369,10 @@ function toBottom() {
 
 function openSession(id, keepFocus) {
     var s = byId(id);
-    if (!s) return;
+    if (!s || closingID === id) return;
     S.selectedId = id;
     if (S.openId !== id) {
+        Optimistic.clearAll();
         SessionActions.close();
         ActionConfirm.close();
         // An agent belongs to the session that sent it away. Carrying one over into the next
@@ -6183,7 +6409,12 @@ function openSession(id, keepFocus) {
 }
 
 function closeDetail(silent) {
+    // The confirmation owns this session until its one-way request settles. In particular, a
+    // phone back gesture must not uncover a writable-looking list while the same session is
+    // still closing underneath it; the successful end clears `closingID` before coming here.
+    if (closingID && S.openId === closingID) return;
     ActionConfirm.close();
+    Optimistic.clearAll();
     S.openId = null;
     S.agent = null;
     S.tx = { id: null, entries: [], signature: null, loading: false, error: null };
@@ -6515,6 +6746,8 @@ els["detail-actions-title"].addEventListener("keydown", actionTriggerKey);
  */
 var SessionActions = {
     opener: null,
+    ticket: 0,
+    settlingEnd: false,
 
     open: function (opener) {
         if (!S.openId) return;
@@ -6557,12 +6790,47 @@ var SessionActions = {
 
     end: function (sessionID) {
         var id = sessionID || S.openId;
-        if (!id || !S.write) return;
+        // The answer matters to the confirmation sheet, which has already disabled both of its
+        // buttons on the assumption that a request is on its way: `false` is the only thing that
+        // tells it nothing is coming back, and that it has to let go of itself.
+        if (!id || !S.write || closingID) return false;
+        var self = this;
+        var ticket = ++this.ticket;
         this.close();
+        closingID = id;
+        this.settlingEnd = false;
+        Waits.end.start();
+        render();
+        ActionConfirm.sync();
         api.end(id).then(function () {
-            if (S.openId === id) closeDetail();
-            toast(T.webEndSession + " ✓");
-        }).catch(function (e) { toast(e.message, true); });
+            self.finishEnd(id, ticket, true);
+        }).catch(function (e) {
+            self.finishEnd(id, ticket, false, e);
+        });
+        return true;
+    },
+
+    /** One ending, whichever answer arrives first. The stream can prove the row is gone before
+     *  the POST returns; once either has answered, the other is only the tail of the same trip
+     *  and must not clear or toast over whatever the reader did next. */
+    finishEnd: function (id, ticket, ok, error) {
+        if (closingID !== id || ticket !== this.ticket || this.settlingEnd) return;
+        var self = this;
+        this.settlingEnd = true;
+        Waits.end.settle(function () {
+            if (closingID !== id || ticket !== self.ticket) return;
+            closingID = null;
+            self.settlingEnd = false;
+            self.ticket += 1;
+            ActionConfirm.finish();
+            if (ok && S.openId === id) closeDetail();
+            else render();
+            toast(ok ? T.webEndSession + " ✓" : ((error && error.message) || T.webRequestFailed), !ok);
+        });
+    },
+
+    gone: function (id) {
+        if (closingID === id) this.finishEnd(id, this.ticket, true);
     }
 };
 
@@ -6682,6 +6950,7 @@ var GitPanel = (function () {
 /** The second press before a session-changing action reaches the transport. */
 var ActionConfirm = {
     pending: null,
+    busy: false,
 
     open: function (kind) {
         var id = S.openId;
@@ -6690,19 +6959,22 @@ var ActionConfirm = {
         var returnFocus = SessionActions.opener || els["detail-focus"];
         SessionActions.close();
         this.pending = { id: id, kind: kind, action: action, opener: returnFocus };
+        this.busy = false;
         els["action-confirm-sheet"].dataset.kind = kind;
         els["action-confirm-title"].textContent = kind === "end"
             ? T.webConfirmEndTitle : fill(T.webConfirmActionTitle, { action: action });
         els["action-confirm-say"].textContent = kind === "end"
             ? T.webConfirmEndSay : fill(T.webConfirmActionSay, { action: action });
         els["action-confirm"].hidden = false;
+        this.sync();
         els["action-confirm-go"].focus({ preventScroll: true });
     },
 
     close: function (restore) {
-        if (els["action-confirm"].hidden) return;
+        if (els["action-confirm"].hidden || this.busy) return;
         var opener = this.pending && this.pending.opener;
         this.pending = null;
+        this.sync();
         els["action-confirm"].hidden = true;
         if (restore && opener && document.contains(opener)) {
             opener.focus({ preventScroll: true });
@@ -6711,10 +6983,47 @@ var ActionConfirm = {
 
     run: function () {
         var pending = this.pending;
-        if (!pending) return;
+        if (!pending || this.busy) return;
+        if (pending.kind === "end") {
+            // The decision stays on screen until the Mac has answered. Disabling both ways out
+            // makes the one request the only action in flight; the spinner itself waits for the
+            // shared 150ms threshold, so a genuinely fast close still looks instant.
+            this.busy = true;
+            this.sync();
+            // A refusal — the write switch went off under this sheet, or a close is already in
+            // flight — leaves nothing in flight to release these buttons, and both ways out of
+            // the sheet are now disabled. So the sheet undoes itself rather than sitting there
+            // spinning at somebody who cannot leave it.
+            if (!SessionActions.end(pending.id)) {
+                this.busy = false;
+                this.sync();
+                this.close(false);
+            }
+            return;
+        }
         this.close(false);
-        if (pending.kind === "end") SessionActions.end(pending.id);
-        else SessionActions.prompt(pending.action, pending.id);
+        SessionActions.prompt(pending.action, pending.id);
+    },
+
+    sync: function () {
+        confirmSpin = null;
+        els["action-confirm-sheet"].setAttribute("aria-busy", this.busy ? "true" : "false");
+        els["action-confirm-cancel"].disabled = this.busy;
+        els["action-confirm-go"].disabled = this.busy;
+        if (this.busy && Waits.end.visible) {
+            els["action-confirm-go"].innerHTML = '<span class="busy"><canvas></canvas><span></span></span>';
+            els["action-confirm-go"].querySelector(".busy span").textContent = T.webClosing;
+            confirmSpin = els["action-confirm-go"].querySelector("canvas");
+            drawSpinner(confirmSpin, spinPhase);
+        } else {
+            els["action-confirm-go"].textContent = T.webConfirm;
+        }
+    },
+
+    finish: function () {
+        this.busy = false;
+        this.sync();
+        this.close(false);
     }
 };
 
@@ -6750,6 +7059,7 @@ els["action-confirm"].addEventListener("click", function () { ActionConfirm.clos
 els["action-confirm-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
 els["action-confirm"].addEventListener("keydown", function (ev) {
     if (ev.key !== "Tab") return;
+    if (ActionConfirm.busy) { ev.preventDefault(); return; }
     var items = [els["action-confirm-cancel"], els["action-confirm-go"]];
     var at = items.indexOf(document.activeElement);
     if ((!ev.shiftKey && at === items.length - 1) || (ev.shiftKey && at <= 0)) {
@@ -6990,11 +7300,12 @@ els["settings-assistant-icons"].addEventListener("click", function () {
  * gives back is in the same space as every id in `/v1/sessions`, but that session is not in the
  * list yet and asking for it directly would `404` for a moment. So the id is kept and the list
  * is watched — for the **id**, not for `isClaude`, which stays false until `claude` itself is up
- * — and what is on screen meanwhile is one line under the header saying so. Nothing invents a
- * row: a session that does not exist yet and a session that does are different things, and only
- * one of them has a state, a title and a transcript. After fifteen seconds it stops waiting and
- * says the tab is open but nothing has reported in. **It never retries.** The tab exists; a
- * retry is a second tab, and "did that work?" has never meant "do it again".
+ * — and what is on screen meanwhile is both the persistent line under the header and a project-
+ * shaped placeholder at the top of the list. The latter remains deliberately outside the
+ * session collection: it has no state, transcript, count or keyboard position, only enough of
+ * the chosen place to show where the real row is arriving. After fifteen seconds both stop
+ * waiting and the line says the tab is open but nothing has reported in. **It never retries.**
+ * The tab exists; a retry is a second tab, and "did that work?" has never meant "do it again".
  */
 var Start = (function () {
     var HOLD = 15000;    // how long the band waits before it admits it has stopped waiting
@@ -7006,8 +7317,13 @@ var Start = (function () {
     var loading = false;
     var pressing = null; // the place being started, while that one request is in flight
     var find = "";       // what has been typed into the sheet's filter
-    var wait = null;     // { id, from, late } — started, and not in the list yet
+    var wait = null;     // { id, from, late, place } — started, and not in the list yet
     var timer = null;
+    var placeholderNode = null;
+    // Held at the placeholder's position through the first following stream update. That first
+    // paint is the promised in-place replacement; after it, ordinary list ordering takes over
+    // through the same FLIP path as every other move rather than making the arrival itself jump.
+    var landed = null;
 
     function say(words) { els["start-say"].textContent = words || ""; }
     function said(words) { els["start-said"].textContent = words || ""; }
@@ -7074,6 +7390,7 @@ var Start = (function () {
     }
 
     function draw() {
+        startSpin = null;
         if (els.start.hidden) return;
         var list = els["start-list"];
         var box = els["start-filter"];
@@ -7123,8 +7440,15 @@ var Start = (function () {
             name.style.color = p.icon ? tint(p.icon.accent) : "";
             // The path is here so two projects with the same name can be told apart, and it is
             // stood aside for the one line that matters more while a row is being pressed.
-            row.querySelector(".where").textContent =
-                pressing === p.id ? T.webStarting : shortPath(p.path);
+            var where = row.querySelector(".where");
+            if (pressing === p.id && Waits.startPress.visible) {
+                where.innerHTML = '<canvas class="start-spin"></canvas><span></span>';
+                where.querySelector("span").textContent = T.webStarting;
+                startSpin = where.querySelector(".start-spin");
+                drawSpinner(startSpin, spinPhase);
+            } else {
+                where.textContent = pressing === p.id ? T.webStarting : shortPath(p.path);
+            }
 
             li.appendChild(row);
             list.appendChild(li);
@@ -7158,34 +7482,45 @@ var Start = (function () {
 
     function press(id) {
         if (pressing || wait || !S.write || typeof api.startPlace !== "function") return;
+        var place = null;
+        (places || []).some(function (p) {
+            if (p.id !== id) return false;
+            place = p;
+            return true;
+        });
         pressing = id;
         said("");
         draw();
+        Waits.startPress.start();
         api.startPlace(id, with_).then(function (d) {
-            pressing = null;
-            // From here the tab exists on the Mac. Nothing after this line is allowed to read
-            // as "it might not have worked", and nothing after it presses this again.
-            began(d && d.id);
+            Waits.startPress.settle(function () {
+                pressing = null;
+                // From here the tab exists on the Mac. Nothing after this line is allowed to read
+                // as "it might not have worked", and nothing after it presses this again.
+                began(d && d.id, place);
+            });
         }).catch(function (e) {
-            pressing = null;
-            if (e && e.code === "write_disabled") {
-                // The switch was turned off while this sheet was open. The server is the one
-                // that knows, so take its word for it — the composer answers to the same flag.
-                S.write = false;
-                renderComposer();
-            } else if (e && e.code === "not_found") {
-                // That directory has gone since the list was built. It is the list that is
-                // wrong rather than the press, so the list is what gets asked again.
-                places = null;
-                load();
-            }
-            said(why(e));
-            draw();
+            Waits.startPress.settle(function () {
+                pressing = null;
+                if (e && e.code === "write_disabled") {
+                    // The switch was turned off while this sheet was open. The server is the one
+                    // that knows, so take its word for it — the composer answers to the same flag.
+                    S.write = false;
+                    renderComposer();
+                } else if (e && e.code === "not_found") {
+                    // That directory has gone since the list was built. It is the list that is
+                    // wrong rather than the press, so the list is what gets asked again.
+                    places = null;
+                    load();
+                }
+                said(why(e));
+                draw();
+            });
         });
     }
 
     /** Started. The sheet has done its job, and what is left is a wait. */
-    function began(id) {
+    function began(id, place) {
         close();
         if (!id) {
             // A reply with no id is nothing to watch the list for. The tab was still opened —
@@ -7193,13 +7528,15 @@ var Start = (function () {
             band(T.webStartSlow, true);
             return;
         }
-        wait = { id: id, from: S.openId, late: false };
+        wait = { id: id, from: S.openId, late: false, place: place || {} };
         band(T.webStartWaiting, false);
+        renderList();
         clearTimeout(timer);
         timer = setTimeout(function () {
             if (!wait) return;
             wait.late = true;
             band(T.webStartSlow, true);
+            renderList();
         }, HOLD);
     }
 
@@ -7228,13 +7565,66 @@ var Start = (function () {
         els["start-close"].focus({ preventScroll: true });
     }
 
-    function close() { els.start.hidden = true; }
+    function close() {
+        if (pressing) return;
+        els.start.hidden = true;
+        startSpin = null;
+    }
+
+    function arrange(list) {
+        var id = wait ? wait.id : landed;
+        if (!id) return list;
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].id !== id) continue;
+            return [list[i]].concat(list.slice(0, i), list.slice(i + 1));
+        }
+        return list;
+    }
+
+    /** The list-shaped promise of the place just pressed. Its node is private to Start rather
+     *  than entered into `rowNodes`, which is the mechanical guarantee that arrows, filters and
+     *  counts cannot mistake it for a session while still letting it occupy the exact geometry
+     *  the arriving row will use. */
+    function placeholder() {
+        if (!wait || wait.late || byId(wait.id)) {
+            if (placeholderNode && placeholderNode.parentNode) {
+                placeholderNode.parentNode.removeChild(placeholderNode);
+            }
+            return null;
+        }
+        if (!placeholderNode) {
+            placeholderNode = document.createElement("li");
+            placeholderNode.className = "row starting-row";
+            placeholderNode.setAttribute("role", "status");
+            placeholderNode.innerHTML = '<canvas class="mark"></canvas>' +
+                '<div class="title"><span class="label"></span></div>' +
+                '<div class="meta"><span class="path"></span></div>' +
+                '<div class="state"><canvas class="spin"></canvas><span class="line"></span></div>';
+        }
+        var place = wait.place || {};
+        placeholderNode.setAttribute("aria-label", T.webStartWaiting);
+        var mark = placeholderNode.querySelector(".mark");
+        if (!drawIcon(mark, place.icon, 4)) mark.classList.add("none");
+        else mark.classList.remove("none");
+        var title = placeholderNode.querySelector(".title");
+        title.querySelector(".label").textContent = place.label || place.path || T.webStarting;
+        title.style.color = place.icon ? tint(place.icon.accent) : "";
+        placeholderNode.querySelector(".path").textContent = shortPath(place.path);
+        placeholderNode.querySelector(".line").textContent = T.webStartWaiting;
+        var spin = placeholderNode.querySelector(".spin");
+        drawSpinner(spin, spinPhase);
+        spinners.push(spin);
+        return placeholderNode;
+    }
 
     return {
         open: open,
         close: close,
         press: press,
         typed: function (value) { find = value; draw(); },
+        placeholder: placeholder,
+        arrange: arrange,
+        arriving: function (id) { return !!(wait && wait.id === id); },
 
         /** The write switch can flip under an open sheet — `hello` carries it on every
          *  reconnect — and the sheet is a different screen on either side of that. */
@@ -7247,6 +7637,7 @@ var Start = (function () {
             clearTimeout(timer);
             timer = null;
             hideBand();
+            renderList();
         },
 
         /**
@@ -7257,8 +7648,14 @@ var Start = (function () {
          * there through a session that had already started fine.
          */
         check: function () {
+            if (!wait && landed) {
+                landed = null;
+                renderList();
+                return false;
+            }
             if (!wait || !byId(wait.id)) return false;
             var id = wait.id, from = wait.from, late = wait.late;
+            landed = late ? null : id;
             wait = null;
             clearTimeout(timer);
             timer = null;
@@ -7517,6 +7914,7 @@ var Info = (function () {
     var pending = null;  // the word sent after `/model`, until the transcript names that model
     var busy = false;    // a `/model` on its way to the Mac
     var stateSeen = "";  // the session's state at the last draw, so a change redraws the buttons
+    var confirming = 0;  // the timer reading back, waiting for a sent `/model` to turn up
 
     function say(w) { els["info-say"].textContent = w || ""; els["info-say"].hidden = !w; }
     function said(w, calm) {
@@ -7703,9 +8101,11 @@ var Info = (function () {
 
     function html(d) {
         var s = d.session || {}, u = d.usage, l = d.limits || {}, f = d.files, dep = d.deploy || [], models = d.models || [];
-        // The model is the one the transcript last named, so a session that switched mid-way
-        // shows what it is on now rather than what it began on — and a `/model` the transcript
-        // has since confirmed is no longer pending.
+        // The model is whatever the transcript last named — a reply, or a `/model` nobody has
+        // replied to yet, whichever of the two is newer. So a session that switched mid-way shows
+        // what it is on now rather than what it began on, a session that has only ever been
+        // switched shows that rather than nothing, and a `/model` this card sent stops being
+        // pending the moment the record agrees with it.
         var current = s.model || (u && u.model) || "";
         if (pending && models.some(function (m) { return m.command === pending && onModel(current, m); })) pending = null;
         var out = hero(s, u), i = 0;
@@ -8187,7 +8587,7 @@ els.pick.addEventListener("change", function () {
 // Paste, because copying a screenshot and pressing paste is how this is done everywhere else.
 // Not while the filter box has the focus: that one takes text and nothing else.
 document.addEventListener("paste", function (ev) {
-    if (!S.openId || !S.write) return;
+    if (!S.openId || !S.write || closingID === S.openId) return;
     if (document.activeElement === els.filter) return;
     var files = ev.clipboardData && ev.clipboardData.files;
     if (!files || !files.length) return;
@@ -8210,7 +8610,7 @@ document.addEventListener("paste", function (ev) {
     document.addEventListener("dragover", function (ev) { if (carriesFiles(ev)) ev.preventDefault(); });
     document.addEventListener("drop", function (ev) { if (carriesFiles(ev)) ev.preventDefault(); });
     pane.addEventListener("dragenter", function (ev) {
-        if (!carriesFiles(ev) || !S.openId || !S.write) return;
+        if (!carriesFiles(ev) || !S.openId || !S.write || closingID === S.openId) return;
         depth += 1;
         pane.classList.add("dropping");
     });
@@ -8223,7 +8623,9 @@ document.addEventListener("paste", function (ev) {
         pane.classList.remove("dropping");
         if (!carriesFiles(ev)) return;
         ev.preventDefault();
-        if (!S.openId || !S.write) { toast(T.webShotNeedsSession, true); return; }
+        if (!S.openId || !S.write || closingID === S.openId) {
+            toast(T.webShotNeedsSession, true); return;
+        }
         Shots.add(ev.dataTransfer.files);
     });
 })();
@@ -8466,7 +8868,9 @@ function submit() {
     if (SkillPicker.accept()) return;
     var text = msgText();
     var pictures = Shots.urls();
-    if ((!text && !pictures.length) || !S.openId || !S.write) return;
+    if ((!text && !pictures.length) || !S.openId || S.agent || !S.write || closingID === S.openId) return;
+    var sentID = S.openId;
+    var stick = atBottom();
     var session = byId(S.openId);
     // A quit line is not a message. Sending it through the ordinary route does make the
     // assistant leave, but the shell (and therefore the iTerm2 tab) immediately drops out of
@@ -8477,7 +8881,7 @@ function submit() {
         (session.assistant === "codex" ? "/quit" : "/exit");
     sending = true;
     renderComposer();
-    var request = quit ? api.end(S.openId) : api.send(S.openId, text, pictures);
+    var request = quit ? api.end(sentID) : api.send(sentID, text, pictures);
     request.then(function () {
         // Every child node goes, not just the words: the placeholder is drawn from what
         // `innerText` says, and a `<br>` the browser left behind would keep the box looking
@@ -8489,7 +8893,14 @@ function submit() {
         // the reader can press the button again rather than going back to the camera roll.
         Shots.clear();
         if (quit) closeDetail();
-        else loadTranscript(S.openId, true);
+        else if (S.openId === sentID) {
+            if (!S.agent) {
+                Optimistic.add(sentID, text, pictures.length);
+                renderTranscript();
+                if (stick) toBottom();
+            }
+            loadTranscript(sentID, true);
+        }
     }).catch(function (e) {
         if (e.code === "write_disabled") {
             // The flag and the truth have drifted apart — believe the answer, not the flag.
