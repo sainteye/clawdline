@@ -1,6 +1,7 @@
 # Clawdline
 
-**一條輸入條，管這台 Mac 上正在跑的每一個 Claude Code 與 Codex session。**
+**這台 Mac 上的每一個 Claude Code 與 Codex session——連同你的 session 派出去的那些子 agent——
+收成一棵活的樹，在 Mac 上，也在手機上。**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13%2B-black.svg)](#安裝)
@@ -9,17 +10,18 @@
 
 [English](README.md) · 繁體中文
 
-<img src="docs/assets/demo.gif" width="760" alt="按 ⌥Space、打字、按 Enter，訊息就進到 Claude Code">
+<img src="docs/assets/fleet-wide.png" width="760" alt="Clawdline 在瀏覽器裡：這台 Mac 上的每一個 Claude Code 與 Codex session 收在同一份清單，被別的 session 派出去的那些縮排在它底下，選中的那個的逐字稿就在清單旁邊">
 
-Claude Code 把輸入框畫在終端機視窗的最下緣。開一個 session 的時候，這是好設計。開了四個之後，
-一天就花在「跑去某個 session」上面：要跟它講一句話，先找到它的分頁；要知道它跑完了沒，再找一次
-它的分頁；而你在找的那排東西是分頁標題——那是**任務**，兩個不同專案很容易在做讀起來一模一樣的
-任務。這件事沒有設定可以改，plugin 也動不到：plugin 提供的是 command、agent、hook、MCP server
-與 skill，不是 TUI 版面。
+只開一個 coding agent 的日子撐不了多久。到了下午就變成五個，其中兩個還不是你開的——某個 session
+覺得那份 diff 需要第二個人看，就把它派了出去。你手上的東西這時候已經不是一排終端機，而是一支有
+形狀的艦隊：哪一個在跑、哪一個卡在一個問題上、每一個是哪一種助理，還有**哪一個是誰叫出來的**。
+這些東西，終端機視窗一件都畫不出來。它給你的是分頁標題，而分頁標題是**任務**——兩個不同專案很
+容易在做讀起來一模一樣的任務——而且 plugin 也動不到，因為 plugin 提供的是 command、agent、
+hook、MCP server 與 skill，不是 TUI 版面。
 
-Clawdline 把它們收在同一個地方。按 <kbd>⌥</kbd><kbd>Space</kbd>、打字，內容就進到你指定的那個
-session。按 <kbd>⌘</kbd><kbd>K</kbd>，每個 session 都是一行，而那一行會說它在做什麼：
-**在跑、跑完了、還是在等你回答。**
+Clawdline 把這個形狀畫出來，也讓你在上面動手。按 <kbd>⌘</kbd><kbd>K</kbd>，每個 session 都是
+一行，而那一行會說它在做什麼——**在跑、跑完了、還是在等你回答**——被某個 session 派出去的那些，
+縮排在它底下。按 <kbd>⌥</kbd><kbd>Space</kbd>、打字，內容就進到你指定的那一個。
 
 **它不會在 Claude Code 或 Codex 裡裝任何東西。** 沒有 hook、沒有 MCP server、不會包一層
 `claude` 或 `codex` 指令、也不會動你的設定檔。它讀的是你的 session 本來就在畫的螢幕、本來就在
@@ -27,7 +29,8 @@ session。按 <kbd>⌘</kbd><kbd>K</kbd>，每個 session 都是一行，而那�
 其餘終端機透過 tmux。
 
 **Codex session 就在同一份清單裡**，條件一模一樣：看得到它在做什麼、讀得到它說過什麼、送得出
-指令、也開得了新的一個。[這句話的完整內容 →](#codex-也在同一條輸入條裡)
+指令、也開得了新的一個——而且派工的兩端誰都可以是誰，Claude Code 的 session 可以把工作派給 Codex
+的子 session，反過來也行。[這句話的完整內容 →](#codex-也在同一條輸入條裡)
 
 沒有東西要搬、也沒有東西要復原。關掉它，你的環境就跟原本一模一樣。
 
@@ -35,7 +38,8 @@ session。按 <kbd>⌘</kbd><kbd>K</kbd>，每個 session 都是一行，而那�
 
 | | |
 | --- | --- |
-| **哪一個 session 在等你** `⌘K`<br><br>全部收在同一份清單。正在跑的那個帶著 Claude Code 自己畫的那行字；螢幕上有問題沒人回答的那個會大聲說出來，因為那是唯一一種每過一秒都在賠錢的狀態。每一行還帶著它自己專案的像素圖示。<br><br>[每個狀態是怎麼判的 →](docs/interface.md#which-session-wants-you) | <img src="docs/assets/sessions-live.gif" width="380" alt="Session 清單，動起來：選取往下走，一個被回答了於是安靜下來、一個跑完、另一個開始發問"> |
+| **整支艦隊，還有誰派了誰** `⌘K`<br><br>這台 Mac 上的每一個 Claude Code 與 Codex session 收在同一份清單——你自己開的那些，還有被某個 session 派出去的那些，縮排在叫它們出來的那個底下。一眼就看得到一排分頁講不出來的事：哪一個在等你，哪一個是別的 session 交代出去的差事。<br><br>[把工作派給另一個 session →](#把工作派給另一個-session) | <img src="docs/assets/fleet-phone.png" width="300" alt="手機上的 session 清單：每個母 session 底下都縮排著一個被派出去的子 session，一個跑 Claude Code、一個跑 Codex，在等你回答的那個用重點色挑出來"> |
+| **哪一個 session 在等你** `⌘K`<br><br>正在跑的那個帶著 Claude Code 自己畫的那行字；螢幕上有問題沒人回答的那個會大聲說出來，因為那是唯一一種每過一秒都在賠錢的狀態。每一行還帶著它自己專案的像素圖示。<br><br>[每個狀態是怎麼判的 →](docs/interface.md#which-session-wants-you) | <img src="docs/assets/sessions-live.gif" width="380" alt="Session 清單，動起來：選取往下走，一個被回答了於是安靜下來、一個跑完、另一個開始發問"> |
 | **把 session 讀回來** `⌘J`<br><br>不是終端機的截圖。Clawdline 讀的是那個 session 的逐字稿檔案，所以你拿到的是真正的訊息邊界、完整歷史、標題、有框線的表格與程式碼——跑完的工具呼叫各收成一行。`⌘F` 撐滿整個螢幕。<br><br>[那塊面板在做什麼 →](docs/interface.md#reading-a-session-back) | <img src="docs/assets/transcript.png" width="380" alt="逐字稿面板：標題、有框線的表格、程式碼區塊，是排版過的而不是刮畫面"> |
 | **同一批 session，在手機上**<br><br>你的 Mac 開一個網頁，手機打開它，就讀得到每個 session 在做什麼、逐字稿也在裡面——第二個開關打開之後還可以打字進去。全新安裝是關著的、只綁 loopback、每一台裝置都要用只出現在 Mac 上的數字配對。要從外面連進來靠 `cloudflared`，那是你自己裝的程式。<br><br>[用瀏覽器，或用手機 →](#用瀏覽器或用手機) | <img src="docs/assets/web-wide.png" width="380" alt="同一個網頁在筆電上：左邊是 session 清單、在等你的那個用重點色標出來，右邊是它的逐字稿，下面是打字的框"> |
 | **聽得懂中英夾雜的語音輸入**<br><br>講的時候字就出現，而且辨識器餵的是你自己的歷史紀錄，所以 `webhook`、`rebase` 被夾在中文句子裡講出來也活得下來。Claude Code 內建的 `/voice` 把聲音串到 Anthropic 的伺服器、需要 Claude.ai 帳號，而且[一種中文都不支援](docs/compatibility.md#claude-code-has-its-own-dictation-now)。再裝上 [Whisper](docs/whisper.md)——一行 `brew install`——停下來之後它會讀同一段錄音把整段換掉，一句話裡就裝得下兩種語言。<br><br>[你講話的時候它在做什麼 →](docs/interface.md#talk-instead-of-type) | <img src="docs/assets/voice.zh.gif" width="380" alt="對著輸入條說話：字邊講邊出現，停下來之後 Whisper 讀同一段錄音把它換掉"> |
@@ -82,6 +86,35 @@ session。按 <kbd>⌘</kbd><kbd>K</kbd>，每個 session 都是一行，而那�
 >
 > *「把這個專案接上 Clawdline —— https://github.com/sainteye/clawdline」* 這一句就夠了。
 
+## 把工作派給另一個 session
+
+你正在講話的那個 session，就是你正在等的那個；而有些事情——畫一張圖、跑一輪測試、看一份 diff——
+其實不必在問它的那條對話裡做完。帶著 `clawdline` skill 的 session 把任務寫下來、請 app 去跑。
+Clawdline 會開一個終端機分頁，把任務指定的那種助理啟動起來，把指示打進去，盯著子 session 的
+回覆，把它花掉的算清楚，然後回頭跟發派的那個 session 說一聲。
+
+<img src="docs/assets/dispatch.webp" width="760" alt="一個 session 把三張工作卡片交給另外三個，每一個各自跑去自己的機器上，最後一條線停在一支亮起來的手機">
+
+**子 session 可以是任一種助理。** 同一個 Claude Code session 可以在同一口氣裡，把畫圖交給一個
+Codex 子 session、把 diff 交給一個 Claude Code 子 session；app 需要知道的只有該起哪一支執行檔、
+之後該讀哪一種螢幕，而這兩件它本來就知道——這正是一台 Mac 跑得起一支混編艦隊、中間卻不必架一層
+框架的原因。派工本身是一條純本機的 HTTP 路由，任何以你的身分在跑的程式都能要一個子 session；
+而把任務寫下來的那個 skill，出的是 Claude Code 版。
+
+**一個你看不到的 agent 是背景工作；一個你看得到、答得了、也停得掉的，才是一個 session。**
+所以這裡的子 session 不是佇列裡的一個 job id。它跟別的東西一樣是清單裡的一行，縮排在叫它出來的
+那個底下，帶著自己的狀態、自己的逐字稿、自己的 token 數——在 Mac 上是這樣，在手機上也是，你可以
+在那裡讀它在做什麼、回答它卡住的那個問題，或者把它結束掉。它花掉的東西按任務累計，算 token；
+模型有公開價格的時候，也一起算成錢。
+
+**派工有自己的一道門。** 它擋在一個只有本機行程讀得到的 `0600` 檔案後面，所以配對過的手機看得到
+這些任務、卻永遠開不了新的——往一個 session 打字，跟再生出三個 session 來，本來就不是同一種
+權限。而且**深度只有一層**：被這個 app 交代成子 session 的那一個，不能再往下派——這就是一支艦隊
+跟一顆 fork bomb 的差別。
+
+**[docs/orchestrator.md](docs/orchestrator.md)** 是那份協定：檔案格式、憑證、整個生命週期，
+以及帶著 `curl` 紀錄的路由說明。
+
 ## 安裝
 
 **Homebrew**
@@ -121,6 +154,8 @@ open ~/Applications/Clawdline.app
 
 在 iTerm2 裡按 <kbd>⌥</kbd><kbd>Space</kbd>，打字，按 <kbd>Enter</kbd>。
 
+<img src="docs/assets/demo.gif" width="760" alt="按 ⌥Space、打字、按 Enter，訊息就進到 Claude Code，而終端機不必被叫到前景">
+
 | 按鍵 | 做什麼 |
 | --- | --- |
 | <kbd>⌥</kbd><kbd>Space</kbd> | 叫出／收起輸入條 |
@@ -151,6 +186,11 @@ open ~/Applications/Clawdline.app
 
 在**設定 → 遠端**打開。如果瀏覽器就在這台 Mac 上，按**用瀏覽器打開**，它會發一把鑰匙並開一個
 已經登入的頁面。手機的話，按「配對手機……」會畫一個 QR code。
+
+**那個頁面是同一支艦隊，不是刪減版。** 這台 Mac 看得到的每一個 session 都在上面，分組方式一樣
+——被派出去的子 session 縮排在叫它出來的那個底下——每一個都帶著自己的逐字稿、自己的狀態、卡住
+的那個問題，還有一個回答它的框。手機只要能打字，就也能開一個 session、結束一個 session；它唯一
+做不到的是派工，那是[另一把這台 Mac 從來不往外送的憑證](#把工作派給另一個-session)。
 
 <img src="docs/assets/web.gif" width="300" alt="手機上的那個網頁：六個 session、各自帶著專案的圖示，在問你話的那個用重點色挑出來。換另一個 session 的逐字稿，兩個工具呼叫摺成一行，點開才展開；最後在下面的框打一句話送出去">
 
@@ -186,18 +226,6 @@ open ~/Applications/Clawdline.app
 **[docs/remote.md](docs/remote.md)** 是完整的威脅模型，包含它**不**防什麼。
 **[docs/api.md](docs/api.md)** 是腳本或外掛講話的那層 HTTP 介面：每個 session、每份逐字稿、
 一條事件流，而 `curl` 就是唯一的 SDK。
-
-## 把工作派給另一個 session
-
-你正在講話的那個 session，就是你正在等的那個；而有些事情——畫一張圖、跑一輪測試、看一份 diff——
-其實不必在問它的那條對話裡做完。帶著 `clawdline` skill 的 session 可以把任務寫下來、請 app 去跑：
-Clawdline 會開一個終端機分頁、把指示打進去、盯著子 session 的回覆、把它花掉的算清楚，
-然後回頭跟發派的那個 session 說一聲。派工走的是它自己的一把憑證——一個只有本機行程讀得到的
-`0600` 檔案——所以配對過的手機看得到這些任務、卻永遠開不了新的，而被這個 app 交代成子 session
-的那一個，也不能再往下派。
-
-**[docs/orchestrator.md](docs/orchestrator.md)** 是那份協定：檔案格式、那兩把憑證、
-整個生命週期，以及帶著 `curl` 紀錄的路由說明。
 
 ## 它是怎麼運作的
 
@@ -378,11 +406,11 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 | | |
 | --- | --- |
 | [輸入條的細節](docs/interface.md) | session 清單、<kbd>⌘</kbd><kbd>J</kbd> 那塊、語音、檔案、瀏海 |
+| [把工作派出去](docs/orchestrator.md) | 一個 session 派工給另一個：協定、憑證、生命週期 |
 | [把專案接上來](docs/connect.md) | 寫給 agent 看的：要建哪些檔、怎麼驗自己有沒有做對 |
 | [開發環境](docs/devstack.md) · [怎麼導入](docs/devstack-adopting.md) | `.devstack.json`，以及導入的三種深度 |
 | [專案狀態檔](docs/project-status.md) | 圖示、顏色、部署、backlog |
 | [從別的地方連進來](docs/remote.md) · [API](docs/api.md) | 完整的威脅模型，以及那層 HTTP 介面 |
-| [把工作派出去](docs/orchestrator.md) | 一個 session 派工給另一個，以及擋在前面的那兩把憑證 |
 | [Hook](docs/hooks.md) | 那五個事件，以及為什麼說了算的仍然是螢幕 |
 | [Whisper](docs/whisper.md) | 一句話裡不只一種語言的時候 |
 | [吉祥物格式](docs/mascots.md) · [圖庫](docs/gallery.md) | 格式，以及大家把 pack 貼在哪 |

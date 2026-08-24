@@ -114,6 +114,8 @@ export function renderWaiting() {
     // said, and they are still the honest answer for that case.
     var menu = open && open.state === "waiting" && open.menu ? open.menu : null;
     var rows = menu && menu.options && menu.options.length ? menu.options : null;
+    var question = menu && typeof menu.question === "string" ? menu.question : "";
+    if (!question.trim()) question = "";
     // Given up after ten seconds: if the session is still waiting by then this was not the
     // answer's own gap, and the honest fallback is better than a dead menu nobody can use.
     if (answeredMenu && (!open || answeredMenu.id !== open.id || open.state !== "waiting"
@@ -121,9 +123,13 @@ export function renderWaiting() {
         answeredMenu = null;
     }
     var sent = !rows && !!answeredMenu;
-    if (sent) rows = answeredMenu.rows;
+    if (sent) {
+        rows = answeredMenu.rows;
+        question = answeredMenu.question || "";
+    }
     var want = !open || open.state !== "waiting" ? "" :
         '<div class="title">' + esc(T.webWaitingTitle) + "</div>" +
+        (question ? '<div class="question">' + esc(question) + "</div>" : "") +
         (rows
             ? '<div class="say">' + words(sent ? T.webMenuSent : T.webMenuSay) + "</div>"
               + menuHTML(rows, sent)
@@ -213,7 +219,8 @@ els.waiting.addEventListener("click", function (ev) {
         // Held so the next render has something to draw when the picker has already gone.
         var asked = byId(S.openId);
         if (asked && asked.menu && asked.menu.options && asked.menu.options.length) {
-            answeredMenu = { id: S.openId, rows: asked.menu.options, at: Date.now() };
+            answeredMenu = { id: S.openId, rows: asked.menu.options,
+                             question: asked.menu.question || "", at: Date.now() };
         }
         api.key(S.openId, opt.dataset.key)
             .then(function () { toast(T.webMenuSent); })

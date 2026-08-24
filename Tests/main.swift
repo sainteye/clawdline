@@ -788,6 +788,31 @@ group("transcript project directory") {
     }
 }
 
+group("a hook session id is an identity boundary") {
+    let fm = FileManager.default
+    let dir = fm.temporaryDirectory
+        .appendingPathComponent("clawdline-transcript-identity-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: dir) }
+
+    let other = dir.appendingPathComponent("somebody-else.jsonl")
+    try! Data("{}\n".utf8).write(to: other)
+
+    // SessionStart fires before Claude creates its own jsonl. The old fallback chose `other`
+    // because it was the only recent file, making a new browser-started tab show an existing
+    // conversation until its own transcript appeared.
+    check("a not-yet-created exact transcript does not fall back to another session",
+          Transcript.locate(in: dir, tabTitle: "Claude Code", startedAt: Date(),
+                            sessionID: "brand-new") == nil)
+
+    let exact = dir.appendingPathComponent("brand-new.jsonl")
+    try! Data("{}\n".utf8).write(to: exact)
+    expect("the exact transcript appears as soon as Claude creates it",
+           Transcript.locate(in: dir, tabTitle: "Claude Code", startedAt: Date(),
+                             sessionID: "brand-new"), exact)
+}
+
 group("transcript rendering") {
     let mono = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
     let text = Transcript.render(Transcript.parse(sampleTranscript), size: 11.5, mono: mono).string
@@ -4294,21 +4319,46 @@ group("a numbered list somebody typed is not a menu") {
       3. \u{6211}\u{770B} web \u{7684}\u{8655}\u{7406}\u{72C0}\u{614B}
     """
     check("a list typed at the prompt is not a question", !SessionState.isChoosing(typed))
-    check("the hook gate makes the same shape a question",
-          SessionState.isChoosing(typed, hookWaiting: true))
-    expect("a gated picker makes the screen waiting",
-           SessionState.read(typed, hookWaiting: true), .waiting)
-    guard let gated = SessionState.menu(typed, hookWaiting: true) else {
-        check("the same shape is a menu after a hook says it is waiting", false); return
+    // **An open gate is not enough on its own.** It means a hook said this session is waiting,
+    // and auto mode raises permission events for approvals it then grants itself — so the gate
+    // stands open while the screen shows whatever the session happens to be printing. Trusting
+    // the caret on that alone put an echoed `\u{276F} 1. Yes` in front of somebody on a phone as a
+    // real question, and they pressed it. A frame is the second fact required, and a list typed
+    // at a prompt has none.
+    check("nor does an open gate, with nothing framing it",
+          !SessionState.isChoosing(typed, hookWaiting: true))
+    expect("so the screen is not called waiting either",
+           SessionState.read(typed, hookWaiting: true), .idle)
+    check("a later composer still disqualifies the echoed list",
+          !SessionState.isChoosing(typed + "\n\u{276F} ", hookWaiting: true))
+
+    // What the gate is actually for: the same ambiguous caret, drawn inside a dialog.
+    let framed = """
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+     \u{2610} web input
+
+     Should the web input bar send straight away?
+
+    \u{276F} 1. Yes, send it
+      2. No, confirm first
+      3. Show me the handling
+    """
+    check("a framed one with the gate open is a menu",
+          SessionState.isChoosing(framed, hookWaiting: true))
+    check("and the frame alone, with no gate, still is not",
+          !SessionState.isChoosing(framed))
+    guard let gated = SessionState.menu(framed, hookWaiting: true) else {
+        check("the framed shape is a menu once a hook says waiting", false); return
     }
     expect("the hook-gated menu keeps every option", gated.options.count, 3)
     expect("the flush-left caret selects its numbered row", gated.selected, 1)
-    check("a later composer still disqualifies the echoed list",
-          !SessionState.isChoosing(typed + "\n\u{276F} ", hookWaiting: true))
+    expect("and its question comes from inside the frame",
+           gated.question, "Should the web input bar send straight away?")
 
     // Real AskUserQuestion rows are separated by descriptions. Walking adjacent lines, like the
     // Codex parser does, stops at the first description; scanning every option row must not.
     let described = """
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
       1. Keep the current API
         This preserves existing callers.
     \u{276F} 2. Add the waiting gate
@@ -4373,6 +4423,125 @@ group("a menu read as options a finger can hit") {
     // The two are the same reading. `isChoosing` exists because most callers only want the yes
     // or no, and a second parser would be a second thing to be wrong.
     check("and the old question is the same question", SessionState.isChoosing(screen))
+}
+
+group("the question above a visual menu") {
+    // AskUserQuestion's descriptions belong to their options, not to the prose above the first
+    // one. The short checkbox line is only a header, so the phone gets the two wrapped question
+    // lines and not that classification label.
+    let described = """
+    ────────────────────────────────────────────
+     ☐ build
+     別的 session 把 index.html 寫完了，但還沒 commit。
+     root 連坐的修正要生效就得 build。怎麼走？
+    ❯ 1. 幫它整理並 commit，再 build（推薦）
+         跟先前那批一樣，先整理工作區。
+      2. 直接 build，不碰它的 commit
+         保留目前的提交狀態。
+      3. 先不要 build
+    ────────────────────────────────────────────
+    """
+    guard let describedMenu = SessionState.menu(described, hookWaiting: true) else {
+        check("a described question is still a menu", false); return
+    }
+    expect("wrapped question lines are joined",
+           describedMenu.question,
+           "別的 session 把 index.html 寫完了，但還沒 commit。 root 連坐的修正要生效就得 build。怎麼走？")
+    expect("description rows do not become options", describedMenu.options.count, 3)
+
+    // **As the terminal actually draws it.** The dialog puts a blank row between the header and
+    // the question and another between the question and the first option. The fixture above has
+    // none, because it was written as adjacent lines — and that difference was the whole bug: the
+    // first blank read as the top of the prose, so a real dialog yielded no question at all while
+    // this group stayed green. Padding is stepped over now, and this is the shape that proves it.
+    let padded = """
+    ────────────────────────────────────────────
+     ☐ build
+
+    │ 別的 session 把 index.html 寫完了，但還沒 commit。
+
+    ❯ 1. 幫它整理並 commit，再 build（推薦）
+         跟先前那批一樣，先整理工作區。
+      2. 直接 build，不碰它的 commit
+      3. 先不要 build
+    ────────────────────────────────────────────
+    """
+    expect("padding inside the dialog is not the top of the question",
+           SessionState.menu(padded, hookWaiting: true)?.question,
+           "別的 session 把 index.html 寫完了，但還沒 commit。")
+
+    // Prose that no edge closed off is not the question. Every dialog that has actually been
+    // captured is framed; without a rule, a header or a caret above it there is nothing to say
+    // where the question starts, and guessing put a page of someone's analysis on a phone.
+    let unframed = """
+    This belongs to the conversation, not to the dialog.
+
+
+     Ship the tested build now?
+    ❯ 1. Yes
+      2. No
+    """
+    check("prose with no edge above it is not read as the question",
+          SessionState.menu(unframed, hookWaiting: true)?.question == nil)
+
+    // **Numbered rows above the frame belong to whoever wrote them.** An assistant listing three
+    // findings, then a dialog with three options, was read as one menu of eight — and because the
+    // first of those eight sat outside the dialog, the question was taken from the prose above
+    // *that*. Both halves are asserted here: the count, and where the question came from.
+    let listAbove = """
+      三個順手挖到的東西
+
+      1. 旗標是我們自己的 prompt 教出來的。
+      2. zh_script.py 把「制」列為簡體字，那是錯的。
+      3. 離線 dump 的 rewarm 通道灌的是同一段摘要。
+
+      Opus 基準 20 題已完成 16 題。
+    ────────────────────────────────────────────
+    ←  ☐ 全跑範圍  ☐ digit 對等  ✔ Submit  →
+
+    要怎麼跑完整那一輪？
+
+    ❯ 1. 砍掉慢的五個，跑剩 17 題（推薦）
+         淘汰最慢的兩個候選。
+      2. 全部也跑完
+      3. 先把題庫拉到 40 題再跑
+    """
+    guard let bounded = SessionState.menu(listAbove, hookWaiting: true) else {
+        check("a dialog under a written list is still a menu", false); return
+    }
+    expect("rows above the frame are not options", bounded.options.count, 3)
+    expect("and the question is the dialog's own", bounded.question, "要怎麼跑完整那一輪？")
+
+    let oneLine = """
+    ╭──────────────────────────╮
+    │ Do you want to proceed?  │
+    │ ❯ 1. Yes                 │
+    │   2. No                  │
+    ╰──────────────────────────╯
+    """
+    expect("a one-line permission question is read",
+           SessionState.menu(oneLine)?.question, "Do you want to proceed?")
+
+    let conversationAbove = """
+    This sentence belongs to the earlier conversation.
+    So does this one.
+    ────────────────────────────────────────────
+     ☐ deploy
+     Ship the tested build now?
+    ❯ 1. Ship it
+      2. Keep testing
+    """
+    expect("a dialog rule keeps earlier conversation out",
+           SessionState.menu(conversationAbove, hookWaiting: true)?.question,
+           "Ship the tested build now?")
+
+    let noQuestion = """
+    │ ❯ 1. Yes │
+    │   2. No  │
+    """
+    let fallback = SessionState.menu(noQuestion)
+    check("a menu with no readable question keeps nil", fallback?.question == nil)
+    expect("missing prose does not lose its options", fallback?.options.count, 2)
 }
 
 group("a menu row no keystroke can reach is shown and not offered") {
