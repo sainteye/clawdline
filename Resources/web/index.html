@@ -1423,6 +1423,12 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 /* Nothing to switch off under reduced motion: `drawSpinner` is driven by the one interval at
    the top, and that interval already returns without advancing when `reduced` is set — so the
    mark is drawn once, in its first phase, and simply stays there. */
+.composer .waiting .title .dismiss {
+    float: right; margin: -2px -2px 0 8px; padding: 2px 7px;
+    color: var(--faint); font-size: 15px; line-height: 1;
+    border-radius: 6px;
+}
+.composer .waiting .title .dismiss:hover { color: var(--ink); background: var(--card-hi); }
 .composer .waiting .title {
     color: var(--accent); font-size: 12.5px; font-weight: 600;
     margin-bottom: 3px;
@@ -6242,6 +6248,28 @@ var waitingDrawn = null;
  * answered from the phone is then told their press did nothing, which is the opposite of what
  * happened. So the options stay on screen, dead, under the line that says the answer went. */
 var answeredMenu = null;
+
+/* A menu the reader has waved away.
+ *
+ * The screen is read, not asked, so a menu on it is a judgement and judgements are wrong
+ * sometimes: text printed into the scrollback can carry the shape of one, and then the card sits
+ * over the composer describing a question nobody asked. Typing was never actually blocked — but a
+ * panel that says a session is waiting on you is its own kind of blocked, and being able to say
+ * "no it isn't" costs one tap and removes the whole class of harm from a wrong reading.
+ *
+ * Keyed on what the menu says rather than on the session, so the next real question comes back on
+ * its own. Cleared when the session stops waiting. */
+var dismissedMenu = null;
+
+function menuKey(menu) {
+    // A waiting card with no menu still needs a key of its own, and it must not collide with any
+    // real one: that state — "waiting, but the menu could not be read" — is the shape a wrong
+    // reading takes most often, and it is the one somebody most wants to wave away.
+    if (!menu) return "\u0000unread";
+    return (menu.question || "") + "\u0001" + (menu.options || []).map(function (o) {
+        return String(o.n) + "\u0002" + String(o.label == null ? "" : o.label);
+    }).join("\u0003");
+}
 var liveDrawn = null;
 var agentsDrawn = null;
 /// The composer's own spinner. Kept out of `spinners`, which the list throws away and rebuilds
@@ -6268,13 +6296,22 @@ function renderWaiting() {
                          || Date.now() - answeredMenu.at > 10000)) {
         answeredMenu = null;
     }
+    if (dismissedMenu && (!open || dismissedMenu.id !== open.id || open.state !== "waiting")) {
+        dismissedMenu = null;
+    }
+    // Waved away: the whole card goes, rather than falling back to the two sentences about
+    // answering on the Mac. Somebody who has just said "this is not a question" is the last
+    // person who needs telling where to answer it.
+    var hushed = !!(dismissedMenu && dismissedMenu.key === menuKey(menu));
     var sent = !rows && !!answeredMenu;
     if (sent) {
         rows = answeredMenu.rows;
         question = answeredMenu.question || "";
     }
-    var want = !open || open.state !== "waiting" ? "" :
-        '<div class="title">' + esc(T.webWaitingTitle) + "</div>" +
+    var want = !open || open.state !== "waiting" || hushed ? "" :
+        '<div class="title">' + esc(T.webWaitingTitle) +
+        '<button type="button" class="dismiss" data-dismiss="1" aria-label="'
+        + esc(T.webClose) + '">\u00d7</button>' + "</div>" +
         (question ? '<div class="question">' + esc(question) + "</div>" : "") +
         (rows
             ? '<div class="say">' + words(sent ? T.webMenuSent : T.webMenuSay) + "</div>"
@@ -6353,6 +6390,14 @@ function menuHTML(rows, spent) {
 
 els.waiting.addEventListener("click", function (ev) {
     if (!ev.target.closest) return;
+
+    if (ev.target.closest("[data-dismiss]")) {
+        var here = S.openId ? byId(S.openId) : null;
+        if (here) dismissedMenu = { id: here.id, key: menuKey(here.menu) };
+        waitingDrawn = null;
+        renderWaiting();
+        return;
+    }
 
     var opt = ev.target.closest("[data-key]");
     if (opt) {
