@@ -4319,21 +4319,46 @@ group("a numbered list somebody typed is not a menu") {
       3. \u{6211}\u{770B} web \u{7684}\u{8655}\u{7406}\u{72C0}\u{614B}
     """
     check("a list typed at the prompt is not a question", !SessionState.isChoosing(typed))
-    check("the hook gate makes the same shape a question",
-          SessionState.isChoosing(typed, hookWaiting: true))
-    expect("a gated picker makes the screen waiting",
-           SessionState.read(typed, hookWaiting: true), .waiting)
-    guard let gated = SessionState.menu(typed, hookWaiting: true) else {
-        check("the same shape is a menu after a hook says it is waiting", false); return
+    // **An open gate is not enough on its own.** It means a hook said this session is waiting,
+    // and auto mode raises permission events for approvals it then grants itself — so the gate
+    // stands open while the screen shows whatever the session happens to be printing. Trusting
+    // the caret on that alone put an echoed `\u{276F} 1. Yes` in front of somebody on a phone as a
+    // real question, and they pressed it. A frame is the second fact required, and a list typed
+    // at a prompt has none.
+    check("nor does an open gate, with nothing framing it",
+          !SessionState.isChoosing(typed, hookWaiting: true))
+    expect("so the screen is not called waiting either",
+           SessionState.read(typed, hookWaiting: true), .idle)
+    check("a later composer still disqualifies the echoed list",
+          !SessionState.isChoosing(typed + "\n\u{276F} ", hookWaiting: true))
+
+    // What the gate is actually for: the same ambiguous caret, drawn inside a dialog.
+    let framed = """
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+     \u{2610} web input
+
+     Should the web input bar send straight away?
+
+    \u{276F} 1. Yes, send it
+      2. No, confirm first
+      3. Show me the handling
+    """
+    check("a framed one with the gate open is a menu",
+          SessionState.isChoosing(framed, hookWaiting: true))
+    check("and the frame alone, with no gate, still is not",
+          !SessionState.isChoosing(framed))
+    guard let gated = SessionState.menu(framed, hookWaiting: true) else {
+        check("the framed shape is a menu once a hook says waiting", false); return
     }
     expect("the hook-gated menu keeps every option", gated.options.count, 3)
     expect("the flush-left caret selects its numbered row", gated.selected, 1)
-    check("a later composer still disqualifies the echoed list",
-          !SessionState.isChoosing(typed + "\n\u{276F} ", hookWaiting: true))
+    expect("and its question comes from inside the frame",
+           gated.question, "Should the web input bar send straight away?")
 
     // Real AskUserQuestion rows are separated by descriptions. Walking adjacent lines, like the
     // Codex parser does, stops at the first description; scanning every option row must not.
     let described = """
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
       1. Keep the current API
         This preserves existing callers.
     \u{276F} 2. Add the waiting gate

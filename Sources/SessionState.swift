@@ -134,6 +134,18 @@ enum SessionState: Equatable {
             }
         }
 
+        // **An unframed flush-left caret is text, not a dialog.** The gate was built on the idea
+        // that a hook saying "waiting" makes that caret trustworthy, and it does not: auto mode
+        // raises permission events constantly, so the gate is open while the screen shows
+        // whatever the session happens to be printing. A `❯ 1. Yes` echoed out of a heredoc was
+        // read as a menu and offered to a phone, which pressed it — the failure this whole rule
+        // exists to prevent, arriving through the door the gate had opened.
+        //
+        // Every dialog captured from a real terminal is drawn inside a frame, so the frame is the
+        // second fact required. An indented caret still needs none: that shape has never been
+        // ambiguous, and it is what permission dialogs and `/model` have always drawn.
+        if flushLeftSelection != nil, dialogStart == 0 { flushLeftSelection = nil }
+
         var options: [Menu.Option] = []
         var carets = 0
         var firstOptionLine: Int? = nil
