@@ -1,0 +1,217 @@
+/* ==========================================================================
+   The session list
+   ========================================================================== */
+.list-scroll { flex: 1 1 auto; padding: 8px 10px 14px; }
+.rows { position: relative; list-style: none; margin: 0; padding: 0; }
+
+.row {
+    position: relative;
+    display: grid;
+    /* A fixed first column, because the marks are not all the same width — a five-wide creature
+       and an eight-wide logo would otherwise start their titles at two different places, and the
+       list is read down the titles. */
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 3px 10px;
+    align-items: center;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: var(--card);
+    cursor: pointer;
+    /* No transform here: the reorder is animated by script, and a CSS transition on the same
+       property would be a second opinion about where the row is. */
+    transition: background 160ms var(--ease), border-color 160ms var(--ease);
+}
+.row:hover { background: var(--card-hi); }
+.row.selected { border-color: #33333d; background: var(--card-hi); }
+.row.open { border-color: var(--accent-ed); }
+
+/* A row may be on its way into or out of the list without yet being a session-shaped answer.
+   Starting owns no id that the list can select, while closing keeps its id only so every route
+   back into that session can refuse the press. Both keep the ordinary row geometry: the real
+   row lands where the placeholder stood, and a closing row does not collapse before the Mac
+   has answered. */
+.row.starting-row { cursor: default; border-color: var(--line); }
+.row.starting-row:hover { background: var(--card); }
+.row.starting-row .title { color: var(--dim); }
+.row[data-closing="1"] { opacity: 0.5; cursor: default; }
+.row[data-closing="1"]:hover { background: var(--card); }
+
+/* The mark, and the title tinted with the mark's own colour. Two sessions in the same
+   project read as the same project before either title has been read. */
+.row .mark { grid-row: 1 / span 2; align-self: center; justify-self: start; display: block; image-rendering: pixelated; opacity: 0.9; }
+.row .mark.none { width: 16px; height: 12px; border-radius: 2px; background: #202028; }
+.row.selected .mark, .row.open .mark { opacity: 1; }
+
+.row .title {
+    grid-column: 2;
+    font-size: 13.5px; font-weight: 500;
+    display: flex; align-items: center; gap: 7px;
+    white-space: nowrap; overflow: hidden;
+}
+.row .title .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.row .title .who {
+    flex: 0 0 auto; color: var(--faint);
+    display: inline-flex; align-items: center; gap: 4px;
+    font: 11px/1 var(--mono);
+}
+.row .meta {
+    grid-column: 2;
+    display: flex; align-items: center; gap: 7px;
+    min-width: 0;
+    color: var(--faint);
+    font-family: var(--mono); font-size: 11px;
+}
+.row .meta .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .meta .tty { flex: 0 0 auto; color: #4f4d47; }
+.assistant-logo {
+    display: inline-block; flex: 0 0 auto;
+    width: 12px; height: 12px;
+    vertical-align: -2px;
+}
+
+/* Work one session handed to another.
+   ---------------------------------------------------------------------------
+   The child sits under the session that asked for it, indented by the width of the mark it no
+   longer starts at, with the elbow drawn in the margin the indent opened up. Absolute, so it
+   costs the grid nothing and cannot push a title along; the row is already `position: relative`
+   for the waiting bar, which is the same trick.
+
+   The chip is the agent count's twin down to the border, and that is deliberate: the two say
+   the same *kind* of thing — context about where this row came from — and a second visual
+   language for it would suggest a second kind of importance that is not there. Only the one
+   still running gets its edge lit, and even that is the accent at a third of its strength. */
+.row[data-depth="1"] { margin-left: 22px; }
+.row .kid {
+    position: absolute; left: -15px; top: 50%; transform: translateY(-50%);
+    color: var(--faint); font: 12px/1 var(--mono);
+}
+.row .kid[hidden] { display: none; }
+.row .task-chip {
+    flex: 0 0 auto; white-space: nowrap;
+    color: var(--faint); font: 10.5px/1 var(--mono);
+    padding: 2px 5px; border: 1px solid var(--line); border-radius: 5px;
+}
+.row .task-chip[data-live="1"] { color: var(--dim); border-color: var(--accent-ed); }
+/* Same guard the agent chip carries, for the same reason: a `display` rule outranks `hidden`,
+   and a chip that cannot hide is a chip on every row in the list. */
+.row .task-chip[hidden] { display: none; }
+
+/* The state line. Three states get three weights, and that is the design:
+   waiting shouts, working murmurs, idle and unknown keep quiet. */
+.row .state { grid-column: 2; display: flex; align-items: center; gap: 7px; min-width: 0; margin-top: 2px; }
+.row .state:empty { display: none; }
+.row .line {
+    font-family: var(--mono); font-size: 11.5px; color: var(--dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.row canvas.spin { flex: 0 0 auto; display: block; }
+
+/* waiting — the loud one. It is the only state that costs you something for every second it
+   goes unnoticed, so it is the only one allowed a colour, a bar and a heartbeat. */
+/* The accent wash is flattened rather than translucent: rows slide over each other while the
+   list re-sorts, and a see-through row picks up whatever is passing underneath it. */
+.row[data-state="waiting"] { background: #2f2322; border-color: var(--accent-ed); }
+.row[data-state="waiting"]:hover { background: #392725; }
+.row[data-state="waiting"]::before {
+    content: ""; position: absolute; left: 0; top: 14px; bottom: 14px;
+    width: 3px; border-radius: 0 3px 3px 0; background: var(--accent);
+}
+.row[data-state="waiting"] .title { color: var(--accent) !important; font-weight: 600; }
+.row[data-state="waiting"] .wants {
+    font-size: 12px; font-weight: 600; color: var(--accent);
+    animation: nudge 2.2s var(--ease) infinite;
+}
+@keyframes nudge { 0%, 70%, 100% { opacity: 1; } 85% { opacity: 0.45; } }
+
+/* unknown — says nothing, but must not be mistaken for idle. A screen that could not be read
+   is not a session that is doing nothing, and drawing it as one is a confident wrong answer. */
+.row[data-state="unknown"] { border-style: dashed; border-color: #26262e; background: #131317; }
+.row[data-state="unknown"] .title { color: var(--faint) !important; }
+.row[data-state="unknown"] .unread { color: var(--faint); font-size: 11.5px; font-style: italic; }
+
+/* Just finished. A neutral wash rather than the accent: the accent means "you are needed",
+   and a session that has quietly stopped is news, not a request. */
+.row.finished::after {
+    content: ""; position: absolute; inset: -1px; border-radius: var(--radius);
+    pointer-events: none;
+    box-shadow: 0 0 0 1px rgba(232, 230, 227, 0.5) inset;
+    animation: finished 1.5s var(--ease) forwards;
+}
+@keyframes finished {
+    0%   { opacity: 0; }
+    18%  { opacity: 0.85; }
+    100% { opacity: 0; }
+}
+.row.entering { animation: enter 260ms var(--ease); }
+@keyframes enter { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.row.leaving { pointer-events: none; z-index: 2; }
+
+.empty { padding: 40px 18px; text-align: center; color: var(--faint); font-size: 13px; }
+.empty b { display: block; color: var(--dim); font-weight: 500; margin-bottom: 5px; }
+
+/* The quiet first screen is allowed to feel like the product rather than an error page. On a
+   desktop the artwork lives in the unused transcript pane; on a phone, where that pane is off
+   screen until a session opens, the same picture belongs to the genuinely empty list instead.
+   The words remain the existing localized empty-state copy and the bitmap is decoration only. */
+.empty.home-hero-list { position: relative; }
+
+/* Pull to refresh, phones only. */
+.ptr {
+    height: 0; overflow: hidden;
+    display: flex; align-items: flex-end; justify-content: center;
+    color: var(--faint); font-size: 11.5px;
+    transition: height 200ms var(--ease);
+}
+.ptr.dragging { transition: none; }
+.ptr span { padding-bottom: 6px; }
+
+/* ==========================================================================
+   Waiting on the network
+   Drawn in the two places the page is honestly empty until something arrives:
+   the transcript pane on the way into a session, and the list on the very
+   first load. Nothing that comes out of memory gets one — a skeleton for
+   something that was never going to be slow is a flicker with no information
+   in it, and the reader has to work out afterwards what they just saw.
+   ========================================================================== */
+.skel .bar {
+    display: block;
+    height: 11px;
+    border-radius: 5px;
+    /* The surfaces this page is already made of: the card highlight, with the hairline colour
+       swept across it. A grey borrowed from somewhere else reads as another product's loading
+       state pasted over this one. Written as rgba because a gradient needs the alpha, and
+       36,36,43 is `--line` and 45,45,54 is one step above it. */
+    background-color: var(--card-hi);
+    background-image: linear-gradient(100deg,
+        rgba(36, 36, 43, 0) 36%, rgba(45, 45, 54, 0.95) 50%, rgba(36, 36, 43, 0) 64%);
+    background-size: 240% 100%;
+    background-repeat: no-repeat;
+    animation: sheen 1.5s linear infinite;
+}
+@keyframes sheen { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+
+/* The transcript's own shape, so the real entries land where the placeholder was rather than
+   somewhere near it. */
+.skel-entry .who .bar { width: 34px; height: 8px; margin-left: auto; }
+.skel-entry .body .bar + .bar { margin-top: 7px; }
+@media (max-width: 899px) { .skel-entry .who .bar { margin-left: 0; } }
+
+/* And the list's. Same geometry as `.row`, because the first thing that happens after this is
+   four real rows arriving in its place. */
+.skel-row {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 6px 10px;
+    align-items: center;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: var(--card);
+}
+.skel-row .bar.mark { grid-row: 1 / span 2; width: 16px; height: 12px; border-radius: 2px; }
+.skel-row .bar.line { height: 12px; }
+.skel-row .bar.sub { height: 9px; }
+

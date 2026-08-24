@@ -1,0 +1,84 @@
+/* ==========================================================================
+   Session status — the useful half of the terminal's own status line
+   The foot of the conversation column, on every screen. See the markup for why
+   it is in the column rather than across the window, and `--indicator` for the
+   twelve pixels it holds back on a phone and nowhere else.
+   ========================================================================== */
+.status-line {
+    flex: 0 0 auto;
+    /* The row, plus whatever the home indicator needs under it — nothing at all on a desk. This
+       is the element that touches the bottom edge of the view, so it is the one that holds that
+       back; `--indicator` says how much and why it is a constant rather than an `env()`. The
+       height grows with it so the words stay centred in their own 34 pixels. */
+    height: calc(var(--status-h) + var(--indicator));
+    padding: 0 14px var(--indicator);
+    display: flex; align-items: center;
+    border-top: 1px solid var(--line);
+    background: rgba(14, 14, 17, 0.9);
+    color: var(--faint); font: 11px/1 var(--mono);
+    overflow: hidden;
+}
+.status-line .open {
+    /* `flex: 0 1 auto` and not the full width it used to take: the row holds three things now
+       and this is the first of them. It gives way before the plan windows do, because a model
+       name is the one thing here that ellipsises without losing its meaning. */
+    flex: 0 1 auto; min-width: 0; height: 100%;
+    display: flex; align-items: center; gap: 0;
+    text-align: left; color: inherit;
+}
+.status-line .open:not(:disabled):hover { color: var(--dim); }
+.status-line .open:disabled { cursor: default; }
+.status-line .item { flex: 0 0 auto; white-space: nowrap; }
+.status-line .item + .item::before {
+    content: "·"; padding: 0 8px; color: #3a3a44;
+}
+.status-line .model {
+    flex: 0 1 auto;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    display: flex; align-items: center; gap: 7px;
+    color: var(--ink); font-weight: 500;
+}
+.status-line .model .assistant-logo { flex: 0 0 auto; width: 13px; height: 13px; }
+.status-line .model .word { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.status-line .usage { color: var(--dim); font-variant-numeric: tabular-nums; }
+.status-line .cost { color: var(--accent); }
+
+/* The working tree, as its own control — see the markup. It carries the `·` that used to come
+   from the sibling rule inside the button, because it is no longer a sibling of anything in
+   there. */
+.status-line .files {
+    flex: 0 1 auto; min-width: 0; height: 100%;
+    display: flex; align-items: center;
+    color: inherit;
+}
+.status-line .files[hidden] { display: none; }
+.status-line .files::before {
+    content: "·"; flex: 0 0 auto; padding: 0 8px; color: #3a3a44;
+}
+.status-line .files:hover { color: var(--dim); }
+.status-line .branch { color: var(--dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-line .mark { flex: 0 0 auto; margin-left: 7px; color: var(--dim); }
+.status-line .mark[data-k="staged"], .status-line .mark[data-k="clean"] { color: var(--ok); }
+.status-line .mark[data-k="untracked"] { color: var(--warn); }
+.status-line .mark[data-k="conflict"] { color: var(--bad); }
+.status-line .limits {
+    margin-left: auto; padding-left: 16px;
+    display: flex; align-items: center; gap: 13px;
+    color: var(--dim); font-variant-numeric: tabular-nums;
+}
+.status-line .limit { white-space: nowrap; }
+.status-line .limit b { color: var(--ink); font-weight: 500; }
+.status-line .limit[data-level="warn"] b { color: var(--warn); }
+.status-line .limit[data-level="bad"] b { color: var(--bad); }
+.status-line .empty { color: var(--faint); }
+
+/* Keep the model and the plan windows — the two facts that decide the next turn — when the
+   browser is only just wide enough to retain its two-column layout. The phone breakpoint below
+   puts the tree back: down there this row has the whole width of the screen rather than the
+   right-hand column of two, and it is the only way into the Git changes sheet that does not go
+   through a menu. */
+@media (max-width: 1080px) {
+    .status-line .files { display: none; }
+    .status-line .limits { padding-left: 12px; }
+}
+

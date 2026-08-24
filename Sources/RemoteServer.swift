@@ -262,6 +262,11 @@ final class RemoteServer {
         let open: Set<String> = ["/", "/index.html", "/manifest.webmanifest", "/hero-orchestration.webp",
                                  "/v1/health", "/v1/strings"]
         let pairing = request.path.hasPrefix("/v1/auth/")
+        // This page's own stylesheets and modules, for the same reason as the page itself: a door
+        // nobody can draw is not a door. They are the same files for everybody, they name no
+        // session, repository or path, and they have been in a public repository all along — the
+        // only thing that changed is that they now sit beside `index.html` instead of inside it.
+        let shell = request.path.hasPrefix("/app/")
         // The icon too, and it has to be: a browser asks for `/favicon.ico` on its own, before
         // and independently of the page, and an install prompt fetches the manifest's icons the
         // same way. It discloses nothing — it is the same drawing of the same creature for
@@ -283,7 +288,7 @@ final class RemoteServer {
             && Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"])
         let taskSecretRoute = orchestrated && request.method == "POST"
             && request.path.hasSuffix("/complete")
-        if !open.contains(request.path), !pairing, !icon, !orchestratorAuthed, !taskSecretRoute {
+        if !open.contains(request.path), !pairing, !shell, !icon, !orchestratorAuthed, !taskSecretRoute {
             if case .denied = permission(for: request) {
                 return .error(401, "unauthorized", "This needs a paired device.")
             }
@@ -810,6 +815,9 @@ final class RemoteServer {
                             headers: ["Content-Type": "image/webp",
                                       "Cache-Control": "public, max-age=86400"],
                             body: data)
+
+        case ("GET", let path) where path.hasPrefix("/app/"):
+            return asset(String(path.dropFirst("/app/".count)))
 
         case ("GET", "/sw.js"):
             return serviceWorker()
@@ -1866,6 +1874,51 @@ final class RemoteServer {
             return .error(404, "not_found", "The web interface is not in this build")
         }
         return Response(status: 200, headers: ["Content-Type": "text/html; charset=utf-8"], body: data)
+    }
+
+    /// One file from under `Resources/web/app`, and only from under there.
+    ///
+    /// **`request.path` is never percent-decoded** — see `Request.init` — so what arrives here is
+    /// the literal string the client put on the wire. That makes the safe rule a whitelist rather
+    /// than a blacklist: there is no `%2e%2e%2f` to recognise, because `%` is not in the alphabet
+    /// below. A segment may only be letters, digits, `.`, `-`, `_`; segments are separated by `/`;
+    /// no empty segment, no `.` and no `..`; and the extension has to be one this app knows how to
+    /// label. Everything else is a 404 before a path is ever built.
+    private func asset(_ name: String) -> Response {
+        let types = ["css": "text/css; charset=utf-8",
+                     "js": "text/javascript; charset=utf-8"]
+        // An explicit set of characters rather than `isLetter` / `isNumber`: those ask a question
+        // about Unicode's categories, and the question here is "is this the name of a file we put
+        // in the bundle ourselves". It also keeps this compiling on the older Swift in CI.
+        let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_")
+
+        let parts = name.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        let plain = { (part: String) -> Bool in
+            if part.isEmpty || part == "." || part == ".." { return false }
+            return part.allSatisfy { allowed.contains($0) }
+        }
+        guard parts.count >= 1, parts.count <= 4, parts.allSatisfy(plain),
+              let file = parts.last,
+              let dot = file.lastIndex(of: "."),
+              let type = types[String(file[file.index(after: dot)...])] else {
+            return .error(404, "not_found", "No such file")
+        }
+
+        guard let root = Bundle.main.resourceURL?
+                .appendingPathComponent("web", isDirectory: true)
+                .appendingPathComponent("app", isDirectory: true) else {
+            return .error(404, "not_found", "The web interface is not in this build")
+        }
+        var url = root
+        for part in parts { url.appendPathComponent(part) }
+        // Belt, and now braces. The whitelist above already makes this impossible; it is here so
+        // that the day somebody widens the alphabet, the file that actually gets read is still
+        // under the directory it was resolved from.
+        guard url.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path + "/"),
+              let data = try? Data(contentsOf: url) else {
+            return .error(404, "not_found", "No such file")
+        }
+        return Response(status: 200, headers: ["Content-Type": type], body: data)
     }
 
     /// The service worker, which exists for one reason: **a page cannot receive a push while it

@@ -1,0 +1,213 @@
+/* ==========================================================================
+   The transcript pane
+   ========================================================================== */
+.pane-detail { background: #101014; }
+
+.detail-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    min-height: 50px;
+}
+.detail-head .back {
+    display: none;
+    flex: 0 0 auto;
+    color: var(--dim); font-size: 13px;
+    padding: 6px 10px 6px 4px;
+}
+.detail-head canvas { display: block; image-rendering: pixelated; flex: 0 0 auto; }
+.detail-head .detail-mark {
+    flex: 0 0 auto;
+    border-radius: 4px;
+}
+.detail-head .detail-mark:disabled { opacity: 0.45; cursor: default; }
+.detail-head .detail-actions { position: relative; flex: 0 0 auto; }
+.detail-head .detail-who {
+    text-align: left; overflow: hidden; border-radius: 5px;
+    padding: 3px 5px; margin: -3px -5px;
+}
+.detail-head .detail-who:disabled { opacity: 0.45; cursor: default; }
+.detail-head .detail-who:hover:not(:disabled) { background: var(--card); }
+/* **A rule that sets `display` outranks the `hidden` attribute.** The header above sets `flex`,
+   so without this the session's header stays on screen behind an agent's. Same trap the chip in
+   the list fell into, noted there too. */
+.detail-head[hidden] { display: none; }
+
+/* The same pane, one of the session's agents in it.
+   ---------------------------------------------------------------------------
+   Deliberately the session header's twin: same height, same hairline, same two lines of text in
+   the same places. Following a link should change what the pane is *about* and not where
+   anything on it sits — a header that is a different height moves the first line of the
+   transcript, which is exactly the thing the reader was looking at when they clicked. */
+.agent-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px 10px 6px;
+    border-bottom: 1px solid var(--line);
+    min-height: 50px;
+}
+.agent-head[hidden] { display: none; }
+/* Always visible, unlike the list's back button — this one is the only way out of here on every
+   screen size, not just on a phone. */
+.agent-head .back {
+    flex: 0 0 auto;
+    color: var(--dim); font-size: 13px;
+    padding: 7px 9px; border-radius: 6px;
+}
+.agent-head .back:hover { background: var(--card); color: var(--ink); }
+.agent-head .who { min-width: 0; flex: 1 1 auto; overflow: hidden; }
+.agent-head .name {
+    font-size: 13.5px; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Monospace, because what it holds is a machine's account of itself: a state, a clock, a token
+   count, a number of tools. The session's subtitle is a path and reads the same way. */
+.agent-head .sub {
+    color: var(--faint); font: 11px/1.5 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.session-actions {
+    position: absolute; z-index: 45;
+    top: calc(100% + 9px); left: -7px;
+    width: 184px;
+    padding: 5px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: #1a1a20;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.48);
+}
+.session-actions[hidden] { display: none; }
+.session-action-stage {
+    display: grid; overflow: hidden; border-radius: 7px;
+}
+.session-action-level {
+    grid-area: 1 / 1; min-width: 0;
+    transform: translateX(0); opacity: 1; visibility: visible;
+    transition: transform 190ms var(--ease), opacity 150ms ease-out, visibility 0s linear;
+    will-change: transform, opacity;
+}
+/* Both levels stay in the grid so the popover keeps one measured height while they trade
+   places. `inert` in the script makes the off-stage level unreachable; these states only draw
+   the push. Entering Git sends the main actions left and brings Git in from the right. */
+.session-action-level[data-place="left"] {
+    transform: translateX(calc(-100% - 10px)); opacity: 0; visibility: hidden;
+    pointer-events: none;
+    transition: transform 190ms var(--ease), opacity 150ms ease-out, visibility 0s linear 190ms;
+}
+.session-action-level[data-place="right"] {
+    transform: translateX(calc(100% + 10px)); opacity: 0; visibility: hidden;
+    pointer-events: none;
+    transition: transform 190ms var(--ease), opacity 150ms ease-out, visibility 0s linear 190ms;
+}
+.session-actions::before {
+    content: ""; position: absolute; top: -5px; left: 14px;
+    width: 8px; height: 8px;
+    border-left: 1px solid var(--line); border-top: 1px solid var(--line);
+    background: #1a1a20; transform: rotate(45deg);
+}
+.session-actions button {
+    position: relative; width: 100%; min-height: 38px;
+    display: flex; align-items: center;
+    padding: 7px 10px; border-radius: 7px;
+    text-align: left; color: var(--ink); font: 12.5px/1.35 var(--mono);
+}
+.session-actions button:hover:not(:disabled),
+.session-actions button:focus-visible { background: var(--card-hi); }
+.session-actions button:disabled { opacity: 0.42; cursor: default; }
+.session-actions button .next { margin-left: auto; color: var(--faint); font-size: 16px; }
+.session-actions .level-back {
+    margin-bottom: 4px; padding-bottom: 9px;
+    border-bottom: 1px solid var(--line); border-radius: 7px 7px 0 0;
+    color: var(--dim); font-family: var(--ui);
+}
+.session-actions .end {
+    margin-top: 4px; padding-top: 9px;
+    border-top: 1px solid var(--line); border-radius: 0 0 7px 7px;
+    color: #d88f7b; font-family: var(--ui);
+}
+.git-panel {
+    flex: 1 1 auto; min-height: 0;
+    display: flex; flex-direction: column;
+    background: #101014;
+}
+.git-panel[hidden] { display: none; }
+/* It is a view of the same session in the same space as the transcript, not a sheet floating
+   over the whole app. The header stays put; only the transcript and its furniture step aside. */
+.pane-detail[data-git="on"] > .tx-scroll,
+.pane-detail[data-git="on"] > .live,
+.pane-detail[data-git="on"] > .agents,
+.pane-detail[data-git="on"] > .composer { display: none; }
+.git-panel-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 9px;
+    padding: 13px 16px 12px 18px;
+    border-bottom: 1px solid var(--line);
+}
+.git-panel-head h2 {
+    min-width: 0; flex: 1 1 auto;
+    margin: 0; color: var(--ink); font-size: 14px; font-weight: 600;
+}
+.git-panel-body { flex: 1 1 auto; padding: 16px 18px 24px; }
+.git-branch {
+    margin: 0 0 12px; color: var(--dim);
+    font: 12px/1.5 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.git-files { margin: 0; padding: 0; list-style: none; }
+.git-file {
+    display: grid; grid-template-columns: 28px minmax(0, 1fr) auto;
+    gap: 9px; align-items: center;
+    min-height: 38px; padding: 7px 8px;
+    border-bottom: 1px solid var(--line);
+    font: 12px/1.4 var(--mono);
+}
+.git-file:first-child { border-top: 1px solid var(--line); }
+.git-file .mark { color: var(--accent); font-weight: 700; letter-spacing: 1px; }
+.git-file[data-kind="untracked"] .mark { color: var(--warn); }
+.git-file[data-kind="conflict"] .mark { color: var(--bad); }
+.git-file .path { min-width: 0; overflow: hidden; white-space: nowrap; color: var(--ink); }
+.git-file .stats { white-space: nowrap; color: var(--faint); }
+.git-file .stats .add { color: var(--ok); }
+.git-file .stats .del { color: #d88f7b; }
+.git-note { padding: 24px 4px; color: var(--faint); font-size: 13px; }
+.git-note.err { color: var(--bad); }
+.detail-head .who { min-width: 0; flex: 1 1 auto; }
+.detail-head .name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detail-head .sub {
+    font-family: var(--mono); font-size: 11px; color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.detail-head .tools { display: flex; gap: 6px; flex: 0 0 auto; }
+.chip {
+    border: 1px solid var(--line); border-radius: 7px;
+    padding: 4px 9px; font-size: 11.5px; color: var(--dim);
+    background: var(--card);
+}
+.chip:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
+.chip:disabled { opacity: 0.4; cursor: default; }
+.chip.on { border-color: var(--accent-ed); color: var(--accent); }
+/* An icon on each of the two buttons in the transcript header. They used to be two words in two
+   identical chips — one a sort control and one a thing that reaches out and moves a window on
+   another machine — and reading as the same kind of control is how "Reveal" came to mean nothing
+   at all to somebody. */
+.chip .ico { display: inline-block; vertical-align: -2px; width: 13px; height: 13px; margin-right: 5px; }
+.chip .ico.arrow { transition: transform 180ms var(--ease); }
+.chip.on .ico.arrow { transform: rotate(180deg); }
+
+/* **Refresh, while it is refreshing.**
+
+   The transcript is refetched quietly — the reader is reading the last version of it and a
+   skeleton over the top would take that away — which meant pressing this button did nothing
+   visible at all. On a desk that is a shrug; on a phone, where nothing else on the screen is
+   moving, it is a button somebody presses three times because they cannot tell whether it
+   worked, and then stops trusting.
+
+   So the control answers for itself: the circular arrow turns, and the chip takes the accent
+   while it is out. Two signals rather than one because the colour is the half that survives a
+   still frame and a reader who has asked for less movement — and because the label is *not*
+   swapped for "Refreshing…", which is four characters wider than "Refresh" and would squeeze
+   the session's name out of a phone header for half a second every press. */
+.chip[data-busy="on"] { border-color: var(--accent-ed); color: var(--accent); }
+.chip[data-busy="on"] .ico { animation: spin 900ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+

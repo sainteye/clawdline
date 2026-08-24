@@ -1,0 +1,96 @@
+/* ==========================================================================
+   Shell — two columns on a desk, one screen at a time on a phone
+   ========================================================================== */
+.app {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+}
+.app[data-pane="off"] { grid-template-columns: minmax(0, 1fr); }
+.app[data-pane="off"] .pane-detail { display: none; }
+
+.pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.pane-list { border-right: 1px solid var(--line); }
+
+/* ==========================================================================
+   Filter
+   ========================================================================== */
+.filter-row {
+    flex: 0 0 auto;
+    padding: 10px 12px;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--line);
+}
+.filter-row input {
+    flex: 1 1 auto; min-width: 0;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 7px 10px;
+    font-size: 13px;
+    color: var(--ink);
+}
+.filter-row input::placeholder { color: var(--faint); }
+.filter-row input:focus { outline: none; border-color: var(--accent-ed); background: var(--card-hi); }
+.filter-row .slash {
+    flex: 0 0 auto; color: var(--faint); font-size: 11px;
+    border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px;
+}
+/* The way to start a new session, on the row that is already furniture rather than in the list
+   the page exists for. Starting one is a rare act next to reading them — a word here would take
+   width off the filter on every screen for ever, and a row of its own would take a session off
+   the top of a phone display. So it is a square with a mark in it, the height of the box beside
+   it, and one tap from the list whichever pane you are on. */
+.filter-row .start {
+    flex: 0 0 auto; align-self: stretch;
+    display: flex; align-items: center; justify-content: center;
+    width: 36px;
+    border: 1px solid var(--line); border-radius: 9px;
+    background: var(--card); color: var(--dim);
+}
+.filter-row .start:hover { background: var(--card-hi); color: var(--ink); }
+.filter-row .start svg { display: block; width: 15px; height: 15px; }
+
+/* The notifications footer. It owns the bottom edge of this column.
+
+   Two weights, and which one is on screen is decided by which of them is still worth pressing.
+   **Off is the state that needs a press**, and as a bordered chip down here it was not getting
+   one — this page had been in daily use for weeks by somebody who never found it, and on a phone
+   the feature does not exist at all until it has been. So off is a filled button the width of the
+   column with a bell on it, and the line underneath finishes the sentence the button starts.
+   On is the chip again: a solid button for a thing already done is noise on every screen for
+   ever, and the only reason to come back to it is to stop it. */
+.notify {
+    flex: 0 0 auto;
+    display: flex; flex-direction: column; align-items: stretch; gap: 7px;
+    padding: 10px 12px calc(10px + var(--indicator));
+    border-top: 1px solid var(--line);
+    color: var(--faint); font-size: 11.5px;
+    line-height: 1.35;
+}
+.notify .say { min-width: 0; overflow-wrap: anywhere; }
+.notify .go {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--accent); color: #17110e;
+    font-size: 13.5px; font-weight: 600;
+    border-radius: 10px;
+    padding: 11px 12px;
+    /* A thumb's worth of target, on the screen this whole feature is for. */
+    min-height: 44px;
+}
+.notify .go:hover:not(:disabled) { background: #e08b6e; }
+.notify .go:disabled { background: #2a2a32; color: var(--faint); cursor: default; }
+/* Drawn, not typeset: see the markup. It takes the button's own colour so it is right in both
+   weights without a second rule. */
+.notify .go .bell { flex: 0 0 auto; display: block; width: 16px; height: 16px; }
+/* The line under the button is the second half of its sentence rather than a paragraph beside
+   it, so it sits under the middle of it. The other three states have no button and are prose. */
+.notify[data-state="off"] .say { text-align: center; }
+/* And when there is nothing to press, there is no footer. Turning notifications off again is a
+   once-a-year action and it was charging rent on every screen, which on a phone means competing
+   with the session list for the only axis that matters. Once this device is subscribed the whole
+   thing collapses into the settings sheet; the same goes for the two dead ends, "blocked" and
+   "this browser cannot", which are explanations rather than things to do. What stays out here is
+   the state that is asking to be pressed. */
+.notify[hidden] { display: none; }

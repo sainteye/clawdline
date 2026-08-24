@@ -1,0 +1,56 @@
+/* ==========================================================================
+   Reset and page frame
+   ========================================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+/* On the root as well as on the body. The body's background is what normally paints the whole
+   canvas, and `visibility: hidden` below is not supposed to change that — but this is one line
+   against the chance of a white flash on a page whose entire palette is dark. */
+html { background: #0e0e11; }
+/* The first paint, held until the interface has its words. See the script in the head. */
+html.booting body { visibility: hidden; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.45 var(--ui);
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    /* And then the visible viewport, which is the only one of the three that knows about the
+       keyboard. iOS does not shrink `dvh` when the keyboard comes up — it leaves the layout
+       viewport alone and pans what you can see — so a page sized in `dvh` puts its bottom edge
+       under the keyboard and everything anchored there goes with it. `--vvh` is written by the
+       script from `visualViewport` and falls back to `100dvh` where there is none. */
+    height: var(--vvh, 100dvh);
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent-ed); outline-offset: 2px; border-radius: 4px; }
+::selection { background: var(--accent-ed); color: #fff; }
+
+.scroller {
+    overflow-y: auto;
+    /* Never sideways. A scroller that says `overflow-y: auto` and nothing about x is entitled to
+       scroll in both directions, and that is how one unbreakable line of tool output turned the
+       reading column into a sideways scroll on a phone: the page went several screens wide and
+       the transcript was left as a strip of empty space beside it. Anything honestly wider than
+       the column — a table, a block of code — scrolls inside its own box; this is the page, and
+       the page does not move. */
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #33333c transparent;
+}
+.scroller::-webkit-scrollbar { width: 9px; height: 9px; }
+.scroller::-webkit-scrollbar-thumb { background: #2b2b33; border-radius: 5px; border: 2px solid transparent; background-clip: content-box; }
+.scroller::-webkit-scrollbar-track { background: transparent; }
+
+.mono { font-family: var(--mono); font-size: 12px; letter-spacing: -0.1px; }
+

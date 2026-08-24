@@ -1,0 +1,73 @@
+/* ==========================================================================
+   Tokens
+   The bar's palette, ported. Dark only, on purpose: this is a window onto an
+   app that lives in a dark menu bar, and a light version of it would be a
+   different product rather than a courtesy.
+   ========================================================================== */
+:root {
+    --bg:        #0e0e11;
+    --card:      #16161a;
+    --card-hi:   #1c1c22;   /* hover / selected fill */
+    --line:      #24242b;   /* hairlines */
+    --ink:       #e8e6e3;
+    --dim:       #9a978f;
+    --faint:     #6d6a64;   /* the things that must be present but never read first */
+    --accent:    #d97757;
+    --accent-in: rgba(217, 119, 87, 0.13);
+    --accent-ed: rgba(217, 119, 87, 0.34);
+
+    /* The connection dot only. Deliberately small and unsaturated — see the note on
+       weights below: green is a colour that wants to be read, and nothing here
+       outranks a session that is waiting for you. */
+    --ok:        #5f9e73;
+    --warn:      #b08a4a;
+    --bad:       #a3564a;
+
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+
+    --radius: 11px;
+    --head-h: 52px;
+    --status-h: 34px;
+
+    /* What the home indicator asks for, and only that.
+
+       It cannot be `env(safe-area-inset-bottom)`: that reports zero without `viewport-fit=cover`,
+       and this page dropped `cover` on purpose — see the note on the viewport tag. iOS keeps the
+       view clear of the clock and the notch on its own, but it still draws it down to the
+       physical bottom edge, and the indicator is a five-point pill sitting about thirteen points
+       up from there. Measured on a 15 Pro with the row flush: the words ended eleven points off
+       the edge, which is under the pill.
+
+       **Thirty-four, the full inset, because everything on this edge is pressed.** The status
+       line is a button — it opens the Session info card — and the notifications footer is a
+       button as well, and a control whose lower half sits in the strip iOS watches for the
+       swipe-up gesture is a control that misses. This is what a native tab bar does with the
+       same edge: the icons and their labels sit entirely above the inset and only the bar's
+       background carries on down into it. Twelve was the number for a row you only read, and
+       this row is not one. */
+    --indicator: 0px;
+    /* **There are no safe-area variables here, and that is the point.** `env(safe-area-inset-*)`
+       reports zero unless the page asked for `viewport-fit=cover`, and this one no longer does —
+       see the note on the viewport tag for the strip of dead screen that bought. iOS keeps the
+       view clear of the clock and the notch on its own now, so a page that padded itself for
+       those as well would be reserving the same strip twice. The bottom edge it does not keep
+       clear, which is what `--indicator` above is for. */
+
+    /* The visible viewport, kept up to date by the script. Declared here so that the first
+       paint has a real value rather than a fallback, and so a browser with no `visualViewport`
+       simply keeps these. */
+    --vvh: 100dvh;
+    --vvt: 0px;
+
+    --ease: cubic-bezier(.2, .7, .2, 1);
+}
+
+/* Keyed on the pointer as well as the width: a browser window dragged narrow on a desk has no
+   indicator to clear, and a hairline of nothing under the status line there would be a hairline
+   of nothing for no reason. A touch screen with no indicator — an SE, most Androids — pays
+   twelve pixels it did not need, which is a margin rather than a gap. */
+@media (pointer: coarse) and (max-width: 899px) {
+    :root { --indicator: 34px; }
+}
+

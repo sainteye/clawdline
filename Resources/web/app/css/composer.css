@@ -1,0 +1,381 @@
+/* ==========================================================================
+   Composer — built, wired, and switched off until the server says otherwise
+   ========================================================================== */
+.composer {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--line);
+    /* No safe-area inset — nothing on this page has one; see the note on the viewport tag. And
+       the status line sits under this in any case. */
+    padding: 10px 14px;
+    background: #0d0d11;
+    /* A `<form>` carries a bottom margin of one em from the browser's own stylesheet, and one em
+       here is fourteen pixels of nothing under the composer — the band of dead space that made
+       the box look like it was floating rather than sitting where it was put. */
+    margin: 0;
+}
+.composer .box {
+    display: flex; align-items: flex-end; gap: 9px;
+    border: 1px solid var(--line); border-radius: 12px;
+    background: var(--card); padding: 8px 8px 8px 12px;
+}
+/* The message box is a `contenteditable` and not a `<textarea>`.
+   It is here to find out whether iOS still draws its form assistant — the `^ v ✓` strip over the
+   keyboard — for something that is not a form control. The arrows were ours to remove either way;
+   the tick is not, and this is the only technique that touches it. **If the tick is still there
+   on the phone this whole change is worth nothing and should go back**, which is why it is kept
+   to one element: this rule, the markup, and the handlers marked with the same note.
+   `plaintext-only` rather than bare `true`, so a paste cannot carry markup in. */
+.composer .msg {
+    flex: 1 1 auto; min-width: 0;
+    position: relative;
+    /* Growing is the element's own behaviour now — a div is as tall as what is in it — so the
+       height dance that measured `scrollHeight` after every keystroke is gone. What is left is
+       the ceiling, and the floor that keeps one line centred against the Send button beside it. */
+    max-height: 140px; min-height: 30px;
+    overflow-y: auto;
+    padding: 5px 0;
+    font-size: 14px; line-height: 1.4;
+    outline: none;
+    /* Both of these matter and neither is a default for a div: newlines have to survive, and a
+       line of shell somebody pasted has to break rather than widen the page. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+/* The placeholder, on a class rather than on `:empty`. `:empty` is true of no child nodes at all,
+   and a browser leaves a `<br>` behind when the last character is deleted — so the placeholder
+   would go away the first time somebody cleared the box by hand and never come back. The class is
+   set from what `innerText` actually says. Absolutely positioned so it cannot push the caret's
+   line down or add a pixel to the box's height. */
+.composer .msg.blank::before {
+    content: attr(data-placeholder);
+    position: absolute; left: 0; top: 5px;
+    color: var(--faint);
+    pointer-events: none;
+}
+/* Skills belong to the line being typed, so their menu sits immediately above that line rather
+   than in a sheet that covers the conversation. It is the same surface under a mouse and a
+   thumb: rows are buttons, arrows merely move the same highlight a tap chooses. */
+.composer .skill-menu {
+    max-height: min(250px, 34vh); overflow-y: auto;
+    border: 1px solid var(--line); border-radius: 11px;
+    background: var(--card);
+    padding: 5px; margin-bottom: 7px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+.composer .skill-menu[hidden] { display: none; }
+.skill-option {
+    width: 100%; min-height: 40px; padding: 6px 9px;
+    display: grid; grid-template-columns: minmax(120px, auto) 1fr;
+    align-items: center; gap: 12px; border-radius: 8px;
+    text-align: left; color: var(--dim);
+}
+.skill-option:hover, .skill-option[aria-selected="true"] {
+    background: var(--accent-in); color: var(--ink);
+}
+.skill-option .command {
+    color: var(--ink); font: 12.5px/1.35 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.skill-option[aria-selected="true"] .command { color: var(--accent); }
+.skill-option .description {
+    min-width: 0; font-size: 11.5px; color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@media (max-width: 520px) {
+    .skill-option { display: block; }
+    .skill-option .description { display: block; margin-top: 2px; }
+}
+/* What is attached, above the box, each one removable before it goes. Small: they are a
+   reminder of what you picked, not a preview worth looking at. */
+.composer .shots { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 9px; }
+.composer .shots:empty { display: none; }
+.shot {
+    position: relative; width: 62px; height: 62px;
+    border: 1px solid var(--line); border-radius: 9px; overflow: hidden;
+    background: var(--card);
+}
+.shot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.shot .drop {
+    position: absolute; top: 3px; right: 3px;
+    width: 19px; height: 19px; border-radius: 50%;
+    background: rgba(0, 0, 0, 0.66); color: #fff;
+    font-size: 13px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+}
+.shot .drop:hover { background: rgba(0, 0, 0, 0.85); }
+.composer .attach {
+    flex: 0 0 auto;
+    width: 30px; min-height: 30px;
+    border-radius: 8px;
+    color: var(--dim); font-size: 19px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+}
+.composer .attach:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
+.composer .attach:disabled { opacity: 0.45; cursor: default; }
+/* Dragging a picture anywhere over the transcript is aiming at the composer. The outline is
+   inside the edge so it cannot be the thing that makes the page scroll. */
+.pane-detail.dropping { outline: 2px dashed var(--accent-ed); outline-offset: -8px; }
+
+.composer .send {
+    flex: 0 0 auto;
+    background: var(--accent); color: #17110e;
+    font-size: 12.5px; font-weight: 600;
+    border-radius: 8px; padding: 6px 13px;
+    min-height: 30px;                     /* the height the field above centres its line against */
+}
+.composer .send:disabled { background: #2a2a32; color: var(--faint); cursor: default; }
+/* In flight. The button keeps its colour rather than going grey — grey is "you may not", and
+   this is "it is happening" — and it breathes so that a slow connection has something on screen
+   saying so. There was nothing at all here before: on a phone over a tunnel, tapping Send and
+   watching nothing change for a second is indistinguishable from a page that is broken, and it
+   is exactly long enough to press again. */
+/* **A sweep across it, not a blink of the whole thing.**
+   The first version faded the entire button between full and half opacity once a second. It did
+   say something was happening and it said it the way a broken control does — the label goes with
+   it, so on a phone the whole button appears to flicker, and the eye reads a flicker as a fault
+   rather than as progress. Worse, the label swaps from "Send" to "Sending…" at the same moment,
+   so the button changes width mid-press and the box under it jumps. (The width is pinned in
+   `renderComposer` now; this is the other half.)
+
+   A light passing over a button that has otherwise not moved is the ordinary way to draw work in
+   flight, and it leaves the label alone at full contrast the whole time. */
+.composer[data-sending="on"] .send:disabled {
+    background: var(--accent); color: #17110e;
+    cursor: default;
+    position: relative; overflow: hidden;
+}
+.composer[data-sending="on"] .send:disabled::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(100deg,
+        rgba(255, 255, 255, 0) 20%,
+        rgba(255, 255, 255, 0.42) 50%,
+        rgba(255, 255, 255, 0) 80%);
+    background-size: 220% 100%;
+    animation: sweep 1.15s var(--ease) infinite;
+}
+@keyframes sweep { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+/* Under reduced motion the sweep goes and the button holds one dimmer wash — still visibly a
+   different state from the one you pressed, with nothing moving. */
+@media (prefers-reduced-motion: reduce) {
+    .composer[data-sending="on"] .send:disabled::after { animation: none; opacity: 0.5; }
+}
+/* The words stay on screen and stay unsent-looking. `readonly` rather than `disabled`, which
+   would take the focus out of the box — and on a phone that closes the keyboard, so every
+   message would cost the whole keyboard dance again.
+
+   **`.msg`, not `textarea`.** This box stopped being a `<textarea>` when it became a
+   `contenteditable` div — see the note on `.composer .msg` — and the rule was left pointing at
+   the old element, so the one piece of feedback it describes has never once fired. */
+.composer[data-sending="on"] .msg { color: var(--dim); }
+.composer[data-write="off"] .box { opacity: 0.55; }
+.composer[data-closing="on"] .box { opacity: 0.55; }
+/* The session has stopped and is waiting for somebody. Above the box rather than under it: this
+   is the last thing in the conversation, and it is read on the way to the place you would type.
+
+   Loud on purpose, and the second line is the reason why. Sending from here while a menu is up
+   does not type the words — the terminal swallows them and the Return underneath confirms
+   whatever row the menu had highlighted. Somebody who does not know that is one press away from
+   answering a question they never read. */
+.composer .waiting {
+    border: 1px solid var(--accent-ed);
+    border-left: 2px solid var(--accent);
+    border-radius: 10px;
+    background: rgba(224, 139, 110, 0.06);
+    padding: 9px 11px;
+    margin-bottom: 9px;
+}
+.composer .waiting[hidden] { display: none; }
+
+/* The line Claude Code draws for itself, above the box you type in.
+   On a phone the session list is a different screen, so once you are inside a conversation
+   there is nothing at all saying whether it is still running — the Mac has the notch and the
+   footer for that and the phone has neither. Quiet on purpose: it is on screen for minutes at
+   a time, so it is dim and monospace rather than another coloured panel competing with the
+   warning above it, which is the one that actually needs somebody to stop. */
+.live {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 7px;
+    padding: 7px 14px 0;
+    color: var(--dim);
+    font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden;
+}
+.live[hidden] { display: none; }
+/* The two of them are one block: "is it running" and then "on what". When the live line is
+   there it carries the hairline and the strip drops its own, so the pair does not read as two
+   separate things stacked up. */
+.live + .agents { border-top: 0; padding-top: 4px; }
+.live:not([hidden]) { border-top: 1px solid var(--line); }
+/* **And the box under them is in the same block.** The composer draws its own hairline, which is
+   right when it is the first thing under the transcript and wrong the moment anything is between
+   them: the live line ended up fenced by a rule above and a rule below, which turns a note about
+   what the session is doing into a row of furniture of its own. Whatever is highest carries the
+   one line, exactly as the pair above already agreed. */
+.live:not([hidden]) ~ .composer,
+.agents:not([hidden]) ~ .composer { border-top: 0; }
+
+.stale .shut {
+    margin-left: 2px; padding: 0 6px;
+    border: 0; background: none; color: inherit;
+    opacity: 0.55; font-size: 15px; line-height: 1; cursor: pointer;
+}
+.stale .shut:hover { opacity: 1; }
+/* **A turning mark, not a fading one.**
+   This was a 6px dot breathing between full and a quarter opacity, and on a phone it read as a
+   dot: the thing it was supposed to say — *this is still going* — needed somebody to watch it
+   for a second and a half to see. What the rest of the app uses for exactly this is the pixel
+   spinner in the session list, on one shared clock, and there was no reason for the composer to
+   have invented a second vocabulary for the same sentence. It is the same canvas, the same eight
+   phases, the same tick. */
+.live canvas.spin { flex: 0 0 auto; display: block; }
+.live .said {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Nothing to switch off under reduced motion: `drawSpinner` is driven by the one interval at
+   the top, and that interval already returns without advancing when `reduced` is set — so the
+   mark is drawn once, in its first phase, and simply stays there. */
+.composer .waiting .title {
+    color: var(--accent); font-size: 12.5px; font-weight: 600;
+    margin-bottom: 3px;
+}
+.composer .waiting .say { color: var(--dim); font-size: 11.5px; line-height: 1.45; }
+.composer .waiting .say + .say { margin-top: 4px; }
+.composer .waiting .say b { color: var(--ink); font-weight: 600; }
+.composer .waiting .go {
+    margin-top: 7px;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card); color: var(--dim);
+    font-size: 11.5px; padding: 4px 10px;
+}
+.composer .waiting .go:hover { background: var(--card-hi); color: var(--ink); }
+
+/* The menu itself, as things a finger can hit.
+   ---------------------------------------------------------------------------
+   This is the half that was missing. The box above it has always known a session was waiting;
+   what it could say about it was "go and find the Mac", which on a phone in another room is not
+   advice, it is a dead end. The options were being parsed on the Mac the whole time and thrown
+   away — see `SessionState.menu`.
+
+   Buttons rather than a list, and the number is the point: it is what gets sent, so it is drawn
+   as the key it is rather than as a bullet. A row that no keystroke reaches is drawn without one
+   and cannot be pressed, because a control that looks live and is not is worse than a line of
+   text. */
+.composer .menu { display: flex; flex-direction: column; gap: 6px; margin-top: 9px; }
+.composer .menu .opt {
+    display: flex; align-items: flex-start; gap: 9px; width: 100%;
+    padding: 9px 11px; text-align: left;
+    background: var(--card); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 9px;
+    font-size: 13px; line-height: 1.4;
+    /* Comfortably past the 44px a thumb wants, without setting a height that a two-line
+       option would then have to break out of. */
+    min-height: 44px;
+}
+.composer .menu .opt:hover:not(:disabled) { background: var(--card-hi); border-color: var(--accent-ed); }
+.composer .menu .opt:active:not(:disabled) { background: var(--accent-in); }
+.composer .menu .opt:disabled { cursor: default; opacity: 0.6; }
+/* The row the caret is parked on over there. Marked rather than pre-selected: it is what a bare
+   Return on the Mac would confirm, which is a fact about that screen and not a recommendation. */
+.composer .menu .opt[data-here="1"] { border-color: var(--accent-ed); background: var(--accent-in); }
+.composer .menu .opt .n {
+    flex: 0 0 auto; min-width: 18px; padding: 1px 0;
+    font: 600 11.5px/1.5 var(--mono); text-align: center;
+    color: var(--accent); opacity: 0.9;
+}
+.composer .menu .opt[data-can="0"] .n { color: var(--faint); }
+.composer .menu .opt .what { flex: 1 1 auto; min-width: 0; }
+.composer .menu .opt .here {
+    display: block; margin-top: 2px;
+    color: var(--faint); font-size: 11px; letter-spacing: 0.02em;
+}
+.composer .menu .opt[disabled] .here { color: var(--faint); }
+
+/* The session and the agents it sent away, as one short tree.
+   ---------------------------------------------------------------------------
+   Drawn the way the terminal draws it: `main` at the root with a filled dot, a ring per agent
+   under it, the kind of agent in a column of its own, then what that agent is doing. The shape
+   is the point. A list of descriptions says a session has three things happening; a tree says
+   they are happening *under* this conversation, which is the fact the pane could never show.
+
+   Still the quietest thing on screen. The one state allowed to be loud on this page is a
+   session waiting for an answer, and a rank of bright rows under it would take that away — so:
+   small, dim, monospace for the machine's half, and no accent anywhere except the ring of
+   something still going and the tint under the row being read. */
+.agents {
+    flex: 0 0 auto;
+    padding: 7px 14px 8px;
+    border-top: 1px solid var(--line);
+}
+.agents[hidden] { display: none; }
+.agents .head {
+    display: flex; align-items: baseline; gap: 7px;
+    color: var(--faint); font-size: 11px; letter-spacing: 0.02em;
+    margin-bottom: 4px;
+}
+.agents .head .n { color: var(--dim); }
+.agents .one {
+    display: flex; align-items: baseline; gap: 8px;
+    width: 100%; min-width: 0; text-align: left;
+    padding: 2px 5px; margin: 0 -5px; border-radius: 5px;
+}
+.agents .one:hover { background: var(--card); }
+.agents .one:hover .what { color: var(--ink); }
+/* Where the reader is. `main` carries it while the pane is showing the session's own
+   conversation, which is the state the strip is in nearly all of the time. */
+.agents .one[aria-current="true"] { background: var(--card-hi); }
+.agents .one[aria-current="true"] .kind { color: var(--ink); }
+/* A ring for an agent, filled for the conversation all of them hang under. */
+.agents .one .mark {
+    flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%;
+    border: 1.5px solid var(--faint); align-self: center;
+}
+.agents .one.root .mark { background: var(--dim); border-color: var(--dim); }
+.agents .one[data-state="running"] .mark { border-color: var(--accent); }
+.agents .one[data-state="done"] .mark { border-color: var(--ok); }
+.agents .one[data-state="failed"] .mark { border-color: var(--bad); }
+/* What kind of agent it is, in a column of its own so the descriptions line up under each
+   other. Monospace and a fixed width for the reason the terminal uses one: these are names from
+   a small fixed set, and a ragged left edge on the column after them is what makes four rows
+   unreadable at a glance. */
+.agents .one .kind {
+    flex: 0 0 auto; width: 106px;
+    color: var(--dim); font: 11px/1.6 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.agents .one .what {
+    flex: 0 1 auto; min-width: 0; color: var(--dim); font-size: 11.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The tool it last reached for, or what it handed back once it has. Same slot, because they are
+   the same question asked at two different times — and set the way the live line is set. */
+.agents .one .doing {
+    flex: 1 1 auto; min-width: 0; color: var(--faint);
+    font: 11px/1.6 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.agents .one .said { color: var(--faint); font-size: 11px; flex: 0 0 auto; }
+
+/* The list's own count. A number and nothing else: the row already has a state to say, and this
+   is the second-quietest thing on it after the tty. */
+.row .agents-chip {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+    color: var(--faint); font: 10.5px/1 var(--mono);
+    padding: 2px 5px; border: 1px solid var(--line); border-radius: 5px;
+}
+.row .agents-chip .dot {
+    width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: 0.7;
+}
+/* **A rule that sets `display` outranks the `hidden` attribute**, which is how a chip meant to
+   appear on two rows out of nine ends up on all nine reading "0". Same guard the live line
+   already carries, for the same reason. */
+.row .agents-chip[hidden] { display: none; }
+
+.composer .why { color: var(--faint); font-size: 11.5px; margin-top: 7px; }
+/* Nothing to explain, no row. The line under the box now only ever says why the box will not
+   take what you type; when everything is working it says nothing, and a line that says nothing
+   should not be costing a row of a phone screen to do it. */
+.composer .why:empty { display: none; }
+.composer .why b { color: var(--dim); font-weight: 500; }
+.composer .why code { font-family: var(--mono); font-size: 11px; color: #8cbaf9; }
+

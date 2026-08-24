@@ -1,0 +1,328 @@
+.tx-scroll { flex: 1 1 auto; padding: 16px 18px 22px 18px; }
+.tx {
+    max-width: 760px;
+    /* Break a word rather than the layout. This text is somebody's terminal: a base64 blob, a
+       path with no spaces in it, a line of escape codes — any of them can be four hundred
+       characters with nowhere to wrap, and left alone one of them stretches its container past
+       the edge of a phone and takes the whole page with it. `anywhere` rather than `break-word`
+       because only `anywhere` also shrinks the box's own minimum width, which is the number the
+       grid track is measuring; `word-break` says the same thing to older WebKit. */
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+.tx-scroll.home { padding: 0; }
+.tx.home { max-width: none; width: 100%; min-height: 100%; }
+.home-hero {
+    position: relative; isolation: isolate; overflow: hidden;
+    min-height: 100%;
+    display: flex; align-items: center;
+    padding: clamp(38px, 7vw, 96px);
+    background: #0e0e11;
+}
+.home-hero::before {
+    content: ""; position: absolute; inset: 0; z-index: -2;
+    background: url("/hero-orchestration-v4-task-clinic.webp") center center / cover no-repeat;
+}
+/* Keep the copy readable without putting an obvious dark panel on top of an image whose own
+   negative space was composed for it. The second fade lets the artwork disappear into the UI
+   instead of ending at the edge of the generated frame. */
+.home-hero::after {
+    content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background:
+        linear-gradient(90deg, rgba(14,14,17,0.08) 0%, rgba(14,14,17,0.02) 42%, rgba(14,14,17,0.20) 100%),
+        linear-gradient(180deg, rgba(14,14,17,0.34), transparent 22%, transparent 78%, rgba(14,14,17,0.78));
+}
+.home-hero .copy { max-width: 340px; transform: translateY(-4%); }
+.home-hero .rule { display: block; width: 34px; height: 2px; margin-bottom: 18px; background: var(--accent); }
+.home-hero h1 {
+    margin: 0 0 10px; max-width: 11ch;
+    color: var(--ink); font-size: clamp(27px, 3vw, 46px); line-height: 1.04;
+    font-weight: 620; letter-spacing: -0.035em;
+}
+.home-hero p { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.55; }
+
+.entry {
+    display: grid;
+    grid-template-columns: 62px minmax(0, 1fr);
+    gap: 14px;
+    padding: 7px 0;
+}
+.entry .who {
+    text-align: right;
+    font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase;
+    color: var(--faint);
+    padding-top: 3px;
+}
+.entry .who .speaker {
+    display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px;
+}
+.entry .who time { display: block; font-size: 10px; color: #4d4a45; text-transform: none; letter-spacing: 0; margin-top: 2px; }
+.entry[data-role="user"] .who { color: var(--dim); }
+.entry .body { min-width: 0; }
+.entry .body p { margin: 0 0 8px 0; }
+.entry .body p:last-child { margin-bottom: 0; }
+.entry[data-role="user"] .body {
+    justify-self: start;          /* the box is the size of what was said, not of the column */
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 11px;
+    color: var(--ink);
+}
+.entry.pending { opacity: 0.7; }
+.entry.pending .body {
+    background: var(--card-hi);
+    border-style: dashed;
+}
+.entry.pending .pending-images,
+.entry.pending .pending-state {
+    display: flex; align-items: center; gap: 7px;
+    color: var(--faint); font-size: 11px;
+}
+.entry.pending .pending-images { margin-top: 7px; }
+.entry.pending .pending-state { margin-top: 6px; }
+.entry.pending .pending-state canvas { flex: 0 0 auto; display: block; }
+.entry[data-role="assistant"] .body { color: var(--ink); }
+.entry[data-role="tool"] .body { color: var(--dim); font-size: 13px; }
+.entry .toolname {
+    display: inline-block;
+    font-family: var(--mono); font-size: 11px;
+    color: var(--accent); opacity: 0.85;
+    border: 1px solid var(--accent-ed); border-radius: 5px;
+    padding: 0 5px; margin-right: 7px;
+}
+.entry .body code {
+    font-family: var(--mono); font-size: 12px;
+    color: #8cbaf9;                       /* blue, not the accent: a path and a link do different things */
+    background: rgba(140, 186, 249, 0.09);
+    border-radius: 4px; padding: 1px 4px;
+}
+.entry .body pre.code {
+    font-family: var(--mono); font-size: 12px; line-height: 1.5;
+    background: #0b0b0e; border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 11px; margin: 6px 0;
+    overflow-x: auto; color: #cfcdc8;
+}
+/* Everything else Markdown.swift knows how to draw, drawn here too. The bar and this page read
+   the same documents, and a heading that is a heading on the Mac and a line of hashes in a browser
+   is one of them getting it wrong. */
+.entry .body h3, .entry .body h4, .entry .body h5, .entry .body h6 {
+    margin: 14px 0 6px 0;
+    font-weight: 600;
+    line-height: 1.3;
+}
+.entry .body > *:first-child { margin-top: 0; }
+.entry .body h3 { font-size: 16px; }
+.entry .body h4 { font-size: 14.5px; }
+.entry .body h5, .entry .body h6 { font-size: 13px; color: var(--dim); }
+.entry .body ul, .entry .body ol { margin: 6px 0; padding-left: 22px; }
+.entry .body li { margin: 2px 0; }
+.entry .body li > ul, .entry .body li > ol { margin: 2px 0; }
+.entry .body ul { list-style: disc; }
+.entry .body ul ul { list-style: circle; }
+.entry .body blockquote {
+    margin: 8px 0;
+    padding: 2px 0 2px 12px;
+    border-left: 2px solid var(--line);
+    color: var(--dim);
+}
+.entry .body hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
+.entry .body a { color: #8cbaf9; text-decoration: underline; text-underline-offset: 2px; }
+.entry .body a:hover { color: #a9cbfb; }
+/* Codex file references use Markdown links whose target is an absolute path on the Mac.
+   A phone cannot open that path, but showing `[label](/the/entire/path:line)` as punctuation is
+   not an honest fallback either. Draw the useful half as a file-shaped inline label, without a
+   pointer cursor or underline that would promise a navigation the browser cannot perform. */
+.entry .body .local-ref {
+    font-family: var(--mono); font-size: 0.92em;
+    color: #8cbaf9;
+    background: rgba(140, 186, 249, 0.09);
+    border-radius: 4px; padding: 1px 4px;
+}
+.entry .body del { color: var(--faint); }
+.entry .body strong { font-weight: 650; }
+
+/* A table is the one thing in a transcript that is honestly wider than the reading column.
+   It scrolls inside its own box; the alternative is a page that scrolls sideways, which breaks
+   every other line on the screen to rescue one. */
+.entry .body .tablewrap {
+    overflow-x: auto;
+    max-width: 100%;
+    margin: 9px 0;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    -webkit-overflow-scrolling: touch;
+}
+.entry .body table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.entry .body th, .entry .body td {
+    padding: 6px 11px;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+}
+.entry .body th:last-child, .entry .body td:last-child { border-right: 0; }
+.entry .body tbody tr:last-child td { border-bottom: 0; }
+.entry .body thead th { background: #1a1a1f; color: var(--dim); font-weight: 600; white-space: nowrap; }
+
+/* A run the reader was spared. It says how much was hidden, because "nothing happened here"
+   and "eleven tool calls happened here" are not the same silence. */
+.entry.folded { padding-bottom: 0; }
+.entry.folded .body { color: var(--faint); font-size: 12px; }
+.entry.folded .pill {
+    display: inline-flex; align-items: baseline; gap: 7px;
+    border: 1px dashed #33333d; border-radius: 999px;
+    padding: 2px 10px; font-family: var(--mono); font-size: 11px;
+    color: var(--faint);
+    max-width: 100%;
+}
+.entry.folded .pill:hover { border-color: var(--accent-ed); color: var(--dim); }
+.entry.folded .pill .caret { color: var(--accent); opacity: 0.8; }
+.entry.folded .pill .steps { flex: 0 0 auto; white-space: nowrap; }
+/* The names of what ran, and the first thing to go when there is no room for them: how many
+   steps were folded away is the part that cannot be guessed from the rest of the page. */
+.entry.folded .pill .what { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entry.folded .pill[aria-expanded="true"] { border-style: solid; }
+
+/* The call that has not come back yet.
+
+   A folded run is a count, and a count that is still climbing looks exactly like a count that
+   stopped climbing an hour ago. The line above says the session is working; nothing said *this*
+   is the part of it being worked on, so a reader watching a number change had to notice the
+   number changing.
+
+   A light passing over it, the same sweep the Send button wears while a message is going out and
+   for the same reason: a sheen crossing something that has otherwise not moved reads as work in
+   flight, where a blink of the whole row reads as a fault. The text keeps its own contrast the
+   whole way — nothing here is drawn in a colour that comes and goes. The accented border does
+   the other half of the job on a still frame, so a screenshot still says which run this is.
+
+   Folded, it is on the pill; opened, on the last row in the run, which is the call actually
+   running. Never on both: two things sweeping in the same block is a page with a fault in it. */
+.entry.folded[data-live] .pill,
+.entry.toolrow[data-live] .toolline {
+    position: relative; overflow: hidden;
+}
+/* The still frame has to say it too — a screenshot, a paused animation, a reader who has asked
+   for less movement. Border, text and a wash of the accent behind the chip, all of which stay
+   put; the sweep is what is added on top of that, not the whole message. */
+.entry.folded[data-live] .pill {
+    border-color: var(--accent-ed); color: var(--dim);
+    background: rgba(217, 119, 87, 0.05);
+}
+.entry.folded[data-live] .pill::after,
+.entry.toolrow[data-live] .toolline::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    /* Measured on the pill, which is the small case: a chip twenty pixels tall and a hundred
+       and fifty wide gives the gradient very little room, so the stops are close together and
+       the peak carries the whole crossing. A tool row is wider, so the same stops are spread
+       further and land softer, which is the right way round.
+
+       The peak was a third of the accent to begin with and read as a highlight sliding over the
+       chip — the eye went to it rather than to the count it is about. A fifth still crosses
+       visibly at this size and stays behind the text where it belongs. */
+    background: linear-gradient(100deg,
+        rgba(217, 119, 87, 0) 30%,
+        rgba(217, 119, 87, 0.20) 50%,
+        rgba(217, 119, 87, 0) 70%);
+    background-size: 220% 100%;
+    /* `linear`, where the Send button's identical sweep is eased. The button's easing is a press
+       that starts fast and settles; this is a heartbeat, and under `--ease` it spent five sixths
+       of every cycle parked off the end of the pill with one visible flick in between — which
+       reads as a glitch rather than as a rhythm.
+
+       Slower than the button's, too, and for the opposite reason. The button's sweep answers a
+       press that has just happened, so it is quick; this one sits under a run that can go on for
+       minutes, and at a pace that fast it is something to be looked at. Two and a bit seconds is
+       a pulse in the corner of the eye rather than a thing flashing. */
+    animation: sweep 2.2s linear infinite;
+}
+/* The sweep goes and one dim accent wash stays: still visibly the live run, with nothing moving.
+   Left to the blanket rule above it would freeze wherever the animation happened to be, which is
+   a highlight parked at a random point across the row. */
+@media (prefers-reduced-motion: reduce) {
+    .entry.folded[data-live] .pill::after,
+    .entry.toolrow[data-live] .toolline::after {
+        animation: none; background: rgba(217, 119, 87, 0.08);
+    }
+}
+
+/* One line per tool call, and nothing more until it is asked for.
+   The wall this replaces was the page at its worst: an agent doing ordinary work would put six
+   greps on a phone screen, each of them a wrapped four-line command, and the sentence somebody
+   was actually reading went off the top. What a call did is one line — a name and a subject —
+   and the line opens when it is pressed. */
+.entry.toolrow { padding: 2px 0; }
+.entry.toolrow .who { padding-top: 3px; }
+.toolline {
+    display: flex; align-items: baseline; gap: 7px;
+    width: 100%; min-width: 0;
+    text-align: left;
+    padding: 2px 0;
+}
+/* `flex: 0 0 auto` and no wrapping: the name is an inline-block by its own rule, and in a flex
+   row with a long command beside it the browser was happy to squeeze it to one character wide —
+   which drew "Bash" as four letters stacked down the page. */
+.toolline .toolname { flex: 0 0 auto; margin-right: 0; white-space: nowrap; }
+.toolline .caret { flex: 0 0 auto; color: var(--accent); opacity: 0.75; font-size: 10px; }
+.toolline .subject {
+    flex: 1 1 auto; min-width: 0;
+    font-family: var(--mono); font-size: 11.5px; color: var(--faint);
+    /* The one place on this page where a long line is *not* allowed to wrap. Everywhere else the
+       rule is "break the word, never the layout"; here the rule is one line, because a hundred
+       characters of shell is the thing being got out of the way. */
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.toolline:hover .subject { color: var(--dim); }
+.toolline[aria-expanded="true"] .subject { color: var(--dim); }
+.toolbody { margin-top: 5px; }
+.toolbody pre.code { margin-top: 0; }
+
+/* A question Claude stopped to ask.
+
+   Everything else a tool does is drawn to be skipped — one grey line, folded, out of the way.
+   This is the opposite instruction: it is the only thing in the transcript that was addressed to
+   the person reading it, and on a phone it was invisible, folded inside a run with nothing but
+   the word `AskUserQuestion` showing. So it gets a card, the accent, and every option on a row
+   of its own with the number the terminal's picker answers to in front of it. */
+.entry.ask .body { color: var(--ink); font-size: inherit; }
+.askbox {
+    border: 1px solid var(--accent-ed);
+    border-left: 2px solid var(--accent);
+    border-radius: 10px;
+    background: rgba(224, 139, 110, 0.05);
+    padding: 10px 12px;
+}
+.asktag {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.4px; text-transform: uppercase;
+    color: var(--accent); opacity: 0.85;
+    margin-bottom: 6px;
+}
+.askhead { font-size: 12px; color: var(--dim); margin-bottom: 3px; }
+.askany { font-size: 11.5px; color: var(--faint); margin-bottom: 3px; }
+.askq { font-size: 14.5px; line-height: 1.45; color: var(--ink); }
+/* `list-style: none` and a number of our own: the browser's counter would restart per list and
+   sit outside the row, and what is wanted is the terminal's own key, in the row, in monospace,
+   at a width that does not move when the count passes nine. */
+.askopts { list-style: none; margin: 9px 0 0 0; padding: 0; }
+.askopt {
+    display: flex; gap: 9px;
+    padding: 7px 0 0 0;
+    border-top: 1px solid var(--line);
+    margin-top: 7px;
+}
+.askopt:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+.askopt .n {
+    flex: 0 0 auto;
+    min-width: 17px;
+    font-family: var(--mono); font-size: 11px;
+    color: var(--accent); opacity: 0.8;
+    padding-top: 2px;
+}
+.askopt .what { min-width: 0; }
+.askopt .what b { font-weight: 600; color: var(--ink); font-size: 13.5px; }
+.askopt .note { display: block; color: var(--dim); font-size: 12.5px; line-height: 1.45; margin-top: 2px; }
+
+.tx-note { color: var(--faint); font-size: 12.5px; padding: 26px 2px; }
+.tx-note.err { color: #c58472; }
+

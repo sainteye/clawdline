@@ -1,0 +1,270 @@
+/* ==========================================================================
+   Overlays — shortcuts, and the small word that says what just happened
+   ========================================================================== */
+.overlay {
+    position: fixed; inset: 0; z-index: 60;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(6, 6, 8, 0.66);
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+    padding: 24px;
+    animation: fade 140ms var(--ease);
+}
+.overlay[hidden] { display: none; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.sheet {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 20px 22px; width: min(460px, 100%);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+.sheet h2 { margin: 0 0 14px 0; font-size: 14px; font-weight: 600; }
+.sheet dl { margin: 0; display: grid; grid-template-columns: 92px 1fr; gap: 9px 14px; align-items: center; }
+.sheet dt { text-align: right; }
+.sheet dd { margin: 0; color: var(--dim); font-size: 12.5px; }
+.sheet kbd {
+    font: 500 11px/1 var(--ui);
+    border: 1px solid #2c2c35; border-radius: 5px; padding: 3px 6px;
+    color: var(--ink); background: #191920;
+}
+.sheet .foot { margin-top: 16px; color: var(--faint); font-size: 11.5px; }
+/* A key named inside a sentence rather than in the column beside it — "j and k do the same".
+   The strings mark it with backticks, which everywhere else on this page means the code face;
+   here what is between them is a key, so it is drawn as one. */
+.sheet dd code { font: 500 11px/1 var(--ui); border: 1px solid #2c2c35; border-radius: 5px; padding: 2px 5px; color: var(--ink); background: #191920; }
+
+/* The settings sheet. Same furniture as the shortcuts card — one pattern for "a small thing
+   over the page" — with rows rather than a definition list. */
+.sheet .block { margin-bottom: 4px; }
+.sheet .block b { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
+.sheet .block .say { margin: 0 0 10px 0; color: var(--dim); font-size: 12.5px; line-height: 1.5; }
+/* A key named inside one of these sentences, drawn the way the shortcuts card draws one — the
+   strings mark it with backticks, and what is between them here is something to press. */
+.sheet .block .say code { font: 500 11px/1 var(--ui); border: 1px solid #2c2c35; border-radius: 5px; padding: 2px 5px; color: var(--ink); background: #191920; }
+.sheet .block .row { display: flex; flex-wrap: wrap; gap: 8px; }
+.sheet .block .row .chip { padding: 7px 12px; font-size: 12.5px; }
+.sheet .assistant-icon-setting { display: inline-flex; align-items: center; gap: 7px; }
+.sheet .assistant-icon-setting .marks { display: inline-flex; align-items: center; gap: 3px; }
+/* What just happened, said where it happened rather than in a toast that has gone by the time
+   somebody looks up from their lock screen. */
+.sheet .block .said { margin: 10px 0 0 0; color: var(--accent); font-size: 12.5px; line-height: 1.5; }
+.sheet .block .said:empty { display: none; }
+.sheet .block .said.calm { color: var(--dim); }
+.sheet .foot span:empty { display: none; }
+/* The way out. Esc and a tap outside both work and neither is discoverable on a phone, which is
+   the screen this sheet is mostly opened on. */
+.sheet .chip.wide { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; }
+.confirm-sheet { width: min(390px, 100%); }
+.confirm-sheet .say { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.55; }
+.confirm-sheet .buttons {
+    display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;
+}
+.confirm-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
+.confirm-sheet .confirm-go { border-color: var(--accent-ed); color: var(--accent); }
+.confirm-sheet[data-kind="end"] .confirm-go { border-color: #57362e; color: #e09985; }
+.confirm-sheet .confirm-go .busy {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+}
+.confirm-sheet .confirm-go canvas { flex: 0 0 auto; display: block; }
+
+/* Where a new session may be started — the same furniture again, with the Mac's own list of
+   places in it. There is no path to type here and there is no route that would take one: what
+   is offered is what the Mac offered, and what goes back is the id it put on the row. */
+.sheet .find {
+    display: block; width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--line); border-radius: 9px;
+    padding: 7px 10px; margin-bottom: 8px;
+    font-size: 13px; color: var(--ink);
+}
+.sheet .find::placeholder { color: var(--faint); }
+.sheet .find:focus { outline: none; border-color: var(--accent-ed); background: var(--card-hi); }
+.sheet .find[hidden] { display: none; }
+.sheet .places { list-style: none; margin: 0; padding: 0; max-height: min(46vh, 340px); overflow-y: auto; }
+.sheet .places li { margin: 0; }
+.sheet .place {
+    display: grid;
+    /* The same fixed first column as a session row, and for the same reason: these are the same
+       marks, and a five-wide creature next to an eight-wide logo would start two titles in two
+       different places down a list that is read by its titles. */
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 1px 10px; align-items: center;
+    width: 100%; min-height: 44px;          /* a thumb's worth, on the screen this is for */
+    text-align: left;
+    padding: 8px 10px; margin-bottom: 2px;
+    border: 1px solid transparent; border-radius: 9px;
+    background: transparent; color: var(--ink);
+}
+.sheet .place:hover:not(:disabled) { background: var(--card-hi); }
+.sheet .place:active:not(:disabled) { background: var(--line); }
+.sheet .place:disabled { opacity: 0.45; cursor: default; }
+.sheet #start-with { align-items: center; gap: 6px; margin: 2px 0 10px 0; flex-wrap: wrap; }
+.sheet #start-with .with-label { font-size: 11.5px; color: var(--dim); margin-right: 2px; }
+.sheet .place canvas { grid-row: 1 / span 2; align-self: center; justify-self: start; display: block; image-rendering: pixelated; opacity: 0.9; }
+.sheet .place canvas.none { width: 16px; height: 12px; border-radius: 2px; background: #202028; }
+.sheet .place .name {
+    grid-column: 2; font-size: 13.5px; font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sheet .place .where {
+    grid-column: 2;
+    font-family: var(--mono); font-size: 11px; color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The one being started. It keeps its place in the list rather than becoming a spinner
+   somewhere else — what was pressed is what is happening. */
+.sheet .place[data-busy="1"] { opacity: 1; border-color: var(--accent-ed); }
+.sheet .place[data-busy="1"] .where { color: var(--accent); }
+.sheet .place[data-busy="1"] .where {
+    display: flex; align-items: center; gap: 7px;
+}
+.sheet .place[data-busy="1"] .where canvas { flex: 0 0 auto; display: block; }
+
+/* The Session info card.
+   A dossier rather than a form: the model the session is on is the headline, in the mono face
+   and large, because it is the one fact on this card that somebody came here to check or to
+   change. Under it, sections separated by hairlines and headed in small tracked capitals — the
+   tokens as one big number with its parts in four tiles, the plan's windows as bars that grow
+   to their number, the tree as the status line's own marks, and project addresses as links.
+   The card scrolls inside itself so that on a phone the buttons under it stay where a thumb is. */
+.info-sheet {
+    padding: 0; overflow: hidden; width: min(480px, 100%);
+    display: flex; flex-direction: column;
+    max-height: calc(var(--vvh) - 48px);
+}
+.info-sheet h2 {
+    margin: 0; padding: 15px 20px 0 20px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);
+}
+.info-sheet .say { margin: 8px 20px 10px 20px; color: var(--dim); font-size: 12.5px; }
+.info-sheet .say[hidden] { display: none; }
+.info-sheet .facts {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    padding: 0 20px 4px 20px;
+}
+.info-sheet .said { margin: 0; padding: 10px 20px 0 20px; color: var(--accent); font-size: 12.5px; line-height: 1.5; }
+.info-sheet .said:empty { display: none; }
+.info-sheet .said.calm { color: var(--dim); }
+.info-sheet .buttons {
+    display: flex; justify-content: flex-end; gap: 8px;
+    padding: 12px 20px 16px 20px; margin-top: 10px; border-top: 1px solid var(--line);
+}
+.info-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
+
+/* The headline. A faint warmth behind it, in the accent, so the top of the card reads as the
+   top and not as the first of six identical rows. */
+.info-sheet .hero { position: relative; padding: 10px 0 16px 0; }
+.info-sheet .hero::before {
+    content: ""; position: absolute; left: -20px; right: -20px; top: -46px; height: 150px;
+    background: radial-gradient(58% 78% at 14% 34%, var(--accent-in), transparent 72%);
+    pointer-events: none;
+}
+.info-sheet .hero > * { position: relative; }
+.info-sheet .hero .who { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--dim); }
+.info-sheet .hero .who .assistant-logo { width: 14px; height: 14px; }
+.info-sheet .hero .model {
+    margin: 7px 0 6px 0; font: 500 22px/1.15 var(--mono); letter-spacing: -0.01em; color: var(--ink);
+    overflow-wrap: anywhere;
+}
+.info-sheet .hero .meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 12px; color: var(--faint); }
+.info-sheet .hero .meta .dot { color: var(--line); }
+.info-sheet .hero .meta .sid {
+    font: 12px var(--mono); color: var(--dim); background: none; border: 0; padding: 0; cursor: pointer;
+    border-bottom: 1px dotted var(--faint);
+}
+.info-sheet .hero .meta .sid:hover { color: var(--ink); border-bottom-color: var(--ink); }
+
+/* One section: a hairline, a heading, and whatever the section is made of. They arrive one
+   after another the first time the card is drawn, and only the first time — a refresh that
+   made everything rise again would look like the card had been closed and opened. */
+.info-sheet .sec {
+    padding: 13px 0 15px 0; border-top: 1px solid var(--line);
+    animation: info-rise 320ms var(--ease) both; animation-delay: calc(var(--i, 0) * 45ms);
+}
+.info-sheet .facts.again .sec { animation: none; }
+@keyframes info-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.info-sheet .sec h3 {
+    margin: 0 0 10px 0; display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);
+}
+.info-sheet .sec h3 .aside { font: 12px var(--mono); letter-spacing: 0; text-transform: none; color: var(--dim); min-width: 0; overflow-wrap: anywhere; text-align: right; }
+.info-sheet .sec h3 .aside .ab { color: var(--accent); }
+.info-sheet .sec .note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--faint); }
+/* A door beside a fact that cannot be read: a small ring with a question mark in it, to the
+   page of the manual that says why and what to install. Drawn faint, since the sentence beside
+   it already says what it says; lit in the accent under a finger. */
+.info-sheet .sec .note .why {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; margin-left: 3px; vertical-align: -3px;
+    border: 1px solid var(--dim); border-radius: 50%;
+    font: 600 10px/1 var(--mono); color: var(--dim); text-decoration: none;
+}
+.info-sheet .sec .note .why:hover { border-color: var(--accent); color: var(--accent); }
+
+/* The models, as things a finger can hit. The one the session is on is filled in the accent;
+   one that has been asked for and not yet answered is drawn in a dashed line, which is the
+   card's way of saying "sent, not seen". A word typed instead of picked goes in the box. */
+.info-sheet .models { display: flex; flex-wrap: wrap; gap: 6px; }
+.info-sheet .models .m {
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px;
+    font: 12px var(--mono); color: var(--dim); background: var(--card); cursor: pointer;
+}
+.info-sheet .models .m:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); border-color: #33333c; }
+.info-sheet .models .m[data-on="1"] { border-color: var(--accent-ed); background: var(--accent-in); color: var(--accent); }
+.info-sheet .models .m[data-pending="1"] { border-style: dashed; border-color: var(--accent-ed); color: var(--accent); }
+.info-sheet .models .m:disabled { cursor: default; }
+.info-sheet .models .m:disabled:not([data-on="1"]):not([data-pending="1"]) { opacity: 0.45; }
+.info-sheet .models .other { display: flex; gap: 6px; flex: 1 1 100%; margin-top: 4px; }
+.info-sheet .models .other input {
+    flex: 1 1 auto; min-width: 0; font: 12px var(--mono); color: var(--ink);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px;
+}
+.info-sheet .models .other input::placeholder { color: var(--faint); font-family: var(--ui); }
+.info-sheet .models .other input:focus { outline: none; border-color: var(--accent-ed); }
+.info-sheet .models .other input:disabled { opacity: 0.45; }
+.info-sheet .models .other .chip { padding: 6px 12px; }
+
+/* The tokens: the total, large and light, then its four parts in tiles. */
+.info-sheet .big { display: flex; align-items: baseline; gap: 8px; margin: -2px 0 10px 0; }
+.info-sheet .big .n { font: 300 30px/1 var(--mono); letter-spacing: -0.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.info-sheet .big .unit { font-size: 12px; color: var(--faint); }
+.info-sheet .big .cost { margin-left: auto; font: 500 13px var(--mono); color: var(--accent); }
+.info-sheet .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.info-sheet .grid .cell { min-width: 0; padding: 8px 9px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
+.info-sheet .grid .cell b { display: block; font: 500 13px var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.info-sheet .grid .cell i { display: block; margin-top: 3px; font-style: normal; font-size: 10.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 420px) { .info-sheet .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* A plan window: its name, a bar, the number. The bar grows to the number after the paint —
+   see `Info.draw` — and the thresholds are the status line's, so both turn amber on the same
+   day. */
+.info-sheet .win { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 3px 10px; align-items: center; margin: 7px 0; }
+.info-sheet .win .wn { font: 500 12px var(--mono); color: var(--dim); }
+.info-sheet .win .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.info-sheet .win .bar i { display: block; height: 100%; width: var(--w, 0%); border-radius: 3px; background: var(--ok); transition: width 560ms var(--ease); }
+.info-sheet .win[data-level="warn"] .bar i { background: var(--warn); }
+.info-sheet .win[data-level="bad"] .bar i { background: var(--bad); }
+.info-sheet .win .pct { min-width: 40px; text-align: right; font: 500 12px var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.info-sheet .win[data-level="bad"] .pct { color: var(--bad); }
+.info-sheet .win .when { grid-column: 2 / 4; font-size: 11px; color: var(--faint); }
+
+/* The tree, in the status line's marks: `+` staged, `*` changed, `?` untracked, `!` conflict. */
+.info-sheet .marks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.info-sheet .marks .mk { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--dim); }
+.info-sheet .marks .mk b { font: 500 13px var(--mono); color: var(--ink); }
+.info-sheet .marks .mk[data-k="staged"] b { color: var(--ok); }
+.info-sheet .marks .mk[data-k="untracked"] b { color: var(--warn); }
+.info-sheet .marks .mk[data-k="conflict"] b { color: var(--bad); }
+.info-sheet .marks .mk[data-k="clean"] b { color: var(--ok); }
+
+/* A project address: a light, a name, the state word, and where it is. Web addresses open;
+   local artifacts remain honest text because a phone cannot open a file on the Mac. */
+.info-sheet .dep-row + .dep-row { border-top: 1px solid var(--line); }
+.info-sheet .dep { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 12px; color: var(--dim); text-decoration: none; }
+.info-sheet .dep .dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.info-sheet .dep[data-state="ok"] .dot { background: var(--ok); }
+.info-sheet .dep[data-state="running"] .dot { background: var(--warn); box-shadow: 0 0 0 3px rgba(176, 138, 74, 0.22); }
+.info-sheet .dep[data-state="fail"] .dot, .info-sheet .dep[data-state="down"] .dot { background: var(--bad); }
+.info-sheet .dep .lbl { color: var(--ink); font-weight: 500; }
+.info-sheet .dep .host { margin-left: auto; min-width: 0; max-width: 55%; font: 11px var(--mono); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.info-sheet .dep-note { margin: -2px 0 7px 15px; font-size: 11px; line-height: 1.45; color: var(--faint); overflow-wrap: anywhere; }
+a.dep:hover .host { color: var(--accent); }
+
