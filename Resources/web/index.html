@@ -6,11 +6,24 @@
      the layout instead, and is: nothing on the page needs magnifying to be read, every text
      field is at least 16px on a touch screen so that focusing one cannot zoom the page either,
      and the page itself never scrolls sideways whatever a session prints into it. -->
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<!-- **No `viewport-fit=cover`, and no translucent status bar below.** Both were here, and
+     together on an iPhone added to the home screen they left a strip of dead page along the
+     bottom of every screen: measured on a 15 Pro it was 59 points — not the home indicator's 34,
+     but exactly the *top* inset. iOS was handing the web app the safe height and then drawing it
+     from the top of the display, so the shortfall came out at the far end, and no padding inside
+     the page could fill something the page did not extend into.
+     Without `cover`, iOS lays the view out inside the safe area itself and every
+     `env(safe-area-inset-*)` is zero by definition — which is why there are none left in here.
+     Checked against another home-screen app on the same phone the same afternoon: it declares
+     neither of these, and its bottom bar sits flush on the edge. -->
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="color-scheme" content="dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="clawdline">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- `black` rather than `black-translucent`: see the viewport note. Translucent is what put the
+     view's top edge under the clock, and this page is `#0e0e11`, so a black strip above it is a
+     shade nobody can pick out. -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="theme-color" content="#0e0e11">
 <title>clawdline</title>
 <link rel="manifest" href="/manifest.webmanifest" id="manifest-link">
@@ -114,10 +127,30 @@ document.documentElement.className = "booting";
     --radius: 11px;
     --head-h: 52px;
     --status-h: 34px;
-    --safe-t: env(safe-area-inset-top, 0px);
-    --safe-b: env(safe-area-inset-bottom, 0px);
-    --safe-l: env(safe-area-inset-left, 0px);
-    --safe-r: env(safe-area-inset-right, 0px);
+
+    /* What the home indicator asks for, and only that.
+
+       It cannot be `env(safe-area-inset-bottom)`: that reports zero without `viewport-fit=cover`,
+       and this page dropped `cover` on purpose — see the note on the viewport tag. iOS keeps the
+       view clear of the clock and the notch on its own, but it still draws it down to the
+       physical bottom edge, and the indicator is a five-point pill sitting about thirteen points
+       up from there. Measured on a 15 Pro with the row flush: the words ended eleven points off
+       the edge, which is under the pill.
+
+       **Thirty-four, the full inset, because everything on this edge is pressed.** The status
+       line is a button — it opens the Session info card — and the notifications footer is a
+       button as well, and a control whose lower half sits in the strip iOS watches for the
+       swipe-up gesture is a control that misses. This is what a native tab bar does with the
+       same edge: the icons and their labels sit entirely above the inset and only the bar's
+       background carries on down into it. Twelve was the number for a row you only read, and
+       this row is not one. */
+    --indicator: 0px;
+    /* **There are no safe-area variables here, and that is the point.** `env(safe-area-inset-*)`
+       reports zero unless the page asked for `viewport-fit=cover`, and this one no longer does —
+       see the note on the viewport tag for the strip of dead screen that bought. iOS keeps the
+       view clear of the clock and the notch on its own now, so a page that padded itself for
+       those as well would be reserving the same strip twice. The bottom edge it does not keep
+       clear, which is what `--indicator` above is for. */
 
     /* The visible viewport, kept up to date by the script. Declared here so that the first
        paint has a real value rather than a fallback, and so a browser with no `visualViewport`
@@ -126,6 +159,14 @@ document.documentElement.className = "booting";
     --vvt: 0px;
 
     --ease: cubic-bezier(.2, .7, .2, 1);
+}
+
+/* Keyed on the pointer as well as the width: a browser window dragged narrow on a desk has no
+   indicator to clear, and a hairline of nothing under the status line there would be a hairline
+   of nothing for no reason. A touch screen with no indicator — an SE, most Androids — pays
+   twelve pixels it did not need, which is a margin rather than a gap. */
+@media (pointer: coarse) and (max-width: 899px) {
+    :root { --indicator: 34px; }
 }
 
 /* ==========================================================================
@@ -189,8 +230,8 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    ========================================================================== */
 .top {
     flex: 0 0 auto;
-    height: calc(var(--head-h) + var(--safe-t));
-    padding: var(--safe-t) calc(14px + var(--safe-r)) 0 calc(14px + var(--safe-l));
+    height: var(--head-h);
+    padding: 0 14px;
     display: flex;
     align-items: center;
     gap: 12px;
@@ -247,7 +288,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .stale {
     flex: 0 0 auto;
     display: flex; align-items: center; gap: 10px;
-    padding: 7px calc(12px + var(--safe-r)) 7px calc(12px + var(--safe-l));
+    padding: 7px 12px;
     border-bottom: 1px solid var(--line);
     background: var(--card);
     color: var(--dim);
@@ -271,7 +312,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .starting {
     flex: 0 0 auto;
     display: flex; align-items: center; gap: 9px;
-    padding: 7px calc(12px + var(--safe-r)) 7px calc(12px + var(--safe-l));
+    padding: 7px 12px;
     border-bottom: 1px solid var(--line);
     background: var(--card);
     color: var(--dim);
@@ -311,7 +352,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    ========================================================================== */
 .filter-row {
     flex: 0 0 auto;
-    padding: 10px 12px 10px calc(12px + var(--safe-l));
+    padding: 10px 12px;
     display: flex; align-items: center; gap: 8px;
     border-bottom: 1px solid var(--line);
 }
@@ -345,9 +386,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .filter-row .start:hover { background: var(--card-hi); color: var(--ink); }
 .filter-row .start svg { display: block; width: 15px; height: 15px; }
 
-/* The notifications footer. It owns the bottom edge of this column, which is why the scroller
-   above it no longer pays for the home indicator: two things counting the same inset is how the
-   composer in the other column ended up floating in a band of nothing.
+/* The notifications footer. It owns the bottom edge of this column.
 
    Two weights, and which one is on screen is decided by which of them is still worth pressing.
    **Off is the state that needs a press**, and as a bordered chip down here it was not getting
@@ -359,7 +398,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .notify {
     flex: 0 0 auto;
     display: flex; flex-direction: column; align-items: stretch; gap: 7px;
-    padding: 10px calc(12px + var(--safe-r)) max(10px, var(--safe-b)) calc(12px + var(--safe-l));
+    padding: 10px 12px calc(10px + var(--indicator));
     border-top: 1px solid var(--line);
     color: var(--faint); font-size: 11.5px;
     line-height: 1.35;
@@ -389,14 +428,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    "this browser cannot", which are explanations rather than things to do. What stays out here is
    the state that is asking to be pressed. */
 .notify[hidden] { display: none; }
-/* The footer was paying for the home indicator on behalf of the scroller above it. With the
-   footer gone the scroller has to pay again, or the last row sits under the indicator. */
-.pane-list[data-notify="off"] .list-scroll { padding-bottom: max(14px, var(--safe-b)); }
-
 /* ==========================================================================
    The session list
    ========================================================================== */
-.list-scroll { flex: 1 1 auto; padding: 8px 10px 14px calc(10px + var(--safe-l)); }
+.list-scroll { flex: 1 1 auto; padding: 8px 10px 14px; }
 .rows { position: relative; list-style: none; margin: 0; padding: 0; }
 
 .row {
@@ -546,6 +581,12 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .empty { padding: 40px 18px; text-align: center; color: var(--faint); font-size: 13px; }
 .empty b { display: block; color: var(--dim); font-weight: 500; margin-bottom: 5px; }
 
+/* The quiet first screen is allowed to feel like the product rather than an error page. On a
+   desktop the artwork lives in the unused transcript pane; on a phone, where that pane is off
+   screen until a session opens, the same picture belongs to the genuinely empty list instead.
+   The words remain the existing localized empty-state copy and the bitmap is decoration only. */
+.empty.home-hero-list { position: relative; }
+
 /* Pull to refresh, phones only. */
 .ptr {
     height: 0; overflow: hidden;
@@ -612,7 +653,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .detail-head {
     flex: 0 0 auto;
     display: flex; align-items: center; gap: 10px;
-    padding: 10px calc(14px + var(--safe-r)) 10px 14px;
+    padding: 10px 14px;
     border-bottom: 1px solid var(--line);
     min-height: 50px;
 }
@@ -649,7 +690,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .agent-head {
     flex: 0 0 auto;
     display: flex; align-items: center; gap: 8px;
-    padding: 10px calc(14px + var(--safe-r)) 10px 6px;
+    padding: 10px 14px 10px 6px;
     border-bottom: 1px solid var(--line);
     min-height: 50px;
 }
@@ -676,13 +717,35 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .session-actions {
     position: absolute; z-index: 45;
     top: calc(100% + 9px); left: -7px;
-    width: 168px;
+    width: 184px;
     padding: 5px;
     border: 1px solid var(--line); border-radius: 10px;
     background: #1a1a20;
     box-shadow: 0 14px 36px rgba(0, 0, 0, 0.48);
 }
 .session-actions[hidden] { display: none; }
+.session-action-stage {
+    display: grid; overflow: hidden; border-radius: 7px;
+}
+.session-action-level {
+    grid-area: 1 / 1; min-width: 0;
+    transform: translateX(0); opacity: 1; visibility: visible;
+    transition: transform 190ms var(--ease), opacity 150ms ease-out, visibility 0s linear;
+    will-change: transform, opacity;
+}
+/* Both levels stay in the grid so the popover keeps one measured height while they trade
+   places. `inert` in the script makes the off-stage level unreachable; these states only draw
+   the push. Entering Git sends the main actions left and brings Git in from the right. */
+.session-action-level[data-place="left"] {
+    transform: translateX(calc(-100% - 10px)); opacity: 0; visibility: hidden;
+    pointer-events: none;
+    transition: transform 190ms var(--ease), opacity 150ms ease-out, visibility 0s linear 190ms;
+}
+.session-action-level[data-place="right"] {
+    transform: translateX(calc(100% + 10px)); opacity: 0; visibility: hidden;
+    pointer-events: none;
+    transition: transform 190ms var(--ease), opacity 150ms ease-out, visibility 0s linear 190ms;
+}
 .session-actions::before {
     content: ""; position: absolute; top: -5px; left: 14px;
     width: 8px; height: 8px;
@@ -698,6 +761,12 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .session-actions button:hover:not(:disabled),
 .session-actions button:focus-visible { background: var(--card-hi); }
 .session-actions button:disabled { opacity: 0.42; cursor: default; }
+.session-actions button .next { margin-left: auto; color: var(--faint); font-size: 16px; }
+.session-actions .level-back {
+    margin-bottom: 4px; padding-bottom: 9px;
+    border-bottom: 1px solid var(--line); border-radius: 7px 7px 0 0;
+    color: var(--dim); font-family: var(--ui);
+}
 .session-actions .end {
     margin-top: 4px; padding-top: 9px;
     border-top: 1px solid var(--line); border-radius: 0 0 7px 7px;
@@ -718,7 +787,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .git-panel-head {
     flex: 0 0 auto;
     display: flex; align-items: center; gap: 9px;
-    padding: 13px calc(16px + var(--safe-r)) 12px 18px;
+    padding: 13px 16px 12px 18px;
     border-bottom: 1px solid var(--line);
 }
 .git-panel-head h2 {
@@ -784,6 +853,36 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     overflow-wrap: anywhere;
     word-break: break-word;
 }
+.tx-scroll.home { padding: 0; }
+.tx.home { max-width: none; width: 100%; min-height: 100%; }
+.home-hero {
+    position: relative; isolation: isolate; overflow: hidden;
+    min-height: 100%;
+    display: flex; align-items: center;
+    padding: clamp(38px, 7vw, 96px);
+    background: #0e0e11;
+}
+.home-hero::before {
+    content: ""; position: absolute; inset: 0; z-index: -2;
+    background: url("/hero-orchestration.webp") center center / cover no-repeat;
+}
+/* Keep the copy readable without putting an obvious dark panel on top of an image whose own
+   negative space was composed for it. The second fade lets the artwork disappear into the UI
+   instead of ending at the edge of the generated frame. */
+.home-hero::after {
+    content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background:
+        linear-gradient(90deg, rgba(14,14,17,0.08) 0%, rgba(14,14,17,0.02) 42%, rgba(14,14,17,0.20) 100%),
+        linear-gradient(180deg, rgba(14,14,17,0.34), transparent 22%, transparent 78%, rgba(14,14,17,0.78));
+}
+.home-hero .copy { max-width: 340px; transform: translateY(-4%); }
+.home-hero .rule { display: block; width: 34px; height: 2px; margin-bottom: 18px; background: var(--accent); }
+.home-hero h1 {
+    margin: 0 0 10px; max-width: 11ch;
+    color: var(--ink); font-size: clamp(27px, 3vw, 46px); line-height: 1.04;
+    font-weight: 620; letter-spacing: -0.035em;
+}
+.home-hero p { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.55; }
 
 .entry {
     display: grid;
@@ -873,6 +972,16 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .entry .body hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
 .entry .body a { color: #8cbaf9; text-decoration: underline; text-underline-offset: 2px; }
 .entry .body a:hover { color: #a9cbfb; }
+/* Codex file references use Markdown links whose target is an absolute path on the Mac.
+   A phone cannot open that path, but showing `[label](/the/entire/path:line)` as punctuation is
+   not an honest fallback either. Draw the useful half as a file-shaped inline label, without a
+   pointer cursor or underline that would promise a navigation the browser cannot perform. */
+.entry .body .local-ref {
+    font-family: var(--mono); font-size: 0.92em;
+    color: #8cbaf9;
+    background: rgba(140, 186, 249, 0.09);
+    border-radius: 4px; padding: 1px 4px;
+}
 .entry .body del { color: var(--faint); }
 .entry .body strong { font-weight: 650; }
 
@@ -917,6 +1026,69 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    steps were folded away is the part that cannot be guessed from the rest of the page. */
 .entry.folded .pill .what { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry.folded .pill[aria-expanded="true"] { border-style: solid; }
+
+/* The call that has not come back yet.
+
+   A folded run is a count, and a count that is still climbing looks exactly like a count that
+   stopped climbing an hour ago. The line above says the session is working; nothing said *this*
+   is the part of it being worked on, so a reader watching a number change had to notice the
+   number changing.
+
+   A light passing over it, the same sweep the Send button wears while a message is going out and
+   for the same reason: a sheen crossing something that has otherwise not moved reads as work in
+   flight, where a blink of the whole row reads as a fault. The text keeps its own contrast the
+   whole way — nothing here is drawn in a colour that comes and goes. The accented border does
+   the other half of the job on a still frame, so a screenshot still says which run this is.
+
+   Folded, it is on the pill; opened, on the last row in the run, which is the call actually
+   running. Never on both: two things sweeping in the same block is a page with a fault in it. */
+.entry.folded[data-live] .pill,
+.entry.toolrow[data-live] .toolline {
+    position: relative; overflow: hidden;
+}
+/* The still frame has to say it too — a screenshot, a paused animation, a reader who has asked
+   for less movement. Border, text and a wash of the accent behind the chip, all of which stay
+   put; the sweep is what is added on top of that, not the whole message. */
+.entry.folded[data-live] .pill {
+    border-color: var(--accent-ed); color: var(--dim);
+    background: rgba(217, 119, 87, 0.05);
+}
+.entry.folded[data-live] .pill::after,
+.entry.toolrow[data-live] .toolline::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    /* Measured on the pill, which is the small case: a chip twenty pixels tall and a hundred
+       and fifty wide gives the gradient very little room, so the stops are close together and
+       the peak carries the whole crossing. A tool row is wider, so the same stops are spread
+       further and land softer, which is the right way round.
+
+       The peak was a third of the accent to begin with and read as a highlight sliding over the
+       chip — the eye went to it rather than to the count it is about. A fifth still crosses
+       visibly at this size and stays behind the text where it belongs. */
+    background: linear-gradient(100deg,
+        rgba(217, 119, 87, 0) 30%,
+        rgba(217, 119, 87, 0.20) 50%,
+        rgba(217, 119, 87, 0) 70%);
+    background-size: 220% 100%;
+    /* `linear`, where the Send button's identical sweep is eased. The button's easing is a press
+       that starts fast and settles; this is a heartbeat, and under `--ease` it spent five sixths
+       of every cycle parked off the end of the pill with one visible flick in between — which
+       reads as a glitch rather than as a rhythm.
+
+       Slower than the button's, too, and for the opposite reason. The button's sweep answers a
+       press that has just happened, so it is quick; this one sits under a run that can go on for
+       minutes, and at a pace that fast it is something to be looked at. Two and a bit seconds is
+       a pulse in the corner of the eye rather than a thing flashing. */
+    animation: sweep 2.2s linear infinite;
+}
+/* The sweep goes and one dim accent wash stays: still visibly the live run, with nothing moving.
+   Left to the blanket rule above it would freeze wherever the animation happened to be, which is
+   a highlight parked at a random point across the row. */
+@media (prefers-reduced-motion: reduce) {
+    .entry.folded[data-live] .pill::after,
+    .entry.toolrow[data-live] .toolline::after {
+        animation: none; background: rgba(217, 119, 87, 0.08);
+    }
+}
 
 /* One line per tool call, and nothing more until it is asked for.
    The wall this replaces was the page at its worst: an agent doing ordinary work would put six
@@ -1003,15 +1175,13 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .composer {
     flex: 0 0 auto;
     border-top: 1px solid var(--line);
-    /* `max` rather than `calc`: the home indicator's inset is already clearance, and adding
-       ten more pixels underneath it is ten pixels of nothing. Ten is the floor for a screen
-       that has no inset at all. */
-    padding: 10px 14px max(10px, var(--safe-b)) 14px;
+    /* No safe-area inset — nothing on this page has one; see the note on the viewport tag. And
+       the status line sits under this in any case. */
+    padding: 10px 14px;
     background: #0d0d11;
     /* A `<form>` carries a bottom margin of one em from the browser's own stylesheet, and one em
-       here is fourteen pixels of nothing under the composer — which on a phone, stacked on top of
-       the home indicator's inset, is the band of dead space that made the box look like it was
-       floating rather than sitting on the bottom edge. */
+       here is fourteen pixels of nothing under the composer — the band of dead space that made
+       the box look like it was floating rather than sitting where it was put. */
     margin: 0;
 }
 .composer .box {
@@ -1197,7 +1367,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .live {
     flex: 0 0 auto;
     display: flex; align-items: center; gap: 7px;
-    padding: 7px calc(14px + var(--safe-r)) 0 14px;
+    padding: 7px 14px 0;
     color: var(--dim);
     font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
     overflow: hidden;
@@ -1298,7 +1468,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    something still going and the tint under the row being read. */
 .agents {
     flex: 0 0 auto;
-    padding: 7px calc(14px + var(--safe-r)) 8px 14px;
+    padding: 7px 14px 8px;
     border-top: 1px solid var(--line);
 }
 .agents[hidden] { display: none; }
@@ -1375,11 +1545,18 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 
 /* ==========================================================================
    Session status — the useful half of the terminal's own status line
+   The foot of the conversation column, on every screen. See the markup for why
+   it is in the column rather than across the window, and `--indicator` for the
+   twelve pixels it holds back on a phone and nowhere else.
    ========================================================================== */
 .status-line {
     flex: 0 0 auto;
-    height: calc(var(--status-h) + var(--safe-b));
-    padding: 0 calc(14px + var(--safe-r)) var(--safe-b) calc(14px + var(--safe-l));
+    /* The row, plus whatever the home indicator needs under it — nothing at all on a desk. This
+       is the element that touches the bottom edge of the view, so it is the one that holds that
+       back; `--indicator` says how much and why it is a constant rather than an `env()`. The
+       height grows with it so the words stay centred in their own 34 pixels. */
+    height: calc(var(--status-h) + var(--indicator));
+    padding: 0 14px var(--indicator);
     display: flex; align-items: center;
     border-top: 1px solid var(--line);
     background: rgba(14, 14, 17, 0.9);
@@ -1387,7 +1564,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     overflow: hidden;
 }
 .status-line .open {
-    width: 100%; min-width: 0; height: 100%;
+    /* `flex: 0 1 auto` and not the full width it used to take: the row holds three things now
+       and this is the first of them. It gives way before the plan windows do, because a model
+       name is the one thing here that ellipsises without losing its meaning. */
+    flex: 0 1 auto; min-width: 0; height: 100%;
     display: flex; align-items: center; gap: 0;
     text-align: left; color: inherit;
 }
@@ -1407,9 +1587,22 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .status-line .model .word { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .status-line .usage { color: var(--dim); font-variant-numeric: tabular-nums; }
 .status-line .cost { color: var(--accent); }
-.status-line .files { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.status-line .branch { color: var(--dim); }
-.status-line .mark { margin-left: 7px; color: var(--dim); }
+
+/* The working tree, as its own control — see the markup. It carries the `·` that used to come
+   from the sibling rule inside the button, because it is no longer a sibling of anything in
+   there. */
+.status-line .files {
+    flex: 0 1 auto; min-width: 0; height: 100%;
+    display: flex; align-items: center;
+    color: inherit;
+}
+.status-line .files[hidden] { display: none; }
+.status-line .files::before {
+    content: "·"; flex: 0 0 auto; padding: 0 8px; color: #3a3a44;
+}
+.status-line .files:hover { color: var(--dim); }
+.status-line .branch { color: var(--dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-line .mark { flex: 0 0 auto; margin-left: 7px; color: var(--dim); }
 .status-line .mark[data-k="staged"], .status-line .mark[data-k="clean"] { color: var(--ok); }
 .status-line .mark[data-k="untracked"] { color: var(--warn); }
 .status-line .mark[data-k="conflict"] { color: var(--bad); }
@@ -1425,7 +1618,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .status-line .empty { color: var(--faint); }
 
 /* Keep the model and the plan windows — the two facts that decide the next turn — when the
-   browser is only just wide enough to retain its two-column layout. */
+   browser is only just wide enough to retain its two-column layout. The phone breakpoint below
+   puts the tree back: down there this row has the whole width of the screen rather than the
+   right-hand column of two, and it is the only way into the Git changes sheet that does not go
+   through a menu. */
 @media (max-width: 1080px) {
     .status-line .files { display: none; }
     .status-line .limits { padding-left: 12px; }
@@ -1551,72 +1747,17 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 }
 .sheet .place[data-busy="1"] .where canvas { flex: 0 0 auto; display: block; }
 
-/* Where this project can be opened. The same furniture a third time, with one difference that
-   is the whole reason the sheet exists: these rows are not all the same kind of thing. An `<a>`
-   opens; a `.file` row is a path and a copy button and never an anchor; and either can carry a
-   line underneath saying why it will not work from here. The difference is drawn on the row
-   rather than left to be found out by tapping it on a train. */
-.sheet .links { list-style: none; margin: 0; padding: 0; max-height: min(46vh, 340px); overflow-y: auto; }
-.sheet .links li { margin: 0; }
-.sheet .link {
-    display: grid;
-    grid-template-columns: 20px minmax(0, 1fr) auto;
-    column-gap: 10px; row-gap: 2px; align-items: center;
-    width: 100%; min-height: 44px;          /* a thumb's worth, as on the places list */
-    text-align: left;
-    padding: 8px 10px; margin-bottom: 2px;
-    border: 1px solid transparent; border-radius: 9px;
-    color: var(--ink); text-decoration: none;
-}
-a.link:hover { background: var(--card-hi); }
-a.link:active { background: var(--line); }
-/* A path is not a destination, so the row that holds one does not behave like one. */
-.sheet .link.file { cursor: default; }
-.sheet .link .kind { grid-column: 1; grid-row: 1 / span 2; width: 15px; height: 15px; color: var(--faint); }
-.sheet .link .name {
-    grid-column: 2; grid-row: 1;
-    display: flex; align-items: baseline; gap: 8px; min-width: 0;
-    font-size: 13.5px; font-weight: 500;
-}
-.sheet .link .name .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sheet .link .where {
-    grid-column: 2; grid-row: 2;
-    font-family: var(--mono); font-size: 11px; color: var(--faint);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.sheet .link .copy { grid-column: 3; grid-row: 1 / span 2; padding: 6px 10px; font-size: 11.5px; }
-/* Why this one will not open from here. Under the row rather than beside it: it is a sentence,
-   and it has to be able to be one on a phone. */
-.sheet .link .note {
-    grid-column: 1 / -1; grid-row: 3;
-    margin: 3px 0 0 0; font-size: 11.5px; line-height: 1.45; color: var(--faint);
-}
-/* That thing's own health, said quietly. A server that is down is worth knowing before it is
-   tapped; it is still not the loudest thing on the page, and nothing here outranks a session
-   that is waiting for you. */
-.sheet .link .ping {
-    display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
-    font-size: 11px; font-weight: 400; color: var(--faint);
-}
-.sheet .link .ping::before {
-    content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint);
-}
-.sheet .link .ping[data-state="ok"]::before { background: var(--ok); }
-.sheet .link .ping[data-state="running"]::before { background: var(--warn); }
-.sheet .link .ping[data-state="fail"]::before,
-.sheet .link .ping[data-state="down"]::before { background: var(--bad); }
-
 /* The Session info card.
    A dossier rather than a form: the model the session is on is the headline, in the mono face
    and large, because it is the one fact on this card that somebody came here to check or to
    change. Under it, sections separated by hairlines and headed in small tracked capitals — the
    tokens as one big number with its parts in four tiles, the plan's windows as bars that grow
-   to their number, the tree as the status line's own marks, the deploys as a light and a link.
+   to their number, the tree as the status line's own marks, and project addresses as links.
    The card scrolls inside itself so that on a phone the buttons under it stay where a thumb is. */
 .info-sheet {
     padding: 0; overflow: hidden; width: min(480px, 100%);
     display: flex; flex-direction: column;
-    max-height: calc(var(--vvh) - 48px - var(--safe-t) - var(--safe-b));
+    max-height: calc(var(--vvh) - 48px);
 }
 .info-sheet h2 {
     margin: 0; padding: 15px 20px 0 20px;
@@ -1743,15 +1884,17 @@ a.link:active { background: var(--line); }
 .info-sheet .marks .mk[data-k="conflict"] b { color: var(--bad); }
 .info-sheet .marks .mk[data-k="clean"] b { color: var(--ok); }
 
-/* A deploy: a light, a name, the state word, and where it is — the whole row the link. */
+/* A project address: a light, a name, the state word, and where it is. Web addresses open;
+   local artifacts remain honest text because a phone cannot open a file on the Mac. */
+.info-sheet .dep-row + .dep-row { border-top: 1px solid var(--line); }
 .info-sheet .dep { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 12px; color: var(--dim); text-decoration: none; }
-.info-sheet .dep + .dep { border-top: 1px solid var(--line); }
 .info-sheet .dep .dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
 .info-sheet .dep[data-state="ok"] .dot { background: var(--ok); }
 .info-sheet .dep[data-state="running"] .dot { background: var(--warn); box-shadow: 0 0 0 3px rgba(176, 138, 74, 0.22); }
 .info-sheet .dep[data-state="fail"] .dot, .info-sheet .dep[data-state="down"] .dot { background: var(--bad); }
 .info-sheet .dep .lbl { color: var(--ink); font-weight: 500; }
 .info-sheet .dep .host { margin-left: auto; min-width: 0; max-width: 55%; font: 11px var(--mono); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.info-sheet .dep-note { margin: -2px 0 7px 15px; font-size: 11px; line-height: 1.45; color: var(--faint); overflow-wrap: anywhere; }
 a.dep:hover .host { color: var(--accent); }
 
 /* --------------------------------------------------------------------------
@@ -1764,7 +1907,7 @@ a.dep:hover .host { color: var(--accent); }
     position: fixed; inset: 0; z-index: 80;
     display: flex; align-items: center; justify-content: center;
     background: var(--bg);
-    padding: calc(24px + var(--safe-t)) 20px calc(24px + var(--safe-b)) 20px;
+    padding: 24px 20px;
     overflow-y: auto;
 }
 .door[hidden] { display: none; }
@@ -1840,7 +1983,7 @@ a.dep:hover .host { color: var(--accent); }
 .toast {
     position: fixed; z-index: 70;
     left: 50%; transform: translateX(-50%);
-    bottom: calc(20px + var(--safe-b) + var(--status-h));
+    bottom: calc(20px + var(--status-h));
     background: #1e1e25; border: 1px solid var(--line); border-radius: 10px;
     padding: 9px 14px; font-size: 12.5px; color: var(--ink);
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
@@ -1869,8 +2012,7 @@ a.dep:hover .host { color: var(--accent); }
            one with the browser's own bottom bar hidden — so it runs on underneath that bar, and
            the composer, which is the last thing in it, sits below the edge of what you can see
            with its bottom padding stranded above it. The dynamic unit is the height that is
-           actually on screen right now, so the box lands on the real bottom edge and the only
-           thing left under it is the home indicator's own inset. */
+           actually on screen right now, so the box lands on the real bottom edge. */
         height: var(--vvh, 100dvh);
         /* And it moves with the visible viewport as well. When the keyboard opens, iOS pans what
            you can see rather than moving the layout, so a fixed element stays where the layout
@@ -1879,7 +2021,6 @@ a.dep:hover .host { color: var(--accent); }
         background: var(--bg);
         transform: translateX(100%);
         transition: transform 260ms var(--ease);
-        padding-top: var(--safe-t);
     }
     .app[data-view="detail"] .pane-detail { transform: none; }
     .app[data-view="detail"] .pane-list { visibility: hidden; }
@@ -1897,7 +2038,28 @@ a.dep:hover .host { color: var(--accent); }
     /* One line of header, and the name of the session is the part of it worth keeping. A control
        that cannot be pressed yet is the first thing to go. */
     .detail-head .chip:disabled { display: none; }
-    .status-line { display: none; }
+    /* The status line stays. It used to be hidden here — a desktop luxury — but which model
+       this session is on, what it has cost and how much of the plan's window is left is *more*
+       worth a row away from the machine, not less: it is the reading you cannot get by looking
+       over at the terminal. It is the tightest row on the screen and it earns its 34px. */
+    .status-line { padding-left: 12px; padding-right: 12px; }
+    .status-line .item + .item::before, .status-line .files::before { padding: 0 6px; }
+    .status-line .limits { padding-left: 10px; gap: 10px; }
+    /* **`49.1M`, not `49.1M tokens`.** The unit is seven characters of a row that has to carry
+       a model, a spend, a branch and two plan windows across 390 points, and it is the only
+       thing in it that says the same word every time — the number beside `$35.58` and under a
+       label reading *tokens* on the card this row opens is not going to be read as anything
+       else. It stays on a desk, where the room is there and one less inference is one less. */
+    .status-line .usage .unit { display: none; }
+    /* And the spend goes with it. It is the one number on this row that never changes what
+       happens next — a turn is not stopped by what it has cost, it is stopped by the plan window
+       on the right — and it is the last thing standing between the branch and the edge of a
+       390-point screen. It is the headline of the card the left half of this row opens, which is
+       where somebody goes when the question is actually money.
+       The `·` in front of it goes too: the separator is drawn by the item that follows it. */
+    .status-line .cost { display: none; }
+    /* And the tree comes back — see the note at the 1080px breakpoint. */
+    .status-line .files { display: flex; }
     .filter-row .slash { display: none; }
 
     .row { padding: 13px 14px; margin-bottom: 8px; gap: 4px 12px; }
@@ -1939,14 +2101,42 @@ a.dep:hover .host { color: var(--accent); }
     .row[data-swipe] > .swipe-end:not([hidden]) { display: flex; }
     .row > .swipe-end:active { background: #573028; }
 
-    /* No safe-area inset here. The composer sits under this and is the thing that touches the
-       bottom edge, so it is the one that pays for the home indicator; adding it here as well
-       bought a second inch of nothing between the last message and the box. */
     .tx-scroll { padding: 14px 16px 16px 16px; }
+    .tx-scroll.home { padding: 0; }
+    .home-hero {
+        align-items: flex-start;
+        padding: clamp(40px, 10vh, 76px) 24px 46vh;
+    }
+    .home-hero::before {
+        background-size: auto 72%;
+        background-position: 64% 100%;
+    }
+    .home-hero::after {
+        background: linear-gradient(180deg, rgba(14,14,17,0.02) 0%, rgba(14,14,17,0.20) 38%, rgba(14,14,17,0.62) 100%);
+    }
+    .home-hero .copy { transform: none; max-width: 300px; }
+    .home-hero h1 { font-size: clamp(28px, 9vw, 38px); }
+
+    .empty.home-hero-list {
+        min-height: calc(var(--vvh, 100dvh) - var(--head-h) - 58px);
+        padding: 44px 24px 50vh;
+        text-align: left;
+        background:
+            linear-gradient(180deg, rgba(14,14,17,0) 0%, rgba(14,14,17,0.06) 34%, rgba(14,14,17,0.72) 100%),
+            url("/hero-orchestration.webp") 64% 100% / auto 70% no-repeat;
+    }
+    .empty.home-hero-list::before {
+        content: ""; display: block; width: 30px; height: 2px;
+        margin-bottom: 16px; background: var(--accent);
+    }
+    .empty.home-hero-list b {
+        max-width: 12ch; margin-bottom: 8px;
+        color: var(--ink); font-size: clamp(25px, 8vw, 34px); line-height: 1.08;
+        font-weight: 620; letter-spacing: -0.03em;
+    }
     .entry { grid-template-columns: minmax(0, 1fr); gap: 3px; padding: 9px 0; }
     .entry .who { text-align: left; display: flex; gap: 8px; align-items: baseline; }
     .entry .who time { margin: 0; }
-    .toast { bottom: calc(20px + var(--safe-b)); }
 }
 
 /* ==========================================================================
@@ -2052,7 +2242,13 @@ a.dep:hover .host { color: var(--accent); }
              nobody was finding it. It is also the one place that can hold the sentence iOS
              readers need, which is longer than a button and is the entire feature until they
              have read it. -->
-        <div class="notify" id="notify" data-state="off">
+        <!-- **Hidden until it has been decided.** Whether this device is already subscribed is
+             a question with an answer only the service worker can give, and it is asked over a
+             promise. Marked up visible, the footer painted the "off" state — a filled orange
+             button the width of the column — and then took it away again a few frames later on
+             every reload of an already-subscribed phone. `Push` un-hides it once, when it knows.
+             `data-state` is not set here either, for the same reason: it would be a claim. -->
+        <div class="notify" id="notify" hidden>
             <button class="go" id="notify-go" type="button" hidden>
                 <!-- Drawn here rather than fetched. This page asks the network for nothing it
                      can draw itself, so the bell is a path and not a font, an emoji or a file:
@@ -2082,12 +2278,20 @@ a.dep:hover .host { color: var(--accent); }
                     <canvas id="detail-mark" width="0" height="0"></canvas>
                 </button>
                 <div class="session-actions" id="session-actions" role="menu" hidden>
-                    <button id="session-focus" type="button" role="menuitem">Show on Mac</button>
-                    <button id="session-info" type="button" role="menuitem">Session info</button>
-                    <button id="session-commit" type="button" role="menuitem" data-action="commit">commit</button>
-                    <button id="session-deploy" type="button" role="menuitem" data-action="deploy">deploy</button>
-                    <button id="session-git" type="button" role="menuitem">Git changes</button>
-                    <button class="end" id="session-end" type="button" role="menuitem">Close session</button>
+                    <div class="session-action-stage">
+                        <div class="session-action-level" id="session-actions-main" data-place="current">
+                            <button id="session-focus" type="button" role="menuitem">Show on Mac</button>
+                            <button id="session-info" type="button" role="menuitem">Session info</button>
+                            <button id="session-git-more" type="button" role="menuitem" aria-haspopup="menu">Git <span class="next" aria-hidden="true">›</span></button>
+                            <button class="end" id="session-end" type="button" role="menuitem">Close session</button>
+                        </div>
+                        <div class="session-action-level" id="session-actions-git" data-place="right" aria-hidden="true" inert>
+                            <button class="level-back" id="session-actions-back" type="button" role="menuitem">‹ Session actions</button>
+                            <button id="session-git" type="button" role="menuitem">Git changes</button>
+                            <button id="session-commit" type="button" role="menuitem" data-action="commit">commit</button>
+                            <button id="session-push" type="button" role="menuitem" data-action="push">push</button>
+                        </div>
+                    </div>
                 </div>
             </div>
             <button class="who detail-who" id="detail-actions-title" type="button"
@@ -2096,15 +2300,10 @@ a.dep:hover .host { color: var(--accent); }
                 <div class="sub" id="detail-sub"></div>
             </button>
             <div class="tools">
-                <!-- Everywhere this project can be opened: its site, the deploy that is running
-                     or has failed, whatever its dev stack is serving, the backlog file. A chain
-                     link, because what is behind it is a list of addresses and not one of them.
-
-                     This slot used to hold the transcript's sort order. Which end a transcript
-                     reads from is a preference somebody sets once, and it was holding a place in
-                     the header of every session on a phone for ever; it is behind the wordmark
-                     now, with the rest of what is true of this browser. -->
-                <button class="chip" id="tx-links" type="button"><svg class="ico" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M5.9 8.1a2.3 2.3 0 0 0 3.2 0l2-2a2.3 2.3 0 0 0-3.2-3.2l-.9.9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path><path d="M8.1 5.9a2.3 2.3 0 0 0-3.2 0l-2 2a2.3 2.3 0 0 0 3.2 3.2l.9-.9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg><span id="tx-links-label">Links</span></button>
+                <!-- A fresh read of the conversation. Links moved into the project-mark menu:
+                     they describe the project, while this slot is always within reach on a
+                     phone precisely when somebody needs the newest line of this transcript. -->
+                <button class="chip" id="tx-refresh" type="button"><svg class="ico" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M11.5 5.6A4.8 4.8 0 1 0 11 9.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path><path d="M9.1 2.4h2.8v2.8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></svg><span id="tx-refresh-label">Refresh</span></button>
                 <!-- A screen, because what this does happens on one that is somewhere else. -->
                 <button class="chip" id="tx-focus" type="button"><svg class="ico" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><rect x="1.3" y="2.2" width="11.4" height="7.8" rx="1.3" fill="none" stroke="currentColor" stroke-width="1.3"></rect><path d="M5 12.2h4M7 10v2.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg><span id="tx-focus-label">Show on Mac</span></button>
             </div>
@@ -2164,15 +2363,30 @@ a.dep:hover .host { color: var(--accent); }
             <input id="pick" type="file" accept="image/*" multiple hidden tabindex="-1">
             <div class="why" id="why"></div>
         </form>
+        <!-- The persistent glance at *this* session: the useful half of its terminal's own
+             status line, under the transcript it is about. It is a button because the full
+             Session info card is the expanded form of the same facts.
+
+             Inside the column, and not across the foot of the window. It used to be a sibling
+             of `<main>`, which drew it the full width of the page — so one session's model, its
+             spend and its plan windows ran on underneath the list of all the others, as if they
+             were the app's numbers rather than this conversation's. It is also the thing that
+             touches the bottom edge now, which makes it the one that holds back what the home
+             indicator needs; see `--indicator`. -->
+        <footer class="status-line" id="status-line">
+            <button class="open" id="status-line-open" type="button" disabled></button>
+            <!-- The working tree, and its own control. It used to be a span inside the button
+                 beside it, which meant tapping the one part of this row that is *about* files
+                 opened a card about tokens. What it opens now is the Git changes sheet — the
+                 list those counts are counting — and it is a separate `<button>` because one
+                 control cannot have two answers and a button cannot be nested in a button. -->
+            <button class="files" id="status-line-files" type="button" hidden></button>
+            <!-- The plan windows are a reading and not a control: there is nothing behind them
+                 that is not already on the card the row's left half opens. -->
+            <div class="limits" id="status-line-limits"></div>
+        </footer>
     </section>
 </main>
-
-<!-- The desktop's persistent glance at the open session. It is a button because the full
-     Session info card is the expanded form of the same facts. Phones keep the composer on the
-     bottom edge instead; the status line is hidden at the phone breakpoint above. -->
-<footer class="status-line" id="status-line">
-    <button class="open" id="status-line-open" type="button" disabled></button>
-</footer>
 
 <div class="overlay" id="keys" hidden>
     <div class="sheet" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
@@ -2265,34 +2479,10 @@ a.dep:hover .host { color: var(--accent); }
     </div>
 </div>
 
-<!-- Everything the open session's project has an address for. Its own sheet, and its own route:
-     working these out costs the Mac a `git` invocation and a handful of file reads, and the
-     session list goes out on the event stream every time anything moves. Opening a menu is rare
-     and paying for it then is free.
-
-     The three kinds of row here are three different promises. One opens in this browser. One
-     opens only from the Mac's own network, and saying so beats a tap that times out on mobile
-     data. One is a file, which no browser can open at all — that one is a path to be copied and
-     is deliberately not a link, because a link that does nothing when tapped is worse than a
-     line of text. -->
-<div class="overlay" id="links" hidden>
-    <div class="sheet" role="dialog" aria-modal="true" id="links-sheet" aria-label="Links">
-        <h2 id="links-title">Links</h2>
-
-        <div class="block">
-            <p class="say" id="links-say"></p>
-            <ul class="links" id="links-list"></ul>
-            <p class="said" id="links-said" role="status" aria-live="polite"></p>
-        </div>
-
-        <button class="chip wide" id="links-close" type="button">Close</button>
-    </div>
-</div>
-
 <!-- The Session info card: the expanded form of the persistent status line, for somebody
      who is not at that terminal. What this session is and what model it is on, what it has
-     spent, what is left of the plan's window, how much has changed on disk, and whether the
-     last deploy went out. The status line and card share a short-lived answer so the Mac does
+     spent, what is left of the plan's window, how much has changed on disk, and every address
+     known for its project. The status line and card share a short-lived answer so the Mac does
      not read a transcript that can be fifty megabytes and run `git` twice for the same facts.
      A plan window nobody reported is drawn as *unknown*, never as 0%. -->
 <div class="overlay" id="info" hidden>
@@ -2309,7 +2499,7 @@ a.dep:hover .host { color: var(--accent); }
 </div>
 
 <!-- One confirmation surface for the three actions that change a session. Opening the compact
-     menu is cheap and reversible; sending commit/deploy or ending the session is not, so those
+     menu is cheap and reversible; sending commit/push or ending the session is not, so those
      cross a second, explicit button before anything reaches the Mac. -->
 <div class="overlay" id="action-confirm" hidden>
     <div class="sheet confirm-sheet" id="action-confirm-sheet" role="alertdialog"
@@ -2460,11 +2650,10 @@ function hasKeyboard() {
     // **Only while the keyboard is up.**
     //
     // `visualViewport.height` is not the same as `100dvh` even with no keyboard: on iOS it
-    // reports what is visible, which already stops short of the home indicator, while the
-    // composer separately pads itself by `env(safe-area-inset-bottom)`. Applying both meant the
-    // same strip of screen was reserved twice, and the input sat in a band of dead space about
-    // two indicators tall — visible on a phone and invisible in any desktop browser, because
-    // there the inset is zero and the two measurements agree.
+    // reports what is visible, which already stops short of the home indicator. Sizing the page
+    // to it reserves that strip a second time — this page reserves it nowhere else now, but it
+    // is still not the measurement wanted here, and back when the composer padded itself by the
+    // inset the two together sat the input in a band of dead space two indicators tall.
     //
     // So the override is applied when the view is *meaningfully* shorter than the page, which
     // is the keyboard and nothing else. The threshold is well above any inset and well below
@@ -2904,21 +3093,21 @@ var optimisticBySession = {};
 var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
  "app", "pane-detail", "back", "detail-focus", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
- "session-actions", "session-focus", "session-info", "session-commit", "session-deploy", "session-git", "session-end",
+ "session-actions", "session-actions-main", "session-actions-git", "session-actions-back",
+ "session-focus", "session-info", "session-git-more", "session-git", "session-commit", "session-push", "session-end",
  "detail-actions-title",
  "action-confirm", "action-confirm-sheet", "action-confirm-title", "action-confirm-say",
  "action-confirm-cancel", "action-confirm-go",
- "tx-links", "tx-links-label", "tx-focus", "tx-focus-label", "live", "stale-shut",
+ "tx-refresh", "tx-refresh-label", "tx-focus", "tx-focus-label", "live", "stale-shut",
  "git-panel", "git-title", "git-refresh", "git-close", "git-body",
  "composer", "msg", "send", "why", "waiting", "agents", "skill-menu", "stale", "stale-say", "stale-go",
  "detail-head", "agent-head", "agent-back", "agent-back-label", "agent-name", "agent-sub",
- "status-line", "status-line-open", "keys", "toast", "brand", "brand-mark",
+ "status-line", "status-line-open", "status-line-files", "status-line-limits", "keys", "toast", "brand", "brand-mark",
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
  "settings-notify-go", "settings-notify-test", "settings-notify-said", "settings-version",
  "settings-close", "settings-order", "settings-order-title", "settings-order-say",
  "settings-order-label", "settings-assistant-icons", "settings-assistant-icons-title",
  "settings-assistant-icons-say", "settings-assistant-icons-marks", "settings-assistant-icons-label",
- "links", "links-sheet", "links-title", "links-say", "links-list", "links-said", "links-close",
  "info", "info-sheet", "info-title", "info-say", "info-body", "info-said", "info-refresh", "info-close",
  "start-go", "start", "start-sheet", "start-title", "start-say", "start-with", "start-filter",
  "start-list",
@@ -3514,14 +3703,6 @@ var Live = {
                          post({}, { "Idempotency-Key": uuid() }));
     },
 
-    /// Everything this session's project has an address for. **Asked when the menu opens and
-    /// never with the session list**: this costs the Mac a `git` invocation and a handful of
-    /// file reads per project, and the list goes out on the event stream every time anything
-    /// moves — which is why it is a route of its own rather than a field on a session.
-    links: function (id) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/links");
-    },
-
     /// Branch and file changes are also fetched only when their panel opens. Unlike the command
     /// actions in the same menu this is read-only, and it never rides the event stream.
     git: function (id) {
@@ -3810,10 +3991,6 @@ var Mock = (function () {
             { label: "deploy", url: "https://github.com/example/atrium/actions/runs/32206093412", kind: "deploy", state: "running", local: false }
         ]
     };
-    // `?links=empty` is every project with nothing, and `?links=fail` is the route refusing —
-    // the two states that are otherwise hard to arrange on a machine that has both.
-    var MOCK_LINKS = params.get("links") || "";
-
     // The info card's shapes. A Claude session that has just spent its five-hour window, with
     // the deploy that failed under it; a Claude session whose plan nobody has reported on, in a
     // clean tree; and a Codex session with the plain percentage its rollout carries. Every
@@ -3845,9 +4022,7 @@ var Mock = (function () {
             ], at: now - 90 },
             files: { branch: "main", head: "d5c61e9f91c46a77", ahead: 2, behind: 0,
                      staged: 1, unstaged: 4, untracked: 2, conflict: 0 },
-            deploy: [
-                { label: "ci", url: "https://github.com/example/clawdline/actions/runs/32206093368", kind: "deploy", state: "fail", local: false }
-            ]
+            links: links["8F3A-1C"]
         },
         "2C71-90": {
             models: CLAUDE_MODELS,
@@ -3858,9 +4033,7 @@ var Mock = (function () {
             limits: { windows: [] },
             files: { branch: "fix/signup-500", head: "9a1b2c3d4e5f6071", ahead: 0, behind: 3,
                      staged: 0, unstaged: 0, untracked: 0, conflict: 0 },
-            deploy: [
-                { label: "deploy", url: "https://github.com/example/atrium/actions/runs/32206093412", kind: "deploy", state: "running", local: false }
-            ]
+            links: links["2C71-90"]
         },
         "44D2-05": {
             models: CODEX_MODELS,
@@ -3872,7 +4045,7 @@ var Mock = (function () {
                 { name: "5h", usedPercent: 24, resetsAt: now + 9000, hit: false },
                 { name: "7d", usedPercent: 71, resetsAt: now + 3 * 86400 + 4000, hit: false }
             ], at: now - 12 },
-            deploy: []
+            links: []
         }
     };
     var MOCK_INFO = params.get("info") || "";
@@ -4123,22 +4296,8 @@ var Mock = (function () {
             });
         },
 
-        /** Slower than it looks it should be, on purpose: the real one shells out to `git`, and
-         *  a sheet that has to say "loading" is a sheet that has to have somewhere to say it. */
-        links: function (id) {
-            return new Promise(function (done, fail) {
-                setTimeout(function () {
-                    if (MOCK_LINKS === "fail") {
-                        fail(Object.assign(new Error("No session named that"), { code: "not_found" }));
-                        return;
-                    }
-                    done({ links: MOCK_LINKS === "empty" ? [] : (links[id] || []).slice() });
-                }, 420);
-            });
-        },
-
-        /** Slow for the same reason `links` is, and slower: the real one reads a transcript
-         *  as well as shelling out, and the refresh button has to be seen to be doing something. */
+        /** Slow because the real route reads a transcript and shells out, and the refresh
+         *  button has to be seen to be doing something. */
         info: function (id) {
             return new Promise(function (done, fail) {
                 setTimeout(function () {
@@ -4151,7 +4310,7 @@ var Mock = (function () {
                     done({ info: {
                         session: { id: id, assistant: session.assistant, cwd: session.cwd },
                         limits: { windows: [] },
-                        deploy: [],
+                        links: (links[id] || []).slice(),
                         models: session.assistant === "codex" ? CODEX_MODELS : CLAUDE_MODELS
                     } });
                 }, 640);
@@ -4987,7 +5146,8 @@ function renderList() {
     }
 
     var empty = !list.length && !starting;
-    els["list-empty"].className = "empty";
+    var homeEmpty = empty && !S.sessions.length && !S.filter;
+    els["list-empty"].className = "empty" + (homeEmpty ? " home-hero-list" : "");
     els["list-empty"].hidden = !empty;
     if (empty) {
         // Four of them, and telling them apart is the whole job: nothing matches what was typed,
@@ -5180,10 +5340,10 @@ function renderDetailHead() {
     }
     els["detail-sub"].textContent = sub.join("  ·  ");
     drawIcon(els["detail-mark"], s && s.icon, 5);
-    // Nothing to ask the Mac about with no session open, and the sheet would have no project
-    // to be about. The chip stays on screen: a control that comes and goes with the selection
+    // Nothing to ask the Mac about with no session open. The chip stays on screen: a control
+    // that comes and goes with the selection
     // is a header that moves under whoever is reading it.
-    els["tx-links"].disabled = !s || ending;
+    els["tx-refresh"].disabled = !s || ending;
     // **Hidden unless this page is being read on the Mac itself.**
     //
     // The button brings a session's terminal to the front over there. Pressed from a phone it
@@ -5211,9 +5371,10 @@ function renderDetailHead() {
     // Reading needs no write switch; the menu it sits in already does, and the day the menu
     // opens for a read-only device this row is the one that should still work.
     els["session-info"].disabled = !s || ending;
-    els["session-commit"].disabled = !s || !S.write || ending;
-    els["session-deploy"].disabled = !s || !S.write || ending;
+    els["session-git-more"].disabled = !s || ending;
     els["session-git"].disabled = !s || ending;
+    els["session-commit"].disabled = !s || !S.write || ending;
+    els["session-push"].disabled = !s || !S.write || ending;
     els["session-end"].disabled = !s || !S.write || ending;
     if (!s) { SessionActions.close(); GitPanel.follow(); }
 }
@@ -5221,7 +5382,16 @@ function renderDetailHead() {
 function renderTranscript() {
     var box = els.tx;
     optimisticSpinners = [];
-    if (!S.openId) { box.innerHTML = '<div class="tx-note">' + esc(T.webPickSession) + "</div>"; return; }
+    var home = !S.openId;
+    box.classList.toggle("home", home);
+    els["tx-scroll"].classList.toggle("home", home);
+    if (home) {
+        box.innerHTML = '<section class="home-hero" aria-labelledby="home-hero-title">' +
+            '<div class="copy"><span class="rule" aria-hidden="true"></span>' +
+            '<h1 id="home-hero-title">' + esc(T.webNoSessionOpen) + '</h1>' +
+            '<p>' + esc(T.webPickSession) + '</p></div></section>';
+        return;
+    }
     // The speaker belongs to the open session. Keeping this beside the transcript render means a
     // Codex answer cannot inherit the page's historical Claude default while sessions switch.
     var session = byId(S.openId);
@@ -5257,6 +5427,8 @@ function renderTranscript() {
     // blocks go out in, and a run stays one thing whichever way round the transcript is read.
     var entries = viewEntries.filter(worthDrawing);
     var blocks = [];
+    var liveRun = null;    // the last run of tool calls, and where its block landed
+    var liveAt = -1;
     var i = 0;
     while (i < entries.length) {
         if (entries[i].role !== "tool") { blocks.push(entryHTML(entries[i])); i += 1; continue; }
@@ -5268,7 +5440,16 @@ function renderTranscript() {
         while (i < entries.length && entries[i].role === "tool" && !askOf(entries[i])) {
             run.push(entries[i]); i += 1;
         }
+        liveRun = run; liveAt = blocks.length;
         blocks.push(runHTML(run));
+    }
+    // The run at the end of a session that is still working is the one happening right now: its
+    // count is still climbing and the call at the end of it has not come back yet. Drawn a
+    // second time with the sweep on it, so the part of the page that is moving is the part of
+    // the work that is moving. It has to be the *last* block — a run with an answer written
+    // under it is finished, whatever the session is doing now.
+    if (liveRun && liveAt === blocks.length - 1 && transcriptWorking()) {
+        blocks[liveAt] = runHTML(liveRun, true);
     }
     if (S.newestFirst) blocks.reverse();
     box.innerHTML = transcriptNotice + blocks.join("");
@@ -5281,6 +5462,18 @@ function renderTranscript() {
     // order. A custom event rather than a direct call: this function is the transcript's, and
     // what somebody else needs to do afterwards is their business, not a line in here.
     document.dispatchEvent(new CustomEvent("clawdline:rendered"));
+}
+
+/**
+ * Whether what is on screen is still being written — the session's own state while its
+ * transcript is open, and the agent's while one of its agents is being read. It is the whole
+ * test behind the sweep on the last run: a transcript that has stopped has nothing in flight,
+ * however recently it stopped.
+ */
+function transcriptWorking() {
+    if (S.agent) return !!(S.agent.meta && S.agent.meta.state === "running");
+    var s = byId(S.openId);
+    return !!(s && s.state === "working");
 }
 
 /**
@@ -5325,13 +5518,22 @@ function worthDrawing(e) {
  * same thing about a live run and says it in one line — and the names beside it say what kind of
  * work it is, which thirty wrapped command lines never quite manage to.
  */
-function runHTML(run) {
+function runHTML(run, live) {
     var names = [];
     run.forEach(function (e) { if (e.tool) names.push(e.tool); });
     var key = foldKey(run);
-    if (names.length < 2) return run.map(toolRowHTML).join("");
+    var last = run.length - 1;
+    // `live` marks the one call that has not come back yet, which is the last one in the run.
+    // Written out rather than `run.map(toolRowHTML)`, which would hand `map`'s index in as the
+    // flag and light every row up.
+    function rows(lit) {
+        return run.map(function (e, n) { return toolRowHTML(e, lit && n === last); }).join("");
+    }
+    if (names.length < 2) return rows(live);
     var open = !!S.expanded[key];
-    return foldHTML(key, names, open) + (open ? run.map(toolRowHTML).join("") : "");
+    // Folded, the pill is the only thing standing for the call in flight, so the sweep goes on
+    // the pill; opened, it goes on the row that is actually running.
+    return foldHTML(key, names, open, live && !open) + (open ? rows(live) : "");
 }
 
 /* --------------------------------------------------------------------------
@@ -5430,7 +5632,7 @@ function askHTML(e) {
  * The key is the entry's own content hash with a letter in front, so it cannot collide with the
  * key of the run it sits inside — `S.expanded` is one map and both live in it.
  */
-function toolRowHTML(e) {
+function toolRowHTML(e, live) {
     var key = "e" + foldKey([e]);
     var open = !!S.expanded[key];
     var head = e.tool
@@ -5438,7 +5640,7 @@ function toolRowHTML(e) {
         : '<span class="caret">' + (open ? "⏷" : "⏵") + "</span>";
     // No timestamp on these. A time beside every grep is a column of numbers nobody reads, and
     // the turn above it is already stamped.
-    return '<div class="entry toolrow" data-role="tool">' +
+    return '<div class="entry toolrow" data-role="tool"' + (live ? ' data-live="1"' : "") + ">" +
         '<div class="who">' + esc(WHO.tool) + "</div>" +
         '<div class="body">' +
         '<button type="button" class="toolline" data-fold="' + key +
@@ -5463,8 +5665,8 @@ function firstLine(text) {
  * the bar draws no handle over an opened run, but its own click handler toggles both ways, and
  * a control that deletes itself on use leaves the focus standing on nothing.
  */
-function foldHTML(key, names, open) {
-    return '<div class="entry folded" data-role="tool">' +
+function foldHTML(key, names, open, live) {
+    return '<div class="entry folded" data-role="tool"' + (live ? ' data-live="1"' : "") + ">" +
         '<div class="who">' + esc(WHO.tool) + "</div>" +
         '<div class="body"><button type="button" class="pill" data-fold="' + key +
         '" aria-expanded="' + (open ? "true" : "false") + '">' +
@@ -5787,8 +5989,9 @@ function listHTML(block) {
  *
  * Unmatched markers stay as text, the same rule the bar follows. The one thing this does that
  * the bar does not have to think about is *where a link may point*: a transcript is somebody
- * else's output, so only the three schemes that cannot execute anything are turned into links
- * and everything else is left as the words it was written as.
+ * else's output, so only the three schemes that cannot execute anything are turned into links.
+ * Absolute file paths are a fourth recognised shape, but are labels rather than anchors: they
+ * name a file on the Mac, which a phone browser cannot open.
  */
 function inlineMd(text) {
     var s = esc(text);
@@ -5831,6 +6034,8 @@ function inlineMd(text) {
             if (!bare) {
                 return safeHref(href)
                     ? '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + "</a>"
+                    : localFileHref(href)
+                        ? '<span class="local-ref" title="' + href + '">' + label + "</span>"
                     : all;
             }
             // Punctuation that ends a sentence is not part of the address. A closing bracket is,
@@ -5878,6 +6083,13 @@ function inlineMd(text) {
 /** Only the schemes that cannot run anything. `javascript:` in a transcript is not a link. */
 function safeHref(href) {
     return /^(https?:\/\/|mailto:)/i.test(href.replace(/&amp;/g, "&"));
+}
+
+/** A file on the Mac, not a route on this web app. Ordinary root-relative URLs stay unrecognised. */
+function localFileHref(href) {
+    var value = href.replace(/&amp;/g, "&");
+    return /^\/(Users|private|tmp|var|Volumes|Applications|Library|opt|usr|home)\//.test(value)
+        || /^file:\/\/\//i.test(value);
 }
 
 function renderComposer() {
@@ -6171,12 +6383,13 @@ function paintStatic() {
     // The chevron is drawn, not typed: it points the way back whichever language is beside it.
     text(els.back, "‹ " + T.webBack);
     attr(els.back, "aria-label", T.webBackLabel);
-    text(els["tx-links-label"], T.webLinks);
-    attr(els["tx-links"], "title", T.webLinksTip);
+    text(els["tx-refresh-label"], T.webGitRefresh);
+    attr(els["tx-refresh"], "title", T.webGitRefresh);
     text(els["tx-focus-label"], T.webShowOnMac);
     attr(els["session-actions"], "aria-label", T.webSessionActions);
     text(els["session-focus"], T.webShowOnMac);
     text(els["session-info"], T.webSessionInfo);
+    text(els["session-actions-back"], "‹ " + T.webSessionActions);
     text(els["info-title"], T.webInfoTitle);
     attr(els["info-sheet"], "aria-label", T.webInfoTitle);
     text(els["info-refresh"], T.webInfoRefresh);
@@ -6213,11 +6426,6 @@ function paintStatic() {
     els["settings-order-say"].innerHTML = words(T.webSettingsOrderSay);
     attr(els["settings-order"], "title", T.webOrderTip);
     text(els["settings-close"], T.webClose);
-
-    // The links sheet. Its rows are drawn each time it opens; only the furniture is here.
-    attr(els["links-sheet"], "aria-label", T.webLinks);
-    text(els["links-title"], T.webLinks);
-    text(els["links-close"], T.webClose);
 
     // Starting one. The button carries the short words as its hover text and the long ones as
     // its name, because what a screen reader reads out is the only label a drawn `+` has.
@@ -6491,7 +6699,13 @@ function drawListSkeleton() {
    8. Opening a session
    ========================================================================== */
 
+// Only the newest request may paint the transcript. Opening a session and receiving its stream
+// update can start two reads almost together; without a ticket, the older snapshot can arrive
+// last and erase the final entry that the newer one had already drawn.
+var transcriptTicket = 0;
+
 function loadTranscript(id, quiet) {
+    var ticket = ++transcriptTicket;
     if (!quiet) {
         S.tx = { id: id, entries: [], signature: null, loading: true, error: null };
         // Only the loud kind waits visibly. A refetch behind a transcript that is already on
@@ -6500,7 +6714,9 @@ function loadTranscript(id, quiet) {
         renderTranscript();
     }
     api.transcript(id).then(function (d) {
-        if (S.openId !== id) { Waits.tx.settle(); return; }   // the reader moved on mid-flight
+        // A later request owns both the result and the visible wait. Settling an older request
+        // here would take down the skeleton while the request that superseded it is still out.
+        if (S.openId !== id || ticket !== transcriptTicket) return;
         var received = d.entries || [];
         // Reconcile before trusting the signature. The common first fetch after a send quite
         // correctly says the file is unchanged; that must preserve the echo, while an eventual
@@ -6521,7 +6737,7 @@ function loadTranscript(id, quiet) {
             if (stick) toBottom();
         });
     }).catch(function (e) {
-        if (S.openId !== id) { Waits.tx.settle(); return; }
+        if (S.openId !== id || ticket !== transcriptTicket) return;
         S.tx = { id: id, entries: [], signature: null, loading: false, error: e.message || T.webTranscriptFailed };
         Waits.tx.settle(renderTranscript);
     });
@@ -6536,7 +6752,7 @@ function toBottom() {
     el.scrollTop = el.scrollHeight;
 }
 
-function openSession(id, keepFocus) {
+function openSession(id, keepFocus, forceRefresh) {
     var s = byId(id);
     if (!s || closingID === id) return;
     S.selectedId = id;
@@ -6554,12 +6770,10 @@ function openSession(id, keepFocus) {
         S.expanded = {};
         // And a picture picked for one session is not a picture for the next one.
         Shots.clear();
-        // Nor is a list of one project's addresses a list of the next one's.
-        Links.follow();
         Info.follow();
         GitPanel.follow();
         loadTranscript(id, false);
-    }
+    } else if (forceRefresh) loadTranscript(id, true);
     if (phone()) {
         els.app.dataset.view = "detail";
         // The phone's own back gesture should mean what it looks like it means.
@@ -6587,7 +6801,6 @@ function closeDetail(silent) {
     S.tx = { id: null, entries: [], signature: null, loading: false, error: null };
     S.expanded = {};
     Shots.clear();
-    Links.follow();
     Info.follow();
     GitPanel.follow();
     SkillPicker.close();
@@ -6805,13 +7018,12 @@ document.addEventListener("keydown", function (ev) {
         ev.preventDefault();
         if (!els.info.hidden) { Info.close(); return; }
         // Do not stack one sheet over another. The shortcut remains global while composing, but
-        // a visible settings, links, start or keyboard card owns the next key until it closes.
-        if (els.settings.hidden && els.start.hidden && els.links.hidden && els.keys.hidden) Info.open();
+        // a visible settings, start or keyboard card owns the next key until it closes.
+        if (els.settings.hidden && els.start.hidden && els.keys.hidden) Info.open();
         return;
     }
 
     if (key === "Escape") {
-        if (!els.links.hidden) { Links.close(); return; }
         if (!els.info.hidden) { Info.close(); return; }
         if (!els.start.hidden) { Start.close(); return; }
         if (!els.settings.hidden) { Settings.close(); return; }
@@ -6832,7 +7044,7 @@ document.addEventListener("keydown", function (ev) {
     if (typing(document.activeElement)) return;
     if (meta || ev.altKey) return;
     // A sheet is over the page, so `j` is not "move down the list behind it".
-    if (!els.settings.hidden || !els.start.hidden || !els.links.hidden) return;
+    if (!els.settings.hidden || !els.start.hidden) return;
 
     switch (key) {
         case "ArrowDown": case "j": ev.preventDefault(); move(1); break;
@@ -7000,7 +7212,9 @@ var SwipeRows = (function () {
 })();
 
 els.filter.addEventListener("input", function () { S.filter = els.filter.value; renderList(); });
-els["tx-links"].addEventListener("click", function () { Links.open(); });
+els["tx-refresh"].addEventListener("click", function () {
+    if (S.openId) loadTranscript(S.openId, true);
+});
 els.back.addEventListener("click", function () { closeDetail(); });
 // One listener on the box rather than one per row: the strip repaints every time an agent
 // reaches for a tool, and rebinding half a dozen buttons a second to do nothing new is work
@@ -7038,7 +7252,7 @@ function actionTriggerKey(ev) {
     if (ev.key !== "ArrowDown") return;
     ev.preventDefault(); ev.stopPropagation();
     SessionActions.open(ev.currentTarget);
-    var first = els["session-actions"].querySelector("button:not(:disabled)");
+    var first = SessionActions.items()[0];
     if (first) first.focus({ preventScroll: true });
 }
 els["detail-focus"].addEventListener("keydown", actionTriggerKey);
@@ -7047,7 +7261,7 @@ els["detail-actions-title"].addEventListener("keydown", actionTriggerKey);
 /**
  * The project mark and its title are two handles for the same menu. Bringing the terminal
  * forward is a menu action of its own, so opening the menu never moves focus away from the
- * browser. Git is a read-only view; `commit` and `deploy` are ordinary prompts, while ending
+ * browser. Git is a read-only view; `commit` and `push` are ordinary prompts, while ending
  * uses the server's named two-step route so the assistant quits cleanly before its terminal tab
  * is closed.
  */
@@ -7056,9 +7270,34 @@ var SessionActions = {
     ticket: 0,
     settlingEnd: false,
 
+    onGit: function () {
+        return els["session-actions-git"].dataset.place === "current";
+    },
+
+    level: function (name, focus) {
+        var git = name === "git";
+        var main = els["session-actions-main"], child = els["session-actions-git"];
+        main.dataset.place = git ? "left" : "current";
+        child.dataset.place = git ? "current" : "right";
+        main.setAttribute("aria-hidden", git ? "true" : "false");
+        child.setAttribute("aria-hidden", git ? "false" : "true");
+        main.toggleAttribute("inert", git);
+        child.toggleAttribute("inert", !git);
+        if (focus) {
+            var first = this.items()[0];
+            if (first) first.focus({ preventScroll: true });
+        }
+    },
+
+    items: function () {
+        var level = this.onGit() ? els["session-actions-git"] : els["session-actions-main"];
+        return Array.prototype.slice.call(level.querySelectorAll("button:not(:disabled)"));
+    },
+
     open: function (opener) {
         if (!S.openId) return;
         this.opener = opener || this.opener || els["detail-focus"];
+        this.level("main", false);
         els["session-actions"].hidden = false;
         els["detail-focus"].setAttribute("aria-expanded", "true");
         els["detail-actions-title"].setAttribute("aria-expanded", "true");
@@ -7067,6 +7306,7 @@ var SessionActions = {
     close: function (restore) {
         if (els["session-actions"].hidden) return;
         els["session-actions"].hidden = true;
+        this.level("main", false);
         els["detail-focus"].setAttribute("aria-expanded", "false");
         els["detail-actions-title"].setAttribute("aria-expanded", "false");
         if (restore && this.opener && document.contains(this.opener)) {
@@ -7355,6 +7595,14 @@ els["session-actions"].addEventListener("click", function (ev) {
     if (ev.target.closest && ev.target.closest("#session-info")) {
         SessionActions.close(); Info.open(); return;
     }
+    if (ev.target.closest && ev.target.closest("#session-git-more")) {
+        SessionActions.level("git", true); return;
+    }
+    if (ev.target.closest && ev.target.closest("#session-actions-back")) {
+        SessionActions.level("main", false);
+        els["session-git-more"].focus({ preventScroll: true });
+        return;
+    }
     if (ev.target.closest && ev.target.closest("#session-git")) {
         GitPanel.open(); return;
     }
@@ -7385,10 +7633,16 @@ els["action-confirm"].addEventListener("keydown", function (ev) {
 });
 
 els["session-actions"].addEventListener("keydown", function (ev) {
+    if ((ev.key === "ArrowLeft" || ev.key === "Escape") &&
+        SessionActions.onGit()) {
+        ev.preventDefault(); ev.stopPropagation();
+        SessionActions.level("main", false);
+        els["session-git-more"].focus({ preventScroll: true });
+        return;
+    }
     if (["ArrowDown", "ArrowUp", "Home", "End"].indexOf(ev.key) < 0) return;
     ev.preventDefault(); ev.stopPropagation();
-    var items = Array.prototype.slice.call(
-        els["session-actions"].querySelectorAll("button:not(:disabled)"));
+    var items = SessionActions.items();
     if (!items.length) return;
     var at = items.indexOf(document.activeElement), next;
     if (ev.key === "Home") next = 0;
@@ -7406,6 +7660,7 @@ document.addEventListener("pointerdown", function (ev) {
 
 document.addEventListener("keydown", function (ev) {
     if (ev.key !== "Escape" || els["session-actions"].hidden) return;
+    if (SessionActions.onGit()) return;
     ev.preventDefault(); ev.stopPropagation(); SessionActions.close(true);
 }, true);
 
@@ -7456,7 +7711,9 @@ function openWanted() {
     if (!byId(wantedSession)) return false;
     var id = wantedSession;
     wantedSession = null;
-    openSession(id);
+    // A notification means there is something new to read. Force a transcript read even when
+    // this session was already open and its fragment therefore routes to the same screen.
+    openSession(id, false, true);
     return true;
 }
 
@@ -8002,208 +8259,6 @@ els["start-list"].addEventListener("click", function (ev) {
 });
 els["starting-close"].addEventListener("click", function () { Start.dismiss(); });
 
-/* ---- where this project can be opened ------------------------------------ */
-
-/**
- * Everything the open session's project has an address for.
- *
- * **Asked for when this opens, and never with the session list.** Working these out costs the
- * Mac a `git` invocation and a handful of file reads per project, and the list goes out on the
- * event stream every time anything moves — a field on a session would be a subprocess per
- * session per second to answer a question nobody had asked. So it is a route of its own, and
- * the answer is held for exactly as long as this sheet is on screen: a deploy finishes and a
- * server falls over, and the next open is a fresh question rather than the old answer again.
- *
- * **Three kinds of row, because three different things are true.** One opens in this browser.
- * One is on the Mac's own network and will not open from a phone on mobile data, which is said
- * on the row rather than found out by tapping it. One is a file, which no browser can open from
- * anywhere — that one is a path and a copy button and is deliberately not a link, because a
- * link that does nothing when tapped is worse than a line of text.
- *
- * **An empty list is the ordinary answer.** A project with no CI and no dev stack has nothing
- * here, and that is a sentence rather than an empty box.
- */
-var Links = (function () {
-    /* The four kinds, as four shapes. A globe for something on the web, an arrow leaving a
-       tray for a deploy, a rack for something serving, a page for a file. */
-    var KINDS = {
-        site: '<circle cx="7" cy="7" r="5.3"/><path d="M1.7 7h10.6M7 1.7c1.5 1.6 2.3 3.4 2.3 5.3S8.5 10.7 7 12.3C5.5 10.7 4.7 8.9 4.7 7S5.5 3.3 7 1.7Z"/>',
-        deploy: '<path d="M7 9.3V2.7M4.4 5.3 7 2.7l2.6 2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 8.9v2a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2"/>',
-        server: '<rect x="2.2" y="2.3" width="9.6" height="3.9" rx="1.1"/><rect x="2.2" y="7.8" width="9.6" height="3.9" rx="1.1"/>',
-        artifact: '<path d="M8.2 1.9H4.3a1.1 1.1 0 0 0-1.1 1.1v8.2a1.1 1.1 0 0 0 1.1 1.1h5.4a1.1 1.1 0 0 0 1.1-1.1V4.4z"/><path d="M8.2 1.9v2.5h2.5"/>'
-    };
-    /* That thing's own health, where it has one. An empty `state` is not a state — plenty of
-       these are addresses nobody measures — so it draws nothing rather than "unknown". */
-    var STATES = { ok: "webLinkOk", fail: "webLinkFail", down: "webLinkDown", running: "webLinkRunning" };
-
-    var forId = null;    // whose links these are
-    var rows = null;     // as the Mac sent them; null until an answer has arrived
-    var loading = false;
-    var ticket = 0;      // the answer that is still wanted, so a stale one can be dropped
-
-    function say(w) { els["links-say"].textContent = w || ""; }
-    function said(w, calm) {
-        els["links-said"].textContent = w || "";
-        els["links-said"].className = "said" + (calm ? " calm" : "");
-    }
-
-    function why(e) {
-        if (e && e.code === "offline") return e.message;   // already this page's own sentence
-        return T.webLinksFailed;
-    }
-
-    /**
-     * Whether this page may put the address in an `href`.
-     *
-     * A whitelist, rather than a test for the schemes that are wrong. These strings come out of
-     * a project's own `devstack.json` and out of a status file — which is to say out of a file
-     * in a repository — and `javascript:` in an `href` is script running on this page with this
-     * page's cookie. Anything that is not plainly `http` or `https` is drawn as text.
-     */
-    function openable(url) { return /^https?:\/\//i.test(url || ""); }
-    function isFile(url) { return /^file:\/\//i.test(url || ""); }
-
-    /** The path inside a `file://` URL, spelled the way it is spelled on the disk. */
-    function pathOf(url) {
-        var raw = String(url).replace(/^file:\/\/(localhost)?/i, "");
-        try { return decodeURIComponent(raw); } catch (e) { return raw; }
-    }
-
-    function icon(kind) {
-        return '<svg class="kind" viewBox="0 0 14 14" aria-hidden="true" focusable="false" ' +
-            'fill="none" stroke="currentColor" stroke-width="1.3">' +
-            (KINDS[kind] || KINDS.site) + "</svg>";
-    }
-
-    function rowHTML(l) {
-        var url = String(l.url || "");
-        var file = isFile(url);
-        var open = openable(url);
-        // `local` means the address resolves on the Mac's own network and nowhere else. Read on
-        // the Mac itself that is simply an address and there is nothing to say; reached over a
-        // tunnel, over a LAN address, or on mobile data it is the whole story about that row.
-        var far = l.local && !atMac();
-        // A reason beats a hint. "reachable on the Mac only" is worth saying about a server that
-        // is up; about one that is down it is beside the point, and the line the process printed
-        // as it died is the only thing anybody opened this sheet to find out.
-        var note = l.why ? String(l.why)
-            : (file ? T.webLinksFile : (far ? T.webLinksLocal : ""));
-        var word = STATES[l.state] ? T[STATES[l.state]] : "";
-
-        var inner = icon(l.kind) +
-            '<span class="name"><span class="what">' + esc(l.label || url) + "</span>" +
-            (word ? '<span class="ping" data-state="' + esc(l.state) + '">' + esc(word) + "</span>" : "") +
-            "</span>" +
-            '<span class="where">' + esc(file ? shortPath(pathOf(url)) : url) + "</span>" +
-            (note ? '<span class="note">' + esc(note) + "</span>" : "") +
-            // Only where there is nothing to tap. The path is shortened to fit the row, so what
-            // gets copied is carried separately: it is the one somebody is going to paste.
-            (open ? "" : '<button class="chip copy" type="button" data-copy="' +
-                esc(file ? pathOf(url) : url) + '">' + esc(T.webLinksCopy) + "</button>");
-
-        return open
-            ? '<a class="link" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + inner + "</a>"
-            : '<div class="link file">' + inner + "</div>";
-    }
-
-    function draw() {
-        if (els.links.hidden) return;
-        say(loading && !rows ? T.webLoading
-            : (rows && !rows.length) ? T.webLinksEmpty
-            : T.webLinksPick);
-        els["links-list"].innerHTML = (rows || []).map(function (l) {
-            return "<li>" + rowHTML(l) + "</li>";
-        }).join("");
-    }
-
-    function load(id) {
-        if (typeof api.links !== "function") { rows = []; draw(); return; }
-        var mine = ++ticket;
-        loading = true;
-        draw();
-        api.links(id).then(function (d) {
-            if (mine !== ticket) return;      // closed, or opened again on another session
-            rows = (d && d.links) || [];
-            loading = false;
-            draw();
-        }).catch(function (e) {
-            if (mine !== ticket) return;
-            rows = [];
-            loading = false;
-            said(why(e));
-            draw();
-        });
-    }
-
-    /** `execCommand` is gone from the specification and is still the only thing that works
-     *  where `navigator.clipboard` is not there at all — which is any page served over plain
-     *  http at a LAN address, and that is exactly how a phone on the same Wi-Fi reaches this
-     *  one. The button has to work on the screen it is for. */
-    function legacyCopy(text) {
-        var box = document.createElement("textarea");
-        box.value = text;
-        box.setAttribute("readonly", "");
-        box.style.position = "fixed";
-        box.style.top = "-1000px";
-        document.body.appendChild(box);
-        var ok = false;
-        try {
-            box.select();
-            box.setSelectionRange(0, text.length);
-            ok = document.execCommand("copy");
-        } catch (e) { ok = false; }
-        document.body.removeChild(box);
-        return ok;
-    }
-
-    return {
-        open: function () {
-            if (!S.openId) return;
-            forId = S.openId;
-            rows = null;
-            said("");
-            els.links.hidden = false;
-            load(forId);
-            els["links-close"].focus({ preventScroll: true });
-        },
-
-        close: function () {
-            els.links.hidden = true;
-            // The cache is the sheet. Nothing is kept for the next open, and an answer still on
-            // its way is no longer wanted — see `ticket`.
-            ticket += 1;
-            loading = false;
-            rows = null;
-            forId = null;
-        },
-
-        /** The session under the sheet changed, so what is in it is about something else. */
-        follow: function () { if (!els.links.hidden && S.openId !== forId) this.close(); },
-
-        copy: function (text) {
-            if (!text) return;
-            said("");
-            var done = function () { said(T.webLinksCopied, true); };
-            var failed = function () { said(T.webLinksCopyFailed); };
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text).then(done).catch(function () {
-                    if (legacyCopy(text)) done(); else failed();
-                });
-                return;
-            }
-            if (legacyCopy(text)) done(); else failed();
-        }
-    };
-})();
-
-els.links.addEventListener("click", function () { Links.close(); });
-els["links-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
-els["links-close"].addEventListener("click", function () { Links.close(); });
-els["links-list"].addEventListener("click", function (ev) {
-    var button = ev.target.closest ? ev.target.closest(".copy") : null;
-    if (button) Links.copy(button.dataset.copy);
-});
-
 /**
  * One small cache in front of the expensive session-info read. The status line needs those facts
  * while the card is closed, and opening the card immediately afterwards must not make the Mac
@@ -8238,9 +8293,15 @@ var SessionFacts = (function () {
 })();
 
 /**
- * The persistent desktop status line. This is the compact reading of the Session info card:
- * model, total token usage and cost, working-tree summary, and the plan windows. The whole row
- * opens the card, just as clicking a terminal status line asks for the detail behind a number.
+ * The persistent status line under the open transcript. This is the compact reading of the
+ * Session info card: model, total token usage and cost, working-tree summary, and the plan
+ * windows. The whole row opens the card, just as clicking a terminal status line asks for the
+ * detail behind a number.
+ *
+ * It used to stand itself down on a phone, back when the phone breakpoint hid the row: an
+ * answer nobody could see was a read of a transcript and a `git status` on the Mac for nothing.
+ * The row is on every screen now, so the reading is taken on every screen — still at most once
+ * a minute, and still shared with the card through `SessionFacts`.
  */
 var StatusLine = (function () {
     var forId = null;
@@ -8276,36 +8337,54 @@ var StatusLine = (function () {
         }).join("");
     }
 
-    function html(d) {
-        var s = d.session || {}, u = d.usage, f = d.files, windows = (d.limits || {}).windows || [];
+    /** The left half: what this session is on and what it has spent. Opens the Session info card. */
+    function identityHTML(d) {
+        var s = d.session || {}, u = d.usage;
         var model = modelName(d) || assistantName(s.assistant);
         var out = '<span class="item model">' + assistantLogo(s.assistant) +
             '<span class="word">' + esc(model) + "</span></span>";
 
         if (u && typeof u.total === "number") {
+            // The unit is its own element so a phone can drop it and keep the number — see the
+            // rule at the phone breakpoint. The title says it in full either way.
             out += '<span class="item usage" title="' + esc(u.total.toLocaleString()) + " " +
-                esc(T.webInfoTokens) + '">' + esc(compact(u.total)) + " " + esc(T.webInfoTokens) + "</span>";
+                esc(T.webInfoTokens) + '">' + esc(compact(u.total)) +
+                '<span class="unit"> ' + esc(T.webInfoTokens) + "</span></span>";
             if (typeof u.costUsd === "number") {
                 out += '<span class="item cost">' + esc(dollars(u.costUsd)) + "</span>";
             }
         }
-
-        if (f) {
-            var branch = f.branch || (f.head ? f.head.slice(0, 7) : "");
-            out += '<span class="item files">' +
-                (branch ? '<span class="branch">⎇ ' + esc(branch) + "</span>" : "") + marks(f) + "</span>";
-        }
-
-        if (windows.length) {
-            out += '<span class="limits">' + windows.map(function (w) {
-                var pct = typeof w.usedPercent === "number"
-                    ? Math.max(0, Math.min(100, Math.round(w.usedPercent))) : null;
-                var level = pct === null ? "" : (pct >= 85 ? "bad" : (pct >= 60 ? "warn" : "ok"));
-                return '<span class="limit" data-level="' + level + '">' + esc(w.name) + " " +
-                    '<b>' + (pct === null ? esc(T.webInfoUnknown) : pct + "%") + "</b></span>";
-            }).join("") + "</span>";
-        }
         return out;
+    }
+
+    /** The working tree. Its own button now, and what it opens is the list it is counting. */
+    function filesHTML(f) {
+        var branch = f.branch || (f.head ? f.head.slice(0, 7) : "");
+        return (branch ? '<span class="branch">⎇ ' + esc(branch) + "</span>" : "") + marks(f);
+    }
+
+    function limitsHTML(windows) {
+        return windows.map(function (w) {
+            var pct = typeof w.usedPercent === "number"
+                ? Math.max(0, Math.min(100, Math.round(w.usedPercent))) : null;
+            var level = pct === null ? "" : (pct >= 85 ? "bad" : (pct >= 60 ? "warn" : "ok"));
+            return '<span class="limit" data-level="' + level + '">' + esc(w.name) + " " +
+                '<b>' + (pct === null ? esc(T.webInfoUnknown) : pct + "%") + "</b></span>";
+        }).join("");
+    }
+
+    /** The two elements beside the button, drawn together because they empty together. */
+    function drawRest(d) {
+        var files = els["status-line-files"], limits = els["status-line-limits"];
+        var f = d && d.files;
+        files.hidden = !f;
+        if (f) {
+            files.innerHTML = filesHTML(f);
+            files.title = T.webSessionGit;
+            files.setAttribute("aria-label", T.webSessionGit);
+        }
+        var windows = ((d && d.limits) || {}).windows || [];
+        limits.innerHTML = windows.length ? limitsHTML(windows) : "";
     }
 
     function draw() {
@@ -8315,20 +8394,23 @@ var StatusLine = (function () {
         button.disabled = !forId;
         if (!forId) {
             button.innerHTML = '<span class="empty">' + esc(T.webPickSession) + "</span>";
+            drawRest(null);
             return;
         }
         if (data) {
-            button.innerHTML = html(data);
+            button.innerHTML = identityHTML(data);
+            drawRest(data);
             return;
         }
         var s = byId(forId) || {};
         button.innerHTML = '<span class="item model">' + assistantLogo(s.assistant) +
             '<span class="word">' + esc(assistantName(s.assistant)) + '</span></span>' +
             '<span class="item empty">' + esc(T.webLoading) + "</span>";
+        drawRest(null);
     }
 
     function load(force) {
-        if (!forId || phone()) return;
+        if (!forId) return;
         var id = forId, mine = ++ticket;
         nextAt = Date.now() + 60000;
         SessionFacts.get(id, force).then(function (facts) {
@@ -8344,7 +8426,6 @@ var StatusLine = (function () {
 
     return {
         follow: function () {
-            if (phone()) return;
             var id = S.openId;
             var s = id ? byId(id) : null;
             var state = s ? s.state : "";
@@ -8365,7 +8446,7 @@ var StatusLine = (function () {
             else if (id && Date.now() >= nextAt) load(false);
         },
         refresh: function (force) {
-            if (!forId || phone()) return;
+            if (!forId) return;
             if (force || Date.now() >= nextAt) load(!!force);
         },
         receive: function (id, facts) {
@@ -8459,6 +8540,11 @@ var Info = (function () {
     }
     function dollars(x) { return x < 0.01 ? "<$0.01" : "$" + x.toFixed(2); }
     function openable(url) { return /^https?:\/\//i.test(url || ""); }
+    function isFile(url) { return /^file:\/\//i.test(url || ""); }
+    function pathOf(url) {
+        var raw = String(url).replace(/^file:\/\/(localhost)?/i, "");
+        try { return decodeURIComponent(raw); } catch (e) { return raw; }
+    }
 
     function sec(i, title, aside, body) {
         return '<section class="sec" style="--i:' + i + '"><h3><span>' + esc(title) + "</span>" +
@@ -8572,25 +8658,32 @@ var Info = (function () {
         }).join("") + "</div>";
     }
 
-    function deployHTML(dep) {
-        if (!dep.length) return note(T.webInfoNoDeploy);
-        return dep.map(function (link) {
+    function linksHTML(links) {
+        if (!links.length) return note(T.webLinksEmpty);
+        return links.map(function (link) {
             var word = STATES[link.state] ? T[STATES[link.state]] : "";
             var url = String(link.url || "");
+            var file = isFile(url);
+            var far = link.local && !atMac();
+            var detail = link.why ? String(link.why)
+                : (file ? T.webLinksFile : (far ? T.webLinksLocal : ""));
+            var where = file ? shortPath(pathOf(url)) : url.replace(/^https?:\/\//i, "");
             var inner = '<span class="dot"></span><span class="lbl">' + esc(link.label || link.kind) + "</span>" +
                 (word ? '<span class="st">' + esc(word) + "</span>" : "") +
-                '<span class="host">' + esc(url.replace(/^https?:\/\//i, "")) + "</span>";
-            // The same whitelist as the Links sheet: a `javascript:` in an `href` is script
-            // running on this page with this page's cookie, so anything not plainly http(s)
-            // is drawn as text.
-            return openable(url)
+                '<span class="host" title="' + esc(file ? pathOf(url) : url) + '">' + esc(where) + "</span>";
+            // A `javascript:` in an `href` is script running on this page with this page's
+            // cookie, so anything not plainly http(s) is drawn as text.
+            var row = openable(url)
                 ? '<a class="dep" data-state="' + esc(link.state || "") + '" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + inner + "</a>"
                 : '<div class="dep" data-state="' + esc(link.state || "") + '">' + inner + "</div>";
+            return '<div class="dep-row">' + row +
+                (detail ? '<p class="dep-note">' + esc(detail) + "</p>" : "") + "</div>";
         }).join("");
     }
 
     function html(d) {
-        var s = d.session || {}, u = d.usage, l = d.limits || {}, f = d.files, dep = d.deploy || [], models = d.models || [];
+        var s = d.session || {}, u = d.usage, l = d.limits || {}, f = d.files,
+            links = d.links || d.deploy || [], models = d.models || [];
         // The model is whatever the transcript last named — a reply, or a `/model` nobody has
         // replied to yet, whichever of the two is newer. So a session that switched mid-way shows
         // what it is on now rather than what it began on, a session that has only ever been
@@ -8607,7 +8700,7 @@ var Info = (function () {
         var known = (l.windows || []).length && l.at ? esc(fill(T.webInfoAsOf, { when: clockOf(l.at) })) : "";
         out += sec(++i, T.webInfoLimits, known, limitsHTML(l, s.assistant));
         out += sec(++i, T.webInfoFiles, branchOf(f), filesHTML(f));
-        out += sec(++i, T.webInfoDeploy, "", deployHTML(dep));
+        out += sec(++i, T.webLinks, "", linksHTML(links));
         return out;
     }
 
@@ -8794,6 +8887,10 @@ els["info-body"].addEventListener("submit", function (ev) {
     Info.switchTo(input ? input.value : "", "");
 });
 els["status-line-open"].addEventListener("click", function () { Info.open(); });
+// The counts in this row are the sheet's own summary, so the row is where the sheet is opened
+// from. It is a shorter way in than the session menu, and on a phone it is the only one that
+// does not start with a menu.
+els["status-line-files"].addEventListener("click", function () { GitPanel.open(); });
 
 // A long-running turn can sit in the working state for hours, so no state transition would ask
 // for a newer reading. Once a minute is intentionally slower than the terminal status line: this
@@ -8823,6 +8920,15 @@ var Push = (function () {
     var subscribed = false;
     var state = "unsupported";   // unsupported | homescreen | blocked | off | on
     var busy = false;
+    /** Whether the subscription has actually been looked up. Until it has, `decide()` answers
+     *  "off" because `subscribed` starts false — which is a default and not a reading, and it is
+     *  the one state that puts a button on the screen. See the markup.
+     *
+     *  Only the footer waits on this. The settings sheet is drawn from `state` either way, so a
+     *  browser whose worker registers and then never activates — the one case where nothing here
+     *  ever settles — still has somewhere to turn notifications on from, and the row along the
+     *  bottom of the list is not offering a button that could not have worked. */
+    var settled = false;
 
     /** The id the server gave this subscription, kept so it can be taken back after a reload. */
     function remember(value) {
@@ -8884,11 +8990,12 @@ var Push = (function () {
         // sentence that gets somebody to a working notification is the whole feature until they
         // have read it. Everything else — already on, blocked, this browser cannot — is a fact
         // rather than a thing to do, and a fact does not get a permanent row of the screen.
-        var inFlow = state === "off" || state === "homescreen";
+        // `settled` first: a footer that has not been decided yet is not in the flow, whatever
+        // the placeholder state says. Appearing a few frames late is a layout shift; appearing
+        // and then vanishing is a fault.
+        var inFlow = settled && (state === "off" || state === "homescreen");
         els.notify.hidden = !inFlow;
         els.notify.dataset.state = state;
-        // The footer was paying the home indicator's inset for the scroller above it.
-        els.notify.parentNode.dataset.notify = inFlow ? "on" : "off";
 
         els["notify-go"].hidden = state !== "off";
         els["notify-go"].disabled = busy;
@@ -8953,7 +9060,13 @@ var Push = (function () {
         redraw: draw,
         start: function () {
             draw();
-            if (decide() === "unsupported" || decide() === "homescreen") return;
+            // These two are read off this browser rather than off a subscription, so they are
+            // known now and there is nothing to wait for.
+            if (decide() === "unsupported" || decide() === "homescreen") {
+                settled = true;
+                draw();
+                return;
+            }
             navigator.serviceWorker.register("/sw.js").then(function (r) {
                 registration = r;
                 return navigator.serviceWorker.ready;
@@ -8964,9 +9077,11 @@ var Push = (function () {
                 // has forgotten — reinstalled, database cleared — would draw as "on" and never
                 // arrive, so what is remembered here is the id the server gave back.
                 subscribed = !!subscription && !!recall();
+                settled = true;
                 draw();
             }).catch(function () {
                 // No worker means no notifications, and the footer already has a sentence for it.
+                settled = true;
                 draw();
             });
         },

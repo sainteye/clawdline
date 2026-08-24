@@ -250,15 +250,16 @@ final class RemoteServer {
         // *who is allowed to be asking at all* rather than about who they are.
         if let refusal = crossOriginRefusal(request) { return refusal }
 
-        // The five things reachable without a token, and each of them is on this list for a
-        // reason rather than for convenience: you cannot log in through a page you cannot load,
-        // and you cannot pair with a machine you cannot ask.
+        // The public shell reachable without a token, and each path is here for a reason rather
+        // than for convenience: you cannot log in through a page whose artwork was refused, and
+        // you cannot pair with a machine you cannot ask. None of these responses contains a
+        // session, repository, path or credential.
         // `/v1/strings` is the newest of them and belongs here for the same reason the page does:
         // the door has to be able to ask for a token *in the reader's own language*, and it cannot
         // ask in a language it has not been told yet. What comes back is interface copy — the same
         // set of sentences for everybody, naming no session, no repository and no path, and
         // already sitting in a public repository — so there is nothing in it to withhold.
-        let open: Set<String> = ["/", "/index.html", "/manifest.webmanifest",
+        let open: Set<String> = ["/", "/index.html", "/manifest.webmanifest", "/hero-orchestration.webp",
                                  "/v1/health", "/v1/strings"]
         let pairing = request.path.hasPrefix("/v1/auth/")
         // The icon too, and it has to be: a browser asks for `/favicon.ico` on its own, before
@@ -794,6 +795,17 @@ final class RemoteServer {
         case ("GET", "/manifest.webmanifest"):
             return manifest()
 
+        case ("GET", "/hero-orchestration.webp"):
+            guard let url = Bundle.main.url(forResource: "hero-orchestration", withExtension: "webp",
+                                            subdirectory: "web"),
+                  let data = try? Data(contentsOf: url) else {
+                return .error(404, "not_found", "The hero artwork is not in this build")
+            }
+            return Response(status: 200,
+                            headers: ["Content-Type": "image/webp",
+                                      "Cache-Control": "public, max-age=86400"],
+                            body: data)
+
         case ("GET", "/sw.js"):
             return serviceWorker()
 
@@ -1233,19 +1245,23 @@ final class RemoteServer {
                 cache: SessionInfo.claudeLimits(cacheDirectory: ProjectStatus.cacheDirectory))
         }
 
-        // The deploy and CI rows of `/links`, unchanged: the same state word means the same
-        // thing on both sheets, and nothing here goes to GitHub that `/links` did not already.
-        let deploy = cwd.map { linksPayload(cwd: $0) }?.filter { row in
+        // Session info is now the one home for every project address. Keep the smaller `deploy`
+        // field in the payload for older web clients, while current clients receive the exact
+        // same full list the compatibility `/links` route exposes.
+        let links = cwd.map { linksPayload(cwd: $0) } ?? []
+        let deploy = links.filter { row in
             let kind = row["kind"] as? String
             return kind == "deploy" || kind == "ci"
-        } ?? []
+        }
 
-        return SessionInfo.payload(
+        var payload = SessionInfo.payload(
             id: session.id, assistant: session.assistant,
             sessionId: HookBridge.note(for: session)?.session, model: model,
             cwd: cwd, startedAt: Targets.processStart(of: session),
             usage: usage, limits: limits, files: cwd.flatMap { SessionInfo.files(cwd: $0) },
             deploy: deploy, models: SessionInfo.models(for: session.assistant))
+        payload["links"] = links
+        return payload
     }
 
     private func sessionsPayload() -> [String: Any] {
@@ -1359,15 +1375,31 @@ final class RemoteServer {
     }
 
     private func transcriptPayload(for session: TargetSession, limit: Int) -> Response {
-        guard let record = Transcript.record(of: session),
-              let text = Transcript.tail(of: record.url, bytes: 8 << 20) else {
+        guard let record = Transcript.record(of: session) else {
             // Not an error. A session that has not spoken yet has an empty transcript, and that
             // is a different thing from a session that could not be found.
             return .json(["entries": [], "signature": ""])
         }
         let file = record.url
+        // The signature must never describe bytes newer than the text beside it. A transcript
+        // can be appended between the read and a later `stat`; returning that later signature
+        // with the earlier tail makes the browser believe the missing final entry is already on
+        // screen, so every subsequent fetch with the same signature is correctly ignored.
+        //
+        // Take the signature first. If the file moves during the read, repeat once from the
+        // newer boundary. A second append can only make the signature lag the text, which costs
+        // one harmless refetch; it cannot make an absent entry look current forever.
+        var signature = Transcript.signature(of: file)
+        guard var text = Transcript.tail(of: file, bytes: 8 << 20) else {
+            return .json(["entries": [], "signature": ""])
+        }
+        let after = Transcript.signature(of: file)
+        if after != signature, let fresh = Transcript.tail(of: file, bytes: 8 << 20) {
+            signature = after
+            text = fresh
+        }
         let entries = rows(of: Transcript.parse(text, assistant: record.assistant, limit: limit))
-        return .json(["entries": entries, "signature": Transcript.signature(of: file)])
+        return .json(["entries": entries, "signature": signature])
     }
 
     /// One agent's conversation, plus the agent itself so the page has something to put in the
@@ -1386,12 +1418,18 @@ final class RemoteServer {
         if let agent = SessionWatch.shared.agents(of: session.id).first(where: { $0.id == id }) {
             out["agent"] = json(of: agent)
         }
-        guard let text = Transcript.tail(of: file, bytes: 8 << 20) else { return .json(out) }
+        var signature = Transcript.signature(of: file)
+        guard var text = Transcript.tail(of: file, bytes: 8 << 20) else { return .json(out) }
+        let after = Transcript.signature(of: file)
+        if after != signature, let fresh = Transcript.tail(of: file, bytes: 8 << 20) {
+            signature = after
+            text = fresh
+        }
         // `sidechains: true` — every row in an agent's file is marked as one, because from the
         // session's point of view that is what an agent is. See `Transcript.parse`.
         out["entries"] = rows(of: Transcript.parse(text, assistant: .claude, limit: limit,
                                                    sidechains: true))
-        out["signature"] = Transcript.signature(of: file)
+        out["signature"] = signature
         return .json(out)
     }
 
