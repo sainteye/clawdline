@@ -41,6 +41,7 @@ struct Indonesian: Copy {
     let nothingToSend = "Tidak ada tujuan — jalankan dulu Claude Code di terminal"
     let sendFailed = "Gagal mengirim"
     let itermSilent = "iTerm2 tidak merespons"
+    let itermBusy = "iTerm2 sedang menunggu dialog — jawab di Mac"
     let scriptMissing = "iterm.js tidak ada — bundel aplikasi rusak?"
     let cannotList = "Tidak bisa membaca sesi iTerm2"
     let noOutput = "Belum ada yang bisa dibaca dari sesi ini."

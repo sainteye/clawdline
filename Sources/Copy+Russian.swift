@@ -41,6 +41,7 @@ struct Russian: Copy {
     let nothingToSend = "Некуда отправлять — сначала запустите Claude Code в терминале"
     let sendFailed = "Не удалось отправить"
     let itermSilent = "iTerm2 не ответил"
+    let itermBusy = "iTerm2 ждёт ответа на диалог — закройте его на Mac"
     let scriptMissing = "Нет iterm.js — повреждённый бандл приложения?"
     let cannotList = "Не удалось прочитать сессии iTerm2"
     let noOutput = "В этой сессии пока нечего читать."

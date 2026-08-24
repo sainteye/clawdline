@@ -41,6 +41,7 @@ struct Turkish: Copy {
     let nothingToSend = "Gönderilecek yer yok — önce bir terminalde Claude Code başlat"
     let sendFailed = "Gönderilemedi"
     let itermSilent = "iTerm2 yanıt vermedi"
+    let itermBusy = "iTerm2 bir iletişim kutusunun yanıtlanmasını bekliyor — Mac'te yanıtlayın"
     let scriptMissing = "iterm.js yok — uygulama paketi bozuk mu?"
     let cannotList = "iTerm2 oturumları okunamadı"
     let noOutput = "Bu oturumda okunacak bir şey henüz yok."

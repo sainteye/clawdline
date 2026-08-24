@@ -41,6 +41,7 @@ struct German: Copy {
     let nothingToSend = "Kein Ziel — starte Claude Code zuerst in einem Terminal"
     let sendFailed = "Konnte nicht senden"
     let itermSilent = "iTerm2 hat nicht geantwortet"
+    let itermBusy = "iTerm2 wartet auf einen Dialog — beantworte ihn am Mac"
     let scriptMissing = "iterm.js fehlt — beschädigtes App-Bundle?"
     let cannotList = "Konnte die iTerm2-Sitzungen nicht lesen"
     let noOutput = "In dieser Sitzung gibt es noch nichts zu lesen."

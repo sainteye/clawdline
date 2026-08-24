@@ -41,6 +41,7 @@ struct Italian: Copy {
     let nothingToSend = "Nessuna destinazione — avvia prima Claude Code in un terminale"
     let sendFailed = "Invio non riuscito"
     let itermSilent = "iTerm2 non ha risposto"
+    let itermBusy = "iTerm2 è in attesa di una finestra di dialogo — rispondi sul Mac"
     let scriptMissing = "Manca iterm.js — bundle dell'app danneggiato?"
     let cannotList = "Non è stato possibile leggere le sessioni di iTerm2"
     let noOutput = "In questa sessione non c'è ancora nulla da leggere."

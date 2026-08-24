@@ -39,6 +39,7 @@ struct Korean: Copy {
     let nothingToSend = "보낼 곳이 없습니다 — 먼저 터미널에서 Claude Code를 실행하세요"
     let sendFailed = "보내지 못했습니다"
     let itermSilent = "iTerm2가 응답하지 않았습니다"
+    let itermBusy = "iTerm2가 대화상자 응답을 기다리고 있습니다 — Mac에서 처리해 주세요"
     let scriptMissing = "iterm.js가 없습니다 — 앱 번들이 손상되었을 수 있습니다"
     let cannotList = "iTerm2 세션을 읽지 못했습니다"
     let noOutput = "이 세션에서 아직 읽을 것이 없습니다."

@@ -558,6 +558,36 @@ group("tmux pane listing parses") {
                             .joined(separator: sep))[0].assistant, .codex)
 }
 
+group("ending a session waits for the process before it takes the tab") {
+    typealias Step = Targets.Farewell.Step
+    func step(_ elapsed: TimeInterval, pid: pid_t? = 42,
+              termed: Bool = false, killed: Bool = false) -> Step {
+        Targets.Farewell.step(elapsed: elapsed, pid: pid, termed: termed, killed: killed)
+    }
+    let polite = Targets.Farewell.polite
+
+    // The whole bug in one line: a tab whose job is still running must not be closed, because
+    // iTerm2 answers that with a modal sheet and nothing on the serial queue moves again.
+    expect("a session still on its tty is waited for", step(0.2), .wait)
+    expect("gone means gone, immediately", step(0.2, pid: nil), .close)
+    expect("and gone late is still just gone", step(polite + 5, pid: nil), .close)
+
+    // Politeness has an end. `/exit` typed during a tool call is a queued message, so a session
+    // can honestly be mid-answer for longer than anyone will hold a phone.
+    expect("the word gets the whole polite window", step(polite - 0.01), .wait)
+    expect("then it is asked with a signal", step(polite), .term(42))
+    expect("asked once, not once per poll", step(polite + 0.4, termed: true), .wait)
+    expect("and then told", step(polite + Targets.Farewell.afterTerm, termed: true), .kill(42))
+    expect("told once as well",
+           step(polite + Targets.Farewell.afterTerm + 0.2, termed: true, killed: true), .wait)
+
+    // Past a SIGKILL there is nothing left to try, and waiting forever would be the same freeze
+    // by a slower road. The tab goes — which is what the old code did to every session.
+    let exhausted = polite + Targets.Farewell.afterTerm + Targets.Farewell.afterKill
+    expect("a process that survives SIGKILL stops the waiting",
+           step(exhausted, termed: true, killed: true), .close)
+}
+
 // MARK: - Terminal escapes
 
 group("ansi: plain text is left alone") {

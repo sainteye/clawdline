@@ -645,6 +645,11 @@ final class RemoteServer {
         // `/exit` and then `exit`, so this is not new power — it is the same power with the two
         // steps joined and named. What it does add is that the second step lands on a tab that
         // has left the list, which is why doing it by hand from a phone was impossible.
+        //
+        // A session that will not leave on the word is signalled rather than closed out from
+        // under — see `Targets.end`. That is not more power than this route already had either:
+        // closing the tab hangs up its tty, which is the same process ending with less notice.
+        // What it stops being is a modal dialog on the Mac that nobody on a phone can answer.
         case ("POST", let path) where path.hasSuffix("/end") && path.hasPrefix("/v1/sessions/"):
             let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/end".count))
             return writing(request) { _ in

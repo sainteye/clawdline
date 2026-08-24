@@ -170,16 +170,31 @@ enum Targets {
     ///
     /// **Two steps, in this order, and the order is the whole of it.** `/exit` first, so Claude
     /// Code leaves the way it would if somebody typed it — flushing its transcript rather than
-    /// being killed in the middle of writing one. Then the tab, after a pause long enough for it
-    /// to have gone.
+    /// being killed in the middle of writing one. Then the tab, once the process it was holding
+    /// is actually gone.
     ///
     /// Closing straight away would work and would be worse: the session's own record of the
     /// conversation is the thing you would still want tomorrow, and it is being appended to right
     /// up to the moment the process ends.
     ///
-    /// **The pause is not a guarantee.** If Claude Code is mid-answer it will not have finished
-    /// leaving, and the tab closes under it — the same outcome as closing the tab by hand, which
-    /// is what the person asking for this would otherwise do. Saying so is the point: this is
+    /// **This used to be a fixed pause, and the fixed pause is what broke.** It waited 1.2
+    /// seconds and closed regardless — which is fine when the word lands at an idle prompt and
+    /// wrong the moment it does not. A session in the middle of a tool call queues `/exit` and
+    /// keeps working, so the tab still had a job in it when the close arrived, and iTerm2 does
+    /// what a terminal should do about that: it puts up a sheet and asks. A sheet is modal.
+    /// The Apple event never returns, `osascript` never exits, and because every remote request
+    /// is answered on one serial queue, a phone that pressed End froze every page in the house
+    /// until somebody walked to the Mac and clicked a button they could not see.
+    ///
+    /// So the pause is now an answer instead of a guess — see ``Farewell``. The ordinary case
+    /// got faster too: `/exit` at an idle prompt is done in a few hundred milliseconds, and this
+    /// no longer sits out the rest of the second and a bit.
+    ///
+    /// **It still ends the session.** A session that will not leave on the word is asked with a
+    /// signal and then told, which is the same outcome the sheet was offering and none of the
+    /// waiting. Worst case is a shade over five seconds rather than forever, and that number
+    /// matters: this runs on the one queue that answers every remote request, so it is a ceiling
+    /// on how long a phone can be left looking at a page that has stopped moving. This is
     /// documented as ending a session, not as saving one.
     static func end(_ session: TargetSession) -> String? {
         // Typed as a line, not as a keystroke: the word is text at a prompt, and `send` already
@@ -188,10 +203,94 @@ enum Targets {
         // other's, which would leave the session open with the tab closing under it.
         let word = (session.assistant ?? .claude).quitLine
         if let failure = send(word, to: session) { return failure }
-        Thread.sleep(forTimeInterval: 1.2)
+        waitToBeGone(session)
         switch session.backend {
         case .iterm: return ITerm.close(session.id)
         case .tmux:  return Tmux.close(session.id)
+        }
+    }
+
+    /// What to do next while waiting for a session to finish leaving.
+    ///
+    /// Split out from the loop that runs it because this is the part with the decisions in it,
+    /// and a decision that can only be exercised by ending somebody's real session is a decision
+    /// with no tests. The loop below is three lines of sleeping; everything that could be wrong
+    /// about *when to stop being polite* is here, and is checked against a clock that is passed
+    /// in rather than one that has to pass.
+    enum Farewell {
+        enum Step: Equatable {
+            /// Still leaving on its own. Look again in a moment.
+            case wait
+            /// Ask the process to go.
+            case term(pid_t)
+            /// Stop asking.
+            case kill(pid_t)
+            /// Nothing is holding the tab. Take it.
+            case close
+        }
+
+        /// How long the word gets before anything harsher happens.
+        ///
+        /// Three seconds, and short on purpose. A session at its prompt reads `/exit` and is gone
+        /// inside one; a session in the middle of a tool call has *queued* the word and will not
+        /// read it until the tool returns, which is not a thing three more seconds fixes. Waiting
+        /// longer would only be waiting — and this runs on the queue that answers every other
+        /// request, so every second here is a second the page does not repaint.
+        ///
+        /// It can afford to be short because the next rung is not violence. `SIGTERM` is how a
+        /// program is asked to leave; both assistants handle it and flush on the way out. The
+        /// thing this replaced — closing the tab regardless — hung up the tty underneath them,
+        /// which is less notice than any step below.
+        static let polite: TimeInterval = 3
+        /// After `SIGTERM`. Claude Code and Codex both handle it and leave; this is the room to.
+        static let afterTerm: TimeInterval = 1.5
+        /// After `SIGKILL`. Only the kernel's own bookkeeping happens in here.
+        static let afterKill: TimeInterval = 1
+
+        static func step(elapsed: TimeInterval, pid: pid_t?,
+                         termed: Bool, killed: Bool) -> Step {
+            // Gone is gone, at any point — including before the first sleep, which is the
+            // common case and the reason this is faster than what it replaces.
+            guard let pid else { return .close }
+            if elapsed < polite { return .wait }
+            if !termed { return .term(pid) }
+            if elapsed < polite + afterTerm { return .wait }
+            if !killed { return .kill(pid) }
+            if elapsed < polite + afterTerm + afterKill { return .wait }
+            // Past a `SIGKILL` and still on the tty means a process the kernel cannot reap
+            // either, and no amount of further waiting changes that. Closing is what is left,
+            // and it is what the old code did to every session unconditionally.
+            return .close
+        }
+    }
+
+    /// Block until nothing is running on that session's tty, or until it has been made so.
+    ///
+    /// The tty and not the session id, because this is a question about processes and iTerm2's
+    /// idea of a session is not one. It works the same for a tmux pane, which is why it is here
+    /// rather than in ``ITerm``: `kill-pane` does not put up a sheet, but it does send a `SIGHUP`
+    /// to whatever is still running, and a transcript half-written is no better on that side.
+    private static func waitToBeGone(_ session: TargetSession) {
+        let started = Date()
+        var termed = false, killed = false
+        while true {
+            let running = ITerm.assistant(onTTY: session.tty)
+            let elapsed = Date().timeIntervalSince(started)
+            switch Farewell.step(elapsed: elapsed, pid: running?.pid,
+                                 termed: termed, killed: killed) {
+            case .close:
+                return
+            case .wait:
+                Thread.sleep(forTimeInterval: 0.2)
+            case .term(let pid):
+                termed = true
+                kill(pid, SIGTERM)
+                Thread.sleep(forTimeInterval: 0.2)
+            case .kill(let pid):
+                killed = true
+                kill(pid, SIGKILL)
+                Thread.sleep(forTimeInterval: 0.2)
+            }
         }
     }
 

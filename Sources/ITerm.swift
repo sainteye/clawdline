@@ -86,17 +86,50 @@ enum ITerm {
 
     // MARK: - Subprocesses
 
-    private static func shell(_ path: String, _ args: [String]) -> String {
+    /// Somewhere for the reader thread to put what it read. A class, not a captured `var`,
+    /// so the handoff across the semaphore is a reference and not a copy in flight.
+    private final class Sink { var data = Data() }
+
+    /// Run something and hand back what it printed, or admit that it never finished.
+    ///
+    /// **Nothing on this path is allowed to wait forever**, and the reason is one specific way
+    /// the whole app used to stop dead. Taking a tab away while a job is still running in it
+    /// makes iTerm2 put up a confirmation sheet; a sheet is modal, so the Apple event behind the
+    /// request never comes back and `osascript` never exits. The remote server answers every
+    /// request on one serial queue — so a single unanswered dialog on the Mac froze every page,
+    /// every phone and the panel itself until somebody walked over and clicked it.
+    ///
+    /// ``Targets/end(_:)`` no longer provokes that sheet, but a profile set to always prompt
+    /// still can, and so can a dialog this app had nothing to do with. A run that overruns its
+    /// deadline is killed and reported as silence, which is what the caller can act on.
+    private static func shell(_ path: String, _ args: [String],
+                              timeout: TimeInterval = 15) -> (out: String, timedOut: Bool) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = args
         let out = Pipe()
         p.standardOutput = out
         p.standardError = Pipe()
-        do { try p.run() } catch { return "" }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
+        do { try p.run() } catch { return ("", false) }
+        // Read on another thread rather than here, because the deadline must not be waiting on
+        // the pipe: a child stuck in an Apple event has written nothing and is not going to
+        // close its end of it either.
+        let sink = Sink()
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            sink.data = out.fileHandleForReading.readDataToEndOfFile()
+            done.signal()
+        }
+        if done.wait(timeout: .now() + timeout) == .timedOut {
+            // Killing `osascript` does not cancel an Apple event iTerm2 has already been handed:
+            // whatever was asked for still happens, once the person at the Mac answers the sheet.
+            // What this buys is that nothing here is still holding the queue while they decide.
+            p.terminate()
+            _ = done.wait(timeout: .now() + 2)
+            return ("", true)
+        }
         p.waitUntilExit()
-        return String(data: data, encoding: .utf8) ?? ""
+        return (String(data: sink.data, encoding: .utf8) ?? "", false)
     }
 
     private static var scriptPath: String? {
@@ -104,14 +137,19 @@ enum ITerm {
     }
 
     @discardableResult
-    private static func osa(_ args: [String]) -> [String: Any] {
+    private static func osa(_ args: [String], timeout: TimeInterval = 15) -> [String: Any] {
         guard let script = scriptPath else {
             return ["ok": false, "error": L.t.scriptMissing]
         }
-        let raw = shell("/usr/bin/osascript", ["-l", "JavaScript", script] + args)
-        guard let data = raw.data(using: .utf8),
+        let run = shell("/usr/bin/osascript", ["-l", "JavaScript", script] + args, timeout: timeout)
+        // A deadline missed on this path means iTerm2 is not answering Apple events, and by far
+        // the likeliest reason is a dialog waiting on the Mac. Said as its own sentence rather
+        // than as "did not respond", because the two ask different things of whoever reads it:
+        // one is a fault to report, the other is a thing to go and click.
+        if run.timedOut { return ["ok": false, "error": L.t.itermBusy] }
+        guard let data = run.out.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = run.out.trimmingCharacters(in: .whitespacesAndNewlines)
             return ["ok": false, "error": trimmed.isEmpty ? L.t.itermSilent : trimmed]
         }
         return obj
@@ -141,11 +179,26 @@ enum ITerm {
         pidLock.unlock()
 
         let map = Assistant.reading(ofPS: shell("/bin/ps", ["-ax", "-o",
-                                                            "tty=,pid=,ppid=,command="]))
+                                                            "tty=,pid=,ppid=,command="]).out)
         pidLock.lock()
         pidCache = (CFAbsoluteTimeGetCurrent(), map)
         pidLock.unlock()
         return map
+    }
+
+    /// What assistant, if any, is still running on one tty — asked now rather than remembered.
+    ///
+    /// ``assistantPIDs()`` answers the same question for every tty at once and holds the answer
+    /// for a couple of seconds, which is right for a status display and wrong here: this is
+    /// asked in a loop by ``Targets/end(_:)`` while it waits for a session to finish leaving,
+    /// and a two-second-old "still there" is exactly the difference between closing a quiet tab
+    /// and closing one that is still working. Scoped to the tty as well, so it costs a fraction
+    /// of the full listing — `ps -t` prints the same columns for one terminal.
+    static func assistant(onTTY tty: String) -> Assistant.Running? {
+        let bare = tty.hasPrefix("/dev/") ? String(tty.dropFirst("/dev/".count)) : tty
+        guard !bare.isEmpty else { return nil }
+        let out = shell("/bin/ps", ["-t", bare, "-o", "tty=,pid=,ppid=,command="], timeout: 5).out
+        return Assistant.reading(ofPS: out)[bare]
     }
 
     /// When a process started, from how long it has been running.
@@ -154,7 +207,7 @@ enum ITerm {
     /// machine's locale, and parsing a localised date to find a file is a way to work on your
     /// machine and nowhere else.
     static func processStart(ofPID pid: Int32) -> Date? {
-        let out = shell("/bin/ps", ["-o", "etime=", "-p", "\(pid)"])
+        let out = shell("/bin/ps", ["-o", "etime=", "-p", "\(pid)"]).out
         guard let seconds = parseElapsed(out) else { return nil }
         return Date(timeIntervalSinceNow: -seconds)
     }
@@ -177,7 +230,7 @@ enum ITerm {
     /// `lsof` rather than the PWD in the environment: an environment variable is whatever it
     /// was at launch, and it splits on spaces, which paths are allowed to contain.
     static func workingDirectory(ofPID pid: Int32) -> String? {
-        let out = shell("/usr/sbin/lsof", ["-a", "-p", "\(pid)", "-d", "cwd", "-Fn"])
+        let out = shell("/usr/sbin/lsof", ["-a", "-p", "\(pid)", "-d", "cwd", "-Fn"]).out
         for line in out.split(separator: "\n") where line.hasPrefix("n/") {
             return String(line.dropFirst())
         }
@@ -194,7 +247,7 @@ enum ITerm {
     /// `-Fn` so the answer is one path per line with an `n` in front of it, rather than a table
     /// whose columns a path with a space in it walks straight through.
     static func openFiles(ofPID pid: Int32) -> [String] {
-        shell("/usr/sbin/lsof", ["-p", "\(pid)", "-Fn"])
+        shell("/usr/sbin/lsof", ["-p", "\(pid)", "-Fn"]).out
             .split(separator: "\n")
             .filter { $0.hasPrefix("n/") }
             .map { String($0.dropFirst()) }
@@ -243,7 +296,13 @@ enum ITerm {
     /// Close a session's tab. See the `close` command in `iterm.js` for why it is the session
     /// and not the tab.
     static func close(_ sessionID: String) -> String? {
-        let res = osa(["close", sessionID])
+        // The one call with a deadline of its own, because it is the one that can raise a sheet:
+        // a tab with a job still in it is closed only after somebody says so. ``Targets/end(_:)``
+        // waits for the job to be gone first so that question is not asked, but a profile set to
+        // prompt regardless will ask anyway — and six seconds is long enough for a close that is
+        // going to happen and short enough that a phone hears about the dialog while it still
+        // means something.
+        let res = osa(["close", sessionID], timeout: 6)
         if res["ok"] as? Bool == true { return nil }
         return res["error"] as? String ?? "that session is gone"
     }

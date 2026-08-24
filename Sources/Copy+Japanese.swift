@@ -39,6 +39,7 @@ struct Japanese: Copy {
     let nothingToSend = "送信先がありません — まずターミナルで Claude Code を起動してください"
     let sendFailed = "送信できませんでした"
     let itermSilent = "iTerm2 から応答がありません"
+    let itermBusy = "iTerm2 がダイアログの返事を待っています — Mac で応答してください"
     let scriptMissing = "iterm.js が見つかりません — アプリバンドルが壊れている可能性があります"
     let cannotList = "iTerm2 のセッションを読み取れませんでした"
     let noOutput = "このセッションにはまだ読むものがありません。"

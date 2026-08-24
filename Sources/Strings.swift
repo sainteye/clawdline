@@ -48,6 +48,7 @@ protocol Copy {
     var nothingToSend: String { get }
     var sendFailed: String { get }
     var itermSilent: String { get }
+    var itermBusy: String { get }
     var scriptMissing: String { get }
     var cannotList: String { get }
     var noOutput: String { get }

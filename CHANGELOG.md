@@ -9,6 +9,28 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: ending a session from a phone could freeze every page in the house
+
+Ending a session types the assistant's quit word and then takes the tab away. The pause between
+the two was a fixed 1.2 seconds — fine when the word lands at an idle prompt, wrong the moment it
+does not. A session in the middle of a tool call *queues* `/exit` and keeps working, so the tab
+still had a job in it when the close arrived, and iTerm2 does what a terminal should do about
+that: it puts up a sheet and asks.
+
+A sheet is modal. The Apple event never came back, `osascript` never exited, and because every
+remote request is answered on one queue, one unanswered dialog on the Mac stopped the web page,
+the phone and the panel until somebody walked over and clicked a button they could not see.
+
+The pause is now an answer rather than a guess: the session's tty is watched until the process is
+actually gone, and only then does the tab go. One that will not leave on the word is asked with a
+signal and then told — which is the same ending the sheet was offering, minus the waiting, and
+gentler than the tab close it replaces. The ordinary case got quicker too, closing in a few
+hundred milliseconds instead of sitting out the second and a bit.
+
+Every round trip to iTerm2 now has a deadline as well, so a dialog this app did not raise cannot
+wedge it either. When one is up, whatever asked says so — *iTerm2 is waiting on a dialog — answer
+it on the Mac* — instead of the app going quiet.
+
 ### Fixed: the app could stop answering when the panel went away
 
 Putting the panel away asks the dictation engine to stop, and stopping it reached for

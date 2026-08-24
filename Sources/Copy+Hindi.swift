@@ -45,6 +45,7 @@ struct Hindi: Copy {
     let nothingToSend = "भेजने की कोई जगह नहीं — पहले किसी terminal में Claude Code चलाएँ"
     let sendFailed = "भेजा नहीं जा सका"
     let itermSilent = "iTerm2 ने जवाब नहीं दिया"
+    let itermBusy = "iTerm2 एक डायलॉग के जवाब का इंतज़ार कर रहा है — उसे Mac पर बंद करें"
     let scriptMissing = "iterm.js नहीं मिला — app bundle खराब है?"
     let cannotList = "iTerm2 के sessions पढ़े नहीं जा सके"
     let noOutput = "इस session में अभी पढ़ने को कुछ नहीं है।"

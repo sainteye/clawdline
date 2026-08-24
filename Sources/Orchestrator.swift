@@ -375,8 +375,9 @@ enum Orchestrator {
     /// then the task written down. Shared with the cascade below so there is one way to cancel a
     /// task rather than two that drift.
     ///
-    /// Not on the main thread: `Targets.end` types the quit word and waits over a second for it
-    /// to land. Both callers arrive on the server's queue.
+    /// Not on the main thread: `Targets.end` types the quit word and then waits for the child to
+    /// actually be gone — a few hundred milliseconds when it leaves on the word, and a bounded
+    /// five and a bit when it has to be made to. Both callers arrive on the server's queue.
     private static func cancelInPlace(_ task: Task) {
         if let childID = task.childTerminalId,
            let child = target(withID: childID) {
@@ -768,8 +769,9 @@ enum Orchestrator {
     /// it, otherwise the tab on its own.
     ///
     /// Shared by the linger and by the cascade so the two cannot drift into closing a tab two
-    /// different ways. Blocks for over a second in the polite case — `Targets.end` types the word
-    /// and waits for it to land — so both callers are somewhere that can afford it.
+    /// different ways. Blocks while the child leaves — `Targets.end` types the word and waits for
+    /// the process to go rather than assuming it did — so both callers are somewhere that can
+    /// afford a wait measured in seconds when the child is busy.
     private static func endChildTab(_ child: TargetSession, justTheTab: Bool) -> String? {
         if justTheTab {
             switch child.backend {

@@ -40,6 +40,7 @@ struct English: Copy {
     let nothingToSend = "Nothing to send to — start Claude Code in a terminal first"
     let sendFailed = "Could not send"
     let itermSilent = "iTerm2 did not respond"
+    let itermBusy = "iTerm2 is waiting on a dialog — answer it on the Mac"
     let scriptMissing = "iterm.js is missing — broken app bundle?"
     let cannotList = "Could not read iTerm2 sessions"
     let noOutput = "Nothing to read from this session yet."
