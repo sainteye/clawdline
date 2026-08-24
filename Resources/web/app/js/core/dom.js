@@ -10,7 +10,7 @@ export var els = {};
  "git-panel", "git-title", "git-refresh", "git-close", "git-body",
  "composer", "msg", "send", "why", "waiting", "agents", "skill-menu", "stale", "stale-say", "stale-go",
  "detail-head", "agent-head", "agent-back", "agent-back-label", "agent-name", "agent-sub",
- "status-line", "status-line-open", "status-line-files", "status-line-limits", "keys", "toast", "brand", "brand-mark",
+ "status-line", "status-line-open", "status-line-files", "status-line-deploy", "status-line-limits", "keys", "toast", "brand", "brand-mark",
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
  "settings-notify-go", "settings-notify-test", "settings-notify-said", "settings-version",
  "settings-close", "settings-order", "settings-order-title", "settings-order-say",

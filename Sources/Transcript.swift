@@ -144,15 +144,24 @@ enum Transcript {
     /// installed it is nil, and the matching underneath is what it always was.
     static func locate(cwd: String, tabTitle: String, startedAt: Date? = nil,
                        sessionID: String? = nil) -> URL? {
-        let dir = projectDirectory(forCwd: cwd)
+        locate(in: projectDirectory(forCwd: cwd), tabTitle: tabTitle,
+               startedAt: startedAt, sessionID: sessionID)
+    }
+
+    /// The same choice with its directory supplied, so identity failures can be exercised
+    /// without making a test write into somebody's real Claude history.
+    static func locate(in dir: URL, tabTitle: String, startedAt: Date? = nil,
+                       sessionID: String? = nil) -> URL? {
         let fm = FileManager.default
 
         if let sessionID, !sessionID.isEmpty {
             let named = dir.appendingPathComponent("\(sessionID).jsonl")
-            if fm.fileExists(atPath: named.path) { return named }
-            // Falls through rather than returning nothing. A session can be resumed into a new
-            // file, and a project directory is named after the working directory — which moves
-            // if somebody renames a folder. Guessing again beats an empty pane.
+            // A SessionStart hook arrives before Claude creates the transcript. Falling through
+            // here used to attach a brand-new tab to any other transcript created in the same
+            // two-minute window — commonly one of the project's background agents. Once Claude
+            // has named the session, an empty pane is the only honest fallback: another file can
+            // never be this session, however close its timestamp or title looks.
+            return fm.fileExists(atPath: named.path) ? named : nil
         }
         guard let names = try? fm.contentsOfDirectory(atPath: dir.path) else { return nil }
         // Stat once per file and sort the answers. Asking inside the comparator looked tidier and

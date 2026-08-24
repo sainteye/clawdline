@@ -233,7 +233,8 @@ export var Mock = (function () {
         ],
         "2C71-90": [
             { label: "staging", url: "https://staging.example.com", kind: "site", state: "down", local: false },
-            { label: "deploy", url: "https://github.com/example/atrium/actions/runs/32206093412", kind: "deploy", state: "running", local: false }
+            { label: "deploy", url: "https://github.com/example/atrium/actions/runs/32206093412", kind: "deploy", state: "running", local: false,
+              startedAt: now - 320, typicalSeconds: 800 }
         ]
     };
     // The info card's shapes. A Claude session that has just spent its five-hour window, with

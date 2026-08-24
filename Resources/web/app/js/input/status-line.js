@@ -57,6 +57,7 @@ export var StatusLine = (function () {
     var ticket = 0;
     var nextAt = 0;
     var stateSeen = "";
+    var deployTicker = null;
 
     function compact(n) {
         if (typeof n !== "number") return T.webInfoUnknown;
@@ -86,13 +87,13 @@ export var StatusLine = (function () {
     }
 
     /** The left half: what this session is on and what it has spent. Opens the Session info card. */
-    function identityHTML(d) {
+    function identityHTML(d, deploying) {
         var s = d.session || {}, u = d.usage;
         var model = modelName(d) || assistantName(s.assistant);
         var out = '<span class="item model">' + assistantLogo(s.assistant) +
             '<span class="word">' + esc(model) + "</span></span>";
 
-        if (u && typeof u.total === "number") {
+        if (!deploying && u && typeof u.total === "number") {
             // The unit is its own element so a phone can drop it and keep the number — see the
             // rule at the phone breakpoint. The title says it in full either way.
             out += '<span class="item usage" title="' + esc(u.total.toLocaleString()) + " " +
@@ -121,18 +122,64 @@ export var StatusLine = (function () {
         }).join("");
     }
 
+    function runningDeploy(d) {
+        var rows = (d && (d.links || d.deploy)) || [];
+        return rows.filter(function (row) {
+            return row && row.state === "running" && (row.kind === "deploy" || row.kind === "ci");
+        })[0] || null;
+    }
+
+    function deployProgress(row) {
+        var started = Number(row && row.startedAt), typical = Number(row && row.typicalSeconds);
+        if (!Number.isFinite(started) || !Number.isFinite(typical) || started <= 0 || typical <= 0) return null;
+        return Math.max(0, Math.min(1, (Date.now() / 1000 - started) / typical));
+    }
+
+    function drawDeploy(row) {
+        var node = els["status-line-deploy"];
+        node.hidden = !row;
+        if (!row) {
+            node.removeAttribute("href");
+            node.innerHTML = "";
+            return;
+        }
+        var progress = deployProgress(row), known = progress !== null;
+        var pct = known ? Math.round(progress * 100) : null;
+        var label = row.label || "deploy";
+        node.dataset.known = known ? "true" : "false";
+        if (/^https?:\/\//i.test(String(row.url || ""))) node.href = row.url;
+        else node.removeAttribute("href");
+        node.innerHTML = '<span class="label">' + esc(label) + '</span>' +
+            '<span class="track" aria-hidden="true"><i style="--w:' + (known ? pct : 0) + '%"></i></span>' +
+            '<span class="pct">' + (known ? pct + "%" : "…") + "</span>";
+        var said = label + " " + (known ? pct + "%" : T.webLinkRunning);
+        node.title = said;
+        node.setAttribute("aria-label", said);
+    }
+
+    function syncDeployTicker(row) {
+        if (row && !deployTicker) {
+            deployTicker = setInterval(function () { drawDeploy(runningDeploy(data)); }, 1000);
+        } else if (!row && deployTicker) {
+            clearInterval(deployTicker);
+            deployTicker = null;
+        }
+    }
+
     /** The two elements beside the button, drawn together because they empty together. */
-    function drawRest(d) {
+    function drawRest(d, deploying) {
         var files = els["status-line-files"], limits = els["status-line-limits"];
         var f = d && d.files;
-        files.hidden = !f;
-        if (f) {
+        files.hidden = !!deploying || !f;
+        if (f && !deploying) {
             files.innerHTML = filesHTML(f);
             files.title = T.webSessionGit;
             files.setAttribute("aria-label", T.webSessionGit);
         }
         var windows = ((d && d.limits) || {}).windows || [];
         limits.innerHTML = windows.length ? limitsHTML(windows) : "";
+        drawDeploy(deploying);
+        syncDeployTicker(deploying);
     }
 
     function draw() {
@@ -145,19 +192,20 @@ export var StatusLine = (function () {
             // open, and only one of the two is worth a sentence. See `listUnknown`.
             button.innerHTML = listUnknown() ? ""
                 : '<span class="empty">' + esc(T.webPickSession) + "</span>";
-            drawRest(null);
+            drawRest(null, null);
             return;
         }
         if (data) {
-            button.innerHTML = identityHTML(data);
-            drawRest(data);
+            var deploying = runningDeploy(data);
+            button.innerHTML = identityHTML(data, !!deploying);
+            drawRest(data, deploying);
             return;
         }
         var s = byId(forId) || {};
         button.innerHTML = '<span class="item model">' + assistantLogo(s.assistant) +
             '<span class="word">' + esc(assistantName(s.assistant)) + '</span></span>' +
             '<span class="item empty">' + esc(T.webLoading) + "</span>";
-        drawRest(null);
+        drawRest(null, null);
     }
 
     function load(force) {

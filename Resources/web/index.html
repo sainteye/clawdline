@@ -320,6 +320,10 @@ document.documentElement.className = "booting";
                  list those counts are counting — and it is a separate `<button>` because one
                  control cannot have two answers and a button cannot be nested in a button. -->
             <button class="files" id="status-line-files" type="button" hidden></button>
+            <!-- While a deploy is running this takes the place of token usage and Git. It is a
+                 link because the progress is only useful if the run behind it is one tap away. -->
+            <a class="deploy" id="status-line-deploy" hidden target="_blank"
+               rel="noopener noreferrer"></a>
             <!-- The plan windows are a reading and not a control: there is nothing behind them
                  that is not already on the card the row's left half opens. -->
             <div class="limits" id="status-line-limits"></div>

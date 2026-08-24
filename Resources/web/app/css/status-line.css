@@ -43,6 +43,35 @@
 .status-line .usage { color: var(--dim); font-variant-numeric: tabular-nums; }
 .status-line .cost { color: var(--accent); }
 
+/* A deploy in flight takes the scarce middle of this row. The model and plan windows remain —
+   they still decide the next turn — while token spend and the Git branch step aside until the
+   run finishes. The clock comes from the same status file as the Mac bar, not from an invented
+   GitHub percentage. */
+.status-line .deploy {
+    flex: 1 1 180px; min-width: 92px; height: 100%;
+    display: flex; align-items: center; gap: 7px;
+    color: var(--dim); font-variant-numeric: tabular-nums;
+}
+.status-line .deploy[hidden] { display: none; }
+.status-line .deploy::before {
+    content: "·"; flex: 0 0 auto; padding: 0 8px; color: #3a3a44;
+}
+.status-line .deploy .label { flex: 0 0 auto; color: var(--ink); }
+.status-line .deploy .track {
+    flex: 1 1 auto; min-width: 22px; height: 5px;
+    overflow: hidden; border-radius: 3px; background: var(--line);
+}
+.status-line .deploy .track i {
+    display: block; width: var(--w, 0%); height: 100%; border-radius: inherit;
+    background: var(--accent); transition: width 1s linear;
+}
+.status-line .deploy[data-known="false"] .track i {
+    width: 36%; background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: deploy-wait 1.6s ease-in-out infinite;
+}
+.status-line .deploy .pct { flex: 0 0 auto; min-width: 3ch; text-align: right; }
+@keyframes deploy-wait { from { transform: translateX(-120%); } to { transform: translateX(280%); } }
+
 /* The working tree, as its own control — see the markup. It carries the `·` that used to come
    from the sibling rule inside the button, because it is no longer a sibling of anything in
    there. */

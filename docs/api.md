@@ -267,7 +267,8 @@ Every address this project has, gathered from the files other tools already writ
 ```console
 $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/links
 {"links":[
-  {"label":"ci","url":"https://github.com/you/repo/actions/runs/123","kind":"deploy","state":"ok","local":false},
+  {"label":"ci","url":"https://github.com/you/repo/actions/runs/123","kind":"deploy","state":"running","local":false,
+   "startedAt":1787396170,"typicalSeconds":800},
   {"label":"web","url":"http://127.0.0.1:3000","kind":"server","state":"ok","local":true},
   {"label":"backlog","url":"file:///Users/you/code/repo/artifacts/backlog.html","kind":"artifact","state":"","local":true}
 ]}
@@ -278,6 +279,7 @@ $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/links
 | `kind` | `site` · `deploy` · `server` · `artifact` — for choosing an icon |
 | `state` | that thing's own health where it has one, else empty. **Worth drawing**: a server that is down is worth knowing before it is tapped |
 | `local` | the address only resolves on the Mac's own network. A phone on mobile data cannot open it, and saying so beats a link that times out |
+| `startedAt` · `typicalSeconds` | present for a running deploy, in seconds; elapsed against typical is the estimated progress shown in the compact status line |
 
 **A route rather than a field on the session.** The session list goes out on the event stream
 whenever anything moves, and gathering these costs a `git` invocation plus a handful of file
@@ -303,7 +305,8 @@ $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/info
   "limits":{"windows":[{"name":"5h","usedPercent":100,"resetsAt":1787417400,"hit":true}],"at":1787416917},
   "files":{"branch":"main","head":"d5c61e9f91c46a77","ahead":2,"behind":0,
            "staged":1,"unstaged":4,"untracked":2,"conflict":0},
-  "deploy":[{"label":"ci","url":"https://github.com/you/repo/actions/runs/123","kind":"deploy","state":"fail","local":false}]
+  "deploy":[{"label":"ci","url":"https://github.com/you/repo/actions/runs/123","kind":"deploy","state":"running","local":false,
+              "startedAt":1787396170,"typicalSeconds":800}]
 }}
 ```
 

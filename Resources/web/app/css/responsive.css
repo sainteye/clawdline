@@ -47,7 +47,8 @@
        worth a row away from the machine, not less: it is the reading you cannot get by looking
        over at the terminal. It is the tightest row on the screen and it earns its 34px. */
     .status-line { padding-left: 12px; padding-right: 12px; }
-    .status-line .item + .item::before, .status-line .files::before { padding: 0 6px; }
+    .status-line .item + .item::before, .status-line .files::before,
+    .status-line .deploy::before { padding: 0 6px; }
     .status-line .limits { padding-left: 10px; gap: 10px; }
     /* **`49.1M`, not `49.1M tokens`.** The unit is seven characters of a row that has to carry
        a model, a spend, a branch and two plan windows across 390 points, and it is the only
