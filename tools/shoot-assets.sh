@@ -11,7 +11,8 @@
 #   ./tools/shoot-assets.sh sessions            # one of them, by name
 #   ./tools/shoot-assets.sh web web-wide        # or several, which costs one restart and not two
 #
-# The browser ones are `web`, `web-wide` and `web-push`; see the note further down.
+# The browser ones are `web`, `web-wide`, `fleet-phone`, `fleet-wide` and `web-push`; see the
+# note further down.
 #
 # Everything is drawn by the app itself, offscreen, so **no Screen Recording permission is
 # needed** and nothing depends on what is on your screen at the time. Needs: the app built
@@ -158,7 +159,7 @@ want() {
 needs_app() {
   local w
   for w in "${WANT[@]}"; do
-    case "$w" in web|web-wide) ;; *) return 0 ;; esac
+    case "$w" in web|web-wide|fleet-phone|fleet-wide) ;; *) return 0 ;; esac
   done
   return 1
 }
@@ -264,6 +265,17 @@ run_if web      webstrip web      "$WEB_PAGE" web  390 16
 # saying about the wide layout is a fact about the layout and not a thing that happens.
 run_if web-wide webshot  web-wide "$WEB_PAGE" open --saying "investigate the webhook" --dwell 2500 \
                                   --desktop --width 1180 --height 760 --scale 2
+
+# The same page, twice more, for the one thing the two above cannot show: **who dispatched whom**.
+# A session that sent work away carries the sessions it started underneath it, indented, and that
+# grouping is the picture — so both of these wait for the page's `orchestrator` frame to land
+# rather than for a clock. Before it does the list is flat, and a flat list is the argument these
+# two exist to refute. Same fixtures as everything else on this page: made-up projects, a `file://`
+# copy, nothing of this machine anywhere near the frame.
+run_if fleet-phone webshot fleet-phone "$WEB_PAGE" fleet --dwell 1400 \
+                                       --width 390 --height 844 --scale 2
+run_if fleet-wide  webshot fleet-wide  "$WEB_PAGE" fleet-wide --dwell 2000 \
+                                       --desktop --width 1180 --height 760 --scale 2
 
 # The notification.
 #

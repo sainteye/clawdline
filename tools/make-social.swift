@@ -88,37 +88,50 @@ func draw(_ s: String, _ x: CGFloat, _ y: CGFloat, _ size: CGFloat,
 
 // The name, then the one sentence. **The sentence is the fenced claim**, not a feature list:
 // this card is read at a glance and only one idea survives that.
-draw("Clawdline", 452, 430, 76, .white, weight: .bold)
-draw("Every Claude Code session already running on your Mac —", 456, 372, 30, quiet)
-draw("including the ones you started by hand.", 456, 330, 30, quiet)
+draw("Clawdline", 452, 448, 76, .white, weight: .bold)
+draw("Every Claude Code and Codex session on your Mac —", 456, 392, 30, quiet)
+draw("and the child agents they dispatched.", 456, 350, 30, quiet)
 
-// Three rows of the list, drawn rather than screenshotted, because at feed size a real screenshot
-// of this would be an illegible grey block. One of them is waiting, in the accent colour, because
-// that state is the entire argument for the product.
-let listX: CGFloat = 456, listTop: CGFloat = 262
-let items: [(String, String, NSColor)] = [
-    ("investigate the webhook", "Crystallizing… (13m 46s)", faint),
-    ("port the Android feature", "waiting for you", body),
-    ("draft the release notes", "", faint),
+// Four rows of the list, drawn rather than screenshotted, because at feed size a real screenshot
+// of this would be an illegible grey block. Two of them are indented under the first, because the
+// shape of the list — who sent whom — is the claim this card is making; and one is waiting, in the
+// accent colour, because that state is the entire argument for the product.
+let listX: CGFloat = 456, listTop: CGFloat = 276, step: CGFloat = 42
+let items: [(String, String, NSColor, Bool)] = [
+    ("investigate the webhook",    "claude · 13m 46s",   faint, false),
+    ("draw the project portrait",  "codex · working",    faint, true),
+    ("read the docs pass",         "claude · done",      faint, true),
+    ("port the Android feature",   "waiting for you",    body,  false),
 ]
 for (i, item) in items.enumerated() {
-    let y = listTop - CGFloat(i) * 44
+    let indent: CGFloat = item.3 ? 34 : 0
+    let x = listX + indent
+    let y = listTop - CGFloat(i) * step
     if item.2 == body {
         body.withAlphaComponent(0.10).setFill()
-        NSBezierPath(roundedRect: NSRect(x: listX - 14, y: y - 9, width: 700, height: 38),
+        NSBezierPath(roundedRect: NSRect(x: x - 14, y: y - 8, width: 700 - indent, height: 36),
                      xRadius: 9, yRadius: 9).fill()
         body.setFill()
-        NSRect(x: listX - 14, y: y - 9, width: 3, height: 38).fill()
+        NSRect(x: x - 14, y: y - 8, width: 3, height: 36).fill()
     }
-    draw(item.0, listX, y, 21, item.2 == body ? .white : quiet,
+    // The elbow that says this row belongs to the one above it. Drawn rather than typed, because
+    // a box-drawing character lands on a different baseline in every font that has one.
+    if item.3 {
+        faint.setStroke()
+        let elbow = NSBezierPath()
+        elbow.lineWidth = 1.5
+        elbow.move(to: NSPoint(x: listX + 8, y: y + step - 10))
+        elbow.line(to: NSPoint(x: listX + 8, y: y + 9))
+        elbow.line(to: NSPoint(x: listX + 22, y: y + 9))
+        elbow.stroke()
+    }
+    draw(item.0, x, y, 21, item.2 == body ? .white : quiet,
          weight: item.2 == body ? .semibold : .regular)
-    if !item.1.isEmpty {
-        draw(item.1, listX + 262, y + 1, 18, item.2, mono: true)
-    }
+    draw(item.1, listX + 296, y + 1, 18, item.2, mono: true)
 }
 
 // The claims that make somebody trust it, small, along the bottom.
-draw("macOS  ·  Swift, no dependencies  ·  MIT  ·  answer them from your phone",
+draw("macOS  ·  Swift, no dependencies  ·  MIT  ·  the same tree on your phone",
      456, 84, 19, faint)
 
 NSGraphicsContext.restoreGraphicsState()

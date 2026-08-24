@@ -421,6 +421,66 @@ function makeStage(cdp, session) {
 
 /* ---- storyboards --------------------------------------------------------- */
 
+/**
+ * The list, once the page knows who dispatched whom.
+ *
+ * **The grouping is not there when the page opens.** The list arrives first and the page's
+ * `orchestrator` frame a moment after it, so anything shot on a timer catches six sessions in
+ * flat alphabetical order with nothing to say that two of them were started by a third — the
+ * exact opposite of the point. `data-depth` is what a row is given once it has been re-parented,
+ * so two of those is the whole fixture landed.
+ */
+async function untilTree(stage) {
+    await stage.until("#rows li");
+    const grouped = await stage.untilTrue(
+        `document.querySelectorAll('#rows li[data-depth="1"]').length >= 2`, 10000);
+    if (!grouped) throw new Error("no child came in under a root — there is no tree to photograph");
+}
+
+/** The row saying this, whatever the list has done with the order since it was last looked at. */
+function rowSaying(label) {
+    return `[...document.querySelectorAll("#rows li")]
+        .find((e) => (e.textContent || "").indexOf(${JSON.stringify(label)}) >= 0)`;
+}
+
+/**
+ * The root, at work — caught on the beat it **starts**, with the list quiet around it.
+ *
+ * The fixture walks its sessions through their states on a four-second clock, and two things
+ * about that clock decide whether this picture is worth taking.
+ *
+ * **The root spends part of the cycle idle**, and a root caught idle loses its state line: the
+ * picture becomes a session that sent two others away and then stopped, which is nobody's
+ * sentence, and is what the first two attempts at this shot came out as. Waiting for `working`
+ * alone does not fix it — whatever is left of the window the page opened in can be a second, and
+ * the framing still has to happen before the shutter. Waiting for the row to go **quiet first**
+ * is what makes the `working` that follows a fresh one, with the rest of the cycle in hand.
+ *
+ * **Sessions queue up in `waiting`**, two and three at a time, and a waiting row is orange and
+ * says it wants you — a louder claim on the eye than a tree of rows that do not. One is the
+ * list doing its job; three, stacked above the subject, is a different picture. So the second
+ * wait asks for both at once: the root still at work, and no more than one row asking. Both in
+ * one expression on purpose — checked one after the other, satisfying the second can cost the
+ * first.
+ *
+ * And the line, not just the state: `working` is set on the beat, the line under it is written by
+ * the next tick, and in between there is a spinner over an empty row.
+ */
+async function untilBusy(stage, label) {
+    const row = rowSaying(label);
+    const quiet = await stage.untilTrue(
+        `(() => { const r = ${row}; return !!r && r.dataset.state !== "working"; })()`, 45000);
+    if (!quiet) throw new Error("the root session never paused — cannot tell a fresh turn from the end of one");
+    const busy = await stage.untilTrue(`(() => {
+        const r = ${row};
+        if (!r || r.dataset.state !== "working") return false;
+        const line = r.querySelector(".state .line");
+        if (!line || !line.textContent.trim()) return false;
+        return document.querySelectorAll('#rows li[data-state="waiting"]').length <= 1;
+    })()`, 45000);
+    if (!busy) throw new Error("the root session never went back to work with the list quiet around it");
+}
+
 const SCRIPTS = {
     /**
      * The interface, on a phone.
@@ -466,6 +526,43 @@ const SCRIPTS = {
         await stage.wait(600);
         await stage.tap("#send");
         await stage.wait(2200);
+    },
+
+    /**
+     * The tree: one session and the work it sent away, hanging under it.
+     *
+     * Framed on the lower child rather than on the root, because scrolling the *last* row of the
+     * group into the middle is the only framing that guarantees the two above it came with it.
+     */
+    async fleet(stage) {
+        await untilTree(stage);
+        await untilBusy(stage, "investigate the webhook");
+        // Framed after the root has its line back, so the measuring is done on the layout that
+        // gets photographed rather than on the shorter one it grew out of.
+        await stage.reveal('#rows li[data-depth="1"]', 1, 700);
+        await stage.wait(OPT.dwell);
+    },
+
+    /**
+     * The same tree at a laptop's width, where the list and a transcript are on screen together.
+     *
+     * The session that gets opened is the **root** of the group: the left pane then says who
+     * dispatched whom and the right pane says what that session is doing with itself, which is
+     * the pair of facts the wide layout exists to hold. Opened by label and checked afterwards,
+     * for the reason `openSaying` exists — the list re-sorts under the press.
+     */
+    "fleet-wide": async (stage) => {
+        await untilTree(stage);
+        await stage.wait(500);
+        await stage.tapSaying("#rows li", "investigate the webhook");
+        if (!await stage.untilSays("#detail-name", "investigate the webhook", 5000)) {
+            throw new Error("the root session did not open — the list moved under the press");
+        }
+        // A real entry, not the skeleton the transcript draws out of the same elements while it
+        // is loading: wait on `.entry` alone and the still is of grey bars.
+        await stage.until("#tx .entry:not(.skel-entry)");
+        await untilBusy(stage, "investigate the webhook");
+        await stage.wait(OPT.dwell);
     },
 
     /**

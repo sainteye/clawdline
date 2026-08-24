@@ -1,6 +1,7 @@
 # Clawdline
 
-**One bar for every Claude Code and Codex session already running on your Mac.**
+**Every Claude Code and Codex session on your Mac — including the child agents your sessions
+dispatched — as one live tree, on your Mac and on your phone.**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13%2B-black.svg)](#install)
@@ -9,18 +10,20 @@
 
 English · [繁體中文](README.zh-TW.md)
 
-<img src="docs/assets/demo.gif" width="760" alt="Press Option-Space, type, press Enter. The message lands in Claude Code.">
+<img src="docs/assets/fleet-wide.png" width="760" alt="Clawdline in a browser: every Claude Code and Codex session on the Mac in one list, the sessions that were dispatched by another session indented under it, and the transcript of the selected one beside the list.">
 
-Claude Code draws its input box at the bottom of a terminal window. That is fine for one session.
-With four, the day is spent walking *to* sessions: to say anything to one, you find its tab; to
-learn whether it is still working, you find its tab; and what you are choosing from is a row of tab
-titles, which are *tasks* — two projects can be working on tasks that read alike. There is no
-setting for this and no plugin can fix it: plugins add commands, agents, hooks, MCP servers and
-skills, not TUI layout.
+Nobody runs one coding agent for long. By the afternoon there are five, and two of them were not
+started by you — a session decided the diff wanted a second reader and sent one off. What you have
+then is not a row of terminals. It is a fleet with a shape: which of them is working, which is
+stuck on a question, which assistant each one is, and **which of them asked for which**. A terminal
+window cannot show you any of that. It offers tab titles, and a tab title is a *task* — two
+projects can be working on tasks that read alike — and no plugin can fix it, because plugins add
+commands, agents, hooks, MCP servers and skills, not TUI layout.
 
-Clawdline is one place for all of them. Press <kbd>⌥</kbd><kbd>Space</kbd>, type, and the message
-lands in the session you point it at. Press <kbd>⌘</kbd><kbd>K</kbd> and every session becomes a row
-that says what it is doing: **working, finished, or waiting for an answer.**
+Clawdline draws the shape and lets you act on it. Press <kbd>⌘</kbd><kbd>K</kbd> and every session
+is a row that says what it is doing — **working, finished, or waiting for an answer** — with the
+sessions a session sent away indented underneath it. Press <kbd>⌥</kbd><kbd>Space</kbd>, type, and
+the message lands in whichever of them you point at.
 
 **Nothing is installed into Claude Code or Codex.** No hooks, no MCP server, no wrapper around
 the `claude` or `codex` command, no edits to your settings. Clawdline reads the screens your sessions
@@ -29,7 +32,9 @@ started by hand an hour ago appear in the list too, not just the ones something 
 iTerm2 is supported directly; every other terminal works through tmux.
 
 **Codex sessions are in the same list**, on the same terms: what each is doing, what it has said,
-what you send it, and opening a new one. [The whole of what that means →](#codex-in-the-same-bar)
+what you send it, and opening a new one — and either assistant can be on either end of a dispatch,
+so a Claude Code session can send work to a Codex child, or the other way round.
+[The whole of what that means →](#codex-in-the-same-bar)
 
 Nothing to migrate, nothing to undo. Quit it and your setup is exactly as it was.
 
@@ -37,7 +42,8 @@ Nothing to migrate, nothing to undo. Quit it and your setup is exactly as it was
 
 | | |
 | --- | --- |
-| **Which session wants you** `⌘K`<br><br>Every session in one list. A working session carries the live line Claude Code draws for itself; a session with a question on screen is the loud one, because that is the only state costing you something for every second it goes unnoticed. Each row wears its project's own mark.<br><br>[How each state is decided →](docs/interface.md#which-session-wants-you) | <img src="docs/assets/sessions-live.gif" width="380" alt="The session list, live: the selection walks down it, one session is answered and goes quiet, another finishes, and a third starts asking."> |
+| **The fleet, and who dispatched whom** `⌘K`<br><br>Every Claude Code and Codex session on the Mac in one list — the ones you opened yourself, and the ones a session dispatched sitting indented under whoever asked for them. One glance answers what a row of tabs cannot: which of them is waiting on you, and which of them is another session's errand.<br><br>[Handing work to another session →](#handing-work-to-another-session) | <img src="docs/assets/fleet-phone.png" width="300" alt="The session list on a phone: parent sessions each with a dispatched child indented beneath, one child running Claude Code and one running Codex, and the session that is waiting for an answer picked out in the accent colour."> |
+| **Which session wants you** `⌘K`<br><br>A working session carries the live line Claude Code draws for itself; a session with a question on screen is the loud one, because that is the only state costing you something for every second it goes unnoticed. Each row wears its project's own mark.<br><br>[How each state is decided →](docs/interface.md#which-session-wants-you) | <img src="docs/assets/sessions-live.gif" width="380" alt="The session list, live: the selection walks down it, one session is answered and goes quiet, another finishes, and a third starts asking."> |
 | **Read a session back** `⌘J`<br><br>Not a screenshot of a terminal. Clawdline reads the session's transcript file, so you get real message boundaries, full history, headings, bordered tables and code — with finished runs of tool calls folded to one line each. `⌘F` fills the screen.<br><br>[What the pane does →](docs/interface.md#reading-a-session-back) | <img src="docs/assets/transcript.png" width="380" alt="The transcript pane: a heading, a bordered table and a code block, laid out rather than scraped."> |
 | **The same sessions on your phone**<br><br>Your Mac serves a page; your phone opens it and reads every session, transcript and all — and types into them if you arm the second switch. Off by default, bound to loopback, every device paired by a code shown only on the Mac. Reaching it from outside is `cloudflared`, which is your own install.<br><br>[From a browser, or your phone →](#from-a-browser-or-your-phone) | <img src="docs/assets/web-wide.png" width="380" alt="The same page on a laptop: the session list down the left with the one that is waiting picked out in the accent colour, its transcript beside it, and a box to type in underneath."> |
 | **Dictation that keeps up with two languages**<br><br>Words appear as you speak, and the recogniser is fed your own prompt history, so `webhook` and `rebase` survive being said inside a Chinese sentence. Claude Code's own `/voice` streams audio to Anthropic's servers, needs a Claude.ai account, and [does not support Chinese](docs/compatibility.md#claude-code-has-its-own-dictation-now). Add [Whisper](docs/whisper.md) — one `brew install` — and a second pass reads the same audio back, so one sentence can hold two languages.<br><br>[What it does while you talk →](docs/interface.md#talk-instead-of-type) | <img src="docs/assets/voice.gif" width="380" alt="Speaking into the bar: the words appear live, then Whisper reads the recording back and replaces them."> |
@@ -90,6 +96,38 @@ Also:
 > *"Connect this project to Clawdline — https://github.com/sainteye/clawdline"* is the whole
 > instruction.
 
+## Handing work to another session
+
+A session you are talking to is a session you are waiting on, and some of what gets asked for —
+draw this, run the suite, read this diff — does not need the conversation it was asked in. A
+session holding the `clawdline` skill writes the task down and asks the app to run it. Clawdline
+opens a terminal tab, starts the assistant the task named, types the briefing into it, watches for
+the child's answer, adds up what it spent, and tells the session that asked.
+
+<img src="docs/assets/dispatch.webp" width="760" alt="One session hands three cards of work to three others, each of which goes off to a machine of its own, and the last thread ends at a phone lighting up.">
+
+**The child can be either assistant.** One Claude Code session can send the drawing to a Codex
+child and the diff to a Claude Code one in the same breath; what the app has to know is which
+binary to start and which screen to read afterwards, and it knows both already — which is why one
+Mac runs a mixed fleet without a framework in the middle of it. Dispatching is a plain local HTTP
+route, so anything running as you can ask for a child; the skill that writes the task down ships
+for Claude Code.
+
+**A dispatched agent you cannot see is a background job; one you can watch, answer and stop is a
+session.** So a child here is not a job id in a queue. It is a row in the same list as everything
+else, indented under the session that asked for it, carrying its own state, its own transcript and
+its own token count — on the Mac and on the phone, where you can read what it is doing, answer the
+question it is stuck on, or end it. What it spent is added up per task, in tokens and, where the
+model has a published price, in dollars.
+
+**Dispatching has a door of its own.** It sits behind a `0600` file only a local process can read,
+so a paired phone can watch the tasks and never start one — typing into a session and spawning
+three more are not the same right. And **depth is one**: a session this app briefed as a child
+cannot dispatch tasks of its own, which is the difference between a fleet and a fork bomb.
+
+**[docs/orchestrator.md](docs/orchestrator.md)** is the protocol: the file formats, the
+credentials, the lifecycle and the routes with `curl` transcripts.
+
 ## Install
 
 **Homebrew**
@@ -131,6 +169,8 @@ cannot send anything without that. Menu bar ✳ → **Launch at login** makes it
 
 Press <kbd>⌥</kbd><kbd>Space</kbd> in iTerm2, type, press <kbd>Enter</kbd>.
 
+<img src="docs/assets/demo.gif" width="760" alt="Press Option-Space, type, press Enter. The message lands in Claude Code without the terminal coming to the front.">
+
 | Key | Action |
 | --- | --- |
 | <kbd>⌥</kbd><kbd>Space</kbd> | Show / hide the bar |
@@ -162,6 +202,12 @@ will not tell you where the text goes is worse than no prompt box at all.
 
 Turn it on in **Settings → Remote**. If the browser is on this Mac, *Open in a browser* mints a
 device and opens the page already signed in. For a phone, *Pair a phone…* draws a QR code.
+
+**The page is the same fleet, not a cut-down one.** Every session the Mac can see is on it, grouped
+the same way — a dispatched child indented under the session that asked for it — with each one's
+transcript, its state, the question it is stuck on and a box to answer it from. A phone that can
+type can also start a session and end one; what it cannot do is dispatch, which is
+[a separate credential this Mac never serves](#handing-work-to-another-session).
 
 <img src="docs/assets/web.gif" width="300" alt="The page on a phone: six sessions, each with its project's mark, and the one that is asking pulled out in the accent colour. Then another session's transcript, where a run of two tool calls sits folded to one line until it is opened; then a reply typed into the box at the bottom and sent.">
 
@@ -201,19 +247,6 @@ opens the same skill menu the bar has, over the same metadata-only route.
 **[docs/remote.md](docs/remote.md)** has the threat model in full, including what this does *not*
 defend against. **[docs/api.md](docs/api.md)** is the HTTP surface a script or a plugin talks to:
 every session, every transcript, an event stream, and `curl` as the only SDK.
-
-## Handing work to another session
-
-A session you are talking to is a session you are waiting on, and some of what gets asked for — draw
-this, run the suite, read this diff — does not need the conversation it was asked in. A session
-holding the `clawdline` skill can write the task down and ask the app to run it: Clawdline opens a
-terminal tab, types the briefing into it, watches for the child's answer, adds up what it spent and
-tells the session that asked. Dispatching sits behind a credential of its own — a `0600` file only a
-local process can read — so a paired phone can watch the tasks and never start one, and a session
-this app briefed as a child cannot dispatch tasks of its own.
-
-**[docs/orchestrator.md](docs/orchestrator.md)** is the protocol: the file formats, the two
-credentials, the lifecycle and the routes with `curl` transcripts.
 
 ## How it works
 
@@ -411,11 +444,11 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 | | |
 | --- | --- |
 | [The bar, up close](docs/interface.md) | the session list, the <kbd>⌘</kbd><kbd>J</kbd> pane, dictation, files, the notch |
+| [Handing work off](docs/orchestrator.md) | one session dispatching another: the protocol, the credentials, the lifecycle |
 | [Connecting a project](docs/connect.md) | written for an agent: the files to create and how to check them |
 | [The dev stack](docs/devstack.md) · [adopting it](docs/devstack-adopting.md) | `.devstack.json`, and the three heights of adopting it |
 | [Project status files](docs/project-status.md) | the mark, the colour, the deploy, the backlog |
 | [From somewhere else](docs/remote.md) · [the API](docs/api.md) | the threat model in full, and the HTTP surface |
-| [Handing work off](docs/orchestrator.md) | one session dispatching another, and the two credentials that gate it |
 | [Hooks](docs/hooks.md) | the five events, and why the screen still decides |
 | [Whisper](docs/whisper.md) | dictating in more than one language |
 | [Mascot packs](docs/mascots.md) · [gallery](docs/gallery.md) | the format, and where packs get posted |
