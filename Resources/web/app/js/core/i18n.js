@@ -1,0 +1,347 @@
+import { esc } from "./esc.js";
+
+/* ==========================================================================
+   Words
+   Every sentence this interface says, and none of them written here twice.
+   The values below are the English, baked in so that a page whose request for
+   the real ones failed is still a page somebody can read rather than a page of
+   blank labels. Everything else — thirteen other languages — arrives from
+   `GET /v1/strings` before the first render, chosen from this browser's own
+   `Accept-Language`, and is written straight over the top of them.
+
+   The page translates nothing and decides nothing about language. The Mac is
+   where the words live, and there is exactly one copy of them: see the web
+   section of `Sources/Strings.swift`.
+   ========================================================================== */
+
+export var T = {
+    webConnLive: "live",
+    webConnConnecting: "connecting",
+    webConnRetrying: "retrying in {n}s",
+    webConnOffline: "offline",
+    webConnLocked: "not paired",
+    webConnTipLive: "Streaming from the app",
+    webConnTipLocked: "This browser has not been paired with the Mac",
+    webConnTipDown: "Not connected — click to try now",
+    webCountWorking: "{n} working",
+    webCountWaiting: "{n} waiting",
+    webCountUnreadable: "{n} unreadable",
+    webCountQuietOne: "{n} session, all quiet",
+    webCountQuietMany: "{n} sessions, all quiet",
+    webCountNone: "no sessions",
+    webFilterPlaceholder: "Filter by task, project or tty",
+    webFilterLabel: "Filter sessions",
+    webListLabel: "Claude Code sessions",
+    webPull: "Pull to refresh",
+    webPullRelease: "Release to refresh",
+    webPullBusy: "Refreshing…",
+    webEmptyFilterTitle: "Nothing matches “{q}”",
+    webEmptyFilterHint: "Esc clears the filter",
+    webEmptyLockedTitle: "This device is not paired",
+    webEmptyLockedHint: "The app answered 401 — pair it from Clawdline on the Mac",
+    webEmptyNoneHint: "Start one in a terminal and it appears here",
+    webEmptyWaitTitle: "Waiting for the app",
+    webEmptyWaitHint: "Nothing has arrived on the stream yet",
+    webStateUnreadable: "screen could not be read",
+    webStateWorking: "working",
+    webBack: "Sessions",
+    webBackLabel: "Back to the session list",
+    webNoSessionOpen: "No session open",
+    webOrderTip: "Reverse the transcript (r)",
+    webShowOnMac: "Show on Mac",
+    webShowOnMacTip: "Bring this session's terminal to the front on the Mac",
+    webShowOnMacOff: "The server reports write: false — nothing can be sent yet",
+    webShowOnMacAsked: "Asked the Mac to bring it forward",
+    webSessionActions: "Session actions",
+    webSessionGit: "Git changes",
+    webGitTitle: "Git changes",
+    webGitClean: "Working tree clean",
+    webGitNotRepo: "Not a Git repository",
+    webGitFailed: "Could not read Git changes",
+    webGitRefresh: "Refresh",
+    webGitClose: "Close",
+    webGitStaged: "Staged",
+    webGitUnstaged: "Unstaged",
+    webGitUntracked: "Untracked",
+    webGitConflict: "Conflict",
+    webEndSession: "Close session",
+    webConfirmActionTitle: "Run {action}?",
+    webConfirmActionSay: "This sends {action} to the current session.",
+    webConfirmEndTitle: "Close this session?",
+    webConfirmEndSay: "The assistant will quit, then its terminal tab will close.",
+    webClosing: "Closing…",
+    webCancel: "Cancel",
+    webConfirm: "Confirm",
+    webPickSession: "Pick a session on the left.",
+    webReading: "Reading…",
+    webLoading: "Loading…",
+    webTranscriptFailed: "Could not read the transcript",
+    webWhoYou: "you",
+    webWhoTool: "tool",
+    webPending: "Waiting for the Mac…",
+    webAttachedImage: "{n} image attached",
+    webAttachedImages: "{n} images attached",
+    webSteps: "{n} steps",
+    webJustNow: "just now",
+    webMinutesAgo: "{n}m ago",
+
+    // A question Claude stopped to ask, and the state of a session that is still on one.
+    webAskLabel: "asked",
+    webAskAny: "Any number of these",
+    webWaitingTitle: "This session is waiting for an answer",
+    webWaitingSay: "Claude Code is showing a menu on the Mac. Clawdline cannot read a menu from here yet, so the choices are only on that screen.",
+    webWaitingSend: "*Sending from here will not type your answer into the menu.* It confirms whichever option the menu has highlighted — which is rarely the one you meant. Answer this one on the Mac.",
+    // The same menu, once it could be read. The two above are what is said when it could not.
+    webMenuSay: "Tap an answer and it goes straight to the session.",
+    webMenuHighlighted: "highlighted",
+    webMenuSent: "Answer sent.",
+    // What a session has going in the background — see `Subagents` on the Mac.
+    webAgents: "Background agents",
+    webAgentsCount: "{n} running",
+    webAgentDone: "done",
+    webAgentFailed: "failed",
+    // Reading one of them. Said in the same words on the Mac, so these four have no `web` prefix.
+    agentRunning: "running",
+    agentTools: "{n} tools",
+    agentEmpty: "This agent has not written anything down yet.",
+    agentBack: "Session",
+    webAgentOpen: "See what this agent did",
+    // Work one session handed to another. A background agent lives inside its session; a task
+    // has a whole session of its own, which is why it gets a row rather than a chip in a strip.
+    webTaskRoot: "Root",
+    webTaskChild: "Child",
+    webTaskTasks: "Tasks",
+    webTaskDone: "done",
+    webTaskFailed: "failed",
+    webTaskRunning: "running",
+    // The page has been open longer than the app it came from.
+    webStale: "Clawdline has been rebuilt on the Mac. This page is the older one.",
+    webStaleGo: "Reload",
+    webSend: "Send",
+    webAttach: "Attach a picture",
+    webRemoveShot: "Remove {name}",
+    webWriteOpen: "Open a session to write to it.",
+    webWriteOff: "*Sending is off* — the server reports `write: false`. The box is wired; it switches itself on when that changes.",
+    webShotsOnlyPictures: "Only pictures can go with a message",
+    webShotsTooMany: "{n} pictures is the most one message can carry",
+    webShotTooBig: "That picture is too big to send, even shrunk",
+    webShotsTooBig: "Those pictures are too big to send together",
+    webShotUnreadable: "That picture could not be read",
+    webShotNeedsSession: "Open a session to send a picture to it",
+    webHintMove: "move",
+    webHintOpen: "open",
+    webHintFilter: "filter",
+    webHintPane: "pane",
+    webKeysLabel: "Keyboard shortcuts",
+    webKeysTitle: "Keyboard",
+    webKeysMove: "Move through the list — `j` and `k` do the same",
+    webKeysOpen: "Open the selected session",
+    webKeysFilter: "Filter the list",
+    webKeysEscape: "Clear the filter, then step back",
+    webKeysList: "Focus the session list",
+    webKeysPane: "Show or hide the transcript",
+    webKeysEnds: "Top or bottom of the transcript",
+    webKeysReverse: "Reverse the transcript order",
+    webKeysThis: "This card",
+    webKeysFoot: "Anything typed into a text box stays in the text box — the shortcuts stand down while you write.",
+    webDoorLabel: "Pair this browser",
+    webDoorAskLede: "This browser has not been let in yet.",
+    webDoorAskFine: "Ask to pair and a six-digit code appears *on the Mac* — it is deliberately not in the reply to this page. Only somebody at that machine can finish this, and that is the point rather than the hurdle.",
+    webDoorName: "Call this device",
+    webDoorAsk: "Ask to pair",
+    webDoorToPassword: "Sign in with a password instead",
+    webDoorCodeLede: "Look at the Mac.",
+    webDoorCodeFine: "Clawdline is showing six digits for {left}. Type them here.",
+    webDoorTwoMinutes: "two minutes",
+    webDoorDigit: "Digit {n}",
+    webDoorConfirm: "Pair this device",
+    webDoorRestart: "Start again",
+    webDoorPasswordLede: "Sign in with the password.",
+    webDoorPasswordFine: "The one set in Clawdline on the Mac, under Settings → Remote. If none has been set, pairing is the way in.",
+    webDoorPassword: "Password",
+    webDoorPasswordGo: "Sign in",
+    webDoorToPair: "Use a pairing code instead",
+    webDoorAsking: "Asking the Mac…",
+    webDoorAskFailed: "Could not ask the Mac.",
+    webDoorRateLimited: "Each request puts an alert on the Mac, so there are only three every ten minutes.",
+    webDoorSixDigits: "Six digits.",
+    webDoorChecking: "Checking…",
+    webDoorFinished: "That pairing is finished — five wrong codes. Ask again when you are at the Mac.",
+    webDoorWrongCode: "That code is not right.",
+    webDoorNeedPassword: "The password, first.",
+    webDoorWrongPassword: "That is not the password.",
+    webDoorExpired: "That code has expired. Ask again and a fresh one appears on the Mac.",
+    webDoorPaired: "Paired — this browser is in",
+    webOffline: "Could not reach Clawdline. Is it still running on the Mac?",
+    webNotJSON: "The server sent something that is not JSON",
+    webRequestFailed: "Request failed",
+    webNotifyGo: "Notify me",
+    webNotifyAsking: "Asking…",
+    webNotifyStop: "Stop",
+    webNotifyStopping: "Stopping…",
+    webNotifyOff: "when a session is waiting for an answer",
+    webNotifyOn: "This device is subscribed. What it gets told about is set on the Mac.",
+    webNotifyBlocked: "Notifications are blocked for this site. That switch is in the browser's own settings, not here.",
+    webNotifyUnsupported: "This browser cannot show notifications.",
+    webNotifyHomeScreen: "Add clawdline to your home screen and open it from there — iOS only sends notifications to an app that lives there.",
+    webNotifyOnFailed: "Could not turn notifications on",
+    webNotifyOffFailed: "Could not turn notifications off",
+    webSettings: "Settings",
+    webSettingsNotify: "Notifications",
+    // The sort order, which is a preference of this browser and now sits where the rest of them
+    // do. `webOrderTip` is still the button's hover text — same words, same job, one row down.
+    webSettingsOrder: "Transcript",
+    webSettingsOrderSay: "Which end of a transcript to start reading from. It applies to every session, and `r` does the same from a keyboard.",
+    webSettingsVersion: "Version {v}",
+    webClose: "Close",
+    webNotifySheetOff: "This device is not told when a session is waiting.",
+    webNotifyTest: "Send a test",
+    webNotifyTestSent: "Sent — it should arrive on this device in a moment.",
+    webNotifyTestNone: "The Mac has no subscription for this device. Turn notifications off and on again, and this browser will register a fresh one.",
+    webNotifyTestFailed: "Could not send a test notification",
+    webSending: "Sending…",
+    webSendTip: "Return sends · Shift-Return starts a line",
+
+    // Starting one. Every one of these is about choosing among what the Mac offered — there is
+    // no path in any of them, because there is no field on that route a path could go in.
+    webStart: "Start a session",
+    webStartLabel: "Start a session in a project",
+    webStartPick: "Where should it start?",
+    webStartWith: "Start with",
+    webStartEmpty: "Nowhere to start yet. Run Claude Code on the Mac once and it will be here.",
+    webStartFilter: "Filter projects",
+    webStarting: "Opening a tab…",
+    // The tab is open by the time this shows, so it says what happened rather than what might.
+    webStartWaiting: "Started. Waiting for it to appear…",
+    webStartSlow: "The tab is open, but the session has not reported in. Have a look at the Mac.",
+    webStartFailed: "That could not be started.",
+    webStartGone: "That project is not on the Mac any more.",
+    webStartTerminalClosed: "{app} is not running on the Mac. Open it there and try again.",
+    webStartTerminalUnsupported: "A session cannot be started in {app} from here. Run tmux in it and this works.",
+    webStartOff: "Starting a session is switched off. Settings → Remote on the Mac turns it on.",
+
+    // Where this project can be opened. Three of these exist to be honest about a row that
+    // cannot be opened from wherever this page is being read — which is the only reason the
+    // list is worth having rather than a page of links that time out.
+    webLinks: "Links",
+    webLinksTip: "Where this project can be opened",
+    webLinksPick: "Everything this project has an address for.",
+    webLinksEmpty: "This project has nothing with an address — no site, no deploy, and no dev stack running.",
+    webLinksFailed: "Could not read this project's links.",
+    webLinksLocal: "On the Mac's own network only. It will not open from here.",
+    webLinksFile: "A file on the Mac. It opens there, not in this browser.",
+    webLinksCopy: "Copy path",
+    webLinksCopied: "Copied.",
+    webLinksCopyFailed: "This browser would not let the page copy that.",
+    // That thing's own health, in its own words, because "ok" means a passing run and a serving
+    // port and there is one row type for both.
+    webLinkOk: "ok",
+    webLinkFail: "failing",
+    webLinkDown: "down",
+    webLinkRunning: "running",
+    webSessionInfo: "Session info",
+    webInfoTitle: "About this session",
+    webInfoSession: "This session",
+    webInfoAssistant: "Assistant",
+    webInfoModel: "Model",
+    webInfoSessionId: "Session id",
+    webInfoDirectory: "Directory",
+    webInfoRunningFor: "Running for",
+    webInfoUsage: "Token use",
+    webInfoInput: "Input",
+    webInfoOutput: "Output",
+    webInfoCacheRead: "Cache read",
+    webInfoCacheWrite: "Cache write",
+    webInfoTotal: "Total",
+    webInfoCost: "Estimated cost",
+    webInfoNoUsage: "No transcript found for this session yet.",
+    webInfoLimits: "Plan limits",
+    webInfoLimitHit: "limit reached",
+    webInfoResets: "resets {when}",
+    webInfoUnknown: "unknown",
+    webInfoFiles: "Files",
+    webInfoBranch: "Branch",
+    webInfoStaged: "Staged",
+    webInfoUnstaged: "Changed",
+    webInfoUntracked: "Untracked",
+    webInfoConflict: "Conflicts",
+    webInfoClean: "Nothing uncommitted.",
+    webInfoNotRepo: "Not a git repository.",
+    webInfoDeploy: "Last deploy",
+    webInfoNoDeploy: "No deploy recorded for this project.",
+    webInfoFailed: "Could not read this session's info.",
+    webInfoRefresh: "Refresh",
+    webInfoTokens: "tokens",
+    webInfoSwitchModel: "Switch model",
+    webInfoModelOther: "another model\u2026",
+    webInfoModelSent: "Sent /model {model}. Confirming\u2026",
+    webInfoModelBusy: "Switching waits until the session is idle.",
+    webInfoLimitsClaude: "Claude Code only writes a window down once it is spent, so nothing is known until then.",
+    webInfoCopied: "Session id copied.",
+    webInfoAsOf: "as of {when}",
+    webInfoWhyUnknown: "Why this is unknown, and how to get the numbers",
+
+    // Said in both places, so said once — the bar's own words, arriving here too.
+    placeholder: "Message Claude Code…",
+    noSession: "No Claude Code session found",
+    noOutput: "Nothing to read from this session yet.",
+    sessionWaiting: "waiting for you",
+    sendFailed: "Could not send",
+    hintList: "list",
+    hintKeys: "keys",
+    hintOrder: "reverse",
+    webOrderNewest: "Newest first",
+    webOrderOldest: "Oldest first"
+};
+
+/**
+ * The strings, as the server sent them.
+ *
+ * Only keys this page already knows are taken. A payload is not a place to learn new names from
+ * — an unknown key is a version of the app that knows something this page does not, and the
+ * right thing to do with it is nothing.
+ */
+export function applyStrings(data) {
+    if (!data) return;
+    for (var key in T) {
+        if (typeof data[key] === "string" && data[key]) T[key] = data[key];
+    }
+    // What a screen reader picks a voice from, and what a browser offers to translate against.
+    if (data.lang) document.documentElement.lang = data.lang;
+    // None of the fourteen is written right to left, so this is `ltr` every time today. It is
+    // set from the answer rather than left alone so that the day one is added, the page is
+    // already laying itself out the way that language is read.
+    if (data.dir) document.documentElement.dir = data.dir;
+}
+
+/**
+ * `{n}`, `{q}`, `{left}` — the holes in a string, filled in.
+ *
+ * **Order matters when the result is going into HTML.** Fill first and escape the whole thing
+ * afterwards — `esc(fill(s, …))` — and one pass covers both the copy and whatever went into it.
+ * Escaping first and filling second would put an unescaped value into an escaped string, which
+ * is the bug this note exists to prevent. A hole with nothing to put in it is left as it was
+ * written, so a missing value shows up as `{n}` rather than as a hole in a sentence.
+ */
+export function fill(s, holes) {
+    return String(s == null ? "" : s).replace(/\{(\w+)\}/g, function (all, key) {
+        return holes && holes[key] != null ? String(holes[key]) : all;
+    });
+}
+
+/**
+ * Interface copy, ready to be written as HTML.
+ *
+ * Two markers and no more: `*emphasis*` and `` `something typed at a machine` ``. They are
+ * turned into tags **after** the string has been escaped, which is what makes them safe — by
+ * then the only `<` and `>` in the string are the ones put there on this line, and a translation
+ * that contains a tag has already had it turned into the text somebody typed.
+ *
+ * Only for strings that carry no filled-in value: a value is escaped, but it is not copy, and it
+ * has no business being read for markers. Those go through `esc(fill(…))` instead.
+ */
+export function words(s) {
+    return esc(s)
+        .replace(/\*([^*]+)\*/g, "<b>$1</b>")
+        .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
