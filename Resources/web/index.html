@@ -6219,6 +6219,15 @@ function renderComposer() {
  * here is the way to put it in front of you.
  */
 var waitingDrawn = null;
+
+/* An answer that has been sent, and the session that has not caught up with it yet.
+ *
+ * Pressing an option closes the picker on the Mac before the next reading notices, so for about
+ * a second the session is still `waiting` with no menu left to read — and the box would fall back
+ * to the two sentences that say answering is only possible on the Mac. Somebody who has just
+ * answered from the phone is then told their press did nothing, which is the opposite of what
+ * happened. So the options stay on screen, dead, under the line that says the answer went. */
+var answeredMenu = null;
 var liveDrawn = null;
 var agentsDrawn = null;
 /// The composer's own spinner. Kept out of `spinners`, which the list throws away and rebuilds
@@ -6237,10 +6246,19 @@ function renderWaiting() {
     // said, and they are still the honest answer for that case.
     var menu = open && open.state === "waiting" && open.menu ? open.menu : null;
     var rows = menu && menu.options && menu.options.length ? menu.options : null;
+    // Given up after ten seconds: if the session is still waiting by then this was not the
+    // answer's own gap, and the honest fallback is better than a dead menu nobody can use.
+    if (answeredMenu && (!open || answeredMenu.id !== open.id || open.state !== "waiting"
+                         || Date.now() - answeredMenu.at > 10000)) {
+        answeredMenu = null;
+    }
+    var sent = !rows && !!answeredMenu;
+    if (sent) rows = answeredMenu.rows;
     var want = !open || open.state !== "waiting" ? "" :
         '<div class="title">' + esc(T.webWaitingTitle) + "</div>" +
         (rows
-            ? '<div class="say">' + words(T.webMenuSay) + "</div>" + menuHTML(rows)
+            ? '<div class="say">' + words(sent ? T.webMenuSent : T.webMenuSay) + "</div>"
+              + menuHTML(rows, sent)
             : '<div class="say">' + words(T.webWaitingSay) + "</div>" +
               '<div class="say">' + words(T.webWaitingSend) + "</div>") +
         '<button type="button" class="go" data-focus="1">' + esc(T.webShowOnMac) + "</button>";
@@ -6299,9 +6317,9 @@ function renderWaiting() {
  * drawn and disabled: the question is still worth reading when you cannot answer it, and a button
  * that looks live and does nothing is worse than a line of text.
  */
-function menuHTML(rows) {
+function menuHTML(rows, spent) {
     return '<div class="menu">' + rows.map(function (o) {
-        var can = o.can !== false && S.write;
+        var can = !spent && o.can !== false && S.write;
         return '<button type="button" class="opt" data-key="' + esc(String(o.n)) + '"' +
             ' data-can="' + (o.can === false ? "0" : "1") + '"' +
             (o.selected ? ' data-here="1"' : "") + (can ? "" : " disabled") + ">" +
@@ -6324,6 +6342,11 @@ els.waiting.addEventListener("click", function (ev) {
         Array.prototype.forEach.call(els.waiting.querySelectorAll(".opt"), function (b) {
             b.disabled = true;
         });
+        // Held so the next render has something to draw when the picker has already gone.
+        var asked = byId(S.openId);
+        if (asked && asked.menu && asked.menu.options && asked.menu.options.length) {
+            answeredMenu = { id: S.openId, rows: asked.menu.options, at: Date.now() };
+        }
         api.key(S.openId, opt.dataset.key)
             .then(function () { toast(T.webMenuSent); })
             .catch(function (e) {
@@ -6331,6 +6354,7 @@ els.waiting.addEventListener("click", function (ev) {
                 // Drawn again from scratch, and the cache has to be cleared to allow it: the
                 // markup has not changed, so the guard in `renderWaiting` would keep the dead
                 // buttons on screen and leave nothing to press.
+                answeredMenu = null;
                 waitingDrawn = null;
                 renderWaiting();
             });
