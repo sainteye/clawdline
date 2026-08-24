@@ -841,6 +841,23 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .chip .ico.arrow { transition: transform 180ms var(--ease); }
 .chip.on .ico.arrow { transform: rotate(180deg); }
 
+/* **Refresh, while it is refreshing.**
+
+   The transcript is refetched quietly — the reader is reading the last version of it and a
+   skeleton over the top would take that away — which meant pressing this button did nothing
+   visible at all. On a desk that is a shrug; on a phone, where nothing else on the screen is
+   moving, it is a button somebody presses three times because they cannot tell whether it
+   worked, and then stops trusting.
+
+   So the control answers for itself: the circular arrow turns, and the chip takes the accent
+   while it is out. Two signals rather than one because the colour is the half that survives a
+   still frame and a reader who has asked for less movement — and because the label is *not*
+   swapped for "Refreshing…", which is four characters wider than "Refresh" and would squeeze
+   the session's name out of a phone header for half a second every press. */
+.chip[data-busy="on"] { border-color: var(--accent-ed); color: var(--accent); }
+.chip[data-busy="on"] .ico { animation: spin 900ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
 .tx-scroll { flex: 1 1 auto; padding: 16px 18px 22px 18px; }
 .tx {
     max-width: 760px;
@@ -1378,6 +1395,13 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    separate things stacked up. */
 .live + .agents { border-top: 0; padding-top: 4px; }
 .live:not([hidden]) { border-top: 1px solid var(--line); }
+/* **And the box under them is in the same block.** The composer draws its own hairline, which is
+   right when it is the first thing under the transcript and wrong the moment anything is between
+   them: the live line ended up fenced by a rule above and a rule below, which turns a note about
+   what the session is doing into a row of furniture of its own. Whatever is highest carries the
+   one line, exactly as the pair above already agreed. */
+.live:not([hidden]) ~ .composer,
+.agents:not([hidden]) ~ .composer { border-top: 0; }
 
 .stale .shut {
     margin-left: 2px; padding: 0 6px;
@@ -3055,6 +3079,12 @@ var S = {
     // An app too old to have the route leaves this empty, and everything below reads as before.
     tasks: [],
     at: 0,
+    // Whether a session list — any list, an empty one included — has ever landed. Two screens
+    // are drawn from this and not from `sessions.length`: the list's "there are none" and the
+    // transcript's "none is open". Both are answers, and before the first frame the page has
+    // not been given one; `sessions` starting empty is how it is declared, not what the Mac
+    // said. See `listUnknown`.
+    arrived: false,
     write: false,           // /v1/health and the hello event both carry it
     version: "",
     conn: "connecting",     // connecting | live | retrying | offline
@@ -3402,8 +3432,10 @@ var Build = {
 
 var handlers = {
     sessions: function (list, at) {
+        var first = !S.arrived;
         S.sessions = list || [];
         S.at = at || 0;
+        S.arrived = true;
         // Anything arriving at all is proof this browser is allowed to ask, whatever an earlier
         // request was told — a pairing finished in another tab counts.
         S.locked = false;
@@ -3414,6 +3446,10 @@ var handlers = {
         // let the settle callback replace it; otherwise this render is the replacement.
         var listWasWaiting = Waits.list.visible;
         onSessions();
+        // Four things were held blank while nobody had said — the list, the pane beside it, that
+        // pane's header and the status line under it. `onSessions` redraws all of them by opening
+        // a session, but a first list with nothing to open opens none, and then nothing does.
+        if (first && !S.openId) { render(); renderTranscript(); }
         Waits.list.settle(listWasWaiting ? renderList : null);
     },
     /// The whole task list, every time one of them moves. Nothing here merges, for the same
@@ -3439,7 +3475,12 @@ var handlers = {
         // A connection that has stopped trying is no longer a wait; it is an answer, and one of
         // the empty states says it in words. A skeleton with nothing coming is worse than the
         // sentence it was standing in for, because it never admits that it has given up.
-        if (state !== "connecting") Waits.list.settle(renderList);
+        if (state !== "connecting") Waits.list.settle(function () {
+            // Nothing ever arrived and the wait has given up: what was held blank while an answer
+            // might still have been coming *is* the answer now, and all four screens say it.
+            if (!S.arrived && !S.openId) { render(); renderTranscript(); }
+            else renderList();
+        });
         renderConn();
     }
 };
@@ -5145,7 +5186,7 @@ function renderList() {
         });
     }
 
-    var empty = !list.length && !starting;
+    var empty = !list.length && !starting && !listUnknown();
     var homeEmpty = empty && !S.sessions.length && !S.filter;
     els["list-empty"].className = "empty" + (homeEmpty ? " home-hero-list" : "");
     els["list-empty"].hidden = !empty;
@@ -5313,7 +5354,10 @@ function renderDetailHead() {
     var ending = !!(s && closingID === s.id);
     els["detail-head"].dataset.closing = ending ? "on" : "off";
     els.back.disabled = ending;
-    els["detail-name"].textContent = s ? (s.label || s.tty || s.id) : T.webNoSessionOpen;
+    // Blank, not "No session open", while the list is still on its way — see `listUnknown`. The
+    // header is the third thing that used to announce an absence and then fill in a name.
+    els["detail-name"].textContent = s ? (s.label || s.tty || s.id)
+        : (listUnknown() ? "" : T.webNoSessionOpen);
     els["detail-name"].style.color = s && s.icon ? tint(s.icon.accent) : "";
     var sub = [];
     if (s) {
@@ -5382,11 +5426,15 @@ function renderDetailHead() {
 function renderTranscript() {
     var box = els.tx;
     optimisticSpinners = [];
-    var home = !S.openId;
+    // Blank rather than the home screen while the list is still on its way — see `listUnknown`.
+    // A pane that says "pick a session" and then opens one on its own is a pane that changed its
+    // mind in front of the reader; a pane that is briefly empty is a pane that is loading.
+    var home = !S.openId && !listUnknown();
     box.classList.toggle("home", home);
     els["tx-scroll"].classList.toggle("home", home);
-    if (home) {
-        box.innerHTML = '<section class="home-hero" aria-labelledby="home-hero-title">' +
+    if (!S.openId) {
+        box.innerHTML = !home ? "" :
+            '<section class="home-hero" aria-labelledby="home-hero-title">' +
             '<div class="copy"><span class="rule" aria-hidden="true"></span>' +
             '<h1 id="home-hero-title">' + esc(T.webNoSessionOpen) + '</h1>' +
             '<p>' + esc(T.webPickSession) + '</p></div></section>';
@@ -6554,6 +6602,24 @@ function Waiting(onShow, showAfter, minShown) {
     };
 }
 
+/**
+ * Whether the page still has no idea what sessions there are.
+ *
+ * Two screens say "there is nothing here" — the list's empty state and the transcript's home
+ * screen — and on a reload both of them were true for a moment and then wrong. Nothing had
+ * arrived yet, so the list was empty because it is declared empty, and no session was open
+ * because the fragment naming one cannot be honoured until that session exists. Each drew its
+ * sentence, and each took it away again a few frames later: two flashes on every load.
+ *
+ * The wait is the test rather than a clock of its own. While it is running — the skeleton up, or
+ * the 150ms before it — nobody has said, and neither screen has anything true to draw. The
+ * moment it settles, whatever it settles into is the answer: a list, an empty Mac, or a
+ * connection that gave up, and all three of those have words already written for them.
+ */
+function listUnknown() {
+    return !S.arrived && (Waits.list.visible || !!Waits.list.timer);
+}
+
 var Waits = {
     tx: Waiting(function () { renderTranscript(); }),
     list: Waiting(function () { renderList(); }),
@@ -6713,7 +6779,9 @@ function loadTranscript(id, quiet) {
         Waits.tx.start();
         renderTranscript();
     }
-    api.transcript(id).then(function (d) {
+    // Returned, so a control that started this can wait for it — see the Refresh chip. Every
+    // other caller ignores it, which is what a fire-and-forget refetch should look like.
+    return api.transcript(id).then(function (d) {
         // A later request owns both the result and the visible wait. Settling an older request
         // here would take down the skeleton while the request that superseded it is still out.
         if (S.openId !== id || ticket !== transcriptTicket) return;
@@ -7212,8 +7280,29 @@ var SwipeRows = (function () {
 })();
 
 els.filter.addEventListener("input", function () { S.filter = els.filter.value; renderList(); });
+/**
+ * Refresh, and be seen doing it.
+ *
+ * A local transcript comes back in a few milliseconds, which is faster than anybody can see: a
+ * spinner that appears and vanishes inside three frames is not feedback, it is a flicker. So the
+ * working state is held for a beat whatever the network does — long enough to have been a state
+ * somebody watched — and then goes. Not disabled while it is out: on a phone a disabled chip in
+ * this header is `display: none`, so disabling it would make the button somebody just pressed
+ * disappear. The flag is what stops a second press, and the chip stays where it was put.
+ */
+var refreshing = false;
 els["tx-refresh"].addEventListener("click", function () {
-    if (S.openId) loadTranscript(S.openId, true);
+    if (!S.openId || refreshing) return;
+    refreshing = true;
+    var chip = els["tx-refresh"], started = Date.now(), HELD = 550;
+    chip.dataset.busy = "on";
+    function done() {
+        setTimeout(function () {
+            chip.dataset.busy = "off";
+            refreshing = false;
+        }, Math.max(0, HELD - (Date.now() - started)));
+    }
+    Promise.resolve(loadTranscript(S.openId, true)).then(done, done);
 });
 els.back.addEventListener("click", function () { closeDetail(); });
 // One listener on the box rather than one per row: the strip repaints every time an agent
@@ -8393,7 +8482,10 @@ var StatusLine = (function () {
         button.setAttribute("aria-label", T.webSessionInfo);
         button.disabled = !forId;
         if (!forId) {
-            button.innerHTML = '<span class="empty">' + esc(T.webPickSession) + "</span>";
+            // Same rule as the pane above it: nobody has said yet is not the same as nobody is
+            // open, and only one of the two is worth a sentence. See `listUnknown`.
+            button.innerHTML = listUnknown() ? ""
+                : '<span class="empty">' + esc(T.webPickSession) + "</span>";
             drawRest(null);
             return;
         }
@@ -9728,12 +9820,15 @@ function boot(data) {
     paintStatic();
 
     renderConn();
+    // **Before the first paint, not after it.** The two screens that say "there is nothing here"
+    // ask whether this wait is still running — see `listUnknown` — and a wait that has not been
+    // started yet answers no. Started here, the first render draws neither of them.
+    Waits.list.start();
     renderTranscript();
     render();
     // Read before the transport starts: `adoptToken` wipes the fragment when there is a token in
     // it, and a URL can carry both.
     routeTo(location.hash);
-    Waits.list.start();
     api.start();
     Push.start();
 }
