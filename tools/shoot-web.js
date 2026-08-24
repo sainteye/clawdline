@@ -551,7 +551,7 @@ const SCRIPTS = {
      * the pair of facts the wide layout exists to hold. Opened by label and checked afterwards,
      * for the reason `openSaying` exists — the list re-sorts under the press.
      */
-    "fleet-wide": async (stage) => {
+    async "fleet-wide"(stage) {
         await untilTree(stage);
         await stage.wait(500);
         await stage.tapSaying("#rows li", "investigate the webhook");

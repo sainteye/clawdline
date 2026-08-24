@@ -1632,6 +1632,35 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .status-line .usage { color: var(--dim); font-variant-numeric: tabular-nums; }
 .status-line .cost { color: var(--accent); }
 
+/* A deploy in flight takes the scarce middle of this row. The model and plan windows remain —
+   they still decide the next turn — while token spend and the Git branch step aside until the
+   run finishes. The clock comes from the same status file as the Mac bar, not from an invented
+   GitHub percentage. */
+.status-line .deploy {
+    flex: 1 1 180px; min-width: 92px; height: 100%;
+    display: flex; align-items: center; gap: 7px;
+    color: var(--dim); font-variant-numeric: tabular-nums;
+}
+.status-line .deploy[hidden] { display: none; }
+.status-line .deploy::before {
+    content: "·"; flex: 0 0 auto; padding: 0 8px; color: #3a3a44;
+}
+.status-line .deploy .label { flex: 0 0 auto; color: var(--ink); }
+.status-line .deploy .track {
+    flex: 1 1 auto; min-width: 22px; height: 5px;
+    overflow: hidden; border-radius: 3px; background: var(--line);
+}
+.status-line .deploy .track i {
+    display: block; width: var(--w, 0%); height: 100%; border-radius: inherit;
+    background: var(--accent); transition: width 1s linear;
+}
+.status-line .deploy[data-known="false"] .track i {
+    width: 36%; background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: deploy-wait 1.6s ease-in-out infinite;
+}
+.status-line .deploy .pct { flex: 0 0 auto; min-width: 3ch; text-align: right; }
+@keyframes deploy-wait { from { transform: translateX(-120%); } to { transform: translateX(280%); } }
+
 /* The working tree, as its own control — see the markup. It carries the `·` that used to come
    from the sibling rule inside the button, because it is no longer a sibling of anything in
    there. */
@@ -2087,7 +2116,8 @@ a.dep:hover .host { color: var(--accent); }
        worth a row away from the machine, not less: it is the reading you cannot get by looking
        over at the terminal. It is the tightest row on the screen and it earns its 34px. */
     .status-line { padding-left: 12px; padding-right: 12px; }
-    .status-line .item + .item::before, .status-line .files::before { padding: 0 6px; }
+    .status-line .item + .item::before, .status-line .files::before,
+    .status-line .deploy::before { padding: 0 6px; }
     .status-line .limits { padding-left: 10px; gap: 10px; }
     /* **`49.1M`, not `49.1M tokens`.** The unit is seven characters of a row that has to carry
        a model, a spend, a branch and two plan windows across 390 points, and it is the only
@@ -2425,6 +2455,10 @@ a.dep:hover .host { color: var(--accent); }
                  list those counts are counting — and it is a separate `<button>` because one
                  control cannot have two answers and a button cannot be nested in a button. -->
             <button class="files" id="status-line-files" type="button" hidden></button>
+            <!-- While a deploy is running this takes the place of token usage and Git. It is a
+                 link because the progress is only useful if the run behind it is one tap away. -->
+            <a class="deploy" id="status-line-deploy" hidden target="_blank"
+               rel="noopener noreferrer"></a>
             <!-- The plan windows are a reading and not a control: there is nothing behind them
                  that is not already on the card the row's left half opens. -->
             <div class="limits" id="status-line-limits"></div>
@@ -3152,7 +3186,7 @@ var els = {};
  "git-panel", "git-title", "git-refresh", "git-close", "git-body",
  "composer", "msg", "send", "why", "waiting", "agents", "skill-menu", "stale", "stale-say", "stale-go",
  "detail-head", "agent-head", "agent-back", "agent-back-label", "agent-name", "agent-sub",
- "status-line", "status-line-open", "status-line-files", "status-line-limits", "keys", "toast", "brand", "brand-mark",
+ "status-line", "status-line-open", "status-line-files", "status-line-deploy", "status-line-limits", "keys", "toast", "brand", "brand-mark",
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
  "settings-notify-go", "settings-notify-test", "settings-notify-said", "settings-version",
  "settings-close", "settings-order", "settings-order-title", "settings-order-say",
@@ -4049,7 +4083,8 @@ var Mock = (function () {
         ],
         "2C71-90": [
             { label: "staging", url: "https://staging.example.com", kind: "site", state: "down", local: false },
-            { label: "deploy", url: "https://github.com/example/atrium/actions/runs/32206093412", kind: "deploy", state: "running", local: false }
+            { label: "deploy", url: "https://github.com/example/atrium/actions/runs/32206093412", kind: "deploy", state: "running", local: false,
+              startedAt: now - 320, typicalSeconds: 800 }
         ]
     };
     // The info card's shapes. A Claude session that has just spent its five-hour window, with
@@ -8520,6 +8555,7 @@ var StatusLine = (function () {
     var ticket = 0;
     var nextAt = 0;
     var stateSeen = "";
+    var deployTicker = null;
 
     function compact(n) {
         if (typeof n !== "number") return T.webInfoUnknown;
@@ -8549,13 +8585,13 @@ var StatusLine = (function () {
     }
 
     /** The left half: what this session is on and what it has spent. Opens the Session info card. */
-    function identityHTML(d) {
+    function identityHTML(d, deploying) {
         var s = d.session || {}, u = d.usage;
         var model = modelName(d) || assistantName(s.assistant);
         var out = '<span class="item model">' + assistantLogo(s.assistant) +
             '<span class="word">' + esc(model) + "</span></span>";
 
-        if (u && typeof u.total === "number") {
+        if (!deploying && u && typeof u.total === "number") {
             // The unit is its own element so a phone can drop it and keep the number — see the
             // rule at the phone breakpoint. The title says it in full either way.
             out += '<span class="item usage" title="' + esc(u.total.toLocaleString()) + " " +
@@ -8584,18 +8620,64 @@ var StatusLine = (function () {
         }).join("");
     }
 
+    function runningDeploy(d) {
+        var rows = (d && (d.links || d.deploy)) || [];
+        return rows.filter(function (row) {
+            return row && row.state === "running" && (row.kind === "deploy" || row.kind === "ci");
+        })[0] || null;
+    }
+
+    function deployProgress(row) {
+        var started = Number(row && row.startedAt), typical = Number(row && row.typicalSeconds);
+        if (!Number.isFinite(started) || !Number.isFinite(typical) || started <= 0 || typical <= 0) return null;
+        return Math.max(0, Math.min(1, (Date.now() / 1000 - started) / typical));
+    }
+
+    function drawDeploy(row) {
+        var node = els["status-line-deploy"];
+        node.hidden = !row;
+        if (!row) {
+            node.removeAttribute("href");
+            node.innerHTML = "";
+            return;
+        }
+        var progress = deployProgress(row), known = progress !== null;
+        var pct = known ? Math.round(progress * 100) : null;
+        var label = row.label || "deploy";
+        node.dataset.known = known ? "true" : "false";
+        if (/^https?:\/\//i.test(String(row.url || ""))) node.href = row.url;
+        else node.removeAttribute("href");
+        node.innerHTML = '<span class="label">' + esc(label) + '</span>' +
+            '<span class="track" aria-hidden="true"><i style="--w:' + (known ? pct : 0) + '%"></i></span>' +
+            '<span class="pct">' + (known ? pct + "%" : "…") + "</span>";
+        var said = label + " " + (known ? pct + "%" : T.webLinkRunning);
+        node.title = said;
+        node.setAttribute("aria-label", said);
+    }
+
+    function syncDeployTicker(row) {
+        if (row && !deployTicker) {
+            deployTicker = setInterval(function () { drawDeploy(runningDeploy(data)); }, 1000);
+        } else if (!row && deployTicker) {
+            clearInterval(deployTicker);
+            deployTicker = null;
+        }
+    }
+
     /** The two elements beside the button, drawn together because they empty together. */
-    function drawRest(d) {
+    function drawRest(d, deploying) {
         var files = els["status-line-files"], limits = els["status-line-limits"];
         var f = d && d.files;
-        files.hidden = !f;
-        if (f) {
+        files.hidden = !!deploying || !f;
+        if (f && !deploying) {
             files.innerHTML = filesHTML(f);
             files.title = T.webSessionGit;
             files.setAttribute("aria-label", T.webSessionGit);
         }
         var windows = ((d && d.limits) || {}).windows || [];
         limits.innerHTML = windows.length ? limitsHTML(windows) : "";
+        drawDeploy(deploying);
+        syncDeployTicker(deploying);
     }
 
     function draw() {
@@ -8608,19 +8690,20 @@ var StatusLine = (function () {
             // open, and only one of the two is worth a sentence. See `listUnknown`.
             button.innerHTML = listUnknown() ? ""
                 : '<span class="empty">' + esc(T.webPickSession) + "</span>";
-            drawRest(null);
+            drawRest(null, null);
             return;
         }
         if (data) {
-            button.innerHTML = identityHTML(data);
-            drawRest(data);
+            var deploying = runningDeploy(data);
+            button.innerHTML = identityHTML(data, !!deploying);
+            drawRest(data, deploying);
             return;
         }
         var s = byId(forId) || {};
         button.innerHTML = '<span class="item model">' + assistantLogo(s.assistant) +
             '<span class="word">' + esc(assistantName(s.assistant)) + '</span></span>' +
             '<span class="item empty">' + esc(T.webLoading) + "</span>";
-        drawRest(null);
+        drawRest(null, null);
     }
 
     function load(force) {

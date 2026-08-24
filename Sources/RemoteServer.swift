@@ -1181,8 +1181,16 @@ final class RemoteServer {
                         "state": health.state, "local": false])
         }
         if let deploy = status.deploy, let url = deploy.url, !url.isEmpty {
-            out.append(["label": deploy.label, "url": url, "kind": "deploy",
-                        "state": deploy.state, "local": false])
+            var row: [String: Any] = ["label": deploy.label, "url": url, "kind": "deploy",
+                                      "state": deploy.state, "local": false]
+            // The compact web status line replaces tokens and Git with the deploy while it is
+            // moving. Give it the same clock the Mac bar uses so the browser can keep the bar
+            // moving between the deliberately infrequent `/info` reads.
+            if deploy.state == "running" {
+                row["startedAt"] = deploy.startedAt
+                row["typicalSeconds"] = deploy.typicalSeconds
+            }
+            out.append(row)
         }
         // Only a project that declared a stack and was trusted to run its own status command.
         // Neither is guessed: an untrusted one is silent rather than probed.
