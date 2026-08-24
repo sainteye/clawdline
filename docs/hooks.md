@@ -38,9 +38,9 @@ reading; it moves one that was going to happen anyway to the moment it was worth
 
 Two things, both of which you can read:
 
-- `~/.config/clawdline/hook.sh` — about sixty lines of `sh`, copied out of the app so that
+- `~/.config/clawdline/hook.sh` — a small `sh` bridge, copied out of the app so that
   moving or rebuilding the app cannot break the path.
-- Five entries in `~/.claude/settings.json`, under `hooks`.
+- Nine matcher groups in `~/.claude/settings.json`, under eight event names.
 
 Everything else in that file is read, changed and written back. A copy of it is kept once, as
 `~/.claude/settings.json.before-clawdline`, so "what did it do to my settings" is a question you
@@ -49,12 +49,16 @@ can answer with `diff` rather than with a promise.
 ```jsonc
 {
   "hooks": {
-    "Stop": [
-      { "hooks": [ { "type": "command",
-                     "command": "'/Users/you/.config/clawdline/hook.sh' Stop",
+    "PreToolUse": [
+      { "matcher": "AskUserQuestion",
+        "hooks": [ { "type": "command",
+                     "command": "'/Users/you/.config/clawdline/hook.sh' PreToolUse ask_user_question",
                      "timeout": 5 } ] }
+    ],
+    "Notification": [
+      { "matcher": "permission_prompt", "hooks": [ /* the same bridge */ ] },
+      { "matcher": "idle_prompt",       "hooks": [ /* the same bridge */ ] }
     ]
-    // …and the same for SessionStart, UserPromptSubmit, Notification, SessionEnd
   }
 }
 ```
@@ -65,49 +69,68 @@ Clawdline goes back to reading the screen, which is what it does when they were 
 
 ---
 
-## The five events, and the five that are missing
+## The events and their matchers
 
-| Event | What Clawdline does with it |
-|---|---|
-| `SessionStart` | Learns the session's id, which is also the name of its transcript file. |
-| `UserPromptSubmit` | **Looks now, and looks again in 2.5 seconds.** Claims nothing. |
-| `Stop` | Marks it not working, even if the spinner line was left on the screen. |
-| `Notification` | **Looks now.** Nothing else — see below. |
-| `SessionEnd` | Same as `Stop`, and forgets what it remembered about the session. |
+| Event | Matcher | What Clawdline does with it |
+|---|---|---|
+| `SessionStart` | — | Learns the session id, which is also the transcript filename. |
+| `UserPromptSubmit` | — | **Looks now, and again in 2.5 seconds.** Claims nothing. |
+| `Stop` | — | Marks it not working if a stale spinner remains. |
+| `PreToolUse` | `AskUserQuestion` | Authoritatively marks it waiting and keeps the full questions and options from `tool_input`. |
+| `PostToolUse` | `AskUserQuestion` | Retracts that waiting state after the answer. |
+| `PermissionRequest` | — | Authoritatively marks it waiting for approval. |
+| `Notification` | `permission_prompt` | Marks it waiting for approval. |
+| `Notification` | `idle_prompt` | **Looks now. Claims nothing.** |
+| `SessionEnd` | — | Same as `Stop`, and forgets the tty remembered for the session. |
 
-Five, all of them rare, and that is the design rather than an oversight.
+These are still rare. `PreToolUse` and `PostToolUse` without a matcher would run on every tool
+call; `matcher: "AskUserQuestion"` means the bridge runs only for the handful of calls whose
+input is an actual question. That input contains the complete `questions` array, including the
+labels the terminal may clip to its current width.
 
-**`PreToolUse` and `PostToolUse` are missing on purpose.** They fire hundreds of times an hour and
-would put this script on the critical path of every tool call your agent makes — to say something
-`UserPromptSubmit` and `Stop` already bracket between them. There is no state in the middle of a
-turn that those two do not already cover.
+`Notification` is also matched rather than handled as one ambiguous event. Claude Code matches
+that group against the notification type, so `permission_prompt` and `idle_prompt` arrive as
+different meanings. A minute of quiet is never turned into “a question is waiting.” If an idle
+notification arrives while an AskUserQuestion note is still open, the script leaves the question
+note intact.
 
 **`SubagentStop` is missing because it would be wrong.** A subagent finishing is not the session
 finishing, and treating it as one would call a session idle while its main agent was still going.
 
 ---
 
-## Why the screen is still the authority
+## What is authoritative, and what remains a fallback
 
-A note says *when* something happened. It never says what is on the screen, and the difference
-matters most for the one state this whole feature exists for.
+Most notes still say only *when* something happened. A prompt submission or an idle notification
+asks Clawdline to read the screen; it does not claim what that reading will find.
 
-`Notification` fires when Claude Code asks for permission. It also fires when a session has
-merely been quiet for a minute. Those are the same event and they are not remotely the same
-thing to somebody reading the list — one of them costs you every second it goes unnoticed and
-the other costs nothing at all. Nothing in the payload separates them reliably.
+Two matched lifecycle events are stronger than a drawing:
 
-So `Notification` does not set a state. It asks for a reading, the reading happens about forty
-milliseconds later, and `SessionState` decides — from the shape on the screen, the way it always
-has. You get the speed of being told and the accuracy of looking.
+- `PreToolUse/AskUserQuestion` is Claude Code stating that its question tool is about to run. Its
+  `tool_input` is the full question, not an inference. `PostToolUse/AskUserQuestion` closes it.
+- `PermissionRequest` is emitted when the permission dialog is about to be shown. The matched
+  `Notification/permission_prompt` is the notification equivalent.
 
-What the notes do settle on their own is the pair of things a screen genuinely cannot:
+Those notes may assert `waiting`. This is the necessary boundary: Claude Code can draw an
+AskUserQuestion picker with its caret at column zero, exactly the same shape as a user's echoed
+message that begins with a numbered list. No screen-only rule can accept the first without also
+accepting the second. The structured hook has information the pixels do not.
 
+The screen is still the complete fallback. Sessions started before installation, disabled hooks,
+missing notes, old notes without `tool_input`, and clipped or unreadable hook data all take the
+same screen path as before. When both exist, structured hook options win so phone buttons carry
+the original labels rather than terminal-width truncations.
+
+What the notes do settle on their own are the things a screen genuinely cannot:
+
+- **A question is waiting or has just been answered.** The matched tool events bracket it and
+  carry its content.
+- **Approval is waiting.** PermissionRequest says so directly; `idle_prompt` never does.
 - **A turn has ended.** Claude Code does not always erase its live line when a fast turn
   finishes, so a capture taken a moment later can find one and call a finished session busy. A
   `Stop` overrides that — for ten seconds, after which the screen wins again.
 
-And that is the only one. **Nothing here ever claims that a session is working**, which is a
+**Nothing here ever claims that a session is working**, which is a
 narrowing that came out of measuring rather than out of caution:
 
 | measured on a real session | |
@@ -123,7 +146,9 @@ issue #249 is this exact bug, and their `HOOK_REMOVALS` list is the tombstone.
 What replaces it is cheaper and cannot be wrong: **a nudge looks twice** — once immediately, and
 again 2.5 seconds later, by which time the live line is up. Same information, nothing asserted.
 
-A question on the screen outranks every note there is.
+A question recognised on screen still outranks every look-only note. An explicit
+AskUserQuestion opening or closing event outranks a stale screen because it is the lifecycle
+being drawn, not a guess about that drawing.
 
 ---
 
@@ -140,11 +165,13 @@ one name both ends already agree on, which is why the note is filed under it:
 
 ```
 ~/.config/clawdline/hooks/ttys004.json
-{"event":"Stop","tty":"ttys004","at":1787040501,"session":"a2937509-…"}
+{"event":"Stop","kind":"stop","tty":"ttys004","at":1787040501,"session":"a2937509-…"}
 ```
 
-One file per session, overwritten in place, never appended. Nothing queues, so an app that was
-not running has missed nothing it could still have acted on.
+One file per session, overwritten in place, never appended. AskUserQuestion notes may also carry
+`tool_input`; that field is accepted only up to 32 KiB, so a surprising tool payload cannot grow
+an unbounded file in the hooks directory. An oversized input is omitted whole and the screen
+remains the fallback.
 
 If no tty can be found, the script writes nothing and exits. A note nobody can match to a session
 on screen is worse than no note: it would make the wiring look like it was working while telling
@@ -161,7 +188,8 @@ Both are about never making Claude Code worse than it was without this.
 - **Always exit 0.** A non-zero exit from a hook is a decision about the work in progress — `2`
   blocks it outright. No failure inside this is worth stopping your turn over.
 
-It costs about eleven milliseconds, five times a turn.
+The unfiltered lifecycle events run a few times per turn. The two tool events run only when their
+`AskUserQuestion` matcher succeeds.
 
 ---
 

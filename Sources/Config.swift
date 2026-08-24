@@ -120,8 +120,9 @@ final class Config {
     ///
     /// Off, and the notes are ignored while the hooks stay wired up — which is the setting to
     /// reach for if a reading ever looks wrong and you want to know whether this is why, without
-    /// editing another program's settings file to find out. Nothing else changes: the screen was
-    /// always where every reading came from. See Sources/HookBridge.swift.
+    /// editing another program's settings file to find out. Nothing else changes: the screen is
+    /// still the complete fallback when no matched lifecycle note states more. See
+    /// Sources/HookBridge.swift.
     var hooks = true
     /// Answer questions over HTTP, on the loopback address, so that a browser or a script can ask
     /// what the panel asks.

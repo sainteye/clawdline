@@ -140,7 +140,17 @@ final class SessionWatch {
             // Dropped for any session the merge moved off `waiting`: a note can settle that a
             // turn ended before the terminal has repainted, and a menu left behind from the
             // capture would be a set of buttons for a question nobody is asking any more.
-            let menus = screens.menus.filter { states[$0.key] == .waiting }
+            var menus = screens.menus.filter { states[$0.key] == .waiting }
+
+            // A matched AskUserQuestion note carries the original labels. Prefer those over the
+            // terminal drawing, where a narrow pane clips precisely the words a phone needs to
+            // offer as buttons. Screen menus remain the complete fallback when hooks are absent
+            // or an old/oversized note did not carry structured input.
+            for session in sessions where states[session.id] == .waiting {
+                let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
+                guard let menu = notes[bare]?.menu else { continue }
+                menus[session.id] = menu
+            }
 
             // Every background agent these sessions have going, which is a question the screen
             // cannot answer at all — a subagent leaves no mark on the terminal. Files only, so

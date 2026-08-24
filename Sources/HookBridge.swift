@@ -15,16 +15,19 @@ import Foundation
 /// those notes land in, so an interesting moment arrives in milliseconds, and the polling
 /// underneath stays exactly where it was.
 ///
-/// **The screen stays the authority, and that is the design rather than a hedge.** A note says
-/// *when* something happened and never *what is on the screen* — `Notification` fires both for a
-/// permission request and for a session that has merely been quiet for a minute, and to anybody
-/// reading the list those are not the same state. So a note's job is mostly to say "look now",
-/// and the reading that follows is the same reading as always. **No note asserts that a session
-/// is working**, which is a narrowing that came out of measuring rather than out of caution — see
-/// `merge`. The one thing a note does settle is something the screen gets wrong rather than
-/// misses: Claude Code does not always erase its live line when a fast turn ends, so a capture
-/// taken a moment later can find one and call a finished session busy. A `Stop` overrides that,
-/// briefly.
+/// Most notes only say *when* something happened, and still ask for the same screen reading as
+/// before. Two are different. `PreToolUse` matched to `AskUserQuestion` is Claude Code itself
+/// saying that a question is waiting, with the complete question in `tool_input`, and
+/// `PermissionRequest` says the same thing about an approval. Those are protocol facts rather
+/// than guesses from a drawing, so they are allowed to assert `.waiting`; PostToolUse retracts
+/// an AskUserQuestion assertion and the next lifecycle event replaces an approval note.
+/// `Notification/idle_prompt` remains only a reason to look.
+///
+/// **The screen stays the fallback, not the authority over facts Claude Code has stated.** That
+/// distinction matters because the question picker and an echoed numbered list can have exactly
+/// the same terminal shape. With no hooks installed, every reading still follows the old path.
+/// No note asserts that a session is working; see `merge`. A `Stop` still briefly fixes the other
+/// known screen error, a live line Claude Code did not erase when a fast turn ended.
 ///
 /// Which is why the fallback is not a degraded mode. With nothing installed this file does
 /// nothing at all, and every reading still arrives — one poll later.
@@ -32,10 +35,9 @@ enum HookBridge {
 
     /// The moments worth being told about.
     ///
-    /// Five, all of them rare. That is deliberate: a hook on `PreToolUse` would fire hundreds of
-    /// times an hour and put this script on the critical path of every tool call somebody's agent
-    /// makes, to tell us something the pair below already brackets. `UserPromptSubmit` and `Stop`
-    /// are the two ends of a turn, and between them there is nothing left to ask.
+    /// `PreToolUse` and `PostToolUse` are here only behind the `AskUserQuestion` matcher. Without
+    /// it they would fire hundreds of times an hour; with it they run only for the rare tool call
+    /// whose input is itself the state the screen cannot distinguish safely.
     ///
     /// `SubagentStop` is missing for the same reason it would be wrong: a subagent finishing is
     /// not the session finishing, and treating it as one would call a session idle while its main
@@ -44,18 +46,101 @@ enum HookBridge {
         case sessionStart = "SessionStart"
         case userPromptSubmit = "UserPromptSubmit"
         case stop = "Stop"
+        case preToolUse = "PreToolUse"
+        case postToolUse = "PostToolUse"
+        case permissionRequest = "PermissionRequest"
         case notification = "Notification"
         case sessionEnd = "SessionEnd"
+    }
+
+    /// What one invocation means after an event's matcher has done its filtering.
+    ///
+    /// Kept separate from `Event`: two Notification groups share an event name and deliberately
+    /// have opposite semantics, while PreToolUse and PostToolUse share a matcher and bracket one
+    /// question. Codex exposes nearly the same lifecycle, so a future bridge can map its hook
+    /// names onto these meanings without changing `Note` or `merge`.
+    enum Kind: String, Equatable {
+        case sessionStart = "session_start"
+        case userPromptSubmit = "user_prompt_submit"
+        case stop
+        case askUserQuestion = "ask_user_question"
+        case askUserQuestionDone = "ask_user_question_done"
+        case permissionRequest = "permission_request"
+        case permissionPrompt = "permission_prompt"
+        case idlePrompt = "idle_prompt"
+        case sessionEnd = "session_end"
+    }
+
+    /// One matcher group written to settings. Registration, rather than Event, is the unit of
+    /// installation because one event may need several independently filtered meanings.
+    struct Registration: Equatable {
+        let event: Event
+        let matcher: String?
+        let kind: Kind
+
+        static let all: [Registration] = [
+            Registration(event: .sessionStart, matcher: nil, kind: .sessionStart),
+            Registration(event: .userPromptSubmit, matcher: nil, kind: .userPromptSubmit),
+            Registration(event: .stop, matcher: nil, kind: .stop),
+            Registration(event: .preToolUse, matcher: Transcript.askTool,
+                         kind: .askUserQuestion),
+            Registration(event: .postToolUse, matcher: Transcript.askTool,
+                         kind: .askUserQuestionDone),
+            Registration(event: .permissionRequest, matcher: nil, kind: .permissionRequest),
+            Registration(event: .notification, matcher: "permission_prompt",
+                         kind: .permissionPrompt),
+            Registration(event: .notification, matcher: "idle_prompt", kind: .idlePrompt),
+            Registration(event: .sessionEnd, matcher: nil, kind: .sessionEnd),
+        ]
+    }
+
+    struct Question: Equatable {
+        let header: String
+        let text: String
+        let multiSelect: Bool
+        let options: [Option]
+
+        struct Option: Equatable {
+            let label: String
+            let note: String
+        }
     }
 
     /// One note, as the script left it.
     struct Note: Equatable {
         let event: Event
+        let kind: Kind
         let tty: String
         let at: Date
         /// Claude Code's own id for the session, which is also the name of its transcript file.
         /// Worth carrying for that alone — see ``Transcript/locate(cwd:tabTitle:startedAt:sessionID:)``.
         let session: String?
+        /// Present only on the opening AskUserQuestion note. Unlike a screen scrape these words
+        /// have not been clipped to the terminal width.
+        let questions: [Question]
+
+        init(event: Event, kind: Kind? = nil, tty: String, at: Date, session: String?,
+             questions: [Question] = []) {
+            self.event = event
+            self.kind = kind ?? HookBridge.legacyKind(event)
+            self.tty = tty
+            self.at = at
+            self.session = session
+            self.questions = questions
+        }
+
+        /// The first picker Claude Code is showing, as buttons the existing answer path knows.
+        /// Multiple questions are presented one at a time; a later transcript refresh still
+        /// carries all of them, while the live menu represents the first unanswered picker.
+        var menu: SessionState.Menu? {
+            guard kind == .askUserQuestion, let question = questions.first,
+                  question.options.count >= 2 else { return nil }
+            let options = question.options.enumerated().map { index, option in
+                SessionState.Menu.Option(number: index + 1, label: option.label,
+                                         selected: index == 0)
+            }
+            return SessionState.Menu(options: options, selected: 1)
+        }
     }
 
     // MARK: - Where everything lives
@@ -155,8 +240,48 @@ enum HookBridge {
               let raw = obj["event"] as? String, let event = Event(rawValue: raw),
               let tty = obj["tty"] as? String, !tty.isEmpty,
               let at = obj["at"] as? Double else { return nil }
+        // Old installed scripts did not write a kind. Keep their notes useful while `start()`
+        // refreshes the script; an old unfiltered Notification can only mean "look" safely.
+        let kind = (obj["kind"] as? String).flatMap(Kind.init(rawValue:)) ?? legacyKind(event)
         let session = (obj["session"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        return Note(event: event, tty: tty, at: Date(timeIntervalSince1970: at), session: session)
+        let questions = parseQuestions(obj["tool_input"])
+        return Note(event: event, kind: kind, tty: tty,
+                    at: Date(timeIntervalSince1970: at), session: session,
+                    questions: questions)
+    }
+
+    private static func legacyKind(_ event: Event) -> Kind {
+        switch event {
+        case .sessionStart: return .sessionStart
+        case .userPromptSubmit: return .userPromptSubmit
+        case .stop: return .stop
+        case .preToolUse: return .askUserQuestion
+        case .postToolUse: return .askUserQuestionDone
+        case .permissionRequest: return .permissionRequest
+        case .notification: return .idlePrompt
+        case .sessionEnd: return .sessionEnd
+        }
+    }
+
+    private static func parseQuestions(_ input: Any?) -> [Question] {
+        guard let input = input as? [String: Any],
+              let rows = input["questions"] as? [[String: Any]] else { return [] }
+        return rows.compactMap { row in
+            let text = clean(row["question"])
+            let options = (row["options"] as? [[String: Any]] ?? []).compactMap { option -> Question.Option? in
+                let label = clean(option["label"])
+                guard !label.isEmpty else { return nil }
+                return Question.Option(label: label, note: clean(option["description"]))
+            }
+            guard !text.isEmpty || !options.isEmpty else { return nil }
+            return Question(header: clean(row["header"]), text: text,
+                            multiSelect: row["multiSelect"] as? Bool ?? false,
+                            options: options)
+        }
+    }
+
+    private static func clean(_ value: Any?) -> String {
+        (value as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// The note for a session, if it left one.
@@ -189,13 +314,32 @@ enum HookBridge {
             guard let note = notes[bare] else { continue }
             let screen = states[session.id] ?? .unknown
 
-            // A question on screen outranks everything. It is the one state read from a shape
-            // rather than inferred from a moment, it is the only one that costs somebody
-            // something per second, and no note ever contradicts it usefully — `Notification`
-            // fires for a permission request and for a minute of quiet alike.
+            // This is the boundary the old bridge did not cross: matched hook events are
+            // authoritative about states they directly bracket. AskUserQuestion's PreToolUse
+            // contains the question and its PostToolUse means it was answered; neither is an
+            // inference from a terminal drawing. PermissionRequest is equally explicit. The
+            // screen remains the answer for every session with no note and for all look-only
+            // events, including idle_prompt.
+            switch note.kind {
+            case .askUserQuestion, .permissionRequest, .permissionPrompt:
+                out[session.id] = .waiting
+                continue
+            case .askUserQuestionDone:
+                // The picker can linger for one capture after the answer. This event says it is
+                // no longer actionable, but says nothing about whether the next model turn has
+                // drawn a live line yet.
+                if screen == .waiting || screen == .unknown { out[session.id] = .idle }
+                continue
+            default:
+                break
+            }
+
+            // A question recognised on screen is still the fallback's strongest fact. Look-only
+            // notes cannot contradict it, and keeping this rule is what preserves old sessions
+            // and installations with hooks disabled.
             if screen == .waiting { continue }
 
-            switch note.event {
+            switch note.kind {
             case .userPromptSubmit:
                 // Nothing. A turn beginning is a moment worth looking at, not a state to assert.
                 //
@@ -216,8 +360,11 @@ enum HookBridge {
                 } else if screen == .unknown {
                     out[session.id] = .idle
                 }
-            case .notification, .sessionStart:
+            case .idlePrompt, .sessionStart:
                 // These only ask us to look. The reading that just happened is the answer.
+                continue
+            case .askUserQuestion, .askUserQuestionDone, .permissionRequest, .permissionPrompt:
+                // Handled above, before the screen fallback is considered.
                 continue
             }
         }
@@ -226,12 +373,13 @@ enum HookBridge {
 
     // MARK: - Installing
 
-    /// True when every one of our events is wired up in `~/.claude/settings.json`.
+    /// True when every one of our matcher groups is wired up in `~/.claude/settings.json`.
     static var isInstalled: Bool {
         let hooks = installedHooks()
-        return Event.allCases.allSatisfy { event in
-            (hooks[event.rawValue] as? [[String: Any]] ?? []).contains { group in
-                (group["hooks"] as? [[String: Any]] ?? []).contains { isOurs($0) }
+        return Registration.all.allSatisfy { registration in
+            (hooks[registration.event.rawValue] as? [[String: Any]] ?? []).contains { group in
+                guard matcher(in: group) == registration.matcher else { return false }
+                return (group["hooks"] as? [[String: Any]] ?? []).contains { isOurs($0) }
             }
         }
     }
@@ -256,7 +404,22 @@ enum HookBridge {
         return command.contains("clawdline/hook.sh")
     }
 
-    /// The same settings with our five events wired in, and everything else exactly as it was.
+    private static func matcher(in group: [String: Any]) -> String? {
+        group["matcher"] as? String
+    }
+
+    /// The group without our handlers. A group may contain handlers from more than one owner;
+    /// removing the entire group because one command is ours would silently delete their hook.
+    private static func removingOurs(from group: [String: Any]) -> [String: Any]? {
+        guard let handlers = group["hooks"] as? [[String: Any]] else { return group }
+        let kept = handlers.filter { !isOurs($0) }
+        guard !kept.isEmpty else { return nil }
+        var group = group
+        group["hooks"] = kept
+        return group
+    }
+
+    /// The same settings with our matcher groups wired in, and everything else exactly as it was.
     ///
     /// Pure, and separate from the file handling, because this is the part that can be wrong in a
     /// way nobody notices until it has eaten somebody's configuration. What it has to get right
@@ -265,21 +428,29 @@ enum HookBridge {
     static func adding(_ script: String, to settings: [String: Any]) -> [String: Any] {
         var settings = settings
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
-        for event in Event.allCases {
-            // Ours dropped first, so installing twice leaves one of each rather than two.
-            var groups = (hooks[event.rawValue] as? [[String: Any]] ?? []).filter { group in
-                !(group["hooks"] as? [[String: Any]] ?? []).contains(where: isOurs)
-            }
-            groups.append([
+        // Drop every old shape first. This happens once, before appending, because Notification
+        // intentionally gets two of our groups and cleaning once per registration would make the
+        // second erase the first.
+        for (event, value) in hooks {
+            guard let groups = value as? [[String: Any]] else { continue }
+            let kept = groups.compactMap { removingOurs(from: $0) }
+            if kept.isEmpty { hooks.removeValue(forKey: event) } else { hooks[event] = kept }
+        }
+
+        for registration in Registration.all {
+            var groups = hooks[registration.event.rawValue] as? [[String: Any]] ?? []
+            var group: [String: Any] = [
                 "hooks": [[
                     "type": "command",
-                    "command": "\(shellQuoted(script)) \(event.rawValue)",
+                    "command": "\(shellQuoted(script)) \(registration.event.rawValue) \(registration.kind.rawValue)",
                     // Generous next to the eleven milliseconds it takes, and it is the ceiling
                     // on how long Claude Code could ever be made to wait for this.
-                    "timeout": 5,
-                ]],
-            ])
-            hooks[event.rawValue] = groups
+                    "timeout": 5
+                ]]
+            ]
+            if let matcher = registration.matcher { group["matcher"] = matcher }
+            groups.append(group)
+            hooks[registration.event.rawValue] = groups
         }
         settings["hooks"] = hooks
         return settings
@@ -291,9 +462,7 @@ enum HookBridge {
         guard var hooks = settings["hooks"] as? [String: Any] else { return settings }
         for (event, value) in hooks {
             guard let groups = value as? [[String: Any]] else { continue }
-            let kept = groups.filter { group in
-                !(group["hooks"] as? [[String: Any]] ?? []).contains(where: isOurs)
-            }
+            let kept = groups.compactMap { removingOurs(from: $0) }
             // An event left with nothing in it goes away rather than sitting there as an empty
             // array: the file should read as though this had never touched it.
             //
@@ -307,7 +476,7 @@ enum HookBridge {
         return settings
     }
 
-    /// Wire the five events into `~/.claude/settings.json`. nil means it worked.
+    /// Wire the matcher groups into `~/.claude/settings.json`. nil means it worked.
     ///
     /// Everything already in that file is read, changed and written back — this is somebody's
     /// own configuration and the app is a guest in it. A copy is kept the first time, next to the

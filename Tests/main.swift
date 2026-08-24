@@ -2827,6 +2827,7 @@ group("hooks: reading a note") {
     let note = HookBridge.parse(good)
     check("a whole note reads", note != nil)
     expect("its event", note?.event, .stop)
+    expect("an old note gets the safe legacy meaning", note?.kind, .stop)
     expect("its tty", note?.tty, "ttys004")
     expect("its session id", note?.session, "3f6a1c2e-7b4d-4a9e-8c15-2d0e9f7b6a34")
 
@@ -2835,6 +2836,15 @@ group("hooks: reading a note") {
     let noSession = HookBridge.parse(Data(#"{"event":"Stop","tty":"ttys004","at":1}"#.utf8))
     check("a note with no session id is still a note", noSession != nil)
     expect("and says so", noSession?.session, nil)
+
+    let asked = Data(#"{"event":"PreToolUse","kind":"ask_user_question","tty":"ttys004","at":2,"tool_input":{"questions":[{"header":"Deploy","question":"Ship this build?","multiSelect":false,"options":[{"label":"Yes","description":"Deploy now"},{"label":"Not yet","description":"Keep testing"}]}]}}"#.utf8)
+    let question = HookBridge.parse(asked)
+    expect("a matched tool note carries its meaning", question?.kind, .askUserQuestion)
+    expect("and the complete question", question?.questions.first?.text, "Ship this build?")
+    expect("with unclipped option labels", question?.questions.first?.options.map(\.label),
+           ["Yes", "Not yet"])
+    expect("which become the existing numbered menu", question?.menu?.options.map(\.number),
+           [1, 2])
 
     // An event this version does not know about is not an error to report; it is a note from a
     // newer script, and the right answer is to ignore it rather than to draw something wrong.
@@ -2854,6 +2864,10 @@ group("hooks: what a note is allowed to change") {
         ["ttys004": HookBridge.Note(event: event, tty: "ttys004",
                                     at: now.addingTimeInterval(-ago), session: nil)]
     }
+    func note(_ kind: HookBridge.Kind, event: HookBridge.Event) -> [String: HookBridge.Note] {
+        ["ttys004": HookBridge.Note(event: event, kind: kind, tty: "ttys004",
+                                    at: now.addingTimeInterval(-1), session: nil)]
+    }
 
     // Nothing installed is the state every reading has to be right in, so it is the first check.
     expect("with no notes, the screen is the whole answer",
@@ -2864,8 +2878,8 @@ group("hooks: what a note is allowed to change") {
                             now: now)["B"],
            .working("x"))
 
-    // The one state the list exists for. A menu is a shape on screen; a note is a moment, and
-    // `Notification` fires for a permission request and for a minute of quiet alike.
+    // The screen remains the fallback authority for look-only and turn-boundary notes. Matched
+    // question events are tested separately below because they carry stronger information.
     expect("a question on screen outranks a Stop",
            HookBridge.merge(notes(.stop), into: ["A": .waiting], sessions: sessions, now: now)["A"],
            .waiting)
@@ -2873,6 +2887,34 @@ group("hooks: what a note is allowed to change") {
            HookBridge.merge(notes(.userPromptSubmit), into: ["A": .waiting],
                             sessions: sessions, now: now)["A"],
            .waiting)
+
+    // These are Claude Code's own lifecycle, not terminal shapes. The opening event can see a
+    // flush-left picker the screen deliberately rejects, and the closing event can beat a picker
+    // that is still present in one stale capture.
+    expect("AskUserQuestion asserts waiting over an idle screen",
+           HookBridge.merge(note(.askUserQuestion, event: .preToolUse), into: ["A": .idle],
+                            sessions: sessions, now: now)["A"],
+           .waiting)
+    expect("and over a screen that could not be read",
+           HookBridge.merge(note(.askUserQuestion, event: .preToolUse), into: ["A": .unknown],
+                            sessions: sessions, now: now)["A"],
+           .waiting)
+    expect("PostToolUse retracts a picker left in the capture",
+           HookBridge.merge(note(.askUserQuestionDone, event: .postToolUse),
+                            into: ["A": .waiting], sessions: sessions, now: now)["A"],
+           .idle)
+    expect("a PermissionRequest authoritatively waits for approval",
+           HookBridge.merge(note(.permissionRequest, event: .permissionRequest),
+                            into: ["A": .working("stale")], sessions: sessions, now: now)["A"],
+           .waiting)
+    expect("a permission notification has the same narrow meaning",
+           HookBridge.merge(note(.permissionPrompt, event: .notification), into: ["A": .idle],
+                            sessions: sessions, now: now)["A"],
+           .waiting)
+    expect("but idle_prompt still only asks for a screen reading",
+           HookBridge.merge(note(.idlePrompt, event: .notification), into: ["A": .idle],
+                            sessions: sessions, now: now)["A"],
+           .idle)
 
     // **No note asserts that a session is working**, and this is the narrowing that measuring
     // produced: Claude Code draws its live line about two seconds after Return and draws nothing
@@ -2929,21 +2971,49 @@ group("hooks: editing somebody else's settings file") {
     let after = HookBridge.adding("/Users/x/.config/clawdline/hook.sh", to: theirs)
     let hooks = after["hooks"] as? [String: Any] ?? [:]
     expect("everything outside hooks is left alone", after["model"] as? String, "opus")
-    expect("an event we do not use keeps its entry",
-           (hooks["PreToolUse"] as? [[String: Any]])?.count, 1)
+    expect("an event we share keeps its entry and gains the matched one",
+           (hooks["PreToolUse"] as? [[String: Any]])?.count, 2)
     expect("an event we share keeps theirs and gains ours",
            (hooks["Stop"] as? [[String: Any]])?.count, 2)
-    for event in HookBridge.Event.allCases {
-        check("\(event.rawValue) is wired up",
-              (hooks[event.rawValue] as? [[String: Any]] ?? []).contains { group in
+    for registration in HookBridge.Registration.all {
+        check("\(registration.event.rawValue)/\(registration.matcher ?? "all") is wired up",
+              (hooks[registration.event.rawValue] as? [[String: Any]] ?? []).contains { group in
+                  (group["matcher"] as? String) == registration.matcher &&
                   (group["hooks"] as? [[String: Any]] ?? []).contains(where: HookBridge.isOurs)
               })
     }
+    let notifications = hooks["Notification"] as? [[String: Any]] ?? []
+    expect("Notification is split into two matcher groups",
+           Set(notifications.compactMap { $0["matcher"] as? String }),
+           Set(["permission_prompt", "idle_prompt"]))
 
     // Pressing Install twice is a thing people do.
     let twice = HookBridge.adding("/Users/x/.config/clawdline/hook.sh", to: after)
     expect("installing twice leaves one of ours",
            ((twice["hooks"] as? [String: Any])?["Stop"] as? [[String: Any]])?.count, 2)
+
+    // A matcher group can contain several owners. Taking our handler out must leave both the
+    // group metadata and the neighbouring command exactly where the user put them.
+    var mixed = after
+    var mixedHooks = mixed["hooks"] as? [String: Any] ?? [:]
+    var stopGroups = mixedHooks["Stop"] as? [[String: Any]] ?? []
+    var ourStop = stopGroups.removeLast()
+    var handlers = ourStop["hooks"] as? [[String: Any]] ?? []
+    handlers.append(["type": "command", "command": "/opt/theirs/same-group.sh"])
+    ourStop["hooks"] = handlers
+    ourStop["once"] = true
+    stopGroups.append(ourStop)
+    mixedHooks["Stop"] = stopGroups
+    mixed["hooks"] = mixedHooks
+    let unmixed = HookBridge.removing(from: mixed)
+    let remainingStop = ((unmixed["hooks"] as? [String: Any])?["Stop"] as? [[String: Any]]) ?? []
+    check("removing ours preserves another handler in the same group",
+          remainingStop.contains { group in
+              group["once"] as? Bool == true &&
+              (group["hooks"] as? [[String: Any]] ?? []).contains {
+                  $0["command"] as? String == "/opt/theirs/same-group.sh"
+              }
+          })
 
     let back = HookBridge.removing(from: twice)
     let left = back["hooks"] as? [String: Any] ?? [:]
@@ -2961,7 +3031,8 @@ group("hooks: editing somebody else's settings file") {
     let spaced = HookBridge.adding("/Users/a b/.config/clawdline/hook.sh", to: [:])
     let command = (((spaced["hooks"] as? [String: Any])?["Stop"] as? [[String: Any]])?
         .first?["hooks"] as? [[String: Any]])?.first?["command"] as? String
-    expect("the path is quoted", command, "'/Users/a b/.config/clawdline/hook.sh' Stop")
+    expect("the path is quoted", command,
+           "'/Users/a b/.config/clawdline/hook.sh' Stop stop")
 }
 
 group("hooks: the script itself") {
@@ -2978,10 +3049,11 @@ group("hooks: the script itself") {
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
 
-    func run(_ event: String, payload: String, into: URL? = dir) -> (out: String, code: Int32) {
+    func run(_ event: String, kind: String? = nil, payload: String,
+             into: URL? = dir) -> (out: String, code: Int32) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = [script, event]
+        p.arguments = [script, event] + (kind.map { [$0] } ?? [])
         var env = ProcessInfo.processInfo.environment
         if let into { env["CLAWDLINE_HOOK_DIR"] = into.path } else { env["CLAWDLINE_HOOK_DIR"] = "/nowhere/at/all" }
         p.environment = env
@@ -3041,6 +3113,43 @@ group("hooks: the script itself") {
     expect("empty stdin, no complaint", run("Stop", payload: "").code, 0)
     expect("no directory to write into, no complaint",
            run("Stop", payload: payload, into: nil).code, 0)
+
+    // Pin the tty through the script's own per-session cache so this half is deterministic even
+    // on a CI process with no controlling terminal.
+    let structured = dir.appendingPathComponent("structured", isDirectory: true)
+    try? FileManager.default.createDirectory(at: structured, withIntermediateDirectories: true)
+    let session = "4f6a1c2e-7b4d-4a9e-8c15-2d0e9f7b6a35"
+    try? Data("ttys777".utf8).write(
+        to: structured.appendingPathComponent(".tty-\(session)"), options: .atomic)
+    let askPayload = #"{"session_id":"4f6a1c2e-7b4d-4a9e-8c15-2d0e9f7b6a35","hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{"questions":[{"header":"Choice","question":"Which path?","options":[{"label":"Keep the full label — \"quoted\"","description":"first"},{"label":"另一條路","description":"second"}],"multiSelect":false}]}}"#
+    let askRun = run("PreToolUse", kind: "ask_user_question", payload: askPayload,
+                     into: structured)
+    let askFile = structured.appendingPathComponent("ttys777.json")
+    let askData = (try? Data(contentsOf: askFile)) ?? Data()
+    let askNote = HookBridge.parse(askData)
+    expect("a structured question still writes nothing to stdout", askRun.out, "")
+    expect("and exits 0", askRun.code, 0)
+    expect("tool_input survives as a complete question in the note",
+           askNote?.questions.first?.text, "Which path?")
+    expect("including labels JSON has to escape",
+           askNote?.questions.first?.options.map(\.label),
+           ["Keep the full label — \"quoted\"", "另一條路"])
+    check("the note has a hard size ceiling", askData.count < 34 * 1024)
+
+    // idle_prompt is a nudge, not a state transition. It must not replace a still-open question,
+    // or the one-minute notification would make precisely the question disappear again.
+    _ = run("Notification", kind: "idle_prompt", payload: askPayload, into: structured)
+    expect("idle_prompt does not erase an authoritative question",
+           HookBridge.parse((try? Data(contentsOf: askFile)) ?? Data())?.kind,
+           .askUserQuestion)
+
+    let huge = String(repeating: "x", count: 40_000)
+    let hugePayload = "{\"session_id\":\"\(session)\",\"tool_input\":{\"questions\":[{\"question\":\"Q\",\"options\":[{\"label\":\"A\",\"description\":\"\(huge)\"},{\"label\":\"B\"}]}]}}"
+    _ = run("PreToolUse", kind: "ask_user_question", payload: hugePayload, into: structured)
+    let capped = (try? Data(contentsOf: askFile)) ?? Data()
+    check("oversized tool_input is omitted rather than growing the note", capped.count < 34 * 1024)
+    check("an omitted oversized input does not become partial JSON",
+          HookBridge.parse(capped)?.questions.isEmpty == true)
 }
 
 // ---------------------------------------------------------------- real captured fixtures

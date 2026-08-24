@@ -20,6 +20,31 @@
 
 event="$1"
 [ -n "$event" ] || exit 0
+kind="$2"
+
+# Old settings written by an earlier Clawdline pass only the event. Keep those harmless until
+# the next Install refreshes their command lines; an unfiltered Notification is only a look.
+if [ -z "$kind" ]; then
+    case "$event" in
+        SessionStart) kind="session_start" ;;
+        UserPromptSubmit) kind="user_prompt_submit" ;;
+        Stop) kind="stop" ;;
+        Notification) kind="idle_prompt" ;;
+        SessionEnd) kind="session_end" ;;
+        *) exit 0 ;;
+    esac
+fi
+
+# These strings go into JSON without escaping because they come from our own command line. Refuse
+# anything else so invoking the script by hand cannot turn an argument into malformed JSON.
+case "$event" in
+    SessionStart|UserPromptSubmit|Stop|PreToolUse|PostToolUse|PermissionRequest|Notification|SessionEnd) ;;
+    *) exit 0 ;;
+esac
+case "$kind" in
+    session_start|user_prompt_submit|stop|ask_user_question|ask_user_question_done|permission_request|permission_prompt|idle_prompt|session_end) ;;
+    *) exit 0 ;;
+esac
 
 dir="${CLAWDLINE_HOOK_DIR:-$HOME/.config/clawdline/hooks}"
 # The app makes this directory. No directory means nobody is listening, and the cheapest
@@ -78,12 +103,37 @@ fi
 # nothing. Screen reading covers this case, as it covers every case.
 [ -n "$tty" ] || exit 0
 
+# An idle notification must never erase an authoritative question that is still unanswered.
+# PostToolUse replaces the AskUserQuestion note when the answer lands; until then the older note
+# is the state, while idle_prompt is only a request to look at the same screen again.
+if [ "$kind" = "idle_prompt" ] && [ -r "$dir/$tty.json" ]; then
+    previous=$(/usr/bin/plutil -extract kind raw -o - "$dir/$tty.json" 2>/dev/null)
+    case "$previous" in
+        ask_user_question|permission_request|permission_prompt) exit 0 ;;
+    esac
+fi
+
+# AskUserQuestion's input is the content: one to four complete questions and their options. Keep
+# it as JSON rather than trying to quote arbitrary user text in sh. `head` places a hard ceiling
+# on what can reach a note; an oversized input is omitted whole instead of leaving invalid JSON.
+# The resulting note is always under 34 KiB even if Claude sends an unexpectedly huge payload.
+tool_input=""
+if [ "$kind" = "ask_user_question" ]; then
+    tool_input=$(printf '%s' "$payload" \
+        | /usr/bin/plutil -extract tool_input json -o - - 2>/dev/null \
+        | /usr/bin/head -c 32769 2>/dev/null)
+    input_bytes=$(printf '%s' "$tool_input" | /usr/bin/wc -c | /usr/bin/tr -d ' ')
+    [ "$input_bytes" -le 32768 ] 2>/dev/null || tool_input=""
+fi
+
 # Written whole and moved into place, so a reader never sees half a line. The name is the tty,
 # so a session has exactly one note and the newest one is the only one.
 tmp="$dir/.$tty.$$"
 {
-    printf '{"event":"%s","tty":"%s","at":%s' "$event" "$tty" "$(date +%s)"
+    printf '{"event":"%s","kind":"%s","tty":"%s","at":%s' \
+        "$event" "$kind" "$tty" "$(date +%s)"
     [ -n "$session" ] && printf ',"session":"%s"' "$session"
+    [ -n "$tool_input" ] && printf ',"tool_input":%s' "$tool_input"
     printf '}\n'
 } > "$tmp" 2>/dev/null || exit 0
 mv -f "$tmp" "$dir/$tty.json" 2>/dev/null
