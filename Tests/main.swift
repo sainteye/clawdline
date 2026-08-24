@@ -4375,6 +4375,62 @@ group("a menu read as options a finger can hit") {
     check("and the old question is the same question", SessionState.isChoosing(screen))
 }
 
+group("the question above a visual menu") {
+    // AskUserQuestion's descriptions belong to their options, not to the prose above the first
+    // one. The short checkbox line is only a header, so the phone gets the two wrapped question
+    // lines and not that classification label.
+    let described = """
+    ────────────────────────────────────────────
+     ☐ build
+     別的 session 把 index.html 寫完了，但還沒 commit。
+     root 連坐的修正要生效就得 build。怎麼走？
+    ❯ 1. 幫它整理並 commit，再 build（推薦）
+         跟先前那批一樣，先整理工作區。
+      2. 直接 build，不碰它的 commit
+         保留目前的提交狀態。
+      3. 先不要 build
+    ────────────────────────────────────────────
+    """
+    guard let describedMenu = SessionState.menu(described, hookWaiting: true) else {
+        check("a described question is still a menu", false); return
+    }
+    expect("wrapped question lines are joined",
+           describedMenu.question,
+           "別的 session 把 index.html 寫完了，但還沒 commit。 root 連坐的修正要生效就得 build。怎麼走？")
+    expect("description rows do not become options", describedMenu.options.count, 3)
+
+    let oneLine = """
+    ╭──────────────────────────╮
+    │ Do you want to proceed?  │
+    │ ❯ 1. Yes                 │
+    │   2. No                  │
+    ╰──────────────────────────╯
+    """
+    expect("a one-line permission question is read",
+           SessionState.menu(oneLine)?.question, "Do you want to proceed?")
+
+    let conversationAbove = """
+    This sentence belongs to the earlier conversation.
+    So does this one.
+    ────────────────────────────────────────────
+     ☐ deploy
+     Ship the tested build now?
+    ❯ 1. Ship it
+      2. Keep testing
+    """
+    expect("a dialog rule keeps earlier conversation out",
+           SessionState.menu(conversationAbove, hookWaiting: true)?.question,
+           "Ship the tested build now?")
+
+    let noQuestion = """
+    │ ❯ 1. Yes │
+    │   2. No  │
+    """
+    let fallback = SessionState.menu(noQuestion)
+    check("a menu with no readable question keeps nil", fallback?.question == nil)
+    expect("missing prose does not lose its options", fallback?.options.count, 2)
+}
+
 group("a menu row no keystroke can reach is shown and not offered") {
     // Ten options is not a shape Claude Code draws today, and the failure if it ever does must
     // not be a button that answers a different question: `Targets.answer` carries 1...9, so the

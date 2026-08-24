@@ -82,9 +82,15 @@ enum SessionState: Equatable {
         let lines = screen
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { String($0) }
-            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        let tail = Array(lines.suffix(tailLines))
-        if assistant == .codex { return codexMenu(tail) }
+        // Keep physical line numbers beside the non-empty tail. The menu detector deliberately
+        // ignores empty terminal rows, but those rows are meaningful boundaries when reading the
+        // prose immediately above the first option.
+        let visible = lines.enumerated().filter {
+            !$0.element.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        let tail = Array(visible.suffix(tailLines))
+        let tailText = tail.map { $0.element }
+        if assistant == .codex { return codexMenu(tailText) }
 
         // AskUserQuestion is the exception to Claude Code's usual drawing: its selected row is
         // flush left, just like the composer. That row is trusted only after a hook has stated
@@ -94,19 +100,21 @@ enum SessionState: Equatable {
         // there until the answer and result arrive together.
         var flushLeftSelection: Int? = nil
         if hookWaiting {
-            let hasIndentedSelection = tail.contains { line in
+            let hasIndentedSelection = tailText.contains { line in
                 guard let row = option(line) else { return false }
                 return row.caret && row.indented
             }
-            if !hasIndentedSelection, let caret = tail.lastIndex(where: { hasCaret($0) }),
-               let row = option(tail[caret]), row.caret, !row.indented {
+            if !hasIndentedSelection, let caret = tailText.lastIndex(where: { hasCaret($0) }),
+               let row = option(tailText[caret]), row.caret, !row.indented {
                 flushLeftSelection = caret
             }
         }
 
         var options: [Menu.Option] = []
         var carets = 0
-        for (index, line) in tail.enumerated() {
+        var firstOptionLine: Int? = nil
+        for (index, captured) in tail.enumerated() {
+            let line = captured.element
             guard let row = option(line) else { continue }
             // **A caret at column zero is the prompt, not a menu** — see ``option(_:)``, which
             // reports where the caret was rather than ruling on it. `❯` is both the glyph a
@@ -116,9 +124,14 @@ enum SessionState: Equatable {
             // just not a selection.
             let selected = row.caret && (row.indented || index == flushLeftSelection)
             if selected { carets += 1 }
+            if firstOptionLine == nil { firstOptionLine = captured.offset }
             options.append(Menu.Option(number: row.number, label: row.label, selected: selected))
         }
         guard carets >= 1, options.count >= 2 else { return nil }
+
+        let menuQuestion: String? = firstOptionLine.flatMap {
+            Self.question(in: lines, before: $0, noEarlierThan: tail.first?.offset ?? 0)
+        }
 
         // **What made it think so.** A false reading here tells somebody a question is waiting
         // and then hands them the wrong buttons to answer it with, which is worse than the old
@@ -126,7 +139,8 @@ enum SessionState: Equatable {
         // and the log line is two of them.
         Log.write("choosing: carets=\(carets) options=\(options.count) — "
                   + options.map { "\($0.number). \($0.label.prefix(60))" }.joined(separator: " ⏐ "))
-        return Menu(options: options, selected: options.first(where: \.selected)?.number)
+        return Menu(question: menuQuestion, options: options,
+                    selected: options.first(where: \.selected)?.number)
     }
 
     /// Whether a menu is on screen at all. The shape every existing caller wanted.
@@ -201,8 +215,8 @@ enum SessionState: Equatable {
             /// Whether a keystroke can carry it — see ``Targets/answer(_:to:)``, which is 1…9.
             var answerable: Bool { (1...9).contains(number) }
         }
-        /// The full question when it came from structured data. A screen capture only knows the
-        /// numbered rows beneath it, so this stays nil for the visual fallback.
+        /// The full question, either from structured data or the text immediately above the
+        /// numbered rows in a visual capture. It stays nil when that boundary cannot be read.
         var question: String? = nil
         var options: [Option]
         var selected: Int?
@@ -215,6 +229,70 @@ enum SessionState: Equatable {
     /// The characters a box draws itself with. A dialog's options sit inside one, so the line as
     /// captured is `│ ❯ 1. Yes …│` and the caret is not at the front of it.
     private static let boxes: Set<Character> = ["│", "┃", "|", "▌", "▏", "╎", "┆", "┊"]
+
+    /// The prose immediately above a menu's first numbered row.
+    ///
+    /// AskUserQuestion puts a short `☐ header` above the prose. That is classification rather
+    /// than the thing somebody has to answer, so it is a boundary and is intentionally omitted.
+    /// Empty rows and box rules are stronger boundaries: crossing either would pull commands,
+    /// permission details, or the preceding conversation into the question shown on a phone.
+    private static func question(in lines: [String], before optionLine: Int,
+                                 noEarlierThan lowerBound: Int) -> String? {
+        guard optionLine > lowerBound else { return nil }
+        var parts: [String] = []
+        var index = optionLine - 1
+        while index >= lowerBound {
+            let raw = lines[index]
+            let text = dialogText(raw)
+            if text.isEmpty || isBoxRule(raw) || isQuestionHeader(text) || hasCaret(raw) {
+                break
+            }
+            parts.insert(text, at: 0)
+            index -= 1
+        }
+        let joined = parts.joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return joined.isEmpty ? nil : joined
+    }
+
+    /// Text inside a dialog wall, without its padding or far edge.
+    private static func dialogText(_ raw: String) -> String {
+        var text = raw.trimmingCharacters(in: .whitespaces)
+        while let first = text.first, boxes.contains(first) {
+            text.removeFirst()
+            text = text.trimmingCharacters(in: .whitespaces)
+        }
+        while let last = text.last, boxes.contains(last) {
+            text.removeLast()
+            text = text.trimmingCharacters(in: .whitespaces)
+        }
+        return text
+    }
+
+    private static func isQuestionHeader(_ text: String) -> Bool {
+        guard let first = text.first else { return false }
+        return first == "☐" || first == "☑" || first == "☒"
+    }
+
+    /// A horizontal rule, including its corners. Requiring at least one horizontal stroke keeps
+    /// an ordinary sentence containing a box character from becoming a boundary by accident.
+    private static func isBoxRule(_ raw: String) -> Bool {
+        let horizontal: Set<Character> = ["─", "━", "═", "╌", "╍", "┄", "┅", "┈", "┉"]
+        let joints: Set<Character> = ["╭", "╮", "╰", "╯", "┌", "┐", "└", "┘", "├", "┤",
+                                      "┬", "┴", "┼", "╞", "╡", "╪", "┏", "┓", "┗", "┛"]
+        var sawHorizontal = false
+        for char in raw {
+            if char == " " || char == "\t" || boxes.contains(char) || joints.contains(char) {
+                continue
+            }
+            if horizontal.contains(char) {
+                sawHorizontal = true
+                continue
+            }
+            return false
+        }
+        return sawHorizontal
+    }
 
     /// This line as a menu option — its number, its words, whether the caret is on it, and
     /// whether the line was indented. `nil` for every other line on the screen, which is nearly
