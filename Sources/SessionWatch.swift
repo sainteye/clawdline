@@ -132,11 +132,11 @@ final class SessionWatch {
             let snap = anyAssistant ? Targets.snapshot() : Targets.Snapshot()
             let sessions = snap.assistantSessions.isEmpty ? snap.sessions : snap.assistantSessions
             // The note must reach the parser before the screen is classified. AskUserQuestion's
-            // flush-left caret is intentionally ambiguous without this protocol fact; merging
-            // `.waiting` after the capture, as below, is too late to recover its option rows.
+            // flush-left caret is intentionally ambiguous without this protocol fact. The note
+            // only opens that parsing gate; the screen still decides whether a menu exists.
             let hookWaiting = Set(sessions.compactMap { session -> String? in
                 let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
-                return notes[bare]?.assertsWaiting == true ? session.id : nil
+                return notes[bare]?.opensMenuGate == true ? session.id : nil
             })
             // Named `screens` and not `reading`: there is a `reading` flag on `self` guarding
             // this whole function, and shadowing it here is a trap for the next edit.

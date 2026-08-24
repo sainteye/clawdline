@@ -675,6 +675,27 @@ group("transcript parsing") {
            Transcript.parse("\n\n" + unterminated + "\n\n").count, 1)
     expect("nothing at all is nothing", Transcript.parse("").count, 0)
 
+    let queued = #"{"type":"queue-operation","operation":"enqueue","timestamp":"2026-08-24T10:28:54.573Z","content":"但我按下去瞬間，會出現等待畫面"}"#
+    let queuedEntries = Transcript.parse(queued)
+    expect("queued input becomes one transcript entry", queuedEntries.count, 1)
+    expect("queued input belongs to the user", queuedEntries.first?.kind,
+           Transcript.Entry.Kind.user)
+    expect("queued input keeps its text", queuedEntries.first?.text,
+           "但我按下去瞬間，會出現等待畫面")
+    expect("queued input keeps its timestamp",
+           queuedEntries.first?.time?.timeIntervalSince1970, 1787567334.573)
+
+    let malformedQueueRows = [
+        #"{"type":"queue-operation","operation":"enqueue"}"#,
+        #"{"type":"queue-operation","operation":"enqueue","content":{"text":"not a string"}}"#,
+        #"{"type":"queue-operation","operation":"dequeue","content":"not a message"}"#,
+        #"{"type":"user","message":{"role":"user","content":"still parses"}}"#,
+    ].joined(separator: "\n")
+    let afterMalformedQueue = Transcript.parse(malformedQueueRows)
+    expect("malformed queue rows do not break later parsing", afterMalformedQueue.count, 1)
+    expect("the valid row after malformed queue rows survives", afterMalformedQueue.first?.text,
+           "still parses")
+
     // The scan walks the UTF-8 view a byte at a time and then slices the String with the indices
     // it stopped on. Those stops are always just after an ASCII newline, so they are always on a
     // character boundary — but if that ever stopped being true the slice would not be wrong, it
@@ -2207,6 +2228,11 @@ group("what a session is doing, from its screen") {
     let working = "✢ Generating… (18s · thinking)\n────────\n❯"
     expect("a spinner is working", SessionState.read(working), .working("Generating… (18s · thinking)"))
     expect("an idle prompt is idle", SessionState.read("❯\n────\n  atrium  main"), .idle)
+    expect("an open hook gate does not turn a working screen into waiting",
+           SessionState.read(working, hookWaiting: true),
+           .working("Generating… (18s · thinking)"))
+    expect("nor does it turn an idle screen into waiting",
+           SessionState.read("❯\n────\n  atrium  main", hookWaiting: true), .idle)
 
     // Not the same answer as "doing nothing", and it must not be drawn like it. A session whose
     // screen could not be read is a session nothing is known about.
@@ -2878,8 +2904,7 @@ group("hooks: what a note is allowed to change") {
                             now: now)["B"],
            .working("x"))
 
-    // The screen remains the fallback authority for look-only and turn-boundary notes. Matched
-    // question events are tested separately below because they carry stronger information.
+    // The screen remains the authority for look-only, turn-boundary and opening input notes.
     expect("a question on screen outranks a Stop",
            HookBridge.merge(notes(.stop), into: ["A": .waiting], sessions: sessions, now: now)["A"],
            .waiting)
@@ -2888,29 +2913,30 @@ group("hooks: what a note is allowed to change") {
                             sessions: sessions, now: now)["A"],
            .waiting)
 
-    // These are Claude Code's own lifecycle, not terminal shapes. The opening event can see a
-    // flush-left picker the screen deliberately rejects, and the closing event can beat a picker
-    // that is still present in one stale capture.
-    expect("AskUserQuestion asserts waiting over an idle screen",
+    // Opening input events only gate the screen parser. In particular, auto mode emits both
+    // permission kinds for approvals it handles itself without ever showing a dialog. The
+    // closing event can still beat a picker that remains in one stale capture.
+    expect("AskUserQuestion does not replace an idle screen",
            HookBridge.merge(note(.askUserQuestion, event: .preToolUse), into: ["A": .idle],
                             sessions: sessions, now: now)["A"],
-           .waiting)
-    expect("and over a screen that could not be read",
+           .idle)
+    expect("nor a screen that could not be read",
            HookBridge.merge(note(.askUserQuestion, event: .preToolUse), into: ["A": .unknown],
                             sessions: sessions, now: now)["A"],
-           .waiting)
+           .unknown)
     expect("PostToolUse retracts a picker left in the capture",
            HookBridge.merge(note(.askUserQuestionDone, event: .postToolUse),
                             into: ["A": .waiting], sessions: sessions, now: now)["A"],
            .idle)
-    expect("a PermissionRequest authoritatively waits for approval",
+    expect("an auto-approved PermissionRequest keeps the working screen",
            HookBridge.merge(note(.permissionRequest, event: .permissionRequest),
-                            into: ["A": .working("stale")], sessions: sessions, now: now)["A"],
-           .waiting)
-    expect("a permission notification has the same narrow meaning",
+                            into: ["A": .working("Reviewing approval request")],
+                            sessions: sessions, now: now)["A"],
+           .working("Reviewing approval request"))
+    expect("an auto-approved permission notification keeps the idle screen",
            HookBridge.merge(note(.permissionPrompt, event: .notification), into: ["A": .idle],
                             sessions: sessions, now: now)["A"],
-           .waiting)
+           .idle)
     expect("but idle_prompt still only asks for a screen reading",
            HookBridge.merge(note(.idlePrompt, event: .notification), into: ["A": .idle],
                             sessions: sessions, now: now)["A"],
@@ -4240,6 +4266,8 @@ group("a numbered list somebody typed is not a menu") {
     check("a list typed at the prompt is not a question", !SessionState.isChoosing(typed))
     check("the hook gate makes the same shape a question",
           SessionState.isChoosing(typed, hookWaiting: true))
+    expect("a gated picker makes the screen waiting",
+           SessionState.read(typed, hookWaiting: true), .waiting)
     guard let gated = SessionState.menu(typed, hookWaiting: true) else {
         check("the same shape is a menu after a hook says it is waiting", false); return
     }
@@ -4273,6 +4301,8 @@ group("a numbered list somebody typed is not a menu") {
     \u{2502}   3. No, tell Claude what to do\u{2502}
     """
     check("a dialog in its box still is", SessionState.isChoosing(menu))
+    check("and remains one with the hook gate open",
+          SessionState.isChoosing(menu, hookWaiting: true))
 
     // Indented but unboxed, which some prompts are.
     let bare = """

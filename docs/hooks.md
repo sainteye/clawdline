@@ -76,10 +76,10 @@ Clawdline goes back to reading the screen, which is what it does when they were 
 | `SessionStart` | — | Learns the session id, which is also the transcript filename. |
 | `UserPromptSubmit` | — | **Looks now, and again in 2.5 seconds.** Claims nothing. |
 | `Stop` | — | Marks it not working if a stale spinner remains. |
-| `PreToolUse` | `AskUserQuestion` | Authoritatively marks it waiting and keeps the full questions and options from `tool_input`. |
-| `PostToolUse` | `AskUserQuestion` | Retracts that waiting state after the answer. |
-| `PermissionRequest` | — | Authoritatively marks it waiting for approval. |
-| `Notification` | `permission_prompt` | Marks it waiting for approval. |
+| `PreToolUse` | `AskUserQuestion` | Opens the flush-left picker gate and keeps the full questions and options from `tool_input`. |
+| `PostToolUse` | `AskUserQuestion` | Retracts a picker left on screen after the answer. |
+| `PermissionRequest` | — | Looks now and opens the picker gate; the screen still decides whether approval is waiting. |
+| `Notification` | `permission_prompt` | Does the same for the permission notification. |
 | `Notification` | `idle_prompt` | **Looks now. Claims nothing.** |
 | `SessionEnd` | — | Same as `Stop`, and forgets the tty remembered for the session. |
 
@@ -99,22 +99,26 @@ finishing, and treating it as one would call a session idle while its main agent
 
 ---
 
-## What is authoritative, and what remains a fallback
+## The hook opens the gate; the screen decides
 
-Most notes still say only *when* something happened. A prompt submission or an idle notification
-asks Clawdline to read the screen; it does not claim what that reading will find.
+Most notes say *when* something happened. A prompt submission or idle notification asks
+Clawdline to read the screen; it does not claim what that reading will find. Input-related notes
+add one narrow fact: **now the parser may trust a flush-left numbered caret as a picker.** Claude
+Code can draw an AskUserQuestion picker with its caret at column zero, exactly the same shape as
+a user's echoed message that begins with a numbered list. The hook disambiguates that shape, but
+the screen must still contain the picker before the session becomes `waiting`.
 
-Two matched lifecycle events are stronger than a drawing:
+This distinction is essential for permission events. In auto mode Claude Code can approve a
+request itself, yet it still emits `PermissionRequest` and `Notification/permission_prompt`.
+There is no dialog and nobody needs to answer. Treating the event itself as `waiting` would send
+a false notification and leave the phone with no options to show. Instead, the permission hook
+opens the same parsing gate and triggers a capture: a real dialog is recognised on screen, while
+an auto-approved request leaves the screen's existing `working` or `idle` state untouched.
 
-- `PreToolUse/AskUserQuestion` is Claude Code stating that its question tool is about to run. Its
-  `tool_input` is the full question, not an inference. `PostToolUse/AskUserQuestion` closes it.
-- `PermissionRequest` is emitted when the permission dialog is about to be shown. The matched
-  `Notification/permission_prompt` is the notification equivalent.
-
-Those notes may assert `waiting`. This is the necessary boundary: Claude Code can draw an
-AskUserQuestion picker with its caret at column zero, exactly the same shape as a user's echoed
-message that begins with a numbered list. No screen-only rule can accept the first without also
-accepting the second. The structured hook has information the pixels do not.
+`PreToolUse/AskUserQuestion` also carries the full question and options in `tool_input`. Once the
+gated screen confirms that its picker is present, those structured labels replace any text the
+terminal clipped. `PostToolUse/AskUserQuestion` remains able to close a picker that lingers for
+one stale capture after it was answered.
 
 The screen is still the complete fallback. Sessions started before installation, disabled hooks,
 missing notes, old notes without `tool_input`, and clipped or unreadable hook data all take the
@@ -123,9 +127,9 @@ the original labels rather than terminal-width truncations.
 
 What the notes do settle on their own are the things a screen genuinely cannot:
 
-- **A question is waiting or has just been answered.** The matched tool events bracket it and
-  carry its content.
-- **Approval is waiting.** PermissionRequest says so directly; `idle_prompt` never does.
+- **A question has just been answered.** The closing tool event can cover one stale repaint.
+- **A confirmed question's unclipped content.** The opening tool event carries its labels; the
+  screen supplies the waiting state.
 - **A turn has ended.** Claude Code does not always erase its live line when a fast turn
   finishes, so a capture taken a moment later can find one and call a finished session busy. A
   `Stop` overrides that — for ten seconds, after which the screen wins again.
@@ -146,9 +150,9 @@ issue #249 is this exact bug, and their `HOOK_REMOVALS` list is the tombstone.
 What replaces it is cheaper and cannot be wrong: **a nudge looks twice** — once immediately, and
 again 2.5 seconds later, by which time the live line is up. Same information, nothing asserted.
 
-A question recognised on screen still outranks every look-only note. An explicit
-AskUserQuestion opening or closing event outranks a stale screen because it is the lifecycle
-being drawn, not a guess about that drawing.
+A question recognised on screen still outranks every look-only note. An AskUserQuestion opening
+only makes the ambiguous picker shape readable; its closing event can outrank a stale screen
+because it says the picker is no longer actionable.
 
 ---
 

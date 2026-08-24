@@ -39,7 +39,8 @@ enum SessionState: Equatable {
     /// differently — see ``menu(_:assistant:tailLines:)`` — and they draw their live line
     /// differently, so a reader told the wrong one reports every session as idle rather than
     /// reporting something wrong, which is the failure mode this shape keeps.
-    static func read(_ screen: String?, assistant: Assistant = .claude) -> SessionState {
+    static func read(_ screen: String?, assistant: Assistant = .claude,
+                     hookWaiting: Bool = false) -> SessionState {
         guard let screen, !screen.isEmpty else { return .unknown }
         let text = Ansi.plain(screen)
 
@@ -47,7 +48,7 @@ enum SessionState: Equatable {
         // draws its dialog *below* whatever came before it, and the spinner line above it is not
         // always erased — so a reader that asked "is it busy?" first would find that stale line,
         // report the session as working, and hide the one row that needed a person.
-        if isChoosing(text, assistant: assistant) { return .waiting }
+        if isChoosing(text, assistant: assistant, hookWaiting: hookWaiting) { return .waiting }
         if let line = Activity.parse(text, assistant: assistant) { return .working(line) }
         return .idle
     }

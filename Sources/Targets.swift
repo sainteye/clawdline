@@ -258,14 +258,14 @@ enum Targets {
 
         func note(_ session: TargetSession, _ screen: String?) {
             let assistant = session.assistant ?? .claude
-            out.states[session.id] = SessionState.read(screen, assistant: assistant)
-            // Only when the screen or an authoritative hook says so. Asking the parser on every
-            // idle screen would be work done to be told nothing once per session per beat; the
-            // hook exception is also what lets the parser safely trust a flush-left caret.
-            let assertedWaiting = hookWaiting.contains(session.id)
-            guard out.states[session.id] == .waiting || assertedWaiting, let screen else { return }
+            let gateOpen = hookWaiting.contains(session.id)
+            out.states[session.id] = SessionState.read(screen, assistant: assistant,
+                                                       hookWaiting: gateOpen)
+            // Only when the screen says so. Opening the gate lets that same screen safely count a
+            // flush-left caret as a selection; it never supplies `.waiting` in the screen's place.
+            guard out.states[session.id] == .waiting, let screen else { return }
             out.menus[session.id] = SessionState.menu(Ansi.plain(screen), assistant: assistant,
-                                                      hookWaiting: assertedWaiting)
+                                                      hookWaiting: gateOpen)
         }
 
         let iterm = sessions.filter { $0.backend == .iterm }

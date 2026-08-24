@@ -352,7 +352,9 @@ enum Transcript {
         else { return [] }
 
         let type = row["type"] as? String
-        guard type == "user" || type == "assistant" else { return [] }
+        guard type == "user" || type == "assistant" || type == "queue-operation" else {
+            return []
+        }
         // Sidechains are subagents talking among themselves, and meta records are
         // bookkeeping. Neither is the conversation you opened the pane to read — unless the
         // conversation you opened *is* an agent's, in which case sidechain is all there is.
@@ -360,6 +362,22 @@ enum Transcript {
         if row["isMeta"] as? Bool == true { return [] }
 
         let time = (row["timestamp"] as? String).flatMap { iso.date(from: $0) }
+
+        // Input submitted during a turn is queued instead of being written as a `user` message.
+        // It is still something the person said, and Claude Code does not repeat it as a user
+        // row when the queue drains. Other queue operations are bookkeeping. Treat malformed
+        // content the same way as any unknown row, and strip machine-only blocks just as the
+        // ordinary user path below does.
+        if type == "queue-operation" {
+            guard row["operation"] as? String == "enqueue",
+                  let raw = row["content"] as? String
+            else { return [] }
+            let text = withoutMachineBlocks(raw)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return [] }
+            return [Entry(kind: .user, text: text, tool: nil, time: time)]
+        }
+
         guard let message = row["message"] as? [String: Any] else { return [] }
 
         var blocks: [[String: Any]] = []

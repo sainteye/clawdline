@@ -16,18 +16,18 @@ import Foundation
 /// underneath stays exactly where it was.
 ///
 /// Most notes only say *when* something happened, and still ask for the same screen reading as
-/// before. Two are different. `PreToolUse` matched to `AskUserQuestion` is Claude Code itself
-/// saying that a question is waiting, with the complete question in `tool_input`, and
-/// `PermissionRequest` says the same thing about an approval. Those are protocol facts rather
-/// than guesses from a drawing, so they are allowed to assert `.waiting`; PostToolUse retracts
-/// an AskUserQuestion assertion and the next lifecycle event replaces an approval note.
+/// before. Input-related notes add one narrow fact: while one is current, the screen parser may
+/// trust an otherwise ambiguous flush-left picker caret. They do not assert `.waiting` — auto
+/// mode emits permission events for requests it approves without showing a dialog, so only a
+/// menu actually found on screen can make that claim. `PreToolUse/AskUserQuestion` also keeps the
+/// complete question in `tool_input`; `PostToolUse` retracts a picker that has not repainted yet.
 /// `Notification/idle_prompt` remains only a reason to look.
 ///
-/// **The screen stays the fallback, not the authority over facts Claude Code has stated.** That
-/// distinction matters because the question picker and an echoed numbered list can have exactly
-/// the same terminal shape. With no hooks installed, every reading still follows the old path.
-/// No note asserts that a session is working; see `merge`. A `Stop` still briefly fixes the other
-/// known screen error, a live line Claude Code did not erase when a fast turn ended.
+/// **The screen stays the authority.** The gate matters because the question picker and an echoed
+/// numbered list can have exactly the same terminal shape. With no hooks installed, every
+/// reading still follows the old path. No note asserts that a session is working; see `merge`. A
+/// `Stop` still briefly fixes the other known screen error, a live line Claude Code did not erase
+/// when a fast turn ended.
 ///
 /// Which is why the fallback is not a degraded mode. With nothing installed this file does
 /// nothing at all, and every reading still arrives — one poll later.
@@ -143,10 +143,10 @@ enum HookBridge {
                                      options: options, selected: 1)
         }
 
-        /// This note is Claude Code itself saying that input is waiting, rather than merely
-        /// asking for another screen reading. The distinction also gates the one ambiguous
-        /// terminal shape: an AskUserQuestion row whose caret is flush left like the composer.
-        var assertsWaiting: Bool {
+        /// This note lets the screen parser trust the one ambiguous terminal shape: an
+        /// AskUserQuestion row whose caret is flush left like the composer. It does not say a
+        /// person is waiting; auto mode produces the permission kinds without drawing a dialog.
+        var opensMenuGate: Bool {
             switch kind {
             case .askUserQuestion, .permissionRequest, .permissionPrompt: return true
             default: return false
@@ -325,16 +325,14 @@ enum HookBridge {
             guard let note = notes[bare] else { continue }
             let screen = states[session.id] ?? .unknown
 
-            // This is the boundary the old bridge did not cross: matched hook events are
-            // authoritative about states they directly bracket. AskUserQuestion's PreToolUse
-            // contains the question and its PostToolUse means it was answered; neither is an
-            // inference from a terminal drawing. PermissionRequest is equally explicit. The
-            // screen remains the answer for every session with no note and for all look-only
-            // events, including idle_prompt.
+            // Opening input notes only gated the screen parser that produced `states`; they do
+            // not assert a state here. Auto mode emits permission events for approvals it handles
+            // itself without drawing a dialog, so the screen remains the authority on whether a
+            // person is actually waiting. The closing AskUserQuestion event is different: it can
+            // retire a picker that is still present in one stale capture.
             switch note.kind {
             case .askUserQuestion, .permissionRequest, .permissionPrompt:
-                out[session.id] = .waiting
-                continue
+                break
             case .askUserQuestionDone:
                 // The picker can linger for one capture after the answer. This event says it is
                 // no longer actionable, but says nothing about whether the next model turn has
@@ -345,9 +343,9 @@ enum HookBridge {
                 break
             }
 
-            // A question recognised on screen is still the fallback's strongest fact. Look-only
-            // notes cannot contradict it, and keeping this rule is what preserves old sessions
-            // and installations with hooks disabled.
+            // A question recognised on screen is the strongest fact. Look-only notes cannot
+            // contradict it, and keeping this rule is what preserves old sessions and
+            // installations with hooks disabled.
             if screen == .waiting { continue }
 
             switch note.kind {
@@ -375,7 +373,7 @@ enum HookBridge {
                 // These only ask us to look. The reading that just happened is the answer.
                 continue
             case .askUserQuestion, .askUserQuestionDone, .permissionRequest, .permissionPrompt:
-                // Handled above, before the screen fallback is considered.
+                // Opening notes already gated parsing; the closing note was handled above.
                 continue
             }
         }
