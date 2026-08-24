@@ -110,10 +110,34 @@ enum SessionState: Equatable {
             }
         }
 
+        // **Where the dialog starts.** Numbered rows on screen are not all the same list: an
+        // assistant writing "three things I found" leaves `1.` `2.` `3.` above the frame, and
+        // counting those as options gave one session eight of them — with the first landing
+        // outside the dialog, so the question was then read from the prose above *that*, and a
+        // page of somebody's analysis arrived on a phone as the thing being asked. The rule
+        // below the caret is the dialog; anything above its frame or its header belongs to the
+        // conversation. With no frame found the whole tail is fair game, which is the behaviour
+        // this had before.
+        let selectedCaret = flushLeftSelection ?? tailText.lastIndex { line in
+            guard let row = option(line) else { return false }
+            return row.caret && row.indented
+        }
+        var dialogStart = 0
+        if let anchor = selectedCaret {
+            var scan = anchor - 1
+            while scan >= 0 {
+                if isBoxRule(tailText[scan]) || isQuestionHeader(dialogText(tailText[scan])) {
+                    dialogStart = scan + 1
+                    break
+                }
+                scan -= 1
+            }
+        }
+
         var options: [Menu.Option] = []
         var carets = 0
         var firstOptionLine: Int? = nil
-        for (index, captured) in tail.enumerated() {
+        for (index, captured) in tail.enumerated() where index >= dialogStart {
             let line = captured.element
             guard let row = option(line) else { continue }
             // **A caret at column zero is the prompt, not a menu** — see ``option(_:)``, which
@@ -250,10 +274,20 @@ enum SessionState: Equatable {
         // dialog drawn without a frame cannot swallow the conversation above it.
         var blanks = 0
         var reach = 12
+        // **Only prose an edge closed off is the question.** Walking up until the reach runs out
+        // reads whatever was on screen before the dialog — measured once at eight lines of
+        // someone's analysis presented to a phone as the thing being asked. A real dialog is
+        // always framed: the rule above it, its header or tab bar, or the caret of the row above.
+        // If none of those turned up, this is not a question and saying nothing is the honest
+        // answer, because the fallback already handles a menu whose prose could not be read.
+        var closed = false
         while index >= lowerBound, reach > 0 {
             let raw = lines[index]
             let text = dialogText(raw)
-            if isBoxRule(raw) || isQuestionHeader(text) || hasCaret(raw) { break }
+            if isBoxRule(raw) || isQuestionHeader(text) || hasCaret(raw) {
+                closed = true
+                break
+            }
             if text.isEmpty {
                 blanks += 1
                 if blanks > 1 { break }
@@ -266,6 +300,7 @@ enum SessionState: Equatable {
             index -= 1
             reach -= 1
         }
+        guard closed else { return nil }
         let joined = parts.joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return joined.isEmpty ? nil : joined
@@ -286,8 +321,11 @@ enum SessionState: Equatable {
     }
 
     private static func isQuestionHeader(_ text: String) -> Bool {
-        guard let first = text.first else { return false }
-        return first == "☐" || first == "☑" || first == "☒"
+        // A checkbox anywhere on the line, not only at the front. One question draws its label as
+        // `☐ build`; several draw a tab bar — `←  ☐ scope  ☐ parity  ✔ Submit  →` — where the
+        // first glyph is an arrow and the boxes are further in. Both are chrome above the
+        // question, and prose that is the question does not contain these characters.
+        return text.contains("☐") || text.contains("☑") || text.contains("☒")
     }
 
     /// A horizontal rule, including its corners. Requiring at least one horizontal stroke keeps

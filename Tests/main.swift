@@ -788,6 +788,31 @@ group("transcript project directory") {
     }
 }
 
+group("a hook session id is an identity boundary") {
+    let fm = FileManager.default
+    let dir = fm.temporaryDirectory
+        .appendingPathComponent("clawdline-transcript-identity-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: dir) }
+
+    let other = dir.appendingPathComponent("somebody-else.jsonl")
+    try! Data("{}\n".utf8).write(to: other)
+
+    // SessionStart fires before Claude creates its own jsonl. The old fallback chose `other`
+    // because it was the only recent file, making a new browser-started tab show an existing
+    // conversation until its own transcript appeared.
+    check("a not-yet-created exact transcript does not fall back to another session",
+          Transcript.locate(in: dir, tabTitle: "Claude Code", startedAt: Date(),
+                            sessionID: "brand-new") == nil)
+
+    let exact = dir.appendingPathComponent("brand-new.jsonl")
+    try! Data("{}\n".utf8).write(to: exact)
+    expect("the exact transcript appears as soon as Claude creates it",
+           Transcript.locate(in: dir, tabTitle: "Claude Code", startedAt: Date(),
+                             sessionID: "brand-new"), exact)
+}
+
 group("transcript rendering") {
     let mono = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
     let text = Transcript.render(Transcript.parse(sampleTranscript), size: 11.5, mono: mono).string
@@ -4420,8 +4445,10 @@ group("the question above a visual menu") {
            SessionState.menu(padded, hookWaiting: true)?.question,
            "別的 session 把 index.html 寫完了，但還沒 commit。")
 
-    // Two blank rows are not padding any more, so prose beyond them stays outside.
-    let farProse = """
+    // Prose that no edge closed off is not the question. Every dialog that has actually been
+    // captured is framed; without a rule, a header or a caret above it there is nothing to say
+    // where the question starts, and guessing put a page of someone's analysis on a phone.
+    let unframed = """
     This belongs to the conversation, not to the dialog.
 
 
@@ -4429,9 +4456,36 @@ group("the question above a visual menu") {
     ❯ 1. Yes
       2. No
     """
-    expect("a gap of two blank rows stops the reach",
-           SessionState.menu(farProse, hookWaiting: true)?.question,
-           "Ship the tested build now?")
+    check("prose with no edge above it is not read as the question",
+          SessionState.menu(unframed, hookWaiting: true)?.question == nil)
+
+    // **Numbered rows above the frame belong to whoever wrote them.** An assistant listing three
+    // findings, then a dialog with three options, was read as one menu of eight — and because the
+    // first of those eight sat outside the dialog, the question was taken from the prose above
+    // *that*. Both halves are asserted here: the count, and where the question came from.
+    let listAbove = """
+      三個順手挖到的東西
+
+      1. 旗標是我們自己的 prompt 教出來的。
+      2. zh_script.py 把「制」列為簡體字，那是錯的。
+      3. 離線 dump 的 rewarm 通道灌的是同一段摘要。
+
+      Opus 基準 20 題已完成 16 題。
+    ────────────────────────────────────────────
+    ←  ☐ 全跑範圍  ☐ digit 對等  ✔ Submit  →
+
+    要怎麼跑完整那一輪？
+
+    ❯ 1. 砍掉慢的五個，跑剩 17 題（推薦）
+         淘汰最慢的兩個候選。
+      2. 全部也跑完
+      3. 先把題庫拉到 40 題再跑
+    """
+    guard let bounded = SessionState.menu(listAbove, hookWaiting: true) else {
+        check("a dialog under a written list is still a menu", false); return
+    }
+    expect("rows above the frame are not options", bounded.options.count, 3)
+    expect("and the question is the dialog's own", bounded.question, "要怎麼跑完整那一輪？")
 
     let oneLine = """
     ╭──────────────────────────╮
