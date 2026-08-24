@@ -401,6 +401,7 @@ struct Japanese: Copy {
     let webInfoModelBusy = "切り替えはセッションが待機中のときだけできます。"
     let webInfoLimitsClaude = "Claude Code は枠を使い切ったときにしか記録しないので、それまでは不明です。"
     let webInfoCopied = "セッション id をコピーしました。"
+    let webInfoAsOf = "{when} 時点"
     let webSettingsOrder = "トランスクリプト"
     let webSettingsOrderSay = "トランスクリプトをどちらの端から読み始めるか。どのセッションにも効きますし、キーボードの `r` も同じことをします。"
     let webAskLabel = "質問しました"

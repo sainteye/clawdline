@@ -403,6 +403,7 @@ struct Italian: Copy {
     let webInfoModelBusy = "Il cambio aspetta che la sessione sia inattiva."
     let webInfoLimitsClaude = "Claude Code annota una finestra solo quando è esaurita; fino ad allora non si sa nulla."
     let webInfoCopied = "Id della sessione copiato."
+    let webInfoAsOf = "alle {when}"
     let webSettingsOrder = "Trascrizione"
     let webSettingsOrderSay = "Da che capo iniziare a leggere una trascrizione. Vale per tutte le sessioni, e da tastiera `r` fa lo stesso."
     let webAskLabel = "ha chiesto"

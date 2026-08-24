@@ -2653,6 +2653,7 @@ var T = {
     webInfoModelBusy: "Switching waits until the session is idle.",
     webInfoLimitsClaude: "Claude Code only writes a window down once it is spent, so nothing is known until then.",
     webInfoCopied: "Session id copied.",
+    webInfoAsOf: "as of {when}",
 
     // Said in both places, so said once — the bar's own words, arriving here too.
     placeholder: "Message Claude Code…",
@@ -7534,6 +7535,17 @@ var Info = (function () {
         try { return d.toLocaleDateString(undefined, { weekday: "short" }); } catch (e) { return d.toDateString().slice(0, 3); }
     }
 
+    /** A moment in the past: a clock if it was within the day, else the day, in the reader's locale. */
+    function clockOf(unix) {
+        if (!unix) return "";
+        var d = new Date(unix * 1000);
+        if (Date.now() / 1000 - unix < 86400) {
+            var h = d.getHours(), m = d.getMinutes();
+            return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+        }
+        try { return d.toLocaleDateString(undefined, { weekday: "short" }); } catch (e) { return d.toDateString().slice(0, 3); }
+    }
+
     function count(x) { return typeof x === "number" ? esc(x.toLocaleString()) : esc(T.webInfoUnknown); }
     /** `6.59M`, `80.1K`, `318` — the size of a number at a glance; the exact one is in the title. */
     function compact(n) {
@@ -7680,7 +7692,10 @@ var Info = (function () {
         // Read-only pairings get no buttons rather than dead ones: there is nothing they could do.
         if (models.length && S.write) out += sec(++i, T.webInfoSwitchModel, "", modelsHTML(models, current));
         out += sec(++i, T.webInfoUsage, "", usageHTML(u));
-        out += sec(++i, T.webInfoLimits, "", limitsHTML(l, s.assistant));
+        // When the windows were last known — the status line writes them down every few seconds
+        // while a Claude Code session is open, and a stale reading should look its age.
+        var known = (l.windows || []).length && l.at ? esc(fill(T.webInfoAsOf, { when: clockOf(l.at) })) : "";
+        out += sec(++i, T.webInfoLimits, known, limitsHTML(l, s.assistant));
         out += sec(++i, T.webInfoFiles, branchOf(f), filesHTML(f));
         out += sec(++i, T.webInfoDeploy, "", deployHTML(dep));
         return out;

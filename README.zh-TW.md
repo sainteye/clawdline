@@ -376,7 +376,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 純 AppKit、沒有相依套件、除了 `swiftc` 沒有 build 系統。
 
 ```sh
-./test.sh     # 1492 個檢查，約兩秒
+./test.sh     # 1501 個檢查，約兩秒
 ./build.sh    # 編譯，原本有在跑的話會自己接回來
 swift build   # 只是為了讓編輯器讀得懂程式碼
 ```

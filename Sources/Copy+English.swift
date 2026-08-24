@@ -402,6 +402,7 @@ struct English: Copy {
     let webInfoModelBusy = "Switching waits until the session is idle."
     let webInfoLimitsClaude = "Claude Code only writes a window down once it is spent, so nothing is known until then."
     let webInfoCopied = "Session id copied."
+    let webInfoAsOf = "as of {when}"
     let webSettingsOrder = "Transcript"
     let webSettingsOrderSay = "Which end of a transcript to start reading from. It applies to every session, and `r` does the same from a keyboard."
     let webAskLabel = "asked"

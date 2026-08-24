@@ -401,6 +401,7 @@ struct Korean: Copy {
     let webInfoModelBusy = "세션이 쉬고 있을 때만 바꿀 수 있습니다."
     let webInfoLimitsClaude = "Claude Code는 한도를 다 쓴 뒤에야 기록하므로, 그 전에는 알 수 없습니다."
     let webInfoCopied = "세션 id를 복사했습니다."
+    let webInfoAsOf = "{when} 기준"
     let webSettingsOrder = "트랜스크립트"
     let webSettingsOrderSay = "트랜스크립트를 어느 쪽 끝부터 읽기 시작할지. 모든 세션에 적용되고, 키보드에서는 `r`이 같은 일을 합니다."
     let webAskLabel = "물었습니다"

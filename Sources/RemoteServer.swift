@@ -1215,6 +1215,13 @@ final class RemoteServer {
             }
         }
         if model == nil, let named = usage?.model, !named.hasPrefix("<") { model = named }
+        // The percentages Claude Code never writes into a transcript, as the status line wrote
+        // them down. Laid under whatever the transcript did say — see `SessionInfo.merged`.
+        if session.assistant == .claude {
+            limits = SessionInfo.merged(
+                transcript: limits,
+                cache: SessionInfo.claudeLimits(cacheDirectory: ProjectStatus.cacheDirectory))
+        }
 
         // The deploy and CI rows of `/links`, unchanged: the same state word means the same
         // thing on both sheets, and nothing here goes to GitHub that `/links` did not already.
@@ -1766,6 +1773,7 @@ final class RemoteServer {
             "webInfoModelBusy": t.webInfoModelBusy,
             "webInfoLimitsClaude": t.webInfoLimitsClaude,
             "webInfoCopied": t.webInfoCopied,
+            "webInfoAsOf": t.webInfoAsOf,
         ])
 
         var response = Response.json(out)

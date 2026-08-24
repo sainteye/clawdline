@@ -403,6 +403,7 @@ struct Russian: Copy {
     let webInfoModelBusy = "Смена ждёт, пока сессия не освободится."
     let webInfoLimitsClaude = "Claude Code записывает окно только когда оно исчерпано; до тех пор ничего не известно."
     let webInfoCopied = "Id сессии скопирован."
+    let webInfoAsOf = "на {when}"
     let webSettingsOrder = "Расшифровка"
     let webSettingsOrderSay = "С какого конца начинать читать расшифровку. Это касается каждой сессии, а с клавиатуры то же самое делает `r`."
     let webAskLabel = "спросил"

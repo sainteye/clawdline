@@ -403,6 +403,7 @@ struct German: Copy {
     let webInfoModelBusy = "Gewechselt wird erst, wenn die Sitzung untätig ist."
     let webInfoLimitsClaude = "Claude Code notiert ein Fenster erst, wenn es aufgebraucht ist; bis dahin ist nichts bekannt."
     let webInfoCopied = "Sitzungs-ID kopiert."
+    let webInfoAsOf = "Stand {when}"
     let webSettingsOrder = "Verlauf"
     let webSettingsOrderSay = "Von welchem Ende her ein Verlauf gelesen wird. Das gilt für jede Sitzung, und auf der Tastatur macht `r` dasselbe."
     let webAskLabel = "hat gefragt"

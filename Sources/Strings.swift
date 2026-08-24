@@ -632,6 +632,7 @@ protocol Copy {
     var webInfoModelBusy: String { get }
     var webInfoLimitsClaude: String { get }
     var webInfoCopied: String { get }
+    var webInfoAsOf: String { get }
     var webSettingsOrder: String { get }
     var webSettingsOrderSay: String { get }
 

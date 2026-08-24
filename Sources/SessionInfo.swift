@@ -154,7 +154,45 @@ enum SessionInfo {
         return out
     }
 
-    /// The status line's shape, should it ever be written down.
+    /// The plan's windows as the status line writes them down. Claude Code hands the status
+    /// line `rate_limits` on stdin and nowhere else, so claude-bestiary's `statusline.py` keeps
+    /// the last set it was given in `rate-limits.json` under its cache directory:
+    /// `{"at": …, "session_id": …, "rate_limits": {"five_hour": {…}, "seven_day": {…}}}`. The
+    /// windows are the account's rather than any session's, which is why one file serves every
+    /// card. A window whose reset has passed is dropped: the number was true of a window that
+    /// is now over, and the honest word for the new one is *unknown*.
+    static func claudeLimits(cache data: Data, now: Date = Date()) -> Limits {
+        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let rates = obj["rate_limits"] as? [String: Any] else { return Limits() }
+        var out = fromRates(rates, at: int(obj["at"]))
+        out.windows.removeAll { window in
+            if let resets = window.resetsAt { return Double(resets) <= now.timeIntervalSince1970 }
+            return false
+        }
+        return out
+    }
+
+    static func claudeLimits(cacheDirectory: URL, now: Date = Date()) -> Limits {
+        let url = cacheDirectory.appendingPathComponent("rate-limits.json")
+        guard let data = try? Data(contentsOf: url) else { return Limits() }
+        return claudeLimits(cache: data, now: now)
+    }
+
+    /// What the transcript says, laid over what the status line wrote down. The transcript's
+    /// word is the stronger one — it is a refusal, from the provider, on this session — so a
+    /// window it names replaces the cache's row of that name; the rest of the cache stands.
+    static func merged(transcript: Limits, cache: Limits) -> Limits {
+        guard !transcript.windows.isEmpty else { return cache }
+        var out = transcript
+        for window in cache.windows where !transcript.windows.contains(where: { $0.name == window.name }) {
+            out.windows.append(window)
+        }
+        out.windows.sort { $0.name < $1.name }   // 5h before 7d, whichever side each came from
+        if out.at == nil { out.at = cache.at }
+        return out
+    }
+
+    /// The status line's shape, wherever it turns up.
     private static func fromRates(_ rates: [String: Any], at: Int?) -> Limits {
         var out = Limits(at: at)
         for key in ["five_hour", "seven_day"] {

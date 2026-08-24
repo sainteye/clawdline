@@ -4571,6 +4571,31 @@ group("the Session info card is read off the files, and says unknown rather than
     expect("neither of which is hit", pct.limits.windows.map(\.hit), [false, false])
     expect("a timestamp without fractions parses too", pct.limits.at, 1787416860)
 
+    // The same shape, from the file the status line keeps for exactly this reader. A window
+    // whose reset has passed is dropped rather than shown — it was true of a window now over.
+    let cacheText = """
+    {"at": 1787537546, "session_id": "s", "rate_limits": {
+      "five_hour": {"used_percentage": 15, "resets_at": 1787545000},
+      "seven_day": {"used_percentage": 8, "resets_at": 1788000000}}}
+    """
+    let kept = SessionInfo.claudeLimits(cache: Data(cacheText.utf8), now: Date(timeIntervalSince1970: 1_787_537_600))
+    expect("the status line's file reads as two windows", kept.windows.map(\.name), ["5h", "7d"])
+    expect("with the percentages it was handed", kept.windows.map { $0.usedPercent ?? -1 }, [15, 8])
+    expect("and when it wrote them", kept.at, 1787537546)
+    let stale = SessionInfo.claudeLimits(cache: Data(cacheText.utf8), now: Date(timeIntervalSince1970: 1_787_600_000))
+    expect("a window past its reset is gone, the other stays", stale.windows.map(\.name), ["7d"])
+    check("a file that is not JSON is unknown, not a crash", SessionInfo.claudeLimits(cache: Data("{".utf8)).windows.isEmpty)
+    check("and a directory without one is the same",
+          SessionInfo.claudeLimits(cacheDirectory: URL(fileURLWithPath: "/nonexistent-" + UUID().uuidString)).windows.isEmpty)
+
+    // The transcript's refusal is the stronger word about its window; the cache fills the rest.
+    let refused = SessionInfo.Limits(windows: [SessionInfo.Window(name: "5h", usedPercent: 100, resetsAt: 1_787_545_000, hit: true)], at: 1_787_540_000)
+    let both = SessionInfo.merged(transcript: refused, cache: kept)
+    expect("a hit window replaces the cache's row of that name", both.windows.map { $0.usedPercent ?? -1 }, [100, 8])
+    expect("and is the one marked hit", both.windows.map(\.hit), [true, false])
+    expect("the cache alone is the answer when the transcript says nothing",
+           SessionInfo.merged(transcript: SessionInfo.Limits(), cache: kept).windows.map(\.name), ["5h", "7d"])
+
     // Codex keeps the running answer on every `token_count`; the newest one is the state.
     let tokenCount = line(["timestamp": "2026-08-23T16:49:47.975Z", "type": "event_msg",
                            "payload": ["type": "token_count",

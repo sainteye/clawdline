@@ -315,15 +315,17 @@ $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/info
 | `files` | the working tree **counted**, not listed: `branch` (empty when detached), `head`, `ahead`, `behind`, `staged`, `unstaged`, `untracked`, `conflict`. A partially added file is under both `staged` and `unstaged`, as `git status` lists it. **Absent** when the directory is not a repository or `git` did not answer in time — and those are the same answer on purpose, because a card that said *clean* about a tree it could not read would be wrong in the direction that matters. The files themselves are `/git` |
 | `deploy` | the `deploy` and `ci` rows of `/links`, unchanged, so a `state` means here what it means there |
 
-**Where the plan numbers come from, and why Claude's are thinner than Codex's.** Codex writes
-`rate_limits.primary` — a percentage, a window length and a reset — onto every `token_count`
-event of its rollout, and the newest one is the answer. Claude Code hands its status line the
-same kind of numbers on stdin and writes none of them into the transcript; what does reach the
-file is a `quotaLimits` block on the turn a window ran out. So for a Claude session this is
-three-valued: a window that is spent and when it comes back (`hit`, 100%), a window that has
-since come back (the record is older than its own reset and says nothing about now), or nothing.
-Should a build start writing the status line's `rate_limits` shape into the file, the same route
-reads it and the card gets percentages without a change here.
+**Where the plan numbers come from.** Codex writes `rate_limits.primary` — a percentage, a window
+length and a reset — onto every `token_count` event of its rollout, and the newest one is the
+answer. Claude Code hands its status line the same kind of numbers on stdin and writes none of
+them into the transcript; what does reach the file is a `quotaLimits` block on the turn a window
+ran out. So a Claude session's windows are read from two places and laid over each other: the
+file [claude-bestiary](https://github.com/sainteye/claude-bestiary)'s `statusline.py` keeps for
+exactly this reader — `rate-limits.json` in its cache directory, the last `rate_limits` it was
+handed, with `at` — and, over that, a refusal in the transcript that has not yet reset (`hit`,
+100%). A cached window whose reset has passed is dropped rather than shown. Without that status
+line installed, or with no Claude Code session open to keep it current, the file goes stale and
+the windows go back to *unknown* — which is the word for it.
 
 **A route rather than a field on the session**, for the reason `/links` gives and one more: on
 top of that route's `git`, this one reads the transcript, which can be fifty megabytes. Free when

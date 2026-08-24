@@ -407,6 +407,7 @@ struct Hindi: Copy {
     let webInfoModelBusy = "मॉडल तभी बदलेगा जब session खाली हो।"
     let webInfoLimitsClaude = "Claude Code कोई window तभी लिखता है जब वह खत्म हो जाए; तब तक कुछ पता नहीं।"
     let webInfoCopied = "Session id कॉपी हो गया।"
+    let webInfoAsOf = "{when} तक"
     let webSettingsOrder = "ट्रांसक्रिप्ट"
     let webSettingsOrderSay = "ट्रांसक्रिप्ट किस सिरे से पढ़नी शुरू हो। यह हर session पर लागू होता है, और कीबोर्ड पर `r` भी यही करता है।"
     let webAskLabel = "ने पूछा"

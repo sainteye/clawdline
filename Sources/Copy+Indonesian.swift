@@ -403,6 +403,7 @@ struct Indonesian: Copy {
     let webInfoModelBusy = "Penggantian menunggu sampai sesi diam."
     let webInfoLimitsClaude = "Claude Code baru mencatat sebuah jendela setelah habis, jadi sebelum itu tidak ada yang diketahui."
     let webInfoCopied = "Id sesi disalin."
+    let webInfoAsOf = "per {when}"
     let webSettingsOrder = "Transkrip"
     let webSettingsOrderSay = "Transkrip mulai dibaca dari ujung yang mana. Ini berlaku untuk setiap sesi, dan dari papan ketik `r` melakukan hal yang sama."
     let webAskLabel = "bertanya"
