@@ -6160,6 +6160,34 @@ function localFileHref(href) {
         || /^file:\/\/\//i.test(value);
 }
 
+/**
+ * An attribute written only when it is about to change.
+ *
+ * Every draw walks over the composer, and writing the same value back over itself is not free.
+ * `contenteditable` is the one that hurts: WebKit treats the write as a change to the element
+ * being edited and takes the caret — and with it the long-press menu — away from whoever was
+ * reaching for it. A transcript that is being written to redraws every few seconds, so on a
+ * phone the Paste that had just appeared under a thumb vanished before it could be pressed.
+ */
+function setAttr(el, name, value) {
+    if (el && el.getAttribute(name) !== value) el.setAttribute(name, value);
+}
+
+/**
+ * Whether this browser has heard of `contenteditable="plaintext-only"`.
+ *
+ * Asked once, of a div that is never in the document. The property **throws** where the value is
+ * unknown rather than falling back to anything, and the throw used to land in the middle of
+ * `renderComposer` — leaving a box that is not editable at all, on exactly the browsers least
+ * able to say so. Where the answer is no the box is a plain `contenteditable` and the paste
+ * handler below is what keeps markup out of it.
+ */
+var plaintextOnly = (function () {
+    var probe = document.createElement("div");
+    try { probe.contentEditable = "plaintext-only"; } catch (e) { return false; }
+    return probe.contentEditable === "plaintext-only";
+})();
+
 function renderComposer() {
     var on = S.write && !!S.openId && closingID !== S.openId;
     var session = S.openId ? byId(S.openId) : null;
@@ -6168,8 +6196,8 @@ function renderComposer() {
         placeholder = placeholder.replace("Claude Code", "Codex").replace("Claude", "Codex");
         if (placeholder === T.placeholder) placeholder = "Codex…";
     }
-    els.msg.setAttribute("data-placeholder", placeholder);
-    els.msg.setAttribute("aria-label", placeholder);
+    setAttr(els.msg, "data-placeholder", placeholder);
+    setAttr(els.msg, "aria-label", placeholder);
     els["skill-menu"].setAttribute("aria-label",
         (session && session.assistant === "codex" ? "Codex" : "Claude Code") + " skills");
     els.composer.dataset.write = S.write ? "on" : "off";
@@ -6179,9 +6207,12 @@ function renderComposer() {
     // is in flight, though — see the `beforeinput` guard below: taking the editability away from
     // a focused element takes the focus with it, and on a phone that shuts the keyboard between
     // every message.
-    els.msg.contentEditable = on ? "plaintext-only" : "false";
+    // Through the attribute rather than the property, so it can be compared before it is
+    // written — see `setAttr`. Twice a second on a working session, the property was writing
+    // `plaintext-only` over `plaintext-only` and unseating the caret each time.
+    setAttr(els.msg, "contenteditable", on ? (plaintextOnly ? "plaintext-only" : "true") : "false");
     // What Return does differs by machine, and the soft keyboard's own key should say which.
-    els.msg.setAttribute("enterkeyhint", hasKeyboard() ? "send" : "enter");
+    setAttr(els.msg, "enterkeyhint", hasKeyboard() ? "send" : "enter");
     // A picture on its own is a message. The server takes text, images, or both, and refuses
     // only the one that is neither — so the button follows the same rule.
     els.send.disabled = !on || sending || Shots.busy() || (!msgText() && !Shots.count());
@@ -9382,10 +9413,7 @@ var Shots = (function () {
         clear: function () { list = []; draw(); },
 
         add: function (files) {
-            var wanted = Array.prototype.filter.call(files || [], function (f) {
-                // A HEIC sometimes arrives with an empty type, so the extension gets a say.
-                return /^image\//.test(f.type) || /\.(hei[cf]|jpe?g|png|gif|webp)$/i.test(f.name || "");
-            });
+            var wanted = Array.prototype.filter.call(files || [], isPicture);
             if (!wanted.length) { toast(T.webShotsOnlyPictures, true); return; }
             if (list.length + wanted.length > MAX_COUNT) {
                 toast(fill(T.webShotsTooMany, { n: MAX_COUNT }), true);
@@ -9423,15 +9451,32 @@ els.pick.addEventListener("change", function () {
     els.pick.value = "";
 });
 
+/** A file the attachment list would take. A HEIC sometimes arrives with an empty type, so the
+ *  extension gets a say. Shared, because a paste is sorted by this same question in two places
+ *  and the two answers disagreeing is how a paste ends up belonging to neither of them. */
+function isPicture(file) {
+    return /^image\//.test(file.type) || /\.(hei[cf]|jpe?g|png|gif|webp)$/i.test(file.name || "");
+}
+
+function carriesPicture(data) {
+    var files = data && data.files;
+    return !!files && Array.prototype.some.call(files, isPicture);
+}
+
 // Paste, because copying a screenshot and pressing paste is how this is done everywhere else.
 // Not while the filter box has the focus: that one takes text and nothing else.
 document.addEventListener("paste", function (ev) {
     if (!S.openId || !S.write || closingID === S.openId) return;
     if (document.activeElement === els.filter) return;
-    var files = ev.clipboardData && ev.clipboardData.files;
-    if (!files || !files.length) return;
+    // The composer runs first and takes anything with words in it. Cancelling here after that
+    // would cancel the paste it just accepted, so a paste already spoken for is left alone.
+    if (ev.defaultPrevented) return;
+    // A picture, and not merely a file: a clipboard often carries something alongside the words
+    // that is no use here, and cancelling the paste for it left the words nowhere to go and a
+    // complaint about pictures on the screen instead.
+    if (!carriesPicture(ev.clipboardData)) return;
     ev.preventDefault();
-    Shots.add(files);
+    Shots.add(ev.clipboardData.files);
 });
 
 // Drag and drop. The whole detail pane is the target — somebody dragging a photograph at this
@@ -9505,12 +9550,25 @@ function caretToEnd() {
  *  still the only thing that does that; the range is the fallback for the day it goes. */
 function insertText(text) {
     if (!text) return;
-    try {
-        if (document.execCommand && document.execCommand("insertText", false, text)) return;
-    } catch (e) { /* the range, then */ }
     var selection = window.getSelection();
+    // Checked only for the ordinary case — a caret rather than a selection, and a run with no
+    // newline in it. Then the box is certainly longer afterwards if anything went in, and if it
+    // is not, `execCommand` said yes and did nothing, which WebKit has been known to do and
+    // which reads from the outside as a Paste that is simply dead. Anything else is left to the
+    // answer alone, because "the length did not change" is not proof there when a selection was
+    // replaced by something the same size.
+    var plain = selection && selection.isCollapsed && text.indexOf("\n") < 0;
+    var before = plain ? els.msg.textContent.length : -1;
+    try {
+        // The browser's own edit, and therefore one that Undo knows about.
+        if (document.execCommand && document.execCommand("insertText", false, text)
+            && (!plain || els.msg.textContent.length !== before)) return;
+    } catch (e) { /* the range, then */ }
     if (!selection || !selection.rangeCount) return;
     var range = selection.getRangeAt(0);
+    // Only ever into the message box. A caret that is somewhere else entirely is not an
+    // invitation to write this text into whatever was under it.
+    if (!els.msg.contains(range.commonAncestorContainer)) return;
     range.deleteContents();
     var node = document.createTextNode(text);
     range.insertNode(node);
@@ -9649,10 +9707,16 @@ els.msg.addEventListener("beforeinput", function (ev) { if (sending) ev.preventD
 // with a rich paste is worth being sure about rather than nearly sure about. A pasted picture is
 // not text and is left to the document's own handler, which puts it in the attachments.
 els.msg.addEventListener("paste", function (ev) {
-    var files = ev.clipboardData && ev.clipboardData.files;
-    if (files && files.length) return;
+    var data = ev.clipboardData || window.clipboardData;
+    var text = data ? data.getData("text/plain") || "" : "";
+    // **A picture goes to the document's handler; anything else with words in it stays here.**
+    // The test used to be `files.length`, and a clipboard carries a file beside the text more
+    // often than a desk makes it look — much of what is copied out of another app on a phone
+    // does — so those pastes were handed to the picture handler, refused as "not a picture",
+    // and the words never arrived at all.
+    if (carriesPicture(data) || !text) return;
     ev.preventDefault();
-    insertText((ev.clipboardData || window.clipboardData).getData("text/plain") || "");
+    insertText(text);
     blankness();
     renderComposer();
     SkillPicker.changed();
@@ -9774,8 +9838,14 @@ function submit() {
     var moved = null;
 
     function offstage() {
-        onstage();
-        moved = [];
+        // **Only what is not already out of the way.** This used to put every tab stop back and
+        // take them all out again on each draw — several hundred attribute writes every few
+        // seconds under a live transcript, while somebody is writing into the middle of it. The
+        // ones already carrying `-1` are skipped by the loop below, so the incremental pass is
+        // the same pass; what goes is the restore-everything that preceded it. Entries whose
+        // element has since been drawn away are dropped so the list cannot grow without end.
+        if (!moved) moved = [];
+        else moved = moved.filter(function (pair) { return document.contains(pair[0]); });
         var all = document.querySelectorAll("a[href], button, input, select, textarea, [tabindex]");
         for (var i = 0; i < all.length; i++) {
             var el = all[i];
