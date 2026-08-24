@@ -81,7 +81,9 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/sessions/:id/transcript` | token | `read` |
 | `GET` | `/v1/sessions/:id/agents/:agentId` | token | `read` |
 | `GET` | `/v1/sessions/:id/links` | token | `read` |
+| `GET` | `/v1/sessions/:id/info` | token | `read` |
 | `GET` | `/v1/sessions/:id/skills` | token | `read` |
+| `GET` | `/v1/sessions/:id/git` | token | `read` |
 | `GET` | `/v1/projects` | token | `read` |
 | `GET` | `/v1/places` | token | `read` |
 | `GET` | `/v1/events` | token | `read` |
@@ -286,6 +288,49 @@ deploy status, the servers from the project's own `status` command, the backlog 
 whatever produced it. An untrusted dev stack stays silent rather than being probed, and a
 `file://` entry is handed over as a path so a client can decline it honestly.
 
+### `GET /v1/sessions/:id/info`
+
+One card about a session and the assistant behind it — what the status line at the bottom of a
+Claude Code terminal says, for somebody who is not at that terminal.
+
+```console
+$ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/info
+{"info":{
+  "session":{"id":"27439AEE-…","assistant":"claude","sessionId":"841cbb8d-…","model":"claude-fable-5",
+             "cwd":"/Users/you/code/atrium","startedAt":1787390000,"seconds":5580},
+  "usage":{"input":4821,"output":38210,"cacheRead":2984120,"cacheWrite":214880,"total":3242031,
+           "model":"claude-fable-5","costUsd":7.38},
+  "limits":{"windows":[{"name":"5h","usedPercent":100,"resetsAt":1787417400,"hit":true}],"at":1787416917},
+  "files":{"branch":"main","head":"d5c61e9f91c46a77","ahead":2,"behind":0,
+           "staged":1,"unstaged":4,"untracked":2,"conflict":0},
+  "deploy":[{"label":"ci","url":"https://github.com/you/repo/actions/runs/123","kind":"deploy","state":"fail","local":false}]
+}}
+```
+
+| field | |
+|---|---|
+| `session` | `id` and `assistant` always; `sessionId` with hooks installed; `model` when a transcript has named one — the **last** model the transcript names, so a session that switched mid-way shows what it is on now; `cwd`, `startedAt` and `seconds` (its age, as of this answer) when the process could be found |
+| `usage` | the transcript's token totals — `input`, `output`, `cacheRead`, `cacheWrite`, `total` — with `model` and, for Claude, `costUsd` at list price. **Absent** when no transcript has been found, which is not the same as zero |
+| `limits` | `windows`: each `name` (`5h`, `7d` — the status line's names), `usedPercent`, `resetsAt`, and `hit` when the provider refused the last request on it; `at` is when the record it came from was written. **An empty `windows` means nobody said**, and a client must draw that as unknown rather than as 0% |
+| `files` | the working tree **counted**, not listed: `branch` (empty when detached), `head`, `ahead`, `behind`, `staged`, `unstaged`, `untracked`, `conflict`. A partially added file is under both `staged` and `unstaged`, as `git status` lists it. **Absent** when the directory is not a repository or `git` did not answer in time — and those are the same answer on purpose, because a card that said *clean* about a tree it could not read would be wrong in the direction that matters. The files themselves are `/git` |
+| `deploy` | the `deploy` and `ci` rows of `/links`, unchanged, so a `state` means here what it means there |
+
+**Where the plan numbers come from, and why Claude's are thinner than Codex's.** Codex writes
+`rate_limits.primary` — a percentage, a window length and a reset — onto every `token_count`
+event of its rollout, and the newest one is the answer. Claude Code hands its status line the
+same kind of numbers on stdin and writes none of them into the transcript; what does reach the
+file is a `quotaLimits` block on the turn a window ran out. So for a Claude session this is
+three-valued: a window that is spent and when it comes back (`hit`, 100%), a window that has
+since come back (the record is older than its own reset and says nothing about now), or nothing.
+Should a build start writing the status line's `rate_limits` shape into the file, the same route
+reads it and the card gets percentages without a change here.
+
+**A route rather than a field on the session**, for the reason `/links` gives and one more: on
+top of that route's `git`, this one reads the transcript, which can be fifty megabytes. Free when
+a card is opened; not something to do on every beat of the stream. Everything here is read and
+nothing is written — the `git` runs with `GIT_OPTIONAL_LOCKS=0` and a deadline, and nothing is
+asked of GitHub that `/links` did not already ask.
+
 ### `GET /v1/sessions/:id/skills`
 
 The file-backed skills a Claude Code session can invoke.
@@ -317,6 +362,33 @@ session's `assistant`, and a Codex session that starts answering with a list wil
 reply. A skill body may contain dynamic commands, and a menu that had to be executed to be read
 would make every autocomplete a side effect. A session whose skills cannot be determined answers
 `{"skills":[]}` rather than an error — an empty menu is a true statement about what can be offered.
+
+### `GET /v1/sessions/:id/git`
+
+The branch and changed files in that session's project, read when a client asks rather than sent
+with every session-list update.
+
+```console
+$ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/git
+{"git":{"branch":"main","head":"d5c61e9f91c46a77","ahead":2,"behind":0,"clean":false,"files":[
+  {"path":"Sources/Foo.swift","from":null,"staged":false,"unstaged":true,"kind":"modified","additions":12,"deletions":3},
+  {"path":"Sources/New.swift","from":"Sources/Old.swift","staged":true,"unstaged":false,"kind":"renamed","additions":1,"deletions":1}
+]}}
+```
+
+| field | |
+|---|---|
+| `branch`, `head` | Git's branch name and full HEAD object id; `head` is empty for an unborn branch |
+| `ahead`, `behind` | distance from the configured upstream, or zero when there is none |
+| `clean` | true when `files` is empty |
+| `kind` | `modified` · `added` · `deleted` · `renamed` · `untracked` · `conflict` |
+| `from` | the old path for a rename, otherwise null |
+| `staged`, `unstaged` | the two columns of porcelain v2's `XY` state; both may be true |
+| `additions`, `deletions` | staged and unstaged numstat totals; null for binary or untracked files |
+
+The route runs status and both numstat views with `GIT_OPTIONAL_LOCKS=0` and a timeout. It never
+changes the worktree or index. A session outside a Git repository answers `404 not_a_repo` in the
+standard [error envelope](#the-error-envelope).
 
 ### `GET /v1/places`
 

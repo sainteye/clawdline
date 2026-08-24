@@ -379,6 +379,17 @@ final class RemoteServer {
             }
             return .json(["links": linksPayload(cwd: cwd)])
 
+        // One card about this session and the assistant behind it: what it has spent, what is
+        // left of the plan's window, how much has changed on disk, whether the last deploy went
+        // out. Fetched when the card opens and never on the stream, for the reason `/links`
+        // gives — this one reads a transcript that can be fifty megabytes on top of the `git`.
+        case ("GET", let path) where path.hasSuffix("/info") && path.hasPrefix("/v1/sessions/"):
+            let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/info".count))
+            guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
+                return .error(404, "not_found", "No session named that")
+            }
+            return .json(["info": infoPayload(for: session)])
+
         // The skills this particular assistant session can invoke. Metadata only: neither a local
         // path nor the body of a SKILL.md belongs on a paired phone, and reading a menu must never
         // execute the dynamic commands a skill may contain.
@@ -406,6 +417,24 @@ final class RemoteServer {
                 ["name": skill.command, "description": skill.description,
                  "source": skill.source.rawValue]
             }])
+
+        // Git is another on-demand project reading, for the same reason as `/links` above: a
+        // status and two diffs are cheap when this panel is opened and three subprocesses per
+        // session per event-stream beat are not. Every invocation is read-only and lock-free.
+        case ("GET", let path) where path.hasSuffix("/git") && path.hasPrefix("/v1/sessions/"):
+            let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/git".count))
+            guard let session = self.session(withID: id.removingPercentEncoding ?? id),
+                  let cwd = Targets.workingDirectory(of: session) else {
+                return .error(404, "not_found", "No session named that")
+            }
+            switch GitChanges.read(cwd: cwd) {
+            case .snapshot(let snapshot):
+                return .json(GitChanges.payload(snapshot))
+            case .notRepository:
+                return .error(404, "not_a_repo", "That session is not inside a Git repository")
+            case .failed:
+                return .error(500, "git_failed", "Could not read that repository")
+            }
 
         case ("GET", let path) where path.hasPrefix("/v1/sessions/"):
             let rest = String(path.dropFirst("/v1/sessions/".count))
@@ -1157,6 +1186,51 @@ final class RemoteServer {
         return out
     }
 
+    /// The card behind `GET /v1/sessions/:id/info`. Everything in it is gathered here and shaped
+    /// in ``SessionInfo/payload(id:assistant:sessionId:model:cwd:startedAt:now:usage:limits:files:deploy:)``,
+    /// which is the half a test can reach.
+    ///
+    /// The token totals are the orchestrator's own readers, because a child's transcript and a
+    /// session's transcript are the same kind of file and one summing of it is enough. The model
+    /// comes from the same pass as the limits rather than from the totals: the last assistant
+    /// turn of a session that just hit its window is `<synthetic>`, and that is not a model.
+    private func infoPayload(for session: TargetSession) -> [String: Any] {
+        let cwd = Targets.workingDirectory(of: session)
+        let record = Transcript.record(of: session)
+
+        var usage: Orchestrator.Usage?
+        var limits = SessionInfo.Limits()
+        var model: String?
+        if let record, let data = try? Data(contentsOf: record.url), !data.isEmpty {
+            switch record.assistant {
+            case .claude:
+                usage = Orchestrator.claudeUsage(transcript: record.url)
+                let read = SessionInfo.claudeLimits(transcript: data)
+                limits = read.limits
+                model = read.model
+            case .codex:
+                usage = Orchestrator.codexUsage(rollout: record.url)
+                limits = SessionInfo.codexLimits(rollout: data)
+                model = usage?.model
+            }
+        }
+        if model == nil, let named = usage?.model, !named.hasPrefix("<") { model = named }
+
+        // The deploy and CI rows of `/links`, unchanged: the same state word means the same
+        // thing on both sheets, and nothing here goes to GitHub that `/links` did not already.
+        let deploy = cwd.map { linksPayload(cwd: $0) }?.filter { row in
+            let kind = row["kind"] as? String
+            return kind == "deploy" || kind == "ci"
+        } ?? []
+
+        return SessionInfo.payload(
+            id: session.id, assistant: session.assistant,
+            sessionId: HookBridge.note(for: session)?.session, model: model,
+            cwd: cwd, startedAt: Targets.processStart(of: session),
+            usage: usage, limits: limits, files: cwd.flatMap { SessionInfo.files(cwd: $0) },
+            deploy: deploy)
+    }
+
     private func sessionsPayload() -> [String: Any] {
         let watch = SessionWatch.shared
         return [
@@ -1410,6 +1484,17 @@ final class RemoteServer {
             "webShowOnMacOff": t.webShowOnMacOff,
             "webShowOnMacAsked": t.webShowOnMacAsked,
             "webSessionActions": t.webSessionActions,
+            "webSessionGit": t.webSessionGit,
+            "webGitTitle": t.webGitTitle,
+            "webGitClean": t.webGitClean,
+            "webGitNotRepo": t.webGitNotRepo,
+            "webGitFailed": t.webGitFailed,
+            "webGitRefresh": t.webGitRefresh,
+            "webGitClose": t.webGitClose,
+            "webGitStaged": t.webGitStaged,
+            "webGitUnstaged": t.webGitUnstaged,
+            "webGitUntracked": t.webGitUntracked,
+            "webGitConflict": t.webGitConflict,
             "webEndSession": t.webEndSession,
             "webConfirmActionTitle": t.webConfirmActionTitle,
             "webConfirmActionSay": t.webConfirmActionSay,
@@ -1638,6 +1723,42 @@ final class RemoteServer {
             "webLinkRunning": t.webLinkRunning,
             "webSettingsOrder": t.webSettingsOrder,
             "webSettingsOrderSay": t.webSettingsOrderSay,
+        ])
+
+        // The Session info card.
+        add([
+            "webSessionInfo": t.webSessionInfo,
+            "webInfoTitle": t.webInfoTitle,
+            "webInfoSession": t.webInfoSession,
+            "webInfoAssistant": t.webInfoAssistant,
+            "webInfoModel": t.webInfoModel,
+            "webInfoSessionId": t.webInfoSessionId,
+            "webInfoDirectory": t.webInfoDirectory,
+            "webInfoRunningFor": t.webInfoRunningFor,
+            "webInfoUsage": t.webInfoUsage,
+            "webInfoInput": t.webInfoInput,
+            "webInfoOutput": t.webInfoOutput,
+            "webInfoCacheRead": t.webInfoCacheRead,
+            "webInfoCacheWrite": t.webInfoCacheWrite,
+            "webInfoTotal": t.webInfoTotal,
+            "webInfoCost": t.webInfoCost,
+            "webInfoNoUsage": t.webInfoNoUsage,
+            "webInfoLimits": t.webInfoLimits,
+            "webInfoLimitHit": t.webInfoLimitHit,
+            "webInfoResets": t.webInfoResets,
+            "webInfoUnknown": t.webInfoUnknown,
+            "webInfoFiles": t.webInfoFiles,
+            "webInfoBranch": t.webInfoBranch,
+            "webInfoStaged": t.webInfoStaged,
+            "webInfoUnstaged": t.webInfoUnstaged,
+            "webInfoUntracked": t.webInfoUntracked,
+            "webInfoConflict": t.webInfoConflict,
+            "webInfoClean": t.webInfoClean,
+            "webInfoNotRepo": t.webInfoNotRepo,
+            "webInfoDeploy": t.webInfoDeploy,
+            "webInfoNoDeploy": t.webInfoNoDeploy,
+            "webInfoFailed": t.webInfoFailed,
+            "webInfoRefresh": t.webInfoRefresh,
         ])
 
         var response = Response.json(out)

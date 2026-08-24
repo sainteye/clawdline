@@ -360,6 +360,17 @@ protocol Copy {
     var webShowOnMacOff: String { get }
     var webShowOnMacAsked: String { get }
     var webSessionActions: String { get }
+    var webSessionGit: String { get }
+    var webGitTitle: String { get }
+    var webGitClean: String { get }
+    var webGitNotRepo: String { get }
+    var webGitFailed: String { get }
+    var webGitRefresh: String { get }
+    var webGitClose: String { get }
+    var webGitStaged: String { get }
+    var webGitUnstaged: String { get }
+    var webGitUntracked: String { get }
+    var webGitConflict: String { get }
     var webEndSession: String { get }
     var webConfirmActionTitle: String { get }
     var webConfirmActionSay: String { get }
@@ -568,6 +579,43 @@ protocol Copy {
     var webLinkFail: String { get }
     var webLinkDown: String { get }
     var webLinkRunning: String { get }
+
+    // The Session info card — see `GET /v1/sessions/:id/info` and the sheet the menu's
+    // **Session info** row opens. `webInfoUnknown` is the one to keep honest: a plan window
+    // nobody reported is *unknown*, never 0%, because a full window drawn as an empty one is
+    // the wrong answer that changes what somebody does next.
+    var webSessionInfo: String { get }
+    var webInfoTitle: String { get }
+    var webInfoSession: String { get }
+    var webInfoAssistant: String { get }
+    var webInfoModel: String { get }
+    var webInfoSessionId: String { get }
+    var webInfoDirectory: String { get }
+    var webInfoRunningFor: String { get }
+    var webInfoUsage: String { get }
+    var webInfoInput: String { get }
+    var webInfoOutput: String { get }
+    var webInfoCacheRead: String { get }
+    var webInfoCacheWrite: String { get }
+    var webInfoTotal: String { get }
+    var webInfoCost: String { get }
+    var webInfoNoUsage: String { get }
+    var webInfoLimits: String { get }
+    var webInfoLimitHit: String { get }
+    var webInfoResets: String { get }
+    var webInfoUnknown: String { get }
+    var webInfoFiles: String { get }
+    var webInfoBranch: String { get }
+    var webInfoStaged: String { get }
+    var webInfoUnstaged: String { get }
+    var webInfoUntracked: String { get }
+    var webInfoConflict: String { get }
+    var webInfoClean: String { get }
+    var webInfoNotRepo: String { get }
+    var webInfoDeploy: String { get }
+    var webInfoNoDeploy: String { get }
+    var webInfoFailed: String { get }
+    var webInfoRefresh: String { get }
     var webSettingsOrder: String { get }
     var webSettingsOrderSay: String { get }
 

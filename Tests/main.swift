@@ -1724,6 +1724,14 @@ group("the languages the interface speaks") {
         "fr:webSettingsVersion", // "Version {v}" — the alternatives all mean something else
         "de:webSettingsVersion", // ditto; Fassung and Ausgabe are not what software has
         "it:webDoorPassword",   // "Password" is the Italian word; parola d'ordine is nobody's
+        // Row labels on the Session info card. These are the words, not loan words nobody
+        // uses: French has no other word for its assistant; "Total" is the word in French,
+        // Spanish, Portuguese and Indonesian; "Model" in Indonesian and Turkish; and "Branch"
+        // is what a German, Italian, Portuguese or Indonesian developer calls one.
+        "fr:webInfoAssistant",
+        "fr:webInfoTotal", "es:webInfoTotal", "pt:webInfoTotal", "id:webInfoTotal",
+        "id:webInfoModel", "tr:webInfoModel",
+        "de:webInfoBranch", "it:webInfoBranch", "pt:webInfoBranch", "id:webInfoBranch",
     ]
     let en = English()
 
@@ -3839,6 +3847,75 @@ group("the key route is gated like every other write") {
     expect("and tab is a good key", key(writer.token, "{\"key\":\"tab\"}").status, 404)
 }
 
+group("Git porcelain and numstat become the web status payload") {
+    let status = """
+    # branch.oid d5c61e9f91c46a77
+    # branch.head main
+    # branch.upstream origin/main
+    # branch.ab +2 -3
+    1 MM N... 100644 100644 100644 aaaaaaa bbbbbbb Sources/Foo.swift
+    2 R. N... 100644 100644 100644 ccccccc ddddddd R100 Sources/New Name.swift\tSources/Old Name.swift
+    1 A. N... 000000 100644 100644 0000000 eeeeeee Sources/Added.swift
+    1 .D N... 100644 100644 000000 fffffff fffffff Sources/Gone.swift
+    1 .M N... 100644 100644 100644 1111111 2222222 Assets/blob.png
+    ? Notes/new file.txt
+    u UU N... 100644 100644 100644 100644 3333333 4444444 5555555 Sources/Conflict.swift
+    """
+    let unstaged = """
+    7\t2\tSources/Foo.swift
+    -\t-\tAssets/blob.png
+    2\t2\tSources/Conflict.swift
+    """
+    let staged = """
+    5\t1\tSources/Foo.swift
+    1\t0\tSources/{Old Name => New Name}.swift
+    3\t0\tSources/Added.swift
+    0\t4\tSources/Gone.swift
+    """
+
+    let parsed = GitChanges.assemble(status: status, unstaged: unstaged, staged: staged)
+    expect("the branch is parsed", parsed.branch, "main")
+    expect("the object id is parsed", parsed.head, "d5c61e9f91c46a77")
+    expect("ahead is parsed", parsed.ahead, 2)
+    expect("behind is parsed", parsed.behind, 3)
+    expect("every porcelain row is kept", parsed.files.count, 7)
+
+    func file(_ path: String) -> GitChanges.File? {
+        parsed.files.first { $0.path == path }
+    }
+    let partial = file("Sources/Foo.swift")
+    expect("a partially staged file is staged", partial?.staged, true)
+    expect("and is unstaged", partial?.unstaged, true)
+    expect("its two addition counts are added", partial?.additions, 12)
+    expect("and its two deletion counts are added", partial?.deletions, 3)
+
+    let renamed = file("Sources/New Name.swift")
+    expect("a rename keeps its destination", renamed?.kind, .renamed)
+    expect("a rename keeps its source", renamed?.from, "Sources/Old Name.swift")
+    expect("a braced numstat rename joins the destination", renamed?.additions, 1)
+    expect("an index-only rename is staged", renamed?.staged, true)
+    expect("an index-only rename is not unstaged", renamed?.unstaged, false)
+
+    expect("an added row is added", file("Sources/Added.swift")?.kind, .added)
+    expect("a deleted row is deleted", file("Sources/Gone.swift")?.kind, .deleted)
+    let untracked = file("Notes/new file.txt")
+    expect("an untracked path may contain spaces", untracked?.kind, .untracked)
+    expect("untracked means a worktree change", untracked?.unstaged, true)
+    expect("an untracked file has no invented count", untracked?.additions, nil)
+    expect("an unmerged row is a conflict", file("Sources/Conflict.swift")?.kind, .conflict)
+    expect("a binary addition count is null", file("Assets/blob.png")?.additions, nil)
+    expect("and so is its deletion count", file("Assets/blob.png")?.deletions, nil)
+
+    let payload = GitChanges.payload(parsed)
+    let git = payload["git"] as? [String: Any]
+    expect("a payload with files is not clean", git?["clean"] as? Bool, false)
+    expect("the payload carries every file", (git?["files"] as? [[String: Any]])?.count, 7)
+    let clean = GitChanges.payload(GitChanges.parseStatus(
+        "# branch.oid abc\n# branch.head topic\n# branch.ab +0 -0\n"))
+    expect("an empty status payload is clean",
+           (clean["git"] as? [String: Any])?["clean"] as? Bool, true)
+}
+
 group("every word the page can draw is a word the page is sent") {
     // **This one is here because the same mistake happened twice.** A string gets added to `Copy`,
     // translated into fourteen languages, and then not listed in `strings(for:)` — and nothing
@@ -4423,6 +4500,152 @@ group("the line a new tab is given names the assistant") {
     expect("and a directory with a quote in it survives",
            StartPoints.itermLine(cwd: "/Users/me/it's", assistant: .codex),
            "cd '/Users/me/it'\\''s' && codex")
+}
+
+group("the Session info card is read off the files, and says unknown rather than 0%") {
+    // The porcelain, counted. A partial add is under both headings, as `git status` lists it.
+    let porcelain = """
+    # branch.oid d5c61e9f91c46a77
+    # branch.head main
+    # branch.upstream origin/main
+    # branch.ab +2 -3
+    1 .M N... 100644 100644 100644 aaaaaaa aaaaaaa Sources/RemoteServer.swift
+    1 MM N... 100644 100644 100644 bbbbbbb ccccccc Sources/Foo.swift
+    1 A. N... 000000 100644 100644 0000000 eeeeeee Sources/Added.swift
+    2 R. N... 100644 100644 100644 1111111 2222222 R100 Sources/New.swift\tSources/Old.swift
+    ? Notes/new file.txt
+    ? Another
+    u UU N... 100644 100644 100644 100644 3333333 4444444 5555555 Sources/Conflict.swift
+    """
+    let files = SessionInfo.parseStatus(porcelain)
+    expect("the branch is read", files.branch, "main")
+    expect("so is the object id", files.head, "d5c61e9f91c46a77")
+    expect("ahead", files.ahead, 2)
+    expect("behind", files.behind, 3)
+    expect("staged counts the index column", files.staged, 3)        // MM, A., R.
+    expect("unstaged counts the worktree column", files.unstaged, 2) // .M, MM
+    expect("untracked is a count of files, not a flag", files.untracked, 2)
+    expect("a conflict is its own count", files.conflict, 1)
+    let fresh = SessionInfo.parseStatus("# branch.oid (initial)\n# branch.head (detached)\n")
+    expect("an initial commit has no head", fresh.head, "")
+    expect("a detached head has no branch", fresh.branch, "")
+    expect("and an empty tree counts nothing", fresh, SessionInfo.Files())
+
+    func line(_ obj: [String: Any]) -> String {
+        (try? JSONSerialization.data(withJSONObject: obj)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    }
+    let now = Date(timeIntervalSince1970: 1_787_400_000)
+
+    // **Claude writes no percentage into a transcript.** What it writes is a `quotaLimits`
+    // block on the turn a window ran out, and that turn's model is `<synthetic>`.
+    let turn = line(["type": "assistant", "timestamp": "2026-08-22T16:41:00.000Z",
+                     "message": ["model": "claude-fable-5", "usage": ["input_tokens": 1]]])
+    let refusal = line(["type": "assistant", "timestamp": "2026-08-22T16:41:57.576Z",
+                        "message": ["model": "<synthetic>"],
+                        "quotaLimits": ["status": "rejected", "resetsAt": 1_787_417_400,
+                                        "rateLimitType": "five_hour"]])
+    let hit = SessionInfo.claudeLimits(transcript: Data((turn + "\n" + refusal + "\n").utf8), now: now)
+    expect("a refusal is a spent window", hit.limits.windows.map(\.name), ["5h"])
+    expect("at a hundred percent", hit.limits.windows.first?.usedPercent, 100)
+    expect("with when it comes back", hit.limits.windows.first?.resetsAt, 1_787_417_400)
+    expect("and marked as hit", hit.limits.windows.first?.hit, true)
+    expect("stamped with the record's own time", hit.limits.at, 1787416917)
+    expect("the synthetic turn is not the model; the one before it is", hit.model, "claude-fable-5")
+
+    let later = Date(timeIntervalSince1970: 1_787_500_000)
+    let past = SessionInfo.claudeLimits(transcript: Data((turn + "\n" + refusal + "\n").utf8), now: later)
+    check("a refusal whose reset has passed says nothing about now", past.limits.windows.isEmpty)
+    let quiet = SessionInfo.claudeLimits(transcript: Data((turn + "\n").utf8), now: now)
+    check("no record at all is unknown, not zero", quiet.limits.windows.isEmpty)
+    expect("but the model is still read", quiet.model, "claude-fable-5")
+    check("an empty file is unknown too", SessionInfo.claudeLimits(transcript: Data(), now: now).limits.windows.isEmpty)
+
+    // The status line's shape, should a build ever write it down: read without a code change.
+    let rates = line(["type": "assistant", "timestamp": "2026-08-22T16:41:00Z",
+                      "rate_limits": ["five_hour": ["used_percentage": 24, "resets_at": 1_787_410_000],
+                                      "seven_day": ["used_percentage": 12.5, "resets_at": 1_787_900_000]]])
+    let pct = SessionInfo.claudeLimits(transcript: Data((rates + "\n").utf8), now: now)
+    expect("the status line's shape reads as two windows", pct.limits.windows.map(\.name), ["5h", "7d"])
+    expect("with their percentages", pct.limits.windows.map { $0.usedPercent ?? -1 }, [24, 12.5])
+    expect("neither of which is hit", pct.limits.windows.map(\.hit), [false, false])
+    expect("a timestamp without fractions parses too", pct.limits.at, 1787416860)
+
+    // Codex keeps the running answer on every `token_count`; the newest one is the state.
+    let tokenCount = line(["timestamp": "2026-08-23T16:49:47.975Z", "type": "event_msg",
+                           "payload": ["type": "token_count",
+                                       "info": ["total_token_usage": ["input_tokens": 10]],
+                                       "rate_limits": ["primary": ["used_percent": 28.0, "window_minutes": 10080,
+                                                                   "resets_at": 1_788_104_505],
+                                                       "secondary": NSNull()]]])
+    let older = line(["timestamp": "2026-08-23T16:00:00.000Z", "type": "event_msg",
+                      "payload": ["type": "token_count", "info": [:],
+                                  "rate_limits": ["primary": ["used_percent": 3.0, "window_minutes": 300,
+                                                              "resets_at": 1]]]])
+    let codex = SessionInfo.codexLimits(rollout: Data((older + "\n" + tokenCount + "\n").utf8))
+    expect("the newest token_count is the answer", codex.windows.map(\.name), ["7d"])
+    expect("with its percentage", codex.windows.first?.usedPercent, 28)
+    expect("and its reset", codex.windows.first?.resetsAt, 1_788_104_505)
+    expect("a null secondary is not a window", codex.windows.count, 1)
+    expect("stamped", codex.at, 1787503787)
+    check("a rollout with no token_count is unknown",
+          SessionInfo.codexLimits(rollout: Data("{\"type\":\"session_meta\"}\n".utf8)).windows.isEmpty)
+
+    expect("five hours", SessionInfo.windowName(minutes: 300), "5h")
+    expect("seven days", SessionInfo.windowName(minutes: 10080), "7d")
+    expect("a day", SessionInfo.windowName(minutes: 1440), "1d")
+    expect("an odd number of minutes stays minutes", SessionInfo.windowName(minutes: 90), "90m")
+    expect("Claude's names map to the same words", SessionInfo.windowName(claudeType: "seven_day"), "7d")
+    expect("and an unknown one is passed through rather than invented", SessionInfo.windowName(claudeType: "monthly"), "monthly")
+
+    // The wire shape. Absent, not zeroed, where nothing was known.
+    var usage = Orchestrator.Usage()
+    usage.input = 10; usage.output = 20; usage.cacheRead = 30; usage.cacheWrite = 40; usage.total = 100
+    usage.model = "claude-fable-5"; usage.costUsd = 0.1234
+    let started = Date(timeIntervalSince1970: 1_787_390_000)
+    let payload = SessionInfo.payload(
+        id: "ABC", assistant: .claude, sessionId: "s-1", model: "claude-fable-5", cwd: "/tmp/x",
+        startedAt: started, now: now, usage: usage, limits: hit.limits, files: files,
+        deploy: [["label": "ci", "url": "https://x", "kind": "deploy", "state": "ok", "local": false]])
+    let session = payload["session"] as? [String: Any]
+    expect("the session's id", session?["id"] as? String, "ABC")
+    expect("its assistant", session?["assistant"] as? String, "claude")
+    expect("its model", session?["model"] as? String, "claude-fable-5")
+    expect("its directory", session?["cwd"] as? String, "/tmp/x")
+    expect("when it started", session?["startedAt"] as? Int, 1_787_390_000)
+    expect("and how long that is", session?["seconds"] as? Int, 10_000)
+    let counts = payload["usage"] as? [String: Any]
+    expect("the totals", counts?["total"] as? Int, 100)
+    expect("the cache halves are separate", counts?["cacheWrite"] as? Int, 40)
+    expect("and the cost", counts?["costUsd"] as? Double, 0.1234)
+    let plan = payload["limits"] as? [String: Any]
+    let windows = plan?["windows"] as? [[String: Any]]
+    expect("one window", windows?.count, 1)
+    expect("named", windows?.first?["name"] as? String, "5h")
+    expect("marked hit", windows?.first?["hit"] as? Bool, true)
+    expect("and dated", plan?["at"] as? Int, 1787416917)
+    let tree = payload["files"] as? [String: Any]
+    expect("the tree, counted", tree?["staged"] as? Int, 3)
+    expect("with its branch", tree?["branch"] as? String, "main")
+    expect("the deploy rows pass through untouched",
+           (payload["deploy"] as? [[String: Any]])?.first?["state"] as? String, "ok")
+    check("and it is JSON", JSONSerialization.isValidJSONObject(payload))
+
+    let bare = SessionInfo.payload(id: "X", assistant: nil, sessionId: nil, model: nil, cwd: nil,
+                                   startedAt: nil, now: now, usage: nil,
+                                   limits: SessionInfo.Limits(), files: nil, deploy: [])
+    check("no transcript is no usage, not zero usage", bare["usage"] == nil)
+    check("no repository is no count, not a clean one", bare["files"] == nil)
+    check("no start is no age", (bare["session"] as? [String: Any])?["seconds"] == nil)
+    expect("unknown limits are an empty list the page can draw as unknown",
+           ((bare["limits"] as? [String: Any])?["windows"] as? [[String: Any]])?.count, 0)
+    check("and it is JSON too", JSONSerialization.isValidJSONObject(bare))
+
+    // The route is a read like the others: a token, or nothing.
+    expect("the route needs a paired device",
+           RemoteServer.shared.route(remoteRequest("GET", "/v1/sessions/nope/info")).status, 401)
+    // And the one `git` it runs answers nothing outside a repository rather than a clean tree.
+    check("a directory that is not a repository has no count",
+          SessionInfo.files(cwd: NSTemporaryDirectory()) == nil)
 }
 
 // MARK: - Result

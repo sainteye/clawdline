@@ -693,6 +693,52 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     border-top: 1px solid var(--line); border-radius: 0 0 7px 7px;
     color: #d88f7b; font-family: var(--ui);
 }
+.git-panel {
+    flex: 1 1 auto; min-height: 0;
+    display: flex; flex-direction: column;
+    background: #101014;
+}
+.git-panel[hidden] { display: none; }
+/* It is a view of the same session in the same space as the transcript, not a sheet floating
+   over the whole app. The header stays put; only the transcript and its furniture step aside. */
+.pane-detail[data-git="on"] > .tx-scroll,
+.pane-detail[data-git="on"] > .live,
+.pane-detail[data-git="on"] > .agents,
+.pane-detail[data-git="on"] > .composer { display: none; }
+.git-panel-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 9px;
+    padding: 13px calc(16px + var(--safe-r)) 12px 18px;
+    border-bottom: 1px solid var(--line);
+}
+.git-panel-head h2 {
+    min-width: 0; flex: 1 1 auto;
+    margin: 0; color: var(--ink); font-size: 14px; font-weight: 600;
+}
+.git-panel-body { flex: 1 1 auto; padding: 16px 18px 24px; }
+.git-branch {
+    margin: 0 0 12px; color: var(--dim);
+    font: 12px/1.5 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.git-files { margin: 0; padding: 0; list-style: none; }
+.git-file {
+    display: grid; grid-template-columns: 28px minmax(0, 1fr) auto;
+    gap: 9px; align-items: center;
+    min-height: 38px; padding: 7px 8px;
+    border-bottom: 1px solid var(--line);
+    font: 12px/1.4 var(--mono);
+}
+.git-file:first-child { border-top: 1px solid var(--line); }
+.git-file .mark { color: var(--accent); font-weight: 700; letter-spacing: 1px; }
+.git-file[data-kind="untracked"] .mark { color: var(--warn); }
+.git-file[data-kind="conflict"] .mark { color: var(--bad); }
+.git-file .path { min-width: 0; overflow: hidden; white-space: nowrap; color: var(--ink); }
+.git-file .stats { white-space: nowrap; color: var(--faint); }
+.git-file .stats .add { color: var(--ok); }
+.git-file .stats .del { color: #d88f7b; }
+.git-note { padding: 24px 4px; color: var(--faint); font-size: 13px; }
+.git-note.err { color: var(--bad); }
 .detail-head .who { min-width: 0; flex: 1 1 auto; }
 .detail-head .name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .detail-head .sub {
@@ -1492,6 +1538,46 @@ a.link:active { background: var(--line); }
 .sheet .link .ping[data-state="fail"]::before,
 .sheet .link .ping[data-state="down"]::before { background: var(--bad); }
 
+/* The Session info card. The same furniture once more, as a definition list per section: a
+   label column and a value column, the values in the mono face because they are a machine's
+   account of itself — a model name, a count of tokens, a clock, a number of files. The card
+   scrolls inside itself so that on a phone the buttons under it stay where a thumb is. */
+.info-sheet .facts { max-height: min(62vh, 520px); overflow-y: auto; }
+.info-sheet .facts h3 { margin: 12px 0 6px 0; font-size: 12px; font-weight: 600; color: var(--dim); }
+.info-sheet .facts h3:first-child { margin-top: 0; }
+.info-sheet .facts p.say { margin: 0 0 4px 0; }
+.info-sheet .facts dl {
+    display: grid; grid-template-columns: minmax(84px, auto) minmax(0, 1fr);
+    gap: 5px 12px; align-items: baseline; margin: 0;
+}
+.info-sheet .facts dt { text-align: left; font-size: 12px; color: var(--faint); white-space: nowrap; }
+.info-sheet .facts dd { margin: 0; font: 12.5px/1.45 var(--mono); color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.info-sheet .facts dd.dim { color: var(--dim); font-family: var(--ui); }
+.info-sheet .facts dd a { color: var(--accent); text-decoration: none; }
+.info-sheet .facts dd a:hover { text-decoration: underline; }
+/* How much of a plan window is gone. The bar is a picture of the number beside it, not a second
+   number — and the thresholds are the status line's, so the two turn amber on the same day. */
+.info-sheet .facts .meter {
+    display: inline-block; vertical-align: middle; width: 64px; height: 5px; margin-right: 8px;
+    border-radius: 3px; background: var(--line); overflow: hidden;
+}
+.info-sheet .facts .meter i { display: block; height: 100%; background: var(--ok); }
+.info-sheet .facts .meter[data-level="warn"] i { background: var(--warn); }
+.info-sheet .facts .meter[data-level="bad"] i { background: var(--bad); }
+.info-sheet .facts .ping {
+    display: inline-flex; align-items: center; gap: 5px; margin-right: 8px;
+    font-size: 11px; color: var(--faint);
+}
+.info-sheet .facts .ping::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint);
+}
+.info-sheet .facts .ping[data-state="ok"]::before { background: var(--ok); }
+.info-sheet .facts .ping[data-state="running"]::before { background: var(--warn); }
+.info-sheet .facts .ping[data-state="fail"]::before,
+.info-sheet .facts .ping[data-state="down"]::before { background: var(--bad); }
+.info-sheet .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.info-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
+
 /* --------------------------------------------------------------------------
    The door
    The whole page, until the server knows who is asking. Not a banner and not a
@@ -1790,8 +1876,10 @@ a.link:active { background: var(--line); }
                 </button>
                 <div class="session-actions" id="session-actions" role="menu" hidden>
                     <button id="session-focus" type="button" role="menuitem">Show on Mac</button>
+                    <button id="session-info" type="button" role="menuitem">Session info</button>
                     <button id="session-commit" type="button" role="menuitem" data-action="commit">commit</button>
                     <button id="session-deploy" type="button" role="menuitem" data-action="deploy">deploy</button>
+                    <button id="session-git" type="button" role="menuitem">Git changes</button>
                     <button class="end" id="session-end" type="button" role="menuitem">Close session</button>
                 </div>
             </div>
@@ -1825,6 +1913,14 @@ a.link:active { background: var(--line); }
                 <div class="sub" id="agent-sub"></div>
             </div>
         </div>
+        <section class="git-panel" id="git-panel" aria-labelledby="git-title" hidden>
+            <div class="git-panel-head">
+                <h2 id="git-title">Git changes</h2>
+                <button class="chip" id="git-refresh" type="button">Refresh</button>
+                <button class="chip" id="git-close" type="button">Close</button>
+            </div>
+            <div class="scroller git-panel-body" id="git-body" aria-live="polite"></div>
+        </section>
         <div class="scroller tx-scroll" id="tx-scroll"><div class="tx" id="tx"></div></div>
         <!-- The session and the work it sent away, as one short tree: `main` at the root and a
              ring per agent under it, the way the terminal draws the same thing.
@@ -1977,6 +2073,29 @@ a.link:active { background: var(--line); }
         </div>
 
         <button class="chip wide" id="links-close" type="button">Close</button>
+    </div>
+</div>
+
+<!-- The Session info card: the status line at the bottom of a Claude Code terminal, for somebody
+     who is not at that terminal. What this session is and what model it is on, what it has
+     spent, what is left of the plan's window, how much has changed on disk, and whether the
+     last deploy went out. Asked for when the card opens and on the refresh button, never on
+     the stream: the Mac reads a transcript that can be fifty megabytes and runs a `git` to
+     answer. A plan window nobody reported is drawn as *unknown*, never as 0%. -->
+<div class="overlay" id="info" hidden>
+    <div class="sheet info-sheet" role="dialog" aria-modal="true" id="info-sheet" aria-label="About this session">
+        <h2 id="info-title">About this session</h2>
+
+        <div class="block">
+            <p class="say" id="info-say"></p>
+            <div class="facts" id="info-body"></div>
+            <p class="said" id="info-said" role="status" aria-live="polite"></p>
+        </div>
+
+        <div class="buttons">
+            <button class="chip" id="info-refresh" type="button">Refresh</button>
+            <button class="chip" id="info-close" type="button">Close</button>
+        </div>
     </div>
 </div>
 
@@ -2219,6 +2338,17 @@ var T = {
     webShowOnMacOff: "The server reports write: false — nothing can be sent yet",
     webShowOnMacAsked: "Asked the Mac to bring it forward",
     webSessionActions: "Session actions",
+    webSessionGit: "Git changes",
+    webGitTitle: "Git changes",
+    webGitClean: "Working tree clean",
+    webGitNotRepo: "Not a Git repository",
+    webGitFailed: "Could not read Git changes",
+    webGitRefresh: "Refresh",
+    webGitClose: "Close",
+    webGitStaged: "Staged",
+    webGitUnstaged: "Unstaged",
+    webGitUntracked: "Untracked",
+    webGitConflict: "Conflict",
     webEndSession: "Close session",
     webConfirmActionTitle: "Run {action}?",
     webConfirmActionSay: "This sends {action} to the current session.",
@@ -2390,6 +2520,38 @@ var T = {
     webLinkFail: "failing",
     webLinkDown: "down",
     webLinkRunning: "running",
+    webSessionInfo: "Session info",
+    webInfoTitle: "About this session",
+    webInfoSession: "This session",
+    webInfoAssistant: "Assistant",
+    webInfoModel: "Model",
+    webInfoSessionId: "Session id",
+    webInfoDirectory: "Directory",
+    webInfoRunningFor: "Running for",
+    webInfoUsage: "Token use",
+    webInfoInput: "Input",
+    webInfoOutput: "Output",
+    webInfoCacheRead: "Cache read",
+    webInfoCacheWrite: "Cache write",
+    webInfoTotal: "Total",
+    webInfoCost: "Estimated cost",
+    webInfoNoUsage: "No transcript found for this session yet.",
+    webInfoLimits: "Plan limits",
+    webInfoLimitHit: "limit reached",
+    webInfoResets: "resets {when}",
+    webInfoUnknown: "unknown",
+    webInfoFiles: "Files",
+    webInfoBranch: "Branch",
+    webInfoStaged: "Staged",
+    webInfoUnstaged: "Changed",
+    webInfoUntracked: "Untracked",
+    webInfoConflict: "Conflicts",
+    webInfoClean: "Nothing uncommitted.",
+    webInfoNotRepo: "Not a git repository.",
+    webInfoDeploy: "Last deploy",
+    webInfoNoDeploy: "No deploy recorded for this project.",
+    webInfoFailed: "Could not read this session's info.",
+    webInfoRefresh: "Refresh",
 
     // Said in both places, so said once — the bar's own words, arriving here too.
     placeholder: "Message Claude Code…",
@@ -2515,11 +2677,12 @@ var S = {
 var els = {};
 ["counts", "conn", "conn-label", "filter", "rows", "list-empty", "list-scroll", "ptr", "ptr-label",
  "app", "pane-detail", "back", "detail-focus", "detail-mark", "detail-name", "detail-sub", "tx", "tx-scroll",
- "session-actions", "session-focus", "session-commit", "session-deploy", "session-end",
+ "session-actions", "session-focus", "session-info", "session-commit", "session-deploy", "session-git", "session-end",
  "detail-actions-title",
  "action-confirm", "action-confirm-sheet", "action-confirm-title", "action-confirm-say",
  "action-confirm-cancel", "action-confirm-go",
  "tx-links", "tx-links-label", "tx-focus", "tx-focus-label", "live", "stale-shut",
+ "git-panel", "git-title", "git-refresh", "git-close", "git-body",
  "composer", "msg", "send", "why", "waiting", "agents", "skill-menu", "stale", "stale-say", "stale-go",
  "detail-head", "agent-head", "agent-back", "agent-back-label", "agent-name", "agent-sub",
  "hints", "keys", "toast", "brand", "brand-mark",
@@ -2529,6 +2692,7 @@ var els = {};
  "settings-order-label", "settings-assistant-icons", "settings-assistant-icons-title",
  "settings-assistant-icons-say", "settings-assistant-icons-marks", "settings-assistant-icons-label",
  "links", "links-sheet", "links-title", "links-say", "links-list", "links-said", "links-close",
+ "info", "info-sheet", "info-title", "info-say", "info-body", "info-said", "info-refresh", "info-close",
  "start-go", "start", "start-sheet", "start-title", "start-say", "start-with", "start-filter",
  "start-list",
  "start-said", "start-close", "starting", "starting-spin", "starting-say", "starting-close",
@@ -3114,9 +3278,23 @@ var Live = {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/links");
     },
 
+    /// Branch and file changes are also fetched only when their panel opens. Unlike the command
+    /// actions in the same menu this is read-only, and it never rides the event stream.
+    git: function (id) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/git");
+    },
+
     /// Where a session may be started. Asked afresh every time the sheet opens: the Mac drops
     /// directories that are no longer there while it builds this, and the answer is only as
     /// true as the moment it was given.
+    /// One card about a session: what it is on, what it has spent, what is left of the plan's
+    /// window, how much has changed on disk, whether the last deploy went out. Asked when the
+    /// card opens and never with the session list, for the same reason as `links` — plus a
+    /// transcript to read that can be fifty megabytes.
+    info: function (id) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/info");
+    },
+
     places: function () { return jsonFetch("/v1/places"); },
 
     /// The id and the assistant are the whole request, and **both of them are in the path**.
@@ -3392,6 +3570,54 @@ var Mock = (function () {
     // the two states that are otherwise hard to arrange on a machine that has both.
     var MOCK_LINKS = params.get("links") || "";
 
+    // The info card's shapes. A Claude session that has just spent its five-hour window, with
+    // the deploy that failed under it; a Claude session whose plan nobody has reported on, in a
+    // clean tree; and a Codex session with the plain percentage its rollout carries. Every
+    // other session answers with what a session that has no transcript yet answers with.
+    // `?info=fail` is the route refusing.
+    var info = {
+        "8F3A-1C": {
+            session: { id: "8F3A-1C", assistant: "claude", sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38",
+                       model: "claude-fable-5", cwd: "/Users/x/code/clawdline",
+                       startedAt: now - 5580, seconds: 5580 },
+            usage: { input: 4821, output: 38210, cacheRead: 2984120, cacheWrite: 214880, total: 3242031,
+                     model: "claude-fable-5", costUsd: 7.38 },
+            limits: { windows: [
+                { name: "5h", usedPercent: 100, resetsAt: now + 2760, hit: true }
+            ], at: now - 90 },
+            files: { branch: "main", head: "d5c61e9f91c46a77", ahead: 2, behind: 0,
+                     staged: 1, unstaged: 4, untracked: 2, conflict: 0 },
+            deploy: [
+                { label: "ci", url: "https://github.com/example/clawdline/actions/runs/32206093368", kind: "deploy", state: "fail", local: false }
+            ]
+        },
+        "2C71-90": {
+            session: { id: "2C71-90", assistant: "claude", model: "claude-opus-5", cwd: "/Users/x/code/atrium",
+                       startedAt: now - 24300, seconds: 24300 },
+            usage: { input: 19340, output: 61022, cacheRead: 7120400, cacheWrite: 380210, total: 7580972,
+                     model: "claude-opus-5", costUsd: 5.61 },
+            limits: { windows: [] },
+            files: { branch: "fix/signup-500", head: "9a1b2c3d4e5f6071", ahead: 0, behind: 3,
+                     staged: 0, unstaged: 0, untracked: 0, conflict: 0 },
+            deploy: [
+                { label: "deploy", url: "https://github.com/example/atrium/actions/runs/32206093412", kind: "deploy", state: "running", local: false }
+            ]
+        },
+        "44D2-05": {
+            session: { id: "44D2-05", assistant: "codex", model: "gpt-5.3-codex", cwd: "/Users/x/tmp/notes",
+                       startedAt: now - 840, seconds: 840 },
+            usage: { input: 8190546, output: 16956, cacheRead: 7978752, cacheWrite: 0, total: 8207502,
+                     model: "gpt-5.3-codex" },
+            limits: { windows: [
+                { name: "5h", usedPercent: 24, resetsAt: now + 9000, hit: false },
+                { name: "7d", usedPercent: 71, resetsAt: now + 3 * 86400 + 4000, hit: false }
+            ], at: now - 12 },
+            deploy: []
+        }
+    };
+    var MOCK_INFO = params.get("info") || "";
+    var MOCK_GIT = params.get("git") || "";
+
     // How the fixture's start behaves: `?start=slow` never reports in, so the fifteen seconds
     // can be watched rather than described; `closed`, `unsupported` and `gone` are the three
     // refusals with a sentence of their own on the other end, and `empty` is a Mac with
@@ -3638,6 +3864,58 @@ var Mock = (function () {
                         return;
                     }
                     done({ links: MOCK_LINKS === "empty" ? [] : (links[id] || []).slice() });
+                }, 420);
+            });
+        },
+
+        /** Slow for the same reason `links` is, and slower: the real one reads a transcript
+         *  as well as shelling out, and the refresh button has to be seen to be doing something. */
+        info: function (id) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (MOCK_INFO === "fail") {
+                        fail(Object.assign(new Error("No session named that"), { code: "not_found" }));
+                        return;
+                    }
+                    if (info[id]) { done({ info: info[id] }); return; }
+                    var session = sessions.filter(function (s) { return s.id === id; })[0] || {};
+                    done({ info: {
+                        session: { id: id, assistant: session.assistant, cwd: session.cwd },
+                        limits: { windows: [] },
+                        deploy: []
+                    } });
+                }, 640);
+            });
+        },
+
+        git: function () {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (MOCK_GIT === "fail") {
+                        fail(Object.assign(new Error("Could not read that repository"),
+                                           { code: "git_failed" }));
+                        return;
+                    }
+                    if (MOCK_GIT === "notrepo") {
+                        fail(Object.assign(new Error("That session is not inside a Git repository"),
+                                           { code: "not_a_repo" }));
+                        return;
+                    }
+                    done({ git: {
+                        branch: "main", head: "d5c61e9f91c46a77", ahead: 2, behind: 0,
+                        clean: MOCK_GIT === "clean",
+                        files: MOCK_GIT === "clean" ? [] : [
+                            { path: "Sources/RemoteServer.swift", from: null, staged: false,
+                              unstaged: true, kind: "modified", additions: 12, deletions: 3 },
+                            { path: "Resources/web/components/session/detail/GitChangesPanel.css",
+                              from: "Resources/web/components/session/GitPanel.css", staged: true,
+                              unstaged: true, kind: "renamed", additions: 4, deletions: 1 },
+                            { path: "notes/status.txt", from: null, staged: false,
+                              unstaged: true, kind: "untracked", additions: null, deletions: null },
+                            { path: "Sources/Conflict.swift", from: null, staged: true,
+                              unstaged: true, kind: "conflict", additions: 8, deletions: 5 }
+                        ]
+                    } });
                 }, 420);
             });
         },
@@ -4520,19 +4798,23 @@ function renderDetailHead() {
     els["tx-focus"].hidden = !atMac();
     els["tx-focus"].disabled = !s || !S.write;
     els["tx-focus"].title = S.write ? T.webShowOnMacTip : T.webShowOnMacOff;
-    // The mark and title open the same compact action menu. Neither performs an action merely by
-    // opening it: bringing the terminal forward is one named choice beside commit and deploy.
-    els["detail-focus"].disabled = !s || !S.write;
-    els["detail-focus"].title = S.write ? T.webSessionActions : T.webShowOnMacOff;
+    // The mark and title open the same compact action menu. The Git row is read-only, so the
+    // menu remains reachable when sending is off; its mutating rows each keep their own gate.
+    els["detail-focus"].disabled = !s;
+    els["detail-focus"].title = T.webSessionActions;
     els["detail-focus"].setAttribute("aria-label", T.webSessionActions);
-    els["detail-actions-title"].disabled = !s || !S.write;
-    els["detail-actions-title"].title = S.write ? T.webSessionActions : T.webShowOnMacOff;
+    els["detail-actions-title"].disabled = !s;
+    els["detail-actions-title"].title = T.webSessionActions;
     els["detail-actions-title"].setAttribute("aria-label", T.webSessionActions);
     els["session-focus"].disabled = !s || !S.write;
+    // Reading needs no write switch; the menu it sits in already does, and the day the menu
+    // opens for a read-only device this row is the one that should still work.
+    els["session-info"].disabled = !s;
     els["session-commit"].disabled = !s || !S.write;
     els["session-deploy"].disabled = !s || !S.write;
+    els["session-git"].disabled = !s;
     els["session-end"].disabled = !s || !S.write;
-    if (!s) SessionActions.close();
+    if (!s) { SessionActions.close(); GitPanel.follow(); }
 }
 
 function renderTranscript() {
@@ -5481,7 +5763,16 @@ function paintStatic() {
     text(els["tx-focus-label"], T.webShowOnMac);
     attr(els["session-actions"], "aria-label", T.webSessionActions);
     text(els["session-focus"], T.webShowOnMac);
+    text(els["session-info"], T.webSessionInfo);
+    text(els["info-title"], T.webInfoTitle);
+    attr(els["info-sheet"], "aria-label", T.webInfoTitle);
+    text(els["info-refresh"], T.webInfoRefresh);
+    text(els["info-close"], T.webClose);
+    text(els["session-git"], T.webSessionGit);
     text(els["session-end"], T.webEndSession);
+    text(els["git-title"], T.webGitTitle);
+    text(els["git-refresh"], T.webGitRefresh);
+    text(els["git-close"], T.webGitClose);
     text(els["action-confirm-cancel"], T.webCancel);
     text(els["action-confirm-go"], T.webConfirm);
 
@@ -5737,6 +6028,8 @@ function openSession(id, keepFocus) {
         Shots.clear();
         // Nor is a list of one project's addresses a list of the next one's.
         Links.follow();
+        Info.follow();
+        GitPanel.follow();
         loadTranscript(id, false);
     }
     if (phone()) {
@@ -5763,6 +6056,8 @@ function closeDetail(silent) {
     S.expanded = {};
     Shots.clear();
     Links.follow();
+    Info.follow();
+    GitPanel.follow();
     SkillPicker.close();
     if (phone()) els.app.dataset.view = "list";
     renderTranscript();
@@ -5977,6 +6272,7 @@ document.addEventListener("keydown", function (ev) {
 
     if (key === "Escape") {
         if (!els.links.hidden) { Links.close(); return; }
+        if (!els.info.hidden) { Info.close(); return; }
         if (!els.start.hidden) { Start.close(); return; }
         if (!els.settings.hidden) { Settings.close(); return; }
         if (!els.keys.hidden) { els.keys.hidden = true; return; }
@@ -6079,14 +6375,15 @@ els["detail-actions-title"].addEventListener("keydown", actionTriggerKey);
 /**
  * The project mark and its title are two handles for the same menu. Bringing the terminal
  * forward is a menu action of its own, so opening the menu never moves focus away from the
- * browser. `commit` and `deploy` are ordinary prompts, while ending uses the server's named
- * two-step route so the assistant quits cleanly before its terminal tab is closed.
+ * browser. Git is a read-only view; `commit` and `deploy` are ordinary prompts, while ending
+ * uses the server's named two-step route so the assistant quits cleanly before its terminal tab
+ * is closed.
  */
 var SessionActions = {
     opener: null,
 
     open: function (opener) {
-        if (!S.openId || !S.write) return;
+        if (!S.openId) return;
         this.opener = opener || this.opener || els["detail-focus"];
         els["session-actions"].hidden = false;
         els["detail-focus"].setAttribute("aria-expanded", "true");
@@ -6135,6 +6432,119 @@ var SessionActions = {
     }
 };
 
+/**
+ * A read-only view of the open session's repository, occupying the transcript's space.
+ *
+ * It owns no cache beyond the time it is visible. Opening and refreshing both ask Git at that
+ * moment, and a ticket makes an answer for the previous session harmless if the reader moves on
+ * while it is in flight.
+ */
+var GitPanel = (function () {
+    var forId = null;
+    var snapshot = null;
+    var loading = false;
+    var error = null;
+    var ticket = 0;
+
+    function shortened(path) {
+        path = String(path || "");
+        var limit = phone() ? 34 : 72;
+        if (path.length <= limit) return path;
+        var tail = Math.floor(limit * 0.65);
+        return path.slice(0, limit - tail - 1) + "…" + path.slice(-tail);
+    }
+
+    function mark(file) {
+        if (file.kind === "conflict") return { text: "!", label: T.webGitConflict };
+        if (file.kind === "untracked") return { text: "?", label: T.webGitUntracked };
+        var text = "", labels = [];
+        if (file.staged) { text += "+"; labels.push(T.webGitStaged); }
+        if (file.unstaged) { text += "*"; labels.push(T.webGitUnstaged); }
+        return { text: text || "·", label: labels.join(", ") };
+    }
+
+    function row(file) {
+        var state = mark(file);
+        var title = file.from ? String(file.from) + " → " + String(file.path) : String(file.path);
+        var hasStats = typeof file.additions === "number" && typeof file.deletions === "number";
+        var stats = hasStats
+            ? '<span class="stats"><span class="add">+' + esc(file.additions) +
+              '</span> <span class="del">−' + esc(file.deletions) + "</span></span>"
+            : '<span class="stats"></span>';
+        return '<li class="git-file" data-kind="' + esc(file.kind || "modified") + '">' +
+            '<span class="mark" aria-label="' + esc(state.label) + '" title="' +
+                esc(state.label) + '">' + esc(state.text) + "</span>" +
+            '<span class="path" title="' + esc(title) + '">' + esc(shortened(file.path)) +
+                "</span>" + stats + "</li>";
+    }
+
+    function render() {
+        if (loading) {
+            els["git-body"].innerHTML = '<div class="git-note" role="status">' +
+                esc(T.webLoading) + "</div>";
+            return;
+        }
+        if (error) {
+            els["git-body"].innerHTML = '<div class="git-note err" role="alert">' +
+                esc(error) + "</div>";
+            return;
+        }
+        var git = snapshot || {};
+        var branch = "⎇ " + (git.branch || String(git.head || "").slice(0, 8)) +
+            " ↑" + (git.ahead || 0) + " ↓" + (git.behind || 0);
+        var files = git.files || [];
+        els["git-body"].innerHTML = '<div class="git-branch">' + esc(branch) + "</div>" +
+            (git.clean || !files.length
+                ? '<div class="git-note">' + esc(T.webGitClean) + "</div>"
+                : '<ul class="git-files">' + files.map(row).join("") + "</ul>");
+    }
+
+    function load() {
+        var id = forId;
+        if (!id) return;
+        var mine = ++ticket;
+        snapshot = null; error = null; loading = true;
+        render();
+        api.git(id).then(function (data) {
+            if (mine !== ticket || forId !== id) return;
+            snapshot = data.git || { files: [], clean: true };
+            loading = false;
+            render();
+        }).catch(function (e) {
+            if (mine !== ticket || forId !== id) return;
+            loading = false;
+            error = e && e.code === "not_a_repo" ? T.webGitNotRepo : T.webGitFailed;
+            render();
+        });
+    }
+
+    return {
+        open: function () {
+            if (!S.openId) return;
+            SessionActions.close();
+            forId = S.openId;
+            els["git-panel"].hidden = false;
+            els["pane-detail"].dataset.git = "on";
+            load();
+            els["git-close"].focus({ preventScroll: true });
+        },
+
+        close: function (restore) {
+            if (els["git-panel"].hidden) return;
+            ticket += 1;
+            forId = null; snapshot = null; loading = false; error = null;
+            els["git-panel"].hidden = true;
+            delete els["pane-detail"].dataset.git;
+            if (restore && !els["detail-focus"].disabled) {
+                els["detail-focus"].focus({ preventScroll: true });
+            }
+        },
+
+        refresh: function () { if (forId) load(); },
+        follow: function () { this.close(false); }
+    };
+})();
+
 /** The second press before a session-changing action reaches the transport. */
 var ActionConfirm = {
     pending: null,
@@ -6180,7 +6590,22 @@ els["session-actions"].addEventListener("click", function (ev) {
     if (ev.target.closest && ev.target.closest("#session-focus")) {
         SessionActions.focusMac(); return;
     }
+    // A read, not an action: nothing is sent, so there is no confirmation to cross. The menu
+    // closes and the card opens over the transcript.
+    if (ev.target.closest && ev.target.closest("#session-info")) {
+        SessionActions.close(); Info.open(); return;
+    }
+    if (ev.target.closest && ev.target.closest("#session-git")) {
+        GitPanel.open(); return;
+    }
     if (ev.target.closest && ev.target.closest("#session-end")) ActionConfirm.open("end");
+});
+
+els["git-refresh"].addEventListener("click", function () { GitPanel.refresh(); });
+els["git-close"].addEventListener("click", function () { GitPanel.close(true); });
+els["git-panel"].addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape") return;
+    ev.preventDefault(); ev.stopPropagation(); GitPanel.close(true);
 });
 
 els["action-confirm-cancel"].addEventListener("click", function () {
@@ -6930,6 +7355,212 @@ els["links-list"].addEventListener("click", function (ev) {
     var button = ev.target.closest ? ev.target.closest(".copy") : null;
     if (button) Links.copy(button.dataset.copy);
 });
+
+/**
+ * The Session info card — the status line at the bottom of a Claude Code terminal, for somebody
+ * who is not at that terminal: what this session is and what model it is on, what it has
+ * spent, what is left of the plan's window, how much has changed on disk, and whether the last
+ * deploy went out.
+ *
+ * Asked for when the card opens and on the refresh button, never on the stream. A refresh keeps
+ * the old card on screen until the new one arrives — a card that blanks itself to say "loading"
+ * has thrown away the one thing somebody was comparing against. A plan window nobody reported
+ * is drawn as *unknown* and never as 0%: a full window shown as an empty one is the one wrong
+ * answer that changes what somebody does next.
+ */
+var Info = (function () {
+    var STATES = { ok: "webLinkOk", fail: "webLinkFail", down: "webLinkDown", running: "webLinkRunning" };
+
+    var forId = null;    // whose card this is
+    var data = null;     // as the Mac sent it; null until an answer has arrived
+    var loading = false;
+    var ticket = 0;      // the answer that is still wanted, so a stale one can be dropped
+
+    function say(w) { els["info-say"].textContent = w || ""; }
+    function said(w, calm) {
+        els["info-said"].textContent = w || "";
+        els["info-said"].className = "said" + (calm ? " calm" : "");
+    }
+    function why(e) {
+        if (e && e.code === "offline") return e.message;   // already this page's own sentence
+        return T.webInfoFailed;
+    }
+
+    /** `1d 2h`, `2h 14m`, `14m` — the status line's own spelling, which needs no translating. */
+    function span(seconds) {
+        var s = Math.max(0, Math.floor(seconds));
+        var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+        if (d) return d + "d " + h + "h";
+        if (h) return h + "h " + m + "m";
+        return m + "m";
+    }
+
+    /** When a window comes back: a clock if it is today, else the day, in the reader's locale. */
+    function resetWhen(unix) {
+        if (!unix) return "";
+        var left = unix - Date.now() / 1000;
+        if (left <= 0) return "";
+        var d = new Date(unix * 1000);
+        if (left < 86400) {
+            var h = d.getHours(), m = d.getMinutes();
+            return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+        }
+        try { return d.toLocaleDateString(undefined, { weekday: "short" }); } catch (e) { return d.toDateString().slice(0, 3); }
+    }
+
+    function count(x) { return typeof x === "number" ? esc(x.toLocaleString()) : esc(T.webInfoUnknown); }
+    function dollars(x) { return x < 0.01 ? "<$0.01" : "$" + x.toFixed(2); }
+    function openable(url) { return /^https?:\/\//i.test(url || ""); }
+
+    function row(label, value, dim) {
+        return "<dt>" + esc(label) + "</dt><dd" + (dim ? ' class="dim"' : "") + ">" + value + "</dd>";
+    }
+    function group(title, rows) { return "<h3>" + esc(title) + "</h3><dl>" + rows + "</dl>"; }
+    function note(title, text) { return "<h3>" + esc(title) + '</h3><p class="say">' + esc(text) + "</p>"; }
+
+    /** One plan window: a bar, the number, and — when it is known — when it comes back. */
+    function meter(w) {
+        var pct = typeof w.usedPercent === "number" ? Math.max(0, Math.min(100, Math.round(w.usedPercent))) : null;
+        if (pct === null) return esc(T.webInfoUnknown);
+        // The status line's thresholds, so both turn amber on the same day.
+        var level = pct >= 85 ? "bad" : (pct >= 60 ? "warn" : "ok");
+        var out = '<span class="meter" data-level="' + level + '"><i style="width:' + pct + '%"></i></span>' + pct + "%";
+        if (w.hit) out += " · " + esc(T.webInfoLimitHit);
+        var when = resetWhen(w.resetsAt);
+        if (when) out += " · " + esc(fill(T.webInfoResets, { when: when }));
+        return out;
+    }
+
+    function html(d) {
+        var s = d.session || {}, u = d.usage, l = d.limits || {}, f = d.files, dep = d.deploy || [];
+        var out = "", rows;
+
+        // Which session, on what model. The model is the one the transcript last named, so a
+        // session that switched mid-way shows what it is on now rather than what it began on.
+        rows = row(T.webInfoAssistant, esc(s.assistant || T.webInfoUnknown));
+        rows += row(T.webInfoModel, esc(s.model || (u && u.model) || T.webInfoUnknown));
+        if (s.sessionId) rows += row(T.webInfoSessionId, esc(s.sessionId));
+        if (s.cwd) rows += row(T.webInfoDirectory, esc(shortPath(s.cwd)));
+        if (typeof s.seconds === "number") rows += row(T.webInfoRunningFor, esc(span(s.seconds)));
+        out += group(T.webInfoSession, rows);
+
+        if (u) {
+            rows = row(T.webInfoInput, count(u.input)) + row(T.webInfoOutput, count(u.output))
+                + row(T.webInfoCacheRead, count(u.cacheRead)) + row(T.webInfoCacheWrite, count(u.cacheWrite))
+                + row(T.webInfoTotal, count(u.total));
+            // Only where a price is known. Codex bills against a plan rather than per token, and
+            // the Mac says nothing rather than a made-up number — so this row says nothing too.
+            if (typeof u.costUsd === "number") rows += row(T.webInfoCost, esc(dollars(u.costUsd)));
+            out += group(T.webInfoUsage, rows);
+        } else {
+            out += note(T.webInfoUsage, T.webInfoNoUsage);
+        }
+
+        var windows = l.windows || [];
+        if (windows.length) {
+            out += group(T.webInfoLimits, windows.map(function (w) { return row(w.name, meter(w)); }).join(""));
+        } else {
+            out += note(T.webInfoLimits, T.webInfoUnknown);
+        }
+
+        if (f) {
+            var branch = f.branch || (f.head ? f.head.slice(0, 7) : "");
+            if (f.ahead) branch += " ↑" + f.ahead;
+            if (f.behind) branch += " ↓" + f.behind;
+            rows = row(T.webInfoBranch, esc(branch || T.webInfoUnknown));
+            if (f.staged) rows += row(T.webInfoStaged, count(f.staged));
+            if (f.unstaged) rows += row(T.webInfoUnstaged, count(f.unstaged));
+            if (f.untracked) rows += row(T.webInfoUntracked, count(f.untracked));
+            if (f.conflict) rows += row(T.webInfoConflict, count(f.conflict));
+            out += group(T.webInfoFiles, rows);
+            if (!(f.staged || f.unstaged || f.untracked || f.conflict)) {
+                out += '<p class="say">' + esc(T.webInfoClean) + "</p>";
+            }
+        } else {
+            out += note(T.webInfoFiles, T.webInfoNotRepo);
+        }
+
+        if (dep.length) {
+            rows = dep.map(function (link) {
+                var word = STATES[link.state] ? T[STATES[link.state]] : "";
+                var ping = word ? '<span class="ping" data-state="' + esc(link.state) + '">' + esc(word) + "</span>" : "";
+                var url = String(link.url || "");
+                // The same whitelist as the Links sheet: a `javascript:` in an `href` is script
+                // running on this page with this page's cookie, so anything not plainly http(s)
+                // is drawn as text.
+                var where = openable(url)
+                    ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(url.replace(/^https?:\/\//i, "")) + "</a>"
+                    : esc(url);
+                return row(link.label || link.kind, ping + where);
+            }).join("");
+            out += group(T.webInfoDeploy, rows);
+        } else {
+            out += note(T.webInfoDeploy, T.webInfoNoDeploy);
+        }
+        return out;
+    }
+
+    function draw() {
+        if (els.info.hidden) return;
+        say(loading && !data ? T.webLoading : "");
+        els["info-body"].innerHTML = data ? html(data) : "";
+        els["info-refresh"].disabled = loading;
+    }
+
+    function load(id) {
+        if (typeof api.info !== "function") { data = null; draw(); return; }
+        var mine = ++ticket;
+        loading = true;
+        said("");
+        draw();
+        api.info(id).then(function (d) {
+            if (mine !== ticket) return;      // closed, or opened again on another session
+            data = (d && d.info) || null;
+            loading = false;
+            draw();
+        }).catch(function (e) {
+            if (mine !== ticket) return;
+            loading = false;
+            said(why(e));
+            draw();
+        });
+    }
+
+    return {
+        open: function () {
+            if (!S.openId) return;
+            forId = S.openId;
+            data = null;
+            said("");
+            els.info.hidden = false;
+            load(forId);
+            els["info-close"].focus({ preventScroll: true });
+        },
+
+        refresh: function () {
+            if (els.info.hidden || !forId || loading) return;
+            load(forId);
+        },
+
+        close: function () {
+            els.info.hidden = true;
+            // The cache is the card. Nothing is kept for the next open, and an answer still on
+            // its way is no longer wanted — see `ticket`.
+            ticket += 1;
+            loading = false;
+            data = null;
+            forId = null;
+        },
+
+        /** The session under the card changed, so what is in it is about something else. */
+        follow: function () { if (!els.info.hidden && S.openId !== forId) this.close(); }
+    };
+})();
+
+els.info.addEventListener("click", function () { Info.close(); });
+els["info-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
+els["info-close"].addEventListener("click", function () { Info.close(); });
+els["info-refresh"].addEventListener("click", function () { Info.refresh(); });
 
 /* ---- notifications ------------------------------------------------------- */
 
