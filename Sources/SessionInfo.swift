@@ -190,6 +190,58 @@ enum SessionInfo {
         return Limits()
     }
 
+    // MARK: - Models
+
+    /// A model the session could be moved to, and the word that moves it. `command` is what goes
+    /// after `/model` in that assistant's own terminal: Claude Code takes an alias (`sonnet`) and
+    /// Codex takes the slug itself. Both set the model in place without opening a picker, which
+    /// is what makes this a button on a phone rather than a menu on the Mac.
+    struct Model: Equatable {
+        var id: String
+        var name: String
+        var command: String
+    }
+
+    /// The models Claude Code answers `/model` with by alias. There is no file to read these
+    /// from — the aliases are Claude Code's own and move with its releases — so this is the
+    /// table. The page matches the session's current model against `id` **by prefix**, which is
+    /// how a dated `claude-haiku-4-5-20251001` still finds its row.
+    static let claudeModels: [Model] = [
+        Model(id: "claude-fable-5", name: "Fable 5", command: "fable"),
+        Model(id: "claude-opus-5", name: "Opus 5", command: "opus"),
+        Model(id: "claude-sonnet-5", name: "Sonnet 5", command: "sonnet"),
+        Model(id: "claude-haiku-4-5", name: "Haiku 4.5", command: "haiku"),
+    ]
+
+    /// Codex keeps the list its own picker shows in `~/.codex/models_cache.json`, fetched from
+    /// the server when it starts. Read rather than typed in: the names change with the plan and
+    /// the month, and a list this app carried would be wrong within one of them. Only what the
+    /// picker would list — `visibility` is `hide` for the rows it would not.
+    static func codexModels(cache data: Data) -> [Model] {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let rows = json["models"] as? [[String: Any]] else { return [] }
+        return rows.compactMap { row in
+            guard let slug = row["slug"] as? String, !slug.isEmpty else { return nil }
+            if let visibility = row["visibility"] as? String, visibility != "list" { return nil }
+            let shown = row["display_name"] as? String
+            return Model(id: slug, name: (shown?.isEmpty == false) ? shown! : slug, command: slug)
+        }
+    }
+
+    static func codexModels(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [Model] {
+        let url = home.appendingPathComponent(".codex/models_cache.json")
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        return codexModels(cache: data)
+    }
+
+    static func models(for assistant: Assistant?) -> [Model] {
+        switch assistant {
+        case .claude: return claudeModels
+        case .codex: return codexModels()
+        case nil: return []
+        }
+    }
+
     // MARK: - The wire shape
 
     /// What the route answers with. Pure, so a test can hand it every piece and read the JSON.
@@ -202,7 +254,7 @@ enum SessionInfo {
     static func payload(id: String, assistant: Assistant?, sessionId: String?, model: String?,
                         cwd: String?, startedAt: Date?, now: Date = Date(),
                         usage: Orchestrator.Usage?, limits: Limits, files: Files?,
-                        deploy: [[String: Any]]) -> [String: Any] {
+                        deploy: [[String: Any]], models: [Model] = []) -> [String: Any] {
         var session: [String: Any] = ["id": id]
         if let assistant { session["assistant"] = assistant.rawValue }
         if let sessionId { session["sessionId"] = sessionId }
@@ -214,6 +266,9 @@ enum SessionInfo {
         }
 
         var out: [String: Any] = ["session": session, "deploy": deploy]
+        // Every row is a button on the card. `command` is the word the page sends after
+        // `/model`; `id` is what it compares the session's current model against.
+        out["models"] = models.map { ["id": $0.id, "name": $0.name, "command": $0.command] }
 
         if let usage {
             var counts: [String: Any] = [

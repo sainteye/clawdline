@@ -271,6 +271,15 @@ protocol Copy {
     var settingsOrchestratorMaxHint: String { get }
     var settingsOrchestratorNotify: String { get }
     var settingsOrchestratorNotifyHint: String { get }
+    /// What becomes of a child's tab once it has reported. Three stops — now, in a bit, never —
+    /// because that is the whole of the choice anybody makes about a tab they are done with. The
+    /// hint carries the exception: a child that timed out keeps its tab, so the screen that would
+    /// tell you why is still there.
+    var settingsOrchestratorClose: String { get }
+    var settingsOrchestratorCloseHint: String { get }
+    var settingsOrchestratorCloseNow: String { get }
+    var settingsOrchestratorCloseLinger: String { get }
+    var settingsOrchestratorCloseKeep: String { get }
     /// A number of seconds, as a settings row shows it.
     ///
     /// Here rather than as a bare "s" because it is the one unit in that window that reads as a
@@ -616,6 +625,13 @@ protocol Copy {
     var webInfoNoDeploy: String { get }
     var webInfoFailed: String { get }
     var webInfoRefresh: String { get }
+    var webInfoTokens: String { get }
+    var webInfoSwitchModel: String { get }
+    var webInfoModelOther: String { get }
+    var webInfoModelSent: String { get }
+    var webInfoModelBusy: String { get }
+    var webInfoLimitsClaude: String { get }
+    var webInfoCopied: String { get }
     var webSettingsOrder: String { get }
     var webSettingsOrderSay: String { get }
 

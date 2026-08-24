@@ -1228,7 +1228,7 @@ final class RemoteServer {
             sessionId: HookBridge.note(for: session)?.session, model: model,
             cwd: cwd, startedAt: Targets.processStart(of: session),
             usage: usage, limits: limits, files: cwd.flatMap { SessionInfo.files(cwd: $0) },
-            deploy: deploy)
+            deploy: deploy, models: SessionInfo.models(for: session.assistant))
     }
 
     private func sessionsPayload() -> [String: Any] {
@@ -1759,6 +1759,13 @@ final class RemoteServer {
             "webInfoNoDeploy": t.webInfoNoDeploy,
             "webInfoFailed": t.webInfoFailed,
             "webInfoRefresh": t.webInfoRefresh,
+            "webInfoTokens": t.webInfoTokens,
+            "webInfoSwitchModel": t.webInfoSwitchModel,
+            "webInfoModelOther": t.webInfoModelOther,
+            "webInfoModelSent": t.webInfoModelSent,
+            "webInfoModelBusy": t.webInfoModelBusy,
+            "webInfoLimitsClaude": t.webInfoLimitsClaude,
+            "webInfoCopied": t.webInfoCopied,
         ])
 
         var response = Response.json(out)

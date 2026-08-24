@@ -1709,6 +1709,7 @@ group("the languages the interface speaks") {
         "*:settingsTitle",      // starts with the app's name, which is not translated
         "*:settingsOff",        // "Off" survives untranslated in several
         "*:hintMascot",         // a short loan word in most of these
+        "*:webInfoTokens",      // the unit under a count; "tokens" is what Spanish and Portuguese call them too
         "es:settingsGeneral",   // "General" is Spanish
         "it:hintOutput",        // and "output" is Italian
         "it:stackActionLogs",   // as is "log"
@@ -4646,6 +4647,43 @@ group("the Session info card is read off the files, and says unknown rather than
     // And the one `git` it runs answers nothing outside a repository rather than a clean tree.
     check("a directory that is not a repository has no count",
           SessionInfo.files(cwd: NSTemporaryDirectory()) == nil)
+}
+
+group("the models a session can be moved to, and the word that moves each") {
+    // What Codex's own picker would list, as its cache on disk says it. The hidden row and the
+    // one without a slug are the two ways a row is not a button.
+    let cache = """
+    {"models":[{"slug":"gpt-5.6-sol","display_name":"GPT-5.6-Sol","visibility":"list"},
+               {"slug":"gpt-5.4-mini","display_name":"","visibility":"list"},
+               {"slug":"codex-auto-review","display_name":"Codex Auto Review","visibility":"hide"},
+               {"display_name":"no slug","visibility":"list"}]}
+    """
+    let models = SessionInfo.codexModels(cache: Data(cache.utf8))
+    expect("the rows the picker lists, in its order", models.map { $0.id }, ["gpt-5.6-sol", "gpt-5.4-mini"])
+    expect("a display name is the name", models[0].name, "GPT-5.6-Sol")
+    expect("and an empty one falls back to the slug", models[1].name, "gpt-5.4-mini")
+    expect("Codex is told the slug itself", models[0].command, "gpt-5.6-sol")
+    expect("a cache that is not JSON is no models, not a crash", SessionInfo.codexModels(cache: Data("{".utf8)), [])
+    expect("and a home without one is the same",
+           SessionInfo.codexModels(home: URL(fileURLWithPath: "/nonexistent-" + UUID().uuidString)), [])
+
+    // Claude Code is told an alias — `/model sonnet` — and the page finds the current row by the
+    // prefix of a full id, which is what survives a dated release like `claude-haiku-4-5-20251001`.
+    let claude = SessionInfo.models(for: .claude)
+    check("there are models for Claude", !claude.isEmpty)
+    check("Claude Code is told an alias, never a dated id", claude.allSatisfy { !$0.command.hasPrefix("claude-") })
+    check("and every row has an id the current model matches by prefix", claude.allSatisfy { $0.id.hasPrefix("claude-") })
+    expect("no assistant, no models", SessionInfo.models(for: nil), [])
+
+    let payload = SessionInfo.payload(id: "X", assistant: .claude, sessionId: nil, model: "claude-sonnet-5",
+                                      cwd: nil, startedAt: nil, usage: nil, limits: SessionInfo.Limits(),
+                                      files: nil, deploy: [], models: claude)
+    let rows = payload["models"] as? [[String: Any]] ?? []
+    expect("the card gets one row per model", rows.count, claude.count)
+    expect("with the three words the page needs", rows.first.map { Set($0.keys) } ?? [], ["id", "name", "command"])
+    let bare = SessionInfo.payload(id: "X", assistant: nil, sessionId: nil, model: nil, cwd: nil, startedAt: nil,
+                                   usage: nil, limits: SessionInfo.Limits(), files: nil, deploy: [])
+    expect("and none is an empty list rather than an absent key", (bare["models"] as? [[String: Any]])?.count, 0)
 }
 
 // MARK: - Result

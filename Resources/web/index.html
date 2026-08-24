@@ -1538,45 +1538,143 @@ a.link:active { background: var(--line); }
 .sheet .link .ping[data-state="fail"]::before,
 .sheet .link .ping[data-state="down"]::before { background: var(--bad); }
 
-/* The Session info card. The same furniture once more, as a definition list per section: a
-   label column and a value column, the values in the mono face because they are a machine's
-   account of itself — a model name, a count of tokens, a clock, a number of files. The card
-   scrolls inside itself so that on a phone the buttons under it stay where a thumb is. */
-.info-sheet .facts { max-height: min(62vh, 520px); overflow-y: auto; }
-.info-sheet .facts h3 { margin: 12px 0 6px 0; font-size: 12px; font-weight: 600; color: var(--dim); }
-.info-sheet .facts h3:first-child { margin-top: 0; }
-.info-sheet .facts p.say { margin: 0 0 4px 0; }
-.info-sheet .facts dl {
-    display: grid; grid-template-columns: minmax(84px, auto) minmax(0, 1fr);
-    gap: 5px 12px; align-items: baseline; margin: 0;
+/* The Session info card.
+   A dossier rather than a form: the model the session is on is the headline, in the mono face
+   and large, because it is the one fact on this card that somebody came here to check or to
+   change. Under it, sections separated by hairlines and headed in small tracked capitals — the
+   tokens as one big number with its parts in four tiles, the plan's windows as bars that grow
+   to their number, the tree as the status line's own marks, the deploys as a light and a link.
+   The card scrolls inside itself so that on a phone the buttons under it stay where a thumb is. */
+.info-sheet {
+    padding: 0; overflow: hidden; width: min(480px, 100%);
+    display: flex; flex-direction: column;
+    max-height: calc(var(--vvh) - 48px - var(--safe-t) - var(--safe-b));
 }
-.info-sheet .facts dt { text-align: left; font-size: 12px; color: var(--faint); white-space: nowrap; }
-.info-sheet .facts dd { margin: 0; font: 12.5px/1.45 var(--mono); color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
-.info-sheet .facts dd.dim { color: var(--dim); font-family: var(--ui); }
-.info-sheet .facts dd a { color: var(--accent); text-decoration: none; }
-.info-sheet .facts dd a:hover { text-decoration: underline; }
-/* How much of a plan window is gone. The bar is a picture of the number beside it, not a second
-   number — and the thresholds are the status line's, so the two turn amber on the same day. */
-.info-sheet .facts .meter {
-    display: inline-block; vertical-align: middle; width: 64px; height: 5px; margin-right: 8px;
-    border-radius: 3px; background: var(--line); overflow: hidden;
+.info-sheet h2 {
+    margin: 0; padding: 15px 20px 0 20px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);
 }
-.info-sheet .facts .meter i { display: block; height: 100%; background: var(--ok); }
-.info-sheet .facts .meter[data-level="warn"] i { background: var(--warn); }
-.info-sheet .facts .meter[data-level="bad"] i { background: var(--bad); }
-.info-sheet .facts .ping {
-    display: inline-flex; align-items: center; gap: 5px; margin-right: 8px;
-    font-size: 11px; color: var(--faint);
+.info-sheet .say { margin: 8px 20px 10px 20px; color: var(--dim); font-size: 12.5px; }
+.info-sheet .say[hidden] { display: none; }
+.info-sheet .facts {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    padding: 0 20px 4px 20px;
 }
-.info-sheet .facts .ping::before {
-    content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint);
+.info-sheet .said { margin: 0; padding: 10px 20px 0 20px; color: var(--accent); font-size: 12.5px; line-height: 1.5; }
+.info-sheet .said:empty { display: none; }
+.info-sheet .said.calm { color: var(--dim); }
+.info-sheet .buttons {
+    display: flex; justify-content: flex-end; gap: 8px;
+    padding: 12px 20px 16px 20px; margin-top: 10px; border-top: 1px solid var(--line);
 }
-.info-sheet .facts .ping[data-state="ok"]::before { background: var(--ok); }
-.info-sheet .facts .ping[data-state="running"]::before { background: var(--warn); }
-.info-sheet .facts .ping[data-state="fail"]::before,
-.info-sheet .facts .ping[data-state="down"]::before { background: var(--bad); }
-.info-sheet .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .info-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
+
+/* The headline. A faint warmth behind it, in the accent, so the top of the card reads as the
+   top and not as the first of six identical rows. */
+.info-sheet .hero { position: relative; padding: 10px 0 16px 0; }
+.info-sheet .hero::before {
+    content: ""; position: absolute; left: -20px; right: -20px; top: -46px; height: 150px;
+    background: radial-gradient(58% 78% at 14% 34%, var(--accent-in), transparent 72%);
+    pointer-events: none;
+}
+.info-sheet .hero > * { position: relative; }
+.info-sheet .hero .who { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--dim); }
+.info-sheet .hero .who .assistant-logo { width: 14px; height: 14px; }
+.info-sheet .hero .model {
+    margin: 7px 0 6px 0; font: 500 22px/1.15 var(--mono); letter-spacing: -0.01em; color: var(--ink);
+    overflow-wrap: anywhere;
+}
+.info-sheet .hero .meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 12px; color: var(--faint); }
+.info-sheet .hero .meta .dot { color: var(--line); }
+.info-sheet .hero .meta .sid {
+    font: 12px var(--mono); color: var(--dim); background: none; border: 0; padding: 0; cursor: pointer;
+    border-bottom: 1px dotted var(--faint);
+}
+.info-sheet .hero .meta .sid:hover { color: var(--ink); border-bottom-color: var(--ink); }
+
+/* One section: a hairline, a heading, and whatever the section is made of. They arrive one
+   after another the first time the card is drawn, and only the first time — a refresh that
+   made everything rise again would look like the card had been closed and opened. */
+.info-sheet .sec {
+    padding: 13px 0 15px 0; border-top: 1px solid var(--line);
+    animation: info-rise 320ms var(--ease) both; animation-delay: calc(var(--i, 0) * 45ms);
+}
+.info-sheet .facts.again .sec { animation: none; }
+@keyframes info-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.info-sheet .sec h3 {
+    margin: 0 0 10px 0; display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);
+}
+.info-sheet .sec h3 .aside { font: 12px var(--mono); letter-spacing: 0; text-transform: none; color: var(--dim); min-width: 0; overflow-wrap: anywhere; text-align: right; }
+.info-sheet .sec h3 .aside .ab { color: var(--accent); }
+.info-sheet .sec .note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--faint); }
+
+/* The models, as things a finger can hit. The one the session is on is filled in the accent;
+   one that has been asked for and not yet answered is drawn in a dashed line, which is the
+   card's way of saying "sent, not seen". A word typed instead of picked goes in the box. */
+.info-sheet .models { display: flex; flex-wrap: wrap; gap: 6px; }
+.info-sheet .models .m {
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px;
+    font: 12px var(--mono); color: var(--dim); background: var(--card); cursor: pointer;
+}
+.info-sheet .models .m:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); border-color: #33333c; }
+.info-sheet .models .m[data-on="1"] { border-color: var(--accent-ed); background: var(--accent-in); color: var(--accent); }
+.info-sheet .models .m[data-pending="1"] { border-style: dashed; border-color: var(--accent-ed); color: var(--accent); }
+.info-sheet .models .m:disabled { cursor: default; }
+.info-sheet .models .m:disabled:not([data-on="1"]):not([data-pending="1"]) { opacity: 0.45; }
+.info-sheet .models .other { display: flex; gap: 6px; flex: 1 1 100%; margin-top: 4px; }
+.info-sheet .models .other input {
+    flex: 1 1 auto; min-width: 0; font: 12px var(--mono); color: var(--ink);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px;
+}
+.info-sheet .models .other input::placeholder { color: var(--faint); font-family: var(--ui); }
+.info-sheet .models .other input:focus { outline: none; border-color: var(--accent-ed); }
+.info-sheet .models .other input:disabled { opacity: 0.45; }
+.info-sheet .models .other .chip { padding: 6px 12px; }
+
+/* The tokens: the total, large and light, then its four parts in tiles. */
+.info-sheet .big { display: flex; align-items: baseline; gap: 8px; margin: -2px 0 10px 0; }
+.info-sheet .big .n { font: 300 30px/1 var(--mono); letter-spacing: -0.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.info-sheet .big .unit { font-size: 12px; color: var(--faint); }
+.info-sheet .big .cost { margin-left: auto; font: 500 13px var(--mono); color: var(--accent); }
+.info-sheet .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.info-sheet .grid .cell { min-width: 0; padding: 8px 9px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
+.info-sheet .grid .cell b { display: block; font: 500 13px var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.info-sheet .grid .cell i { display: block; margin-top: 3px; font-style: normal; font-size: 10.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 420px) { .info-sheet .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* A plan window: its name, a bar, the number. The bar grows to the number after the paint —
+   see `Info.draw` — and the thresholds are the status line's, so both turn amber on the same
+   day. */
+.info-sheet .win { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 3px 10px; align-items: center; margin: 7px 0; }
+.info-sheet .win .wn { font: 500 12px var(--mono); color: var(--dim); }
+.info-sheet .win .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.info-sheet .win .bar i { display: block; height: 100%; width: var(--w, 0%); border-radius: 3px; background: var(--ok); transition: width 560ms var(--ease); }
+.info-sheet .win[data-level="warn"] .bar i { background: var(--warn); }
+.info-sheet .win[data-level="bad"] .bar i { background: var(--bad); }
+.info-sheet .win .pct { min-width: 40px; text-align: right; font: 500 12px var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.info-sheet .win[data-level="bad"] .pct { color: var(--bad); }
+.info-sheet .win .when { grid-column: 2 / 4; font-size: 11px; color: var(--faint); }
+
+/* The tree, in the status line's marks: `+` staged, `*` changed, `?` untracked, `!` conflict. */
+.info-sheet .marks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.info-sheet .marks .mk { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--dim); }
+.info-sheet .marks .mk b { font: 500 13px var(--mono); color: var(--ink); }
+.info-sheet .marks .mk[data-k="staged"] b { color: var(--ok); }
+.info-sheet .marks .mk[data-k="untracked"] b { color: var(--warn); }
+.info-sheet .marks .mk[data-k="conflict"] b { color: var(--bad); }
+.info-sheet .marks .mk[data-k="clean"] b { color: var(--ok); }
+
+/* A deploy: a light, a name, the state word, and where it is — the whole row the link. */
+.info-sheet .dep { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 12px; color: var(--dim); text-decoration: none; }
+.info-sheet .dep + .dep { border-top: 1px solid var(--line); }
+.info-sheet .dep .dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.info-sheet .dep[data-state="ok"] .dot { background: var(--ok); }
+.info-sheet .dep[data-state="running"] .dot { background: var(--warn); box-shadow: 0 0 0 3px rgba(176, 138, 74, 0.22); }
+.info-sheet .dep[data-state="fail"] .dot, .info-sheet .dep[data-state="down"] .dot { background: var(--bad); }
+.info-sheet .dep .lbl { color: var(--ink); font-weight: 500; }
+.info-sheet .dep .host { margin-left: auto; min-width: 0; max-width: 55%; font: 11px var(--mono); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+a.dep:hover .host { color: var(--accent); }
 
 /* --------------------------------------------------------------------------
    The door
@@ -2085,13 +2183,9 @@ a.link:active { background: var(--line); }
 <div class="overlay" id="info" hidden>
     <div class="sheet info-sheet" role="dialog" aria-modal="true" id="info-sheet" aria-label="About this session">
         <h2 id="info-title">About this session</h2>
-
-        <div class="block">
-            <p class="say" id="info-say"></p>
-            <div class="facts" id="info-body"></div>
-            <p class="said" id="info-said" role="status" aria-live="polite"></p>
-        </div>
-
+        <p class="say" id="info-say" hidden></p>
+        <div class="facts" id="info-body"></div>
+        <p class="said" id="info-said" role="status" aria-live="polite"></p>
         <div class="buttons">
             <button class="chip" id="info-refresh" type="button">Refresh</button>
             <button class="chip" id="info-close" type="button">Close</button>
@@ -2552,6 +2646,13 @@ var T = {
     webInfoNoDeploy: "No deploy recorded for this project.",
     webInfoFailed: "Could not read this session's info.",
     webInfoRefresh: "Refresh",
+    webInfoTokens: "tokens",
+    webInfoSwitchModel: "Switch model",
+    webInfoModelOther: "another model\u2026",
+    webInfoModelSent: "Sent /model {model}. The card shows it after the next reply.",
+    webInfoModelBusy: "Switching waits until the session is idle.",
+    webInfoLimitsClaude: "Claude Code only writes a window down once it is spent, so nothing is known until then.",
+    webInfoCopied: "Session id copied.",
 
     // Said in both places, so said once — the bar's own words, arriving here too.
     placeholder: "Message Claude Code…",
@@ -3575,8 +3676,22 @@ var Mock = (function () {
     // clean tree; and a Codex session with the plain percentage its rollout carries. Every
     // other session answers with what a session that has no transcript yet answers with.
     // `?info=fail` is the route refusing.
+    // What each assistant's `/model` will take: Claude Code an alias, Codex a slug.
+    var CLAUDE_MODELS = [
+        { id: "claude-fable-5", name: "Fable 5", command: "fable" },
+        { id: "claude-opus-5", name: "Opus 5", command: "opus" },
+        { id: "claude-sonnet-5", name: "Sonnet 5", command: "sonnet" },
+        { id: "claude-haiku-4-5", name: "Haiku 4.5", command: "haiku" }
+    ];
+    var CODEX_MODELS = [
+        { id: "gpt-5.6-sol", name: "GPT-5.6-Sol", command: "gpt-5.6-sol" },
+        { id: "gpt-5.5", name: "GPT-5.5", command: "gpt-5.5" },
+        { id: "gpt-5.4", name: "GPT-5.4", command: "gpt-5.4" },
+        { id: "gpt-5.4-mini", name: "GPT-5.4-Mini", command: "gpt-5.4-mini" }
+    ];
     var info = {
         "8F3A-1C": {
+            models: CLAUDE_MODELS,
             session: { id: "8F3A-1C", assistant: "claude", sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38",
                        model: "claude-fable-5", cwd: "/Users/x/code/clawdline",
                        startedAt: now - 5580, seconds: 5580 },
@@ -3592,6 +3707,7 @@ var Mock = (function () {
             ]
         },
         "2C71-90": {
+            models: CLAUDE_MODELS,
             session: { id: "2C71-90", assistant: "claude", model: "claude-opus-5", cwd: "/Users/x/code/atrium",
                        startedAt: now - 24300, seconds: 24300 },
             usage: { input: 19340, output: 61022, cacheRead: 7120400, cacheWrite: 380210, total: 7580972,
@@ -3604,6 +3720,7 @@ var Mock = (function () {
             ]
         },
         "44D2-05": {
+            models: CODEX_MODELS,
             session: { id: "44D2-05", assistant: "codex", model: "gpt-5.3-codex", cwd: "/Users/x/tmp/notes",
                        startedAt: now - 840, seconds: 840 },
             usage: { input: 8190546, output: 16956, cacheRead: 7978752, cacheWrite: 0, total: 8207502,
@@ -3882,7 +3999,8 @@ var Mock = (function () {
                     done({ info: {
                         session: { id: id, assistant: session.assistant, cwd: session.cwd },
                         limits: { windows: [] },
-                        deploy: []
+                        deploy: [],
+                        models: session.assistant === "codex" ? CODEX_MODELS : CLAUDE_MODELS
                     } });
                 }, 640);
             });
@@ -4320,15 +4438,17 @@ function taskLive(t) {
 /**
  * Whether a task still gets to say where a row sits.
  *
- * A finished task does, for ten minutes. Without that, the row of a child that has just landed
- * jumps out from under its root at the exact moment somebody looks over to read the result —
- * and the answer to "where did that go" is a scroll through the list. After ten minutes it is
- * history, and history has no business holding two rows together.
+ * A finished task does, for as long as the child's terminal is still open. The app closes that
+ * tab on its own schedule (or leaves it, if told to), and while it is there it belongs under the
+ * root that asked for it — a row that jumps out from under its root at the exact moment somebody
+ * looks over to read the result turns "where did that go" into a scroll through the list. Once
+ * the tab is gone there is no row to hold, and the task is history.
  */
 function taskShaping(t) {
     if (taskLive(t)) return true;
-    if (!t || !t.finishedAt) return false;
-    return (Math.floor(Date.now() / 1000) - t.finishedAt) < 600;
+    if (!t || !t.finishedAt || !t.child || !t.child.terminalId) return false;
+    var id = t.child.terminalId;
+    return S.sessions.some(function (s) { return s.id === id; });
 }
 
 /** The task a session is the child of, live or long over — what the header reads. The freshest
@@ -4508,6 +4628,8 @@ function render() {
     // one that is about to be hidden.
     renderAgentHead();
     renderComposer();
+    // The Session info card's buttons depend on whether the session is idle.
+    if (typeof Info === "object" && Info) Info.follow();
     renderWaiting();
     renderAgents();
     renderHints();
@@ -7375,8 +7497,12 @@ var Info = (function () {
     var data = null;     // as the Mac sent it; null until an answer has arrived
     var loading = false;
     var ticket = 0;      // the answer that is still wanted, so a stale one can be dropped
+    var drawn = false;   // the sections have risen once; a redraw should not make them rise again
+    var pending = null;  // the word sent after `/model`, until the transcript names that model
+    var busy = false;    // a `/model` on its way to the Mac
+    var stateSeen = "";  // the session's state at the last draw, so a change redraws the buttons
 
-    function say(w) { els["info-say"].textContent = w || ""; }
+    function say(w) { els["info-say"].textContent = w || ""; els["info-say"].hidden = !w; }
     function said(w, calm) {
         els["info-said"].textContent = w || "";
         els["info-said"].className = "said" + (calm ? " calm" : "");
@@ -7409,102 +7535,184 @@ var Info = (function () {
     }
 
     function count(x) { return typeof x === "number" ? esc(x.toLocaleString()) : esc(T.webInfoUnknown); }
+    /** `6.59M`, `80.1K`, `318` — the size of a number at a glance; the exact one is in the title. */
+    function compact(n) {
+        if (typeof n !== "number") return T.webInfoUnknown;
+        if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 1 : 2) + "M";
+        if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + "K";
+        return String(n);
+    }
     function dollars(x) { return x < 0.01 ? "<$0.01" : "$" + x.toFixed(2); }
     function openable(url) { return /^https?:\/\//i.test(url || ""); }
 
-    function row(label, value, dim) {
-        return "<dt>" + esc(label) + "</dt><dd" + (dim ? ' class="dim"' : "") + ">" + value + "</dd>";
+    function sec(i, title, aside, body) {
+        return '<section class="sec" style="--i:' + i + '"><h3><span>' + esc(title) + "</span>" +
+            (aside ? '<span class="aside">' + aside + "</span>" : "") + "</h3>" + body + "</section>";
     }
-    function group(title, rows) { return "<h3>" + esc(title) + "</h3><dl>" + rows + "</dl>"; }
-    function note(title, text) { return "<h3>" + esc(title) + '</h3><p class="say">' + esc(text) + "</p>"; }
+    function note(text) { return '<p class="note">' + esc(text) + "</p>"; }
 
-    /** One plan window: a bar, the number, and — when it is known — when it comes back. */
-    function meter(w) {
-        var pct = typeof w.usedPercent === "number" ? Math.max(0, Math.min(100, Math.round(w.usedPercent))) : null;
-        if (pct === null) return esc(T.webInfoUnknown);
-        // The status line's thresholds, so both turn amber on the same day.
-        var level = pct >= 85 ? "bad" : (pct >= 60 ? "warn" : "ok");
-        var out = '<span class="meter" data-level="' + level + '"><i style="width:' + pct + '%"></i></span>' + pct + "%";
-        if (w.hit) out += " · " + esc(T.webInfoLimitHit);
-        var when = resetWhen(w.resetsAt);
-        if (when) out += " · " + esc(fill(T.webInfoResets, { when: when }));
+    function session() { return forId ? byId(forId) : null; }
+    /** Only an idle session takes a `/model`: typed into a working one it interrupts the turn
+     *  with a question on the Mac, and typed into one that is asking, it is the answer. */
+    function canSwitch() { var s = session(); return !!(s && S.write && s.state === "idle" && !busy); }
+    /** The row the session is on. By prefix, so `claude-haiku-4-5-20251001` finds `claude-haiku-4-5`. */
+    function onModel(current, m) { return !!current && (current === m.id || current.indexOf(m.id) === 0); }
+
+    function hero(s, u) {
+        var model = s.model || (u && u.model) || "";
+        var meta = [];
+        if (s.cwd) meta.push('<span title="' + esc(T.webInfoDirectory) + '">' + esc(shortPath(s.cwd)) + "</span>");
+        if (s.sessionId) {
+            meta.push('<button type="button" class="sid" data-copy="' + esc(s.sessionId) + '" title="' +
+                esc(T.webInfoSessionId + ": " + s.sessionId) + '">' + esc(String(s.sessionId).slice(0, 8)) + "</button>");
+        }
+        if (typeof s.seconds === "number") {
+            meta.push('<span title="' + esc(T.webInfoRunningFor) + '">' + esc(span(s.seconds)) + "</span>");
+        }
+        return '<div class="hero">' +
+            '<div class="who">' + assistantLogo(s.assistant) + "<span>" + esc(s.assistant || T.webInfoUnknown) + "</span></div>" +
+            '<div class="model">' + esc(model || T.webInfoUnknown) + "</div>" +
+            '<div class="meta">' + meta.join('<span class="dot">·</span>') + "</div>" +
+            "</div>";
+    }
+
+    function modelsHTML(models, current) {
+        var can = canSwitch();
+        var chips = models.map(function (m) {
+            var on = onModel(current, m);
+            var wait = !on && pending === m.command;
+            return '<button type="button" class="m" data-model="' + esc(m.command) + '" data-name="' + esc(m.name) + '"' +
+                (on ? ' data-on="1" aria-current="true"' : "") + (wait ? ' data-pending="1"' : "") +
+                (can && !on ? "" : " disabled") + ">" + esc(m.name) + "</button>";
+        }).join("");
+        // A word typed rather than picked has no row of its own, so it is drawn as one while it
+        // is on its way.
+        if (pending && !models.some(function (m) { return m.command === pending; })) {
+            chips += '<button type="button" class="m" data-pending="1" disabled>' + esc(pending) + "</button>";
+        }
+        var other = '<form class="other" data-other="1">' +
+            '<input type="text" name="model" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" ' +
+            'placeholder="' + esc(T.webInfoModelOther) + '" aria-label="' + esc(T.webInfoModelOther) + '"' + (can ? "" : " disabled") + ">" +
+            '<button type="submit" class="chip"' + (can ? "" : " disabled") + ">" + esc(T.webSend) + "</button></form>";
+        return '<div class="models">' + chips + other + "</div>" + (can ? "" : note(T.webInfoModelBusy));
+    }
+
+    function usageHTML(u) {
+        if (!u) return note(T.webInfoNoUsage);
+        var cells = [[u.input, T.webInfoInput], [u.output, T.webInfoOutput],
+                     [u.cacheRead, T.webInfoCacheRead], [u.cacheWrite, T.webInfoCacheWrite]];
+        return '<div class="big"><span class="n" title="' + count(u.total) + '">' + esc(compact(u.total)) + "</span>" +
+            '<span class="unit">' + esc(T.webInfoTokens) + "</span>" +
+            // Only where a price is known. Codex bills against a plan rather than per token, and
+            // the Mac says nothing rather than a made-up number — so this says nothing too.
+            (typeof u.costUsd === "number" ? '<span class="cost">' + esc(dollars(u.costUsd)) + "</span>" : "") +
+            "</div>" +
+            '<div class="grid">' + cells.map(function (c) {
+                return '<div class="cell"><b title="' + count(c[0]) + '">' + esc(compact(c[0])) + "</b><i>" + esc(c[1]) + "</i></div>";
+            }).join("") + "</div>";
+    }
+
+    function limitsHTML(l, assistant) {
+        var windows = l.windows || [];
+        // Nothing known is said as such, never as 0% — and for Claude, why: its transcript only
+        // records a window once it has been spent.
+        if (!windows.length) return note(assistant === "claude" ? T.webInfoLimitsClaude : T.webInfoUnknown);
+        return windows.map(function (w) {
+            var pct = typeof w.usedPercent === "number" ? Math.max(0, Math.min(100, Math.round(w.usedPercent))) : null;
+            var level = pct === null ? "" : (pct >= 85 ? "bad" : (pct >= 60 ? "warn" : "ok"));
+            var tail = [];
+            if (w.hit) tail.push(esc(T.webInfoLimitHit));
+            var when = resetWhen(w.resetsAt);
+            if (when) tail.push(esc(fill(T.webInfoResets, { when: when })));
+            return '<div class="win" data-level="' + level + '"><span class="wn">' + esc(w.name) + "</span>" +
+                '<span class="bar"><i data-w="' + (pct === null ? 0 : pct) + '%"></i></span>' +
+                '<span class="pct">' + (pct === null ? esc(T.webInfoUnknown) : pct + "%") + "</span>" +
+                (tail.length ? '<span class="when">' + tail.join(" · ") + "</span>" : "") + "</div>";
+        }).join("");
+    }
+
+    function branchOf(f) {
+        if (!f) return "";
+        var b = f.branch || (f.head ? f.head.slice(0, 7) : "");
+        if (!b) return "";
+        var out = "⎇ " + esc(b);
+        if (f.ahead) out += ' <span class="ab">↑' + f.ahead + "</span>";
+        if (f.behind) out += ' <span class="ab">↓' + f.behind + "</span>";
         return out;
     }
 
+    function filesHTML(f) {
+        if (!f) return note(T.webInfoNotRepo);
+        var marks = [["staged", "+", f.staged, T.webInfoStaged], ["unstaged", "*", f.unstaged, T.webInfoUnstaged],
+                     ["untracked", "?", f.untracked, T.webInfoUntracked], ["conflict", "!", f.conflict, T.webInfoConflict]]
+            .filter(function (m) { return m[2]; });
+        if (!marks.length) return '<div class="marks"><span class="mk" data-k="clean"><b>✓</b>' + esc(T.webInfoClean) + "</span></div>";
+        return '<div class="marks">' + marks.map(function (m) {
+            return '<span class="mk" data-k="' + m[0] + '"><b>' + m[1] + m[2] + "</b>" + esc(m[3]) + "</span>";
+        }).join("") + "</div>";
+    }
+
+    function deployHTML(dep) {
+        if (!dep.length) return note(T.webInfoNoDeploy);
+        return dep.map(function (link) {
+            var word = STATES[link.state] ? T[STATES[link.state]] : "";
+            var url = String(link.url || "");
+            var inner = '<span class="dot"></span><span class="lbl">' + esc(link.label || link.kind) + "</span>" +
+                (word ? '<span class="st">' + esc(word) + "</span>" : "") +
+                '<span class="host">' + esc(url.replace(/^https?:\/\//i, "")) + "</span>";
+            // The same whitelist as the Links sheet: a `javascript:` in an `href` is script
+            // running on this page with this page's cookie, so anything not plainly http(s)
+            // is drawn as text.
+            return openable(url)
+                ? '<a class="dep" data-state="' + esc(link.state || "") + '" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + inner + "</a>"
+                : '<div class="dep" data-state="' + esc(link.state || "") + '">' + inner + "</div>";
+        }).join("");
+    }
+
     function html(d) {
-        var s = d.session || {}, u = d.usage, l = d.limits || {}, f = d.files, dep = d.deploy || [];
-        var out = "", rows;
-
-        // Which session, on what model. The model is the one the transcript last named, so a
-        // session that switched mid-way shows what it is on now rather than what it began on.
-        rows = row(T.webInfoAssistant, esc(s.assistant || T.webInfoUnknown));
-        rows += row(T.webInfoModel, esc(s.model || (u && u.model) || T.webInfoUnknown));
-        if (s.sessionId) rows += row(T.webInfoSessionId, esc(s.sessionId));
-        if (s.cwd) rows += row(T.webInfoDirectory, esc(shortPath(s.cwd)));
-        if (typeof s.seconds === "number") rows += row(T.webInfoRunningFor, esc(span(s.seconds)));
-        out += group(T.webInfoSession, rows);
-
-        if (u) {
-            rows = row(T.webInfoInput, count(u.input)) + row(T.webInfoOutput, count(u.output))
-                + row(T.webInfoCacheRead, count(u.cacheRead)) + row(T.webInfoCacheWrite, count(u.cacheWrite))
-                + row(T.webInfoTotal, count(u.total));
-            // Only where a price is known. Codex bills against a plan rather than per token, and
-            // the Mac says nothing rather than a made-up number — so this row says nothing too.
-            if (typeof u.costUsd === "number") rows += row(T.webInfoCost, esc(dollars(u.costUsd)));
-            out += group(T.webInfoUsage, rows);
-        } else {
-            out += note(T.webInfoUsage, T.webInfoNoUsage);
-        }
-
-        var windows = l.windows || [];
-        if (windows.length) {
-            out += group(T.webInfoLimits, windows.map(function (w) { return row(w.name, meter(w)); }).join(""));
-        } else {
-            out += note(T.webInfoLimits, T.webInfoUnknown);
-        }
-
-        if (f) {
-            var branch = f.branch || (f.head ? f.head.slice(0, 7) : "");
-            if (f.ahead) branch += " ↑" + f.ahead;
-            if (f.behind) branch += " ↓" + f.behind;
-            rows = row(T.webInfoBranch, esc(branch || T.webInfoUnknown));
-            if (f.staged) rows += row(T.webInfoStaged, count(f.staged));
-            if (f.unstaged) rows += row(T.webInfoUnstaged, count(f.unstaged));
-            if (f.untracked) rows += row(T.webInfoUntracked, count(f.untracked));
-            if (f.conflict) rows += row(T.webInfoConflict, count(f.conflict));
-            out += group(T.webInfoFiles, rows);
-            if (!(f.staged || f.unstaged || f.untracked || f.conflict)) {
-                out += '<p class="say">' + esc(T.webInfoClean) + "</p>";
-            }
-        } else {
-            out += note(T.webInfoFiles, T.webInfoNotRepo);
-        }
-
-        if (dep.length) {
-            rows = dep.map(function (link) {
-                var word = STATES[link.state] ? T[STATES[link.state]] : "";
-                var ping = word ? '<span class="ping" data-state="' + esc(link.state) + '">' + esc(word) + "</span>" : "";
-                var url = String(link.url || "");
-                // The same whitelist as the Links sheet: a `javascript:` in an `href` is script
-                // running on this page with this page's cookie, so anything not plainly http(s)
-                // is drawn as text.
-                var where = openable(url)
-                    ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(url.replace(/^https?:\/\//i, "")) + "</a>"
-                    : esc(url);
-                return row(link.label || link.kind, ping + where);
-            }).join("");
-            out += group(T.webInfoDeploy, rows);
-        } else {
-            out += note(T.webInfoDeploy, T.webInfoNoDeploy);
-        }
+        var s = d.session || {}, u = d.usage, l = d.limits || {}, f = d.files, dep = d.deploy || [], models = d.models || [];
+        // The model is the one the transcript last named, so a session that switched mid-way
+        // shows what it is on now rather than what it began on — and a `/model` the transcript
+        // has since confirmed is no longer pending.
+        var current = s.model || (u && u.model) || "";
+        if (pending && models.some(function (m) { return m.command === pending && onModel(current, m); })) pending = null;
+        var out = hero(s, u), i = 0;
+        // Read-only pairings get no buttons rather than dead ones: there is nothing they could do.
+        if (models.length && S.write) out += sec(++i, T.webInfoSwitchModel, "", modelsHTML(models, current));
+        out += sec(++i, T.webInfoUsage, "", usageHTML(u));
+        out += sec(++i, T.webInfoLimits, "", limitsHTML(l, s.assistant));
+        out += sec(++i, T.webInfoFiles, branchOf(f), filesHTML(f));
+        out += sec(++i, T.webInfoDeploy, "", deployHTML(dep));
         return out;
     }
 
     function draw() {
         if (els.info.hidden) return;
+        var s = session();
+        stateSeen = s ? s.state : "";
         say(loading && !data ? T.webLoading : "");
-        els["info-body"].innerHTML = data ? html(data) : "";
+        // A redraw under somebody's fingers keeps what they had typed and where the caret was.
+        var box = els["info-body"];
+        var typed = box.querySelector(".other input");
+        var kept = typed ? typed.value : "";
+        var focused = !!typed && document.activeElement === typed;
+        var again = drawn;
+        box.classList.toggle("again", again);
+        box.innerHTML = data ? html(data) : "";
+        if (data) drawn = true;
         els["info-refresh"].disabled = loading;
+        typed = box.querySelector(".other input");
+        if (typed && kept) typed.value = kept;
+        if (typed && focused && !typed.disabled) typed.focus({ preventScroll: true });
+        // The bars grow from nothing to their number the first time: laid out once at nothing
+        // (the read of `offsetWidth` is what forces that), then given the number, so the
+        // transition has somewhere to start. Not on a frame callback — a tab in the background
+        // gets none, and a card opened there would show every window as empty. A redraw sets
+        // them straight away: a bar that shrank to nothing and grew back every time the session
+        // changed state would be a nervous tic, not a picture.
+        var bars = box.querySelectorAll(".bar i");
+        if (!again && bars.length) void box.offsetWidth;
+        for (var k = 0; k < bars.length; k++) bars[k].style.setProperty("--w", bars[k].dataset.w);
     }
 
     function load(id) {
@@ -7531,6 +7739,9 @@ var Info = (function () {
             if (!S.openId) return;
             forId = S.openId;
             data = null;
+            drawn = false;
+            pending = null;
+            busy = false;
             said("");
             els.info.hidden = false;
             load(forId);
@@ -7550,10 +7761,47 @@ var Info = (function () {
             loading = false;
             data = null;
             forId = null;
+            pending = null;
+            busy = false;
         },
 
-        /** The session under the card changed, so what is in it is about something else. */
-        follow: function () { if (!els.info.hidden && S.openId !== forId) this.close(); }
+        /** The session under the card changed, so what is in it is about something else; or
+         *  its state did, and the buttons under the model depend on that. Redrawn only then: a
+         *  redraw wipes a half-typed model name. */
+        follow: function () {
+            if (els.info.hidden) return;
+            if (S.openId !== forId) { this.close(); return; }
+            var s = session();
+            if (data && s && s.state !== stateSeen) draw();
+        },
+
+        /** `/model <word>`, typed into the session as one line. One word: the assistants take
+         *  no more than one, and a second would be typed into the terminal as part of it. */
+        switchTo: function (word, name) {
+            var id = forId;
+            word = String(word || "").trim().split(/\s+/)[0] || "";
+            if (!word || !canSwitch()) return;
+            busy = true;
+            said("");
+            draw();
+            api.send(id, "/model " + word, []).then(function () {
+                if (forId !== id) return;
+                busy = false;
+                pending = word;
+                said(fill(T.webInfoModelSent, { model: name || word }), true);
+                draw();
+            }).catch(function (e) {
+                if (forId !== id) return;
+                busy = false;
+                said((e && e.message) || T.webInfoFailed);
+                draw();
+            });
+        },
+
+        copy: function (text) {
+            if (!text || !navigator.clipboard) return;
+            navigator.clipboard.writeText(text).then(function () { toast(T.webInfoCopied); }).catch(function () {});
+        }
     };
 })();
 
@@ -7561,6 +7809,20 @@ els.info.addEventListener("click", function () { Info.close(); });
 els["info-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
 els["info-close"].addEventListener("click", function () { Info.close(); });
 els["info-refresh"].addEventListener("click", function () { Info.refresh(); });
+els["info-body"].addEventListener("click", function (ev) {
+    var t = ev.target;
+    var chip = t.closest ? t.closest("button[data-model]") : null;
+    if (chip) { if (!chip.disabled) Info.switchTo(chip.dataset.model, chip.dataset.name); return; }
+    var sid = t.closest ? t.closest("button[data-copy]") : null;
+    if (sid) Info.copy(sid.dataset.copy);
+});
+els["info-body"].addEventListener("submit", function (ev) {
+    var form = ev.target;
+    if (!form || !form.dataset || !form.dataset.other) return;
+    ev.preventDefault();
+    var input = form.querySelector("input");
+    Info.switchTo(input ? input.value : "", "");
+});
 
 /* ---- notifications ------------------------------------------------------- */
 
