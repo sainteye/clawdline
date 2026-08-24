@@ -407,6 +407,7 @@ struct Portuguese: Copy {
     let webInfoLimitsClaude = "O Claude Code só anota uma janela quando ela se esgota; até lá, nada se sabe."
     let webInfoCopied = "Id da sessão copiado."
     let webInfoAsOf = "às {when}"
+    let webInfoWhyUnknown = "Por que é desconhecido, e como obter os números"
     let webSettingsOrder = "Transcrição"
     let webSettingsOrderSay = "De que ponta começar a ler uma transcrição. Vale para todas as sessões, e no teclado `r` faz a mesma coisa."
     let webAskLabel = "perguntou"

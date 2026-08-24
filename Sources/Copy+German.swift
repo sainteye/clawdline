@@ -404,6 +404,7 @@ struct German: Copy {
     let webInfoLimitsClaude = "Claude Code notiert ein Fenster erst, wenn es aufgebraucht ist; bis dahin ist nichts bekannt."
     let webInfoCopied = "Sitzungs-ID kopiert."
     let webInfoAsOf = "Stand {when}"
+    let webInfoWhyUnknown = "Warum unbekannt, und wie die Zahlen kommen"
     let webSettingsOrder = "Verlauf"
     let webSettingsOrderSay = "Von welchem Ende her ein Verlauf gelesen wird. Das gilt für jede Sitzung, und auf der Tastatur macht `r` dasselbe."
     let webAskLabel = "hat gefragt"

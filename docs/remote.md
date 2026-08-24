@@ -465,6 +465,59 @@ $ jq -r '"\(.at|todate)  \(.event)  \(.device // .id // "")"' ~/.config/clawdlin
 Nothing rotates this file and nothing trims it. It grows by a line per event, which for this
 feature is a handful a day.
 
+### The plan windows say unknown
+
+The Session info card draws a Claude session's 5h and 7d windows from a file the status line
+keeps, because Claude Code hands those two numbers to the status line on stdin and writes them
+nowhere else — not the transcript, not a file of its own. The `?` beside *unknown* on the card
+points here. It means one of three things, in the order they usually turn out to be:
+
+**1. The status line is not [claude-bestiary](https://github.com/sainteye/claude-bestiary)'s.**
+That is the one that writes the file. Install it:
+
+```bash
+git clone https://github.com/sainteye/claude-bestiary
+cd claude-bestiary
+./install.sh          # symlinks into ~/.claude, idempotent
+./verify.sh
+```
+
+and put it in `~/.claude/settings.json`:
+
+```json
+{ "statusLine": { "type": "command",
+                  "command": "bash ~/.claude/statusline-command.sh",
+                  "refreshInterval": 2 } }
+```
+
+`refreshInterval` matters here as well as on the bar: the file is rewritten on that beat, so
+without it the numbers only move when something else on the line does.
+
+**2. No Claude Code session is open on the Mac.** The status line runs inside one, so the file
+only moves while one is running. A window whose reset has passed is dropped rather than shown
+stale, and the card goes back to *unknown* — which is the word for it, since nothing since then
+has been seen. Open a session and the numbers are back within a couple of seconds.
+
+**3. The file is somewhere else.** Clawdline reads `rate-limits.json` from the directory the
+status line writes its other caches to: `~/.claude/statusline-cache/` unless `status_dir` in
+`~/.config/clawdline/config.json` says otherwise. Check that the file is there and current:
+
+```console
+$ cat ~/.claude/statusline-cache/rate-limits.json
+{
+  "at": 1787537762,
+  "rate_limits": {
+    "five_hour": { "resets_at": 1787547000, "used_percentage": 15 },
+    "seven_day": { "resets_at": 1787860800, "used_percentage": 8 }
+  },
+  "session_id": "beaa6f31-…"
+}
+```
+
+A status line of your own can write that shape to that path and the card will read it the same
+way: `at` in Unix seconds, and under `rate_limits` the `five_hour` and `seven_day` objects exactly
+as Claude Code hands them over.
+
 ---
 
 ## Turning it off

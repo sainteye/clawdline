@@ -633,6 +633,7 @@ protocol Copy {
     var webInfoLimitsClaude: String { get }
     var webInfoCopied: String { get }
     var webInfoAsOf: String { get }
+    var webInfoWhyUnknown: String { get }
     var webSettingsOrder: String { get }
     var webSettingsOrderSay: String { get }
 

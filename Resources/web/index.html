@@ -1608,6 +1608,16 @@ a.link:active { background: var(--line); }
 .info-sheet .sec h3 .aside { font: 12px var(--mono); letter-spacing: 0; text-transform: none; color: var(--dim); min-width: 0; overflow-wrap: anywhere; text-align: right; }
 .info-sheet .sec h3 .aside .ab { color: var(--accent); }
 .info-sheet .sec .note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--faint); }
+/* A door beside a fact that cannot be read: a small ring with a question mark in it, to the
+   page of the manual that says why and what to install. Drawn faint, since the sentence beside
+   it already says what it says; lit in the accent under a finger. */
+.info-sheet .sec .note .why {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; margin-left: 3px; vertical-align: -3px;
+    border: 1px solid var(--dim); border-radius: 50%;
+    font: 600 10px/1 var(--mono); color: var(--dim); text-decoration: none;
+}
+.info-sheet .sec .note .why:hover { border-color: var(--accent); color: var(--accent); }
 
 /* The models, as things a finger can hit. The one the session is on is filled in the accent;
    one that has been asked for and not yet answered is drawn in a dashed line, which is the
@@ -2654,6 +2664,7 @@ var T = {
     webInfoLimitsClaude: "Claude Code only writes a window down once it is spent, so nothing is known until then.",
     webInfoCopied: "Session id copied.",
     webInfoAsOf: "as of {when}",
+    webInfoWhyUnknown: "Why this is unknown, and how to get the numbers",
 
     // Said in both places, so said once — the bar's own words, arriving here too.
     placeholder: "Message Claude Code…",
@@ -7493,6 +7504,10 @@ els["links-list"].addEventListener("click", function (ev) {
  */
 var Info = (function () {
     var STATES = { ok: "webLinkOk", fail: "webLinkFail", down: "webLinkDown", running: "webLinkRunning" };
+    // Where the `?` beside an unknown plan window goes: the page of the manual that says why it
+    // is unknown and what to install so that it is not. A window that cannot be read is the one
+    // fact on this card somebody can do something about, so it is the one with a door.
+    var HELP_LIMITS = "https://github.com/sainteye/clawdline/blob/main/docs/remote.md#the-plan-windows-say-unknown";
 
     var forId = null;    // whose card this is
     var data = null;     // as the Mac sent it; null until an answer has arrived
@@ -7628,7 +7643,12 @@ var Info = (function () {
         var windows = l.windows || [];
         // Nothing known is said as such, never as 0% — and for Claude, why: its transcript only
         // records a window once it has been spent.
-        if (!windows.length) return note(assistant === "claude" ? T.webInfoLimitsClaude : T.webInfoUnknown);
+        if (!windows.length) {
+            if (assistant !== "claude") return note(T.webInfoUnknown);
+            return '<p class="note">' + esc(T.webInfoLimitsClaude) +
+                ' <a class="why" href="' + HELP_LIMITS + '" target="_blank" rel="noopener noreferrer" title="' +
+                esc(T.webInfoWhyUnknown) + '" aria-label="' + esc(T.webInfoWhyUnknown) + '">?</a></p>';
+        }
         return windows.map(function (w) {
             var pct = typeof w.usedPercent === "number" ? Math.max(0, Math.min(100, Math.round(w.usedPercent))) : null;
             var level = pct === null ? "" : (pct >= 85 ? "bad" : (pct >= 60 ? "warn" : "ok"));

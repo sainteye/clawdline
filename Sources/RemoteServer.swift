@@ -1774,6 +1774,7 @@ final class RemoteServer {
             "webInfoLimitsClaude": t.webInfoLimitsClaude,
             "webInfoCopied": t.webInfoCopied,
             "webInfoAsOf": t.webInfoAsOf,
+            "webInfoWhyUnknown": t.webInfoWhyUnknown,
         ])
 
         var response = Response.json(out)

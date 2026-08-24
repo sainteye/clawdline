@@ -404,6 +404,7 @@ struct Turkish: Copy {
     let webInfoLimitsClaude = "Claude Code bir pencereyi ancak tükenince yazar; o zamana kadar bir şey bilinmez."
     let webInfoCopied = "Oturum kimliği kopyalandı."
     let webInfoAsOf = "{when} itibarıyla"
+    let webInfoWhyUnknown = "Neden bilinmiyor, ve sayılar nasıl alınır"
     let webSettingsOrder = "Döküm"
     let webSettingsOrderSay = "Döküm hangi uçtan okunmaya başlasın. Her oturum için geçerli, klavyede `r` de aynısını yapar."
     let webAskLabel = "sordu"

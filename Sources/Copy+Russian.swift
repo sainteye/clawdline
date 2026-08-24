@@ -404,6 +404,7 @@ struct Russian: Copy {
     let webInfoLimitsClaude = "Claude Code записывает окно только когда оно исчерпано; до тех пор ничего не известно."
     let webInfoCopied = "Id сессии скопирован."
     let webInfoAsOf = "на {when}"
+    let webInfoWhyUnknown = "Почему неизвестно, и как получить цифры"
     let webSettingsOrder = "Расшифровка"
     let webSettingsOrderSay = "С какого конца начинать читать расшифровку. Это касается каждой сессии, а с клавиатуры то же самое делает `r`."
     let webAskLabel = "спросил"

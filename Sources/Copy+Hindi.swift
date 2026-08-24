@@ -408,6 +408,7 @@ struct Hindi: Copy {
     let webInfoLimitsClaude = "Claude Code कोई window तभी लिखता है जब वह खत्म हो जाए; तब तक कुछ पता नहीं।"
     let webInfoCopied = "Session id कॉपी हो गया।"
     let webInfoAsOf = "{when} तक"
+    let webInfoWhyUnknown = "यह अज्ञात क्यों है, और आँकड़े कैसे पाएँ"
     let webSettingsOrder = "ट्रांसक्रिप्ट"
     let webSettingsOrderSay = "ट्रांसक्रिप्ट किस सिरे से पढ़नी शुरू हो। यह हर session पर लागू होता है, और कीबोर्ड पर `r` भी यही करता है।"
     let webAskLabel = "ने पूछा"
