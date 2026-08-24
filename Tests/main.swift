@@ -4870,6 +4870,72 @@ group("finishing a task takes that task's secret and nothing else") {
     expect("and says nothing else about it", remoteErrorCode(unknown), "not_found")
 }
 
+group("closing a root session takes the work it dispatched with it") {
+    // The cascade behind `POST /v1/sessions/:id/end`. What is asserted here is the *selection* —
+    // which tasks a closing root takes down — because the acting half ends terminal tabs, and a
+    // test that opened tabs to close them would be a test nobody dares run twice.
+    Orchestrator.forget()
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before {
+            try? before.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Orchestrator.forget()
+    }
+    let root = "8967a1ee-9718-45ed-94d5-c81178870072"
+    let stranger = "1c9a4d55-6f31-4b02-8d77-0a2e3c4b5d61"
+    let born = Date().timeIntervalSince1970
+    func row(_ id: String, _ state: String, rootSession: String?, at: Double) -> [String: Any] {
+        var out: [String: Any] = ["id": id, "state": state, "kind": "custom", "title": "a task",
+                                  "assistant": "claude", "project_dir": "/tmp",
+                                  "timeout_minutes": 30, "created": at,
+                                  "secret_hash": Orchestrator.hash(ofSecret: String(repeating: "a1", count: 32)),
+                                  "artifacts": []]
+        if let rootSession { out["root_session"] = rootSession }
+        return out
+    }
+    let live = "0f8fad5b-d9cb-469f-a165-70867728950e"
+    let alsoLive = "22222222-3333-4444-5555-666666666666"
+    let done = "33333333-4444-5555-6666-777777777777"
+    let elsewhere = "44444444-5555-6666-7777-888888888888"
+    let orphan = "55555555-6666-7777-8888-999999999999"
+    let rows: [[String: Any]] = [
+        row(alsoLive, "queued", rootSession: root, at: born + 1),
+        row(live, "briefed", rootSession: root, at: born),
+        row(done, "success", rootSession: root, at: born + 2),
+        row(elsewhere, "briefed", rootSession: stranger, at: born + 3),
+        row(orphan, "briefed", rootSession: nil, at: born + 4),
+    ]
+    let stored = (try? JSONSerialization.data(withJSONObject: ["version": 1, "tasks": rows])) ?? Data()
+    try? FileManager.default.createDirectory(at: store.deletingLastPathComponent(),
+                                             withIntermediateDirectories: true)
+    try? stored.write(to: store, options: .atomic)
+
+    expect("every live task of this root goes, oldest first",
+           Orchestrator.liveTasks(dispatchedBy: root), [live, alsoLive])
+    check("a task that already finished is left where it is — its tab is the linger's business",
+          !Orchestrator.liveTasks(dispatchedBy: root).contains(done))
+    expect("another root's child is nobody else's to cancel",
+           Orchestrator.liveTasks(dispatchedBy: stranger), [elsewhere])
+    check("and a task with no root named is not swept up with them",
+          !Orchestrator.liveTasks(dispatchedBy: root).contains(orphan)
+              && !Orchestrator.liveTasks(dispatchedBy: stranger).contains(orphan))
+    expect("a session nobody dispatched from cancels nothing",
+           Orchestrator.liveTasks(dispatchedBy: "77777777-8888-9999-aaaa-bbbbbbbbbbbb"), [])
+
+    // The identity half. A session that never left a hook note cannot be matched to a task, and
+    // the answer to that is *nothing* — the failure worth guarding against is a nil id quietly
+    // matching every task that has no root either.
+    let unknown = TargetSession(backend: .iterm, id: "%no-such-tab%", name: "x",
+                                tty: "/dev/ttys-nobody", windowIndex: 0, tabIndex: 0,
+                                assistant: .claude)
+    expect("a session with no note of its own takes nothing down with it",
+           Orchestrator.cancelChildren(ofRoot: unknown), [])
+}
+
 group("the Session info card is read off the files, and says unknown rather than 0%") {
     // The porcelain, counted. A partial add is under both headings, as `git status` lists it.
     let porcelain = """

@@ -363,16 +363,86 @@ enum Orchestrator {
             return .refused(409, "already_done", "That task already finished.")
         }
         RemoteAuth.audit("orchestrator.cancel", ["task": taskID])
-        if let childID = task.childTerminalId,
-           let child = target(withID: childID) {
-            _ = Targets.end(child)
-        }
-        DispatchQueue.main.async { finalize(taskID, as: .cancelled, summary: "Cancelled.") }
+        cancelInPlace(task)
         // The record it answers with still says the old state — finalize runs on main a moment
         // later — so the state is overridden here for the reply alone.
         var record = existingRecord(taskID) ?? [:]
         record["state"] = State.cancelled.rawValue
         return .ok(["ok": true, "task": record])
+    }
+
+    /// Cancelling with no HTTP answer wrapped around it: the child's tab ended the polite way,
+    /// then the task written down. Shared with the cascade below so there is one way to cancel a
+    /// task rather than two that drift.
+    ///
+    /// Not on the main thread: `Targets.end` types the quit word and waits over a second for it
+    /// to land. Both callers arrive on the server's queue.
+    private static func cancelInPlace(_ task: Task) {
+        if let childID = task.childTerminalId,
+           let child = target(withID: childID) {
+            _ = Targets.end(child)
+        }
+        DispatchQueue.main.async { finalize(task.id, as: .cancelled, summary: "Cancelled.") }
+    }
+
+    /// The live tasks a root session dispatched, oldest first.
+    ///
+    /// Apart from the cascade because it is the half worth testing on its own: *live* only — a
+    /// task that already ended is ended, and a reported child's tab belongs to the linger in
+    /// `closeChild` rather than to this — and matched on `root_session`, which is the assistant's
+    /// own id for itself and not any name this app has for a tab.
+    static func liveTasks(dispatchedBy rootSessionId: String) -> [String] {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        return tasks.values
+            .filter { !$0.state.isTerminal && $0.rootSessionId == rootSessionId }
+            .sorted { $0.created < $1.created }
+            .map { $0.id }
+    }
+
+    /// Ending a root session ends the work it dispatched: every live task of its own is cancelled
+    /// and every child's tab closed with it. Answers with the tasks it cancelled.
+    ///
+    /// **Runs before the root's own tab goes, and the ordering is the whole of it.** A task knows
+    /// its root by the session id in that session's hook note, and the note is reached through
+    /// the tty of a tab that is a second away from leaving the reading. Close the root first and
+    /// there is nothing left to match against: the children run on, reporting into a conversation
+    /// that ended.
+    ///
+    /// **Explicitly closing a session, and nothing else.** A tab closed by hand leaves the
+    /// children alone: the app does not watch a root for signs of death, because "not in this
+    /// reading" is also true of a terminal that lost its accessibility permission for a moment,
+    /// and being wrong about that would kill somebody's work mid-turn.
+    ///
+    /// **One level, and the second is not missing.** `dispatch` refuses a root that is itself a
+    /// live child, so the depth is capped at 1 — a child has no children of its own to collect
+    /// and recursion here would only be a loop that never runs twice.
+    ///
+    /// A busy child gets `cancel`'s decisiveness rather than `closeChild`'s ten minutes of
+    /// patience. Those are different moments: one is tidying up after work that finished, this is
+    /// somebody pressing close, and making them wait on a child they cannot see is not the thing
+    /// they asked for.
+    @discardableResult
+    static func cancelChildren(ofRoot session: TargetSession) -> [String] {
+        guard let rootSession = rootIdentity(of: session) else { return [] }
+        let live = liveTasks(dispatchedBy: rootSession)
+        for id in live {
+            guard let task = held(id) else { continue }
+            // `why` is what tells this row apart from a task somebody cancelled on purpose: this
+            // one did nothing, its root left.
+            RemoteAuth.audit("orchestrator.cancel", ["task": id, "why": "root_ended",
+                                                     "root": session.id])
+            cancelInPlace(task)
+        }
+        return live
+    }
+
+    /// What a session calls itself, which is what `rootSessionId` was written from — the terminal
+    /// id is this app's name for a tab and means nothing to the assistant inside it. Same
+    /// main-thread hop as `target(withID:)`, because that is where the notes are reloaded.
+    private static func rootIdentity(of session: TargetSession) -> String? {
+        if Thread.isMainThread { return HookBridge.note(for: session)?.session }
+        return DispatchQueue.main.sync { HookBridge.note(for: session)?.session }
     }
 
     // MARK: - Lifecycle: the beat

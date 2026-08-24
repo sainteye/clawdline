@@ -282,7 +282,24 @@ briefed, the task is `failure` with *child session ended without reporting*. A c
 finished task in every sense except the one that would have been written down.
 
 **cancelled** — somebody asked. The child's terminal is ended politely, the way
-[`POST /v1/sessions/:id/end`](api.md#post-v1sessionsidend) does it.
+[`POST /v1/sessions/:id/end`](api.md#post-v1sessionsidend) does it. There are two ways to ask. One
+is the cancel route. The other is **closing the root session**: ending a session through
+[`POST /v1/sessions/:id/end`](api.md#post-v1sessionsidend) — the Close button on the page — cancels
+every live task that session dispatched and closes each child's tab first, and only then closes the
+root's own. The order is not cosmetic. A task is matched to its root by the session id in that
+session's hook note, and the note is reached through the tty of the tab that is about to disappear:
+a root closed first is a root that can no longer be matched to anything, and its children run on
+reporting into a conversation that ended. Both ways write `orchestrator.cancel` to the audit log,
+and the cascade carries `why=root_ended` — a task cancelled *for* you should not read like one you
+cancelled.
+
+**Only an explicit close cascades.** Closing the tab by hand does not. The app never watches a root
+for signs of death, because "not in this reading" is a sentence that is also true of a terminal that
+lost its accessibility permission for a moment, and the cost of being wrong there is somebody's work
+killed mid-turn. Two more things it deliberately leaves alone: a task that already finished, whose
+tab belongs to the linger described below rather than to this, and a second level, which does not
+exist — a child may not dispatch (`depth_exceeded`), so one root's children are all the children
+there are. A busy child gets no grace period either; somebody pressed a button that says close.
 
 **spawn_failed** — the tab never happened, or never got briefed inside two minutes, or the app was
 restarted while the task was still in `queued`/`spawning`. That last one is not a bug: the plaintext

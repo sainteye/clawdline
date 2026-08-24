@@ -651,6 +651,13 @@ final class RemoteServer {
                     return .error(404, "not_found", "No session named that")
                 }
                 RemoteAuth.audit("session.end", ["id": session.id])
+                // **The children first, while the root is still there to be recognised.** A task
+                // is matched to its root by the session id in that session's hook note, and the
+                // note is found through the tty of the tab this line is about to close — after
+                // `end` there is nothing left to match, and the children would run on as orphans.
+                // Nothing happens here for a session that dispatched nothing, which is most of
+                // them; the cascade and its reasoning live in `Orchestrator`.
+                Orchestrator.cancelChildren(ofRoot: session)
                 if let failure = Targets.end(session) {
                     return .error(502, "internal", failure)
                 }
