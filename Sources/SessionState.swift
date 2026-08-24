@@ -241,14 +241,30 @@ enum SessionState: Equatable {
         guard optionLine > lowerBound else { return nil }
         var parts: [String] = []
         var index = optionLine - 1
-        while index >= lowerBound {
+        // **A blank line inside the dialog is padding, not a boundary.** The drawn shape puts one
+        // between the header and the question and another between the question and the first
+        // option, so treating the first empty row as the top of the prose finds nothing at all —
+        // which is exactly what happened, and what a fixture written as adjacent lines could not
+        // catch. The frame, the checkbox header and a caret are the real edges; blanks are
+        // stepped over. Two in a row are not padding any more, and the reach is capped so that a
+        // dialog drawn without a frame cannot swallow the conversation above it.
+        var blanks = 0
+        var reach = 12
+        while index >= lowerBound, reach > 0 {
             let raw = lines[index]
             let text = dialogText(raw)
-            if text.isEmpty || isBoxRule(raw) || isQuestionHeader(text) || hasCaret(raw) {
-                break
+            if isBoxRule(raw) || isQuestionHeader(text) || hasCaret(raw) { break }
+            if text.isEmpty {
+                blanks += 1
+                if blanks > 1 { break }
+                index -= 1
+                reach -= 1
+                continue
             }
+            blanks = 0
             parts.insert(text, at: 0)
             index -= 1
+            reach -= 1
         }
         let joined = parts.joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)

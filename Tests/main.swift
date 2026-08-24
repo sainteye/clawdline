@@ -4399,6 +4399,40 @@ group("the question above a visual menu") {
            "別的 session 把 index.html 寫完了，但還沒 commit。 root 連坐的修正要生效就得 build。怎麼走？")
     expect("description rows do not become options", describedMenu.options.count, 3)
 
+    // **As the terminal actually draws it.** The dialog puts a blank row between the header and
+    // the question and another between the question and the first option. The fixture above has
+    // none, because it was written as adjacent lines — and that difference was the whole bug: the
+    // first blank read as the top of the prose, so a real dialog yielded no question at all while
+    // this group stayed green. Padding is stepped over now, and this is the shape that proves it.
+    let padded = """
+    ────────────────────────────────────────────
+     ☐ build
+
+    │ 別的 session 把 index.html 寫完了，但還沒 commit。
+
+    ❯ 1. 幫它整理並 commit，再 build（推薦）
+         跟先前那批一樣，先整理工作區。
+      2. 直接 build，不碰它的 commit
+      3. 先不要 build
+    ────────────────────────────────────────────
+    """
+    expect("padding inside the dialog is not the top of the question",
+           SessionState.menu(padded, hookWaiting: true)?.question,
+           "別的 session 把 index.html 寫完了，但還沒 commit。")
+
+    // Two blank rows are not padding any more, so prose beyond them stays outside.
+    let farProse = """
+    This belongs to the conversation, not to the dialog.
+
+
+     Ship the tested build now?
+    ❯ 1. Yes
+      2. No
+    """
+    expect("a gap of two blank rows stops the reach",
+           SessionState.menu(farProse, hookWaiting: true)?.question,
+           "Ship the tested build now?")
+
     let oneLine = """
     ╭──────────────────────────╮
     │ Do you want to proceed?  │
