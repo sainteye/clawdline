@@ -27,8 +27,14 @@ import { renderTranscript } from "../view/transcript.js";
     var moved = null;
 
     function offstage() {
-        onstage();
-        moved = [];
+        // **Only what is not already out of the way.** This used to put every tab stop back and
+        // take them all out again on each draw — several hundred attribute writes every few
+        // seconds under a live transcript, while somebody is writing into the middle of it. The
+        // ones already carrying `-1` are skipped by the loop below, so the incremental pass is
+        // the same pass; what goes is the restore-everything that preceded it. Entries whose
+        // element has since been drawn away are dropped so the list cannot grow without end.
+        if (!moved) moved = [];
+        else moved = moved.filter(function (pair) { return document.contains(pair[0]); });
         var all = document.querySelectorAll("a[href], button, input, select, textarea, [tabindex]");
         for (var i = 0; i < all.length; i++) {
             var el = all[i];

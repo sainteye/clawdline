@@ -11,6 +11,34 @@ import { closingID } from "./list.js";
 import { Shots } from "../input/shots.js";
 import { msgText, sending } from "../input/composer.js";
 
+/**
+ * An attribute written only when it is about to change.
+ *
+ * Every draw walks over the composer, and writing the same value back over itself is not free.
+ * `contenteditable` is the one that hurts: WebKit treats the write as a change to the element
+ * being edited and takes the caret — and with it the long-press menu — away from whoever was
+ * reaching for it. A transcript that is being written to redraws every few seconds, so on a
+ * phone the Paste that had just appeared under a thumb vanished before it could be pressed.
+ */
+function setAttr(el, name, value) {
+    if (el && el.getAttribute(name) !== value) el.setAttribute(name, value);
+}
+
+/**
+ * Whether this browser has heard of `contenteditable="plaintext-only"`.
+ *
+ * Asked once, of a div that is never in the document. The property **throws** where the value is
+ * unknown rather than falling back to anything, and the throw used to land in the middle of
+ * `renderComposer` — leaving a box that is not editable at all, on exactly the browsers least
+ * able to say so. Where the answer is no the box is a plain `contenteditable` and the paste
+ * handler below is what keeps markup out of it.
+ */
+var plaintextOnly = (function () {
+    var probe = document.createElement("div");
+    try { probe.contentEditable = "plaintext-only"; } catch (e) { return false; }
+    return probe.contentEditable === "plaintext-only";
+})();
+
 export function renderComposer() {
     var on = S.write && !!S.openId && closingID !== S.openId;
     var session = S.openId ? byId(S.openId) : null;
@@ -19,8 +47,8 @@ export function renderComposer() {
         placeholder = placeholder.replace("Claude Code", "Codex").replace("Claude", "Codex");
         if (placeholder === T.placeholder) placeholder = "Codex…";
     }
-    els.msg.setAttribute("data-placeholder", placeholder);
-    els.msg.setAttribute("aria-label", placeholder);
+    setAttr(els.msg, "data-placeholder", placeholder);
+    setAttr(els.msg, "aria-label", placeholder);
     els["skill-menu"].setAttribute("aria-label",
         (session && session.assistant === "codex" ? "Codex" : "Claude Code") + " skills");
     els.composer.dataset.write = S.write ? "on" : "off";
@@ -30,9 +58,12 @@ export function renderComposer() {
     // is in flight, though — see the `beforeinput` guard below: taking the editability away from
     // a focused element takes the focus with it, and on a phone that shuts the keyboard between
     // every message.
-    els.msg.contentEditable = on ? "plaintext-only" : "false";
+    // Through the attribute rather than the property, so it can be compared before it is
+    // written — see `setAttr`. Twice a second on a working session, the property was writing
+    // `plaintext-only` over `plaintext-only` and unseating the caret each time.
+    setAttr(els.msg, "contenteditable", on ? (plaintextOnly ? "plaintext-only" : "true") : "false");
     // What Return does differs by machine, and the soft keyboard's own key should say which.
-    els.msg.setAttribute("enterkeyhint", hasKeyboard() ? "send" : "enter");
+    setAttr(els.msg, "enterkeyhint", hasKeyboard() ? "send" : "enter");
     // A picture on its own is a message. The server takes text, images, or both, and refuses
     // only the one that is neither — so the button follows the same rule.
     els.send.disabled = !on || sending || Shots.busy() || (!msgText() && !Shots.count());
@@ -99,6 +130,28 @@ var waitingDrawn = null;
  * answered from the phone is then told their press did nothing, which is the opposite of what
  * happened. So the options stay on screen, dead, under the line that says the answer went. */
 var answeredMenu = null;
+
+/* A menu the reader has waved away.
+ *
+ * The screen is read, not asked, so a menu on it is a judgement and judgements are wrong
+ * sometimes: text printed into the scrollback can carry the shape of one, and then the card sits
+ * over the composer describing a question nobody asked. Typing was never actually blocked — but a
+ * panel that says a session is waiting on you is its own kind of blocked, and being able to say
+ * "no it isn't" costs one tap and removes the whole class of harm from a wrong reading.
+ *
+ * Keyed on what the menu says rather than on the session, so the next real question comes back on
+ * its own. Cleared when the session stops waiting. */
+var dismissedMenu = null;
+
+function menuKey(menu) {
+    // A waiting card with no menu still needs a key of its own, and it must not collide with any
+    // real one: that state — "waiting, but the menu could not be read" — is the shape a wrong
+    // reading takes most often, and it is the one somebody most wants to wave away.
+    if (!menu) return "\u0000unread";
+    return (menu.question || "") + "\u0001" + (menu.options || []).map(function (o) {
+        return String(o.n) + "\u0002" + String(o.label == null ? "" : o.label);
+    }).join("\u0003");
+}
 var liveDrawn = null;
 var agentsDrawn = null;
 /// The button's resting width, and the words it was measured against.
@@ -122,13 +175,22 @@ export function renderWaiting() {
                          || Date.now() - answeredMenu.at > 10000)) {
         answeredMenu = null;
     }
+    if (dismissedMenu && (!open || dismissedMenu.id !== open.id || open.state !== "waiting")) {
+        dismissedMenu = null;
+    }
+    // Waved away: the whole card goes, rather than falling back to the two sentences about
+    // answering on the Mac. Somebody who has just said "this is not a question" is the last
+    // person who needs telling where to answer it.
+    var hushed = !!(dismissedMenu && dismissedMenu.key === menuKey(menu));
     var sent = !rows && !!answeredMenu;
     if (sent) {
         rows = answeredMenu.rows;
         question = answeredMenu.question || "";
     }
-    var want = !open || open.state !== "waiting" ? "" :
-        '<div class="title">' + esc(T.webWaitingTitle) + "</div>" +
+    var want = !open || open.state !== "waiting" || hushed ? "" :
+        '<div class="title">' + esc(T.webWaitingTitle) +
+        '<button type="button" class="dismiss" data-dismiss="1" aria-label="'
+        + esc(T.webClose) + '">\u00d7</button>' + "</div>" +
         (question ? '<div class="question">' + esc(question) + "</div>" : "") +
         (rows
             ? '<div class="say">' + words(sent ? T.webMenuSent : T.webMenuSay) + "</div>"
@@ -200,12 +262,21 @@ function menuHTML(rows, spent) {
             '<span class="n">' + esc(String(o.n)) + "</span>" +
             '<span class="what">' + esc(o.label || "") +
             (o.selected ? '<span class="here">' + esc(T.webMenuHighlighted) + "</span>" : "") +
+            (o.detail ? '<span class="note">' + esc(o.detail) + "</span>" : "") +
             "</span></button>";
     }).join("") + "</div>";
 }
 
 els.waiting.addEventListener("click", function (ev) {
     if (!ev.target.closest) return;
+
+    if (ev.target.closest("[data-dismiss]")) {
+        var here = S.openId ? byId(S.openId) : null;
+        if (here) dismissedMenu = { id: here.id, key: menuKey(here.menu) };
+        waitingDrawn = null;
+        renderWaiting();
+        return;
+    }
 
     var opt = ev.target.closest("[data-key]");
     if (opt) {

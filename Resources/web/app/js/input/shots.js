@@ -110,10 +110,7 @@ export var Shots = (function () {
         clear: function () { list = []; draw(); },
 
         add: function (files) {
-            var wanted = Array.prototype.filter.call(files || [], function (f) {
-                // A HEIC sometimes arrives with an empty type, so the extension gets a say.
-                return /^image\//.test(f.type) || /\.(hei[cf]|jpe?g|png|gif|webp)$/i.test(f.name || "");
-            });
+            var wanted = Array.prototype.filter.call(files || [], isPicture);
             if (!wanted.length) { toast(T.webShotsOnlyPictures, true); return; }
             if (list.length + wanted.length > MAX_COUNT) {
                 toast(fill(T.webShotsTooMany, { n: MAX_COUNT }), true);
@@ -151,15 +148,32 @@ els.pick.addEventListener("change", function () {
     els.pick.value = "";
 });
 
+/** A file the attachment list would take. A HEIC sometimes arrives with an empty type, so the
+ *  extension gets a say. Shared, because a paste is sorted by this same question in two places
+ *  and the two answers disagreeing is how a paste ends up belonging to neither of them. */
+function isPicture(file) {
+    return /^image\//.test(file.type) || /\.(hei[cf]|jpe?g|png|gif|webp)$/i.test(file.name || "");
+}
+
+export function carriesPicture(data) {
+    var files = data && data.files;
+    return !!files && Array.prototype.some.call(files, isPicture);
+}
+
 // Paste, because copying a screenshot and pressing paste is how this is done everywhere else.
 // Not while the filter box has the focus: that one takes text and nothing else.
 document.addEventListener("paste", function (ev) {
     if (!S.openId || !S.write || closingID === S.openId) return;
     if (document.activeElement === els.filter) return;
-    var files = ev.clipboardData && ev.clipboardData.files;
-    if (!files || !files.length) return;
+    // The composer runs first and takes anything with words in it. Cancelling here after that
+    // would cancel the paste it just accepted, so a paste already spoken for is left alone.
+    if (ev.defaultPrevented) return;
+    // A picture, and not merely a file: a clipboard often carries something alongside the words
+    // that is no use here, and cancelling the paste for it left the words nowhere to go and a
+    // complaint about pictures on the screen instead.
+    if (!carriesPicture(ev.clipboardData)) return;
     ev.preventDefault();
-    Shots.add(files);
+    Shots.add(ev.clipboardData.files);
 });
 
 // Drag and drop. The whole detail pane is the target — somebody dragging a photograph at this

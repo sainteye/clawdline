@@ -604,6 +604,28 @@ const SCRIPTS = {
         },
     },
 
+    /**
+     * A terminal's tab bar, switched through — the picture the README's first paragraph argues
+     * with. Nothing of Clawdline is in this one; see the note at the top of tools/tabs/index.html.
+     *
+     * **The beats are the argument, so they are timed rather than dashed through.** Each switch
+     * has to sit long enough to be read as a decision somebody made and got nothing back for —
+     * about a second, which is roughly what it costs to look at a tab and find out it is not the
+     * one. Five of them, because two switches read as a comparison and five read as a search.
+     *
+     * The order walks away from the front tab rather than along the bar: ⌘4 then ⌘8 then back to
+     * ⌘2 is somebody hunting, and hunting is what the bar leaves you to do.
+     */
+    async tabs(stage) {
+        await stage.until("#tabs .tab");
+        await stage.wait(1100);                      // long enough to take the bar in first
+        for (const n of [3, 7, 1, 9, 5]) {
+            await stage.evaluate(`window.TabsMock.select(${n})`);
+            await stage.wait(1050);
+        }
+        await stage.wait(800);                       // a beat at the end, so the loop has one
+    },
+
     /** Open one session and sit on it. For a still of the transcript, and for `--eval`. */
     async open(stage) {
         await stage.until("#rows li");

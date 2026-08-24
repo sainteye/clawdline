@@ -72,6 +72,12 @@ for g in sessions sessions-live picker-live demo island dance mochi-dance stretc
     -frames:v 1 "$TMP/gif-$g.png"
 done
 
+# `tabs.gif` is deliberately not in any of the lists above, and this line is here so that the
+# next person to notice does not have to work out whether it was forgotten. It is a drawing —
+# tools/tabs/index.html, a `file://` page whose eleven titles are typed into it — so there is no
+# path by which this machine's projects, branches or conversations could reach the frame. What
+# this sheet exists to catch cannot happen to it.
+
 FILES=("$TMP"/*.png)
 ffmpeg -v error -y $(printf -- '-i %s ' "${FILES[@]}") \
   -filter_complex "$(for i in $(seq 0 $(( ${#FILES[@]} - 1 ))); do printf '[%d]' "$i"; done)vstack=inputs=${#FILES[@]}" \

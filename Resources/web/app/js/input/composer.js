@@ -10,7 +10,7 @@ import { renderDetailHead, renderTranscript } from "../view/transcript.js";
 import { renderComposer } from "../view/composer.js";
 import { Optimistic } from "../view/waits.js";
 import { atBottom, closeDetail, loadTranscript, toBottom } from "../session/open.js";
-import { Shots } from "./shots.js";
+import { carriesPicture, Shots } from "./shots.js";
 
 /* ---- the composer -------------------------------------------------------- */
 
@@ -48,12 +48,25 @@ function caretToEnd() {
  *  still the only thing that does that; the range is the fallback for the day it goes. */
 function insertText(text) {
     if (!text) return;
-    try {
-        if (document.execCommand && document.execCommand("insertText", false, text)) return;
-    } catch (e) { /* the range, then */ }
     var selection = window.getSelection();
+    // Checked only for the ordinary case — a caret rather than a selection, and a run with no
+    // newline in it. Then the box is certainly longer afterwards if anything went in, and if it
+    // is not, `execCommand` said yes and did nothing, which WebKit has been known to do and
+    // which reads from the outside as a Paste that is simply dead. Anything else is left to the
+    // answer alone, because "the length did not change" is not proof there when a selection was
+    // replaced by something the same size.
+    var plain = selection && selection.isCollapsed && text.indexOf("\n") < 0;
+    var before = plain ? els.msg.textContent.length : -1;
+    try {
+        // The browser's own edit, and therefore one that Undo knows about.
+        if (document.execCommand && document.execCommand("insertText", false, text)
+            && (!plain || els.msg.textContent.length !== before)) return;
+    } catch (e) { /* the range, then */ }
     if (!selection || !selection.rangeCount) return;
     var range = selection.getRangeAt(0);
+    // Only ever into the message box. A caret that is somewhere else entirely is not an
+    // invitation to write this text into whatever was under it.
+    if (!els.msg.contains(range.commonAncestorContainer)) return;
     range.deleteContents();
     var node = document.createTextNode(text);
     range.insertNode(node);
@@ -192,10 +205,16 @@ els.msg.addEventListener("beforeinput", function (ev) { if (sending) ev.preventD
 // with a rich paste is worth being sure about rather than nearly sure about. A pasted picture is
 // not text and is left to the document's own handler, which puts it in the attachments.
 els.msg.addEventListener("paste", function (ev) {
-    var files = ev.clipboardData && ev.clipboardData.files;
-    if (files && files.length) return;
+    var data = ev.clipboardData || window.clipboardData;
+    var text = data ? data.getData("text/plain") || "" : "";
+    // **A picture goes to the document's handler; anything else with words in it stays here.**
+    // The test used to be `files.length`, and a clipboard carries a file beside the text more
+    // often than a desk makes it look — much of what is copied out of another app on a phone
+    // does — so those pastes were handed to the picture handler, refused as "not a picture",
+    // and the words never arrived at all.
+    if (carriesPicture(data) || !text) return;
     ev.preventDefault();
-    insertText((ev.clipboardData || window.clipboardData).getData("text/plain") || "");
+    insertText(text);
     blankness();
     renderComposer();
     SkillPicker.changed();
