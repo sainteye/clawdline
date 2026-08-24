@@ -5152,6 +5152,110 @@ group("what a child's turn cost, at the prices this app knows") {
           Orchestrator.cost(of: unpriced) == nil)
 }
 
+group("an orchestrated child is briefed only at a real composer") {
+    // This is the shape that triggered the bug: Claude's process is present and its banner is
+    // readable, but MCP startup has not finished and no input row exists yet. SessionState calls
+    // it idle because there is neither a menu nor a spinner; the orchestrator must not.
+    let starting = """
+    ╭──────────────────────────────────────╮
+    │ ✻ Welcome to Claude Code             │
+    │ MCP server serena: connecting…       │
+    │ MCP server headroom: starting…       │
+    ╰──────────────────────────────────────╯
+    """
+    expect("the shared screen state has the ambiguous old answer",
+           SessionState.read(starting, assistant: .claude), .idle)
+    check("but a startup banner is not an input-ready child",
+          !Orchestrator.briefingInputReady(starting, assistant: .claude))
+    expect("so the first message waits",
+           Orchestrator.briefingDecision(screen: starting, assistant: .claude,
+                                         transcript: nil, transcriptKnown: true,
+                                         taskID: taskID, attempts: 0,
+                                         secondsSinceAttempt: nil), .wait)
+
+    let claudeReady = """
+    ╭──────────────────────────────────────╮
+    │ Welcome back                         │
+    ╰──────────────────────────────────────╯
+
+    ❯
+
+      ? for shortcuts
+    """
+    check("Claude's empty composer is positive readiness",
+          Orchestrator.briefingInputReady(claudeReady, assistant: .claude))
+    expect("the first attempt may be sent there",
+           Orchestrator.briefingDecision(screen: claudeReady, assistant: .claude,
+                                         transcript: nil, transcriptKnown: false,
+                                         taskID: taskID, attempts: 0,
+                                         secondsSinceAttempt: nil), .send)
+
+    // The shapes above are tidied. What iTerm2 actually hands back has U+00A0 after the caret,
+    // and a brand-new session carries the suggestion rather than a bare caret — which is the one
+    // a child is briefed at. Written with an escape because the character is invisible in a
+    // diff, and a plain space here would put the bug back without failing anything.
+    let nbsp = "\u{00A0}"
+    check("the caret's real separator is U+00A0, not a space",
+          Orchestrator.briefingInputReady("❯\(nbsp)   ", assistant: .claude))
+    check("and a new session's suggestion is the composer a child is briefed at",
+          Orchestrator.briefingInputReady("❯\(nbsp)Try \"edit a file to fix a bug\"",
+                                          assistant: .claude))
+    check("a draft already in the composer is not a fresh child",
+          !Orchestrator.briefingInputReady("❯\(nbsp)/deploy", assistant: .claude))
+
+    let codexReady = """
+    › Ask Codex to do anything
+
+      gpt-5.6-sol default · ~/code/clawdline
+    """
+    check("Codex's composer is recognised independently",
+          Orchestrator.briefingInputReady(codexReady, assistant: .codex))
+}
+
+group("briefing delivery is verified and retries are bounded") {
+    let ready = "❯\n\n  ? for shortcuts"
+    let marker = "You are a Clawdline CHILD agent for task \(taskID). Read CHILD.md."
+    let claudeReceipt = """
+    {"type":"user","message":{"role":"user","content":"\(marker)"}}
+    """
+    expect("a named user turn is the receipt",
+           Orchestrator.briefingDecision(screen: nil, assistant: .claude,
+                                         transcript: claudeReceipt, transcriptKnown: true,
+                                         taskID: taskID, attempts: 5,
+                                         secondsSinceAttempt: 60), .accepted)
+
+    expect("a receipt is given time to appear before any retry",
+           Orchestrator.briefingDecision(screen: ready, assistant: .claude,
+                                         transcript: nil, transcriptKnown: true,
+                                         taskID: taskID, attempts: 1,
+                                         secondsSinceAttempt: 5), .wait)
+    expect("absence in an unidentified transcript can never justify a duplicate",
+           Orchestrator.briefingDecision(screen: ready, assistant: .claude,
+                                         transcript: nil, transcriptKnown: false,
+                                         taskID: taskID, attempts: 1,
+                                         secondsSinceAttempt: 60), .wait)
+    expect("the attempt below the ceiling may retry after the receipt window",
+           Orchestrator.briefingDecision(screen: ready, assistant: .claude,
+                                         transcript: nil, transcriptKnown: true,
+                                         taskID: taskID,
+                                         attempts: Orchestrator.briefingAttemptLimit - 1,
+                                         secondsSinceAttempt: 60), .send)
+    expect("the ceiling stops another copy from being sent",
+           Orchestrator.briefingDecision(screen: ready, assistant: .claude,
+                                         transcript: nil, transcriptKnown: true,
+                                         taskID: taskID,
+                                         attempts: Orchestrator.briefingAttemptLimit,
+                                         secondsSinceAttempt: 60), .exhausted)
+
+    let codexReceipt = """
+    {"type":"event_msg","payload":{"type":"item_completed","item":\
+    {"type":"UserMessage","content":[{"type":"text","text":"\(marker)"}]}}}
+    """
+    check("Codex's rollout closes the same retry gate",
+          Orchestrator.transcriptContainsBriefing(codexReceipt, assistant: .codex,
+                                                  taskID: taskID))
+}
+
 group("the one line a child is given") {
     let secret = String(repeating: "c3", count: 32)
     let line = Orchestrator.firstLine(id: taskID, secret: secret)

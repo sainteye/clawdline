@@ -9,6 +9,22 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: a slow-starting child could miss its briefing forever
+
+Opening a child and seeing the assistant process was not the same thing as seeing somewhere to
+type. A Claude Code session still starting slow MCP servers could already have a readable banner
+without a spinner or a menu; that absence was mistaken for an idle prompt, so the briefing was
+sent into startup, silently dropped, and marked delivered. The child stayed open at an empty
+prompt until its task timed out.
+
+The orchestrator now waits for the assistant's actual composer before typing. Sending bytes to a
+terminal is no longer treated as delivery either: the task remains in startup until Claude Code's
+transcript or Codex's rollout records that task's first user turn. If the named record still has
+no such turn after the receipt window and the empty composer is back, the app retries under a
+fixed attempt limit; once a turn is recorded, that receipt closes the retry gate before the child
+can execute it twice. Trust prompts are still answered automatically, and a child that never
+becomes ready still times out after two minutes.
+
 ### Fixed: ending a session from a phone could freeze every page in the house
 
 Ending a session types the assistant's quit word and then takes the tab away. The pause between

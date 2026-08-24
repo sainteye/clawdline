@@ -68,6 +68,9 @@ enum Orchestrator {
         var artifacts: [String] = []
         var usage: Usage?
         var injectAttempts = 0
+        /// The most recent time the first message was handed to the terminal. In memory only:
+        /// a process restart loses the plaintext secret and fails every spawning task anyway.
+        var lastInjectAt: Date?
         var answeredMenu = false
         /// When the child's terminal was last seen in a reading — the difference between a child
         /// that finished and one whose tab was closed under it.
@@ -78,6 +81,76 @@ enum Orchestrator {
         var closeAt: Date?
 
         var dir: URL { Orchestrator.root.appendingPathComponent(id, isDirectory: true) }
+    }
+
+    enum BriefingDecision: Equatable {
+        case send, wait, accepted, exhausted
+    }
+
+    static let briefingAttemptLimit = 5
+    static let briefingReceiptDelay: TimeInterval = 15
+
+    /// Whether the assistant has drawn the empty composer that can accept a new turn.
+    ///
+    /// This is deliberately narrower than `SessionState.idle`. That state is the absence of a
+    /// recognised menu or live line; a startup banner while slow MCP servers are still loading
+    /// has exactly that absence. The composer is positive evidence that startup has completed.
+    static func briefingInputReady(_ screen: String?, assistant: Assistant) -> Bool {
+        guard let screen, !screen.isEmpty else { return false }
+        let text = Ansi.plain(screen)
+        guard SessionState.read(text, assistant: assistant) == .idle else { return false }
+        // Claude Code puts U+00A0 between its caret and the composer, not a space: a real capture
+        // reads `❯\u{00A0}` when empty and `❯\u{00A0}/deploy` with a draft in it. Trimming does
+        // hide that — `.whitespaces` is Unicode Zs, which U+00A0 belongs to — but only at the ends
+        // of a line, so the bare-caret test below passes while a prefix written with a plain space
+        // never fires at all. Fold it first, once, rather than spell it into every comparison.
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.replacingOccurrences(of: "\u{00A0}", with: " ")
+                     .trimmingCharacters(in: .whitespaces) }
+
+        switch assistant {
+        case .claude:
+            // Claude's empty composer is either a bare caret or carries its grey `Try "…"`
+            // suggestion — the bundle renders it as `Try "` around a bolded example, so a brand
+            // new session is far more likely to show that than a bare caret. A submitted message
+            // is echoed after the same caret, so accepting an arbitrary suffix here would turn
+            // the receipt check below back into a race.
+            return lines.contains { $0 == "❯" || $0.hasPrefix("❯ Try \"") }
+        case .codex:
+            // Codex writes sent messages after the same glyph; its empty composer is the one
+            // whose placeholder says what can be entered, not merely any `›` in the scrollback.
+            return lines.contains { $0 == "›" || $0.hasPrefix("› Ask Codex to do anything") }
+        }
+    }
+
+    /// The task marker in a user turn is the delivery receipt. Looking for this specific turn,
+    /// rather than any user-shaped bookkeeping row, also proves that the transcript belongs to
+    /// this task before it is allowed to close the retry gate.
+    static func transcriptContainsBriefing(_ transcript: String?, assistant: Assistant,
+                                           taskID: String) -> Bool {
+        guard let transcript else { return false }
+        let marker = "Clawdline CHILD agent for task \(taskID)"
+        return Transcript.parse(transcript, assistant: assistant, limit: 100).contains { entry in
+            entry.kind == .user && entry.text.contains(marker)
+        }
+    }
+
+    /// Pure policy for the asynchronous hand-off. A retry needs all three facts: enough time has
+    /// passed, the named transcript still lacks this task's turn, and the empty composer is back.
+    /// Claude and Codex append the user turn before beginning it, so an accepted first send puts
+    /// the marker in the transcript before it can execute. That closes this gate before another
+    /// copy can be sent; a missing transcript alone is never grounds for a retry.
+    static func briefingDecision(screen: String?, assistant: Assistant, transcript: String?,
+                                 transcriptKnown: Bool, taskID: String, attempts: Int,
+                                 secondsSinceAttempt: TimeInterval?) -> BriefingDecision {
+        if transcriptContainsBriefing(transcript, assistant: assistant, taskID: taskID) {
+            return .accepted
+        }
+        guard briefingInputReady(screen, assistant: assistant) else { return .wait }
+        if attempts == 0 { return .send }
+        guard transcriptKnown else { return .wait }
+        if let secondsSinceAttempt, secondsSinceAttempt < briefingReceiptDelay { return .wait }
+        return attempts >= briefingAttemptLimit ? .exhausted : .send
     }
 
     /// What a route handler gets back; `RemoteServer` turns it into a `Response`.
@@ -619,11 +692,13 @@ enum Orchestrator {
             task.childTTY = child.tty
             lock.lock(); tasks[task.id] = task; lock.unlock()
         }
+        let changed = noteChildIdentity(child, in: &task)
+        let screen = Targets.capture(child)
         // A brand-new session in a directory the assistant has not been told to trust opens on a
         // dialog, and text sent into a dialog confirms whatever is highlighted. The root asked
         // for work in exactly this directory, so the default answer is taken — once, and written
         // down.
-        if Targets.isChoosing(child) {
+        if let screen, SessionState.isChoosing(screen, assistant: task.assistant) {
             if !task.answeredMenu {
                 task.answeredMenu = true
                 lock.lock(); tasks[task.id] = task; lock.unlock()
@@ -632,16 +707,55 @@ enum Orchestrator {
             }
             return true
         }
-        guard SessionWatch.shared.states[childID] == .idle else { return false }
+
+        let transcript: String?
+        if let path = task.transcriptPath {
+            transcript = try? String(contentsOfFile: path, encoding: .utf8)
+        } else {
+            transcript = nil
+        }
+        let elapsed = task.lastInjectAt.map { Date().timeIntervalSince($0) }
+        let decision = briefingDecision(screen: screen, assistant: task.assistant,
+                                        transcript: transcript,
+                                        transcriptKnown: task.transcriptPath != nil,
+                                        taskID: task.id, attempts: task.injectAttempts,
+                                        secondsSinceAttempt: elapsed)
+        if decision == .accepted {
+            task.state = .briefed
+            task.briefedAt = task.lastInjectAt ?? Date()
+            task.lastSeenChild = Date()
+            lock.lock()
+            tasks[task.id] = task
+            secrets.removeValue(forKey: task.id)
+            lock.unlock()
+            RemoteAuth.audit("orchestrator.brief", ["task": task.id,
+                                                      "child": task.childTerminalId ?? "?",
+                                                      "attempts": String(task.injectAttempts)])
+            return true
+        }
+        if decision == .exhausted {
+            lock.lock(); tasks[task.id] = task; lock.unlock()
+            finalize(task.id, as: .spawnFailed,
+                     summary: "The child did not record the briefing after \(briefingAttemptLimit) attempts.")
+            return false // finalize saved and broadcast already
+        }
+        guard decision == .send else {
+            if changed { lock.lock(); tasks[task.id] = task; lock.unlock() }
+            return changed
+        }
         guard let secret = heldSecret(task.id) else {
             finalize(task.id, as: .spawnFailed, summary: "The task's secret was lost before briefing.")
             return false
         }
         writeChildBrief(for: task)
         let line = firstLine(id: task.id, secret: secret, announce: L.t.childAnnounce(task.title))
+        task.injectAttempts += 1
+        task.lastInjectAt = Date()
         if let failure = Targets.send(line, to: child) {
-            task.injectAttempts += 1
-            if task.injectAttempts >= 5 {
+            // A reported transport failure did not enter the receipt window; the next beat may
+            // try again immediately, still under the same total-attempt ceiling.
+            task.lastInjectAt = nil
+            if task.injectAttempts >= briefingAttemptLimit {
                 lock.lock(); tasks[task.id] = task; lock.unlock()
                 finalize(task.id, as: .spawnFailed, summary: "Could not type into the child: \(failure)")
                 return false
@@ -649,14 +763,12 @@ enum Orchestrator {
             lock.lock(); tasks[task.id] = task; lock.unlock()
             return true
         }
-        task.state = .briefed
-        task.briefedAt = Date()
-        task.lastSeenChild = Date()
-        lock.lock()
-        tasks[task.id] = task
-        secrets.removeValue(forKey: task.id)
-        lock.unlock()
-        RemoteAuth.audit("orchestrator.brief", ["task": task.id, "child": task.childTerminalId ?? "?"])
+        // `Targets.send` proves only that bytes reached the tty. Keep the secret and remain in
+        // `spawning` until the assistant's own transcript proves those bytes became a user turn.
+        lock.lock(); tasks[task.id] = task; lock.unlock()
+        RemoteAuth.audit("orchestrator.brief.inject", ["task": task.id,
+                                                        "child": task.childTerminalId ?? "?",
+                                                        "attempt": String(task.injectAttempts)])
         return true
     }
 
@@ -688,30 +800,7 @@ enum Orchestrator {
             task.lastSeenChild = Date()
             // The child's own identity, once its assistant has written it down. Free for Claude
             // (a dictionary the hooks fill), one cached lsof for Codex.
-            if task.childSessionId == nil {
-                switch task.assistant {
-                case .claude:
-                    if let noted = HookBridge.note(for: child)?.session {
-                        task.childSessionId = noted
-                        task.transcriptPath = StartPoints.projectsRoot
-                            .appendingPathComponent(StartPoints.slug(of: task.projectDir), isDirectory: true)
-                            .appendingPathComponent(noted + ".jsonl").path
-                        changed = true
-                    }
-                case .codex:
-                    if let rollout = Codex.locate(cwd: task.projectDir, startedAt: task.spawnedAt,
-                                                  pid: Targets.pid(of: child)) {
-                        task.transcriptPath = rollout.path
-                        task.childSessionId = Codex.head(of: rollout)?.id
-                        changed = true
-                        // The thread gets the task's name too, so `codex resume` lists it by
-                        // what it did rather than by the first line it was handed.
-                        if let threadID = task.childSessionId, !threadID.isEmpty {
-                            CodexNaming.shared.name(task.title, thread: threadID, target: child)
-                        }
-                    }
-                }
-            }
+            changed = noteChildIdentity(child, in: &task) || changed
             lock.lock(); tasks[task.id] = task; lock.unlock()
         } else if let seen = task.lastSeenChild {
             if Date().timeIntervalSince(seen) > 60 {
@@ -723,6 +812,53 @@ enum Orchestrator {
         } else {
             task.lastSeenChild = Date()
             lock.lock(); tasks[task.id] = task; lock.unlock()
+        }
+        return changed
+    }
+
+    /// Fill in the assistant's own durable identity as soon as it exists. Briefing and watching
+    /// share this because the transcript is now the boundary between those two states.
+    private static func noteChildIdentity(_ child: TargetSession, in task: inout Task) -> Bool {
+        var changed = false
+        switch task.assistant {
+        case .claude:
+            if task.childSessionId == nil, let noted = HookBridge.note(for: child)?.session {
+                task.childSessionId = noted
+                changed = true
+            }
+            if task.transcriptPath == nil, let sessionID = task.childSessionId {
+                task.transcriptPath = StartPoints.projectsRoot
+                    .appendingPathComponent(StartPoints.slug(of: task.projectDir), isDirectory: true)
+                    .appendingPathComponent(sessionID + ".jsonl").path
+                changed = true
+            }
+            // With hooks disabled the file itself is the first durable identity available. A
+            // delivered first turn creates it, so it can still confirm the ordinary one-send
+            // path; absence without an identity is intentionally not enough to trigger a retry.
+            if task.transcriptPath == nil,
+               let found = Transcript.locate(cwd: task.projectDir, tabTitle: child.name,
+                                               startedAt: task.spawnedAt) {
+                task.transcriptPath = found.path
+                task.childSessionId = found.deletingPathExtension().lastPathComponent
+                changed = true
+            }
+        case .codex:
+            if task.transcriptPath == nil,
+               let rollout = Codex.locate(cwd: task.projectDir, startedAt: task.spawnedAt,
+                                           pid: Targets.pid(of: child)) {
+                task.transcriptPath = rollout.path
+                changed = true
+            }
+            if task.childSessionId == nil, let path = task.transcriptPath,
+               let threadID = Codex.head(of: URL(fileURLWithPath: path))?.id {
+                task.childSessionId = threadID
+                changed = true
+                // The thread gets the task's name too, so `codex resume` lists it by what it did
+                // rather than by the first line it was handed.
+                if !threadID.isEmpty {
+                    CodexNaming.shared.name(task.title, thread: threadID, target: child)
+                }
+            }
         }
         return changed
     }
