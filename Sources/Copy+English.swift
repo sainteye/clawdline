@@ -403,7 +403,7 @@ struct English: Copy {
     let webInfoTokens = "tokens"
     let webInfoSwitchModel = "Switch model"
     let webInfoModelOther = "another model…"
-    let webInfoModelSent = "Sent /model {model}. The card shows it after the next reply."
+    let webInfoModelSent = "Sent /model {model}. Confirming…"
     let webInfoModelBusy = "Switching waits until the session is idle."
     let webInfoLimitsClaude = "Claude Code only writes a window down once it is spent, so nothing is known until then."
     let webInfoCopied = "Session id copied."

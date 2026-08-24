@@ -228,13 +228,47 @@ enum StartPoints {
                      isDirectory: (String) -> Bool = StartPoints.isDirectory) -> [Place] {
         var best: [String: Place] = [:]
         for place in places {
-            guard usable(place.path), isDirectory(place.path) else { continue }
+            guard usable(place.path), isDurablePlace(place.path), isDirectory(place.path) else {
+                continue
+            }
             if let had = best[place.path], had.at >= place.at { continue }
             best[place.path] = place
         }
         return Array(best.values
             .sorted { $0.at == $1.at ? $0.path < $1.path : $0.at > $1.at }
             .prefix(limit))
+    }
+
+    /// A directory somebody would recognise as a place to work, rather than storage an
+    /// assistant created while doing its work.
+    ///
+    /// Rollouts faithfully record all of these locations, which is exactly why the filter lives
+    /// here rather than in the parser. Running Codex from a Claude scratchpad, opening Codex
+    /// Desktop, or starting a CLI from `$HOME` all produce valid records; none creates a project
+    /// the person asked Clawdline to keep in its start list.
+    static func isDurablePlace(_ path: String, home: String? = nil,
+                               temporary: String? = nil) -> Bool {
+        func resolved(_ value: String) -> String {
+            URL(fileURLWithPath: value).standardizedFileURL.resolvingSymlinksInPath().path
+        }
+        func isInside(_ path: String, _ root: String) -> Bool {
+            path == root || path.hasPrefix(root + "/")
+        }
+
+        let path = resolved(path)
+        let home = resolved(home ?? FileManager.default.homeDirectoryForCurrentUser.path)
+        let temporary = resolved(temporary ?? NSTemporaryDirectory())
+        if path == home { return false }
+        if isInside(path, resolved(home + "/.claude")) { return false }
+        if isInside(path, resolved(home + "/.codex")) { return false }
+        if isInside(path, resolved(home + "/Documents/Codex")) { return false }
+        if isInside(path, temporary) { return false }
+        // `NSTemporaryDirectory` normally resolves one per-user /var/folders root. These cover
+        // deliberate /tmp worktrees and the `/private` spelling macOS reports through `lsof`.
+        if isInside(path, resolved("/tmp")) || isInside(path, resolved("/private/tmp")) {
+            return false
+        }
+        return true
     }
 
     /// The directories clawdline can already see a session in.

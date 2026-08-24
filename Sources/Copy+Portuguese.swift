@@ -407,7 +407,7 @@ struct Portuguese: Copy {
     let webInfoTokens = "tokens"
     let webInfoSwitchModel = "Trocar de modelo"
     let webInfoModelOther = "outro modelo…"
-    let webInfoModelSent = "/model {model} enviado. O cartão mostra depois da próxima resposta."
+    let webInfoModelSent = "/model {model} enviado. Confirmando…"
     let webInfoModelBusy = "A troca espera a sessão ficar ociosa."
     let webInfoLimitsClaude = "O Claude Code só anota uma janela quando ela se esgota; até lá, nada se sabe."
     let webInfoCopied = "Id da sessão copiado."

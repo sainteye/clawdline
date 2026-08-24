@@ -408,7 +408,7 @@ struct Hindi: Copy {
     let webInfoTokens = "टोकन"
     let webInfoSwitchModel = "मॉडल बदलें"
     let webInfoModelOther = "कोई और मॉडल…"
-    let webInfoModelSent = "/model {model} भेज दिया। अगले जवाब के बाद कार्ड पर दिखेगा।"
+    let webInfoModelSent = "/model {model} भेज दिया। पुष्टि हो रही है…"
     let webInfoModelBusy = "मॉडल तभी बदलेगा जब session खाली हो।"
     let webInfoLimitsClaude = "Claude Code कोई window तभी लिखता है जब वह खत्म हो जाए; तब तक कुछ पता नहीं।"
     let webInfoCopied = "Session id कॉपी हो गया।"

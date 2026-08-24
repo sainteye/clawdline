@@ -402,7 +402,7 @@ struct Japanese: Copy {
     let webInfoTokens = "トークン"
     let webInfoSwitchModel = "モデルを切り替える"
     let webInfoModelOther = "ほかのモデル…"
-    let webInfoModelSent = "/model {model} を送りました。次の返答のあとにカードへ反映されます。"
+    let webInfoModelSent = "/model {model} を送りました。確認中…"
     let webInfoModelBusy = "切り替えはセッションが待機中のときだけできます。"
     let webInfoLimitsClaude = "Claude Code は枠を使い切ったときにしか記録しないので、それまでは不明です。"
     let webInfoCopied = "セッション id をコピーしました。"

@@ -379,10 +379,10 @@ final class RemoteServer {
             }
             return .json(["links": linksPayload(cwd: cwd)])
 
-        // One card about this session and the assistant behind it: what it has spent, what is
-        // left of the plan's window, how much has changed on disk, whether the last deploy went
-        // out. Fetched when the card opens and never on the stream, for the reason `/links`
-        // gives — this one reads a transcript that can be fifty megabytes on top of the `git`.
+        // The facts behind this session's compact status line and expanded card: what it has
+        // spent, what is left of the plan's window, how much has changed on disk, whether the
+        // last deploy went out. Never put on the stream, for the reason `/links` gives — this
+        // reads a transcript that can be fifty megabytes on top of the `git`; the page caches it.
         case ("GET", let path) where path.hasSuffix("/info") && path.hasPrefix("/v1/sessions/"):
             let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/info".count))
             guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
@@ -723,21 +723,21 @@ final class RemoteServer {
                 if images.isEmpty {
                     problem = Targets.send(text, to: session)
                 } else {
-                    // Written to disk and handed over as files, because that is the shape the
-                    // existing path already takes: `Drop` borrows the pasteboard, sends Ctrl-V so
-                    // Claude Code turns each one into `[Image #3]`, and hands the pasteboard back.
-                    // All of that works today from a drag onto the bar — this is the same journey
-                    // with a phone at the far end of it.
+                    // Written to the bounded drop cache and handed over as files, because that is
+                    // the shape the existing path already takes. Claude consumes the bytes while
+                    // `Drop` borrows the pasteboard; Codex receives the path and opens it only
+                    // after this request is over. Keeping the successful handoff is therefore
+                    // part of the protocol, not leftover temporary state.
                     let made = Self.pieces(text: text, images: images)
-                    defer {
-                        for path in made.temporary { try? FileManager.default.removeItem(atPath: path) }
-                    }
                     guard made.pieces.contains(where: {
                         if case .image = $0 { return true }; return false
                     }) else {
                         return .error(400, "bad_request", "None of those were images I could read.")
                     }
                     problem = Targets.send(made.pieces, to: session)
+                    // A failed terminal handoff has no future reader. Successful paths stay in
+                    // Drop's bounded cache so Codex can open them when it reaches the prompt.
+                    Self.finishUploads(made.stored, sent: problem == nil)
                 }
                 // Written down before the answer goes back, because the interesting case for the
                 // log is the one where something went wrong afterwards.
@@ -1072,25 +1072,28 @@ final class RemoteServer {
     ///
     /// The claimed media type is ignored entirely for the same reason. It is a string somebody
     /// sent us.
-    static func pieces(text: String, images: [String]) -> (pieces: [Drop.Piece], temporary: [String]) {
+    static func pieces(text: String, images: [String]) -> (pieces: [Drop.Piece], stored: [String]) {
         var pieces: [Drop.Piece] = []
-        var temporary: [String] = []
+        var stored: [String] = []
         if !text.isEmpty { pieces.append(.text(text)) }
 
-        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("clawdline-remote", isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-
-        for (index, source) in images.enumerated() {
+        for source in images {
             guard let raw = decodeDataURL(source),
                   let rep = NSBitmapImageRep(data: raw),
                   let png = rep.representation(using: .png, properties: [:]) else { continue }
-            let url = folder.appendingPathComponent("\(UUID().uuidString)-\(index).png")
-            guard (try? png.write(to: url, options: .atomic)) != nil else { continue }
-            temporary.append(url.path)
-            pieces.append(.image(url.path))
+            guard let path = Drop.store(png, as: "png") else { continue }
+            stored.append(path)
+            pieces.append(.image(path))
         }
-        return (pieces, temporary)
+        return (pieces, stored)
+    }
+
+    /// Remove uploads only when their path never reached a terminal. A successful send is kept
+    /// by ``Drop/prune(keeping:)``; in particular, returning HTTP 200 does not mean Codex has
+    /// read the file yet.
+    static func finishUploads(_ paths: [String], sent: Bool) {
+        guard !sent else { return }
+        for path in paths { try? FileManager.default.removeItem(atPath: path) }
     }
 
     /// `data:image/heic;base64,AAAA…` → the bytes. Anything else, including a `data:` URL that is

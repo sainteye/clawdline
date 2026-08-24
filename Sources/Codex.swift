@@ -82,7 +82,7 @@ enum Codex {
     // MARK: - The head of a rollout
 
     /// What the first line of a rollout says about itself: where the session is working, what
-    /// Codex calls it, and whether it is a conversation with a person at all.
+    /// Codex calls it, whether it is a conversation with a person, and which Codex made it.
     struct Head: Equatable {
         var cwd: String
         var id: String
@@ -97,6 +97,13 @@ enum Codex {
         /// A rollout that does not say counts as one, because the field is newer than the
         /// format: absent means nobody wrote it down, not "this is a subagent".
         var isUser: Bool
+        /// A terminal conversation rather than a Codex Desktop workspace.
+        ///
+        /// Both have `thread_source: user`, but Desktop creates working directories under
+        /// `~/.codex/.chatgpt-projects` and `~/Documents/Codex` on its own. Those are records of
+        /// the desktop app, not projects Clawdline should offer to start another terminal in.
+        /// Current rollouts distinguish them with `source: cli` and `source: vscode`.
+        var isInteractiveCLI: Bool
     }
 
     /// Read that, cheaply and once.
@@ -137,9 +144,13 @@ enum Codex {
     /// a `cwd` of their own and one of them is a `file://` URL rather than a path.
     static func head(inText text: String) -> Head? {
         guard let cwd = StartPoints.cwds(in: text).first, !cwd.isEmpty else { return nil }
-        let source = string(after: "\"thread_source\":", in: text)
+        let threadSource = string(after: "\"thread_source\":", in: text)
+        let source = string(after: "\"source\":", in: text)
         return Head(cwd: cwd, id: string(after: "\"session_id\":", in: text) ?? "",
-                    isUser: source == nil || source == "user")
+                    isUser: threadSource == nil || threadSource == "user",
+                    // Before `source` existed, every rollout Clawdline could see here came from
+                    // the CLI. Preserve those old sessions rather than erasing their projects.
+                    isInteractiveCLI: source == nil || source == "cli")
     }
 
     /// The string value after a key, read textually for the same reason the `cwd` is.
@@ -273,7 +284,8 @@ enum Codex {
         }
         var best: [String: Date] = [:]
         for file in files {
-            guard let cwd = head(of: file)?.cwd, !cwd.isEmpty else { continue }
+            guard let head = head(of: file), head.isUser, head.isInteractiveCLI else { continue }
+            let cwd = head.cwd
             let at = modified(file)
             if let had = best[cwd], had >= at { continue }
             best[cwd] = at

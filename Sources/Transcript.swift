@@ -373,12 +373,24 @@ enum Transcript {
         for block in blocks {
             switch block["type"] as? String {
             case "text":
-                var text = (block["text"] as? String ?? "")
+                let raw = (block["text"] as? String ?? "")
+                var text = raw
+                // A slash command is the one piece of tagged machinery somebody did type, so it
+                // goes back in as the line they typed — see `slashCommand(in:)`.
+                let typed = type == "user" ? slashCommand(in: raw) : nil
                 if type == "user" { text = withoutMachineBlocks(text) }
                 text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !text.isEmpty else { continue }
-                out.append(Entry(kind: type == "user" ? .user : .assistant,
-                                 text: text, tool: nil, time: time))
+                if let typed { text = text.isEmpty ? typed : typed + "\n" + text }
+                if !text.isEmpty {
+                    out.append(Entry(kind: type == "user" ? .user : .assistant,
+                                     text: text, tool: nil, time: time))
+                }
+                // And what it printed, filed as a result: a command and its answer are two
+                // halves of one exchange, and a call followed by what it returned is a shape the
+                // pane already draws.
+                if type == "user", let printed = commandOutput(in: raw) {
+                    out.append(Entry(kind: .toolResult, text: printed, tool: nil, time: time))
+                }
             case "tool_use":
                 let name = block["name"] as? String ?? "tool"
                 // A question is the one tool call whose arguments are the whole point of it, so
@@ -415,6 +427,11 @@ enum Transcript {
     ///
     /// Unknown tags are left alone. This is a list of things observed to be injected, not a rule
     /// about angle brackets: somebody quoting XML at Claude has typed that, and it stays.
+    ///
+    /// The command tags are the one exception to "nobody typed it", and they are handled either
+    /// side of this rather than inside it: what comes out here is a command's *expansion*, and
+    /// ``slashCommand(in:)`` puts the line that caused it back. This function stays a plain
+    /// remover so that everything else calling it gets what it asks for.
     static func withoutMachineBlocks(_ text: String) -> String {
         var out = text
         for tag in ["task-notification", "system-reminder", "local-command-stdout",
@@ -441,6 +458,61 @@ enum Transcript {
             rest = rest[end.upperBound...]
         }
         return out + rest
+    }
+
+    // MARK: - Slash commands
+
+    /// The slash command a turn **is**, as one line: `/model fable`.
+    ///
+    /// ``withoutMachineBlocks`` takes `<command-name>`, `<command-message>` and `<command-args>`
+    /// out, and for the *expansion* of a command — the paragraphs of instructions a skill unrolls
+    /// into the user's turn — that is right. It is wrong for the command itself. What is left of
+    /// a `/model fable` afterwards is nothing at all, so the entry is dropped, so a session whose
+    /// only traffic so far has been slash commands reads in the pane as a session that has said
+    /// nothing: the one place somebody looks to find out what has been happening is the one place
+    /// it is not.
+    ///
+    /// So the three tags come back as the line somebody typed. `nil` for the turns that are not
+    /// commands, which is nearly all of them.
+    ///
+    /// `<command-message>` is the picker's own label for the row and is not typed by anybody; it
+    /// stays out.
+    static func slashCommand(in text: String) -> String? {
+        guard let name = inner(tag: "command-name", of: text)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
+        let command = name.hasPrefix("/") ? name : "/" + name
+        guard let args = inner(tag: "command-args", of: text)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !args.isEmpty else { return command }
+        return command + " " + args
+    }
+
+    /// What a slash command printed, with the terminal's colours taken out.
+    ///
+    /// This is the half of the exchange that says whether the command worked — `Set model to
+    /// Opus 5` — and Claude Code records it as its own turn, tagged, on the user's side. It is
+    /// filed as a tool result rather than as anybody's words: nobody said it, the machine
+    /// answered it, and one line with the rest a tap away is what the pane does with an answer.
+    ///
+    /// A command that printed nothing leaves the tag empty, and an empty result is no result.
+    static func commandOutput(in text: String) -> String? {
+        var parts: [String] = []
+        for tag in ["local-command-stdout", "local-command-stderr"] {
+            guard let body = inner(tag: tag, of: text) else { continue }
+            let plain = Ansi.plain(body).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !plain.isEmpty { parts.append(plain) }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n")
+    }
+
+    /// What is inside the first `<tag>…</tag>`, or nil when there is no such tag. The inverse of
+    /// ``removing(tag:from:)``, and truncated the same way: opened and never closed means the
+    /// record was cut off mid-write, and everything after the opening tag is the block.
+    private static func inner(tag: String, of text: String) -> String? {
+        guard let start = text.range(of: "<\(tag)>") else { return nil }
+        guard let end = text.range(of: "</\(tag)>", range: start.upperBound..<text.endIndex) else {
+            return String(text[start.upperBound...])
+        }
+        return String(text[start.upperBound..<end.lowerBound])
     }
 
     // MARK: - The question tool

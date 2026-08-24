@@ -404,7 +404,7 @@ struct Italian: Copy {
     let webInfoTokens = "token"
     let webInfoSwitchModel = "Cambia modello"
     let webInfoModelOther = "un altro modello…"
-    let webInfoModelSent = "/model {model} inviato. La scheda lo mostrerà dopo la prossima risposta."
+    let webInfoModelSent = "/model {model} inviato. Conferma in corso…"
     let webInfoModelBusy = "Il cambio aspetta che la sessione sia inattiva."
     let webInfoLimitsClaude = "Claude Code annota una finestra solo quando è esaurita; fino ad allora non si sa nulla."
     let webInfoCopied = "Id della sessione copiato."

@@ -196,12 +196,10 @@ enum StateHook {
     /// only one thread ever touches would be a lock explaining nothing.
     private static var previous: [String: SessionState] = [:]
 
-    /// When each session started the turn it is in the middle of.
-    ///
-    /// Only exists to answer "was this one long enough to be worth a buzz". Keyed by session id
-    /// and cleared the moment the turn ends, so a machine that has been up for a week holds one
-    /// entry per session that is working right now and nothing else.
-    private static var startedWorking: [String: Date] = [:]
+    /// The clock behind "a long turn finished". Kept as a value with a pure-ish update boundary
+    /// because the edge cases are the feature: launching halfway through work and pausing for a
+    /// permission must not erase time that belongs to the same turn.
+    private static var finishTracker = FinishTracker()
 
     /// How long a turn has to have run before finishing it is news.
     ///
@@ -210,6 +208,54 @@ enum StateHook {
     /// same fact arriving late. Over it you had gone to do something else, which is the entire
     /// case for a notification.
     static let finishThreshold: TimeInterval = 120
+
+    /// Remember the beginning of each turn across the imperfect sequence of screen readings.
+    ///
+    /// A live line has its own elapsed counter. That is stronger evidence than the instant this
+    /// app happened to notice it, and lets a newly launched Clawdline recover a turn already in
+    /// progress. `waiting` deliberately keeps the clock: a permission prompt pauses one turn; it
+    /// does not begin a new one. `idle` ends it, and a vanished session is forgotten.
+    struct FinishTracker {
+        private var began: [String: Date] = [:]
+
+        mutating func update(states: [String: SessionState],
+                             sessions: [TargetSession],
+                             changes: [Change],
+                             now: Date,
+                             threshold: TimeInterval) -> [TargetSession] {
+            let live = Set(sessions.map(\.id))
+            began = began.filter { live.contains($0.key) }
+
+            // Read every current working state, not only transitions into one. The first reading
+            // after launch is intentionally not a transition, but it still carries a real clock.
+            for session in sessions {
+                guard case .working(let line) = states[session.id] else { continue }
+                let inferred = Activity.elapsed(in: line).map { now.addingTimeInterval(-$0) } ?? now
+                if let existing = began[session.id] {
+                    began[session.id] = min(existing, inferred)
+                } else {
+                    began[session.id] = inferred
+                }
+            }
+
+            var finished: [TargetSession] = []
+            for change in changes where change.to == .idle {
+                let start = began.removeValue(forKey: change.session.id)
+                // Usually this is working → idle. It may also be waiting → idle when somebody
+                // answers a permission and the remaining work finishes before the next capture;
+                // requiring one last observed spinner there recreates the same missed-event bug.
+                guard let start else { continue }
+                if now.timeIntervalSince(start) >= threshold { finished.append(change.session) }
+            }
+
+            // Clear a turn even when the previous reading was unknown and therefore produced no
+            // transition. Otherwise the next prompt in that terminal inherits an old clock.
+            for session in sessions where states[session.id] == .idle {
+                began.removeValue(forKey: session.id)
+            }
+            return finished
+        }
+    }
 
     /// Start listening.
     ///
@@ -220,6 +266,10 @@ enum StateHook {
     /// explicit at the only place it could be got wrong.
     static func observe() {
         previous = SessionWatch.shared.states
+        finishTracker = FinishTracker()
+        _ = finishTracker.update(states: previous,
+                                 sessions: SessionWatch.shared.targets,
+                                 changes: [], now: Date(), threshold: finishThreshold)
         SessionWatch.shared.observers[observerKey] = { react() }
     }
 
@@ -229,6 +279,7 @@ enum StateHook {
     static func stop() {
         SessionWatch.shared.observers.removeValue(forKey: observerKey)
         previous = [:]
+        finishTracker = FinishTracker()
     }
 
     /// What to call the project a session belongs to on a lock screen.
@@ -293,15 +344,14 @@ enum StateHook {
             sendPush(for: change.session, event: L.t.pushWaiting)
         }
 
-        // "It finished" — off unless asked for, and thresholded even then. See `finishThreshold`
-        // for why the unthresholded version is the mistake.
+        // "It finished" — thresholded even when enabled. See `finishThreshold` for why the
+        // unthresholded version is the mistake. Tracking still runs while the preference is off,
+        // so turning it on cannot announce a turn that already ended.
         let now = Date()
-        for change in changes {
-            if case .working = change.to { startedWorking[change.session.id] = now; continue }
-            guard let began = startedWorking.removeValue(forKey: change.session.id) else { continue }
-            guard Config.shared.pushOnFinish, change.to == .idle else { continue }
-            guard now.timeIntervalSince(began) >= finishThreshold else { continue }
-            sendPush(for: change.session, event: L.t.pushFinished)
+        let finished = finishTracker.update(states: states, sessions: sessions, changes: changes,
+                                            now: now, threshold: finishThreshold)
+        if Config.shared.pushOnFinish {
+            for session in finished { sendPush(for: session, event: L.t.pushFinished) }
         }
 
         let argv = Config.shared.onStateChange

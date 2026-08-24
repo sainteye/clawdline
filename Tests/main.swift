@@ -1569,6 +1569,31 @@ group("an image goes over as an image, not as a path") {
            Drop.pieces(text: "just words", imagePaths: ["/tmp/gone.png"]), [.text("just words")])
 }
 
+group("remote images survive the terminal handoff") {
+    // The phone sends bytes, but Codex receives a path and opens it only after the HTTP request
+    // has returned. Deleting the file with the route's defer made the path dead on arrival.
+    let image = NSImage(size: NSSize(width: 2, height: 2))
+    image.lockFocus()
+    NSColor.systemBlue.setFill()
+    NSRect(x: 0, y: 0, width: 2, height: 2).fill()
+    image.unlockFocus()
+    let png = NSBitmapImageRep(data: image.tiffRepresentation!)!
+        .representation(using: .png, properties: [:])!
+    let source = "data:image/png;base64," + png.base64EncodedString()
+
+    let made = RemoteServer.pieces(text: "look", images: [source, source])
+    expect("every upload becomes an image piece", made.stored.count, 2)
+    expect("same-millisecond uploads keep distinct paths", Set(made.stored).count, 2)
+    check("the cached uploads exist before handoff",
+          made.stored.allSatisfy { FileManager.default.fileExists(atPath: $0) })
+    RemoteServer.finishUploads(made.stored, sent: true)
+    check("a successful handoff keeps them for Codex",
+          made.stored.allSatisfy { FileManager.default.fileExists(atPath: $0) })
+    RemoteServer.finishUploads(made.stored, sent: false)
+    check("a failed handoff leaves no orphans",
+          made.stored.allSatisfy { !FileManager.default.fileExists(atPath: $0) })
+}
+
 group("giving the pasteboard back") {
     // Borrowing the pasteboard and not returning it costs somebody whatever they copied five
     // minutes ago, for a feature they never asked for.
@@ -2704,6 +2729,48 @@ group("the machinery Claude Code injects into your turns") {
            Transcript.withoutMachineBlocks("deploy it"), "deploy it")
 }
 
+group("a slash command is the one piece of that machinery somebody typed") {
+    // The three rows one `/model` leaves behind. `withoutMachineBlocks` empties all three, and an
+    // empty entry is dropped — so a session whose whole history so far is one switch read in the
+    // pane as a session that had said nothing at all, which is the one thing a pane must not do.
+    let rows = [
+        #"{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>Caveat: x</local-command-caveat>"}}"#,
+        #"{"type":"user","timestamp":"2026-08-24T03:24:21.355Z","message":{"role":"user","content":"<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>fable</command-args>"}}"#,
+        #"{"type":"user","message":{"role":"user","content":"<local-command-stdout>Set model to \u001b[1mFable 5\u001b[22m and saved as your default for new sessions</local-command-stdout>"}}"#,
+    ].joined(separator: "\n")
+    let entries = Transcript.parse(rows)
+    expect("the command and what it printed, and not the caveat between them", entries.count, 2)
+    expect("what somebody typed is theirs", entries.first?.kind, Transcript.Entry.Kind.user)
+    expect("said as one line", entries.first?.text, "/model fable")
+    check("and stamped like any turn", entries.first?.time != nil)
+    expect("what it printed is the machine answering", entries.last?.kind, Transcript.Entry.Kind.toolResult)
+    expect("with the terminal's bold taken out", entries.last?.text,
+           "Set model to Fable 5 and saved as your default for new sessions")
+
+    expect("a command with nothing after it is just the command",
+           Transcript.slashCommand(in: "<command-name>/recap</command-name><command-args></command-args>"), "/recap")
+    expect("an argument comes with it",
+           Transcript.slashCommand(in: "<command-name>/code-review</command-name><command-args>high</command-args>"), "/code-review high")
+    expect("a name written without its slash is given one",
+           Transcript.slashCommand(in: "<command-name>model</command-name>"), "/model")
+    expect("the picker's own label for the row is not typed by anybody",
+           Transcript.slashCommand(in: "<command-name>/model</command-name><command-message>model</command-message>"), "/model")
+    check("ordinary prose is not a command", Transcript.slashCommand(in: "run /model for me") == nil)
+
+    // A command whose expansion arrives in the same block keeps both: the line that was typed,
+    // and whatever of the turn was not machinery.
+    expect("the line typed leads what is left of the turn",
+           Transcript.parse(#"{"type":"user","message":{"role":"user","content":"<command-name>/deploy</command-name>now please"}}"#).first?.text,
+           "/deploy\nnow please")
+
+    check("a command that printed nothing has no result",
+          Transcript.commandOutput(in: "<local-command-stdout></local-command-stdout>") == nil)
+    expect("stderr counts as printed too",
+           Transcript.commandOutput(in: "<local-command-stderr>no such model</local-command-stderr>"), "no such model")
+    check("and a turn with no command in it prints nothing",
+          Transcript.commandOutput(in: "deploy it") == nil)
+}
+
 group("the remote server refuses the right cross-origin requests") {
     // DNS rebinding: the page keeps calling itself evil.com while the address behind the name
     // becomes 127.0.0.1, so origin checks stop working — and Host is the one thing that does not
@@ -3172,6 +3239,49 @@ group("state hook: a reading is not an event") {
                                  sessions: sessions).count, 0)
 }
 
+group("a long turn keeps enough time to announce its finish") {
+    let session = hookTarget("LONG")
+    let epoch = Date(timeIntervalSince1970: 1_000)
+    func change(_ from: SessionState, _ to: SessionState) -> StateHook.Change {
+        StateHook.Change(session: session, from: from, to: to)
+    }
+
+    var launchedLate = StateHook.FinishTracker()
+    expect("a first reading is still not a finished turn",
+           launchedLate.update(states: [session.id: .working("Working (2m 5s • esc to interrupt)")],
+                               sessions: [session], changes: [], now: epoch,
+                               threshold: 120).count, 0)
+    expect("but its own clock survives launching halfway through",
+           launchedLate.update(states: [session.id: .idle], sessions: [session],
+                               changes: [change(.working("Working (2m 5s)"), .idle)],
+                               now: epoch.addingTimeInterval(1), threshold: 120).map(\.id),
+           [session.id])
+
+    var interrupted = StateHook.FinishTracker()
+    _ = interrupted.update(states: [session.id: .working("Generating… (1s)")],
+                           sessions: [session], changes: [change(.idle, .working("Generating… (1s)"))],
+                           now: epoch, threshold: 120)
+    _ = interrupted.update(states: [session.id: .waiting], sessions: [session],
+                           changes: [change(.working("Generating… (2m 3s)"), .waiting)],
+                           now: epoch.addingTimeInterval(123), threshold: 120)
+    _ = interrupted.update(states: [session.id: .working("Generating… (1s)")],
+                           sessions: [session], changes: [change(.waiting, .working("Generating… (1s)"))],
+                           now: epoch.addingTimeInterval(140), threshold: 120)
+    expect("a permission pause does not turn one long task into two short ones",
+           interrupted.update(states: [session.id: .idle], sessions: [session],
+                              changes: [change(.working("Generating… (8s)"), .idle)],
+                              now: epoch.addingTimeInterval(148), threshold: 120).map(\.id),
+           [session.id])
+
+    var short = StateHook.FinishTracker()
+    _ = short.update(states: [session.id: .working("Working (8s)")], sessions: [session],
+                     changes: [], now: epoch, threshold: 120)
+    expect("the two-minute preference remains a real threshold",
+           short.update(states: [session.id: .idle], sessions: [session],
+                        changes: [change(.working("Working (8s)"), .idle)],
+                        now: epoch.addingTimeInterval(2), threshold: 120).count, 0)
+}
+
 group("state hook: the words a hook reads") {
     // Spelled out rather than derived, because these are somebody else's API: renaming a case in
     // Swift must not quietly rename a string a shell script compares against.
@@ -3592,6 +3702,22 @@ group("the list of places, tidied") {
           StartPoints.id(for: "/a/b") != StartPoints.id(for: "/a/c"))
     check("and there is no path anywhere in it",
           !StartPoints.id(for: "/Users/me/code/notebook").contains("notebook"))
+
+    // Codex records every cwd it is launched in, including locations its own apps and another
+    // assistant made. They are true cwd values and still not projects somebody created.
+    func durable(_ path: String) -> Bool {
+        StartPoints.isDurablePlace(path, home: "/Users/me",
+                                   temporary: "/private/var/folders/me/T")
+    }
+    check("the home folder is not invented into a project", !durable("/Users/me"))
+    check("Codex Desktop's private workspace is not one",
+          !durable("/Users/me/.codex/.chatgpt-projects/g-p-123"))
+    check("nor is the Documents workspace Codex Desktop creates",
+          !durable("/Users/me/Documents/Codex/2026-08-24/new-chat"))
+    check("an assistant scratchpad under the system temp root is not one",
+          !durable("/private/var/folders/me/T/claude/scratchpad/probe"))
+    check("an ordinary checkout remains a place",
+          durable("/Users/me/code/clawdline"))
 }
 
 group("starting a session is behind the write gate, like everything else that runs code") {
@@ -4322,11 +4448,22 @@ group("a rollout says where its session is working") {
     """
     check("a person's thread says so", Codex.head(inText: mine)?.isUser == true)
     check("and a subagent's says otherwise", Codex.head(inText: theirs)?.isUser == false)
+    check("a terminal rollout is an interactive CLI session",
+          Codex.head(inText: mine)?.isInteractiveCLI == true)
+    let desktop = """
+    {"type":"session_meta","payload":{"session_id":"c","cwd":"/Users/me/Documents/Codex/new-chat",\
+    "originator":"codex_work_desktop","source":"vscode","thread_source":"user"}}
+    """
+    check("a Desktop conversation is a person but not a CLI project",
+          Codex.head(inText: desktop)?.isUser == true
+            && Codex.head(inText: desktop)?.isInteractiveCLI == false)
     // The field is newer than the format. Absent means nobody wrote it down, which is not the
     // same as "this is a subagent" — and reading it that way would empty the pane for anyone
     // whose sessions predate it.
     check("a rollout that does not say counts as a person's",
           Codex.head(inText: head)?.isUser == true)
+    check("and an old rollout remains a CLI session",
+          Codex.head(inText: head)?.isInteractiveCLI == true)
 }
 
 group("the rollout a Codex process is holding open") {
@@ -4939,6 +5076,71 @@ group("the models a session can be moved to, and the word that moves each") {
     let bare = SessionInfo.payload(id: "X", assistant: nil, sessionId: nil, model: nil, cwd: nil, startedAt: nil,
                                    usage: nil, limits: SessionInfo.Limits(), files: nil, deploy: [])
     expect("and none is an empty list rather than an absent key", (bare["models"] as? [[String: Any]])?.count, 0)
+}
+
+group("the model a `/model` names, before the reply that proves it") {
+    func line(_ obj: [String: Any]) -> String {
+        (try? JSONSerialization.data(withJSONObject: obj)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    }
+    func user(_ content: String) -> String {
+        line(["type": "user", "message": ["role": "user", "content": content]])
+    }
+    func file(_ rows: [String]) -> Data { Data((rows.joined(separator: "\n") + "\n").utf8) }
+
+    // Exactly the three rows Claude Code writes for one `/model`, caveat and all. None of them is
+    // an assistant turn, so before this the file's last word on the model was the one the session
+    // had just left — and for a session that has only ever been switched, there was no word at all.
+    let caveat = line(["type": "user", "isMeta": true,
+                       "message": ["role": "user", "content": "<local-command-caveat>Caveat: …</local-command-caveat>"]])
+    let asked = user("<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>opus</command-args>")
+    let printed = user("<local-command-stdout>Set model to \u{1b}[1mOpus 5\u{1b}[22m and saved as your default for new sessions</local-command-stdout>")
+    let reply = line(["type": "assistant", "message": ["model": "claude-sonnet-5", "usage": ["input_tokens": 1]]])
+
+    expect("a switch is the newest thing anybody said about the model",
+           SessionInfo.claudeLimits(transcript: file([reply, caveat, asked, printed])).model, "claude-opus-5")
+    expect("and a reply after the switch is newer still",
+           SessionInfo.claudeLimits(transcript: file([caveat, asked, printed, reply])).model, "claude-sonnet-5")
+    expect("a session that has done nothing but switch still knows what it is on",
+           SessionInfo.claudeLimits(transcript: file([caveat, asked, printed])).model, "claude-opus-5")
+    // The word typed becomes the id a reply would have carried, so the card says one thing about
+    // one session either side of that reply and the page's row matching keeps working.
+    expect("the word typed is turned into the id a reply would have carried",
+           SessionInfo.claudeLimits(transcript: file([asked])).model, "claude-opus-5")
+
+    // `/model` with nothing after it opens a picker: the row records that a switch happened
+    // without recording what to, and the line it printed is the only place the choice appears.
+    let picked = user("<command-name>/model</command-name>\n<command-args></command-args>")
+    expect("a picker's choice is read off what it printed",
+           SessionInfo.claudeLimits(transcript: file([picked, printed])).model, "claude-opus-5")
+    check("and a picker that printed nothing says nothing",
+          SessionInfo.claudeLimits(transcript: file([picked])).model == nil)
+    // Read from the end, the printed line arrives first — and is only believed where a `/model`
+    // asked for it. On its own it is somebody's terminal output.
+    check("a stray line about models is not a switch",
+          SessionInfo.claudeLimits(transcript: file([printed])).model == nil)
+
+    expect("the word a row asked for", SessionInfo.modelSwitch(inRow: "<command-name>/model</command-name><command-args>haiku</command-args>"), "haiku")
+    expect("only the first word of it", SessionInfo.modelSwitch(inRow: "<command-name>/model</command-name><command-args>opus and then some</command-args>"), "opus")
+    expect("no argument is the empty string, which is not the same as no row",
+           SessionInfo.modelSwitch(inRow: "<command-name>/model</command-name>"), "")
+    check("another command is not one", SessionInfo.modelSwitch(inRow: "<command-name>/recap</command-name>") == nil)
+    check("and neither is ordinary prose", SessionInfo.modelSwitch(inRow: "switch to opus please") == nil)
+
+    expect("the name it printed, without the terminal's bold",
+           SessionInfo.modelPrinted(inRow: "<local-command-stdout>Set model to \u{1b}[1mHaiku 4.5\u{1b}[22m and saved as your default for new sessions</local-command-stdout>"),
+           "Haiku 4.5")
+    expect("and without a trailing clause when there is none",
+           SessionInfo.modelPrinted(inRow: "<local-command-stdout>Set model to Sonnet 5</local-command-stdout>"), "Sonnet 5")
+    check("a wording this build does not know comes back nil rather than wrong",
+          SessionInfo.modelPrinted(inRow: "<local-command-stdout>Model unchanged</local-command-stdout>") == nil)
+
+    expect("an alias becomes the id", SessionInfo.claudeModelID(word: "sonnet", printed: nil), "claude-sonnet-5")
+    expect("a printed name becomes the same id", SessionInfo.claudeModelID(word: "", printed: "Sonnet 5"), "claude-sonnet-5")
+    expect("a model released after this build is passed through as it was written",
+           SessionInfo.claudeModelID(word: "opus-6", printed: nil), "opus-6")
+    expect("and so is a name it has never heard printed",
+           SessionInfo.claudeModelID(word: "", printed: "Default (recommended)"), "Default (recommended)")
+    check("nothing said is nothing answered", SessionInfo.claudeModelID(word: "", printed: nil) == nil)
 }
 
 // MARK: - Result

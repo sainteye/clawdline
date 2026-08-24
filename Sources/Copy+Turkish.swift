@@ -404,7 +404,7 @@ struct Turkish: Copy {
     let webInfoTokens = "token"
     let webInfoSwitchModel = "Modeli değiştir"
     let webInfoModelOther = "başka bir model…"
-    let webInfoModelSent = "/model {model} gönderildi. Kart bir sonraki yanıttan sonra gösterir."
+    let webInfoModelSent = "/model {model} gönderildi. Doğrulanıyor…"
     let webInfoModelBusy = "Değişiklik oturum boşta kalana kadar bekler."
     let webInfoLimitsClaude = "Claude Code bir pencereyi ancak tükenince yazar; o zamana kadar bir şey bilinmez."
     let webInfoCopied = "Oturum kimliği kopyalandı."

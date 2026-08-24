@@ -34,7 +34,7 @@ enum Drop {
         }
         for type in [NSPasteboard.PasteboardType.png, .tiff] {
             guard let data = pasteboard.data(forType: type) else { continue }
-            if let path = write(data, as: type == .png ? "png" : "tiff", now: now) { return [path] }
+            if let path = store(data, as: type == .png ? "png" : "tiff", now: now) { return [path] }
         }
         return []
     }
@@ -155,10 +155,18 @@ enum Drop {
     static func filename(extension ext: String, now: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "yyyyMMdd-HHmmss-SSS"
-        return "clawdline-\(f.string(from: now)).\(ext)"
+        // A remote message can carry several pictures, all written inside one millisecond.
+        // The timestamp keeps oldest-first pruning; the suffix keeps those siblings distinct.
+        return "clawdline-\(f.string(from: now))-\(UUID().uuidString).\(ext)"
     }
 
-    private static func write(_ data: Data, as ext: String, now: Date) -> String? {
+    /// Keep bytes somewhere an assistant can read after the terminal has accepted its prompt.
+    ///
+    /// This is shared by clipboard images and remote uploads. A terminal accepting a pasted
+    /// path is not an acknowledgement that the program on the other end has opened that path:
+    /// Codex reads it later, when it handles the prompt. The bounded cache gives it that time
+    /// without turning every image ever sent into a permanent file.
+    static func store(_ data: Data, as ext: String, now: Date = Date()) -> String? {
         let dir = directory
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent(filename(extension: ext, now: now))

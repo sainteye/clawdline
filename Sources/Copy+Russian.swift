@@ -404,7 +404,7 @@ struct Russian: Copy {
     let webInfoTokens = "токенов"
     let webInfoSwitchModel = "Сменить модель"
     let webInfoModelOther = "другая модель…"
-    let webInfoModelSent = "Отправлено /model {model}. Карточка покажет её после следующего ответа."
+    let webInfoModelSent = "Отправлено /model {model}. Проверяем…"
     let webInfoModelBusy = "Смена ждёт, пока сессия не освободится."
     let webInfoLimitsClaude = "Claude Code записывает окно только когда оно исчерпано; до тех пор ничего не известно."
     let webInfoCopied = "Id сессии скопирован."

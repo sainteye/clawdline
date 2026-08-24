@@ -404,7 +404,7 @@ struct Indonesian: Copy {
     let webInfoTokens = "token"
     let webInfoSwitchModel = "Ganti model"
     let webInfoModelOther = "model lain…"
-    let webInfoModelSent = "/model {model} terkirim. Kartu menampilkannya setelah balasan berikutnya."
+    let webInfoModelSent = "/model {model} terkirim. Mengonfirmasi…"
     let webInfoModelBusy = "Penggantian menunggu sampai sesi diam."
     let webInfoLimitsClaude = "Claude Code baru mencatat sebuah jendela setelah habis, jadi sebelum itu tidak ada yang diketahui."
     let webInfoCopied = "Id sesi disalin."

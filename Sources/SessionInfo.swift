@@ -1,9 +1,9 @@
 import Foundation
 
-/// One card about a session and the assistant behind it — what it has spent, what is left of
-/// the plan's window, how much has changed on disk, and whether the last deploy went out. It is
-/// what the Claude Code status line draws at the bottom of a terminal, for somebody who is not
-/// looking at that terminal.
+/// The facts behind a session's compact web status line and its expanded card — what it has
+/// spent, what is left of the plan's window, how much has changed on disk, and whether the last
+/// deploy went out. It is what the Claude Code status line draws at the bottom of a terminal,
+/// for somebody who is not looking at that terminal.
 ///
 /// The parsing lives up here and the process that obtains the text lives at the bottom, apart,
 /// for the reason `Targets.swift` gives: the parsing is where the bugs are, and a test can hand
@@ -114,14 +114,30 @@ enum SessionInfo {
     /// Read from the end, because the last record is the whole answer and these files reach
     /// fifty megabytes; the model comes from the same pass for the same reason. The model of the
     /// refusal itself is `<synthetic>`, which is not a model and is skipped.
+    ///
+    /// **The model is not only the assistant rows' to say.** A `/model` is written down as a user
+    /// row, and the line it printed as the one after it; neither is a turn. So between a switch
+    /// and the reply that proves it — which is a whole session, for one that has been opened and
+    /// switched and not yet asked anything — the file's last word on the model is the one the
+    /// session has just left, and the card answers *unknown* or, worse, confidently wrong.
+    /// Reading from the end settles which of the two wins without a rule about it: whichever
+    /// comes first is the newest thing anybody said. The printed line is met *before* the command
+    /// that caused it, so it is held until that command turns up and `Set model to …` is only
+    /// believed where a `/model` actually asked for it.
     static func claudeLimits(transcript data: Data, now: Date = Date()) -> (limits: Limits, model: String?) {
         var limits: Limits?
         var model: String?
+        var printed: String?      // a `Set model to …` seen on the way past, not yet accounted for
         for line in data.split(separator: 0x0A).reversed() {
             if limits != nil, model != nil { break }
             let text = String(decoding: line, as: UTF8.self)
             let wantsLimit = limits == nil && (text.contains("quotaLimits") || text.contains("rate_limits"))
-            let wantsModel = model == nil && text.contains("\"model\"")
+            // Three spellings rather than one, because the rows a switch leaves behind put the
+            // word in prose inside a tag rather than in a key. Still spelled out rather than a
+            // bare `contains("model")`: what follows a match is a JSON parse of the whole line,
+            // and a line can be a hundred kilobytes of tool result that merely mentions models.
+            let wantsModel = model == nil && (text.contains("\"model\"")
+                || text.contains("/model") || text.contains("Set model to"))
             guard wantsLimit || wantsModel,
                   let obj = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any]
             else { continue }
@@ -129,6 +145,13 @@ enum SessionInfo {
                let message = obj["message"] as? [String: Any],
                let named = message["model"] as? String, !named.hasPrefix("<"), !named.isEmpty {
                 model = named
+            }
+            if wantsModel, model == nil, obj["type"] as? String == "user", let said = userText(obj) {
+                if let word = modelSwitch(inRow: said) {
+                    model = claudeModelID(word: word, printed: printed)
+                } else if let name = modelPrinted(inRow: said) {
+                    printed = name
+                }
             }
             if wantsLimit {
                 if let quota = obj["quotaLimits"] as? [String: Any] {
@@ -140,6 +163,75 @@ enum SessionInfo {
             }
         }
         return (limits ?? Limits(), model)
+    }
+
+    // MARK: - What a `/model` says
+
+    /// The word a `/model` row asked for — `opus` — or nil for any row that is not one.
+    ///
+    /// The empty string is its own answer: `/model` typed with nothing after it opens a picker,
+    /// so the row records that a switch happened without recording what to, and the line it
+    /// printed becomes the only place the choice appears.
+    static func modelSwitch(inRow text: String) -> String? {
+        guard let name = between("<command-name>", "</command-name>", in: text)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
+        guard name == "/model" || name == "model" else { return nil }
+        let args = between("<command-args>", "</command-args>", in: text)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return args.split(separator: " ").first.map(String.init) ?? ""
+    }
+
+    /// The model a `/model` printed: `Set model to ⟨bold⟩Opus 5⟨/bold⟩ and saved as your default
+    /// for new sessions`, with the terminal's bold taken back out.
+    ///
+    /// Prose, and read as prose. It is the only place the chosen name appears when a picker was
+    /// used rather than an argument typed, which is worth one string match — and a build that
+    /// words it differently comes back nil, which sends the caller to the word that was typed.
+    static func modelPrinted(inRow text: String) -> String? {
+        guard let out = between("<local-command-stdout>", "</local-command-stdout>", in: text)
+        else { return nil }
+        let plain = Ansi.plain(out)
+        guard let said = plain.range(of: "Set model to ") else { return nil }
+        var rest = plain[said.upperBound...]
+        if let stop = rest.firstIndex(of: "\n") { rest = rest[..<stop] }
+        if let stop = rest.range(of: " and ") { rest = rest[..<stop.lowerBound] }
+        let name = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
+    }
+
+    /// The id an assistant row would have carried, for a model named the way `/model` names it.
+    ///
+    /// The two sources have to end up saying the same thing. Otherwise one card reads
+    /// `claude-opus-5` before a reply and `Opus 5` after it about a session that never changed,
+    /// and the page's row matching — by id, by prefix — stops finding the button to light up.
+    ///
+    /// A name this build has never heard of is passed through as it was written. A model released
+    /// after this build is still a true answer to "what is it on", and an id invented for it
+    /// would not be.
+    static func claudeModelID(word: String, printed: String?) -> String? {
+        if !word.isEmpty, let row = claudeModels.first(where: { $0.command == word }) { return row.id }
+        if let printed, !printed.isEmpty {
+            return claudeModels.first(where: { $0.name == printed })?.id ?? printed
+        }
+        return word.isEmpty ? nil : word
+    }
+
+    /// A user row's text, in either shape a build has written it: one string, or a list of blocks.
+    private static func userText(_ obj: [String: Any]) -> String? {
+        guard let message = obj["message"] as? [String: Any] else { return nil }
+        if let text = message["content"] as? String { return text }
+        guard let blocks = message["content"] as? [[String: Any]] else { return nil }
+        let texts = blocks.compactMap { $0["text"] as? String }
+        return texts.isEmpty ? nil : texts.joined(separator: "\n")
+    }
+
+    /// What sits between two markers, or nil when the opening one is not there.
+    private static func between(_ open: String, _ close: String, in text: String) -> String? {
+        guard let start = text.range(of: open) else { return nil }
+        guard let end = text.range(of: close, range: start.upperBound..<text.endIndex) else {
+            return String(text[start.upperBound...])   // cut off mid-write: the rest is the block
+        }
+        return String(text[start.upperBound..<end.lowerBound])
     }
 
     private static func fromQuota(_ quota: [String: Any], at: Int?, now: Date) -> Limits {

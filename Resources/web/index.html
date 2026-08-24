@@ -113,7 +113,7 @@ document.documentElement.className = "booting";
 
     --radius: 11px;
     --head-h: 52px;
-    --hint-h: 34px;
+    --status-h: 34px;
     --safe-t: env(safe-area-inset-top, 0px);
     --safe-b: env(safe-area-inset-bottom, 0px);
     --safe-l: env(safe-area-inset-left, 0px);
@@ -1374,26 +1374,62 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .composer .why code { font-family: var(--mono); font-size: 11px; color: #8cbaf9; }
 
 /* ==========================================================================
-   Hint row — the same chips the bar wears along its bottom edge
+   Session status — the useful half of the terminal's own status line
    ========================================================================== */
-.hints {
+.status-line {
     flex: 0 0 auto;
-    height: calc(var(--hint-h) + var(--safe-b));
+    height: calc(var(--status-h) + var(--safe-b));
     padding: 0 calc(14px + var(--safe-r)) var(--safe-b) calc(14px + var(--safe-l));
-    display: flex; align-items: center; gap: 13px;
+    display: flex; align-items: center;
     border-top: 1px solid var(--line);
     background: rgba(14, 14, 17, 0.9);
-    color: var(--faint); font-size: 11px;
+    color: var(--faint); font: 11px/1 var(--mono);
     overflow: hidden;
 }
-.hints .pair { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
-.hints kbd {
-    font: 500 11px/1 var(--ui);
-    min-width: 20px; text-align: center;
-    border: 1px solid #2c2c35; border-radius: 5px;
-    padding: 3px 5px; color: var(--dim); background: #191920;
+.status-line .open {
+    width: 100%; min-width: 0; height: 100%;
+    display: flex; align-items: center; gap: 0;
+    text-align: left; color: inherit;
 }
-.hints .grow { flex: 1 1 auto; }
+.status-line .open:not(:disabled):hover { color: var(--dim); }
+.status-line .open:disabled { cursor: default; }
+.status-line .item { flex: 0 0 auto; white-space: nowrap; }
+.status-line .item + .item::before {
+    content: "·"; padding: 0 8px; color: #3a3a44;
+}
+.status-line .model {
+    flex: 0 1 auto;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    display: flex; align-items: center; gap: 7px;
+    color: var(--ink); font-weight: 500;
+}
+.status-line .model .assistant-logo { flex: 0 0 auto; width: 13px; height: 13px; }
+.status-line .model .word { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.status-line .usage { color: var(--dim); font-variant-numeric: tabular-nums; }
+.status-line .cost { color: var(--accent); }
+.status-line .files { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.status-line .branch { color: var(--dim); }
+.status-line .mark { margin-left: 7px; color: var(--dim); }
+.status-line .mark[data-k="staged"], .status-line .mark[data-k="clean"] { color: var(--ok); }
+.status-line .mark[data-k="untracked"] { color: var(--warn); }
+.status-line .mark[data-k="conflict"] { color: var(--bad); }
+.status-line .limits {
+    margin-left: auto; padding-left: 16px;
+    display: flex; align-items: center; gap: 13px;
+    color: var(--dim); font-variant-numeric: tabular-nums;
+}
+.status-line .limit { white-space: nowrap; }
+.status-line .limit b { color: var(--ink); font-weight: 500; }
+.status-line .limit[data-level="warn"] b { color: var(--warn); }
+.status-line .limit[data-level="bad"] b { color: var(--bad); }
+.status-line .empty { color: var(--faint); }
+
+/* Keep the model and the plan windows — the two facts that decide the next turn — when the
+   browser is only just wide enough to retain its two-column layout. */
+@media (max-width: 1080px) {
+    .status-line .files { display: none; }
+    .status-line .limits { padding-left: 12px; }
+}
 
 /* ==========================================================================
    Overlays — shortcuts, and the small word that says what just happened
@@ -1804,7 +1840,7 @@ a.dep:hover .host { color: var(--accent); }
 .toast {
     position: fixed; z-index: 70;
     left: 50%; transform: translateX(-50%);
-    bottom: calc(20px + var(--safe-b) + var(--hint-h));
+    bottom: calc(20px + var(--safe-b) + var(--status-h));
     background: #1e1e25; border: 1px solid var(--line); border-radius: 10px;
     padding: 9px 14px; font-size: 12.5px; color: var(--ink);
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
@@ -1861,7 +1897,7 @@ a.dep:hover .host { color: var(--accent); }
     /* One line of header, and the name of the session is the part of it worth keeping. A control
        that cannot be pressed yet is the first thing to go. */
     .detail-head .chip:disabled { display: none; }
-    .hints { display: none; }
+    .status-line { display: none; }
     .filter-row .slash { display: none; }
 
     .row { padding: 13px 14px; margin-bottom: 8px; gap: 4px 12px; }
@@ -2131,7 +2167,12 @@ a.dep:hover .host { color: var(--accent); }
     </section>
 </main>
 
-<footer class="hints" id="hints"></footer>
+<!-- The desktop's persistent glance at the open session. It is a button because the full
+     Session info card is the expanded form of the same facts. Phones keep the composer on the
+     bottom edge instead; the status line is hidden at the phone breakpoint above. -->
+<footer class="status-line" id="status-line">
+    <button class="open" id="status-line-open" type="button" disabled></button>
+</footer>
 
 <div class="overlay" id="keys" hidden>
     <div class="sheet" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
@@ -2143,6 +2184,7 @@ a.dep:hover .host { color: var(--accent); }
             <dt><kbd>esc</kbd></dt><dd>Clear the filter, then step back</dd>
             <dt><kbd>⌘K</kbd></dt><dd>Focus the session list</dd>
             <dt><kbd>⌘J</kbd></dt><dd>Show or hide the transcript</dd>
+            <dt><kbd>⌘I</kbd></dt><dd>Session info</dd>
             <dt><kbd>g</kbd> <kbd>G</kbd></dt><dd>Top or bottom of the transcript</dd>
             <dt><kbd>r</kbd></dt><dd>Reverse the transcript order</dd>
             <dt><kbd>?</kbd></dt><dd>This card</dd>
@@ -2247,12 +2289,12 @@ a.dep:hover .host { color: var(--accent); }
     </div>
 </div>
 
-<!-- The Session info card: the status line at the bottom of a Claude Code terminal, for somebody
+<!-- The Session info card: the expanded form of the persistent status line, for somebody
      who is not at that terminal. What this session is and what model it is on, what it has
      spent, what is left of the plan's window, how much has changed on disk, and whether the
-     last deploy went out. Asked for when the card opens and on the refresh button, never on
-     the stream: the Mac reads a transcript that can be fifty megabytes and runs a `git` to
-     answer. A plan window nobody reported is drawn as *unknown*, never as 0%. -->
+     last deploy went out. The status line and card share a short-lived answer so the Mac does
+     not read a transcript that can be fifty megabytes and run `git` twice for the same facts.
+     A plan window nobody reported is drawn as *unknown*, never as 0%. -->
 <div class="overlay" id="info" hidden>
     <div class="sheet info-sheet" role="dialog" aria-modal="true" id="info-sheet" aria-label="About this session">
         <h2 id="info-title">About this session</h2>
@@ -2870,7 +2912,7 @@ var els = {};
  "git-panel", "git-title", "git-refresh", "git-close", "git-body",
  "composer", "msg", "send", "why", "waiting", "agents", "skill-menu", "stale", "stale-say", "stale-go",
  "detail-head", "agent-head", "agent-back", "agent-back-label", "agent-name", "agent-sub",
- "hints", "keys", "toast", "brand", "brand-mark",
+ "status-line", "status-line-open", "keys", "toast", "brand", "brand-mark",
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
  "settings-notify-go", "settings-notify-test", "settings-notify-said", "settings-version",
  "settings-close", "settings-order", "settings-order-title", "settings-order-say",
@@ -3489,10 +3531,10 @@ var Live = {
     /// Where a session may be started. Asked afresh every time the sheet opens: the Mac drops
     /// directories that are no longer there while it builds this, and the answer is only as
     /// true as the moment it was given.
-    /// One card about a session: what it is on, what it has spent, what is left of the plan's
-    /// window, how much has changed on disk, whether the last deploy went out. Asked when the
-    /// card opens and never with the session list, for the same reason as `links` — plus a
-    /// transcript to read that can be fifty megabytes.
+    /// The facts behind the compact status line and its expanded card: what the session is on,
+    /// what it has spent, what is left of the plan's window, how much changed on disk, whether
+    /// the last deploy went out. Kept out of the session-list stream because answering reads a
+    /// transcript that can be fifty megabytes; the client gives the answer a short-lived cache.
     info: function (id) {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/info");
     },
@@ -4751,9 +4793,9 @@ function render() {
     renderComposer();
     // The Session info card's buttons depend on whether the session is idle.
     if (typeof Info === "object" && Info) Info.follow();
+    if (typeof StatusLine === "object" && StatusLine) StatusLine.follow();
     renderWaiting();
     renderAgents();
-    renderHints();
 }
 
 function renderConn() {
@@ -6107,17 +6149,6 @@ function agentRowHTML(a, here) {
         "</button>";
 }
 
-function renderHints() {
-    if (phone()) { els.hints.innerHTML = ""; return; }
-    var pairs = [
-        ["↑↓", T.webHintMove], ["⏎", T.webHintOpen], ["/", T.webHintFilter],
-        ["⌘K", T.hintList], ["⌘J", T.webHintPane], ["r", T.hintOrder], ["?", T.hintKeys]
-    ];
-    els.hints.innerHTML = '<span class="grow"></span>' + pairs.map(function (p) {
-        return '<span class="pair"><kbd>' + esc(p[0]) + "</kbd>" + esc(p[1]) + "</span>";
-    }).join("");
-}
-
 /* ---- the words that live in the markup ----------------------------------- */
 
 /**
@@ -6214,6 +6245,7 @@ function paintStatic() {
     var rows = [
         [["↑", "↓"], T.webKeysMove], [["⏎"], T.webKeysOpen], [["/"], T.webKeysFilter],
         [["esc"], T.webKeysEscape], [["⌘K"], T.webKeysList], [["⌘J"], T.webKeysPane],
+        [["⌘I"], T.webSessionInfo],
         [["g", "G"], T.webKeysEnds], [["r"], T.webKeysReverse], [["?"], T.webKeysThis]
     ];
     sheet.querySelector("dl").innerHTML = rows.map(function (row) {
@@ -6754,8 +6786,8 @@ document.addEventListener("keydown", function (ev) {
         return;
     }
 
-    // The two that work from anywhere, including out of a text box, because they are how you
-    // get out of the text box.
+    // The three that work from anywhere, including out of a text box, because they are how you
+    // get out of the text box or into the session's details.
     if (meta && (key === "k" || key === "K")) {
         ev.preventDefault();
         els.rows.focus();
@@ -6767,6 +6799,14 @@ document.addEventListener("keydown", function (ev) {
         if (phone()) { els.app.dataset.view = els.app.dataset.view === "detail" ? "list" : "detail"; return; }
         S.paneOpen = !S.paneOpen;
         els.app.dataset.pane = S.paneOpen ? "on" : "off";
+        return;
+    }
+    if (meta && (key === "i" || key === "I")) {
+        ev.preventDefault();
+        if (!els.info.hidden) { Info.close(); return; }
+        // Do not stack one sheet over another. The shortcut remains global while composing, but
+        // a visible settings, links, start or keyboard card owns the next key until it closes.
+        if (els.settings.hidden && els.start.hidden && els.links.hidden && els.keys.hidden) Info.open();
         return;
     }
 
@@ -8165,16 +8205,189 @@ els["links-list"].addEventListener("click", function (ev) {
 });
 
 /**
+ * One small cache in front of the expensive session-info read. The status line needs those facts
+ * while the card is closed, and opening the card immediately afterwards must not make the Mac
+ * read the same transcript and run the same `git status` twice. A minute is fresh enough for a
+ * glance; ending a turn and the card's Refresh button both ask explicitly for a newer answer.
+ */
+var SessionFacts = (function () {
+    var TTL = 60000;
+    var cache = {};       // id -> { data, at }
+    var pending = {};     // id -> Promise
+
+    return {
+        peek: function (id) { return cache[id] ? cache[id].data : null; },
+        fresh: function (id) { return !!(cache[id] && Date.now() - cache[id].at < TTL); },
+        drop: function (id) { if (id) delete cache[id]; },
+        get: function (id, force) {
+            if (!id || typeof api.info !== "function") return Promise.resolve(null);
+            if (!force && this.fresh(id)) return Promise.resolve(cache[id].data);
+            if (pending[id]) return pending[id];
+            pending[id] = api.info(id).then(function (answer) {
+                var data = (answer && answer.info) || null;
+                cache[id] = { data: data, at: Date.now() };
+                delete pending[id];
+                return data;
+            }).catch(function (e) {
+                delete pending[id];
+                throw e;
+            });
+            return pending[id];
+        }
+    };
+})();
+
+/**
+ * The persistent desktop status line. This is the compact reading of the Session info card:
+ * model, total token usage and cost, working-tree summary, and the plan windows. The whole row
+ * opens the card, just as clicking a terminal status line asks for the detail behind a number.
+ */
+var StatusLine = (function () {
+    var forId = null;
+    var data = null;
+    var ticket = 0;
+    var nextAt = 0;
+    var stateSeen = "";
+
+    function compact(n) {
+        if (typeof n !== "number") return T.webInfoUnknown;
+        if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 1 : 2) + "M";
+        if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + "K";
+        return String(n);
+    }
+    function dollars(x) { return x < 0.01 ? "<$0.01" : "$" + x.toFixed(2); }
+
+    function modelName(d) {
+        var s = d.session || {}, u = d.usage || {};
+        var current = s.model || u.model || "";
+        var row = (d.models || []).filter(function (m) {
+            return current && (current === m.id || current.indexOf(m.id) === 0);
+        })[0];
+        return row ? row.name : current;
+    }
+
+    function marks(f) {
+        var rows = [["staged", "+", f.staged], ["unstaged", "*", f.unstaged],
+                    ["untracked", "?", f.untracked], ["conflict", "!", f.conflict]]
+            .filter(function (m) { return m[2]; });
+        if (!rows.length) return '<span class="mark" data-k="clean">✓</span>';
+        return rows.map(function (m) {
+            return '<span class="mark" data-k="' + m[0] + '">' + m[1] + m[2] + "</span>";
+        }).join("");
+    }
+
+    function html(d) {
+        var s = d.session || {}, u = d.usage, f = d.files, windows = (d.limits || {}).windows || [];
+        var model = modelName(d) || assistantName(s.assistant);
+        var out = '<span class="item model">' + assistantLogo(s.assistant) +
+            '<span class="word">' + esc(model) + "</span></span>";
+
+        if (u && typeof u.total === "number") {
+            out += '<span class="item usage" title="' + esc(u.total.toLocaleString()) + " " +
+                esc(T.webInfoTokens) + '">' + esc(compact(u.total)) + " " + esc(T.webInfoTokens) + "</span>";
+            if (typeof u.costUsd === "number") {
+                out += '<span class="item cost">' + esc(dollars(u.costUsd)) + "</span>";
+            }
+        }
+
+        if (f) {
+            var branch = f.branch || (f.head ? f.head.slice(0, 7) : "");
+            out += '<span class="item files">' +
+                (branch ? '<span class="branch">⎇ ' + esc(branch) + "</span>" : "") + marks(f) + "</span>";
+        }
+
+        if (windows.length) {
+            out += '<span class="limits">' + windows.map(function (w) {
+                var pct = typeof w.usedPercent === "number"
+                    ? Math.max(0, Math.min(100, Math.round(w.usedPercent))) : null;
+                var level = pct === null ? "" : (pct >= 85 ? "bad" : (pct >= 60 ? "warn" : "ok"));
+                return '<span class="limit" data-level="' + level + '">' + esc(w.name) + " " +
+                    '<b>' + (pct === null ? esc(T.webInfoUnknown) : pct + "%") + "</b></span>";
+            }).join("") + "</span>";
+        }
+        return out;
+    }
+
+    function draw() {
+        var button = els["status-line-open"];
+        button.title = T.webSessionInfo + " (⌘I)";
+        button.setAttribute("aria-label", T.webSessionInfo);
+        button.disabled = !forId;
+        if (!forId) {
+            button.innerHTML = '<span class="empty">' + esc(T.webPickSession) + "</span>";
+            return;
+        }
+        if (data) {
+            button.innerHTML = html(data);
+            return;
+        }
+        var s = byId(forId) || {};
+        button.innerHTML = '<span class="item model">' + assistantLogo(s.assistant) +
+            '<span class="word">' + esc(assistantName(s.assistant)) + '</span></span>' +
+            '<span class="item empty">' + esc(T.webLoading) + "</span>";
+    }
+
+    function load(force) {
+        if (!forId || phone()) return;
+        var id = forId, mine = ++ticket;
+        nextAt = Date.now() + 60000;
+        SessionFacts.get(id, force).then(function (facts) {
+            if (mine !== ticket || forId !== id) return;
+            data = facts;
+            draw();
+        }).catch(function () {
+            if (mine !== ticket || forId !== id) return;
+            // Keep the last good reading. If there was none, the basic session identity remains.
+            draw();
+        });
+    }
+
+    return {
+        follow: function () {
+            if (phone()) return;
+            var id = S.openId;
+            var s = id ? byId(id) : null;
+            var state = s ? s.state : "";
+            if (id !== forId) {
+                ticket += 1;
+                forId = id;
+                data = id ? SessionFacts.peek(id) : null;
+                stateSeen = state;
+                nextAt = 0;
+                draw();
+                if (id) load(false);
+                return;
+            }
+            // The completed turn is when totals and limits have most likely changed.
+            var endedTurn = stateSeen === "working" && state !== "working";
+            stateSeen = state;
+            if (endedTurn) load(true);
+            else if (id && Date.now() >= nextAt) load(false);
+        },
+        refresh: function (force) {
+            if (!forId || phone()) return;
+            if (force || Date.now() >= nextAt) load(!!force);
+        },
+        receive: function (id, facts) {
+            if (id !== forId || !facts) return;
+            data = facts;
+            nextAt = Date.now() + 60000;
+            draw();
+        }
+    };
+})();
+
+/**
  * The Session info card — the status line at the bottom of a Claude Code terminal, for somebody
  * who is not at that terminal: what this session is and what model it is on, what it has
  * spent, what is left of the plan's window, how much has changed on disk, and whether the last
  * deploy went out.
  *
- * Asked for when the card opens and on the refresh button, never on the stream. A refresh keeps
- * the old card on screen until the new one arrives — a card that blanks itself to say "loading"
- * has thrown away the one thing somebody was comparing against. A plan window nobody reported
- * is drawn as *unknown* and never as 0%: a full window shown as an empty one is the one wrong
- * answer that changes what somebody does next.
+ * It shares the status line's short-lived answer. A refresh keeps the old card on screen until
+ * the new one arrives — a card that blanks itself to say "loading" has thrown away the one thing
+ * somebody was comparing against. A plan window nobody reported is drawn as *unknown* and never
+ * as 0%: a full window shown as an empty one is the one wrong answer that changes what somebody
+ * does next.
  */
 var Info = (function () {
     var STATES = { ok: "webLinkOk", fail: "webLinkFail", down: "webLinkDown", running: "webLinkRunning" };
@@ -8427,16 +8640,16 @@ var Info = (function () {
         for (var k = 0; k < bars.length; k++) bars[k].style.setProperty("--w", bars[k].dataset.w);
     }
 
-    function load(id) {
-        if (typeof api.info !== "function") { data = null; draw(); return; }
+    function load(id, force) {
         var mine = ++ticket;
         loading = true;
         said("");
         draw();
-        api.info(id).then(function (d) {
+        SessionFacts.get(id, !!force).then(function (facts) {
             if (mine !== ticket) return;      // closed, or opened again on another session
-            data = (d && d.info) || null;
+            data = facts;
             loading = false;
+            StatusLine.receive(id, facts);
             draw();
         }).catch(function (e) {
             if (mine !== ticket) return;
@@ -8446,35 +8659,71 @@ var Info = (function () {
         });
     }
 
+    /**
+     * Read back until a sent `/model` turns up, then stop.
+     *
+     * The send is not the confirmation. What the Mac reports is that the line went into the
+     * terminal; what Claude Code did with it is written to the transcript a moment later, and the
+     * card is the thing that reads transcripts. So it reads again, a beat apart, a few times over
+     * — and the chip stops being pending the moment an answer names the new model, because that
+     * is `html`'s rule and not a second one invented here.
+     *
+     * **Quietly**, which is the whole reason this is not `load`. Nobody asked for a refresh: it
+     * must not blank the card, must not grey out the refresh button, and must not wipe the line
+     * saying what was sent — all of which a real load does, and all of which would read as the
+     * card doing something on its own three times in a row.
+     *
+     * Nothing here reports a failure. A `/model` that never lands leaves the chip pending, which
+     * is exactly what an outstanding request looks like, and the refresh button is right there.
+     */
+    function readBack(id, tries) {
+        clearTimeout(confirming);
+        if (tries <= 0) return;
+        confirming = setTimeout(function () {
+            if (forId !== id || els.info.hidden || !pending) return;
+            SessionFacts.drop(id);
+            SessionFacts.get(id, true).then(function (facts) {
+                if (forId !== id || els.info.hidden || !pending || !facts) return;
+                data = facts;
+                StatusLine.receive(id, facts);
+                draw();
+                if (pending) readBack(id, tries - 1);
+                else said("");
+            }).catch(function () {});
+        }, 800);
+    }
+
     return {
         open: function () {
             if (!S.openId) return;
             forId = S.openId;
-            data = null;
+            data = SessionFacts.peek(forId);
             drawn = false;
             pending = null;
             busy = false;
+            clearTimeout(confirming);
             said("");
             els.info.hidden = false;
-            load(forId);
+            load(forId, false);
             els["info-close"].focus({ preventScroll: true });
         },
 
         refresh: function () {
             if (els.info.hidden || !forId || loading) return;
-            load(forId);
+            load(forId, true);
         },
 
         close: function () {
             els.info.hidden = true;
-            // The cache is the card. Nothing is kept for the next open, and an answer still on
-            // its way is no longer wanted — see `ticket`.
+            // An answer still on its way is no longer wanted by the card — see `ticket`. The
+            // shared cache remains, because the status line is still showing this session.
             ticket += 1;
             loading = false;
             data = null;
             forId = null;
             pending = null;
             busy = false;
+            clearTimeout(confirming);
         },
 
         /** The session under the card changed, so what is in it is about something else; or
@@ -8483,6 +8732,12 @@ var Info = (function () {
         follow: function () {
             if (els.info.hidden) return;
             if (S.openId !== forId) { this.close(); return; }
+            // The status line reads the same answer on its own clock and leaves it in the shared
+            // cache. A card open beside it should not be the last to know: a `/model` typed into
+            // the terminal changes what this card is about, and nobody who typed it expects to
+            // have to press refresh to find that out.
+            var shared = SessionFacts.peek(forId);
+            if (shared && shared !== data) { data = shared; draw(); return; }
             var s = session();
             if (data && s && s.state !== stateSeen) draw();
         },
@@ -8500,11 +8755,14 @@ var Info = (function () {
                 if (forId !== id) return;
                 busy = false;
                 pending = word;
+                SessionFacts.drop(id);
                 said(fill(T.webInfoModelSent, { model: name || word }), true);
                 draw();
+                readBack(id, 5);
             }).catch(function (e) {
                 if (forId !== id) return;
                 busy = false;
+                clearTimeout(confirming);
                 said((e && e.message) || T.webInfoFailed);
                 draw();
             });
@@ -8535,6 +8793,12 @@ els["info-body"].addEventListener("submit", function (ev) {
     var input = form.querySelector("input");
     Info.switchTo(input ? input.value : "", "");
 });
+els["status-line-open"].addEventListener("click", function () { Info.open(); });
+
+// A long-running turn can sit in the working state for hours, so no state transition would ask
+// for a newer reading. Once a minute is intentionally slower than the terminal status line: this
+// path reads a transcript and runs `git`, and the browser only needs a current glance.
+setInterval(function () { StatusLine.refresh(false); }, 60000);
 
 /* ---- notifications ------------------------------------------------------- */
 
@@ -9300,7 +9564,6 @@ function submit() {
 /* ---- the layout can change under us -------------------------------------- */
 
 window.addEventListener("resize", function () {
-    renderHints();
     // Coming back to a desk with a transcript open on the phone layout would otherwise leave
     // the detail pane sitting off to one side of a two-column grid.
     if (!phone()) els.app.dataset.view = "list";

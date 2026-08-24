@@ -402,7 +402,7 @@ struct Korean: Copy {
     let webInfoTokens = "토큰"
     let webInfoSwitchModel = "모델 바꾸기"
     let webInfoModelOther = "다른 모델…"
-    let webInfoModelSent = "/model {model}을 보냈습니다. 다음 답변 뒤에 카드에 반영됩니다."
+    let webInfoModelSent = "/model {model}을 보냈습니다. 확인 중…"
     let webInfoModelBusy = "세션이 쉬고 있을 때만 바꿀 수 있습니다."
     let webInfoLimitsClaude = "Claude Code는 한도를 다 쓴 뒤에야 기록하므로, 그 전에는 알 수 없습니다."
     let webInfoCopied = "세션 id를 복사했습니다."

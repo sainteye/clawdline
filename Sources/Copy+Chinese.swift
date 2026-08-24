@@ -405,7 +405,7 @@ struct TraditionalChinese: Copy {
     let webInfoTokens = "tokens"
     let webInfoSwitchModel = "切換模型"
     let webInfoModelOther = "其他模型…"
-    let webInfoModelSent = "已送出 /model {model}，下一次回覆後這裡會顯示新模型。"
+    let webInfoModelSent = "已送出 /model {model}，確認中…"
     let webInfoModelBusy = "要等 session 閒置時才能切換模型。"
     let webInfoLimitsClaude = "Claude Code 只在額度用完時才會記下來，在那之前這裡沒有資料。"
     let webInfoCopied = "已複製 session id。"
@@ -634,11 +634,11 @@ struct SimplifiedChinese: Copy {
     let settingsOrchestratorCloseNow = "马上把标签页关掉"
     let settingsOrchestratorCloseLinger = "三分钟后再关"
     let settingsOrchestratorCloseKeep = "留着不要关"
+    func childAnnounce(_ title: String) -> String { "收到 Clawdline 派来的任务：\(title)——开始处理。" }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 
     let webConnLive = "已连上"
     let webConnConnecting = "连接中"
-    func childAnnounce(_ title: String) -> String { "收到 Clawdline 派来的任务：\(title)——开始处理。" }
     let webConnRetrying = "{n} 秒后重试"
     let webConnOffline = "离线"
     let webConnLocked = "未配对"
@@ -862,7 +862,7 @@ struct SimplifiedChinese: Copy {
     let webInfoTokens = "tokens"
     let webInfoSwitchModel = "切换模型"
     let webInfoModelOther = "其他模型…"
-    let webInfoModelSent = "已发送 /model {model}，下一次回复后这里会显示新模型。"
+    let webInfoModelSent = "已发送 /model {model}，确认中…"
     let webInfoModelBusy = "要等会话空闲时才能切换模型。"
     let webInfoLimitsClaude = "Claude Code 只在额度用完时才会记录，在那之前这里没有数据。"
     let webInfoCopied = "已复制会话 id。"

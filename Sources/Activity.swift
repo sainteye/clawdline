@@ -97,23 +97,39 @@ enum Activity {
     /// which was the whole of one sample — and everything past a minute went unrecognised,
     /// meaning the strip vanished exactly when a long wait made it worth having.
     static func hasElapsed(_ text: String) -> Bool {
+        elapsed(in: text) != nil
+    }
+
+    /// The counter inside a live line, in seconds.
+    ///
+    /// This is more than a parser convenience. It is the assistant's own clock, so it survives
+    /// Clawdline launching halfway through a turn; a timer that begins with the first screen
+    /// capture does not. The finish notifier uses it to recover the part of a long turn it did
+    /// not personally witness.
+    static func elapsed(in text: String) -> TimeInterval? {
         let chars = Array(text)
         var i = 0
         while i < chars.count {
             guard chars[i] == "(" else { i += 1; continue }
             var j = i + 1
-            var previousWasDigit = false
+            var total = 0
             while j < chars.count, chars[j] != ")" {
-                if chars[j] == "s", previousWasDigit {
-                    // "s" has to end the number, not start a word: "(3 stages" is not a clock.
-                    let next = j + 1 < chars.count ? chars[j + 1] : " "
-                    if !next.isLetter { return true }
+                guard chars[j].isNumber else { j += 1; continue }
+                let start = j
+                while j < chars.count, chars[j].isNumber { j += 1 }
+                guard let value = Int(String(chars[start..<j])), j < chars.count else { continue }
+                // The unit must touch the number. Without that rule, `(3 stages)` becomes three
+                // seconds merely because the next word starts with an s.
+                switch chars[j] {
+                case "h": total += value * 3600
+                case "m": total += value * 60
+                case "s": return TimeInterval(total + value)
+                default: continue
                 }
-                previousWasDigit = chars[j].isNumber
                 j += 1
             }
             i += 1
         }
-        return false
+        return nil
     }
 }
