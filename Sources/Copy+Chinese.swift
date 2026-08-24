@@ -309,6 +309,9 @@ struct TraditionalChinese: Copy {
 
     let webSettings = "設定"
     let webSettingsNotify = "通知"
+    let webSettingsAssistantIcons = "助理圖示"
+    let webSettingsAssistantIconsSay = "在對話中，於 Claude 或 Codex 名稱前顯示其圖示。"
+    let webSettingsAssistantIconsShow = "顯示圖示"
     let webSettingsVersion = "版本 {v}"
     let webClose = "關閉"
     let webNotifySheetOff = "有 session 在等的時候，不會通知這台裝置。"
@@ -701,6 +704,9 @@ struct SimplifiedChinese: Copy {
 
     let webSettings = "设置"
     let webSettingsNotify = "通知"
+    let webSettingsAssistantIcons = "助理图标"
+    let webSettingsAssistantIconsSay = "在对话中，于 Claude 或 Codex 名称前显示其图标。"
+    let webSettingsAssistantIconsShow = "显示图标"
     let webSettingsVersion = "版本 {v}"
     let webClose = "关闭"
     let webNotifySheetOff = "有 session 在等的时候，不会通知这台设备。"

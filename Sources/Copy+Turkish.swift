@@ -308,6 +308,9 @@ struct Turkish: Copy {
 
     let webSettings = "Ayarlar"
     let webSettingsNotify = "Bildirimler"
+    let webSettingsAssistantIcons = "Asistan simgeleri"
+    let webSettingsAssistantIconsSay = "Konuşmada Claude veya Codex adından önce simgesini göster."
+    let webSettingsAssistantIconsShow = "Simgeleri göster"
     let webSettingsVersion = "Sürüm {v}"
     let webClose = "Kapat"
     let webNotifySheetOff = "Bir oturum beklerken bu cihaza haber verilmiyor."

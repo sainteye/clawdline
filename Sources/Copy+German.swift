@@ -308,6 +308,9 @@ struct German: Copy {
 
     let webSettings = "Einstellungen"
     let webSettingsNotify = "Benachrichtigungen"
+    let webSettingsAssistantIcons = "Assistenten-Symbole"
+    let webSettingsAssistantIconsSay = "Zeigt im Gespräch das Symbol von Claude oder Codex vor seinem Namen."
+    let webSettingsAssistantIconsShow = "Symbole anzeigen"
     let webSettingsVersion = "Version {v}"
     let webClose = "Schließen"
     let webNotifySheetOff = "Diesem Gerät wird nicht gesagt, wenn eine Sitzung wartet."

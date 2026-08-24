@@ -433,7 +433,14 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .row .title {
     grid-column: 2;
     font-size: 13.5px; font-weight: 500;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    display: flex; align-items: center; gap: 7px;
+    white-space: nowrap; overflow: hidden;
+}
+.row .title .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.row .title .who {
+    flex: 0 0 auto; color: var(--faint);
+    display: inline-flex; align-items: center; gap: 4px;
+    font: 11px/1 var(--mono);
 }
 .row .meta {
     grid-column: 2;
@@ -444,7 +451,11 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 }
 .row .meta .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .meta .tty { flex: 0 0 auto; color: #4f4d47; }
-.row .meta .who { flex: 0 0 auto; color: var(--dim); }
+.assistant-logo {
+    display: inline-block; flex: 0 0 auto;
+    width: 12px; height: 12px;
+    vertical-align: -2px;
+}
 
 /* Work one session handed to another.
    ---------------------------------------------------------------------------
@@ -729,6 +740,9 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
     font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase;
     color: var(--faint);
     padding-top: 3px;
+}
+.entry .who .speaker {
+    display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px;
 }
 .entry .who time { display: block; font-size: 10px; color: #4d4a45; text-transform: none; letter-spacing: 0; margin-top: 2px; }
 .entry[data-role="user"] .who { color: var(--dim); }
@@ -1354,6 +1368,8 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .sheet .block .say code { font: 500 11px/1 var(--ui); border: 1px solid #2c2c35; border-radius: 5px; padding: 2px 5px; color: var(--ink); background: #191920; }
 .sheet .block .row { display: flex; flex-wrap: wrap; gap: 8px; }
 .sheet .block .row .chip { padding: 7px 12px; font-size: 12.5px; }
+.sheet .assistant-icon-setting { display: inline-flex; align-items: center; gap: 7px; }
+.sheet .assistant-icon-setting .marks { display: inline-flex; align-items: center; gap: 3px; }
 /* What just happened, said where it happened rather than in a toast that has gone by the time
    somebody looks up from their lock screen. */
 .sheet .block .said { margin: 10px 0 0 0; color: var(--accent); font-size: 12.5px; line-height: 1.5; }
@@ -1882,6 +1898,18 @@ a.link:active { background: var(--line); }
                 <button class="chip" id="settings-notify-test" type="button" hidden></button>
             </div>
             <p class="said" id="settings-notify-said" role="status" aria-live="polite"></p>
+        </div>
+
+        <div class="block">
+            <b id="settings-assistant-icons-title">Assistant icons</b>
+            <p class="say" id="settings-assistant-icons-say">Show the Claude or Codex mark before its name in the conversation.</p>
+            <div class="row">
+                <button class="chip assistant-icon-setting" id="settings-assistant-icons" type="button"
+                        aria-pressed="true">
+                    <span class="marks" id="settings-assistant-icons-marks" aria-hidden="true"></span>
+                    <span id="settings-assistant-icons-label">Show icons</span>
+                </button>
+            </div>
         </div>
 
         <!-- Which end the transcript reads from. It lived in the transcript header until the
@@ -2428,6 +2456,18 @@ function words(s) {
         .replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
+/** A preference that belongs to this browser, kept beside the other browser-local settings. */
+function storedBool(key, fallback) {
+    try {
+        var value = localStorage.getItem(key);
+        return value === null ? fallback : value === "1";
+    } catch (e) { return fallback; }
+}
+
+function storeBool(key, value) {
+    try { localStorage.setItem(key, value ? "1" : "0"); } catch (e) { }
+}
+
 /* ==========================================================================
    1. State
    One object, and every render reads from it. The stream sends a whole list
@@ -2453,6 +2493,7 @@ var S = {
     filter: "",
     paneOpen: true,         // ⌘J, desktop only
     newestFirst: false,
+    assistantIcons: storedBool("clawdline.assistant-icons", true),
 
     tx: { id: null, entries: [], signature: null, loading: false, error: null },
     // Which of the open session's agents is being read, if any. **The session stays open
@@ -2485,7 +2526,8 @@ var els = {};
  "settings", "settings-sheet", "settings-title", "settings-notify-title", "settings-notify-say",
  "settings-notify-go", "settings-notify-test", "settings-notify-said", "settings-version",
  "settings-close", "settings-order", "settings-order-title", "settings-order-say",
- "settings-order-label",
+ "settings-order-label", "settings-assistant-icons", "settings-assistant-icons-title",
+ "settings-assistant-icons-say", "settings-assistant-icons-marks", "settings-assistant-icons-label",
  "links", "links-sheet", "links-title", "links-say", "links-list", "links-said", "links-close",
  "start-go", "start", "start-sheet", "start-title", "start-say", "start-with", "start-filter",
  "start-list",
@@ -2625,6 +2667,30 @@ function drawIcon(canvas, icon, cellPx) {
         }
     }
     return true;
+}
+
+/* The same two product marks as AssistantLogo.swift. Kept inline so the list and transcript
+   never wait on another request, and so the marks inherit their exact row-sized geometry. */
+var ASSISTANT_LOGOS = {
+    claude: {
+        colour: "#D97757",
+        path: "M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z"
+    },
+    codex: {
+        colour: "#10A37F",
+        path: "M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z"
+    }
+};
+
+function assistantLogo(kind) {
+    var logo = ASSISTANT_LOGOS[kind];
+    if (!logo) return "";
+    return '<svg class="assistant-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+        '<path fill="' + logo.colour + '" fill-rule="evenodd" d="' + logo.path + '"></path></svg>';
+}
+
+function assistantName(kind) {
+    return kind === "claude" ? "claude" : kind === "codex" ? "codex" : "assistant";
 }
 
 /**
@@ -4071,19 +4137,6 @@ function byId(id) {
     return null;
 }
 
-/** Whether the sessions on screen are running more than one kind of assistant. What decides
- *  whether a row says which one it is — see `fillRow`. */
-function mixedAssistants() {
-    var seen = null;
-    for (var i = 0; i < S.sessions.length; i++) {
-        var a = S.sessions[i].assistant;
-        if (!a) continue;
-        if (seen && seen !== a) return true;
-        seen = a;
-    }
-    return false;
-}
-
 /** What has to be the same for a transcript to still be current. The line is in it because a
  *  session that is still working is still writing. */
 function revisionOf(s) { return s ? s.state + "|" + (s.line || "") + "|" + (s.label || "") : ""; }
@@ -4306,9 +4359,8 @@ function buildRow(s) {
     li.innerHTML =
         '<span class="kid" hidden aria-hidden="true">└</span>' +
         '<canvas class="mark"></canvas>' +
-        '<div class="title"></div>' +
+        '<div class="title"><span class="label"></span><span class="who" hidden></span></div>' +
         '<div class="meta"><span class="path"></span><span class="tty"></span>' +
-        '<span class="who" hidden></span>' +
         '<span class="agents-chip" hidden><span class="dot"></span><span class="n"></span></span>' +
         '<span class="task-chip" hidden></span></div>' +
         '<div class="state"></div>';
@@ -4327,7 +4379,7 @@ function fillRow(node, s) {
     if (!drawIcon(mark, s.icon, 4)) mark.classList.add("none"); else mark.classList.remove("none");
 
     var title = node.querySelector(".title");
-    title.textContent = s.label || s.tty || s.id;
+    title.querySelector(".label").textContent = s.label || s.tty || s.id;
     // Tinted with the project's own colour, so two sessions in one project read as one project
     // before either title has been read. Waiting overrides it in CSS — that row is not about
     // which project it is.
@@ -4336,13 +4388,12 @@ function fillRow(node, s) {
     node.querySelector(".path").textContent = shortPath(s.cwd);
     node.querySelector(".tty").textContent = s.tty || s.backend || "";
 
-    // Which assistant, and **only when the list is holding more than one kind**. On a phone
-    // watching a Mac that runs one of them the word is on every row and separates nothing;
-    // the moment a Claude Code session and a Codex one are next to each other it is the only
-    // thing on the row that says which is which.
+    // Always name the assistant, exactly as the Mac list does. The project mark on the left says
+    // which project; this product mark answers the independent question, Claude or Codex.
     var who = node.querySelector(".who");
-    who.hidden = !(s.assistant && mixedAssistants());
-    who.textContent = who.hidden ? "" : s.assistant;
+    who.hidden = !ASSISTANT_LOGOS[s.assistant];
+    who.innerHTML = who.hidden ? "" : assistantLogo(s.assistant) +
+        "<span>" + esc(assistantName(s.assistant)) + "</span>";
 
     // How many agents this session has out. **A number and nothing else**, sitting with the path
     // and the tty rather than with the state: the state line answers "does this want me", and
@@ -4487,6 +4538,10 @@ function renderDetailHead() {
 function renderTranscript() {
     var box = els.tx;
     if (!S.openId) { box.innerHTML = '<div class="tx-note">' + esc(T.webPickSession) + "</div>"; return; }
+    // The speaker belongs to the open session. Keeping this beside the transcript render means a
+    // Codex answer cannot inherit the page's historical Claude default while sessions switch.
+    var session = byId(S.openId);
+    WHO.assistant = assistantName(session && session.assistant);
     // One pane, one of two conversations in it: the session's, or one of the agents it sent
     // away. Everything below this line is the same either way — the same blocks, the same folds,
     // the same reading order — because an agent's transcript is the same kind of record.
@@ -4661,8 +4716,7 @@ function askHTML(e) {
     }).join("");
 
     return '<div class="entry ask" data-role="ask">' +
-        '<div class="who">' + esc(WHO.assistant) +
-        (e.at ? '<time data-at="' + e.at + '">' + esc(clockOf(e.at)) + "</time>" : "") + "</div>" +
+        whoHTML("assistant", e.at) +
         '<div class="body"><div class="askbox">' +
         '<div class="asktag">' + esc(T.webAskLabel) + "</div>" + body +
         "</div></div></div>";
@@ -4789,12 +4843,22 @@ els.tx.addEventListener("keydown", function (ev) {
 // is a name, and a name is the same word in fourteen languages. See `paintStatic`.
 var WHO = { user: "you", assistant: "claude", tool: "tool" };
 
+/** A transcript speaker, with the current assistant's mark when this browser opted into it. */
+function whoHTML(role, at) {
+    var mark = "";
+    if (role === "assistant" && S.assistantIcons) {
+        var session = byId(S.openId);
+        mark = assistantLogo(session && session.assistant);
+    }
+    return '<div class="who"><span class="speaker">' + mark + esc(WHO[role]) + "</span>" +
+        (at ? '<time data-at="' + at + '">' + esc(clockOf(at)) + "</time>" : "") + "</div>";
+}
+
 function entryHTML(e) {
     var role = WHO[e.role] ? e.role : "assistant";
     var body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "") + richText(e.text);
     return '<div class="entry" data-role="' + role + '">' +
-        '<div class="who">' + esc(WHO[role]) +
-        (e.at ? '<time data-at="' + e.at + '">' + esc(clockOf(e.at)) + "</time>" : "") + "</div>" +
+        whoHTML(role, e.at) +
         '<div class="body">' + body + "</div></div>";
 }
 
@@ -5438,6 +5502,9 @@ function paintStatic() {
     attr(els["settings-sheet"], "aria-label", T.webSettings);
     text(els["settings-title"], T.webSettings);
     text(els["settings-notify-title"], T.webSettingsNotify);
+    text(els["settings-assistant-icons-title"], T.webSettingsAssistantIcons);
+    els["settings-assistant-icons-say"].innerHTML = words(T.webSettingsAssistantIconsSay);
+    text(els["settings-assistant-icons-label"], T.webSettingsAssistantIconsShow);
     text(els["settings-order-title"], T.webSettingsOrder);
     els["settings-order-say"].innerHTML = words(T.webSettingsOrderSay);
     attr(els["settings-order"], "title", T.webOrderTip);
@@ -6257,12 +6324,21 @@ var Settings = (function () {
             els["settings-version"].textContent =
                 S.version ? fill(T.webSettingsVersion, { v: S.version }) : "";
             Push.redraw();
+            this.drawAssistantIcons();
             this.drawOrder();
             els["settings-close"].focus({ preventScroll: true });
         },
 
         close: function () { els.settings.hidden = true; },
         toggle: function () { if (els.settings.hidden) this.open(); else this.close(); },
+
+        drawAssistantIcons: function () {
+            var button = els["settings-assistant-icons"];
+            button.classList.toggle("on", S.assistantIcons);
+            button.setAttribute("aria-pressed", S.assistantIcons ? "true" : "false");
+            els["settings-assistant-icons-marks"].innerHTML =
+                assistantLogo("claude") + assistantLogo("codex");
+        },
 
         /**
          * The transcript's order, as it was drawn in the header it came from: the words say
@@ -6328,6 +6404,12 @@ els["settings-close"].addEventListener("click", function () { Settings.close(); 
 els["settings-notify-go"].addEventListener("click", function () { Push.toggle(); });
 els["settings-notify-test"].addEventListener("click", function () { Settings.test(); });
 els["settings-order"].addEventListener("click", toggleOrder);
+els["settings-assistant-icons"].addEventListener("click", function () {
+    S.assistantIcons = !S.assistantIcons;
+    storeBool("clawdline.assistant-icons", S.assistantIcons);
+    Settings.drawAssistantIcons();
+    renderTranscript();
+});
 
 /* ---- starting a session -------------------------------------------------- */
 

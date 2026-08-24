@@ -308,6 +308,9 @@ struct Spanish: Copy {
 
     let webSettings = "Ajustes"
     let webSettingsNotify = "Notificaciones"
+    let webSettingsAssistantIcons = "Iconos del asistente"
+    let webSettingsAssistantIconsSay = "Muestra la marca de Claude o Codex antes de su nombre en la conversación."
+    let webSettingsAssistantIconsShow = "Mostrar iconos"
     let webSettingsVersion = "Versión {v}"
     let webClose = "Cerrar"
     let webNotifySheetOff = "A este dispositivo no se le avisa cuando una sesión está esperando."

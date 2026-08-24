@@ -306,6 +306,9 @@ struct Japanese: Copy {
 
     let webSettings = "設定"
     let webSettingsNotify = "通知"
+    let webSettingsAssistantIcons = "アシスタントのアイコン"
+    let webSettingsAssistantIconsSay = "会話で Claude または Codex の名前の前にアイコンを表示します。"
+    let webSettingsAssistantIconsShow = "アイコンを表示"
     let webSettingsVersion = "バージョン {v}"
     let webClose = "閉じる"
     let webNotifySheetOff = "セッションが待っていても、この端末には知らせません。"

@@ -312,6 +312,9 @@ struct Hindi: Copy {
 
     let webSettings = "सेटिंग्ज़"
     let webSettingsNotify = "सूचनाएँ"
+    let webSettingsAssistantIcons = "सहायक आइकन"
+    let webSettingsAssistantIconsSay = "बातचीत में Claude या Codex के नाम से पहले उसका चिह्न दिखाएँ।"
+    let webSettingsAssistantIconsShow = "आइकन दिखाएँ"
     let webSettingsVersion = "संस्करण {v}"
     let webClose = "बंद करें"
     let webNotifySheetOff = "कोई session इंतज़ार में हो, तब भी इस डिवाइस को नहीं बताया जाता।"

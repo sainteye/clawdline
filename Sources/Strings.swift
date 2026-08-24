@@ -494,6 +494,9 @@ protocol Copy {
     // to be pressed; everything else lives in here.
     var webSettings: String { get }
     var webSettingsNotify: String { get }
+    var webSettingsAssistantIcons: String { get }
+    var webSettingsAssistantIconsSay: String { get }
+    var webSettingsAssistantIconsShow: String { get }
     var webSettingsVersion: String { get }
     var webClose: String { get }
     /// The sheet's version of ``webNotifyOff``. That one finishes the button's sentence and is a

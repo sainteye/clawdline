@@ -311,6 +311,9 @@ struct Portuguese: Copy {
 
     let webSettings = "Definições"
     let webSettingsNotify = "Notificações"
+    let webSettingsAssistantIcons = "Ícones do assistente"
+    let webSettingsAssistantIconsSay = "Mostra a marca do Claude ou Codex antes do nome na conversa."
+    let webSettingsAssistantIconsShow = "Mostrar ícones"
     let webSettingsVersion = "Versão {v}"
     let webClose = "Fechar"
     let webNotifySheetOff = "Este dispositivo não é avisado quando uma sessão está esperando."

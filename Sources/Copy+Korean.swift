@@ -306,6 +306,9 @@ struct Korean: Copy {
 
     let webSettings = "설정"
     let webSettingsNotify = "알림"
+    let webSettingsAssistantIcons = "어시스턴트 아이콘"
+    let webSettingsAssistantIconsSay = "대화에서 Claude 또는 Codex 이름 앞에 아이콘을 표시합니다."
+    let webSettingsAssistantIconsShow = "아이콘 표시"
     let webSettingsVersion = "버전 {v}"
     let webClose = "닫기"
     let webNotifySheetOff = "세션이 기다려도 이 기기에는 알리지 않습니다."

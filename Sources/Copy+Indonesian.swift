@@ -308,6 +308,9 @@ struct Indonesian: Copy {
 
     let webSettings = "Pengaturan"
     let webSettingsNotify = "Notifikasi"
+    let webSettingsAssistantIcons = "Ikon asisten"
+    let webSettingsAssistantIconsSay = "Tampilkan tanda Claude atau Codex sebelum namanya dalam percakapan."
+    let webSettingsAssistantIconsShow = "Tampilkan ikon"
     let webSettingsVersion = "Versi {v}"
     let webClose = "Tutup"
     let webNotifySheetOff = "Perangkat ini tidak dikabari saat ada sesi yang menunggu."

@@ -308,6 +308,9 @@ struct Russian: Copy {
 
     let webSettings = "Настройки"
     let webSettingsNotify = "Уведомления"
+    let webSettingsAssistantIcons = "Значки ассистентов"
+    let webSettingsAssistantIconsSay = "Показывать значок Claude или Codex перед его именем в диалоге."
+    let webSettingsAssistantIconsShow = "Показывать значки"
     let webSettingsVersion = "Версия {v}"
     let webClose = "Закрыть"
     let webNotifySheetOff = "Этому устройству не сообщают, когда сессия ждёт."

@@ -307,6 +307,9 @@ struct English: Copy {
 
     let webSettings = "Settings"
     let webSettingsNotify = "Notifications"
+    let webSettingsAssistantIcons = "Assistant icons"
+    let webSettingsAssistantIconsSay = "Show the Claude or Codex mark before its name in the conversation."
+    let webSettingsAssistantIconsShow = "Show icons"
     let webSettingsVersion = "Version {v}"
     let webClose = "Close"
     let webNotifySheetOff = "This device is not told when a session is waiting."

@@ -1545,6 +1545,9 @@ final class RemoteServer {
         add([
             "webSettings": t.webSettings,
             "webSettingsNotify": t.webSettingsNotify,
+            "webSettingsAssistantIcons": t.webSettingsAssistantIcons,
+            "webSettingsAssistantIconsSay": t.webSettingsAssistantIconsSay,
+            "webSettingsAssistantIconsShow": t.webSettingsAssistantIconsShow,
             "webSettingsVersion": t.webSettingsVersion,
             "webClose": t.webClose,
             "webNotifySheetOff": t.webNotifySheetOff,
