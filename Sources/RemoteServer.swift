@@ -1283,6 +1283,7 @@ final class RemoteServer {
     private func json(of session: TargetSession) -> [String: Any] {
         let watch = SessionWatch.shared
         let state = watch.states[session.id] ?? .unknown
+        let menu = watch.menu(of: session.id)
         var out: [String: Any] = [
             "id": session.id,
             "backend": session.backend.rawValue,
@@ -1297,11 +1298,18 @@ final class RemoteServer {
         ]
         if let assistant = session.assistant { out["assistant"] = assistant.rawValue }
         if case .working(let line) = state { out["line"] = line }
+        if state == .waiting, let menu {
+            // The page's transcript revision predates structured menus and watches `line`, not
+            // `menu`. Waiting rows never display `line`, so this stable value is only a revision:
+            // when the transcript-backed picker arrives after the waiting notification, the page
+            // refetches immediately instead of waiting until the answer changes the state.
+            out["line"] = menuRevision(menu)
+        }
         // The question itself, so a phone can answer it instead of being told to go and find a
         // Mac. Only ever present on a waiting session, and absent when the menu could not be
         // read — which the page has to handle anyway, because that is the old behaviour and it
         // is still what happens when a dialog is drawn in a shape this does not recognise.
-        if let menu = watch.menu(of: session.id) { out["menu"] = json(of: menu) }
+        if let menu { out["menu"] = json(of: menu) }
         let agents = watch.agents(of: session.id)
         if !agents.isEmpty { out["agents"] = agents.map { json(of: $0) } }
         if let cwd = Targets.workingDirectory(of: session) { out["cwd"] = cwd }
@@ -1334,7 +1342,16 @@ final class RemoteServer {
             },
         ]
         if let selected = menu.selected { out["selected"] = selected }
+        if let question = menu.question { out["question"] = question }
         return out
+    }
+
+    /// Stable content for the legacy session revision field. Separators prevent different
+    /// question/option boundaries from collapsing to the same string.
+    private func menuRevision(_ menu: SessionState.Menu) -> String {
+        ([menu.question ?? ""] + menu.options.map {
+            "\($0.number)\u{1f}\($0.label)\u{1f}\($0.selected ? 1 : 0)"
+        }).joined(separator: "\u{1e}")
     }
 
     /// One background agent.

@@ -74,6 +74,12 @@ enum Transcript {
         var text: String
         var tool: String?
         var time: Date?
+        /// Claude's id for a tool call, or the id a result says it completes.
+        ///
+        /// Most readers only need the call and its output to be adjacent. A question is
+        /// different: it can stay open for minutes, and only this id says whether the picker at
+        /// the end of the transcript is still actionable or merely part of its history.
+        var toolUseID: String? = nil
     }
 
     // MARK: - Finding the file
@@ -397,11 +403,17 @@ enum Transcript {
                 // it carries them rather than a line describing them. See `askPayload`.
                 let text = (name == askTool ? askPayload(input: block["input"]) : nil)
                     ?? summarise(input: block["input"])
-                out.append(Entry(kind: .tool, text: text, tool: name, time: time))
+                out.append(Entry(kind: .tool, text: text, tool: name, time: time,
+                                 toolUseID: block["id"] as? String))
             case "tool_result":
                 let text = firstLine(of: block["content"])
-                guard !text.isEmpty else { continue }
-                out.append(Entry(kind: .toolResult, text: text, tool: nil, time: time))
+                let toolUseID = block["tool_use_id"] as? String
+                // An empty result is still the closing half of a call. Keeping it when it has an
+                // id prevents an already-answered question from coming back as live; renderers
+                // already tolerate an empty tool result as an empty half of a run.
+                guard !text.isEmpty || toolUseID != nil else { continue }
+                out.append(Entry(kind: .toolResult, text: text, tool: nil, time: time,
+                                 toolUseID: toolUseID))
             default:
                 continue   // thinking blocks, images, anything added later
             }
@@ -537,6 +549,11 @@ enum Transcript {
     /// field would have to be added at both ends at once.
     static let askMarker = "\u{1}ask\u{1}"
 
+    /// The last unanswered question lookup is polled while a session waits. Its signature makes
+    /// an unchanged transcript a stat rather than another half-megabyte read every 1.2 seconds.
+    private static let askLock = NSLock()
+    private static var askCache: [String: (signature: String, questions: [Question]?)] = [:]
+
     /// One question as it was asked. Several can arrive in one call.
     struct Question {
         var header: String
@@ -549,6 +566,19 @@ enum Transcript {
         struct Option {
             var label: String
             var note: String
+        }
+
+        /// The first picker as the existing remote answer path understands it. The question is
+        /// retained as well as the rows so the session payload can change when structured data
+        /// arrives after the waiting state itself.
+        var menu: SessionState.Menu? {
+            guard options.count >= 2 else { return nil }
+            let rows = options.enumerated().map { index, option in
+                SessionState.Menu.Option(number: index + 1, label: option.label,
+                                         selected: index == 0)
+            }
+            return SessionState.Menu(question: text.isEmpty ? nil : text,
+                                     options: rows, selected: 1)
         }
     }
 
@@ -606,6 +636,46 @@ enum Transcript {
                      })
         }
         return questions.isEmpty ? nil : questions
+    }
+
+    /// The questions in the newest `AskUserQuestion` call which has no matching result yet.
+    ///
+    /// Only the tail is read: an open picker stops the main conversation, so its call is near the
+    /// end, while an old answered call outside this bounded window cannot become live again. The
+    /// parser has its own entry limit as a second bound for a tail full of bookkeeping rows.
+    static func unansweredAsk(inTranscript url: URL, tailBytes: Int = 512 << 10,
+                              limit: Int = 400) -> [Question]? {
+        let sig = signature(of: url)
+        askLock.lock()
+        if let hit = askCache[url.path], hit.signature == sig {
+            defer { askLock.unlock() }
+            return hit.questions
+        }
+        askLock.unlock()
+
+        let questions = tail(of: url, bytes: tailBytes)
+            .flatMap { unansweredAsk(in: $0, limit: limit) }
+        askLock.lock()
+        askCache[url.path] = (sig, questions)
+        askLock.unlock()
+        return questions
+    }
+
+    /// The pure half of ``unansweredAsk(inTranscript:tailBytes:limit:)``, kept separate so the
+    /// undocumented JSONL shapes can be pinned by small fixtures rather than somebody's file.
+    static func unansweredAsk(in jsonl: String, limit: Int = 400) -> [Question]? {
+        var answered: Set<String> = []
+        for entry in parse(jsonl, limit: limit).reversed() {
+            guard let id = entry.toolUseID, !id.isEmpty else { continue }
+            if entry.kind == .toolResult {
+                answered.insert(id)
+                continue
+            }
+            guard entry.kind == .tool, entry.tool == askTool, !answered.contains(id),
+                  let questions = askQuestions(in: entry.text) else { continue }
+            return questions
+        }
+        return nil
     }
 
     private static func clean(_ value: Any?) -> String {

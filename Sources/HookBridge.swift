@@ -139,7 +139,8 @@ enum HookBridge {
                 SessionState.Menu.Option(number: index + 1, label: option.label,
                                          selected: index == 0)
             }
-            return SessionState.Menu(options: options, selected: 1)
+            return SessionState.Menu(question: question.text.isEmpty ? nil : question.text,
+                                     options: options, selected: 1)
         }
     }
 

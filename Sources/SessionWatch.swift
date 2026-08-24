@@ -142,13 +142,20 @@ final class SessionWatch {
             // capture would be a set of buttons for a question nobody is asking any more.
             var menus = screens.menus.filter { states[$0.key] == .waiting }
 
-            // A matched AskUserQuestion note carries the original labels. Prefer those over the
-            // terminal drawing, where a narrow pane clips precisely the words a phone needs to
-            // offer as buttons. Screen menus remain the complete fallback when hooks are absent
-            // or an old/oversized note did not carry structured input.
+            // Structured sources carry the original labels. Prefer those over the terminal
+            // drawing, where a narrow pane clips precisely the words a phone needs to offer as
+            // buttons. A hook note is cheapest; Claude currently omits the opening hook for this
+            // tool, so its unresolved transcript call is next. The screen remains the fallback
+            // for permissions and any future dialog shape the structured readers do not know.
             for session in sessions where states[session.id] == .waiting {
                 let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
-                guard let menu = notes[bare]?.menu else { continue }
+                if let menu = notes[bare]?.menu {
+                    menus[session.id] = menu
+                    continue
+                }
+                guard let record = Transcript.record(of: session), record.assistant == .claude,
+                      let question = Transcript.unansweredAsk(inTranscript: record.url)?.first,
+                      let menu = question.menu else { continue }
                 menus[session.id] = menu
             }
 

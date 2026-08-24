@@ -695,6 +695,39 @@ group("transcript parsing") {
            Transcript.parse(wide, limit: 1)[0].text, "謝謝")
 }
 
+group("an unanswered question is read from the transcript tail") {
+    let answered = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"ask-old","name":"AskUserQuestion","input":{"questions":[{"header":"Old","question":"Already settled?","options":[{"label":"Yes"},{"label":"No"}],"multiSelect":false}]}}]}}"#
+    let oldResult = #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"ask-old","content":"Yes"}]}}"#
+    let pending = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"ask-live","name":"AskUserQuestion","input":{"questions":[{"header":"Choice","question":"Which path?","options":[{"label":"Keep the full label — \"quoted\"","description":"first"},{"label":"另一條路","description":"second"}],"multiSelect":false}]}}]}}"#
+    let rows = [answered, oldResult, pending].joined(separator: "\n")
+
+    let entries = Transcript.parse(rows)
+    expect("a call keeps the id Claude gave it", entries.last?.toolUseID, "ask-live")
+    expect("a result keeps the id it closes", entries.dropLast().last?.toolUseID, "ask-old")
+
+    let question = Transcript.unansweredAsk(in: rows)?.first
+    expect("the newest call without its result is returned", question?.text, "Which path?")
+    expect("its complete labels survive", question?.options.map(\.label),
+           ["Keep the full label — \"quoted\"", "另一條路"])
+    expect("it becomes the existing answer menu", question?.menu?.options.map(\.number), [1, 2])
+
+    let emptyResult = #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"ask-live","content":""}]}}"#
+    let settled = rows + "\n" + emptyResult
+    check("even an empty matching result settles the question",
+          Transcript.unansweredAsk(in: settled) == nil)
+
+    // The file reader must not depend on the head of a transcript. The cut begins in a large,
+    // invalid row and drops it, while the complete question at the tail remains readable.
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-unanswered-\(UUID().uuidString).jsonl")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let fixture = String(repeating: "old history ", count: 2_000) + "\n" + rows
+    try? Data(fixture.utf8).write(to: url, options: .atomic)
+    expect("the bounded file query finds the tail question",
+           Transcript.unansweredAsk(inTranscript: url, tailBytes: 4_096)?.first?.text,
+           "Which path?")
+}
+
 group("transcript tool summaries") {
     expect("command wins", Transcript.summarise(input: ["description": "d", "command": "ls -l"]), "ls -l")
     expect("then a path", Transcript.summarise(input: ["description": "d", "file_path": "/tmp/a"]), "/tmp/a")

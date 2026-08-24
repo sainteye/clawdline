@@ -178,6 +178,9 @@ enum SessionState: Equatable {
             /// Whether a keystroke can carry it — see ``Targets/answer(_:to:)``, which is 1…9.
             var answerable: Bool { (1...9).contains(number) }
         }
+        /// The full question when it came from structured data. A screen capture only knows the
+        /// numbered rows beneath it, so this stays nil for the visual fallback.
+        var question: String? = nil
         var options: [Option]
         var selected: Int?
     }
