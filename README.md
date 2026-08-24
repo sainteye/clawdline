@@ -202,6 +202,19 @@ opens the same skill menu the bar has, over the same metadata-only route.
 defend against. **[docs/api.md](docs/api.md)** is the HTTP surface a script or a plugin talks to:
 every session, every transcript, an event stream, and `curl` as the only SDK.
 
+## Handing work to another session
+
+A session you are talking to is a session you are waiting on, and some of what gets asked for — draw
+this, run the suite, read this diff — does not need the conversation it was asked in. A session
+holding the `clawdline` skill can write the task down and ask the app to run it: Clawdline opens a
+terminal tab, types the briefing into it, watches for the child's answer, adds up what it spent and
+tells the session that asked. Dispatching sits behind a credential of its own — a `0600` file only a
+local process can read — so a paired phone can watch the tasks and never start one, and a session
+this app briefed as a child cannot dispatch tasks of its own.
+
+**[docs/orchestrator.md](docs/orchestrator.md)** is the protocol: the file formats, the two
+credentials, the lifecycle and the routes with `curl` transcripts.
+
 ## How it works
 
 **Reading.** Clawdline lists every iTerm2 session and tmux pane, checks each one's TTY against
@@ -338,6 +351,10 @@ itself.
 | `remote_tunnel_name` · `remote_hostname` | `""` | both required for a named tunnel |
 | `cloudflared_path` | `""` | empty looks where package managers put it |
 | `push_on_finish` · `push_on_deploy` | `true` · `false` | when a phone should buzz |
+| `orchestrator_enabled` | `true` | may a session hand work to another |
+| `orchestrator_max_children` | `3` | child sessions at once, 1–10 |
+| `orchestrator_notify_root` | `true` | type a line back into the session that asked |
+| `orchestrator_child_linger` | `180` | seconds a reported child's tab stays open; `0` closes it at once, `-1` never |
 
 ## Permissions and privacy
 
@@ -398,6 +415,7 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 | [The dev stack](docs/devstack.md) · [adopting it](docs/devstack-adopting.md) | `.devstack.json`, and the three heights of adopting it |
 | [Project status files](docs/project-status.md) | the mark, the colour, the deploy, the backlog |
 | [From somewhere else](docs/remote.md) · [the API](docs/api.md) | the threat model in full, and the HTTP surface |
+| [Handing work off](docs/orchestrator.md) | one session dispatching another, and the two credentials that gate it |
 | [Hooks](docs/hooks.md) | the five events, and why the screen still decides |
 | [Whisper](docs/whisper.md) | dictating in more than one language |
 | [Mascot packs](docs/mascots.md) · [gallery](docs/gallery.md) | the format, and where packs get posted |
@@ -408,7 +426,7 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```sh
-./test.sh     # 1501 checks, a couple of seconds
+./test.sh     # 1567 checks, a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code
 ```

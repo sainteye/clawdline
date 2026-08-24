@@ -279,6 +279,13 @@ a file, and the timeout is arithmetic on a stored timestamp. So the app comes ba
 registry, and carries on watching. That is the one restart case that matters, because it is the one
 where a child is out there doing work.
 
+**The tab goes away afterwards.** A child that reported — `success` or `failure` — has nothing left
+to say, so `orchestrator_child_linger` decides how long its terminal tab hangs around: three minutes
+by default, `0` to close it the moment the task finalizes, `-1` to leave it to you. Only a reported
+child is closed. A `timeout`, a `spawn_failed`, a child that never came up at all: those tabs stay
+exactly where they are, because whatever went wrong is written on that screen and closing it would
+throw away the only copy.
+
 ### Being told
 
 When a task finalizes, the app looks for the root's terminal — the root declared a session id, and

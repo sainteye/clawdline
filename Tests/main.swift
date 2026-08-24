@@ -4503,6 +4503,236 @@ group("the line a new tab is given names the assistant") {
            "cd '/Users/me/it'\\''s' && codex")
 }
 
+// MARK: - Handing work to another session
+
+/// A lowercase UUID, which is the only shape a task id is ever allowed to have.
+let taskID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+
+group("a task.json is read before a terminal is opened for it") {
+    // Everything here is the file a *root* session wrote, which is to say a file this app did not
+    // write and cannot trust. `draft` is the whole of the reading, and it is pure — the directory
+    // check is handed in — so the refusals can be exercised without a filesystem to arrange.
+    func file(_ overrides: [String: Any] = [:]) -> [String: Any] {
+        var obj: [String: Any] = ["clawdline_protocol": 1,
+                                  "task_id": taskID,
+                                  "kind": "image",
+                                  "assistant": "codex",
+                                  "project_dir": "/Users/me/code/thing",
+                                  "title": "draw the project",
+                                  "instructions": "Draw it, in ink.",
+                                  "timeout_minutes": 45,
+                                  "root": ["session_id": "abc", "label": "notebook"]]
+        for (key, value) in overrides { obj[key] = value }
+        return obj
+    }
+    func read(_ obj: [String: Any], expecting: String = taskID) -> Orchestrator.DraftOutcome {
+        Orchestrator.draft(from: obj, expecting: expecting, isDirectory: { _ in true })
+    }
+    func made(_ obj: [String: Any]) -> Orchestrator.Draft? {
+        if case .ok(let draft) = read(obj) { return draft }
+        return nil
+    }
+    func refused(_ obj: [String: Any], expecting: String = taskID) -> Bool {
+        if case .bad = read(obj, expecting: expecting) { return true }
+        return false
+    }
+
+    expect("a whole task is taken as written", made(file())?.assistant, .codex)
+    expect("with its own timeout", made(file())?.timeoutMinutes, 45)
+    expect("its kind", made(file())?.kind, "image")
+    expect("its title", made(file())?.title, "draw the project")
+    expect("and who asked for it", made(file())?.rootSessionId, "abc")
+    expect("a file with no kind is a custom one", made(file(["kind": ""]))?.kind, "custom")
+    expect("and one with no timeout gets the default",
+           made(file(["timeout_minutes": NSNull()]))?.timeoutMinutes, 30)
+    expect("a title longer than the field is cut, not refused",
+           made(file(["title": String(repeating: "t", count: 400)]))?.title.count, 200)
+
+    // The refusals, one reason at a time.
+    check("a protocol nobody has written yet", refused(file(["clawdline_protocol": 2])))
+    check("and a missing one", refused(file(["clawdline_protocol": NSNull()])))
+    check("an assistant this app cannot start", refused(file(["assistant": "emacs"])))
+    check("a task_id that is a path", refused(file(["task_id": "../../etc/passwd"]),
+                                             expecting: "../../etc/passwd"))
+    check("a task_id with a separator in it, at the right length",
+          refused(file(["task_id": "0f8fad5b-d9cb-469f-a165-7086772895/e"]),
+                  expecting: "0f8fad5b-d9cb-469f-a165-7086772895/e"))
+    check("a task_id that does not match the dispatch",
+          refused(file(["task_id": "11111111-2222-3333-4444-555555555555"])))
+    check("instructions nobody wrote", refused(file(["instructions": ""])))
+    check("instructions past 16 KiB",
+          refused(file(["instructions": String(repeating: "x", count: 16_385)])))
+    check("a project_dir that is not a directory",
+          {
+              if case .bad = Orchestrator.draft(from: file(), expecting: taskID,
+                                                isDirectory: { _ in false }) { return true }
+              return false
+          }())
+    check("a project_dir that is not a path at all", refused(file(["project_dir": "thing"])))
+    check("a timeout past four hours", refused(file(["timeout_minutes": 999])))
+    check("and one of zero minutes", refused(file(["timeout_minutes": 0])))
+}
+
+group("a task id is the name of a directory, so it may not be a path") {
+    check("a lowercase UUID is one", Orchestrator.isTaskID(taskID))
+    check("in upper case it is not", !Orchestrator.isTaskID(taskID.uppercased()))
+    check("nor is a walk upwards", !Orchestrator.isTaskID("../../etc/passwd"))
+    check("nor is one with a slash at the right length",
+          !Orchestrator.isTaskID("0f8fad5b-d9cb-469f-a165-7086772895/e"))
+    check("nor a letter that is not hex",
+          !Orchestrator.isTaskID("0f8fad5b-d9cb-469f-a165-70867728950g"))
+    check("nor one character too few", !Orchestrator.isTaskID(String(taskID.dropLast())))
+    check("nor nothing at all", !Orchestrator.isTaskID(""))
+}
+
+group("a task secret is kept as a hash and compared as one") {
+    let secret = String(repeating: "a1", count: 32)
+    let stored = Orchestrator.hash(ofSecret: secret)
+    expect("the stored form is a SHA-256 in hex", stored.count, 64)
+    check("and it is not the secret", stored != secret)
+    expect("the same secret hashes the same way twice",
+           Orchestrator.hash(ofSecret: secret), stored)
+    check("a different one does not",
+          Orchestrator.hash(ofSecret: String(repeating: "b2", count: 32)) != stored)
+    check("the child's secret verifies against what was kept",
+          RemoteAuth.constantTimeEquals(stored, Orchestrator.hash(ofSecret: secret)))
+    check("and somebody else's does not",
+          !RemoteAuth.constantTimeEquals(stored,
+                                         Orchestrator.hash(ofSecret: secret + "0")))
+
+    // The other credential: the one that says a local process asked, which is a different claim
+    // from "this device is paired" and is deliberately not the same string.
+    check("no dispatch token is not the dispatch token", !Orchestrator.verifyDispatch(token: nil))
+    check("nor is an empty one", !Orchestrator.verifyDispatch(token: ""))
+    check("nor is a guess", !Orchestrator.verifyDispatch(token: String(repeating: "0", count: 44)))
+    check("the minted one is", Orchestrator.verifyDispatch(token: Orchestrator.dispatchToken()))
+}
+
+group("what a child's turn cost, at the prices this app knows") {
+    expect("Opus, in", Orchestrator.price(forModel: "claude-opus-5-20260201")?.input, 5)
+    expect("Opus, out", Orchestrator.price(forModel: "claude-opus-5-20260201")?.output, 25)
+    expect("Sonnet, in", Orchestrator.price(forModel: "claude-sonnet-4-5")?.input, 3)
+    expect("Fable, out", Orchestrator.price(forModel: "claude-fable-5")?.output, 50)
+    expect("Haiku, in", Orchestrator.price(forModel: "claude-haiku-4-5")?.input, 1)
+    // Codex bills against a plan rather than per token, so there is no honest number to give.
+    check("a model nobody has a price for", Orchestrator.price(forModel: "gpt-5.6-luna") == nil)
+    check("and no model at all", Orchestrator.price(forModel: nil) == nil)
+
+    func opus(input: Int = 0, output: Int = 0, cacheRead: Int = 0,
+              cacheWrite: Int = 0) -> Orchestrator.Usage {
+        var usage = Orchestrator.Usage()
+        usage.model = "claude-opus-5-20260201"
+        usage.input = input
+        usage.output = output
+        usage.cacheRead = cacheRead
+        usage.cacheWrite = cacheWrite
+        return usage
+    }
+    expect("a million input tokens is the input price", Orchestrator.cost(of: opus(input: 1_000_000)), 5)
+    expect("a million output tokens is the output price",
+           Orchestrator.cost(of: opus(output: 1_000_000)), 25)
+    expect("a cache read is a tenth of an input token",
+           Orchestrator.cost(of: opus(cacheRead: 1_000_000)), 0.5)
+    expect("a cache write is an input token and a quarter",
+           Orchestrator.cost(of: opus(cacheWrite: 1_000_000)), 6.25)
+    expect("and the four are added up",
+           Orchestrator.cost(of: opus(input: 1_000_000, output: 1_000_000,
+                                      cacheRead: 1_000_000, cacheWrite: 1_000_000)),
+           36.75)
+    expect("the answer is money, so it stops at four places",
+           Orchestrator.cost(of: opus(input: 100)), 0.0005)
+    expect("and a single token rounds away rather than inventing a digit",
+           Orchestrator.cost(of: opus(input: 1)), 0)
+    var unpriced = Orchestrator.Usage()
+    unpriced.model = "gpt-5.6-luna"
+    unpriced.input = 1_000_000
+    check("tokens nobody has a price for cost nothing that can be said",
+          Orchestrator.cost(of: unpriced) == nil)
+}
+
+group("the one line a child is given") {
+    let secret = String(repeating: "c3", count: 32)
+    let line = Orchestrator.firstLine(id: taskID, secret: secret)
+    check("carries the secret, because nothing else ever will",
+          line.contains("TASK_SECRET=" + secret))
+    check("and names the file that says what to do",
+          line.contains("/tmp/.clawdline/\(taskID)/CHILD.md"))
+    check("and it is one line, because it is typed into a prompt", !line.contains("\n"))
+}
+
+group("dispatching is the one thing a paired device may not do") {
+    // The whole point of the second credential. A phone with `send` can already type into a
+    // session; opening a *new* one from a task file somebody else wrote is a different power, and
+    // it is behind a `0600` file no page can read.
+    Orchestrator.forget()
+    defer { Orchestrator.forget() }
+    let phone = RemoteAuth.addDevice(name: "a phone that may send", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: phone.id) }
+
+    let body = "{\"task_id\":\"\(taskID)\",\"secret\":\"\(String(repeating: "a1", count: 32))\"}"
+    let anonymous = RemoteServer.shared.route(
+        remoteRequest("POST", "/v1/orchestrator/tasks", body: body))
+    expect("nothing at all is turned away at the door", anonymous.status, 401)
+    expect("and says so", remoteErrorCode(anonymous), "unauthorized")
+
+    let paired = RemoteServer.shared.route(
+        remoteRequest("POST", "/v1/orchestrator/tasks",
+                      headers: ["Authorization": "Bearer \(phone.token)",
+                                "Idempotency-Key": UUID().uuidString],
+                      body: body))
+    expect("a paired device gets in the door and no further", paired.status, 403)
+    expect("and it is a refusal about the credential, not the task",
+           remoteErrorCode(paired), "forbidden")
+
+    let reading = RemoteServer.shared.route(remoteRequest("GET", "/v1/orchestrator/tasks"))
+    expect("reading the list needs a credential too", reading.status, 401)
+    expect("and it is the ordinary one", remoteErrorCode(reading), "unauthorized")
+}
+
+group("finishing a task takes that task's secret and nothing else") {
+    // The completion route is the one place a *child* speaks, and a child was never given a
+    // device token — so it is exempt from the door and gated on the secret alone. The task is put
+    // into the store rather than dispatched, because dispatching opens a terminal tab.
+    Orchestrator.forget()
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before {
+            try? before.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Orchestrator.forget()
+    }
+    let secret = String(repeating: "a1", count: 32)
+    let row: [String: Any] = ["id": taskID, "state": "briefed", "kind": "custom",
+                              "title": "a task", "assistant": "codex", "project_dir": "/tmp",
+                              "timeout_minutes": 30, "created": Date().timeIntervalSince1970,
+                              "secret_hash": Orchestrator.hash(ofSecret: secret),
+                              "artifacts": []]
+    let stored = (try? JSONSerialization.data(withJSONObject: ["version": 1, "tasks": [row]])) ?? Data()
+    try? FileManager.default.createDirectory(at: store.deletingLastPathComponent(),
+                                             withIntermediateDirectories: true)
+    try? stored.write(to: store, options: .atomic)
+
+    func finish(_ id: String, secret: String?) -> RemoteServer.Response {
+        var headers: [String: String] = [:]
+        if let secret { headers["X-Clawdline-Task-Secret"] = secret }
+        return RemoteServer.shared.route(
+            remoteRequest("POST", "/v1/orchestrator/tasks/\(id)/complete", headers: headers,
+                          body: "{\"status\":\"success\",\"summary\":\"drew it\"}"))
+    }
+
+    let wrong = finish(taskID, secret: String(repeating: "b2", count: 32))
+    expect("another task's secret is not this task's", wrong.status, 403)
+    expect("and it is a plain refusal", remoteErrorCode(wrong), "forbidden")
+    let silent = finish(taskID, secret: nil)
+    expect("no secret at all is the same refusal", silent.status, 403)
+    let unknown = finish("11111111-2222-3333-4444-555555555555", secret: secret)
+    expect("a task nobody registered is a 404", unknown.status, 404)
+    expect("and says nothing else about it", remoteErrorCode(unknown), "not_found")
+}
+
 group("the Session info card is read off the files, and says unknown rather than 0%") {
     // The porcelain, counted. A partial add is under both headings, as `git status` lists it.
     let porcelain = """

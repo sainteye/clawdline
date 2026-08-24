@@ -3,7 +3,7 @@
 Plain AppKit. No dependencies, no Xcode project, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 1501 checks, a couple of seconds
+./test.sh     # 1567 checks, a couple of seconds
 ./build.sh    # builds the .app and relaunches it if it was running
 ```
 

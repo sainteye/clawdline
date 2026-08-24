@@ -215,6 +215,11 @@ final class Config {
     /// Type one line into the root session when a task it dispatched finishes, so the
     /// conversation that asked for the work is the one that hears it is done.
     var orchestratorNotifyRoot = true
+    /// What becomes of a child's terminal once it has reported: seconds to leave it open before
+    /// the app closes it, `0` to close as soon as it is quiet, `-1` to leave it to the user.
+    /// Only a child that reported — success or failure — is closed; one that timed out or never
+    /// came up is left where it is, because what went wrong is on that screen.
+    var orchestratorChildLinger = 180
     /// Where the project status files are read from, and where the icon registry lives.
     ///
     /// Both default to what claude-bestiary writes, because that is what most people reading this
@@ -271,6 +276,9 @@ final class Config {
             orchestratorMaxChildren = v
         }
         if let v = obj["orchestrator_notify_root"] as? Bool { orchestratorNotifyRoot = v }
+        if let v = obj["orchestrator_child_linger"] as? Int, v >= -1, v <= 3600 {
+            orchestratorChildLinger = v
+        }
         if let v = obj["status_dir"] as? String { statusDir = v }
         if let v = obj["icons_file"] as? String { iconsFile = v }
         if let v = obj["output_height"] as? Double, v >= 80, v <= 900 { outputHeight = CGFloat(v) }
@@ -325,6 +333,7 @@ final class Config {
             "orchestrator_enabled": orchestratorEnabled,
             "orchestrator_max_children": orchestratorMaxChildren,
             "orchestrator_notify_root": orchestratorNotifyRoot,
+            "orchestrator_child_linger": orchestratorChildLinger,
             "status_dir": statusDir,
             "icons_file": iconsFile,
             "output_height": Double(outputHeight),

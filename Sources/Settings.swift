@@ -428,6 +428,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                        switchFor({ Config.shared.orchestratorNotifyRoot },
                                  { Config.shared.orchestratorNotifyRoot = $0 }),
                        hint: L.t.settingsOrchestratorNotifyHint)
+        pane.right.row(L.t.settingsOrchestratorClose, lingerPopUp(),
+                       hint: L.t.settingsOrchestratorCloseHint)
 
         pane.wide.block(label: L.t.settingsRemoteDevices, view: devicesControl(),
                         hint: L.t.settingsRemotePhoneHint)
@@ -441,6 +443,21 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         popUp((1...10).map { (String($0), String($0)) },
               current: String(Config.shared.orchestratorMaxChildren)) {
             Config.shared.orchestratorMaxChildren = Int($0) ?? Config.shared.orchestratorMaxChildren
+        }
+    }
+
+    /// What becomes of a child's tab after it reports. Three stops rather than a number: the
+    /// choice people actually make is now, in a bit, or never — and three minutes is the only
+    /// "in a bit" anybody would type. A hand-edited `orchestrator_child_linger` between the stops
+    /// shows as the nearest one and is left alone until this control is touched.
+    private func lingerPopUp() -> NSView {
+        let stops: [(String, String)] = [("0", L.t.settingsOrchestratorCloseNow),
+                                         ("180", L.t.settingsOrchestratorCloseLinger),
+                                         ("-1", L.t.settingsOrchestratorCloseKeep)]
+        let current = Config.shared.orchestratorChildLinger
+        let shown = current < 0 ? "-1" : (current == 0 ? "0" : "180")
+        return popUp(stops, current: shown) {
+            Config.shared.orchestratorChildLinger = Int($0) ?? Config.shared.orchestratorChildLinger
         }
     }
 

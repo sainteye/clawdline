@@ -187,6 +187,18 @@ open ~/Applications/Clawdline.app
 **[docs/api.md](docs/api.md)** 是腳本或外掛講話的那層 HTTP 介面：每個 session、每份逐字稿、
 一條事件流，而 `curl` 就是唯一的 SDK。
 
+## 把工作派給另一個 session
+
+你正在講話的那個 session，就是你正在等的那個；而有些事情——畫一張圖、跑一輪測試、看一份 diff——
+其實不必在問它的那條對話裡做完。帶著 `clawdline` skill 的 session 可以把任務寫下來、請 app 去跑：
+Clawdline 會開一個終端機分頁、把指示打進去、盯著子 session 的回覆、把它花掉的算清楚，
+然後回頭跟發派的那個 session 說一聲。派工走的是它自己的一把憑證——一個只有本機行程讀得到的
+`0600` 檔案——所以配對過的手機看得到這些任務、卻永遠開不了新的，而被這個 app 交代成子 session
+的那一個，也不能再往下派。
+
+**[docs/orchestrator.md](docs/orchestrator.md)** 是那份協定：檔案格式、那兩把憑證、
+整個生命週期，以及帶著 `curl` 紀錄的路由說明。
+
 ## 它是怎麼運作的
 
 **讀。** Clawdline 把每一個 iTerm2 session 與 tmux pane 列出來，拿每一個的 TTY 去對 `ps`，
@@ -314,6 +326,10 @@ claude
 | `remote_tunnel_name` · `remote_hostname` | `""` | named tunnel 兩個都必填 |
 | `cloudflared_path` | `""` | 空的 ＝ 去套件管理器慣用的位置找 |
 | `push_on_finish` · `push_on_deploy` | `true` · `false` | 手機什麼時候該震 |
+| `orchestrator_enabled` | `true` | 能不能讓一個 session 把工作派給另一個 |
+| `orchestrator_max_children` | `3` | 同時最多幾個子 session，1–10 |
+| `orchestrator_notify_root` | `true` | 做完之後往發派的 session 打一行字 |
+| `orchestrator_child_linger` | `180` | 回報過的子 session，分頁再留幾秒；`0` 馬上關，`-1` 不關 |
 
 ## 權限與隱私
 
@@ -366,6 +382,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 | [開發環境](docs/devstack.md) · [怎麼導入](docs/devstack-adopting.md) | `.devstack.json`，以及導入的三種深度 |
 | [專案狀態檔](docs/project-status.md) | 圖示、顏色、部署、backlog |
 | [從別的地方連進來](docs/remote.md) · [API](docs/api.md) | 完整的威脅模型，以及那層 HTTP 介面 |
+| [把工作派出去](docs/orchestrator.md) | 一個 session 派工給另一個，以及擋在前面的那兩把憑證 |
 | [Hook](docs/hooks.md) | 那五個事件，以及為什麼說了算的仍然是螢幕 |
 | [Whisper](docs/whisper.md) | 一句話裡不只一種語言的時候 |
 | [吉祥物格式](docs/mascots.md) · [圖庫](docs/gallery.md) | 格式，以及大家把 pack 貼在哪 |
@@ -376,7 +393,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 純 AppKit、沒有相依套件、除了 `swiftc` 沒有 build 系統。
 
 ```sh
-./test.sh     # 1501 個檢查，約兩秒
+./test.sh     # 1567 個檢查，約兩秒
 ./build.sh    # 編譯，原本有在跑的話會自己接回來
 swift build   # 只是為了讓編輯器讀得懂程式碼
 ```

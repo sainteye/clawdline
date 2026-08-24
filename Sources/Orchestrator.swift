@@ -72,6 +72,10 @@ enum Orchestrator {
         /// When the child's terminal was last seen in a reading — the difference between a child
         /// that finished and one whose tab was closed under it.
         var lastSeenChild: Date?
+        /// When the child's terminal is due to be closed, once it has reported. In memory only:
+        /// a tab is closed on the strength of what this process saw, never on what a previous
+        /// one wrote down.
+        var closeAt: Date?
 
         var dir: URL { Orchestrator.root.appendingPathComponent(id, isDirectory: true) }
     }
@@ -361,6 +365,10 @@ enum Orchestrator {
     /// Wired once at launch, alongside the other observers.
     static func start() {
         load()
+        // Minted now rather than on first use: the skill tells a root to read this file before
+        // its first dispatch, and a file that appears only after a request nobody can make yet
+        // is a door that opens from the inside.
+        _ = dispatchToken()
         // Anything the previous process was mid-way through briefing is unbriefable now: the
         // plaintext secret died with that process, and typing a secret we no longer hold is not
         // a thing that can be retried.
@@ -394,7 +402,7 @@ enum Orchestrator {
     /// firing cannot ask for the reading that fires it.
     static func beat(fromTimer: Bool) {
         lock.lock()
-        let live = tasks.values.filter { !$0.state.isTerminal }
+        let live = tasks.values.filter { !$0.state.isTerminal || $0.closeAt != nil }
         lock.unlock()
         guard !live.isEmpty else { return }
 
@@ -403,7 +411,7 @@ enum Orchestrator {
             switch task.state {
             case .spawning: changed = brief(task) || changed
             case .briefed:  changed = watch(task) || changed
-            default: break
+            default: changed = closeChild(task) || changed
             }
         }
         if fromTimer, live.contains(where: { $0.state == .spawning }) {
@@ -537,6 +545,52 @@ enum Orchestrator {
         return changed
     }
 
+    /// Close a reported child's terminal once its linger has run out. True when the record changed.
+    private static func closeChild(_ task: Task) -> Bool {
+        var task = task
+        guard let closeAt = task.closeAt, let childID = task.childTerminalId else { return false }
+        let now = Date()
+        guard now >= closeAt else { return false }
+        guard let child = SessionWatch.shared.targets.first(where: { $0.id == childID }),
+              child.assistant == nil || child.assistant == task.assistant,
+              task.childTTY == nil || child.tty == task.childTTY else {
+            // Gone already, or the terminal is somebody else's now: nothing here is ours to close.
+            task.closeAt = nil
+            lock.lock(); tasks[task.id] = task; lock.unlock()
+            return true
+        }
+        // A child still mid-turn is left alone — result.json was meant to be the last thing it
+        // wrote, but a tab closed under a running turn is a mess, not an exit. Ten minutes of
+        // patience, then the tab goes without the courtesy of `/exit`, because typing into a
+        // menu confirms whatever is highlighted. An assistant that already left on its own
+        // gets the same treatment: there is nobody in that tab to say the word to.
+        var busy = Targets.isChoosing(child)
+        if case .working? = SessionWatch.shared.states[childID] { busy = true }
+        let overdue = now.timeIntervalSince(closeAt) > 600
+        if busy, !overdue { return false }
+        let justTheTab = busy || child.assistant == nil
+        task.closeAt = nil
+        lock.lock(); tasks[task.id] = task; lock.unlock()
+        RemoteAuth.audit("orchestrator.close", ["task": task.id, "child": childID,
+                                                 "how": justTheTab ? "tab" : "exit"])
+        // Off the main thread: `end` types the quit word, waits for it to land, then closes the
+        // tab, and a second of that on the main thread is a second the panel does not draw.
+        DispatchQueue.global(qos: .utility).async {
+            let failure: String?
+            if justTheTab {
+                switch child.backend {
+                case .iterm: failure = ITerm.close(child.id)
+                case .tmux:  failure = Tmux.close(child.id)
+                }
+            } else {
+                failure = Targets.end(child)
+            }
+            if let failure { Log.write("orchestrator: could not close the child — \(failure)") }
+            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+        }
+        return true
+    }
+
     private struct ChildResult {
         var status: String
         var summary: String?
@@ -579,6 +633,12 @@ enum Orchestrator {
         if let summary { task.summary = summary }
         if !artifacts.isEmpty { task.artifacts = artifacts }
         secrets.removeValue(forKey: taskID)
+        // Only a child that reported gets its tab closed for it. One that timed out, or never
+        // came up, has something on its screen worth reading, and stays.
+        let linger = Config.shared.orchestratorChildLinger
+        if outcome == .success || outcome == .failure, linger >= 0, task.childTerminalId != nil {
+            task.closeAt = Date().addingTimeInterval(TimeInterval(linger))
+        }
         tasks[taskID] = task
         lock.unlock()
 
