@@ -179,6 +179,7 @@ struct Portuguese: Copy {
     let settingsOrchestratorCloseNow = "Fechar o separador logo"
     let settingsOrchestratorCloseLinger = "Fechá-lo ao fim de três minutos"
     let settingsOrchestratorCloseKeep = "Deixá-lo aberto"
+    func childAnnounce(_ title: String) -> String { "Tarefa do Clawdline recebida: \(title) — começo já." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 
     let webConnLive = "ao vivo"

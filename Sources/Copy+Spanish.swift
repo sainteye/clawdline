@@ -176,6 +176,7 @@ struct Spanish: Copy {
     let settingsOrchestratorCloseNow = "Cerrar la pestaña enseguida"
     let settingsOrchestratorCloseLinger = "Cerrarla a los tres minutos"
     let settingsOrchestratorCloseKeep = "Dejarla abierta"
+    func childAnnounce(_ title: String) -> String { "Encargo de Clawdline recibido: \(title) — empiezo ahora." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 
     let webConnLive = "en vivo"

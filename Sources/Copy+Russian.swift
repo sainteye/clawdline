@@ -176,6 +176,7 @@ struct Russian: Copy {
     let settingsOrchestratorCloseNow = "Закрывать вкладку сразу"
     let settingsOrchestratorCloseLinger = "Закрывать через три минуты"
     let settingsOrchestratorCloseKeep = "Оставлять открытой"
+    func childAnnounce(_ title: String) -> String { "Задача от Clawdline принята: \(title) — приступаю." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f с", value) }
 
     let webConnLive = "на связи"

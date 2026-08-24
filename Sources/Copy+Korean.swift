@@ -174,6 +174,7 @@ struct Korean: Copy {
     let settingsOrchestratorCloseNow = "탭을 바로 닫기"
     let settingsOrchestratorCloseLinger = "3분 뒤에 닫기"
     let settingsOrchestratorCloseKeep = "닫지 않고 두기"
+    func childAnnounce(_ title: String) -> String { "Clawdline이 맡긴 일을 받았습니다: \(title) — 지금 시작합니다." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f초", value) }
 
     let webConnLive = "실시간"

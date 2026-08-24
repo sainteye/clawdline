@@ -280,6 +280,13 @@ protocol Copy {
     var settingsOrchestratorCloseNow: String { get }
     var settingsOrchestratorCloseLinger: String { get }
     var settingsOrchestratorCloseKeep: String { get }
+    /// The very first line a child session says, naming the task it has just taken on.
+    ///
+    /// A child works in a terminal tab somebody may be watching, and without this the tab opens
+    /// and goes quiet: an assistant typing away at an errand nobody in the room asked for. The
+    /// child is the one speaking, so it speaks to whoever is at this Mac — the interface language,
+    /// not the language of the session that dispatched it. `title` is the task's short human title.
+    func childAnnounce(_ title: String) -> String
     /// A number of seconds, as a settings row shows it.
     ///
     /// Here rather than as a bare "s" because it is the one unit in that window that reads as a

@@ -180,6 +180,7 @@ struct Hindi: Copy {
     let settingsOrchestratorCloseNow = "टैब तुरंत बंद कर दें"
     let settingsOrchestratorCloseLinger = "तीन मिनट बाद बंद करें"
     let settingsOrchestratorCloseKeep = "खुला ही रहने दें"
+    func childAnnounce(_ title: String) -> String { "Clawdline से काम मिल गया: \(title) — अभी शुरू कर रहा हूँ।" }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f से॰", value) }
 
     let webConnLive = "लाइव"

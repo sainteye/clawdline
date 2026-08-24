@@ -48,8 +48,11 @@ struct TargetSession: Equatable, Identifiable {
     /// The task name Clawdline should draw. Claude Code puts its task in the terminal title;
     /// Codex persists it as thread metadata, so its optional bridge takes precedence here.
     var displayLabel: String {
-        CodexNaming.displayLabel(threadName: CodexNaming.shared.title(for: self),
-                                 terminalLabel: label)
+        // A session this app opened for a task is called by that task, whichever assistant is
+        // in it: the title was known before the tab existed, and it is what a list should say.
+        if let sent = Orchestrator.title(forTerminal: id) { return sent }
+        return CodexNaming.displayLabel(threadName: CodexNaming.shared.title(for: self),
+                                       terminalLabel: label)
     }
 
     /// Strip a leading status glyph and the space after it.

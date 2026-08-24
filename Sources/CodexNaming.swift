@@ -133,6 +133,34 @@ final class CodexNaming {
         Log.write("codex name: named thread \(head.id)")
     }
 
+    /// Name a thread outright. The orchestrator already knows what a child was sent to do, so
+    /// there is no model turn to pay for: the title goes on the thread so `codex resume` lists
+    /// it by its task, and into the cache so the label changes at once. A name somebody put on
+    /// the thread by hand is left alone, and the auto-namer treats the thread as finished.
+    func name(_ title: String, thread threadID: String, target: TargetSession) {
+        work.addOperation { [weak self] in
+            guard let self else { return }
+            self.remember(title, threadID: threadID, targetID: target.id)
+            // The auto-namer may have got there first — same queue, but it can have been queued
+            // by an earlier reading. A title it generated yields to the task's; one a person
+            // typed does not, and the only way to tell them apart is whether it was us.
+            self.lock.lock()
+            let autoNamed = !self.finishedThreads.insert(threadID).inserted
+            self.lock.unlock()
+            guard let binary = Self.executable(for: target),
+                  let server = CodexNameServer(executable: binary, codexHome: Codex.home) else {
+                Log.write("codex name: could not reach app-server to name child thread \(threadID)")
+                return
+            }
+            defer { server.stop() }
+            if !autoNamed, let before = server.thread(id: threadID),
+               Self.threadName(in: before) != nil { return }
+            if !server.setName(title, threadID: threadID) {
+                Log.write("codex name: could not name child thread \(threadID)")
+            }
+        }
+    }
+
     /// The title to put on Clawdline surfaces. The terminal's own title remains untouched because
     /// iTerm and tmux use it for navigation, and Codex's supported name lives in thread metadata.
     func title(for target: TargetSession) -> String? {

@@ -175,6 +175,7 @@ struct English: Copy {
     let settingsOrchestratorCloseNow = "Close the tab right away"
     let settingsOrchestratorCloseLinger = "Close it after three minutes"
     let settingsOrchestratorCloseKeep = "Leave it open"
+    func childAnnounce(_ title: String) -> String { "Clawdline task received: \(title) — starting now." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 
     let webConnLive = "live"

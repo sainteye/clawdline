@@ -174,6 +174,7 @@ struct Japanese: Copy {
     let settingsOrchestratorCloseNow = "すぐにタブを閉じる"
     let settingsOrchestratorCloseLinger = "3 分たってから閉じる"
     let settingsOrchestratorCloseKeep = "閉じずに残す"
+    func childAnnounce(_ title: String) -> String { "Clawdline から依頼を受け取りました：\(title)——いまから取りかかります。" }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 
     let webConnLive = "受信中"

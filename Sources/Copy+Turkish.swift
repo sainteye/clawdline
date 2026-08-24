@@ -176,6 +176,7 @@ struct Turkish: Copy {
     let settingsOrchestratorCloseNow = "Sekmeyi hemen kapat"
     let settingsOrchestratorCloseLinger = "Üç dakika sonra kapat"
     let settingsOrchestratorCloseKeep = "Açık bırak"
+    func childAnnounce(_ title: String) -> String { "Clawdline'dan gelen görev alındı: \(title) — şimdi başlıyorum." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f sn", value) }
 
     let webConnLive = "canlı"

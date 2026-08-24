@@ -103,6 +103,24 @@ enum Orchestrator {
     /// Plaintext secrets, held only between dispatch and briefing. Never on disk.
     private static var secrets: [String: String] = [:]
     private static var dispatchTimes: [Date] = []
+    /// Child terminal id → task title, rebuilt whenever the tasks change. Read on every redraw
+    /// of every session row, which is why it is a dictionary and not a walk over the tasks.
+    private static var titlesByTerminal: [String: String] = [:]
+
+    /// What a terminal this app opened for a task is called. Nil for every other session.
+    static func title(forTerminal id: String) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return titlesByTerminal[id]
+    }
+
+    /// Under the lock.
+    private static func reindex() {
+        var found: [String: String] = [:]
+        for task in tasks.values {
+            if let terminal = task.childTerminalId { found[terminal] = task.title }
+        }
+        titlesByTerminal = found
+    }
 
     // MARK: - The dispatch token
 
@@ -462,7 +480,8 @@ enum Orchestrator {
             return false
         }
         writeChildBrief(for: task)
-        if let failure = Targets.send(firstLine(id: task.id, secret: secret), to: child) {
+        let line = firstLine(id: task.id, secret: secret, announce: L.t.childAnnounce(task.title))
+        if let failure = Targets.send(line, to: child) {
             task.injectAttempts += 1
             if task.injectAttempts >= 5 {
                 lock.lock(); tasks[task.id] = task; lock.unlock()
@@ -527,6 +546,11 @@ enum Orchestrator {
                         task.transcriptPath = rollout.path
                         task.childSessionId = Codex.head(of: rollout)?.id
                         changed = true
+                        // The thread gets the task's name too, so `codex resume` lists it by
+                        // what it did rather than by the first line it was handed.
+                        if let threadID = task.childSessionId, !threadID.isEmpty {
+                            CodexNaming.shared.name(task.title, thread: threadID, target: child)
+                        }
                     }
                 }
             }
@@ -685,9 +709,22 @@ enum Orchestrator {
 
     // MARK: - What the child is told
 
-    static func firstLine(id: String, secret: String) -> String {
-        "You are a Clawdline CHILD agent for task \(id). "
-            + "Read /tmp/.clawdline/\(id)/CHILD.md and follow it exactly. TASK_SECRET=\(secret)"
+    /// The announcement rides in the typed line and not only in CHILD.md, because an assistant
+    /// answers the line before it opens the file — and the first thing on the screen should be
+    /// what the child was sent to do, in the language of whoever is looking.
+    static func firstLine(id: String, secret: String, announce: String? = nil) -> String {
+        let opening = announce.map { "Say this line first, verbatim: \($0) Then read" } ?? "Read"
+        return "You are a Clawdline CHILD agent for task \(id). "
+            + "\(opening) /tmp/.clawdline/\(id)/CHILD.md and follow it exactly. TASK_SECRET=\(secret)"
+    }
+
+    /// The interface language, named twice — in English for the assistant reading the briefing,
+    /// and in itself for the person reading over its shoulder: "Traditional Chinese (繁體中文)".
+    static var languageName: String {
+        let tag = L.tag(of: L.t)
+        let english = Locale(identifier: "en").localizedString(forIdentifier: tag) ?? tag
+        let native = Locale(identifier: tag).localizedString(forIdentifier: tag) ?? tag
+        return english == native ? english : "\(english) (\(native))"
     }
 
     static func childBrief(for task: Task) -> String {
@@ -697,6 +734,19 @@ enum Orchestrator {
 
         You are a CHILD session working for a Clawdline root session. Your one job is the task
         described in \(dir)/task.json — read that file now.
+
+        ## Language, and the first thing you say
+
+        The person watching this terminal reads \(languageName). Everything you say in this
+        session, and the "summary" you write into result.json, is in that language — this
+        briefing is in English only so that every assistant reads it the same way.
+
+        Before you read task.json or touch anything, say exactly this line, on its own:
+
+        \(L.t.childAnnounce(task.title))
+
+        Then, once you have read task.json, one more line in the same language saying in your
+        own words what you are about to do and where the output will go.
 
         ## Rules
 
@@ -931,11 +981,13 @@ enum Orchestrator {
         }
         lock.lock()
         tasks = found
+        reindex()
         lock.unlock()
     }
 
     private static func save() {
         lock.lock()
+        reindex()
         let rows = tasks.values.sorted { $0.created < $1.created }.map { stored($0) }
         lock.unlock()
         let obj: [String: Any] = ["version": 1, "tasks": rows]
@@ -1077,6 +1129,7 @@ enum Orchestrator {
         tasks = [:]
         secrets = [:]
         dispatchTimes = []
+        titlesByTerminal = [:]
         loaded = false
         lock.unlock()
     }

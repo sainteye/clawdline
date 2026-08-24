@@ -196,6 +196,21 @@ in `CHILD.md`, which the app writes immediately before injecting: where the task
 outputs go, how long it has, that it must not dispatch, that it must not read other task
 directories, and exactly what `result.json` has to look like.
 
+It also says what language to speak. The briefing itself is English so every assistant reads it
+the same way, but the person watching the tab is whoever set Clawdline's language — so the file
+names that language and asks for `result.json`'s `summary` in it. The one fixed line the child
+says before anything else (*收到 Clawdline 派來的任務：專案肖像——開始處理。*, in the app's own
+words for that language) rides in the typed message itself, ahead of "read CHILD.md" — an
+assistant answers the line before it opens the file, and the first thing on the screen should be
+what the tab was sent to do. Once it has read the task, it adds a line of its own about what it is
+going to do and where the output will land.
+
+The tab is also *called* by its task. Every Clawdline surface — the panel, the island, the phone —
+labels a session the app opened for a task with that task's `title`, whichever assistant is in it,
+from the moment it appears; and a Codex child's thread is named the same way through the
+app-server, so `codex resume` lists it by what it did rather than by the first line it was handed. A tab that opens and starts working in silence is a tab nobody can tell apart from a
+stray one; a tab that says what it was sent to do is a child.
+
 **The secret is in the message and not in the file**, and that asymmetry is the whole design.
 `CHILD.md` sits in a directory; the message goes into a terminal's input. A file on disk is a thing
 that can be read later, by something else, after the task is over. The plaintext secret exists in

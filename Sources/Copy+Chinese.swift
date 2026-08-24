@@ -177,6 +177,7 @@ struct TraditionalChinese: Copy {
     let settingsOrchestratorCloseNow = "馬上把分頁關掉"
     let settingsOrchestratorCloseLinger = "三分鐘後再關"
     let settingsOrchestratorCloseKeep = "留著不要關"
+    func childAnnounce(_ title: String) -> String { "收到 Clawdline 派來的任務：\(title)——開始處理。" }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 
     let webConnLive = "已連上"
@@ -633,6 +634,7 @@ struct SimplifiedChinese: Copy {
 
     let webConnLive = "已连上"
     let webConnConnecting = "连接中"
+    func childAnnounce(_ title: String) -> String { "收到 Clawdline 派来的任务：\(title)——开始处理。" }
     let webConnRetrying = "{n} 秒后重试"
     let webConnOffline = "离线"
     let webConnLocked = "未配对"
