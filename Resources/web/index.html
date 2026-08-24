@@ -1478,6 +1478,15 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 }
 .composer .menu .opt[data-can="0"] .n { color: var(--faint); }
 .composer .menu .opt .what { flex: 1 1 auto; min-width: 0; }
+/* What the answer costs you. The dialog draws a line or two under each label — which models get
+   dropped, what it spends, what it leaves behind — and "cut the slow five" does not say which
+   five. Quieter than the label, so a row still reads as one choice at a glance. */
+.composer .menu .opt .note {
+    display: block; margin-top: 3px;
+    color: var(--dim); font-size: 12.5px; line-height: 1.45;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.composer .menu .opt[disabled] .note { color: var(--faint); }
 .composer .menu .opt .here {
     display: block; margin-top: 2px;
     color: var(--faint); font-size: 11px; letter-spacing: 0.02em;
@@ -6337,6 +6346,7 @@ function menuHTML(rows, spent) {
             '<span class="n">' + esc(String(o.n)) + "</span>" +
             '<span class="what">' + esc(o.label || "") +
             (o.selected ? '<span class="here">' + esc(T.webMenuHighlighted) + "</span>" : "") +
+            (o.detail ? '<span class="note">' + esc(o.detail) + "</span>" : "") +
             "</span></button>";
     }).join("") + "</div>";
 }

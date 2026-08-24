@@ -161,7 +161,9 @@ enum SessionState: Equatable {
             let selected = row.caret && (row.indented || index == flushLeftSelection)
             if selected { carets += 1 }
             if firstOptionLine == nil { firstOptionLine = captured.offset }
-            options.append(Menu.Option(number: row.number, label: row.label, selected: selected))
+            options.append(Menu.Option(number: row.number, label: row.label,
+                                       detail: detail(under: captured.offset, in: lines),
+                                       selected: selected))
         }
         guard carets >= 1, options.count >= 2 else { return nil }
 
@@ -246,6 +248,12 @@ enum SessionState: Equatable {
             /// The number as printed. This is the keystroke.
             let number: Int
             let label: String
+            /// The rows drawn under the label, joined. `AskUserQuestion` puts the consequence of
+            /// each answer there — which models get dropped, what it costs, what breaks — and a
+            /// label without it is often not enough to choose on: "cut the slow five" does not
+            /// say which five. Empty when the dialog draws single-line options, as permission
+            /// prompts and `/model` do.
+            var detail: String? = nil
             /// The caret is parked on this one, so it is what a bare Return would confirm.
             let selected: Bool
             /// Whether a keystroke can carry it — see ``Targets/answer(_:to:)``, which is 1…9.
@@ -272,6 +280,31 @@ enum SessionState: Equatable {
     /// than the thing somebody has to answer, so it is a boundary and is intentionally omitted.
     /// Empty rows and box rules are stronger boundaries: crossing either would pull commands,
     /// permission details, or the preceding conversation into the question shown on a phone.
+    /// The rows drawn under one option, joined into a sentence.
+    ///
+    /// Walks down until the next option, a frame or a blank — the same edges the question uses,
+    /// read the other way. Nothing is inferred about indentation: a description is simply
+    /// whatever prose sits between this numbered row and the next thing that is not prose, which
+    /// is what the dialog draws and does not depend on how far it happens to be indented.
+    ///
+    /// **On the physical lines, blanks included.** The dialog puts one before the navigation hint
+    /// at the bottom, so reading a version with the blanks stripped out attached
+    /// "Enter to select · Esc to cancel" to the last option as though it were its description.
+    private static func detail(under optionIndex: Int, in lines: [String]) -> String? {
+        var parts: [String] = []
+        var index = optionIndex + 1
+        while index < lines.count {
+            let raw = lines[index]
+            if option(raw) != nil || isBoxRule(raw) || hasCaret(raw) { break }
+            let text = dialogText(raw)
+            if text.isEmpty || isQuestionHeader(text) { break }
+            parts.append(text)
+            index += 1
+        }
+        let joined = parts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return joined.isEmpty ? nil : joined
+    }
+
     private static func question(in lines: [String], before optionLine: Int,
                                  noEarlierThan lowerBound: Int) -> String? {
         guard optionLine > lowerBound else { return nil }

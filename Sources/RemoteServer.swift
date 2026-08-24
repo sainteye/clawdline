@@ -1342,8 +1342,10 @@ final class RemoteServer {
     private func json(of menu: SessionState.Menu) -> [String: Any] {
         var out: [String: Any] = [
             "options": menu.options.map { option -> [String: Any] in
-                ["n": option.number, "label": option.label,
-                 "selected": option.selected, "can": option.answerable]
+                var row: [String: Any] = ["n": option.number, "label": option.label,
+                                          "selected": option.selected, "can": option.answerable]
+                if let detail = option.detail { row["detail"] = detail }
+                return row
             },
         ]
         if let selected = menu.selected { out["selected"] = selected }
