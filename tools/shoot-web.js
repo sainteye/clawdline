@@ -21,8 +21,12 @@
 // protocol, not from the screen, so what is on your display at the time does not matter. That is
 // the same property tools/shoot-assets.sh is built around.
 //
-//   node tools/shoot-web.js --url "file://$PWD/Resources/web/index.html?write=1" \
+//   ./tools/web-serve.py --root Resources/web --port 7789 &
+//   node tools/shoot-web.js --url "http://127.0.0.1:7789/?write=1&mock=1" \
 //        --dir .shoot/web --script web --fps 16
+//
+// Over http and not `file://`: the page's styles are a dozen `<link>`s, and a `file://` origin is
+// opaque, so a browser will not fetch them.
 //
 // It is not usually run by hand: tools/shoot-assets.sh has `web`, `web-wide` and `web-push`
 // targets that call it with the arguments the README's pictures were taken with.

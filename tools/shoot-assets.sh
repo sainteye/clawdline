@@ -109,7 +109,13 @@ strip() {  # strip <name> <script> <seconds> <width> [extra query] [fps]
 # storyboard, writes `f0000.png…`, and ffmpeg turns them into a GIF. No Screen Recording
 # permission there either; the frames come from the renderer, not from the screen.
 
-WEB_PAGE="file://$PWD/Resources/web/index.html?write=1"
+# Over http rather than off the disk, because the page's stylesheets are twelve separate files now
+# and a browser will not fetch a `<link>` — nor, later, a module — from a `file://` origin. The
+# server is `tools/web-serve.py` pointed at a port nothing is listening on, so the arrangement keeps
+# the property the `file://` copy had and the pictures depend on: nothing on this machine can reach
+# the frame. `mock=1` says out loud what `file://` used to say by itself.
+WEB_PAGE="http://127.0.0.1:7789/?write=1&mock=1"
+WEB_PORT=7789
 
 need_node() { command -v node >/dev/null || { echo "!! node not found — the browser pictures need it (brew install node)"; exit 1; }; }
 
@@ -249,21 +255,40 @@ fi
 
 # The interface, on a phone.
 #
-# Shot from a **`file://` copy of the page**, which is the mode its own fixtures were written for
-# — "enough of a machine to see every state, every animation and the reconnect, from a file://
-# copy with nothing running". Two things follow from that and both matter here. Nothing on this
-# machine can reach the frame: there is no server in it, so no repository of yours, no branch of
-# yours and no conversation of yours can appear the way they twice have in the app's pictures.
-# And anybody can reshoot it — no app, no pairing, no sessions, just a checkout and a Chrome.
+# Shot from **a static copy of the page served over loopback**, which is the mode its own fixtures
+# were written for — "enough of a machine to see every state, every animation and the reconnect,
+# with nothing running". It used to be a literal `file://` URL; the page's styles are twelve
+# `<link>`s now, and a `file://` origin cannot fetch those. The server here is a file server and
+# nothing else: `--upstream` points at a port nothing listens on and `--token-file` at `/dev/null`,
+# so every `/v1/` request 502s exactly as it failed before. Two things follow and both matter.
+# Nothing on this machine can reach the frame: there is no app behind this server, so no repository
+# of yours, no branch of yours and no conversation of yours can appear the way they twice have in
+# the app's pictures. And anybody can reshoot it — no app, no pairing, no sessions, just a checkout,
+# a Chrome and the Python that is already on the machine.
 #
-# The words are English because a `file://` copy has no `/v1/strings` to ask, and the page's own
-# built-in copy is the English one. That is the same reason it does not disturb the language
-# setting on the way past.
-run_if web      webstrip web      "$WEB_PAGE" web  390 16
-# And the same page on a laptop, where both panes fit at once. A still, because what is worth
-# saying about the wide layout is a fact about the layout and not a thing that happens.
-run_if web-wide webshot  web-wide "$WEB_PAGE" open --saying "investigate the webhook" --dwell 2500 \
-                                  --desktop --width 1180 --height 760 --scale 2
+# The words are English because there is no `/v1/strings` to be had, and the page's own built-in
+# copy is the English one. That is the same reason it does not disturb the language setting on the
+# way past — and the reason the upstream is deliberately dead rather than merely absent: a running
+# app would answer that one request, in whatever language its owner reads.
+if want web || want web-wide; then
+  need_node
+  python3 tools/web-serve.py --root Resources/web --port "$WEB_PORT" \
+      --upstream 127.0.0.1:1 --token-file /dev/null &
+  WEBSERVE=$!
+  trap 'kill $WEBSERVE 2>/dev/null; restore' EXIT
+  # Poll rather than sleep: the port is open when it is open.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    curl -s -o /dev/null -m 1 "http://127.0.0.1:$WEB_PORT/" && break
+    sleep 0.3
+  done
+  run_if web      webstrip web      "$WEB_PAGE" web  390 16
+  # And the same page on a laptop, where both panes fit at once. A still, because what is worth
+  # saying about the wide layout is a fact about the layout and not a thing that happens.
+  run_if web-wide webshot  web-wide "$WEB_PAGE" open --saying "investigate the webhook" --dwell 2500 \
+                                    --desktop --width 1180 --height 760 --scale 2
+  kill $WEBSERVE 2>/dev/null || true
+  trap restore EXIT
+fi
 
 # The notification.
 #

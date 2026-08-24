@@ -14,6 +14,17 @@ so that a script running as you does not have to invent credentials.
 
     ./tools/web-serve.py --root tools/phone --port 7788
 
+It has since acquired a second job, for a related reason: the page's styles are a dozen separate
+files and a browser will not fetch a `<link>` from a `file://` origin, so the copy of the web
+interface that the README's pictures are taken from — and that mock mode is developed against —
+needs an origin too.
+
+    ./tools/web-serve.py --root Resources/web --port 7789   # then open /?mock=1&write=1
+
+Pointing `--upstream` at a port nothing listens on turns it back into a plain file server, which is
+what `tools/shoot-assets.sh` does for those two pictures: nothing behind it means nothing of yours
+can appear in them.
+
 **Nothing it serves is a stand-in for the server.** `/v1/push/key`, `/v1/push/subscribe` and
 `/v1/push/test` are answered by Clawdline, so a notification that arrives arrived the whole way.
 The only thing this adds is the header, and the only thing it hides is the token.
@@ -25,7 +36,6 @@ import argparse
 import http.server
 import json
 import os
-import socketserver
 import sys
 import urllib.error
 import urllib.request
@@ -35,6 +45,13 @@ PASS_EXACT = ("/favicon.ico", "/manifest.webmanifest")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    # Said here rather than left to the system's table. `mimetypes` reads `/etc/apache2/mime.types`
+    # and friends, so what a `.js` is called depends on the machine, and `SimpleHTTPRequestHandler`
+    # falls back to `application/octet-stream` when it does not know — which a browser refuses to
+    # run as a module, silently enough that the console never says MIME. The page is served as
+    # several dozen modules and stylesheets now, so this is not a corner.
+    extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map,
+                      ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css"}
     upstream = "127.0.0.1:7717"
     token = ""
 
@@ -142,8 +159,12 @@ def main():
         def __init__(self, *a, **kw):
             super().__init__(*a, directory=root, **kw)
 
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("127.0.0.1", args.port), Rooted) as httpd:
+    # Threaded, because the page is no longer one request. A single-threaded server hands out
+    # thirteen files in thirteen round trips, one after another, and the first paint waits for all
+    # of them. Still HTTP/1.0 and still a connection per file — `protocol_version` is a property of
+    # the handler and this does not change it — but the thirteen are now answered at once.
+    http.server.ThreadingHTTPServer.allow_reuse_address = True
+    with http.server.ThreadingHTTPServer(("127.0.0.1", args.port), Rooted) as httpd:
         print("serving %s on http://127.0.0.1:%d/ → %s" % (root, args.port, upstream), file=sys.stderr)
         httpd.serve_forever()
 
