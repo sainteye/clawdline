@@ -397,7 +397,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
    The session list
    ========================================================================== */
 .list-scroll { flex: 1 1 auto; padding: 8px 10px 14px calc(10px + var(--safe-l)); }
-.rows { list-style: none; margin: 0; padding: 0; }
+.rows { position: relative; list-style: none; margin: 0; padding: 0; }
 
 .row {
     position: relative;
@@ -541,6 +541,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 }
 .row.entering { animation: enter 260ms var(--ease); }
 @keyframes enter { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.row.leaving { pointer-events: none; z-index: 2; }
 
 .empty { padding: 40px 18px; text-align: center; color: var(--faint); font-size: 13px; }
 .empty b { display: block; color: var(--dim); font-weight: 500; margin-bottom: 5px; }
@@ -3144,9 +3145,14 @@ var handlers = {
         // Anything arriving at all is proof this browser is allowed to ask, whatever an earlier
         // request was told — a pairing finished in another tab counts.
         S.locked = false;
-        // The first list to arrive is the end of the list's skeleton, if it ever went up.
-        Waits.list.settle(renderList);
+        // Draw the new state once. `settle(renderList)` used to run before `onSessions`, so every
+        // ordinary stream frame drew the list here and then drew it again inside `onSessions`.
+        // That second draw cancelled the FLIP which the first one had only just started. When a
+        // skeleton is actually on screen, keep drawing it until its minimum lifetime is over and
+        // let the settle callback replace it; otherwise this render is the replacement.
+        var listWasWaiting = Waits.list.visible;
         onSessions();
+        Waits.list.settle(listWasWaiting ? renderList : null);
     },
     /// The whole task list, every time one of them moves. Nothing here merges, for the same
     /// reason `sessions` does not: half an update is a class of bug this page does not have.
@@ -4619,7 +4625,8 @@ function revisionOf(s) { return s ? s.state + "|" + (s.line || "") + "|" + (s.la
    the selected row does not lose focus every time the stream breathes.
    ========================================================================== */
 
-var rowNodes = {};   // id → <li>
+var rowNodes = {};       // id → live <li>
+var leavingNodes = {};   // id → detached-from-the-list-order <li>
 // An end request has already crossed the confirmation boundary. Kept outside `S.sessions`
 // because it is browser-side progress rather than a fact from the stream; the stream may remove
 // the session before the request that caused it has made the osascript round trip back.
@@ -4750,6 +4757,51 @@ function renderCounts() {
     els.counts.innerHTML = bits.join("");
 }
 
+/**
+ * Keep a removed row where it was visibly sitting while the live rows take their final places.
+ * Taking it out of flow first means the ordinary FLIP moves its neighbours all the way to their
+ * destination; the old row can then leave on top without being appended to a different position
+ * or remaining a keyboard and pointer target after its session is gone.
+ */
+function leaveRow(id, node, seen, rowsBox) {
+    if (node.flipAnim) { node.flipAnim.cancel(); node.flipAnim = null; }
+    node.classList.remove("entering", "finished");
+    node.classList.add("leaving");
+    node.setAttribute("aria-hidden", "true");
+    node.tabIndex = -1;
+    node.style.position = "absolute";
+    node.style.top = (seen.top - rowsBox.top) + "px";
+    node.style.left = (seen.left - rowsBox.left) + "px";
+    node.style.width = seen.width + "px";
+    node.style.opacity = seen.opacity;
+    node.style.transform = "none";
+    leavingNodes[id] = node;
+
+    function finish() {
+        if (leavingNodes[id] !== node) return;
+        if (node.parentNode) node.parentNode.removeChild(node);
+        delete leavingNodes[id];
+    }
+
+    node.leaveAnim = node.animate(
+        [{ opacity: seen.opacity, transform: "none" },
+         { opacity: 0, transform: "translateY(-4px) scale(.97)" }],
+        { duration: 190, easing: "cubic-bezier(.4, 0, 1, 1)" }
+    );
+    node.leaveAnim.onfinish = finish;
+    node.leaveAnim.oncancel = finish;
+}
+
+function discardLeaving(id) {
+    var node = leavingNodes[id];
+    if (!node) return;
+    if (node.leaveAnim) node.leaveAnim.cancel();
+    else {
+        if (node.parentNode) node.parentNode.removeChild(node);
+        delete leavingNodes[id];
+    }
+}
+
 function renderList() {
     // Nothing has ever arrived and the wait has gone on long enough to be worth drawing. No rows
     // are built: there are none to build, and the skeleton stands in for the empty state rather
@@ -4758,20 +4810,44 @@ function renderList() {
 
     var list = Start.arrange(ordered());
 
-    // FLIP, first half: where every row is now, before the DOM is touched.
+    // FLIP, first half: both where every row is visibly sitting and where layout put it before
+    // the DOM is touched. The distinction matters while a previous FLIP is still running: a
+    // stream frame that does not change layout must leave that animation alone, while one that
+    // does change it starts again from the visible position rather than snapping to the old end.
     var before = {};
     if (!reduced) {
         Object.keys(rowNodes).forEach(function (id) {
-            before[id] = rowNodes[id].getBoundingClientRect().top;
+            var node = rowNodes[id];
+            var box = node.getBoundingClientRect();
+            before[id] = {
+                top: box.top, left: box.left, width: box.width,
+                layoutTop: node.offsetTop, opacity: getComputedStyle(node).opacity
+            };
         });
     }
 
     spinners = [];
     var wanted = {};
+    list.forEach(function (s) { wanted[s.id] = true; });
+
+    // A leaving row has to be taken out of flow before live nodes are appended into their new
+    // order. Otherwise appendChild moves the obsolete node to an arbitrary slot, so it fades
+    // from somewhere it was never seen and the live rows animate to positions that are already
+    // out of date.
+    var rowsBox = !reduced ? els.rows.getBoundingClientRect() : null;
+    Object.keys(rowNodes).forEach(function (id) {
+        if (wanted[id]) return;
+        var node = rowNodes[id];
+        delete rowNodes[id];
+        if (!node.parentNode) return;
+        if (reduced) node.parentNode.removeChild(node);
+        else leaveRow(id, node, before[id], rowsBox);
+    });
+
     list.forEach(function (s) {
-        wanted[s.id] = true;
         var node = rowNodes[s.id];
         if (!node) {
+            discardLeaving(s.id);
             node = buildRow(s);
             rowNodes[s.id] = node;
             if (!reduced && !Start.arriving(s.id)) {
@@ -4783,12 +4859,6 @@ function renderList() {
         // appendChild moves a node that is already here, which is what makes this a reorder
         // rather than a rebuild — the element under the pointer stays the element under the pointer.
         els.rows.appendChild(node);
-    });
-    Object.keys(rowNodes).forEach(function (id) {
-        if (wanted[id]) return;
-        var node = rowNodes[id];
-        if (node.parentNode) node.parentNode.removeChild(node);
-        delete rowNodes[id];
     });
 
     // Not a session and deliberately not in `rowNodes`: it cannot be selected, filtered or
@@ -4808,12 +4878,31 @@ function renderList() {
     if (!reduced) {
         Object.keys(rowNodes).forEach(function (id) {
             var from = before[id];
-            if (from == null) return;
+            if (!from) return;
             var node = rowNodes[id];
-            // Measured before the running animation is cancelled, so a row that is interrupted
-            // mid-flight sets off again from where it visibly is rather than from where it was.
-            var delta = from - node.getBoundingClientRect().top;
+            // The target did not move, so neither should an animation already travelling there.
+            // Cancelling it on every one-second line update was the remaining way a row could
+            // snap halfway through an otherwise correct reorder.
+            if (from.layoutTop === node.offsetTop) return;
+            // If entry and reorder overlap, preserve the opacity already reached and hand the
+            // transform over to FLIP. Two animations replacing the same transform is not a
+            // meaningful composite, and which one wins differs between WebKit and Chromium.
+            if (node.classList.contains("entering")) {
+                node.classList.remove("entering");
+                node.style.opacity = from.opacity;
+                node.enterFadeAnim = node.animate(
+                    [{ opacity: from.opacity }, { opacity: 1 }],
+                    { duration: 160, easing: "cubic-bezier(.2, .7, .2, 1)" }
+                );
+                node.enterFadeAnim.onfinish = function () {
+                    node.style.opacity = "";
+                    node.enterFadeAnim = null;
+                };
+            }
             if (node.flipAnim) node.flipAnim.cancel();
+            // Cancellation exposes the new untransformed layout position. `from.top` was read
+            // before it, so this delta resumes at the exact pixel that was on screen.
+            var delta = from.top - node.getBoundingClientRect().top;
             if (Math.abs(delta) < 1) return;
             node.flipAnim = node.animate(
                 [{ transform: "translateY(" + delta + "px)" }, { transform: "none" }],
@@ -4863,9 +4952,11 @@ function buildRow(s) {
 function fillRow(node, s) {
     var closing = closingID === s.id;
     var closingVisible = closing && Waits.end.visible;
+    var pending = Optimistic.entries(s.id).length > 0;
     node.dataset.id = s.id;
     node.dataset.state = s.state;
     if (closingVisible) node.dataset.closing = "1"; else delete node.dataset.closing;
+    if (pending) node.dataset.pending = "1"; else delete node.dataset.pending;
     node.classList.toggle("selected", s.id === S.selectedId);
     node.classList.toggle("open", s.id === S.openId);
     node.setAttribute("aria-selected", s.id === S.selectedId ? "true" : "false");
@@ -4944,12 +5035,20 @@ function fillRow(node, s) {
     // new line every second, and throwing away the spinner's canvas to write one string would
     // restart the animation once a second — which is exactly the thing that should look steady.
     var state = node.querySelector(".state");
-    var shape = closingVisible ? "closing" : s.state;
+    // A local turn is a fact about the trip to the Mac, not a replacement for the state the
+    // Mac reported. Keep `data-state` untouched and give the transient trip its own shape; a
+    // waiting row keeps its louder request for attention alongside the quieter delivery note.
+    var shape = closingVisible ? "closing" : (pending ? "pending-" + s.state : s.state);
     if (state.dataset.shape !== shape) {
         state.dataset.shape = shape;
         if (shape === "closing") {
             state.innerHTML = '<canvas class="spin"></canvas><span class="line">' +
                 esc(T.webClosing) + "</span>";
+        } else if (pending) {
+            state.innerHTML = (s.state === "waiting"
+                ? '<span class="wants">' + esc(T.sessionWaiting) + "</span>"
+                : "") + '<canvas class="spin"></canvas><span class="line">' +
+                esc(T.webPending) + "</span>";
         } else if (s.state === "waiting") {
             state.innerHTML = '<span class="wants">' + esc(T.sessionWaiting) + "</span>";
         } else if (s.state === "working") {
@@ -4962,8 +5061,9 @@ function fillRow(node, s) {
             state.innerHTML = "";
         }
     }
-    if (shape === "working" || shape === "closing") {
-        state.querySelector(".line").textContent = shape === "closing" ? T.webClosing : (s.line || "");
+    if (pending || shape === "working" || shape === "closing") {
+        state.querySelector(".line").textContent = pending ? T.webPending :
+            (shape === "closing" ? T.webClosing : (s.line || ""));
         var canvas = state.querySelector(".spin");
         drawSpinner(canvas, spinPhase);
         spinners.push(canvas);
@@ -6198,15 +6298,16 @@ var Waits = {
  * letting the next transcript fetch speak for itself.
  */
 var Optimistic = {
-    add: function (id, text, imageCount) {
+    add: function (id, text, imageCount, known) {
         var entry = {
             role: "user", text: text, at: Math.floor(Date.now() / 1000),
             pending: true, imageCount: imageCount || 0, token: uuid(), wait: null,
-            known: this.known(S.tx.entries)
+            known: known || this.known(S.tx.id === id ? S.tx.entries : [])
         };
         entry.wait = Waiting(function () { Optimistic.expire(id, entry.token); }, 10 * 60 * 1000, 0);
         (optimisticBySession[id] || (optimisticBySession[id] = [])).push(entry);
         entry.wait.start();
+        renderList();
         return entry;
     },
 
@@ -6265,6 +6366,7 @@ var Optimistic = {
         }
         if (kept.length) optimisticBySession[id] = kept;
         else delete optimisticBySession[id];
+        if (matched) renderList();
         return matched;
     },
 
@@ -6285,6 +6387,7 @@ var Optimistic = {
         if (kept.length === pending.length) return;
         if (kept.length) optimisticBySession[id] = kept;
         else delete optimisticBySession[id];
+        renderList();
         if (S.openId === id && !S.agent) renderTranscript();
     }
 };
@@ -6372,7 +6475,6 @@ function openSession(id, keepFocus) {
     if (!s || closingID === id) return;
     S.selectedId = id;
     if (S.openId !== id) {
-        Optimistic.clearAll();
         SessionActions.close();
         ActionConfirm.close();
         // An agent belongs to the session that sent it away. Carrying one over into the next
@@ -6414,7 +6516,6 @@ function closeDetail(silent) {
     // still closing underneath it; the successful end clears `closingID` before coming here.
     if (closingID && S.openId === closingID) return;
     ActionConfirm.close();
-    Optimistic.clearAll();
     S.openId = null;
     S.agent = null;
     S.tx = { id: null, entries: [], signature: null, loading: false, error: null };
@@ -6783,8 +6884,18 @@ var SessionActions = {
     prompt: function (action, sessionID) {
         var id = sessionID || S.openId;
         if (!id || !S.write) return;
+        // The reader can switch sessions during the HTTP trip. Remember the target's transcript
+        // before that happens, so an older identical command cannot claim this new local turn.
+        var known = Optimistic.known(S.tx.id === id ? S.tx.entries : []);
         this.close();
-        api.send(id, action, []).then(function () { toast(action + " ✓"); })
+        api.send(id, action, []).then(function () {
+            Optimistic.add(id, action, 0, known);
+            if (S.openId === id && !S.agent) {
+                renderTranscript();
+                loadTranscript(id, true);
+            }
+            toast(action + " ✓");
+        })
             .catch(function (e) { toast(e.message, true); });
     },
 
