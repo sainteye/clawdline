@@ -426,7 +426,7 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```sh
-./test.sh     # 1625 checks, a couple of seconds
+./test.sh     # a couple of seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code
 ```
