@@ -695,39 +695,6 @@ group("transcript parsing") {
            Transcript.parse(wide, limit: 1)[0].text, "謝謝")
 }
 
-group("an unanswered question is read from the transcript tail") {
-    let answered = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"ask-old","name":"AskUserQuestion","input":{"questions":[{"header":"Old","question":"Already settled?","options":[{"label":"Yes"},{"label":"No"}],"multiSelect":false}]}}]}}"#
-    let oldResult = #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"ask-old","content":"Yes"}]}}"#
-    let pending = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"ask-live","name":"AskUserQuestion","input":{"questions":[{"header":"Choice","question":"Which path?","options":[{"label":"Keep the full label — \"quoted\"","description":"first"},{"label":"另一條路","description":"second"}],"multiSelect":false}]}}]}}"#
-    let rows = [answered, oldResult, pending].joined(separator: "\n")
-
-    let entries = Transcript.parse(rows)
-    expect("a call keeps the id Claude gave it", entries.last?.toolUseID, "ask-live")
-    expect("a result keeps the id it closes", entries.dropLast().last?.toolUseID, "ask-old")
-
-    let question = Transcript.unansweredAsk(in: rows)?.first
-    expect("the newest call without its result is returned", question?.text, "Which path?")
-    expect("its complete labels survive", question?.options.map(\.label),
-           ["Keep the full label — \"quoted\"", "另一條路"])
-    expect("it becomes the existing answer menu", question?.menu?.options.map(\.number), [1, 2])
-
-    let emptyResult = #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"ask-live","content":""}]}}"#
-    let settled = rows + "\n" + emptyResult
-    check("even an empty matching result settles the question",
-          Transcript.unansweredAsk(in: settled) == nil)
-
-    // The file reader must not depend on the head of a transcript. The cut begins in a large,
-    // invalid row and drops it, while the complete question at the tail remains readable.
-    let url = FileManager.default.temporaryDirectory
-        .appendingPathComponent("clawdline-unanswered-\(UUID().uuidString).jsonl")
-    defer { try? FileManager.default.removeItem(at: url) }
-    let fixture = String(repeating: "old history ", count: 2_000) + "\n" + rows
-    try? Data(fixture.utf8).write(to: url, options: .atomic)
-    expect("the bounded file query finds the tail question",
-           Transcript.unansweredAsk(inTranscript: url, tailBytes: 4_096)?.first?.text,
-           "Which path?")
-}
-
 group("transcript tool summaries") {
     expect("command wins", Transcript.summarise(input: ["description": "d", "command": "ls -l"]), "ls -l")
     expect("then a path", Transcript.summarise(input: ["description": "d", "file_path": "/tmp/a"]), "/tmp/a")
@@ -4271,6 +4238,33 @@ group("a numbered list somebody typed is not a menu") {
       3. \u{6211}\u{770B} web \u{7684}\u{8655}\u{7406}\u{72C0}\u{614B}
     """
     check("a list typed at the prompt is not a question", !SessionState.isChoosing(typed))
+    check("the hook gate makes the same shape a question",
+          SessionState.isChoosing(typed, hookWaiting: true))
+    guard let gated = SessionState.menu(typed, hookWaiting: true) else {
+        check("the same shape is a menu after a hook says it is waiting", false); return
+    }
+    expect("the hook-gated menu keeps every option", gated.options.count, 3)
+    expect("the flush-left caret selects its numbered row", gated.selected, 1)
+    check("a later composer still disqualifies the echoed list",
+          !SessionState.isChoosing(typed + "\n\u{276F} ", hookWaiting: true))
+
+    // Real AskUserQuestion rows are separated by descriptions. Walking adjacent lines, like the
+    // Codex parser does, stops at the first description; scanning every option row must not.
+    let described = """
+      1. Keep the current API
+        This preserves existing callers.
+    \u{276F} 2. Add the waiting gate
+        This trusts the ambiguous caret only after a hook signal.
+      3. Cancel
+        Leave the code unchanged.
+    """
+    guard let describedMenu = SessionState.menu(described, hookWaiting: true) else {
+        check("a described AskUserQuestion is a menu", false); return
+    }
+    expect("description lines do not stop option collection", describedMenu.options.count, 3)
+    expect("described option numbers remain in screen order",
+           describedMenu.options.map(\.number), [1, 2, 3])
+    expect("the described selected row is correct", describedMenu.selected, 2)
 
     // And the thing it must still catch: a real dialog, drawn inside its box.
     let menu = """

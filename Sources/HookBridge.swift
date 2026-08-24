@@ -142,6 +142,16 @@ enum HookBridge {
             return SessionState.Menu(question: question.text.isEmpty ? nil : question.text,
                                      options: options, selected: 1)
         }
+
+        /// This note is Claude Code itself saying that input is waiting, rather than merely
+        /// asking for another screen reading. The distinction also gates the one ambiguous
+        /// terminal shape: an AskUserQuestion row whose caret is flush left like the composer.
+        var assertsWaiting: Bool {
+            switch kind {
+            case .askUserQuestion, .permissionRequest, .permissionPrompt: return true
+            default: return false
+            }
+        }
     }
 
     // MARK: - Where everything lives

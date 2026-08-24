@@ -131,9 +131,17 @@ final class SessionWatch {
             let anyAssistant = !ITerm.assistantPIDs().isEmpty
             let snap = anyAssistant ? Targets.snapshot() : Targets.Snapshot()
             let sessions = snap.assistantSessions.isEmpty ? snap.sessions : snap.assistantSessions
+            // The note must reach the parser before the screen is classified. AskUserQuestion's
+            // flush-left caret is intentionally ambiguous without this protocol fact; merging
+            // `.waiting` after the capture, as below, is too late to recover its option rows.
+            let hookWaiting = Set(sessions.compactMap { session -> String? in
+                let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
+                return notes[bare]?.assertsWaiting == true ? session.id : nil
+            })
             // Named `screens` and not `reading`: there is a `reading` flag on `self` guarding
             // this whole function, and shadowing it here is a trap for the next edit.
-            let screens = anyAssistant ? Targets.reading(of: sessions) : Targets.Reading()
+            let screens = anyAssistant
+                ? Targets.reading(of: sessions, hookWaiting: hookWaiting) : Targets.Reading()
             // What was read, with what Claude Code said about itself folded in. A no-op when
             // nothing is installed, which is the state every reading has to be right in.
             let states = HookBridge.merge(notes, into: screens.states, sessions: sessions)
@@ -142,21 +150,15 @@ final class SessionWatch {
             // capture would be a set of buttons for a question nobody is asking any more.
             var menus = screens.menus.filter { states[$0.key] == .waiting }
 
-            // Structured sources carry the original labels. Prefer those over the terminal
+            // Structured hook data carries the original labels. Prefer it over the terminal
             // drawing, where a narrow pane clips precisely the words a phone needs to offer as
-            // buttons. A hook note is cheapest; Claude currently omits the opening hook for this
-            // tool, so its unresolved transcript call is next. The screen remains the fallback
-            // for permissions and any future dialog shape the structured readers do not know.
+            // buttons. The screen remains the fallback for permission notes and AskUserQuestion,
+            // whose opening hook is currently omitted by Claude Code.
             for session in sessions where states[session.id] == .waiting {
                 let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
                 if let menu = notes[bare]?.menu {
                     menus[session.id] = menu
-                    continue
                 }
-                guard let record = Transcript.record(of: session), record.assistant == .claude,
-                      let question = Transcript.unansweredAsk(inTranscript: record.url)?.first,
-                      let menu = question.menu else { continue }
-                menus[session.id] = menu
             }
 
             // Every background agent these sessions have going, which is a question the screen

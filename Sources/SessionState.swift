@@ -72,27 +72,48 @@ enum SessionState: Equatable {
     /// on one of them, and a menu never offers fewer than two things to choose between. Either
     /// test alone lets ordinary output through; together they do not.
     ///
-    /// Codex draws the same idea and breaks the one rule this relies on, which is why the
-    /// assistant has to be known: **its caret is flush left**, in the same column as the caret
-    /// in front of the box you type into. See ``codexMenu(_:)``.
+    /// Codex always breaks the one rule this relies on, which is why the assistant has to be
+    /// known: **its caret is flush left**, in the same column as the caret in front of the box
+    /// you type into. See ``codexMenu(_:)``. Claude Code's AskUserQuestion now does the same, but
+    /// that ambiguous shape is accepted only when `hookWaiting` supplies an independent fact.
     static func menu(_ screen: String, assistant: Assistant = .claude,
-                     tailLines: Int = 30) -> Menu? {
+                     tailLines: Int = 30, hookWaiting: Bool = false) -> Menu? {
         let lines = screen
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { String($0) }
             .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        if assistant == .codex { return codexMenu(Array(lines.suffix(tailLines))) }
+        let tail = Array(lines.suffix(tailLines))
+        if assistant == .codex { return codexMenu(tail) }
+
+        // AskUserQuestion is the exception to Claude Code's usual drawing: its selected row is
+        // flush left, just like the composer. That row is trusted only after a hook has stated
+        // that the session is waiting, and only when it is the last caret on screen; otherwise
+        // an echoed numbered message would become a menu again. The transcript cannot supply
+        // the missing gate or labels: measured while the picker is open, its call is not written
+        // there until the answer and result arrive together.
+        var flushLeftSelection: Int? = nil
+        if hookWaiting {
+            let hasIndentedSelection = tail.contains { line in
+                guard let row = option(line) else { return false }
+                return row.caret && row.indented
+            }
+            if !hasIndentedSelection, let caret = tail.lastIndex(where: { hasCaret($0) }),
+               let row = option(tail[caret]), row.caret, !row.indented {
+                flushLeftSelection = caret
+            }
+        }
 
         var options: [Menu.Option] = []
         var carets = 0
-        for line in lines.suffix(tailLines) {
+        for (index, line) in tail.enumerated() {
             guard let row = option(line) else { continue }
             // **A caret at column zero is the prompt, not a menu** — see ``option(_:)``, which
             // reports where the caret was rather than ruling on it. `❯` is both the glyph a
             // dialog marks its current row with and the one Claude Code puts in front of the
             // line you type, so a message that begins with a numbered list echoes as `❯ 1. …`
-            // with `2. …` under it. The row is still listed; it is just not a selection.
-            let selected = row.caret && row.indented
+            // with `2. …` under it. The row is still listed; absent the hook gate above, it is
+            // just not a selection.
+            let selected = row.caret && (row.indented || index == flushLeftSelection)
             if selected { carets += 1 }
             options.append(Menu.Option(number: row.number, label: row.label, selected: selected))
         }
@@ -109,8 +130,9 @@ enum SessionState: Equatable {
 
     /// Whether a menu is on screen at all. The shape every existing caller wanted.
     static func isChoosing(_ screen: String, assistant: Assistant = .claude,
-                           tailLines: Int = 30) -> Bool {
-        menu(screen, assistant: assistant, tailLines: tailLines) != nil
+                           tailLines: Int = 30, hookWaiting: Bool = false) -> Bool {
+        menu(screen, assistant: assistant, tailLines: tailLines,
+             hookWaiting: hookWaiting) != nil
     }
 
     // MARK: - Codex

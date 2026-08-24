@@ -253,17 +253,19 @@ enum Targets {
         var menus: [String: SessionState.Menu] = [:]
     }
 
-    static func reading(of sessions: [TargetSession]) -> Reading {
+    static func reading(of sessions: [TargetSession], hookWaiting: Set<String> = []) -> Reading {
         var out = Reading()
 
         func note(_ session: TargetSession, _ screen: String?) {
             let assistant = session.assistant ?? .claude
             out.states[session.id] = SessionState.read(screen, assistant: assistant)
-            // Only when the state says so. `read` has already decided a menu is up — asking the
-            // parser again on an idle screen would be work done to be told nothing, once per
-            // session per beat, which is the shape of cost this whole file is careful about.
-            guard out.states[session.id] == .waiting, let screen else { return }
-            out.menus[session.id] = SessionState.menu(Ansi.plain(screen), assistant: assistant)
+            // Only when the screen or an authoritative hook says so. Asking the parser on every
+            // idle screen would be work done to be told nothing once per session per beat; the
+            // hook exception is also what lets the parser safely trust a flush-left caret.
+            let assertedWaiting = hookWaiting.contains(session.id)
+            guard out.states[session.id] == .waiting || assertedWaiting, let screen else { return }
+            out.menus[session.id] = SessionState.menu(Ansi.plain(screen), assistant: assistant,
+                                                      hookWaiting: assertedWaiting)
         }
 
         let iterm = sessions.filter { $0.backend == .iterm }
