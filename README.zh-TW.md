@@ -369,6 +369,7 @@ claude
 | `voice_language` | `auto` | 釘住語言；`voice_engine` 與 Whisper 那幾個鍵在 [whisper.md](docs/whisper.md) |
 | `send_images_as_paste` | `true` | 圖片以 `[Image #3]` 進去，而不是路徑 |
 | `hooks` | `true` | 裝了 Claude Code hook 之後要不要相信它 |
+| `session_registry` | `true` | 要不要相信每個 Claude Code session 自己寫下的狀態 |
 | `status_dir` · `icons_file` | `""` | 專案狀態檔與圖示登錄檔 |
 
 **遠端**

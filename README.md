@@ -407,6 +407,7 @@ itself.
 | `voice_language` | `auto` | pin the language; `voice_engine` and the Whisper keys are in [whisper.md](docs/whisper.md) |
 | `send_images_as_paste` | `true` | images arrive as `[Image #3]`, not as a path |
 | `hooks` | `true` | believe Claude Code's hooks when installed |
+| `session_registry` | `true` | believe what each Claude Code session writes about itself |
 | `status_dir` · `icons_file` | `""` | project status files and the icon registry |
 
 **Remote**
