@@ -179,6 +179,11 @@ struct English: Copy {
     let settingsOrchestratorCloseNow = "Close the tab right away"
     let settingsOrchestratorCloseLinger = "Close it after three minutes"
     let settingsOrchestratorCloseKeep = "Leave it open"
+    let settingsOrchestratorPolicy = "How work is handed out"
+    let settingsOrchestratorPolicyHint = "Rules Clawdline reads on every dispatch and copies into the briefing of every child that may dispatch in turn. Which assistant, which model, what shape the graph should be. Empty means no house rules."
+    let settingsOrchestratorPolicyEdit = "Edit the rules"
+    func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "In force — \(lines) lines" }
+    let settingsOrchestratorPolicyOff = "No house rules — every dispatch is the dispatcher's own call"
     func childAnnounce(_ title: String) -> String { "Clawdline task received: \(title) — starting now." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

@@ -83,6 +83,10 @@ enum Orchestrator {
         /// The task whose child dispatched this one, when it said so. Nil at depth 1, and nil at
         /// depth 2 when the parent was recognised by session id instead.
         var parentTaskId: String?
+        /// The whole graph this task is one node of, in the dispatcher's own words. Carried into
+        /// the briefing so a leaf knows what its output feeds — which is the difference between
+        /// a usable answer and an essay.
+        var plan: String?
         var childTerminalId: String?
         var childBackend: Backend?
         var childTTY: String?
@@ -296,6 +300,7 @@ enum Orchestrator {
         var rootSessionId: String?
         var rootLabel: String?
         var parentTaskId: String?
+        var plan: String?
     }
 
     enum DraftOutcome: Equatable {
@@ -333,10 +338,17 @@ enum Orchestrator {
             }
             model = ok
         }
+        if let plan = obj["plan"] as? String, plan.utf8.count > planLimit {
+            return .bad("plan must be at most \(planLimit / 1024) KiB")
+        }
         var made = Draft()
         made.id = id
         made.assistant = assistant
         made.model = model
+        made.plan = (obj["plan"] as? String).flatMap {
+            let text = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? nil : text
+        }
         made.projectDir = dir
         made.instructions = instructions
         made.kind = (obj["kind"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(40)) } ?? "custom"
@@ -432,7 +444,7 @@ enum Orchestrator {
                         assistant: made.assistant, model: made.model, projectDir: made.projectDir,
                         timeoutMinutes: made.timeoutMinutes, created: Date(),
                         rootSessionId: made.rootSessionId, rootLabel: made.rootLabel,
-                        depth: depth, parentTaskId: made.parentTaskId,
+                        depth: depth, parentTaskId: made.parentTaskId, plan: made.plan,
                         secretHash: hash(ofSecret: secret))
         lock.lock()
         tasks[taskID] = task
@@ -1264,7 +1276,7 @@ enum Orchestrator {
 
         You are a CHILD session working for a Clawdline root session. Your one job is the task
         described in \(dir)/task.json — read that file now.
-
+        \(planSection(for: task))
         ## Language, and the first thing you say
 
         The person watching this terminal reads \(languageName). Everything you say in this
@@ -1286,7 +1298,7 @@ enum Orchestrator {
         - Do not read any directory under /tmp/.clawdline/ other than the ones named here.
         - Do not do work the task did not ask for.
         - You have \(task.timeoutMinutes) minutes before the task is marked timed out.
-        \(handOnSection(for: task, allowance: allowance))
+        \(handOnSection(for: task, allowance: allowance))\(policySection(allowance: allowance))
         ## Reporting — this is the completion signal, do it exactly
 
         When the work is done (or has failed for good), write \(dir)/result.json:
@@ -1310,6 +1322,136 @@ enum Orchestrator {
            -H "X-Clawdline-Task-Secret: <TASK_SECRET>" -H 'Content-Type: application/json' \\
            -d '{"status":"success","summary":"..."}'`
         This is never required; the file alone is enough.
+        """
+    }
+
+    // MARK: - House rules
+
+    /// Where the dispatch policy lives — beside the token and the registry, in the directory
+    /// `CLAWDLINE_REMOTE_DIR` moves when it is set.
+    ///
+    /// A file rather than a string in `config.json`, because it is paragraphs: multi-line prose
+    /// survives being hand-edited in a file and does not survive being hand-edited as a JSON
+    /// string with `\n` in it.
+    static var policyURL: URL { RemoteAuth.directory.appendingPathComponent("dispatch-policy.md") }
+
+    /// The maximum this app will carry into a briefing. Generous for house rules and small
+    /// enough that a file somebody pasted a novel into cannot push the actual task off the
+    /// bottom of a child's attention.
+    static let policyLimit = 4096
+
+    /// The same ceiling for the graph a task carries. Both end up in one briefing beside 16 KiB
+    /// of instructions, and a briefing a child skims is worse than a shorter one it reads.
+    static let planLimit = 4096
+
+    /// What this Mac says about how work should be handed out, or nil when nobody has said
+    /// anything. Read at dispatch rather than at launch, so an edit takes effect on the next
+    /// task instead of on the next restart.
+    static func policy() -> String? {
+        guard let raw = try? String(contentsOf: policyURL, encoding: .utf8) else { return nil }
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        return String(text.prefix(policyLimit))
+    }
+
+    /// Write the starting policy, once, if there is no file yet — and answer where it is either
+    /// way. Never overwrites: what is in there is somebody's, and a default that came back after
+    /// being deleted would be a setting that does not stay set.
+    @discardableResult
+    static func ensurePolicyFile() -> URL {
+        let url = policyURL
+        guard !FileManager.default.fileExists(atPath: url.path) else { return url }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        try? Data(defaultPolicy.utf8).write(to: url, options: .atomic)
+        return url
+    }
+
+    /// Opinionated on purpose. An empty file with a comment saying "put your rules here" is a
+    /// feature nobody uses; a file with defensible rules already in it is one somebody edits.
+    /// English because it is copied into a briefing every other line of which is English, and
+    /// because it is read by an assistant before it is read by a person — but nothing stops it
+    /// being rewritten in any language, and a child will follow it just the same.
+    static let defaultPolicy = """
+    # How work is handed out on this Mac
+
+    Clawdline reads this file every time a task is dispatched and copies it into the briefing of
+    every child that is allowed to dispatch in turn. Edit it freely. Delete everything and the
+    feature switches itself off — an empty file means there are no house rules.
+
+    ## Which assistant
+
+    - **Codex** for *making* something you can then look at: writing code, generating an SVG or
+      an image, running a build until it goes green, mechanical edits across many files.
+    - **Claude** for reading and judging: reviewing a diff, working out why something behaves the
+      way it does, searching and weighing what it found, writing prose somebody will read.
+
+    ## Which model
+
+    Name one when the default is the wrong size for the job, and say why in the plan.
+
+    - `haiku` — mechanical, single-source work. Fetch a page and pull three facts out of it.
+      Reformat a list. Anything where being wrong is obvious.
+    - `sonnet` — ordinary work with judgement in it, and the default choice for a leaf.
+    - `opus` — a decision somebody will act on without checking, and any synthesis of several
+      children's answers.
+
+    **A verdict runs on a model at least as strong as what produced what it is judging.** A
+    review by something smaller than the thing reviewed is a rubber stamp with a token cost.
+
+    ## The shape of the graph
+
+    - Plan the whole graph before dispatching any of it: what each leaf produces, who joins those
+      answers together, and what the top hands back.
+    - **Breadth before depth.** Two children splitting a job beat one child that will hand half
+      of it on. Go a level deeper only when the second level's work cannot be named until the
+      first level has answered.
+    - **Every node is told the whole graph**, not just its own job — that is what `plan` in
+      task.json is for. A leaf that knows what its output feeds writes a usable output; one that
+      does not writes an essay.
+    - Leaves are narrow enough to state in a sentence. If a child's instructions need three
+      paragraphs to say what "done" means, it is two children.
+    """
+
+    /// The graph this task is one node of, when the dispatcher wrote one down.
+    ///
+    /// Near the top, above even the language rule, because it is the context every other line is
+    /// read in: a child that knows its answer is one of four being joined together writes
+    /// something joinable, and one that does not writes a report.
+    private static func planSection(for task: Task) -> String {
+        guard let plan = task.plan, !plan.isEmpty else { return "" }
+        return """
+
+
+        ## The plan this is part of
+
+        Written by the session that dispatched you. You are one node of it — find yourself in it
+        before you start, and hand back what the node after you needs rather than everything you
+        found.
+
+        \(plan)
+
+        """
+    }
+
+    /// This Mac's house rules for handing work out, when there are any.
+    ///
+    /// Only for a child that may dispatch, because that is what the rules are about — a leaf
+    /// reading somebody's model-selection policy is reading noise it has no decision to spend it
+    /// on. Read from disk at briefing time, so an edit reaches the next child rather than the
+    /// next launch.
+    private static func policySection(allowance: Int) -> String {
+        guard allowance > 0, let policy = policy() else { return "" }
+        return """
+
+
+        ## What this Mac says about handing work out
+
+        House rules, from \(policyURL.path). They are the person's, not this app's; where they
+        and your own judgement disagree, follow them and say so in your summary.
+
+        \(policy)
+
         """
     }
 
@@ -1618,6 +1760,7 @@ enum Orchestrator {
         if let v = task.rootLabel { out["root_label"] = v }
         if let v = task.parentTaskId { out["parent_task"] = v }
         if let v = task.model { out["model"] = v }
+        if let v = task.plan { out["plan"] = v }
         if let v = task.childTerminalId { out["child_terminal"] = v }
         if let v = task.childBackend { out["child_backend"] = v.rawValue }
         if let v = task.childTTY { out["child_tty"] = v }
@@ -1656,6 +1799,7 @@ enum Orchestrator {
         task.rootLabel = obj["root_label"] as? String
         task.parentTaskId = obj["parent_task"] as? String
         task.model = StartPoints.modelName(obj["model"] as? String)
+        task.plan = obj["plan"] as? String
         // A registry written before tasks had a depth holds only tasks a root dispatched, which
         // is exactly what 1 means.
         task.depth = (obj["depth"] as? Int).map { min(max($0, 1), 9) } ?? 1

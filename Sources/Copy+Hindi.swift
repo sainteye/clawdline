@@ -184,6 +184,11 @@ struct Hindi: Copy {
     let settingsOrchestratorCloseNow = "टैब तुरंत बंद कर दें"
     let settingsOrchestratorCloseLinger = "तीन मिनट बाद बंद करें"
     let settingsOrchestratorCloseKeep = "खुला ही रहने दें"
+    let settingsOrchestratorPolicy = "काम कैसे बाँटा जाए"
+    let settingsOrchestratorPolicyHint = "हर बार काम भेजते समय Clawdline इन नियमों को पढ़ता है और आगे भेज सकने वाले हर चाइल्ड की हिदायत में इन्हें जोड़ देता है: कौन-सा एजेंट, कौन-सा मॉडल, ग्राफ़ किस आकार का हो। खाली मतलब कोई नियम नहीं।"
+    let settingsOrchestratorPolicyEdit = "नियम बदलें"
+    func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "लागू — \(lines) पंक्तियाँ" }
+    let settingsOrchestratorPolicyOff = "कोई नियम नहीं — हर बार भेजने वाला खुद तय करता है"
     func childAnnounce(_ title: String) -> String { "Clawdline से काम मिल गया: \(title) — अभी शुरू कर रहा हूँ।" }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f से॰", value) }
 

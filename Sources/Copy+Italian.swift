@@ -180,6 +180,11 @@ struct Italian: Copy {
     let settingsOrchestratorCloseNow = "Chiudere subito la scheda"
     let settingsOrchestratorCloseLinger = "Chiuderla dopo tre minuti"
     let settingsOrchestratorCloseKeep = "Lasciarla aperta"
+    let settingsOrchestratorPolicy = "Come si distribuisce il lavoro"
+    let settingsOrchestratorPolicyHint = "Regole che Clawdline legge a ogni invio e ricopia nelle istruzioni di ogni sessione figlia che può inviarne a sua volta: quale assistente, quale modello, che forma deve avere il grafo. Vuoto significa nessuna regola."
+    let settingsOrchestratorPolicyEdit = "Modifica le regole"
+    func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "In vigore — \(lines) righe" }
+    let settingsOrchestratorPolicyOff = "Nessuna regola — ogni invio è deciso da chi lo fa"
     func childAnnounce(_ title: String) -> String { "Incarico da Clawdline ricevuto: \(title) — comincio subito." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

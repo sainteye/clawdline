@@ -290,6 +290,17 @@ protocol Copy {
     var settingsOrchestratorCloseNow: String { get }
     var settingsOrchestratorCloseLinger: String { get }
     var settingsOrchestratorCloseKeep: String { get }
+    /// The house rules for handing work out: a card saying whether there are any, and a button
+    /// that opens the file. Named rather than described, because the thing the button opens is a
+    /// file on disk and the row above it prints the path.
+    var settingsOrchestratorPolicy: String { get }
+    var settingsOrchestratorPolicyHint: String { get }
+    var settingsOrchestratorPolicyEdit: String { get }
+    /// What the card says when there are rules. `lines` is how many lines the file holds — a
+    /// count rather than a preview, because the file is prose and three words of it out of
+    /// context says less than the fact that it is there.
+    func settingsOrchestratorPolicyOn(_ lines: Int) -> String
+    var settingsOrchestratorPolicyOff: String { get }
     /// The very first line a child session says, naming the task it has just taken on.
     ///
     /// A child works in a terminal tab somebody may be watching, and without this the tab opens

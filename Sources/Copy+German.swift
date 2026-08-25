@@ -180,6 +180,11 @@ struct German: Copy {
     let settingsOrchestratorCloseNow = "Den Tab sofort schließen"
     let settingsOrchestratorCloseLinger = "Nach drei Minuten schließen"
     let settingsOrchestratorCloseKeep = "Offen lassen"
+    let settingsOrchestratorPolicy = "Wie Arbeit verteilt wird"
+    let settingsOrchestratorPolicyHint = "Regeln, die Clawdline bei jeder Vergabe liest und in die Anweisung jeder Kindsitzung kopiert, die selbst vergeben darf: welcher Assistent, welches Modell, welche Form der Graph haben soll. Leer heißt: keine Regeln."
+    let settingsOrchestratorPolicyEdit = "Regeln bearbeiten"
+    func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "In Kraft — \(lines) Zeilen" }
+    let settingsOrchestratorPolicyOff = "Keine Regeln — jede Vergabe bleibt die Entscheidung dessen, der vergibt"
     func childAnnounce(_ title: String) -> String { "Clawdline-Auftrag erhalten: \(title) — ich fange jetzt an." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

@@ -5190,6 +5190,13 @@ group("a task.json is read before a terminal is opened for it") {
     expect("one that names a model carries it", made(file(["model": "haiku"]))?.model, "haiku")
     check("and one that names something that is not a model is refused, not quietly ignored",
           refused(file(["model": "haiku; rm -rf /"])))
+    expect("the graph a task is one node of comes through whole",
+           made(file(["plan": "root → two leaves → this one"]))?.plan,
+           "root → two leaves → this one")
+    check("a plan of nothing but whitespace is no plan",
+          made(file(["plan": "   \n  "]))?.plan == nil)
+    check("and one past four KiB is refused rather than cut",
+          refused(file(["plan": String(repeating: "p", count: 4097)])))
     expect("with its own timeout", made(file())?.timeoutMinutes, 45)
     expect("its kind", made(file())?.kind, "image")
     expect("its title", made(file())?.title, "draw the project")
@@ -5520,6 +5527,65 @@ group("a child is told whether it may hand work on, and never has to find out by
     expect("and one is enough to make the floor two", Orchestrator.depthFloor, 2)
     Config.shared.orchestratorMaxGrandchildren = 10
     expect("ten does not make it three — there is no third", Orchestrator.depthFloor, 2)
+}
+
+group("the graph and the house rules reach the child that needs them") {
+    // Two paragraphs a briefing grows, and they are governed differently: the plan comes from
+    // whoever dispatched (per task), the policy from whoever owns this Mac (per machine). What
+    // they have in common is that a child reading neither writes an essay instead of an answer.
+    let savedGrandchildren = Config.shared.orchestratorMaxGrandchildren
+    let policyFile = Orchestrator.policyURL
+    let policyBefore = try? Data(contentsOf: policyFile)
+    defer {
+        Config.shared.orchestratorMaxGrandchildren = savedGrandchildren
+        if let policyBefore {
+            try? policyBefore.write(to: policyFile, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: policyFile)
+        }
+    }
+    func brief(plan: String?, allowance: Int) -> String {
+        Config.shared.orchestratorMaxGrandchildren = allowance
+        var task = Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
+                                     assistant: .claude, projectDir: "/Users/me/code/thing",
+                                     timeoutMinutes: 30, created: Date(), depth: 1,
+                                     secretHash: String(repeating: "0", count: 64))
+        task.plan = plan
+        return Orchestrator.childBrief(for: task)
+    }
+    try? FileManager.default.createDirectory(at: policyFile.deletingLastPathComponent(),
+                                             withIntermediateDirectories: true)
+    try? Data("Review runs on opus. Breadth before depth.".utf8).write(to: policyFile, options: .atomic)
+
+    let both = brief(plan: "root → 3 searchers → this one joins them up", allowance: 3)
+    check("the plan is in the briefing, in the dispatcher's own words",
+          both.contains("root → 3 searchers → this one joins them up"))
+    check("above the rules, because it is what the rules are read in the light of",
+          both.range(of: "## The plan this is part of")!.lowerBound
+              < both.range(of: "## Rules")!.lowerBound)
+    check("and this Mac's house rules are there for a child that may dispatch",
+          both.contains("Review runs on opus."))
+    check("named by path, so a child can say where a rule it followed came from",
+          both.contains(Orchestrator.policyURL.path))
+
+    let leaf = brief(plan: "root → 3 searchers → this one", allowance: 0)
+    check("a leaf is told the plan too — it is what makes its answer joinable",
+          leaf.contains("root → 3 searchers → this one"))
+    check("but not the rules for handing work out, which it has no decision to spend them on",
+          !leaf.contains("Review runs on opus."))
+
+    try? FileManager.default.removeItem(at: policyFile)
+    check("no file at all is no paragraph, rather than an empty heading",
+          !brief(plan: nil, allowance: 3).contains("What this Mac says"))
+    check("and no plan is no paragraph either",
+          !brief(plan: nil, allowance: 3).contains("## The plan this is part of"))
+    try? Data("   \n\n  ".utf8).write(to: policyFile, options: .atomic)
+    check("a file of nothing but whitespace counts as nobody having said anything",
+          Orchestrator.policy() == nil)
+
+    check("the starting rules say something about models and something about shape",
+          Orchestrator.defaultPolicy.contains("haiku")
+              && Orchestrator.defaultPolicy.contains("Breadth before depth"))
 }
 
 group("dispatching is the one thing a paired device may not do") {

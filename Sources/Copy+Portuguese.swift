@@ -183,6 +183,11 @@ struct Portuguese: Copy {
     let settingsOrchestratorCloseNow = "Fechar o separador logo"
     let settingsOrchestratorCloseLinger = "Fechá-lo ao fim de três minutos"
     let settingsOrchestratorCloseKeep = "Deixá-lo aberto"
+    let settingsOrchestratorPolicy = "Como o trabalho é distribuído"
+    let settingsOrchestratorPolicyHint = "Regras que o Clawdline lê a cada envio e copia para as instruções de cada sessão filha que pode enviar por sua vez: que assistente, que modelo, que forma deve ter o grafo. Vazio significa sem regras."
+    let settingsOrchestratorPolicyEdit = "Editar as regras"
+    func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "Em vigor — \(lines) linhas" }
+    let settingsOrchestratorPolicyOff = "Sem regras — cada envio fica ao critério de quem envia"
     func childAnnounce(_ title: String) -> String { "Tarefa do Clawdline recebida: \(title) — começo já." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

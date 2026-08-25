@@ -178,6 +178,11 @@ struct Korean: Copy {
     let settingsOrchestratorCloseNow = "탭을 바로 닫기"
     let settingsOrchestratorCloseLinger = "3분 뒤에 닫기"
     let settingsOrchestratorCloseKeep = "닫지 않고 두기"
+    let settingsOrchestratorPolicy = "일을 나누는 규칙"
+    let settingsOrchestratorPolicyHint = "맡길 때마다 Clawdline이 읽고, 다시 맡길 수 있는 모든 자식 세션의 지시문에 그대로 옮겨 적는 규칙입니다. 어느 어시스턴트를, 어느 모델을, 그래프를 어떤 모양으로. 비워 두면 규칙 없음입니다."
+    let settingsOrchestratorPolicyEdit = "규칙 편집"
+    func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "적용 중 — \(lines)줄" }
+    let settingsOrchestratorPolicyOff = "규칙 없음 — 맡길 때마다 맡기는 쪽이 정합니다"
     func childAnnounce(_ title: String) -> String { "Clawdline이 맡긴 일을 받았습니다: \(title) — 지금 시작합니다." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f초", value) }
 

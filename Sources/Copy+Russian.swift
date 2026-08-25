@@ -180,6 +180,11 @@ struct Russian: Copy {
     let settingsOrchestratorCloseNow = "Закрывать вкладку сразу"
     let settingsOrchestratorCloseLinger = "Закрывать через три минуты"
     let settingsOrchestratorCloseKeep = "Оставлять открытой"
+    let settingsOrchestratorPolicy = "Как раздаётся работа"
+    let settingsOrchestratorPolicyHint = "Правила, которые Clawdline читает при каждой отправке и переносит в инструкцию каждой дочерней сессии, которой можно отправлять дальше: какой ассистент, какая модель, какой формы должен быть граф. Пусто — правил нет."
+    let settingsOrchestratorPolicyEdit = "Изменить правила"
+    func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "Действуют — строк: \(lines)" }
+    let settingsOrchestratorPolicyOff = "Правил нет — каждый раз решает тот, кто отправляет"
     func childAnnounce(_ title: String) -> String { "Задача от Clawdline принята: \(title) — приступаю." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f с", value) }
 

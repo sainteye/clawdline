@@ -178,6 +178,11 @@ struct Japanese: Copy {
     let settingsOrchestratorCloseNow = "すぐにタブを閉じる"
     let settingsOrchestratorCloseLinger = "3 分たってから閉じる"
     let settingsOrchestratorCloseKeep = "閉じずに残す"
+    let settingsOrchestratorPolicy = "仕事の配り方"
+    let settingsOrchestratorPolicyHint = "派遣のたびに Clawdline が読み、さらに派遣できる子セッションすべての指示に書き写すルールです。どのアシスタントか、どのモデルか、グラフをどんな形にするか。空なら決まりごとはありません。"
+    let settingsOrchestratorPolicyEdit = "ルールを編集"
+    func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "有効 — \(lines) 行" }
+    let settingsOrchestratorPolicyOff = "決まりごとなし — 出すたびに出す側が決めます"
     func childAnnounce(_ title: String) -> String { "Clawdline から依頼を受け取りました：\(title)——いまから取りかかります。" }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 

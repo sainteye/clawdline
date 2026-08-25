@@ -181,6 +181,11 @@ struct TraditionalChinese: Copy {
     let settingsOrchestratorCloseNow = "馬上把分頁關掉"
     let settingsOrchestratorCloseLinger = "三分鐘後再關"
     let settingsOrchestratorCloseKeep = "留著不要關"
+    let settingsOrchestratorPolicy = "派工的規矩"
+    let settingsOrchestratorPolicyHint = "每次派工 Clawdline 都會讀這份規矩，並且抄進每一個「還能再往下派」的 child 的指示裡：用哪個助理、用哪個模型、整張圖該長什麼樣。留空 ＝ 沒有規矩。"
+    let settingsOrchestratorPolicyEdit = "編輯規矩"
+    func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "生效中——\(lines) 行" }
+    let settingsOrchestratorPolicyOff = "沒有規矩——每次派工由派的人自己決定"
     func childAnnounce(_ title: String) -> String { "收到 Clawdline 派來的任務：\(title)——開始處理。" }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 
@@ -660,6 +665,11 @@ struct SimplifiedChinese: Copy {
     let settingsOrchestratorCloseNow = "马上把标签页关掉"
     let settingsOrchestratorCloseLinger = "三分钟后再关"
     let settingsOrchestratorCloseKeep = "留着不要关"
+    let settingsOrchestratorPolicy = "派工的规矩"
+    let settingsOrchestratorPolicyHint = "每次派工 Clawdline 都会读这份规矩，并且抄进每一个「还能再往下派」的 child 的指示里：用哪个助理、用哪个模型、整张图该长什么样。留空 ＝ 没有规矩。"
+    let settingsOrchestratorPolicyEdit = "编辑规矩"
+    func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "生效中——\(lines) 行" }
+    let settingsOrchestratorPolicyOff = "没有规矩——每次派工由派的人自己决定"
     func childAnnounce(_ title: String) -> String { "收到 Clawdline 派来的任务：\(title)——开始处理。" }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 

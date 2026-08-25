@@ -180,6 +180,11 @@ struct Indonesian: Copy {
     let settingsOrchestratorCloseNow = "Tutup tabnya langsung"
     let settingsOrchestratorCloseLinger = "Tutup setelah tiga menit"
     let settingsOrchestratorCloseKeep = "Biarkan terbuka"
+    let settingsOrchestratorPolicy = "Cara pekerjaan dibagikan"
+    let settingsOrchestratorPolicyHint = "Aturan yang dibaca Clawdline setiap kali menugaskan dan disalin ke pengarahan setiap sesi anak yang boleh menugaskan lagi: asisten mana, model mana, bentuk grafnya seperti apa. Kosong berarti tidak ada aturan."
+    let settingsOrchestratorPolicyEdit = "Ubah aturan"
+    func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "Berlaku — \(lines) baris" }
+    let settingsOrchestratorPolicyOff = "Tidak ada aturan — setiap penugasan diputuskan sendiri oleh yang menugaskan"
     func childAnnounce(_ title: String) -> String { "Tugas dari Clawdline diterima: \(title) — mulai dikerjakan sekarang." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f dtk", value) }
 

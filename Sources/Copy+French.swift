@@ -180,6 +180,11 @@ struct French: Copy {
     let settingsOrchestratorCloseNow = "Fermer l'onglet tout de suite"
     let settingsOrchestratorCloseLinger = "Le fermer au bout de trois minutes"
     let settingsOrchestratorCloseKeep = "Le laisser ouvert"
+    let settingsOrchestratorPolicy = "Comment le travail est réparti"
+    let settingsOrchestratorPolicyHint = "Des règles que Clawdline lit à chaque envoi et recopie dans les instructions de chaque session fille autorisée à déléguer : quel assistant, quel modèle, quelle forme doit avoir le graphe. Vide, il n'y a pas de règles."
+    let settingsOrchestratorPolicyEdit = "Modifier les règles"
+    func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "En vigueur — \(lines) lignes" }
+    let settingsOrchestratorPolicyOff = "Aucune règle — chaque envoi reste au jugement de qui l'envoie"
     func childAnnounce(_ title: String) -> String { "Tâche Clawdline reçue : \(title) — je m'y mets." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

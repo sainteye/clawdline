@@ -71,6 +71,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
     private var hooksButton: ChipButton?
     private var hooksCard: NoteCard?
+    private var policyCard: NoteCard?
     private var deviceChips: DeviceChips?
     private var tunnelCard: NoteCard?
     private var mascotMark: MascotView?
@@ -432,6 +433,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                        hint: L.t.settingsOrchestratorNotifyHint)
         pane.right.row(L.t.settingsOrchestratorClose, lingerPopUp(),
                        hint: L.t.settingsOrchestratorCloseHint)
+        pane.right.block(label: L.t.settingsOrchestratorPolicy, view: policyControl(),
+                         hint: L.t.settingsOrchestratorPolicyHint)
+        pane.right.mono(Orchestrator.policyURL.path
+            .replacingOccurrences(of: NSHomeDirectory(), with: "~"))
 
         pane.wide.block(label: L.t.settingsRemoteDevices, view: devicesControl(),
                         hint: L.t.settingsRemotePhoneHint)
@@ -460,6 +465,26 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
             Config.shared.orchestratorMaxGrandchildren =
                 Int($0) ?? Config.shared.orchestratorMaxGrandchildren
         }
+    }
+
+    /// The house rules, as a card that says whether there are any and a button that opens them.
+    ///
+    /// A button rather than a text box, and a file rather than a key in `config.json`, because
+    /// what goes in there is paragraphs — it is edited the way prose is edited, in whatever the
+    /// person already writes prose in, and read back by this app on every dispatch. The file is
+    /// written on the first press and never after: what is in it is theirs, and a default that
+    /// grew back after being deleted would be a setting that does not stay set.
+    private func policyControl() -> NSView {
+        let card = NoteCard()
+        let button = ChipButton(title: L.t.settingsOrchestratorPolicyEdit)
+        button.action = { NSWorkspace.shared.open(Orchestrator.ensurePolicyFile()) }
+        card.trailing = button
+        let policy = Orchestrator.policy()
+        card.dot = policy == nil ? .idle : .live
+        card.text = policy.map { L.t.settingsOrchestratorPolicyOn($0.split(separator: "\n").count) }
+            ?? L.t.settingsOrchestratorPolicyOff
+        policyCard = card
+        return card
     }
 
     /// What becomes of a child's tab after it reports. Three stops rather than a number: the
@@ -527,6 +552,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
     private func refreshLive() {
         refreshHooksControl()
+        refreshPolicyCard()
         refreshDevices()
         refreshTunnel()
     }
@@ -769,6 +795,20 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     /// it — so "the button says installed" is not a claim worth making on its own. Whether a
     /// session has ever actually reported is the only evidence that the wiring works, and it costs
     /// nothing to look: it is the newest note on disk.
+    /// The card is read off the file, and the file is edited somewhere else — so it is re-read on
+    /// the same beat everything else on these panes is, rather than only when the pane is built.
+    /// Somebody who saves in their editor and looks back at this window should see it.
+    private func refreshPolicyCard() {
+        guard let card = policyCard else { return }
+        let policy = Orchestrator.policy()
+        let text = policy.map { L.t.settingsOrchestratorPolicyOn($0.split(separator: "\n").count) }
+            ?? L.t.settingsOrchestratorPolicyOff
+        let changed = card.text != text
+        card.text = text
+        card.dot = policy == nil ? .idle : .live
+        if changed { relayoutCurrent() }
+    }
+
     private func refreshHooksControl() {
         let installed = HookBridge.isInstalled
         hooksButton?.title = installed ? L.t.settingsHooksRemove : L.t.settingsHooksInstall
