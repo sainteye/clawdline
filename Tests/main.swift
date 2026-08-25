@@ -5189,6 +5189,15 @@ group("a task.json is read before a terminal is opened for it") {
     expect("its kind", made(file())?.kind, "image")
     expect("its title", made(file())?.title, "draw the project")
     expect("and who asked for it", made(file())?.rootSessionId, "abc")
+    // The one identification a child can always make correctly: it has known its own task id
+    // since its first message, whereas its session id is something this app works out later.
+    let parent = "9f2b6a7e-5d0c-4123-8d4e-3f9a21bc8765"
+    expect("and, when it is a child asking, the task it hangs under",
+           made(file(["root": ["session_id": "abc", "parent_task": parent]]))?.parentTaskId, parent)
+    check("a parent that is a path is no parent at all",
+          made(file(["root": ["parent_task": "../../etc/passwd"]]))?.parentTaskId == nil)
+    check("nor is one nobody wrote",
+          made(file(["root": ["session_id": "abc"]]))?.parentTaskId == nil)
     expect("a file with no kind is a custom one", made(file(["kind": ""]))?.kind, "custom")
     expect("and one with no timeout gets the default",
            made(file(["timeout_minutes": NSNull()]))?.timeoutMinutes, 30)
@@ -5424,6 +5433,52 @@ group("the one line a child is given") {
     check("and it is one line, because it is typed into a prompt", !line.contains("\n"))
 }
 
+group("a child is told whether it may hand work on, and never has to find out by being refused") {
+    // CHILD.md is the whole of a child's instructions, so the level it is standing on has to be
+    // written into it. A child that discovers the rule by dispatching and being refused has
+    // already spent a turn on it, and one that assumes the old rule never tries at all.
+    let saved = Config.shared.orchestratorMaxGrandchildren
+    defer { Config.shared.orchestratorMaxGrandchildren = saved }
+    func brief(depth: Int, allowance: Int) -> String {
+        Config.shared.orchestratorMaxGrandchildren = allowance
+        let task = Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
+                                     assistant: .claude, projectDir: "/Users/me/code/thing",
+                                     timeoutMinutes: 30, created: Date(), depth: depth,
+                                     secretHash: String(repeating: "0", count: 64))
+        return Orchestrator.childBrief(for: task)
+    }
+
+    let allowed = brief(depth: 1, allowance: 3)
+    check("a child with a level under it is told how many it may open",
+          allowed.contains("at most 3 child sessions of your own"))
+    check("and gets the recipe rather than a pointer to a skill — half of them are Codex",
+          allowed.contains("## Handing work on") && allowed.contains("/v1/orchestrator/tasks"))
+    check("with its own task id already filled in as the parent, since that is the field nothing else would tell it",
+          allowed.contains("root:{parent_task:\"\(taskID)\"}"))
+    check("and it is told where the answer will appear",
+          allowed.contains("result.json"))
+    check("the token stays this Mac's, not something to pass down",
+          allowed.contains("do not hand it to anything you dispatch"))
+
+    let floor = brief(depth: 2, allowance: 3)
+    check("a child already on the floor is told not to dispatch",
+          floor.contains("Do not dispatch Clawdline tasks of your own."))
+    check("and is given no recipe to ignore", !floor.contains("## Handing work on"))
+
+    let off = brief(depth: 1, allowance: 0)
+    check("nor is one on a Mac where the level is switched off",
+          off.contains("Do not dispatch Clawdline tasks of your own.")
+              && !off.contains("## Handing work on"))
+
+    Config.shared.orchestratorMaxGrandchildren = 0
+    expect("zero grandchildren is the rule this app had before the level existed",
+           Orchestrator.depthFloor, 1)
+    Config.shared.orchestratorMaxGrandchildren = 1
+    expect("and one is enough to make the floor two", Orchestrator.depthFloor, 2)
+    Config.shared.orchestratorMaxGrandchildren = 10
+    expect("ten does not make it three — there is no third", Orchestrator.depthFloor, 2)
+}
+
 group("dispatching is the one thing a paired device may not do") {
     // The whole point of the second credential. A phone with `send` can already type into a
     // session; opening a *new* one from a task file somebody else wrote is a different power, and
@@ -5516,7 +5571,8 @@ group("closing a root session takes the work it dispatched with it") {
     let stranger = "1c9a4d55-6f31-4b02-8d77-0a2e3c4b5d61"
     let born = Date().timeIntervalSince1970
     func row(_ id: String, _ state: String, rootSession: String?, at: Double,
-             child: String? = nil) -> [String: Any] {
+             child: String? = nil, childSession: String? = nil,
+             parentTask: String? = nil) -> [String: Any] {
         var out: [String: Any] = ["id": id, "state": state, "kind": "custom", "title": "a task",
                                   "assistant": "claude", "project_dir": "/tmp",
                                   "timeout_minutes": 30, "created": at,
@@ -5524,6 +5580,8 @@ group("closing a root session takes the work it dispatched with it") {
                                   "artifacts": []]
         if let rootSession { out["root_session"] = rootSession }
         if let child { out["child_terminal"] = child }
+        if let childSession { out["child_session"] = childSession }
+        if let parentTask { out["parent_task"] = parentTask }
         return out
     }
     let live = "0f8fad5b-d9cb-469f-a165-70867728950e"
@@ -5533,10 +5591,21 @@ group("closing a root session takes the work it dispatched with it") {
     let orphan = "55555555-6666-7777-8888-999999999999"
     let alsoDone = "66666666-7777-8888-9999-aaaaaaaaaaaa"
     let noTab = "77777777-8888-9999-aaaa-bbbbbbbbbbbb"
+    // The second level. `live` is a child that got as far as being read, so it has a session id
+    // of its own to be named by; `done` reported already, and the work it handed on is still
+    // running under it — which is the case that decides whether a grandchild belongs to anybody.
+    let liveSession = "aaaa1111-2222-3333-4444-555555555555"
+    let below = "88888888-9999-aaaa-bbbb-cccccccccccd"
+    let belowDone = "99999999-aaaa-bbbb-cccc-dddddddddddd"
+    let belowDead = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     let rows: [[String: Any]] = [
         row(alsoLive, "queued", rootSession: root, at: born + 1),
-        row(live, "briefed", rootSession: root, at: born),
+        row(live, "briefed", rootSession: root, at: born, childSession: liveSession),
         row(done, "success", rootSession: root, at: born + 2, child: "%tab-done%"),
+        row(below, "briefed", rootSession: liveSession, at: born + 7),
+        row(belowDone, "success", rootSession: nil, at: born + 8, child: "%tab-below%",
+            parentTask: live),
+        row(belowDead, "briefed", rootSession: nil, at: born + 9, parentTask: done),
         row(elsewhere, "briefed", rootSession: stranger, at: born + 3),
         row(orphan, "briefed", rootSession: nil, at: born + 4),
         row(alsoDone, "failure", rootSession: root, at: born + 5, child: "%tab-also%"),
@@ -5572,6 +5641,25 @@ group("closing a root session takes the work it dispatched with it") {
               && !Orchestrator.liveTasks(dispatchedBy: stranger).contains(orphan))
     expect("a session nobody dispatched from cancels nothing",
            Orchestrator.liveTasks(dispatchedBy: "88888888-9999-aaaa-bbbb-cccccccccccc"), [])
+
+    // The level below, which a root's leaving has to reach as well now that a child may dispatch.
+    // Two names for the same parent and either is enough: the session id the child calls itself
+    // by, which this app only learns once it has read a transcript, and the task the child named
+    // as its own — the one identification a Codex child can make at all, since its session id is
+    // in a rollout file rather than in the hook notes.
+    expect("a grandchild is reached through the session id its parent goes by",
+           Orchestrator.liveTasks(under: [live]), [below])
+    expect("and through the task it named as its parent, even one that has already reported",
+           Orchestrator.liveTasks(under: [done]), [belowDead])
+    expect("a finished grandchild's tab is collected the same way its parent's is",
+           Orchestrator.lingeringTasks(under: [live]), [belowDone])
+    expect("nobody's parent collects nobody", Orchestrator.liveTasks(under: []), [])
+    expect("and a task that named neither is not filed under a stranger",
+           Orchestrator.liveTasks(under: [elsewhere]), [])
+    check("a task is never collected as its own grandchild",
+          !Orchestrator.liveTasks(under: [live]).contains(live))
+    check("and the level below is not swept up by the level above's own selection",
+          !Orchestrator.liveTasks(dispatchedBy: root).contains(below))
 
     // The identity half. A session that never left a hook note cannot be matched to a task, and
     // the answer to that is *nothing* — the failure worth guarding against is a nil id quietly

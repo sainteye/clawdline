@@ -1310,8 +1310,8 @@ enum Orchestrator {
         ## Handing work on
 
         Parts of this task that stand entirely on their own may go to child sessions of yours —
-        at most \(allowance) alive at once. They are the last level: what they open, nothing
-        opens under. Only do it where a part really is separate work, since briefing a session
+        at most \(allowance) alive at once. They are the last level: nothing opens under what
+        they open. Only do it where a part really is separate work, since briefing a session
         costs more than most of what you would hand it, and never for something you could do in
         the time it takes to write the instructions.
 
@@ -1344,6 +1344,7 @@ enum Orchestrator {
           besides your own you may look inside.
         - Wait for everything you handed on before writing your own result.json. Yours finishing
           is what ends theirs.
+
         """
     }
 
