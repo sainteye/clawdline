@@ -2424,7 +2424,8 @@ final class RemoteServer {
 
         self.addEventListener("fetch", function (event) {
             // Only the page. Everything else on this origin is either an API answer, which is
-            // `no-store` already, or a drawn icon, which is worth its day of cache.
+            // `no-store` already, a drawn icon, which is worth its day of cache, or a stylesheet
+            // or module under a URL naming the build it came from, which is worth a year.
             if (event.request.mode !== "navigate") { return; }
             event.respondWith(
                 fetch(event.request.url, { cache: "reload", credentials: "include" })

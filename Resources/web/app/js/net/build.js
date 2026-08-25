@@ -10,17 +10,16 @@ import { els } from "../core/dom.js";
  * Whether the app on the Mac has moved on since this page was served.
  *
  * A standalone PWA is not a document somebody reloads; it is a window that sits in the app
- * switcher for days. Nothing here caches — the service worker stores nothing — so the page is
- * not stale in the browser's sense, it is simply *old*, and the browser has no reason to think
- * anything is wrong. That is how a phone came to be running a build from an hour before while
- * the Mac had been rebuilt twice, with no sign of it anywhere on screen.
+ * switcher for days. The page is not stale in the browser's sense — the document is `no-store`,
+ * and the stylesheets and modules it keeps are cached under a URL carrying the build they came
+ * from, so a reload can only ever produce one build's worth of page. It is simply *old*, and the
+ * browser has no reason to think anything is wrong. That is how a phone came to be running a
+ * build from an hour before while the Mac had been rebuilt twice, with no sign of it on screen.
  *
  * The check is the cheapest one available: `/v1/health` already answers on every connect and
  * every reconnect, and the first answer of the session is the baseline. **Anything that changes
- * when the app is rebuilt will do** — this reads `build` first and falls back to `version` and
- * the protocol number, so the day the server carries a per-build stamp this starts working
- * without another line here. (Today `version` is the string in `build.sh`, which two rebuilds of
- * the same release do not change, so today this fires only across a version bump.)
+ * when the app is rebuilt will do** — this reads `build`, the executable's own timestamp, and
+ * falls back to `version` and the protocol number for a server too old to send one.
  *
  * **Never a reload of its own.** Somebody may be mid-sentence in the composer, and a page that
  * replaces itself to be newer has thrown that away to win an argument nobody was having.
