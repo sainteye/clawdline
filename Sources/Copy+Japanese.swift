@@ -466,6 +466,7 @@ struct Japanese: Copy {
     let webInfoDeploy = "最後のデプロイ"
     let webInfoNoDeploy = "このプロジェクトにはデプロイの記録がありません。"
     let webInfoFailed = "このセッションの情報を読めませんでした。"
+    let webInfoBusy = "Mac がほかのセッションの読み込みで手一杯です。少ししてからどうぞ。"
     let webInfoRefresh = "更新"
     let webInfoTokens = "トークン"
     let webInfoSwitchModel = "モデルを切り替える"

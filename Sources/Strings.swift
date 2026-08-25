@@ -838,6 +838,11 @@ protocol Copy {
     var webInfoDeploy: String { get }
     var webInfoNoDeploy: String { get }
     var webInfoFailed: String { get }
+    /// 429 `busy` — the card is one of three routes sharing a limit, and this one drains in
+    /// well under a second. Same rule as ``webVoiceBusy`` and ``webCommandBusy``: a refusal that
+    /// fixes itself asks for a retry, while ``webInfoFailed`` beside it reads as a session that
+    /// cannot be read at all, which is a different afternoon.
+    var webInfoBusy: String { get }
     var webInfoRefresh: String { get }
     var webInfoTokens: String { get }
     var webInfoSwitchModel: String { get }

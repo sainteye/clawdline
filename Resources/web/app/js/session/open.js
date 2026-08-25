@@ -61,9 +61,45 @@ export function loadTranscript(id, quiet) {
         });
     }).catch(function (e) {
         if (S.openId !== id || ticket !== transcriptTicket) return;
-        S.tx = { id: id, entries: [], signature: null, loading: false, error: e.message || T.webTranscriptFailed };
+        // A read that failed keeps whatever is already on screen. It is the same rule as the
+        // skeleton above and it is here for the same reason — the reader is reading the last
+        // version of it — except that this is the branch where it matters: the list refetches
+        // roughly once a second while a session works, so one refused read used to empty the pane
+        // somebody was mid-sentence in, with no gesture of theirs behind it.
+        //
+        // **Not only `busy`.** A dropped connection, a 500 and a refusal all leave the same thing
+        // true: the last transcript that arrived is still the best answer there is, and throwing
+        // it away buys nothing. Only a first load has nothing to keep, and that one still says so
+        // with the whole pane.
+        var held = S.tx.id === id ? S.tx.entries : [];
+        S.tx = {
+            id: id,
+            entries: held,
+            // Kept with them. The signature is the server's name for *these* entries, so holding
+            // it is what lets the next read that comes back unchanged be believed; nulling it
+            // would turn the recovery into a full replace and take the reader's scroll with it.
+            signature: held.length ? S.tx.signature : null,
+            loading: false,
+            error: whyTranscript(e)
+        };
         Waits.tx.settle(renderTranscript);
     });
+}
+
+/**
+ * What went wrong, in this page's own words — the same shape as `whyIntents` beside the composer
+ * and `why` on the info card.
+ *
+ * Only `offline` carries its own message through, because `jsonFetch` wrote that one here and it
+ * is already translated. Everything else arrives from the Mac in English, and a server sentence
+ * put in front of somebody reading Chinese is a fault report in a language they did not pick.
+ *
+ * With entries held it is drawn as a line above the transcript rather than instead of it — see
+ * `renderTranscript`, which has had both branches all along and only ever reached the empty one.
+ */
+function whyTranscript(e) {
+    if (e && e.code === "offline") return e.message;   // already this page's own sentence
+    return T.webTranscriptFailed;
 }
 
 export function atBottom() {

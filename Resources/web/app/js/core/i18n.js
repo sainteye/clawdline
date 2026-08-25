@@ -342,6 +342,7 @@ export var T = {
     webInfoDeploy: "Last deploy",
     webInfoNoDeploy: "No deploy recorded for this project.",
     webInfoFailed: "Could not read this session's info.",
+    webInfoBusy: "The Mac is busy reading other sessions — try again in a moment.",
     webInfoRefresh: "Refresh",
     webInfoTokens: "tokens",
     webInfoSwitchModel: "Switch model",

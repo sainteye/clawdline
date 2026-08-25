@@ -468,6 +468,7 @@ struct Turkish: Copy {
     let webInfoDeploy = "Son deploy"
     let webInfoNoDeploy = "Bu proje için kayıtlı bir deploy yok."
     let webInfoFailed = "Bu oturumun bilgisi okunamadı."
+    let webInfoBusy = "Mac şu anda başka oturumları okumakla meşgul. Birazdan tekrar dene."
     let webInfoRefresh = "Yenile"
     let webInfoTokens = "token"
     let webInfoSwitchModel = "Modeli değiştir"

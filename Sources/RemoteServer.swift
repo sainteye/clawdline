@@ -239,6 +239,16 @@ final class RemoteServer {
             plan(request, on: conn)
             return
         }
+        // And these three are that same rule applied backwards, to routes written before anybody
+        // had said it out loud. None of them takes seconds the way the two above do — the dearest
+        // is 0.531 — but they are what a phone asks for over and over, and on the shared queue a
+        // request is not slow, it is *exclusive*: five `/info` in flight answered `/v1/health`, a
+        // one-millisecond route, in 3.143 seconds, and held the event stream and its heartbeat for
+        // the same three. See `readSlowly`.
+        if request.method == "GET", Self.isSlowReading(request.path) {
+            readSlowly(request, on: conn)
+            return
+        }
         let response = route(request)
         send(response, on: conn)
     }
@@ -1745,6 +1755,183 @@ final class RemoteServer {
         return Data(base64Encoded: body, options: [.ignoreUnknownCharacters])
     }
 
+    // MARK: - Readings too expensive for the shared queue
+
+    /// The three reads that had to leave `route`, for the reason dictation and the planner left
+    /// it and with a different kind of number behind them.
+    ///
+    /// Not one of these takes seconds. What they have instead is that each of them is a
+    /// subprocess or a large file, and that a phone asks for them constantly: `/info` is an
+    /// `lsof` for the working directory, a whole transcript through `Data(contentsOf:)`, an
+    /// `osascript` into iTerm2 for the screen and a `git status`; `/transcript` reads up to eight
+    /// megabytes off disk and parses it; `/v1/places` walks both assistants' records of where
+    /// they have been run. Measured against a running app on 25 August 2026 they cost 0.531,
+    /// 0.194 and 0.176 seconds, against 0.001 for `/v1/health` and 0.002 for the orchestrator's
+    /// task list.
+    ///
+    /// **Their own latency is not the harm; everybody else's is.** A route in `route` runs on the
+    /// one queue every connection is read on, so it does not merely take its half second — it
+    /// takes it exclusively, and `broadcast`, `broadcastOrchestrator` and the heartbeat are all
+    /// `queue.async` onto the same one. What that measures as: `/v1/health` answered in 3.143
+    /// seconds with five `/info` in flight, three thousand times its own cost, and an event
+    /// stream that says nothing for those three seconds to a phone whose only way of telling a
+    /// busy Mac from a dead one is that the stream keeps beating.
+    ///
+    /// A path test rather than a fourth `if` in `handle` per route, because the three of them
+    /// take the same door. The whole shape is checked rather than merely the suffix: an agent
+    /// transcript and an invented deeper route are not one of these reads, even when their last
+    /// segment happens to have the same name.
+    static func isSlowReading(_ path: String) -> Bool {
+        if path == "/v1/places" { return true }
+        guard path.hasPrefix("/v1/sessions/") else { return false }
+        let rest = path.dropFirst("/v1/sessions/".count)
+        let parts = rest.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty else { return false }
+        return parts[1] == "info" || parts[1] == "transcript"
+    }
+
+    /// The slow reads that may be refused before they enter the worker queue. Transcript is
+    /// deliberately absent: it is the cheapest of the three, is quietly refreshed once a second,
+    /// and a refusal used to replace a conversation already on screen with an error.
+    static func isLimitedSlowReading(_ path: String) -> Bool {
+        isSlowReading(path) && !path.hasSuffix("/transcript")
+    }
+
+    /// Gate here, answer elsewhere, write back here — `transcribe`'s shape, and each third of it
+    /// is here for the reason it gives.
+    ///
+    /// **The gate stays on the server's queue** because that is where the state behind it lives,
+    /// and because a request that is going to be refused must not first pay for a hop and a place
+    /// in a line. It is the gate `dispatch` applies, with everything that cannot apply already
+    /// taken out: none of these three paths is in the open set, none is a pairing, shell, icon or
+    /// orchestrator route, and `writeOriginRefusal` has nothing to say about a GET. What is left
+    /// is the host check and whether this device is paired.
+    ///
+    /// **The answer is `route(request)` and not a copy of the three cases**, which is the part
+    /// worth defending. Those cases are also the seam the tests ask these routes through —
+    /// `Tests/main.swift` asks both `/v1/places` and `/v1/sessions/nope/info` through `route` —
+    /// so lifting the work out of them would have left two descriptions of one route with only a
+    /// convention keeping them equal, and the copy that gets edited would be the tested one. Sent
+    /// back through `route`, the answer a test sees and the answer a phone gets are the same
+    /// answer by construction; the gate above merely agrees with itself when `dispatch` asks
+    /// again. That second check is still cheap, but it is not merely a dictionary lookup:
+    /// `RemoteAuth.verify` loads its store, copies the devices under a lock, hashes the token,
+    /// compares it with every approved device without an early exit, then takes the lock again
+    /// to update `lastSeen`. The update is a deliberate side effect of both checks.
+    ///
+    /// Nor can the worker path touch the instance state owned by the server queue. The existing
+    /// list is `listener`, `streams`, `nextEventID`, `pairingTimes`, `idempotent`, `voiceQueued`,
+    /// `planQueued` and `heartbeat`; `port` is the ninth item, and these routes do not read it
+    /// either (`crossOriginRefusal` reads `Config.shared.remotePort`). `readingLimiter` is moved
+    /// only after the worker returns to the server queue.
+    private func readSlowly(_ request: Request, on conn: NWConnection) {
+        if let refusal = slowReadingRefusal(request) {
+            send(withCachePolicy(refusal), on: conn)
+            return
+        }
+        // Not remembered anywhere, for the reason `transcribe` spells out: this refusal is about
+        // this Mac at this moment rather than about the request. These are reads, so the retry it
+        // invites has no effect to repeat and nothing needs to be held against a key.
+        guard readingLimiter.admit(request.path, depth: Self.readingDepth) else {
+            send(withCachePolicy(.error(429, "busy",
+                                        "This Mac already has \(Self.readingDepth) of these to "
+                                        + "read. Try again in a moment.")), on: conn)
+            return
+        }
+        readingQueue.async { [weak self] in
+            guard let self else { conn.cancel(); return }
+            let response = self.route(request)
+            // Back to the server's queue before the counter moves, because it belongs to that
+            // queue and this closure does not. The cache policy is already on the response —
+            // `route` applies it at its own door, which is the whole point of it being there.
+            self.queue.async {
+                self.readingLimiter.finish(request.path)
+                self.send(response, on: conn)
+            }
+        }
+    }
+
+    /// The part of `readSlowly`'s gate that `dispatch` will apply again on the worker. Kept as a
+    /// seam so a test can prove that leaving `route` did not invent a different authentication
+    /// answer.
+    func slowReadingRefusal(_ request: Request) -> Response? {
+        if let refusal = crossOriginRefusal(request) { return refusal }
+        if case .denied = permission(for: request) {
+            return .error(401, "unauthorized", "This needs a paired device.")
+        }
+        return nil
+    }
+
+    /// The queue those readings happen on. **Serial, and which way to answer that is the
+    /// interesting part of this change rather than a detail of it.**
+    ///
+    /// Concurrent is the tempting answer, and honestly so: unlike whisper none of this is
+    /// compute. `/info` spends its half second *waiting* — on `lsof`, on `osascript`, on `git` —
+    /// so four at once would cost about what one costs. That is visible in the measurement:
+    /// four `/info` in flight answer at 0.486, 0.754, 1.183 and 2.182 seconds, a ladder made
+    /// entirely of standing in line, and a wide queue would flatten it.
+    ///
+    /// It is still the wrong answer here, for three reasons that all lean the same way.
+    ///
+    /// The dearest third of `/info` is `Targets.visibleScreen`, which is an `osascript` and so an
+    /// Apple event into iTerm2 — and iTerm2 takes those one at a time. Four at once does not
+    /// overlap them, it moves the queue somewhere this app cannot see or bound, *and* puts it in
+    /// front of `ITerm.tails`, the once-a-second reading the menu bar, the panel, the island and
+    /// the session stream are all drawn from. That trades a remote request being slow for the bar
+    /// in front of the person going still, and of the two that is the one somebody notices.
+    ///
+    /// Second, what these routes read through is full of caches with no lock on them:
+    /// `ProjectIcon.projects` is a read-modify-write of a static dictionary, and `HookBridge.notes`
+    /// is replaced wholesale from the main thread. `ProjectIcon.projects` already has entrants
+    /// from the main thread, `SessionWatch`'s once-a-second global queue, and the server queue;
+    /// this change adds the reading queue as a fourth. The new overlap is therefore the server
+    /// queue beside the reading queue, not a main thread that was its only previous peer. Neither
+    /// cache was made safe or newly unsafe here; serial keeps the new entrant from multiplying
+    /// into however many phones are pointed at this Mac.
+    ///
+    /// Third and plainest: the ladder was never what hurt. `/v1/health` at 3.143 seconds and a
+    /// stream that stops beating are, and one queue away from `route` ends both of those
+    /// completely. Four `/info` at once still answer in the same 2.18 seconds they answer in
+    /// today — that cost is unchanged, and it is now paid only by whoever opened four cards.
+    private let readingQueue = DispatchQueue(label: "dev.sainteye.clawdline.remote.reading")
+
+    /// How many of the bounded reads are on it. Touched only from the server's queue, like
+    /// everything else here that is not behind a lock. Transcript uses the queue but not this
+    /// limit; see `isLimitedSlowReading`.
+    private var readingLimiter = ReadingLimiter()
+
+    /// The counter operation as one testable unit. `finish` happens before the response is sent,
+    /// so an already-interrupted connection cannot strand a place in the queue. An unbounded
+    /// transcript is admitted and finished without changing the count.
+    struct ReadingLimiter {
+        private(set) var count = 0
+
+        mutating func admit(_ path: String, depth: Int) -> Bool {
+            guard RemoteServer.isLimitedSlowReading(path) else { return true }
+            guard count < depth else { return false }
+            count += 1
+            return true
+        }
+
+        mutating func finish(_ path: String) {
+            guard RemoteServer.isLimitedSlowReading(path) else { return }
+            precondition(count > 0)
+            count -= 1
+        }
+    }
+
+    /// Eight, shared by `/info` and `/v1/places` because they stand in one line. Transcript stands
+    /// in that line too, but is never refused by this number — it is the cheapest reading and a
+    /// quiet refresh must not erase the conversation its reader already has.
+    ///
+    /// Dictation's two is an answer to "how long will somebody hold a phone" with a five-second
+    /// answer under it. In the measured healthy case these reads take about half a second, so
+    /// eight is a useful patience bound. It is not a promise about wait time or drain rate: an
+    /// `/info` can sit in a 15-second Apple event timeout or a six-second project-status timeout,
+    /// and while it does the eighth request can wait minutes. At that point rejecting the next
+    /// bounded read is load shedding, not evidence that trying again immediately will work.
+    static let readingDepth = 8
+
     // MARK: - What the routes answer with
 
     /// The directories a session may be started in — see ``StartPoints``.
@@ -2627,6 +2814,7 @@ final class RemoteServer {
             "webInfoDeploy": t.webInfoDeploy,
             "webInfoNoDeploy": t.webInfoNoDeploy,
             "webInfoFailed": t.webInfoFailed,
+            "webInfoBusy": t.webInfoBusy,
             "webInfoRefresh": t.webInfoRefresh,
             "webInfoTokens": t.webInfoTokens,
             "webInfoSwitchModel": t.webInfoSwitchModel,

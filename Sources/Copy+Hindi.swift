@@ -472,6 +472,7 @@ struct Hindi: Copy {
     let webInfoDeploy = "आख़िरी deploy"
     let webInfoNoDeploy = "इस प्रोजेक्ट का कोई deploy दर्ज नहीं है।"
     let webInfoFailed = "इस session की जानकारी पढ़ी नहीं जा सकी।"
+    let webInfoBusy = "Mac अभी दूसरे sessions पढ़ने में लगा है। थोड़ी देर बाद कोशिश कीजिए।"
     let webInfoRefresh = "रीफ़्रेश करें"
     let webInfoTokens = "टोकन"
     let webInfoSwitchModel = "मॉडल बदलें"

@@ -468,6 +468,7 @@ struct Russian: Copy {
     let webInfoDeploy = "Последний деплой"
     let webInfoNoDeploy = "У этого проекта нет записей о деплое."
     let webInfoFailed = "Не удалось прочитать сведения об этой сессии."
+    let webInfoBusy = "Mac сейчас занят чтением других сессий. Попробуйте через минуту."
     let webInfoRefresh = "Обновить"
     let webInfoTokens = "токенов"
     let webInfoSwitchModel = "Сменить модель"

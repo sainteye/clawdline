@@ -467,6 +467,7 @@ struct English: Copy {
     let webInfoDeploy = "Last deploy"
     let webInfoNoDeploy = "No deploy recorded for this project."
     let webInfoFailed = "Could not read this session's info."
+    let webInfoBusy = "The Mac is busy reading other sessions — try again in a moment."
     let webInfoRefresh = "Refresh"
     let webInfoTokens = "tokens"
     let webInfoSwitchModel = "Switch model"

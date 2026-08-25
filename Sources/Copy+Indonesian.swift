@@ -468,6 +468,7 @@ struct Indonesian: Copy {
     let webInfoDeploy = "Deploy terakhir"
     let webInfoNoDeploy = "Tidak ada catatan deploy untuk proyek ini."
     let webInfoFailed = "Info sesi ini tidak bisa dibaca."
+    let webInfoBusy = "Mac sedang sibuk membaca sesi lain. Coba lagi sebentar lagi."
     let webInfoRefresh = "Muat ulang"
     let webInfoTokens = "token"
     let webInfoSwitchModel = "Ganti model"

@@ -471,6 +471,7 @@ struct Portuguese: Copy {
     let webInfoDeploy = "Último deploy"
     let webInfoNoDeploy = "Este projeto não tem nenhum deploy registrado."
     let webInfoFailed = "Não foi possível ler as informações desta sessão."
+    let webInfoBusy = "O Mac está ocupado lendo outras sessões. Tente daqui a pouco."
     let webInfoRefresh = "Atualizar"
     let webInfoTokens = "tokens"
     let webInfoSwitchModel = "Trocar de modelo"

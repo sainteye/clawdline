@@ -46,8 +46,14 @@ export var Info = (function () {
         els["info-said"].textContent = w || "";
         els["info-said"].className = "said" + (calm ? " calm" : "");
     }
+    /// What the Mac refused with. `busy` is the third of its kind on this page — see
+    /// `webVoiceBusy` and `webCommandBusy` — and it is the one thing here that fixes itself: this
+    /// card is one of three routes sharing a limit, and the answer is to ask again in a moment.
+    /// Drawn as "could not read this session's info" it reads as a session gone wrong instead.
     function why(e) {
-        if (e && e.code === "offline") return e.message;   // already this page's own sentence
+        var code = e && e.code;
+        if (code === "offline") return e.message;   // already this page's own sentence
+        if (code === "busy") return T.webInfoBusy;
         return T.webInfoFailed;
     }
 

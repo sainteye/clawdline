@@ -466,6 +466,7 @@ struct Korean: Copy {
     let webInfoDeploy = "마지막 배포"
     let webInfoNoDeploy = "이 프로젝트에는 배포 기록이 없습니다."
     let webInfoFailed = "이 세션의 정보를 읽지 못했습니다."
+    let webInfoBusy = "Mac이 다른 세션을 읽느라 바쁩니다. 잠시 뒤에 다시 해 보세요."
     let webInfoRefresh = "새로고침"
     let webInfoTokens = "토큰"
     let webInfoSwitchModel = "모델 바꾸기"
