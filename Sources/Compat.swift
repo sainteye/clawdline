@@ -141,6 +141,17 @@ enum Compat {
             since: "2.1.224"),
         Dependency(
             program: "Claude Code",
+            what: "`parkedJobId` appearing in that file once a conversation is moved to the "
+                + "background, and the `kind: \"bg\"` file whose `jobId` matches it — which is "
+                + "where that conversation carries on, under an id of its own",
+            where_: "SessionRegistry.swift",
+            symptom: "A tab whose conversation has moved to the background is read from the file "
+                   + "it stopped writing: the transcript ends mid-sentence at the moment of the "
+                   + "move, and the status frozen there outranks everything the screen can see. "
+                   + "A version that never parks writes no such field, and none of this applies",
+            since: "not known to have a floor"),
+        Dependency(
+            program: "Claude Code",
             what: "The empty composer: a bare `❯`, or the grey `Try \"…\"` suggestion a new "
                 + "session draws instead",
             where_: "Orchestrator.swift",

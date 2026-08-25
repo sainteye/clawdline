@@ -28,13 +28,19 @@ import Foundation
 /// drawn, and a question hidden behind a spinner is the one mistake here that costs somebody
 /// something. See ``merge(_:into:sessions:)``.
 ///
-/// Four ways this reaches nothing, all of which land back on exactly today's behaviour: the
+/// **One thing these files do not keep current is themselves.** A conversation can be moved to
+/// the background, and from that moment the tab's file is never written again while the
+/// conversation carries on in a session of its own — see ``Entry/parkedJobId``, which is the only
+/// mark left behind that it happened, and ``entry(for:in:)``, which follows it or answers nothing.
+///
+/// Five ways this reaches nothing, all of which land back on exactly today's behaviour: the
 /// directory is missing (an older Claude Code, or one of the cloud backends whose peer features
 /// this rides along with, or a container); the file states a `peerProtocol` this build was not
 /// written against; the `status` is a word this build does not know — Claude Code writes `shell`
-/// while you are in `!` mode and the documentation does not list it; or ``Config/sessionRegistry``
-/// is off. **Codex needs no mention anywhere in here**: it writes no such file, so its sessions
-/// fall through every one of these gates on their own.
+/// while you are in `!` mode and the documentation does not list it; the session is parked and
+/// the background half of it cannot be found; or ``Config/sessionRegistry`` is off. **Codex needs
+/// no mention anywhere in here**: it writes no such file, so its sessions fall through every one
+/// of these gates on their own.
 enum SessionRegistry {
 
     /// The protocol version of the registry files this build was written against.
@@ -89,6 +95,27 @@ enum SessionRegistry {
         let procStart: String?
         let peerProtocol: Int
         let statusUpdatedAt: Date?
+        /// What Claude Code calls this sort of session: `interactive` for a tab somebody is
+        /// typing in, `bg` for one its daemon is running with nobody watching. Kept as the word
+        /// it was written as, because the only question this build asks of it is whether it says
+        /// `bg` — and a word nobody has documented yet is a word to carry, not to translate.
+        let kind: String?
+        /// The daemon's id for a background session, `1f47c762` and the like. Only a `bg` file
+        /// has one, and it is the value a parked tab's ``parkedJobId`` points at.
+        let jobId: String?
+        /// Set on an interactive session whose conversation has moved to the background — the
+        /// banner reads *Your conversation moved to the background*, and the tab stays open with
+        /// nothing more to say.
+        ///
+        /// **The field's real meaning is that everything beside it has stopped being true.**
+        /// From the moment it appears the file is never written again: measured here, forty
+        /// minutes of a live conversation with the same `statusUpdatedAt` down to the
+        /// millisecond, while the session it had moved into changed state three times. So the
+        /// `sessionID` next to it names a transcript that ends mid-conversation and the `status`
+        /// next to it is whatever happened to be true at the moment of the move. See
+        /// ``entry(for:in:)``, which is where this stops being data and starts being a reason to
+        /// answer nothing.
+        let parkedJobId: String?
     }
 
     /// What this Mac can say about the process behind a session.
@@ -114,10 +141,21 @@ enum SessionRegistry {
     struct Reading: Equatable {
         var entries: [Int32: Entry] = [:]
         var processes: [String: Process] = [:]
+        /// The processes behind the background sessions that parked tabs have moved into, by job
+        /// id — the other half of ``entries``, exactly as ``processes`` is for tabs.
+        ///
+        /// Keyed by job id because that is the only handle a parked file offers: it names the job
+        /// its conversation left for and never the pid. The file itself is in ``entries`` under
+        /// the pid that wrote it, like every other file here; this says which process that pid is
+        /// currently, which is the same thing ``processes`` says for a tab and is needed for the
+        /// same reason.
+        var background: [String: Process] = [:]
 
-        init(entries: [Int32: Entry] = [:], processes: [String: Process] = [:]) {
+        init(entries: [Int32: Entry] = [:], processes: [String: Process] = [:],
+             background: [String: Process] = [:]) {
             self.entries = entries
             self.processes = processes
+            self.background = background
         }
     }
 
@@ -167,12 +205,63 @@ enum SessionRegistry {
                      waitingFor: text(obj["waitingFor"]),
                      procStart: text(obj["procStart"]),
                      peerProtocol: peer,
-                     statusUpdatedAt: updated)
+                     statusUpdatedAt: updated,
+                     kind: text(obj["kind"]),
+                     jobId: text(obj["jobId"]),
+                     parkedJobId: text(obj["parkedJobId"]))
     }
 
     private static func text(_ value: Any?) -> String? {
         guard let s = value as? String, !s.isEmpty else { return nil }
         return s
+    }
+
+    /// Find the live half of every parked session in this reading, and fold it in.
+    ///
+    /// A directory listing, which ``entries(in:pids:)`` one screen up goes out of its way not to
+    /// do — and the difference that makes it allowed here is that this key is exact. That
+    /// function reads by name because nothing inside a file says which tab it belongs to, so a
+    /// listing there would end in guessing which of them was ours. Here the parked file names a
+    /// job, the background file states the same job, and putting the two together is a lookup.
+    ///
+    /// **It costs nothing until somebody parks something.** With no `parkedJobId` anywhere in the
+    /// reading there is no listing, no read and no `ps`; the check that decides is a walk over a
+    /// dictionary that already holds one entry per open tab. The alternative was
+    /// `claude agents --json`, which prints the same fields from the same daemon — but that is a
+    /// subprocess, on a path the poll walks every 1.2 seconds, against a directory holding one
+    /// small file per session running on the machine. The pid in each file name is checked
+    /// against the running process before the file is read, so the count that matters is not how
+    /// many sessions this Mac has ever run.
+    ///
+    /// `started` is passed in rather than measured here for the reason ``Reading`` carries
+    /// process facts at all: it is a `ps` per pid, it belongs to the layer that already runs one
+    /// and caches it, and a test cannot run one at all.
+    static func attachBackground(to reading: inout Reading, in dir: URL = directory,
+                                 started: (Int32) -> Date?) {
+        var wanted: Set<String> = []
+        for entry in reading.entries.values {
+            guard let job = entry.parkedJobId else { continue }
+            wanted.insert(job)
+        }
+        guard !wanted.isEmpty,
+              let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path)
+        else { return }
+
+        for name in names where name.hasSuffix(".json") {
+            guard let pid = Int32(name.dropLast(".json".count)), pid > 0,
+                  reading.entries[pid] == nil,
+                  // Nothing prunes this directory, so most of what a listing finds is about a
+                  // process that ended weeks ago. Asking the kernel is a syscall and reading the
+                  // file is not, so the dead are dropped before anything is opened. `EPERM` is a
+                  // live process this user does not own, which is still alive.
+                  kill(pid, 0) == 0 || errno != ESRCH else { continue }
+            guard let data = try? Data(contentsOf: dir.appendingPathComponent(name)),
+                  let entry = parse(data), entry.pid == pid, entry.kind == "bg",
+                  let job = entry.jobId, wanted.contains(job),
+                  reading.background[job] == nil else { continue }
+            reading.entries[pid] = entry
+            reading.background[job] = Process(pid: pid, started: started(pid))
+        }
     }
 
     // MARK: - Which file belongs to which session
@@ -226,9 +315,47 @@ enum SessionRegistry {
     /// Three gates, and a session that fails any of them is one the screen answers for alone:
     /// there is a process behind it whose start time this Mac agrees with, its file states the
     /// protocol version this build knows, and the file is about that same process.
+    ///
+    /// Then a fourth, which is a different kind of question. The three above ask whether this
+    /// file is about this process; parking asks whether this process is still the conversation.
+    /// **A parked tab passes all three and answers with a stopped clock** — same process, same
+    /// pid, same start time, and a `sessionId` and `status` frozen at the moment the
+    /// conversation walked out of it. See ``live(inJob:in:)``.
     static func entry(for sessionID: String, in reading: Reading) -> Entry? {
         guard let process = reading.processes[sessionID],
               let entry = reading.entries[process.pid],
+              entry.peerProtocol == protocolVersion,
+              isSameProcess(entry, startedAt: process.started) else { return nil }
+        guard let job = entry.parkedJobId else { return entry }
+        return live(inJob: job, in: reading)
+    }
+
+    /// The background session a parked tab's conversation moved into, or nothing at all.
+    ///
+    /// The same three gates the tab itself went through, applied to the file the daemon's session
+    /// writes: it claims to be the `bg` half of this exact job, it states the protocol version
+    /// this build knows, and it is about the process this Mac has on that pid. That last one is
+    /// what catches the case this directory makes easy — nothing prunes it, so the file of a
+    /// background session that finished days ago still names its job, and a parked tab that has
+    /// been sitting there since then still points at it.
+    ///
+    /// **Failing means nothing, never the parked file.** That is the whole shape of this fix and
+    /// it is worth saying plainly: frozen data is worse than no data, because no data loses to
+    /// every other source and frozen data beats them all. With nothing here,
+    /// ``sessionID(of:)`` answers nothing and ``Transcript/record(of:)`` falls through to a hook
+    /// note and then to matching the tab's own title — both of which are about the conversation
+    /// that is actually running — while ``merge(_:into:sessions:)`` and ``waiting(in:sessions:)``
+    /// simply have no opinion and leave the screen to say what it sees. Hand back the parked file
+    /// instead and every one of those is overruled by a `sessionId` naming a transcript that
+    /// stops mid-sentence.
+    ///
+    /// The whole entry is returned rather than the two fields that were wrong. Everything in it
+    /// is about the live conversation — its own pid, its own working directory, the name the
+    /// daemon gave it — and there is nothing left in the parked file worth carrying forward.
+    private static func live(inJob job: String, in reading: Reading) -> Entry? {
+        guard let process = reading.background[job],
+              let entry = reading.entries[process.pid],
+              entry.kind == "bg", entry.jobId == job,
               entry.peerProtocol == protocolVersion,
               isSameProcess(entry, startedAt: process.started) else { return nil }
         return entry

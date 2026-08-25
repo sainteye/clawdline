@@ -470,6 +470,36 @@ enum Targets {
         return started
     }
 
+    /// The same cache for processes that belong to no tab.
+    ///
+    /// Keyed by pid because that is all there is to key it by: the background session behind a
+    /// parked tab is running under the daemon, on no terminal, and the only thing naming it is
+    /// the number in its file's name. Without this the poll would pay a `ps` a second for every
+    /// tab somebody has parked — which is the one cost that would have made following a park
+    /// expensive, since everything else about it is a directory listing.
+    private static var bgStartCache: [Int32: (at: CFAbsoluteTime, started: Date?)] = [:]
+
+    static func processStart(ofPID pid: Int32) -> Date? {
+        cwdLock.lock()
+        if let hit = bgStartCache[pid], CFAbsoluteTimeGetCurrent() - hit.at < 20 {
+            defer { cwdLock.unlock() }
+            return hit.started
+        }
+        cwdLock.unlock()
+
+        let started = ITerm.processStart(ofPID: pid)
+        cwdLock.lock()
+        // Held for the same twenty seconds as a tab's, and for the same reason: a number can be
+        // handed to a different process, and that is what the start time being cached is about.
+        // Swept on the way past because this one is keyed by pid, so it grows with every
+        // background session the machine has ever run rather than with the tabs that are open.
+        let now = CFAbsoluteTimeGetCurrent()
+        bgStartCache = bgStartCache.filter { now - $0.value.at < 20 }
+        bgStartCache[pid] = (now, started)
+        cwdLock.unlock()
+        return started
+    }
+
     /// What Claude Code says about these sessions, and the process facts that decide which of
     /// its files is allowed to speak for which session. See ``SessionRegistry``.
     ///
@@ -495,6 +525,10 @@ enum Targets {
             out.processes[id] = SessionRegistry.Process(pid: pid,
                                                         started: processStart(of: session))
         }
+        // A parked tab's file is about a conversation that has left it, so the other half of the
+        // reading is where that conversation went. Free unless somebody has parked something:
+        // with no parked file in hand this looks at nothing and runs no `ps`.
+        SessionRegistry.attachBackground(to: &out) { processStart(ofPID: $0) }
         return out
     }
 
