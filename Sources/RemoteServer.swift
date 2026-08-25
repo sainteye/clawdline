@@ -2396,7 +2396,6 @@ final class RemoteServer {
             "webResumeGone": t.webResumeGone,
             "webResumeClaudeOnly": t.webResumeClaudeOnly,
             "webResuming": t.webResuming,
-            "webResumeMore": t.webResumeMore,
             "webResumeCapped": t.webResumeCapped,
         ])
 

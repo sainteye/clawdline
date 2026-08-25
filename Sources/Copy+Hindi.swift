@@ -411,7 +411,6 @@ struct Hindi: Copy {
     let webResumeGone = "वह बातचीत अब Mac पर नहीं है।"
     let webResumeClaudeOnly = "जारी रखी जा सकने वाली बातचीत सिर्फ़ Claude Code सहेजता है।"
     let webResuming = "फिर से खोल रहे हैं…"
-    let webResumeMore = "{n} और दिखाएँ"
     let webResumeCapped = "इनसे पुरानी इस सूची में नहीं हैं।"
     let webCommand = "बोलकर बताएं क्या शुरू करना है"
     let webCommandLabel = "क्या करना है बोलकर session शुरू करें"

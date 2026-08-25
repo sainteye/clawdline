@@ -270,6 +270,7 @@ export var T = {
     webResumeGone: "That conversation is not on the Mac any more.",
     webResumeClaudeOnly: "Only Claude Code keeps conversations that can be picked back up.",
     webResuming: "Picking it back up\u2026",
+    webResumeCapped: "Older ones than these are not on this list.",
 
     // Starting a session by saying it, rather than picking it — see the web section of
     // `Sources/Strings.swift` for the fifteen keys and what each is for. Nothing here may say or

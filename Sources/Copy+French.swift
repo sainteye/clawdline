@@ -407,7 +407,6 @@ struct French: Copy {
     let webResumeGone = "Cette conversation n'est plus sur le Mac."
     let webResumeClaudeOnly = "Seul Claude Code garde des conversations que l'on peut reprendre."
     let webResuming = "Reprise en cours…"
-    let webResumeMore = "Voir {n} de plus"
     let webResumeCapped = "Les plus anciennes ne sont pas dans cette liste."
     let webCommand = "Dire ce qu'il faut lancer"
     let webCommandLabel = "Lancer une session en disant ce qu'elle doit faire"

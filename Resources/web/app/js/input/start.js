@@ -52,12 +52,6 @@ import { openSession } from "../session/open.js";
 export var Start = (function () {
     var HOLD = 15000;    // how long the band waits before it admits it has stopped waiting
     var MANY = 8;        // places, past which a box to filter them earns its row
-    // Conversations drawn at once, and each press of the row at the bottom. A project's whole
-    // history arrives in one reply — which is what lets the filter box search all of it rather
-    // than only what is on screen — so this is about the scroll, not about the fetching. Forty
-    // rows in a sheet that is a third of a phone is a list you arrive at the bottom of by
-    // accident; twenty-five is about a screen and a half.
-    var PAGE = 25;
 
     var places = null;   // as the Mac sent them; null until an answer has arrived
     var assistants = [];  // what the Mac will start — [{ id, label }], its list and not this one
@@ -70,7 +64,6 @@ export var Start = (function () {
     var pasts = null;    // as the Mac sent them, for `at`; null until an answer has arrived
     var capped = false;  // the Mac stopped listing before the end, and said so
     var reading = false;
-    var shown = 0;       // how many rows of the current list have been unfolded
     var wait = null;     // { id, from, late, place } — started, and not in the list yet
     var timer = null;
     var placeholderNode = null;
@@ -357,8 +350,7 @@ export var Start = (function () {
 
         list.innerHTML = "";
         var all = matchingPast();
-        var upTo = Math.min(shown, all.length);
-        all.slice(0, upTo).forEach(function (r) {
+        all.forEach(function (r) {
             var li = document.createElement("li");
             var row = document.createElement("button");
             row.type = "button";
@@ -393,23 +385,15 @@ export var Start = (function () {
             list.appendChild(li);
         });
 
-        // What is left, and then — only once nothing is left — what the Mac itself left out.
-        // The two are different facts and only one of them can be acted on, so they are never
-        // both on screen: a button that unfolds more, or a line saying there is no more to
-        // unfold from here.
-        if (upTo < all.length) {
-            var li = document.createElement("li");
-            var more = document.createElement("button");
-            more.type = "button";
-            more.className = "more";
-            more.textContent = fill(T.webResumeMore, { n: all.length - upTo });
-            more.disabled = !!pressing || !!wait;
-            more.onclick = function () { shown += PAGE; draw(); };
-            li.appendChild(more);
-            list.appendChild(li);
-        } else if (capped && all.length) {
+        // Every row the Mac sent, and then what it did not send.
+        //
+        // There was a *Show 25 more* row here for an afternoon and it was friction with nothing
+        // behind it: the whole list is already on this device, so the button was asking somebody
+        // to authorise work that had been done before the sheet opened. What is worth a row at
+        // the bottom is the one thing scrolling genuinely cannot reach.
+        if (capped && all.length) {
             var note = document.createElement("li");
-            note.className = "more note";
+            note.className = "note";
             note.setAttribute("role", "status");
             note.textContent = T.webResumeCapped;
             list.appendChild(note);
@@ -449,7 +433,6 @@ export var Start = (function () {
         at = place;
         pasts = null;
         capped = false;
-        shown = PAGE;
         find = "";
         els["start-filter"].value = "";
         said("");
@@ -482,7 +465,6 @@ export var Start = (function () {
         at = null;
         pasts = null;
         capped = false;
-        shown = 0;
         reading = false;
         find = "";
         els["start-filter"].value = "";
@@ -697,9 +679,7 @@ export var Start = (function () {
         close: close,
         press: press,
         pick: pick,
-        // Typing makes a different list, and a fold that carried over from the old one would
-        // leave somebody looking at "show 3 more" over a list of four.
-        typed: function (value) { find = value; shown = PAGE; draw(); },
+        typed: function (value) { find = value; draw(); },
         scrolled: edge,
         placeholder: placeholder,
         arrange: arrange,

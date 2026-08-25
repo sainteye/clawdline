@@ -406,7 +406,6 @@ struct English: Copy {
     let webResumeGone = "That conversation is not on the Mac any more."
     let webResumeClaudeOnly = "Only Claude Code keeps conversations that can be picked back up."
     let webResuming = "Picking it back up\u{2026}"
-    let webResumeMore = "Show {n} more"
     let webResumeCapped = "Older ones than these are not on this list."
     let webCommand = "Say what to start"
     let webCommandLabel = "Start a session by saying what to do"

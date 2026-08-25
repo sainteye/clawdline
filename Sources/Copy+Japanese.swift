@@ -405,7 +405,6 @@ struct Japanese: Copy {
     let webResumeGone = "その会話はもう Mac にありません。"
     let webResumeClaudeOnly = "続きから開ける会話を残すのは Claude Code だけです。"
     let webResuming = "続きを開いています…"
-    let webResumeMore = "さらに {n} 件"
     let webResumeCapped = "これより古いものはこの一覧にありません。"
     let webCommand = "話して何を始めるか伝える"
     let webCommandLabel = "話して何をするか伝え、セッションを始める"
