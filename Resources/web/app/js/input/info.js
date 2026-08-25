@@ -35,9 +35,11 @@ export var Info = (function () {
     var ticket = 0;      // the answer that is still wanted, so a stale one can be dropped
     var drawn = false;   // the sections have risen once; a redraw should not make them rise again
     var pending = null;  // the word sent after `/model`, until the transcript names that model
-    var busy = false;    // a `/model` on its way to the Mac
+    var permissionPending = null; // the mode requested, until a fresh screen capture agrees
+    var busy = false;    // a model command or permission key sequence on its way to the Mac
     var stateSeen = "";  // the session's state at the last draw, so a change redraws the buttons
     var confirming = 0;  // the timer reading back, waiting for a sent `/model` to turn up
+    var permissionConfirming = 0;
 
     function say(w) { els["info-say"].textContent = w || ""; els["info-say"].hidden = !w; }
     function said(w, calm) {
@@ -108,6 +110,7 @@ export var Info = (function () {
     /** Only an idle session takes a `/model`: typed into a working one it interrupts the turn
      *  with a question on the Mac, and typed into one that is asking, it is the answer. */
     function canSwitch() { var s = session(); return !!(s && S.write && s.state === "idle" && !busy); }
+    function canSwitchPermission() { return !!(session() && S.write && !busy); }
     /** The row the session is on. By prefix, so `claude-haiku-4-5-20251001` finds `claude-haiku-4-5`. */
     function onModel(current, m) { return !!current && (current === m.id || current.indexOf(m.id) === 0); }
 
@@ -148,6 +151,37 @@ export var Info = (function () {
             'placeholder="' + esc(T.webInfoModelOther) + '" aria-label="' + esc(T.webInfoModelOther) + '"' + (can ? "" : " disabled") + ">" +
             '<button type="submit" class="chip"' + (can ? "" : " disabled") + ">" + esc(T.webSend) + "</button></form>";
         return '<div class="models">' + chips + other + "</div>" + (can ? "" : note(T.webInfoModelBusy));
+    }
+
+    function permissionName(mode) {
+        var names = {
+            auto: "webInfoPermissionAuto", manual: "webInfoPermissionManual",
+            acceptEdits: "webInfoPermissionAcceptEdits", plan: "webInfoPermissionPlan"
+        };
+        return names[mode] ? T[names[mode]] : mode;
+    }
+
+    /** The server's option order is Claude Code's cycle order, so the distance is both a UI
+     *  calculation and the exact number of Back-Tabs to send. Unknown has no index on purpose. */
+    function permissionSteps(permission, target) {
+        var options = permission && permission.options || [];
+        var start = options.indexOf(permission && permission.current);
+        var end = options.indexOf(target);
+        if (start < 0 || end < 0 || !options.length) return null;
+        return (end - start + options.length) % options.length;
+    }
+
+    function permissionHTML(permission) {
+        if (!permission || permission.current === "unknown") return note(T.webInfoPermissionUnreadable);
+        var can = canSwitchPermission();
+        var chips = (permission.options || []).map(function (mode) {
+            var on = permission.current === mode;
+            var wait = !on && permissionPending === mode;
+            return '<button type="button" class="m" data-permission="' + esc(mode) + '"' +
+                (on ? ' data-on="1" aria-current="true"' : "") + (wait ? ' data-pending="1"' : "") +
+                (can && !on ? "" : " disabled") + ">" + esc(permissionName(mode)) + "</button>";
+        }).join("");
+        return '<div class="models">' + chips + "</div>" + (can ? "" : note(T.webInfoPermissionBusy));
     }
 
     function usageHTML(u) {
@@ -235,7 +269,7 @@ export var Info = (function () {
 
     function html(d) {
         var s = d.session || {}, u = d.usage, l = d.limits || {}, f = d.files,
-            links = d.links || d.deploy || [], models = d.models || [];
+            links = d.links || d.deploy || [], models = d.models || [], permission = d.permission;
         // The model is whatever the transcript last named — a reply, or a `/model` nobody has
         // replied to yet, whichever of the two is newer. So a session that switched mid-way shows
         // what it is on now rather than what it began on, a session that has only ever been
@@ -243,9 +277,11 @@ export var Info = (function () {
         // pending the moment the record agrees with it.
         var current = s.model || (u && u.model) || "";
         if (pending && models.some(function (m) { return m.command === pending && onModel(current, m); })) pending = null;
+        if (permissionPending && permission && permission.current === permissionPending) permissionPending = null;
         var out = hero(s, u), i = 0;
         // Read-only pairings get no buttons rather than dead ones: there is nothing they could do.
         if (models.length && S.write) out += sec(++i, T.webInfoSwitchModel, "", modelsHTML(models, current));
+        if (permission && S.write) out += sec(++i, T.webInfoSwitchPermission, "", permissionHTML(permission));
         out += sec(++i, T.webInfoUsage, "", usageHTML(u));
         // When the windows were last known — the status line writes them down every few seconds
         // while a Claude Code session is open, and a stale reading should look its age.
@@ -338,6 +374,39 @@ export var Info = (function () {
         }, 800);
     }
 
+    function readPermissionBack(id, tries) {
+        clearTimeout(permissionConfirming);
+        if (tries <= 0) return;
+        permissionConfirming = setTimeout(function () {
+            if (forId !== id || els.info.hidden || !permissionPending) return;
+            SessionFacts.drop(id);
+            SessionFacts.get(id, true).then(function (facts) {
+                if (forId !== id || els.info.hidden || !permissionPending || !facts) return;
+                data = facts;
+                StatusLine.receive(id, facts);
+                draw();
+                if (permissionPending) readPermissionBack(id, tries - 1);
+                else said("");
+            }).catch(function () {});
+        }, 500);
+    }
+
+    function pause(ms) { return new Promise(function (done) { setTimeout(done, ms); }); }
+
+    /** Send each Back-Tab as its own idempotent write, with enough space for Claude Code to
+     *  consume and repaint between them. Sending the escape sequence itself remains one atomic
+     *  terminal write on the server; this delay is between complete keys, never their bytes. */
+    function permissionKeys(id, count) {
+        var sent = 0;
+        function next() {
+            return api.key(id, "shift+tab").then(function () {
+                sent += 1;
+                return sent < count ? pause(180).then(next) : null;
+            });
+        }
+        return next();
+    }
+
     return {
         open: function () {
             if (!S.openId) return;
@@ -345,8 +414,10 @@ export var Info = (function () {
             data = SessionFacts.peek(forId);
             drawn = false;
             pending = null;
+            permissionPending = null;
             busy = false;
             clearTimeout(confirming);
+            clearTimeout(permissionConfirming);
             said("");
             els.info.hidden = false;
             load(forId, false);
@@ -367,8 +438,10 @@ export var Info = (function () {
             data = null;
             forId = null;
             pending = null;
+            permissionPending = null;
             busy = false;
             clearTimeout(confirming);
+            clearTimeout(permissionConfirming);
         },
 
         /** The session under the card changed, so what is in it is about something else; or
@@ -413,6 +486,33 @@ export var Info = (function () {
             });
         },
 
+        switchPermission: function (mode) {
+            var id = forId;
+            var permission = data && data.permission;
+            var steps = permissionSteps(permission, mode);
+            if (!steps || !canSwitchPermission()) return;
+            busy = true;
+            permissionPending = mode;
+            said("");
+            draw();
+            permissionKeys(id, steps).then(function () {
+                if (forId !== id) return;
+                busy = false;
+                SessionFacts.drop(id);
+                said(fill(T.webInfoPermissionSent, { mode: permissionName(mode) }), true);
+                draw();
+                if (permissionPending) readPermissionBack(id, 8);
+                else said("");
+            }).catch(function (e) {
+                if (forId !== id) return;
+                busy = false;
+                permissionPending = null;
+                clearTimeout(permissionConfirming);
+                said((e && e.message) || T.webInfoFailed);
+                draw();
+            });
+        },
+
         copy: function (text) {
             if (!text || !navigator.clipboard) return;
             navigator.clipboard.writeText(text).then(function () { toast(T.webInfoCopied); }).catch(function () {});
@@ -428,6 +528,8 @@ els["info-body"].addEventListener("click", function (ev) {
     var t = ev.target;
     var chip = t.closest ? t.closest("button[data-model]") : null;
     if (chip) { if (!chip.disabled) Info.switchTo(chip.dataset.model, chip.dataset.name); return; }
+    var permission = t.closest ? t.closest("button[data-permission]") : null;
+    if (permission) { if (!permission.disabled) Info.switchPermission(permission.dataset.permission); return; }
     var sid = t.closest ? t.closest("button[data-copy]") : null;
     if (sid) Info.copy(sid.dataset.copy);
 });

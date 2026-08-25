@@ -279,9 +279,11 @@ export var Mock = (function () {
         { id: "gpt-5.4", name: "GPT-5.4", command: "gpt-5.4" },
         { id: "gpt-5.4-mini", name: "GPT-5.4-Mini", command: "gpt-5.4-mini" }
     ];
+    var PERMISSION_MODES = ["auto", "manual", "acceptEdits", "plan"];
     var info = {
         "8F3A-1C": {
             models: CLAUDE_MODELS,
+            permission: { current: "auto", options: PERMISSION_MODES },
             session: { id: "8F3A-1C", assistant: "claude", sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38",
                        model: "claude-fable-5", cwd: "/Users/x/code/clawdline",
                        startedAt: now - 5580, seconds: 5580 },
@@ -296,6 +298,7 @@ export var Mock = (function () {
         },
         "2C71-90": {
             models: CLAUDE_MODELS,
+            permission: { current: "unknown", options: PERMISSION_MODES },
             session: { id: "2C71-90", assistant: "claude", model: "claude-opus-5", cwd: "/Users/x/code/atrium",
                        startedAt: now - 24300, seconds: 24300 },
             usage: { input: 19340, output: 61022, cacheRead: 7120400, cacheWrite: 380210, total: 7580972,
@@ -544,10 +547,17 @@ export var Mock = (function () {
         },
         /** Answering moves the session off `waiting`, which is the whole thing worth seeing
          *  from a file:// copy: the menu goes, the buttons go, and the composer comes back. */
-        key: function (id) {
+        key: function (id, press) {
             return new Promise(function (done, fail) {
                 setTimeout(function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
+                    if (press === "shift+tab") {
+                        var permission = info[id] && info[id].permission;
+                        var at = permission ? PERMISSION_MODES.indexOf(permission.current) : -1;
+                        if (at >= 0) permission.current = PERMISSION_MODES[(at + 1) % PERMISSION_MODES.length];
+                        done({ ok: true });
+                        return;
+                    }
                     var s = find(id);
                     if (s) { s.state = "working"; s.line = "Deciding\u2026 (1s)"; s.menu = null; }
                     emit();
@@ -625,7 +635,9 @@ export var Mock = (function () {
                         session: { id: id, assistant: session.assistant, cwd: session.cwd },
                         limits: { windows: [] },
                         links: (links[id] || []).slice(),
-                        models: session.assistant === "codex" ? CODEX_MODELS : CLAUDE_MODELS
+                        models: session.assistant === "codex" ? CODEX_MODELS : CLAUDE_MODELS,
+                        permission: session.assistant === "claude"
+                            ? { current: "manual", options: PERMISSION_MODES } : undefined
                     } });
                 }, 640);
             });

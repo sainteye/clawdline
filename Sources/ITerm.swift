@@ -292,7 +292,7 @@ enum ITerm {
         return res["error"] as? String ?? L.t.sendFailed
     }
 
-    /// One byte, as a keypress rather than as text — see the `key` command in iterm.js.
+    /// Raw key bytes rather than text — see the `key` command in iterm.js.
     /// Close a session's tab. See the `close` command in `iterm.js` for why it is the session
     /// and not the tab.
     static func close(_ sessionID: String) -> String? {
@@ -307,10 +307,14 @@ enum ITerm {
         return res["error"] as? String ?? "that session is gone"
     }
 
-    static func keystroke(_ byte: UInt8, to sessionID: String) -> String? {
-        let res = osa(["key", sessionID, String(byte)])
+    static func keystroke(_ bytes: [UInt8], to sessionID: String) -> String? {
+        let res = osa(["key", sessionID] + bytes.map(String.init))
         if res["ok"] as? Bool == true { return nil }
         return res["error"] as? String ?? L.t.sendFailed
+    }
+
+    static func keystroke(_ byte: UInt8, to sessionID: String) -> String? {
+        keystroke([byte], to: sessionID)
     }
 
     static func submit(_ sessionID: String) -> String? { keystroke(13, to: sessionID) }

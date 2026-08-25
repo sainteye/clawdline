@@ -84,15 +84,15 @@ function run(argv) {
     return JSON.stringify(hit ? { ok: true } : { ok: false, error: "That session is gone" });
   }
 
-  // One byte, written outside any bracketed paste. Inside one it would be a character being
+  // Key bytes, written together and outside any bracketed paste. Inside one they would be text
   // handed to the program rather than a key it is being asked about, and the only reason to send
   // 0x16 is so that the far side treats it as Ctrl-V and reaches for the clipboard.
   if (cmd === "key") {
     const want = String(argv[1] || "").toUpperCase();
-    const code = parseInt(String(argv[2] || "0"), 10);
+    const codes = argv.slice(2).map(function (raw) { return parseInt(String(raw || "0"), 10); });
     const hit = eachSession(function (s) {
       if (safe(function () { return s.id(); }, "").toUpperCase() !== want) return undefined;
-      s.write({ text: String.fromCharCode(code), newline: false });
+      s.write({ text: String.fromCharCode.apply(String, codes), newline: false });
       return true;
     });
     return JSON.stringify(hit ? { ok: true } : { ok: false, error: "That session is gone" });

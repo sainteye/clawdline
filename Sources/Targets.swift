@@ -133,12 +133,12 @@ enum Targets {
         }
     }
 
-    /// Answer a menu with the one byte its picker reads.
+    /// Answer a menu, or send the one escape sequence this app names as a key.
     ///
     /// Claude Code's `AskUserQuestion` picker takes a bare digit **outside a bracketed paste** and
     /// treats it as a selection — in a single-select it also confirms, in a multi-select it
     /// toggles and `Tab` moves on to the review. That is why this exists at all and why it is a
-    /// byte rather than a string: `send` wraps its text in a bracketed paste, and **the picker
+    /// key rather than a string: `send` wraps its text in a bracketed paste, and **the picker
     /// throws the whole paste away and then acts on the Return that follows it**.
     ///
     /// Codex's dialogs answer the same way, which was checked rather than assumed: `2` on its
@@ -146,13 +146,22 @@ enum Targets {
     ///
     /// **Allowlisted here rather than at the route**, because the danger is not that somebody
     /// answers the wrong question — it is that a byte channel into a tty is an escape-sequence
-    /// channel into a tty. `1`–`9` and `Tab` answer a menu and can do nothing else; `ESC` alone
-    /// cancels, and three bytes of an arrow key sent as three round trips arrive as one.
+    /// channel into a tty. `1`–`9` and `Tab` answer a menu and can do nothing else; the only
+    /// sequence admitted is back-tab, which Claude Code uses to cycle permission modes. Keeping
+    /// it whole also matters: three HTTP round trips could interleave with somebody typing and
+    /// turn an intended key into three unrelated bytes.
     static func answer(_ byte: UInt8, to session: TargetSession) -> String? {
-        guard (0x31...0x39).contains(byte) || byte == 0x09 else {
+        answer([byte], to: session)
+    }
+
+    static func answer(_ bytes: [UInt8], to session: TargetSession) -> String? {
+        let menuKey = bytes.count == 1
+            && ((0x31...0x39).contains(bytes[0]) || bytes[0] == 0x09)
+        let backTab: [UInt8] = [0x1b, 0x5b, 0x5a]       // ESC [ Z
+        guard menuKey || bytes == backTab else {
             return "That is not a key this can send."
         }
-        return keystroke(byte, to: session)
+        return keystroke(bytes, to: session)
     }
 
     /// Whether this session is showing a menu right now, which changes what typing into it means.
@@ -294,11 +303,15 @@ enum Targets {
         }
     }
 
-    private static func keystroke(_ byte: UInt8, to session: TargetSession) -> String? {
+    private static func keystroke(_ bytes: [UInt8], to session: TargetSession) -> String? {
         switch session.backend {
-        case .iterm: return ITerm.keystroke(byte, to: session.id)
-        case .tmux:  return Tmux.keystroke(byte, to: session.id)
+        case .iterm: return ITerm.keystroke(bytes, to: session.id)
+        case .tmux:  return Tmux.keystroke(bytes, to: session.id)
         }
+    }
+
+    private static func keystroke(_ byte: UInt8, to session: TargetSession) -> String? {
+        keystroke([byte], to: session)
     }
 
     private static func submit(to session: TargetSession) -> String? {
@@ -321,6 +334,15 @@ enum Targets {
         switch session.backend {
         case .iterm: return ITerm.capture(session.id)
         case .tmux:  return Tmux.capture(session.id)
+        }
+    }
+
+    /// What is visible now, without tmux scrollback. A current mode cannot be read from history:
+    /// after somebody cycles, an older status line is still true text and a false current answer.
+    static func visibleScreen(of session: TargetSession) -> String? {
+        switch session.backend {
+        case .iterm: return ITerm.capture(session.id)
+        case .tmux:  return Tmux.capture(session.id, scrollback: 0)
         }
     }
 

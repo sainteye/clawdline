@@ -747,6 +747,14 @@ protocol Copy {
     var webInfoModelOther: String { get }
     var webInfoModelSent: String { get }
     var webInfoModelBusy: String { get }
+    var webInfoSwitchPermission: String { get }
+    var webInfoPermissionAuto: String { get }
+    var webInfoPermissionManual: String { get }
+    var webInfoPermissionAcceptEdits: String { get }
+    var webInfoPermissionPlan: String { get }
+    var webInfoPermissionUnreadable: String { get }
+    var webInfoPermissionSent: String { get }
+    var webInfoPermissionBusy: String { get }
     var webInfoLimitsClaude: String { get }
     var webInfoCopied: String { get }
     var webInfoAsOf: String { get }

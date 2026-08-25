@@ -301,6 +301,7 @@ $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/info
 {"info":{
   "session":{"id":"27439AEE-…","assistant":"claude","sessionId":"841cbb8d-…","model":"claude-fable-5",
              "cwd":"/Users/you/code/atrium","startedAt":1787390000,"seconds":5580},
+  "permission":{"current":"auto","options":["auto","manual","acceptEdits","plan"]},
   "usage":{"input":4821,"output":38210,"cacheRead":2984120,"cacheWrite":214880,"total":3242031,
            "model":"claude-fable-5","costUsd":7.38},
   "limits":{"windows":[{"name":"5h","usedPercent":100,"resetsAt":1787417400,"hit":true}],"at":1787416917},
@@ -314,6 +315,7 @@ $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/info
 | field | |
 |---|---|
 | `session` | `id` and `assistant` always; `sessionId` with hooks installed; `model` when a transcript has named one — the **last** model the transcript names, so a session that switched mid-way shows what it is on now; `cwd`, `startedAt` and `seconds` (its age, as of this answer) when the process could be found |
+| `permission` | Claude Code's current permission mode and the Shift-Tab cycle order. `current` is `auto`, `manual`, `acceptEdits`, `plan`, or `unknown`; `manual` specifically means the screen was readable and showed no mode line, while `unknown` means the screen capture was absent or empty. **Absent for Codex sessions**, which do not have this mode cycle |
 | `usage` | the transcript's token totals — `input`, `output`, `cacheRead`, `cacheWrite`, `total` — with `model` and, for Claude, `costUsd` at list price. **Absent** when no transcript has been found, which is not the same as zero |
 | `limits` | `windows`: each `name` (`5h`, `7d` — the status line's names), `usedPercent`, `resetsAt`, and `hit` when the provider refused the last request on it; `at` is when the record it came from was written. **An empty `windows` means nobody said**, and a client must draw that as unknown rather than as 0% |
 | `files` | the working tree **counted**, not listed: `branch` (empty when detached), `head`, `ahead`, `behind`, `staged`, `unstaged`, `untracked`, `conflict`. A partially added file is under both `staged` and `unstaged`, as `git status` lists it. **Absent** when the directory is not a repository or `git` did not answer in time — and those are the same answer on purpose, because a card that said *clean* about a tree it could not read would be wrong in the direction that matters. The files themselves are `/git` |
@@ -581,8 +583,10 @@ whatever the terminal said as the message.
 
 ### `POST /v1/sessions/:id/key`
 
-Answers a menu with a single keystroke. `{"key":"1"}`…`{"key":"9"}`, or `{"key":"tab"}`. Anything
-else is `400 bad_request`, and the allowlist is checked before anything goes looking for a terminal.
+Answers a menu with a single keystroke. `{"key":"1"}`…`{"key":"9"}`, `{"key":"tab"}`, or
+`{"key":"shift+tab"}`. The last sends back-tab (`ESC [ Z`) as one terminal sequence and is used
+to cycle Claude Code's permission mode. Anything else is `400 bad_request`, and the allowlist is
+checked before anything goes looking for a terminal.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/key \

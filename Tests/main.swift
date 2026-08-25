@@ -1891,6 +1891,10 @@ group("the languages the interface speaks") {
         "fr:webInfoTotal", "es:webInfoTotal", "pt:webInfoTotal", "id:webInfoTotal",
         "id:webInfoModel", "tr:webInfoModel",
         "de:webInfoBranch", "it:webInfoBranch", "pt:webInfoBranch", "id:webInfoBranch",
+        // Permission mode labels use the same native words: manual in Spanish, Portuguese and
+        // Indonesian, and Plan in German and Turkish.
+        "es:webInfoPermissionManual", "pt:webInfoPermissionManual", "id:webInfoPermissionManual",
+        "de:webInfoPermissionPlan", "tr:webInfoPermissionPlan",
     ]
     let en = English()
 
@@ -4135,7 +4139,7 @@ group("a deploy is news only when it stops running") {
            changed(["a": "running"], [:]), [])
 }
 
-group("answering a menu is a byte, and only ever one of ten") {
+group("answering a menu or cycling permissions stays a closed key allowlist") {
     // This is the only path in the app that writes a raw byte into a tty from the network, so the
     // allowlist is the whole security argument. It lives in `Targets.answer`, not at the route:
     // a second route added later would otherwise have to remember to repeat it.
@@ -4153,6 +4157,12 @@ group("answering a menu is a byte, and only ever one of ten") {
     for good: UInt8 in [0x31, 0x39, 0x09] {
         check("byte \(good) is not refused by the allowlist",
               Targets.answer(good, to: session) != "That is not a key this can send.")
+    }
+    check("back-tab is the one multi-byte sequence admitted",
+          Targets.answer([0x1b, 0x5b, 0x5a], to: session) != "That is not a key this can send.")
+    for bad in [[UInt8](), [0x1b], [0x5b, 0x5a], [0x1b, 0x5b, 0x41], [0x31, 0x32]] {
+        check("sequence \(bad) is refused before it reaches a terminal",
+              Targets.answer(bad, to: session) == "That is not a key this can send.")
     }
 }
 
@@ -4219,6 +4229,8 @@ group("the key route is gated like every other write") {
     expect("a good key against no session is a 404",
            key(writer.token, "{\"key\":\"3\"}").status, 404)
     expect("and tab is a good key", key(writer.token, "{\"key\":\"tab\"}").status, 404)
+    expect("and shift+tab is a good key",
+           key(writer.token, "{\"key\":\"shift+tab\"}").status, 404)
 }
 
 group("a recording arrives as base64 and is refused before it costs a second of CPU") {
@@ -5320,6 +5332,42 @@ group("how far a child may go is this Mac's answer, not the asking session's") {
           Assistant.claude.command(model: nil, permission: .ask) == "claude")
 }
 
+group("the directory a child is given reach over is a path, not a fragment of one") {
+    // The second string a dispatch puts on a command line, and the one that decides whether a
+    // child can read its own briefing without asking. Same shape of rule as `modelName`: a closed
+    // alphabet rather than an escaping pass, so there is nothing in it for a shell to read.
+    func ok(_ raw: String) -> Bool { StartPoints.extraDir(raw) == raw }
+    check("the task directory is one", ok("/tmp/.clawdline/0f8fad5b-d9cb-469f-a165-70867728950e"))
+    check("so is the parent it sits in", ok("/tmp/.clawdline"))
+    check("and a plain project path", ok("/Users/me/code/thing"))
+
+    check("a relative path is not — there is no cwd to resolve it against here",
+          StartPoints.extraDir("tmp/.clawdline") == nil)
+    check("nor one that walks upwards", StartPoints.extraDir("/tmp/../etc") == nil)
+    check("nor one with a space", StartPoints.extraDir("/tmp/two words") == nil)
+    check("nor one with a semicolon", StartPoints.extraDir("/tmp/x;id") == nil)
+    check("nor a substitution", StartPoints.extraDir("/tmp/$(id)") == nil)
+    check("nor a quote", StartPoints.extraDir("/tmp/\"x\"") == nil)
+    check("nor a newline", StartPoints.extraDir("/tmp/x\nid") == nil)
+    check("nor nothing at all", StartPoints.extraDir("") == nil && StartPoints.extraDir(nil) == nil)
+    check("nor a path past 256 characters",
+          StartPoints.extraDir("/tmp/" + String(repeating: "a", count: 256)) == nil)
+
+    // Both CLIs spell it the same, which is the only reason the flag is not a switch.
+    expect("claude is given it by name", Assistant.claude.command(model: nil, addDir: "/tmp/.clawdline"),
+           "claude --add-dir /tmp/.clawdline")
+    expect("and so is codex", Assistant.codex.command(model: nil, addDir: "/tmp/.clawdline"),
+           "codex --add-dir /tmp/.clawdline")
+    expect("with the model in front of it when there is one",
+           Assistant.claude.command(model: "haiku", addDir: "/tmp/.clawdline"),
+           "claude --model haiku --add-dir /tmp/.clawdline")
+    check("a refused path reaches the line as no flag rather than as an argument",
+          StartPoints.itermLine(cwd: "/tmp/x", assistant: .claude, addDir: "/tmp/a b")
+              .hasSuffix("&& claude"))
+    expect("and nothing at all is still the bare command",
+           Assistant.claude.command(model: nil, addDir: nil), "claude")
+}
+
 group("a task id is the name of a directory, so it may not be a path") {
     check("a lowercase UUID is one", Orchestrator.isTaskID(taskID))
     check("in upper case it is not", !Orchestrator.isTaskID(taskID.uppercased()))
@@ -6027,6 +6075,52 @@ group("the models a session can be moved to, and the word that moves each") {
     let bare = SessionInfo.payload(id: "X", assistant: nil, sessionId: nil, model: nil, cwd: nil, startedAt: nil,
                                    usage: nil, limits: SessionInfo.Limits(), files: nil, deploy: [])
     expect("and none is an empty list rather than an absent key", (bare["models"] as? [[String: Any]])?.count, 0)
+}
+
+group("Claude Code permission modes come from the screen and cycle in wire order") {
+    expect("auto mode is read from its exact status phrase",
+           SessionInfo.permissionMode(screen:
+            "work\n  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents\n"), .auto)
+    expect("accept edits mode is read from its exact status phrase",
+           SessionInfo.permissionMode(screen:
+            "work\n  ⏵⏵ accept edits on (shift+tab to cycle) · ← for agents\n"), .acceptEdits)
+    expect("plan mode is read from its exact status phrase",
+           SessionInfo.permissionMode(screen:
+            "work\n  ⏸ plan mode on (shift+tab to cycle) · ← for agents\n"), .plan)
+    expect("a readable screen without a mode line is manual",
+           SessionInfo.permissionMode(screen: "Claude Code\n❯ "), .manual)
+    expect("conversation text cannot impersonate the status line",
+           SessionInfo.permissionMode(screen: "The words auto mode on appeared in a reply.\n❯ "), .manual)
+    expect("tmux colour does not hide the status line",
+           SessionInfo.permissionMode(screen:
+            "\u{1b}[2m  ⏸ plan mode on (shift+tab to cycle) · ← for agents\u{1b}[0m"), .plan)
+    expect("a failed capture is unknown", SessionInfo.permissionMode(screen: nil), .unknown)
+    expect("an empty capture is unknown", SessionInfo.permissionMode(screen: " \n\t"), .unknown)
+
+    expect("one step moves to the next position",
+           SessionInfo.permissionSteps(from: .manual, to: .acceptEdits), 1)
+    expect("several steps move forward through the cycle",
+           SessionInfo.permissionSteps(from: .auto, to: .plan), 3)
+    expect("the distance wraps around to the beginning",
+           SessionInfo.permissionSteps(from: .plan, to: .manual), 2)
+    expect("staying on the same mode sends no keys",
+           SessionInfo.permissionSteps(from: .acceptEdits, to: .acceptEdits), 0)
+    check("unknown never invents a starting position",
+          SessionInfo.permissionSteps(from: .unknown, to: .auto) == nil)
+
+    let claude = SessionInfo.payload(
+        id: "X", assistant: .claude, sessionId: nil, model: nil, cwd: nil, startedAt: nil,
+        usage: nil, limits: SessionInfo.Limits(), files: nil, deploy: [], permission: .acceptEdits)
+    let permission = claude["permission"] as? [String: Any]
+    expect("the card gets the current permission mode",
+           permission?["current"] as? String, "acceptEdits")
+    expect("and the options in cycle order", permission?["options"] as? [String],
+           ["auto", "manual", "acceptEdits", "plan"])
+
+    let codex = SessionInfo.payload(
+        id: "Y", assistant: .codex, sessionId: nil, model: nil, cwd: nil, startedAt: nil,
+        usage: nil, limits: SessionInfo.Limits(), files: nil, deploy: [], permission: .auto)
+    check("a Codex card has no permission field", codex["permission"] == nil)
 }
 
 group("the model a `/model` names, before the reply that proves it") {

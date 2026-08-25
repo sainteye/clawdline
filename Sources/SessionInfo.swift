@@ -320,6 +320,50 @@ enum SessionInfo {
         return Limits()
     }
 
+    // MARK: - Permission mode
+
+    /// The four positions Claude Code visits with Shift-Tab, plus the fact that its screen could
+    /// not be read. `manual` and `unknown` must stay separate: a readable screen with no mode line
+    /// is Claude Code's default mode, while an absent screen says nothing about where the cycle is.
+    enum PermissionMode: String, Equatable {
+        case auto
+        case manual
+        case acceptEdits
+        case plan
+        case unknown
+    }
+
+    static let permissionModes: [PermissionMode] = [.auto, .manual, .acceptEdits, .plan]
+
+    /// Read only the three phrases Claude Code actually prints. The fourth position deliberately
+    /// has no status line, so any non-empty screen without one of them is `manual`; treating an
+    /// empty or failed capture the same way would make the page press from a position it does not
+    /// know and land on the wrong mode.
+    static func permissionMode(screen: String?) -> PermissionMode {
+        guard let screen else { return .unknown }
+        let plain = Ansi.plain(screen)
+        guard !plain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .unknown }
+        // tmux preserves colour escapes. Remove them before asking about a line's beginning, then
+        // require the status line's own prefix so a conversation merely quoting "auto mode on"
+        // cannot impersonate the current mode.
+        for raw in plain.split(separator: "\n", omittingEmptySubsequences: false).reversed() {
+            let line = String(raw)
+            if line.hasPrefix("  ⏵⏵ auto mode on") { return .auto }
+            if line.hasPrefix("  ⏵⏵ accept edits on") { return .acceptEdits }
+            if line.hasPrefix("  ⏸ plan mode on") { return .plan }
+        }
+        return .manual
+    }
+
+    /// How many Shift-Tabs move between two known positions. `nil` is the important answer for
+    /// `unknown`: without a starting index there is no honest number of presses. The web client
+    /// uses the same four-item wire order when it performs the switch.
+    static func permissionSteps(from: PermissionMode, to: PermissionMode) -> Int? {
+        guard let start = permissionModes.firstIndex(of: from),
+              let end = permissionModes.firstIndex(of: to) else { return nil }
+        return (end - start + permissionModes.count) % permissionModes.count
+    }
+
     // MARK: - Models
 
     /// A model the session could be moved to, and the word that moves it. `command` is what goes
@@ -384,7 +428,8 @@ enum SessionInfo {
     static func payload(id: String, assistant: Assistant?, sessionId: String?, model: String?,
                         cwd: String?, startedAt: Date?, now: Date = Date(),
                         usage: Orchestrator.Usage?, limits: Limits, files: Files?,
-                        deploy: [[String: Any]], models: [Model] = []) -> [String: Any] {
+                        deploy: [[String: Any]], models: [Model] = [],
+                        permission: PermissionMode? = nil) -> [String: Any] {
         var session: [String: Any] = ["id": id]
         if let assistant { session["assistant"] = assistant.rawValue }
         if let sessionId { session["sessionId"] = sessionId }
@@ -399,6 +444,14 @@ enum SessionInfo {
         // Every row is a button on the card. `command` is the word the page sends after
         // `/model`; `id` is what it compares the session's current model against.
         out["models"] = models.map { ["id": $0.id, "name": $0.name, "command": $0.command] }
+        // Codex has no corresponding cycle, so absence is the contract rather than an empty
+        // object a client might mistake for a feature whose reading merely failed.
+        if assistant == .claude {
+            out["permission"] = [
+                "current": (permission ?? .unknown).rawValue,
+                "options": permissionModes.map(\.rawValue),
+            ]
+        }
 
         if let usage {
             var counts: [String: Any] = [

@@ -149,16 +149,21 @@ enum Tmux {
         return submit(paneID)
     }
 
-    /// One byte, as a keypress rather than as text.
+    /// Raw key bytes, as one keypress rather than as text.
     ///
     /// Outside the bracketed paste on purpose: inside one, a control byte is a character being
     /// handed to the program, not a key it is being asked about — and the whole point of sending
-    /// 0x16 is that the far side treats it as Ctrl-V. `-H` takes hex, which says the byte
-    /// without tmux looking for a key name.
-    static func keystroke(_ byte: UInt8, to paneID: String) -> String? {
+    /// 0x16 is that the far side treats it as Ctrl-V. `-H` takes hex, which says the bytes
+    /// without tmux looking for key names. One `send-keys` keeps a multi-byte terminal sequence
+    /// together; separate processes would leave room for somebody else's input between them.
+    static func keystroke(_ bytes: [UInt8], to paneID: String) -> String? {
         guard binary != nil else { return "tmux not found — set \"tmux_path\" in the config" }
-        let hex = String(format: "%02x", byte)
-        return run(["send-keys", "-t", paneID, "-H", hex]).ok ? nil : "that tmux pane is gone"
+        let hex = bytes.map { String(format: "%02x", $0) }
+        return run(["send-keys", "-t", paneID, "-H"] + hex).ok ? nil : "that tmux pane is gone"
+    }
+
+    static func keystroke(_ byte: UInt8, to paneID: String) -> String? {
+        keystroke([byte], to: paneID)
     }
 
     /// Close a pane. The tmux half of ending a session from somewhere you cannot see it.

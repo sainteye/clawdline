@@ -650,10 +650,11 @@ final class RemoteServer {
 
         // Answering a menu, which is a different act from typing — see `Targets.answer`.
         //
-        // Write-level and allowlisted twice over: nothing but `1`–`9` and `Tab` reaches a tty, and
-        // the allowlist that matters is the one in `Targets`, not this parse. A route that took
-        // "any key" would be a way to write escape sequences into somebody's terminal from a
-        // phone, and no amount of validating the *question* would make that not true.
+        // Write-level and allowlisted twice over: only `1`–`9`, Tab, and the exact back-tab
+        // sequence Claude Code uses for permission modes reach a tty, and the allowlist that
+        // matters is the one in `Targets`, not this parse. A route that took "any key" would be
+        // a way to write escape sequences into somebody's terminal from a phone, and no amount
+        // of validating the *question* would make that not true.
         // Ending a session, which is the only route here that destroys something.
         //
         // Write-level, idempotency-keyed like every other write, and **`send` rather than a
@@ -695,20 +696,22 @@ final class RemoteServer {
                 // thing this route is for, and a check that runs after two other steps is a check
                 // somebody will later move.
                 let key = (body["key"] as? String) ?? ""
-                let byte: UInt8
+                let bytes: [UInt8]
                 if key == "tab" {
-                    byte = 0x09
+                    bytes = [0x09]
+                } else if key == "shift+tab" {
+                    bytes = [0x1b, 0x5b, 0x5a]
                 } else if key.count == 1, let c = key.unicodeScalars.first,
                           ("1"..."9").contains(key) {
-                    byte = UInt8(c.value)
+                    bytes = [UInt8(c.value)]
                 } else {
                     return .error(400, "bad_request",
-                                  "key must be \"1\"…\"9\" or \"tab\".")
+                                  "key must be \"1\"…\"9\", \"tab\", or \"shift+tab\".")
                 }
                 guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
                     return .error(404, "not_found", "No session named that")
                 }
-                if let failure = Targets.answer(byte, to: session) {
+                if let failure = Targets.answer(bytes, to: session) {
                     return .error(502, "internal", failure)
                 }
                 RemoteAuth.audit("session.key", ["id": session.id, "key": key])
@@ -1585,12 +1588,15 @@ final class RemoteServer {
             return kind == "deploy" || kind == "ci"
         }
 
+        let permission = session.assistant == .claude
+            ? SessionInfo.permissionMode(screen: Targets.visibleScreen(of: session)) : nil
         var payload = SessionInfo.payload(
             id: session.id, assistant: session.assistant,
             sessionId: HookBridge.note(for: session)?.session, model: model,
             cwd: cwd, startedAt: Targets.processStart(of: session),
             usage: usage, limits: limits, files: cwd.flatMap { SessionInfo.files(cwd: $0) },
-            deploy: deploy, models: SessionInfo.models(for: session.assistant))
+            deploy: deploy, models: SessionInfo.models(for: session.assistant),
+            permission: permission)
         payload["links"] = links
         return payload
     }
@@ -2198,6 +2204,14 @@ final class RemoteServer {
             "webInfoModelOther": t.webInfoModelOther,
             "webInfoModelSent": t.webInfoModelSent,
             "webInfoModelBusy": t.webInfoModelBusy,
+            "webInfoSwitchPermission": t.webInfoSwitchPermission,
+            "webInfoPermissionAuto": t.webInfoPermissionAuto,
+            "webInfoPermissionManual": t.webInfoPermissionManual,
+            "webInfoPermissionAcceptEdits": t.webInfoPermissionAcceptEdits,
+            "webInfoPermissionPlan": t.webInfoPermissionPlan,
+            "webInfoPermissionUnreadable": t.webInfoPermissionUnreadable,
+            "webInfoPermissionSent": t.webInfoPermissionSent,
+            "webInfoPermissionBusy": t.webInfoPermissionBusy,
             "webInfoLimitsClaude": t.webInfoLimitsClaude,
             "webInfoCopied": t.webInfoCopied,
             "webInfoAsOf": t.webInfoAsOf,
