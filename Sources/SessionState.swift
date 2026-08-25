@@ -104,8 +104,20 @@ enum SessionState: Equatable {
                 guard let row = option(line) else { return false }
                 return row.caret && row.indented
             }
-            if !hasIndentedSelection, let caret = tailText.lastIndex(where: { hasCaret($0) }),
-               let row = option(tailText[caret]), row.caret, !row.indented {
+            // **The last caret is not the dialog's — the composer is below it.** A picker does not
+            // take the input line away, so the moment anybody has typed a character the bottom of
+            // the screen is `\u{276F} their text`, and looking only at the last caret found that
+            // instead and gave up. Codex can key on the last caret because its dialog replaces the
+            // composer; Claude Code's does not.
+            //
+            // So the last flush-left caret **that heads a numbered row** is the one. An echoed
+            // list still cannot become a menu: nothing above it is a frame, and the frame is
+            // required a few lines down.
+            let flushCaret = tailText.lastIndex { line in
+                guard let row = option(line) else { return false }
+                return row.caret && !row.indented
+            }
+            if !hasIndentedSelection, let caret = flushCaret {
                 flushLeftSelection = caret
             }
         }

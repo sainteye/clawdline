@@ -1513,17 +1513,22 @@ enum Orchestrator {
 
     ## First: should this be dispatched at all?
 
-    **Answering "no, do this yourself" is a correct answer, not a failure.** Say it plainly and move
-    on. There is a measurement behind this and it is sharp in both directions: on work that splits
-    into independent pieces, coordinating several agents beat a single one by **80.9%**; on work where
+    There is a measurement behind this and it is sharp in both directions: on work that splits into
+    independent pieces, coordinating several agents beat a single one by **80.9%**; on work where
     every step depends on the one before it, *every* multi-agent arrangement tested was **39–70%
     worse** than a single agent, because the handoffs break a chain that needed to stay whole.
 
     So the question is one sentence: **can this be cut into pieces that do not need to talk to each
     other, and joined at the end?**
 
-    Dispatch when the answer is yes. When it is no, say so and do the work here. And say so for these,
-    which are the shapes that look dispatchable and are not:
+    **When the answer is no, that is a recommendation and not a refusal.** Say so, give the reason in
+    a sentence, and ask — then do whatever they answer. The person has reasons this file cannot see:
+    they may want Codex to take this one, or their own context left free for something else, or
+    simply to watch it happen in a tab they can step into. **Their yes settles it**, and does not need
+    to be argued with or hedged. What is owed is the reason, once, before the work starts — not after
+    it went badly.
+
+    These are the shapes that look dispatchable and are not, and the ones worth saying it about:
 
     - **Diagnosis and debugging.** Every step is chosen because of what the last step found. Handing
       that to a fresh session throws away the reasoning that made the next step obvious.

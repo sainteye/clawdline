@@ -197,11 +197,15 @@ It opens with the two decisions that come before any of the others:
 
 **Whether to dispatch at all.** The measurement is sharp in both directions — work that splits
 into independent pieces goes 80.9% better with several agents, work where each step depends on
-the last goes 39–70% *worse* — so the file states the test as one sentence (*can this be cut into
-pieces that need not talk to each other?*), says plainly that **"no, do it yourself" is a correct
-answer rather than a failure**, and lists the shapes that look dispatchable and are not:
-diagnosis, dozens of small jobs, anything on a path where somebody is waiting, agents that must
-talk back and forth, typed output, and work smaller than its own briefing.
+the last goes 39–70% *worse* — so the file states the test as one sentence: *can this be cut into
+pieces that need not talk to each other?* It then lists the shapes that look dispatchable and are
+not: diagnosis, dozens of small jobs, anything on a path where somebody is waiting, agents that
+must talk back and forth, typed output, and work smaller than its own briefing.
+
+**A "no" there is a recommendation, not a refusal.** The rule is to say it, give the reason in a
+sentence, and ask — because the person has reasons this file cannot see, and *"I want Codex to
+take this one"* is a complete one. What the check buys is that the reason arrives before the work
+rather than after it went badly; it was never meant to be a veto.
 
 **Which shape.** Five named ones, so a graph is chosen rather than improvised: *split and join*
 for research, *build then read* for anything producing code, *decide then do* for a change worth

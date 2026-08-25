@@ -5695,8 +5695,13 @@ group("the graph and the house rules reach the child that needs them") {
     // The two halves a dispatcher needs before it picks anything: whether to dispatch, and what
     // shape to use. Both were added after a graph was dispatched to research them.
     check("and it decides whether to dispatch before it decides how",
-          Orchestrator.defaultPolicy.contains("should this be dispatched at all")
-              && Orchestrator.defaultPolicy.contains("is a correct answer, not a failure"))
+          Orchestrator.defaultPolicy.contains("should this be dispatched at all"))
+    // A judgement the person can overrule. The first draft told a dispatcher to decline and do
+    // the work itself, which turns a useful check into a veto over somebody else's call — and
+    // "I want Codex to take this one" is a reason no policy file can see.
+    check("and a no there asks rather than refuses",
+          Orchestrator.defaultPolicy.contains("a recommendation and not a refusal")
+              && Orchestrator.defaultPolicy.contains("Their yes settles it"))
     check("and offers named shapes rather than leaving the graph improvised",
           Orchestrator.defaultPolicy.contains("Split and join")
               && Orchestrator.defaultPolicy.contains("Build then read"))
