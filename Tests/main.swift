@@ -6094,6 +6094,260 @@ group("the model a `/model` names, before the reply that proves it") {
     check("nothing said is nothing answered", SessionInfo.claudeModelID(word: "", printed: nil) == nil)
 }
 
+// MARK: - Claude Code's session registry
+
+// Real files, taken off a running machine — the ones quoted in
+// artifacts/2026-08-25-contracts-over-shapes.md §2.3. Kept whole rather than trimmed to the
+// fields under test: what breaks a parser is the field nobody thought about.
+private let registryBusy = #"{"pid":10407,"sessionId":"f0108a4c-18fc-48fd-98f5-46016169a6a8","cwd":"/Users/sainteye/code/clawdline","startedAt":1787638904666,"procStart":"Tue Aug 25 06:21:43 2026","version":"2.1.245","peerProtocol":1,"peerFeatures":["notify_idle","artifact_yield"],"kind":"interactive","entrypoint":"cli","messagingSocketPath":"/tmp/cc-socks/10407.sock","name":"clawdline-03","nameSource":"derived","nameSince":1787638904666,"status":"busy","updatedAt":1787638966573,"statusUpdatedAt":1787638966573,"bridgeSessionId":"session_01KkTi3hSUWwQc9KdBweow7T"}"#
+
+private let registryIdle = #"{"pid":33510,"sessionId":"1032cdf2-194f-4d29-aff1-8703719e8977","cwd":"/Users/sainteye/code/sugar-elite","startedAt":1787635103029,"procStart":"Tue Aug 25 05:18:22 2026","version":"2.1.241","peerProtocol":1,"peerFeatures":["notify_idle"],"kind":"interactive","entrypoint":"cli","messagingSocketPath":"/tmp/cc-socks/33510.sock","name":"sugar-elite-e1","nameSource":"derived","nameSince":1787635103029,"status":"idle","updatedAt":1787635103098,"statusUpdatedAt":1787635103098,"bridgeSessionId":"session_019TBjKEZPzR2kFbab5QK7ix"}"#
+
+// The state this whole file exists for, and the one the report caught live: pid 73886 sat in
+// `waiting`/`input needed` for fifty-three seconds while somebody was away from the terminal.
+private let registryWaiting = #"{"pid":73886,"sessionId":"7864bbba-68f5-493b-a8ff-2c891e998a76","cwd":"/Users/sainteye/code/clawdline","startedAt":1787633574594,"procStart":"Tue Aug 25 04:52:53 2026","version":"2.1.241","peerProtocol":1,"peerFeatures":["notify_idle"],"kind":"interactive","entrypoint":"cli","messagingSocketPath":"/tmp/cc-socks/73886.sock","name":"clawdline-cd","nameSource":"derived","nameSince":1787633574594,"status":"waiting","waitingFor":"input needed","updatedAt":1787636333659,"statusUpdatedAt":1787636333659,"bridgeSessionId":"session_01TyawSRwKDDs198RArmDhik"}"#
+
+// `!` mode. Observed 147 times in a fifteen-minute poll and listed in no documentation, which is
+// the entire argument for having a case for words this build does not know.
+private let registryShell = #"{"pid":12872,"sessionId":"5cbe1f22-2b26-4e35-9f1e-2f1cf5f0f4b1","cwd":"/Users/sainteye/code/cairn","startedAt":1787636273000,"procStart":"Tue Aug 25 05:37:53 2026","version":"2.1.245","peerProtocol":1,"peerFeatures":["notify_idle"],"kind":"interactive","entrypoint":"cli","name":"cairn-05","status":"shell","updatedAt":1787636273670,"statusUpdatedAt":1787636273670}"#
+
+// The file exists and the session has not written a status into it yet. Caught twice in the same
+// poll, so it is a state to have an answer for rather than a hypothetical.
+private let registryNewborn = #"{"pid":67398,"sessionId":"9d0f1a77-1a3b-4e5d-8c0a-77c1a5f0d2b4","cwd":"/Users/sainteye/code/sugarjs","startedAt":1787635955290,"procStart":"Tue Aug 25 05:32:35 2026","version":"2.1.245","peerProtocol":1,"peerFeatures":["notify_idle"],"kind":"interactive","entrypoint":"cli","name":"sugarjs-0f","updatedAt":1787635955352}"#
+
+private func registrySession(_ id: String, assistant: Assistant? = .claude) -> TargetSession {
+    TargetSession(backend: .iterm, id: id, name: "x", tty: "/dev/ttys004",
+                  windowIndex: 0, tabIndex: 0, assistant: assistant)
+}
+
+/// A reading in which `entry` really does belong to session `id`: the pid matches and the start
+/// time this Mac would have measured agrees with the one in the file.
+private func registryReading(_ id: String, _ json: String, drift: TimeInterval = 0,
+                             measured: Bool = true) -> SessionRegistry.Reading {
+    guard let entry = SessionRegistry.parse(Data(json.utf8)) else { return SessionRegistry.Reading() }
+    let started = measured
+        ? SessionRegistry.procStartDate(entry.procStart)?.addingTimeInterval(drift) : nil
+    return SessionRegistry.Reading(entries: [entry.pid: entry],
+                                   processes: [id: SessionRegistry.Process(pid: entry.pid,
+                                                                           started: started)])
+}
+
+group("session registry: reading a file a session wrote about itself") {
+    let busy = SessionRegistry.parse(Data(registryBusy.utf8))
+    check("a whole file reads", busy != nil)
+    expect("its pid", busy?.pid, 10407)
+    expect("its status", busy?.status, .busy)
+    expect("the id that also names its transcript", busy?.sessionID,
+           "f0108a4c-18fc-48fd-98f5-46016169a6a8")
+    expect("where it is working", busy?.cwd, "/Users/sainteye/code/clawdline")
+    expect("the name Claude Code gave it", busy?.name, "clawdline-03")
+    expect("the protocol version it states", busy?.peerProtocol, 1)
+    check("nothing is waiting on it", busy?.waitingFor == nil)
+
+    let waiting = SessionRegistry.parse(Data(registryWaiting.utf8))
+    expect("a session stopped on a question says so", waiting?.status, .waiting)
+    expect("and says what for", waiting?.waitingFor, "input needed")
+
+    // The word documented nowhere. Carried rather than dropped, so that the merge can tell "I
+    // have no opinion" apart from "there was no file".
+    expect("a status this build has never heard of is kept as itself",
+           SessionRegistry.parse(Data(registryShell.utf8))?.status, .other("shell"))
+    check("a file written before its session had a status is not in any state",
+          SessionRegistry.parse(Data(registryNewborn.utf8))?.status == nil)
+
+    check("half a file is dropped",
+          SessionRegistry.parse(Data(#"{"pid":10407,"sta"#.utf8)) == nil)
+    check("a file with no pid in it is dropped",
+          SessionRegistry.parse(Data(#"{"status":"waiting","peerProtocol":1}"#.utf8)) == nil)
+    // Silence is the one answer a version gate must never read as agreement.
+    expect("a file that states no protocol version states zero",
+           SessionRegistry.parse(Data(#"{"pid":1,"status":"idle"}"#.utf8))?.peerProtocol, 0)
+}
+
+group("session registry: telling one process from the next one to get its number") {
+    // `LC_ALL=C TZ=UTC ps -o lstart=`, which is the exact command Claude Code runs — so this is
+    // one program's C-locale output being read by another, not a localised date being guessed at.
+    let parsed = SessionRegistry.procStartDate("Tue Aug 25 06:21:43 2026")
+    check("the format Claude Code writes parses", parsed != nil)
+    expect("as the instant the file's own startedAt names, to the second",
+           parsed.map { Int($0.timeIntervalSince1970) }, 1787638903)
+    // `ps` pads a single-digit day with a second space, and that day comes round every month.
+    check("a single-digit day, padded the way ps pads it, parses too",
+          SessionRegistry.procStartDate("Tue Aug  5 06:21:43 2026") != nil)
+    check("something that is not a date at all is nothing",
+          SessionRegistry.procStartDate("just now") == nil)
+    check("and neither is a missing field", SessionRegistry.procStartDate(nil) == nil)
+
+    guard let entry = SessionRegistry.parse(Data(registryBusy.utf8)) else {
+        check("the fixture parses", false)
+        return
+    }
+    let real = SessionRegistry.procStartDate(entry.procStart)
+    check("a process that started when the file says it did is the same process",
+          SessionRegistry.isSameProcess(entry, startedAt: real))
+    check("and still is a second or two out, which is all the two clocks can agree to",
+          SessionRegistry.isSameProcess(entry, startedAt: real?.addingTimeInterval(2)))
+    // The reason this exists: a dead session's file left behind, and its number handed to
+    // somebody else's tab. Nothing else in the entry would say so.
+    check("a process that started an hour later is a different process",
+          !SessionRegistry.isSameProcess(entry, startedAt: real?.addingTimeInterval(3600)))
+    check("a start time this Mac could not measure is not the benefit of the doubt",
+          !SessionRegistry.isSameProcess(entry, startedAt: nil))
+    let noStart = SessionRegistry.parse(Data(#"{"pid":10407,"status":"waiting","peerProtocol":1}"#.utf8))
+    check("and neither is a file that does not say when its process started",
+          noStart.map { !SessionRegistry.isSameProcess($0, startedAt: Date()) } ?? false)
+}
+
+group("session registry: what a file is allowed to change") {
+    let session = registrySession("A")
+    let other = registrySession("B")
+    let sessions = [session, other]
+
+    // Nothing installed, nothing running, an older Claude Code, one of the cloud backends: the
+    // state every reading has to be right in, so it is the first check.
+    expect("with no files at all, the screen is the whole answer",
+           SessionRegistry.merge(SessionRegistry.Reading(), into: ["A": .idle],
+                                 sessions: sessions)["A"],
+           .idle)
+    expect("and a session nobody found a file for is untouched",
+           SessionRegistry.merge(registryReading("A", registryBusy), into: ["B": .idle],
+                                 sessions: sessions)["B"],
+           .idle)
+
+    // 1. The whole point. A question no longer has to be *recognised* to be reported.
+    expect("a session that says it is waiting is waiting, whatever the screen looked like",
+           SessionRegistry.merge(registryReading("A", registryWaiting), into: ["A": .idle],
+                                 sessions: sessions)["A"],
+           .waiting)
+    expect("including behind a spinner that was never erased",
+           SessionRegistry.merge(registryReading("A", registryWaiting),
+                                 into: ["A": .working("Cogitating… (7s)")],
+                                 sessions: sessions)["A"],
+           .waiting)
+    expect("and on a screen that could not be read at all",
+           SessionRegistry.merge(registryReading("A", registryWaiting), into: ["A": .unknown],
+                                 sessions: sessions)["A"],
+           .waiting)
+    expect("the screen parser is told, so it can go and read the options",
+           SessionRegistry.waiting(in: registryReading("A", registryWaiting), sessions: sessions),
+           ["A"])
+
+    // 2. The one place the screen still wins. A menu recognised on the terminal is stronger than
+    // `busy`, because the registry can be a beat behind a dialog that has just been drawn — and
+    // of the two ways to be wrong for that beat, only this one hides the row somebody must act on.
+    expect("a menu found on screen is not overwritten by a session that says it is busy",
+           SessionRegistry.merge(registryReading("A", registryBusy), into: ["A": .waiting],
+                                 sessions: sessions)["A"],
+           .waiting)
+    expect("nor by one that says it is idle",
+           SessionRegistry.merge(registryReading("A", registryIdle), into: ["A": .waiting],
+                                 sessions: sessions)["A"],
+           .waiting)
+
+    // The two seconds before Claude Code draws its live line, which the screen alone reads as
+    // an idle session — and the stale line after a fast turn, which it reads as a busy one.
+    expect("a session that says it is busy is working, before it has drawn anything",
+           SessionRegistry.merge(registryReading("A", registryBusy), into: ["A": .idle],
+                                 sessions: sessions)["A"],
+           .working(""))
+    expect("and keeps the sentence the terminal already showed, clock and all",
+           SessionRegistry.merge(registryReading("A", registryBusy),
+                                 into: ["A": .working("Cogitating… (7s)")],
+                                 sessions: sessions)["A"],
+           .working("Cogitating… (7s)"))
+    expect("a session that says it is idle beats a spinner left on the screen",
+           SessionRegistry.merge(registryReading("A", registryIdle),
+                                 into: ["A": .working("Cogitating… (7s)")],
+                                 sessions: sessions)["A"],
+           .idle)
+
+    // 3. The one explicit version number anything in this app reads.
+    let future = registryBusy.replacingOccurrences(of: #""peerProtocol":1"#,
+                                                   with: #""peerProtocol":2"#)
+    expect("a file speaking a protocol this build was not written against is ignored whole",
+           SessionRegistry.merge(registryReading("A", future), into: ["A": .idle],
+                                 sessions: sessions)["A"],
+           .idle)
+
+    // 4. `shell`, and every word after it that nobody has written down yet.
+    expect("a status this build does not know decides nothing",
+           SessionRegistry.merge(registryReading("A", registryShell),
+                                 into: ["A": .working("Cogitating… (7s)")],
+                                 sessions: sessions)["A"],
+           .working("Cogitating… (7s)"))
+    expect("and neither does a file written before its session had one",
+           SessionRegistry.merge(registryReading("A", registryNewborn), into: ["A": .idle],
+                                 sessions: sessions)["A"],
+           .idle)
+    expect("an unknown status does not open the parsing gate either",
+           SessionRegistry.waiting(in: registryReading("A", registryShell), sessions: sessions),
+           [])
+
+    // 5. The leftover file. Without this a dead session's number, handed out again, paints a
+    // stranger's state onto somebody's tab — and nothing on the screen would contradict it.
+    expect("a file about a process that started an hour earlier is thrown away",
+           SessionRegistry.merge(registryReading("A", registryWaiting, drift: 3600),
+                                 into: ["A": .idle], sessions: sessions)["A"],
+           .idle)
+    expect("and so is one this Mac could not check at all",
+           SessionRegistry.merge(registryReading("A", registryWaiting, measured: false),
+                                 into: ["A": .idle], sessions: sessions)["A"],
+           .idle)
+
+    // 7. Codex, without a line of code naming Codex. It writes no file, so there is no pid in
+    // the reading for it, so every gate above is already closed.
+    let codex = registrySession("C", assistant: .codex)
+    expect("a Codex session falls back to its screen, because nothing here is about it",
+           SessionRegistry.merge(registryReading("A", registryWaiting), into: ["C": .idle],
+                                 sessions: [codex])["C"],
+           .idle)
+}
+
+group("session registry: which files get read, and when a change is worth a look") {
+    let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-registry-test-\(getpid())")
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    // 6. The degrade that matters most: an older Claude Code, a cloud backend, a container.
+    // There is no directory, and the answer is nothing rather than an error.
+    expect("a directory that is not there reads as no sessions at all",
+           SessionRegistry.entries(in: dir.appendingPathComponent("nope"), pids: [10407]).count, 0)
+
+    try? Data(registryBusy.utf8).write(to: dir.appendingPathComponent("10407.json"))
+    try? Data(registryWaiting.utf8).write(to: dir.appendingPathComponent("73886.json"))
+    expect("a file is found by the pid that names it",
+           SessionRegistry.entries(in: dir, pids: [10407])[10407]?.status, .busy)
+    expect("and a pid with no file is simply absent",
+           SessionRegistry.entries(in: dir, pids: [10407, 99999]).count, 1)
+    // The directory is never pruned, so it holds every session the machine has ever run. Reading
+    // it by name is what keeps the cost proportional to the tabs open rather than to the history.
+    expect("a file nobody asked about is not read",
+           SessionRegistry.entries(in: dir, pids: [10407])[73886]?.status, nil)
+    // Belt for a file that has been moved or renamed by hand: the name and the contents have to
+    // agree about which process this is, or it is not a fact about anything.
+    try? Data(registryBusy.utf8).write(to: dir.appendingPathComponent("55555.json"))
+    expect("a file whose contents disagree with its own name is dropped",
+           SessionRegistry.entries(in: dir, pids: [55555]).count, 0)
+
+    // What the directory watcher compares. Every session on the machine writes here at every
+    // turn boundary it has, and a reading costs a round trip to every terminal — so the clocks
+    // that move on every write must not count as a change.
+    let before = SessionRegistry.entries(in: dir, pids: [10407, 73886])
+    let touched = registryBusy.replacingOccurrences(of: #""updatedAt":1787638966573"#,
+                                                    with: #""updatedAt":1787638999999"#)
+    try? Data(touched.utf8).write(to: dir.appendingPathComponent("10407.json"))
+    let after = SessionRegistry.entries(in: dir, pids: [10407, 73886])
+    check("a file rewritten with the same status is not worth a terminal round trip",
+          SessionRegistry.statuses(after) == SessionRegistry.statuses(before))
+    let moved = registryBusy.replacingOccurrences(of: #""status":"busy""#,
+                                                  with: #""status":"waiting""#)
+    try? Data(moved.utf8).write(to: dir.appendingPathComponent("10407.json"))
+    check("a session that has stopped for a question is",
+          SessionRegistry.statuses(SessionRegistry.entries(in: dir, pids: [10407, 73886]))
+              != SessionRegistry.statuses(before))
+}
+
 // MARK: - Result
 
 print("")

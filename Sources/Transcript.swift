@@ -31,9 +31,14 @@ enum Transcript {
         let started = Targets.processStart(of: session)
         switch assistant {
         case .claude:
-            // The session id, when a hook has told us one, skips all the guessing underneath.
+            // The session id skips all the guessing underneath. Claude Code's own registry file
+            // is asked first: it is there for every session whether or not anybody installed
+            // hooks, and it is checked against the process behind this tab, where a note is
+            // keyed on a tty and can outlive the session that left it — a tab restarted in the
+            // same terminal would otherwise be handed the previous conversation.
+            let id = SessionRegistry.sessionID(of: session) ?? HookBridge.note(for: session)?.session
             guard let url = locate(cwd: cwd, tabTitle: session.name, startedAt: started,
-                                   sessionID: HookBridge.note(for: session)?.session)
+                                   sessionID: id)
             else { return nil }
             return (url, .claude)
         case .codex:

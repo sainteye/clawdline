@@ -71,8 +71,14 @@ final class SessionWatch {
         didSet { if isForeground != oldValue { start() } }
     }
 
+    /// What the registry said last time, and which file was found to belong to which session.
+    /// Kept because the directory watcher needs something to compare against — see
+    /// ``registryDidChange()`` — and because it is where a session's own id comes from.
+    private(set) var registry = SessionRegistry.Reading()
+
     private var timer: Timer?
     private var reading = false
+    private var watchingRegistry = false
 
     private var interval: TimeInterval { isForeground ? 1.2 : 20 }
 
@@ -81,7 +87,33 @@ final class SessionWatch {
         let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in self?.read() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
+        // Once, not on every cadence change: `start()` is called again whenever the panel opens
+        // or closes, and re-opening the file descriptor each time would leak one per press.
+        if !watchingRegistry {
+            watchingRegistry = true
+            SessionRegistry.watch { [weak self] in self?.registryDidChange() }
+        }
         read()
+    }
+
+    /// A session rewrote its registry file. Look now, if it changed anything.
+    ///
+    /// **The guard is the whole of this.** Every Claude Code session on the machine writes into
+    /// that one directory at every turn boundary it has, and a reading costs a round trip to
+    /// every terminal — so "a file moved" is not on its own worth paying for. What is worth
+    /// paying for is a status that is not the status this app is currently showing, which is the
+    /// same rate a hook fires at and buys the same thing: a question noticed in the time it takes
+    /// to write the file rather than at the next twenty-second tick.
+    ///
+    /// Only the sessions already known, because those are the ones a reading would be about; a
+    /// session that has just appeared is nobody's question yet and the timer will find it.
+    private func registryDidChange() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard Config.shared.sessionRegistry, !registry.entries.isEmpty else { return }
+        let fresh = SessionRegistry.entries(pids: Array(registry.entries.keys))
+        guard SessionRegistry.statuses(fresh) != SessionRegistry.statuses(registry.entries)
+        else { return }
+        nudge()
     }
 
     func stop() {
@@ -123,6 +155,7 @@ final class SessionWatch {
         reading = true
         // Taken here, on the main thread, because that is the only thread that writes them.
         let notes = Config.shared.hooks ? HookBridge.notes : [:]
+        let useRegistry = Config.shared.sessionRegistry
         DispatchQueue.global(qos: isForeground ? .userInitiated : .utility).async { [weak self] in
             guard let self else { return }
             // Cheapest possible answer to "is any of this worth doing": one `ps`, already cached
@@ -138,13 +171,32 @@ final class SessionWatch {
                 let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
                 return notes[bare]?.opensMenuGate == true ? session.id : nil
             })
+            // What Claude Code says about itself, which is a different kind of fact from either
+            // of the two above: not a screen, and not a thing that happened, but each session's
+            // own current answer. Empty when the switch is off, when the Claude Code on this
+            // machine is too old to write the files, and for every Codex session — and empty is
+            // exactly today's behaviour, because everything below it is a no-op on an empty one.
+            let registry = useRegistry && anyAssistant
+                ? Targets.registry(of: sessions) : SessionRegistry.Reading()
+            // A registry `waiting` opens the same parsing gate a hook note opens, and it opens it
+            // on better grounds: it is written when something is genuinely blocked, where the
+            // permission notes fire for requests auto mode approves without drawing anything.
+            // This is the half of "a question is open" the registry cannot answer on its own —
+            // it says a person is being asked, the screen says what the options are.
+            let gate = hookWaiting.union(SessionRegistry.waiting(in: registry, sessions: sessions))
             // Named `screens` and not `reading`: there is a `reading` flag on `self` guarding
             // this whole function, and shadowing it here is a trap for the next edit.
             let screens = anyAssistant
-                ? Targets.reading(of: sessions, hookWaiting: hookWaiting) : Targets.Reading()
+                ? Targets.reading(of: sessions, hookWaiting: gate) : Targets.Reading()
             // What was read, with what Claude Code said about itself folded in. A no-op when
             // nothing is installed, which is the state every reading has to be right in.
-            let states = HookBridge.merge(notes, into: screens.states, sessions: sessions)
+            //
+            // The registry goes last, and where the two disagree it wins: a note is a report that
+            // a moment passed and has to be reasoned about afterwards, while a status is the
+            // session's answer to the question being asked, rewritten the moment it stops being
+            // true. Neither can move a session off a menu found on the screen.
+            let heard = HookBridge.merge(notes, into: screens.states, sessions: sessions)
+            let states = SessionRegistry.merge(registry, into: heard, sessions: sessions)
             // Dropped for any session the merge moved off `waiting`: a note can settle that a
             // turn ended before the terminal has repainted, and a menu left behind from the
             // capture would be a set of buttons for a question nobody is asking any more.
@@ -179,6 +231,7 @@ final class SessionWatch {
                 self.grids.merge(grids) { _, new in new }
                 self.menus = menus
                 self.agents = agents
+                self.registry = registry
                 self.apply(targets: sessions, states: states)
             }
         }

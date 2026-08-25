@@ -352,6 +352,10 @@ enum Targets {
         var menus: [String: SessionState.Menu] = [:]
     }
 
+    /// `hookWaiting` is the sessions something outside the screen says are stopped on a question
+    /// — a hook note, or Claude Code's own registry entry, which agree about what the fact means
+    /// and only differ in where it came from. It opens one parsing gate and asserts nothing: see
+    /// ``SessionState/menu(_:assistant:tailLines:hookWaiting:)``.
     static func reading(of sessions: [TargetSession], hookWaiting: Set<String> = []) -> Reading {
         var out = Reading()
 
@@ -442,6 +446,34 @@ enum Targets {
         startCache[session.id] = (CFAbsoluteTimeGetCurrent(), started)
         cwdLock.unlock()
         return started
+    }
+
+    /// What Claude Code says about these sessions, and the process facts that decide which of
+    /// its files is allowed to speak for which session. See ``SessionRegistry``.
+    ///
+    /// **The two halves cost very different amounts, which is why they are read in this order.**
+    /// The pid comes out of one `ps` shared by every session and cached for a couple of seconds.
+    /// The start time is a `ps` of its own per session, so it is only asked for the sessions a
+    /// registry file was actually found for — which is also the whole of why nothing in here
+    /// names Codex. A Codex session writes no file, so it drops out at the same line a Claude
+    /// Code session with no registry at all drops out at.
+    static func registry(of sessions: [TargetSession]) -> SessionRegistry.Reading {
+        var pids: [String: Int32] = [:]
+        var byID: [String: TargetSession] = [:]
+        for session in sessions where session.isAssistant {
+            byID[session.id] = session
+            if let pid = pid(of: session) { pids[session.id] = pid }
+        }
+        guard !pids.isEmpty else { return SessionRegistry.Reading() }
+
+        var out = SessionRegistry.Reading()
+        out.entries = SessionRegistry.entries(pids: Array(pids.values))
+        for (id, pid) in pids where out.entries[pid] != nil {
+            guard let session = byID[id] else { continue }
+            out.processes[id] = SessionRegistry.Process(pid: pid,
+                                                        started: processStart(of: session))
+        }
+        return out
     }
 
     /// Put this session in front of you — or, with `activate: false`, merely make it the one its

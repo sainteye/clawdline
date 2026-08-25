@@ -9,6 +9,41 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Changed: a session waiting for you says so itself, instead of being caught at it
+
+Until now, "this session is waiting for an answer" was something Clawdline worked out by looking:
+it captured the terminal and recognised the shape of a menu — numbered options, a caret on one of
+them. That works, it works on sessions that were open before this app existed, and it has two
+costs. It only knows what it has looked at, and away from the panel it looks once every twenty
+seconds. And a question drawn in a shape it does not recognise is a question it never reports.
+
+Claude Code has been writing the answer down the whole time. Every session keeps a small file
+about itself under `~/.claude/sessions/`, and the status in it — idle, busy, **waiting** — is
+rewritten the moment it stops being true. Clawdline now reads those files. **Nothing to install
+and nothing to restart**: unlike the hooks, the files are already there, for every session already
+open, whether or not you ever let this app near your `settings.json`.
+
+What changes in front of you. A session that stops for a permission dialog, an MCP server's
+question or a sandbox request is marked as waiting straight away, rather than when its dialog
+happens to be recognised — including the ones drawn in shapes the screen reader has never been
+able to tell apart from ordinary output. A session that has just been given work looks busy in the
+two seconds before it draws its first line, instead of looking idle. A spinner Claude Code forgot
+to erase after a fast turn no longer keeps a finished session looking busy. And ⌘J finds the right
+conversation without matching on tab titles and timestamps, because the file names it.
+
+The screen still has the last word on one thing, deliberately: a menu actually recognised on the
+terminal is never overwritten by a session that says it is merely busy. The file can be a beat
+behind a dialog that has just been drawn, and of the two ways to be wrong for that beat, only one
+hides the row you have to act on.
+
+Everything here degrades to exactly what this app did before, and it does so quietly. An older
+Claude Code that writes no such files, a backend that does not carry them, a status word this
+version has never heard of, a file left behind by a session whose process is gone and whose
+number has since been handed to somebody else — each of those falls back to reading the screen,
+and Codex, which writes nothing of the kind, was never anywhere near this path. If you would
+rather it did not read them at all, `session_registry` in `~/.config/clawdline/config.json` turns
+it off in one word.
+
 ### Added: a child can hand work on, one level further
 
 A session dispatched a task and that was the end of the line — the child it opened was refused if

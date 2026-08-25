@@ -124,6 +124,14 @@ final class Config {
     /// still the complete fallback when no matched lifecycle note states more. See
     /// Sources/HookBridge.swift.
     var hooks = true
+    /// Believe what Claude Code's session registry says a session is doing.
+    ///
+    /// Each session writes a small file about itself under `~/.claude/sessions/` and keeps the
+    /// status in it current, so unlike a hook this is there whether or not anybody installed
+    /// anything — including for sessions that were already open. Off, and the files are ignored
+    /// and every reading is the screen's alone, which is the setting to reach for if a state ever
+    /// looks wrong and you want to know whether this is why. See Sources/SessionRegistry.swift.
+    var sessionRegistry = true
     /// Answer questions over HTTP, on the loopback address, so that a browser or a script can ask
     /// what the panel asks.
     ///
@@ -293,6 +301,7 @@ final class Config {
         if let v = obj["language"] as? String, !v.isEmpty { language = v }
         if let v = obj["mascot"] as? String, !v.isEmpty { mascot = v }
         if let v = obj["hooks"] as? Bool { hooks = v }
+        if let v = obj["session_registry"] as? Bool { sessionRegistry = v }
         if let v = obj["remote"] as? Bool { remote = v }
         if let v = obj["remote_port"] as? Int, v > 0, v < 65536 { remotePort = v }
         if let v = obj["push_on_finish"] as? Bool { pushOnFinish = v }
@@ -361,6 +370,7 @@ final class Config {
             "language": language,
             "mascot": mascot,
             "hooks": hooks,
+            "session_registry": sessionRegistry,
             "remote": remote,
             "remote_port": remotePort,
             "push_on_finish": pushOnFinish,
