@@ -501,6 +501,7 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 | [From somewhere else](docs/remote.md) · [the API](docs/api.md) | the threat model in full, and the HTTP surface |
 | [Hooks](docs/hooks.md) | the eight events, and why the screen still decides |
 | [Waiting](docs/waiting.md) | where the work runs, and the two ways waiting for a subprocess has broken this |
+| [Backgrounded conversations](docs/background-conversations.md) | the tab that stops writing its own file, and what reads it instead |
 | [Whisper](docs/whisper.md) | dictating in more than one language |
 | [Mascot packs](docs/mascots.md) · [gallery](docs/gallery.md) | the format, and where packs get posted |
 | [Versions](docs/compatibility.md) | which Claude Code and Codex releases this was run against |
