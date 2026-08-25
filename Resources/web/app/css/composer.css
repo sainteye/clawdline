@@ -149,13 +149,24 @@
    row and the mark beside them is the decoration. The bar on the Mac counts for exactly the
    same reason; see `docs/whisper.md`. */
 .composer .voice {
-    display: flex; align-items: center; gap: 9px;
+    /* It wraps, and on a phone it does. "Stop and transcribe" is eighteen characters and Cancel
+       is six, and the two of them beside a meter and a running count is more than three hundred
+       and thirty pixels of row — so on a narrow screen the pair drops to a line of its own and
+       stays hard against the right edge, where a pair of buttons on this page always is. */
+    display: flex; flex-wrap: wrap; align-items: center; gap: 9px;
     margin-bottom: 9px; padding: 6px 8px 6px 11px;
     border: 1px solid var(--line); border-radius: 10px;
     background: var(--card);
 }
 .composer .voice[hidden] { display: none; }
-.composer .voice .what { flex: 1 1 auto; min-width: 0; }
+/* **A fixed basis rather than `auto`, which is what keeps the row from flickering.** Flexbox
+   decides where to break on the *unshrunk* width of each item, so with `auto` the wrap would be
+   decided by however many characters the count happens to be at that instant — and at the width
+   where that is marginal, the buttons would jump to their own line and back at the moment the
+   clock rolled from 0:09 to 0:10. The number is what the count actually needs: fifteen
+   characters of the mono face at 11.5px, which is "Listening… 2:57" at its widest. So the row
+   breaks exactly when the words would have had to, and never between one second and the next. */
+.composer .voice .what { flex: 1 1 108px; min-width: 0; }
 .composer .voice .said {
     display: block;
     color: var(--dim); font: 11.5px/1.45 var(--mono);
@@ -174,9 +185,18 @@
     color: var(--faint); font-size: 11px; line-height: 1.4;
 }
 .composer .voice .spin { flex: 0 0 auto; }
-/* Listening. Red is the convention and the accent is what this page has; either way it is the
-   one mark on screen that has to be visible from across a desk, because it means a microphone
-   in the room is open. It breathes rather than blinks — a blink reads as a fault. */
+/* Listening, drawn from what is actually being heard — see `listen` in `voice.js`. Squares and
+   not a curve, because everything on this page that is drawn rather than typeset is made of
+   cells: it is the spinner's own cell size, so the mark that says "listening" and the mark that
+   replaces it a moment later to say "reading" are visibly the same material.
+
+   The canvas is sized from the inside, in whole device pixels; nothing here may set its width or
+   the retina rounding it does for itself is undone. */
+.composer .voice .wave { flex: 0 0 auto; display: block; }
+/* Listening, where there is no meter: reduced motion, or a browser that would not build the
+   analyser. Red is the convention and the accent is what this page has; either way it is the one
+   mark on screen that has to be visible from across a desk, because it means a microphone in the
+   room is open. It breathes rather than blinks — a blink reads as a fault. */
 .composer .voice .dot {
     flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
     background: var(--accent);
@@ -185,13 +205,30 @@
 /* Under reduced motion the global rule stops this on its last frame, which is the dot at full
    strength — still the loudest thing in the row, with nothing moving. */
 @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-.composer .voice .drop {
+/* The ways out, together and at the far end of the row. They are one decision with two answers —
+   keep what was said, or throw it away — and a decision whose halves are at opposite ends of the
+   composer is one people only find half of. */
+.composer .voice .acts {
+    flex: 0 0 auto; margin-left: auto;
+    display: flex; align-items: center; gap: 8px;
+}
+.composer .voice .drop,
+.composer .voice .go {
     flex: 0 0 auto;
     border: 1px solid var(--line); border-radius: 999px;
     background: var(--card); color: var(--dim);
     font-size: 11.5px; padding: 5px 12px; min-height: 30px;
 }
 .composer .voice .drop:hover { background: var(--card-hi); color: var(--ink); }
+/* The one that keeps the words, weighted the way this page weights the second of a pair — the
+   accent in the border and the letters, the same wash behind it that the recording microphone
+   takes. Filled like Send would make it the loudest thing in a composer whose loudest thing
+   should still be the fact that a microphone is open. */
+.composer .voice .go {
+    border-color: var(--accent-ed); background: var(--accent-in); color: var(--accent);
+    font-weight: 600;
+}
+.composer .voice .go:hover { background: rgba(217, 119, 87, 0.2); }
 
 .composer .send {
     flex: 0 0 auto;

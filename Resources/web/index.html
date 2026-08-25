@@ -284,11 +284,18 @@ document.documentElement.className = "booting";
                  directly above the box, at the end of the transcript. -->
             <div class="waiting" id="waiting" role="status" hidden></div>
             <div class="shots" id="shots"></div>
-            <!-- The microphone's own row: what it is doing and how long it has been doing it.
-                 The seconds are the point. Both halves of this wait can be long — three minutes
-                 of talking, and a first transcription that spends twelve of its seconds reading
-                 a model off disk — and a mark that only turns cannot be told apart from a hang.
-                 The bar on the Mac counts for the same reason; see `docs/whisper.md`. -->
+            <!-- The microphone's own row: what it is doing, how long it has been doing it, and
+                 the two ways out of it. The seconds are the point. Both halves of this wait can
+                 be long — three minutes of talking, and a first transcription that spends twelve
+                 of its seconds reading a model off disk — and a mark that only turns cannot be
+                 told apart from a hang. The bar on the Mac counts for the same reason; see
+                 `docs/whisper.md`.
+
+                 Empty here and built in `voice.js`, once per state: while it is listening the
+                 mark beside the count is a meter drawn from what the microphone is actually
+                 hearing, and the buttons are Cancel and "Stop and transcribe" — the second being
+                 the same action as the microphone beside the box, said in the place somebody
+                 watching the count is already looking. -->
             <div class="voice" id="voice" role="status" hidden></div>
             <div class="skill-menu" id="skill-menu" role="listbox" aria-label="Claude Code skills" hidden></div>
             <div class="box">

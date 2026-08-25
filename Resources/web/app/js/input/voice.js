@@ -1,7 +1,8 @@
 import { T, fill } from "../core/i18n.js";
 import { els } from "../core/dom.js";
+import { reduced } from "../core/env.js";
 import { toast } from "../core/util.js";
-import { drawSpinner, setVoiceSpin, spinPhase } from "../core/pixels.js";
+import { drawSpinner, drawWave, setVoiceSpin, spinPhase, WAVE } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { renderComposer } from "../view/composer.js";
 import { appendMsg } from "./composer.js";
@@ -45,6 +46,11 @@ export var Voice = (function () {
     /// reboot spends twelve seconds reading the model off disk before it hears a word, and eight
     /// is comfortably past every ordinary one and comfortably short of that.
     var SLOW_SECONDS = 8;
+    /// Where the meter's floor and ceiling sit, in dBFS. A phone held at arm's length hears
+    /// ordinary speech somewhere around -30, a room that has gone quiet around -55, and the
+    /// numbers are picked so the first fills most of the mark and the second none of it.
+    var QUIET_DB = -50;
+    var LOUD_DB = -20;
 
     var state = "off";          // off | opening | recording | reading
     var stream = null;
@@ -71,6 +77,19 @@ export var Voice = (function () {
      * never use it. So it is said once and then forgotten, and the press after that tries again.
      */
     var whisperless = null;
+
+    /* The meter. `heard` is an audio context of its own, held open only while the microphone is
+       — it is not the one `decode` builds afterwards, and the note on `listen` says why they
+       cannot be the same one. `levels` is the last second and a bit of loudness, one whole
+       number of cells per column, and `peak` is the loudest frame since the last of them went in. */
+    var heard = null;
+    var ears = null;            // the AnalyserNode reading the stream that is being recorded
+    var samples = null;         // its scratch buffer, allocated once rather than sixty times a second
+    var bars = null;            // the canvas in the row, or null when nothing is drawing
+    var frame = null;           // the outstanding `requestAnimationFrame`
+    var levels = [];
+    var peak = 0;
+    var pushed = 0;
 
     /* ---- can this happen at all -------------------------------------------- */
 
@@ -195,6 +214,9 @@ export var Voice = (function () {
             toast(T.webVoiceUnsupported, true);
             return;
         }
+        // Before the row is drawn, and still in the turn the recording started in. See `listen`:
+        // the whole reason this is here and not where the first frame wants it is the gesture.
+        listen(got);
         since = Date.now();
         state = "recording";
         show();
@@ -305,6 +327,7 @@ export var Voice = (function () {
     function release() {
         if (recorder) recorder.ondataavailable = recorder.onstop = recorder.onerror = null;
         recorder = null;
+        deaf();
         silence(stream);
         stream = null;
     }
@@ -314,6 +337,121 @@ export var Voice = (function () {
         got.getTracks().forEach(function (track) {
             try { track.stop(); } catch (e) { /* already gone */ }
         });
+    }
+
+    /* ---- what the microphone is hearing ------------------------------------- */
+
+    /**
+     * Listen to the stream that is being recorded, so the row can draw it.
+     *
+     * A mark that pulses on a clock says the page is doing something. It does not say the
+     * microphone is hearing anything, and those are two different facts to somebody holding a
+     * phone at arm's length in a room with other people talking — the first question of a
+     * dictation that came back empty is always "was it even picking me up". So the level is read
+     * off the stream itself, and a flat line means a quiet room rather than meaning broken.
+     *
+     * **The context is opened here, in the same turn the recording starts, rather than at the
+     * first frame that wants it.** iOS gives a page that asks inside a gesture a context that is
+     * already running and a page that asks afterwards one that is suspended — and a suspended
+     * analyser reads a flat line, which is exactly the picture a microphone hearing nothing
+     * would draw. The failure would look like an answer, which is the worst way for this to be
+     * wrong. It is closed again the moment the recording ends either way: an audio session left
+     * open is one iOS may route or duck something else for.
+     *
+     * This is not the context `decode` builds. That one is opened long after any gesture, has no
+     * reason to be running, and closes itself when the bytes are decoded.
+     *
+     * Nothing is connected to the destination: an analyser is pulled by the graph on its own, and
+     * a path to the speakers would be this page playing the room back into the room.
+     */
+    function listen(got) {
+        // Reduced motion is honoured by never building any of this. There is then nothing to
+        // animate, and no audio session held open for the sake of something nobody asked to see.
+        if (reduced) return;
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        try {
+            heard = new Ctx();
+            // Belt and braces for the browser that hands one back suspended anyway. The promise
+            // is not waited on: the meter starts a frame late and nothing else notices.
+            if (heard.state === "suspended" && heard.resume) heard.resume();
+            ears = heard.createAnalyser();
+            ears.fftSize = 1024;
+            heard.createMediaStreamSource(got).connect(ears);
+            samples = new Uint8Array(ears.fftSize);
+        } catch (e) {
+            // All of this is decoration over a recording that is already running. A browser that
+            // will not build the graph gets the still dot instead and loses not one word.
+            deaf();
+        }
+    }
+
+    /**
+     * One frame.
+     *
+     * **Read every frame and drawn ten times a second, which is two rates on purpose.** The
+     * analyser only ever holds the last twenty milliseconds or so, so a loop that looked once
+     * per column would miss four fifths of what was said and flatten the syllables it did catch;
+     * the loudest reading between columns is the one that gets kept. And a column per frame
+     * would be a blur travelling sixty pixels a second, which is something to watch rather than
+     * something to glance at.
+     *
+     * `requestAnimationFrame` rather than a timer because a page in the background stops being
+     * given frames, and a meter still drawing to a canvas nobody can see is a phone warming in
+     * a pocket for nothing.
+     */
+    function paint() {
+        frame = requestAnimationFrame(paint);
+        if (!ears || !bars) return;
+        ears.getByteTimeDomainData(samples);
+        var sum = 0;
+        for (var i = 0; i < samples.length; i++) {
+            // 128 is silence in the byte form; what is wanted is the distance from it.
+            var d = (samples[i] - 128) / 128;
+            sum += d * d;
+        }
+        var lit = cells(Math.sqrt(sum / samples.length));
+        if (lit > peak) peak = lit;
+        var now = Date.now();
+        if (now - pushed < WAVE.step) return;
+        pushed = now;
+        levels.push(peak);
+        levels.shift();
+        peak = 0;
+        drawWave(bars, levels);
+    }
+
+    /// A root-mean-square in [0, 1] as whole cells above the floor. **In decibels**, because the
+    /// linear number spends its entire life in the bottom tenth — ordinary speech a phone's
+    /// length away sits around 0.03 — and a mark drawn straight from it is a flat line with an
+    /// occasional twitch in it, which is the picture this exists to avoid.
+    function cells(rms) {
+        var db = 20 * Math.log10(rms || 1e-6);
+        var t = (db - QUIET_DB) / (LOUD_DB - QUIET_DB);
+        if (t < 0) t = 0; else if (t > 1) t = 1;
+        return Math.round(t * (WAVE.rows - 1));
+    }
+
+    /// Stop drawing, because the canvas is being thrown away by whatever is rebuilding the row.
+    /// The microphone may still be open — this says nothing about that.
+    function still() {
+        if (frame !== null) cancelAnimationFrame(frame);
+        frame = null;
+        bars = null;
+    }
+
+    /// Stop drawing and give the audio session back. Called wherever the microphone is handed
+    /// back, which is the moment this has any further reason to be open.
+    function deaf() {
+        still();
+        ears = null;
+        samples = null;
+        levels = [];
+        peak = 0;
+        pushed = 0;
+        var ctx = heard;
+        heard = null;
+        shut(ctx);
     }
 
     /* ---- turning a recording into something whisper.cpp can read ------------ */
@@ -437,10 +575,11 @@ export var Voice = (function () {
     /**
      * The row, built once per state and then left alone.
      *
-     * Rebuilding it on every tick would take the Cancel button out from under a thumb four
-     * times a second, which is the same lesson `renderWaiting` learned about its own buttons.
-     * So only the count is written after this, and it is written into a text node that is
-     * already on screen.
+     * Rebuilding it on every tick would take the buttons out from under a thumb four times a
+     * second, which is the same lesson `renderWaiting` learned about its own. So only the count
+     * is written after this, into a text node that is already on screen — and the meter is a
+     * canvas that is also already on screen, whose *contents* change while the element it is
+     * drawn on does not move.
      */
     function show() {
         var live = state === "recording";
@@ -456,6 +595,7 @@ export var Voice = (function () {
             if (drawn) {
                 drawn = "";
                 setVoiceSpin(null);
+                still();
                 box.textContent = "";
                 box.hidden = true;
                 box.removeAttribute("data-near");
@@ -465,6 +605,8 @@ export var Voice = (function () {
             return;
         }
         if (drawn !== state) {
+            // Whatever the last state was drawing into, it is about to stop existing.
+            still();
             drawn = state;
             box.textContent = "";
             box.removeAttribute("data-near");
@@ -477,7 +619,29 @@ export var Voice = (function () {
                 box.appendChild(spin);
                 setVoiceSpin(spin);
                 drawSpinner(spin, spinPhase);
+            } else if (ears) {
+                // Decoration, and only decoration: the seconds beside it are the substance of
+                // this row and are what a screen reader is given. `aria-hidden` rather than a
+                // label, because a live region that announced a picture of loudness ten times a
+                // second would talk over the one sentence in here worth hearing.
+                setVoiceSpin(null);
+                var wave = document.createElement("canvas");
+                wave.className = "wave";
+                wave.setAttribute("aria-hidden", "true");
+                box.appendChild(wave);
+                bars = wave;
+                levels = [];
+                while (levels.length < WAVE.cols) levels.push(0);
+                peak = 0;
+                pushed = 0;
+                // Drawn once before the first frame, so the row opens on the flat line rather
+                // than on an empty space that fills in a sixtieth of a second later.
+                drawWave(wave, levels);
+                frame = requestAnimationFrame(paint);
             } else {
+                // No analyser: reduced motion, or a browser that would not build the graph. The
+                // dot this row has always drawn, which under reduced motion the global rule
+                // stops on its brightest frame.
                 setVoiceSpin(null);
                 var dot = document.createElement("span");
                 dot.className = "dot";
@@ -494,19 +658,43 @@ export var Voice = (function () {
             what.appendChild(note);
             box.appendChild(what);
 
-            var out = document.createElement("button");
-            out.type = "button";
-            out.className = "drop";
-            out.textContent = T.webCancel;
-            // Same reason as Send and the attachment: pressing this must not close the keyboard
-            // of somebody who was typing while they dictated.
-            out.addEventListener("mousedown", function (ev) { ev.preventDefault(); });
-            out.addEventListener("click", cancel);
-            box.appendChild(out);
+            /**
+             * The ways out, in the order this page puts every pair — the one that undoes on the
+             * left, the one that goes on with it on the right, and the weight on the second.
+             *
+             * **Two of them while it is listening.** Ending a recording used to live only on the
+             * microphone beside the box, which meant the row that says a recording is happening
+             * was not the row you could end one from — and the two halves of the same decision,
+             * "keep this" and "throw this away", sat at opposite ends of the composer. The
+             * microphone still stops it; nothing was taken away. It simply stopped being the
+             * only way, and this is the one place somebody is already looking.
+             *
+             * Transcribing keeps the single Cancel: there is no "finish" to offer for something
+             * that is being done at the other end.
+             */
+            var acts = document.createElement("div");
+            acts.className = "acts";
+            acts.appendChild(way(T.webCancel, "drop", cancel));
+            if (state === "recording") acts.appendChild(way(T.webVoiceStop, "go", stop));
+            box.appendChild(acts);
             box.hidden = false;
         }
         say();
         renderComposer();
+    }
+
+    /// One of them. The `mousedown` is the one Send and the attachment carry for the same
+    /// reason: pressing this must not close the keyboard of somebody who was typing while they
+    /// dictated. No new words — "Stop and transcribe" is what the microphone already calls
+    /// itself while it is recording, and one action said twice should be said the same way.
+    function way(words, kind, go) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = kind;
+        b.textContent = words;
+        b.addEventListener("mousedown", function (ev) { ev.preventDefault(); });
+        b.addEventListener("click", go);
+        return b;
     }
 
     /// The count, and only the count.
