@@ -1171,6 +1171,17 @@ final class RemoteServer {
             send(withCachePolicy(refusal), on: conn)
             return
         }
+        // **The one check `route` does for every other route.** Not being paired is answered
+        // before not being allowed to send, because they are different sentences and only the
+        // second one is about permission. Skipping `route` to keep whisper off the shared queue
+        // also skipped its door, so an unpaired phone was told "This device may read, and not
+        // send" — which claims it may read, and it may not. Measured against a running app:
+        // `/v1/sessions/:id/send` answered 401 and this answered 403 for the same empty request.
+        if case .denied = permission(for: request) {
+            send(withCachePolicy(.error(401, "unauthorized", "This needs a paired device.")),
+                 on: conn)
+            return
+        }
         // **Write, not read, and the reason is not that this writes anything.** It is that a
         // device which may only read has nowhere to put a sentence — it cannot send one — while
         // transcribing costs this Mac ten seconds of every core it has. Read-level access is
