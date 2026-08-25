@@ -69,10 +69,43 @@ export function hasKeyboard() {
     // is the keyboard and nothing else. The threshold is well above any inset and well below
     // any keyboard.
     var KEYBOARD = 80;
+    // And a floor under it, because the override is the whole page's height and a wrong one is
+    // not a cosmetic wrong. A view reported as a fraction of the page this small is not a
+    // keyboard — no keyboard leaves a tenth of a phone showing — it is a measurement taken
+    // while the page was between states. Taken at face value it wrote a height of a few dozen
+    // pixels onto `body`, whose `overflow: hidden` then cut everything below the header off,
+    // and the page stayed that way until it was loaded again: the session list gone, the
+    // transcript gone, a reload the only way back and no reload button on a phone.
+    var FLOOR = 0.3;
+
+    /**
+     * Whether anything at all holds the caret.
+     *
+     * A keyboard needs something focused to type into, and nothing else on iOS shrinks the
+     * visible viewport — so with the focus on the document body the override has no business
+     * being set whatever the numbers say. Deliberately the loose test rather than "is this a
+     * text field": the composer is a `div` that is only made `contenteditable` once the Mac
+     * says this device may write, and a check that named the tags it knew about would have
+     * gone quietly wrong there — the keyboard would be up, the override would be refused, and
+     * the box being typed into would sit under the keyboard again. Nothing is lost by being
+     * broad, because a button taking focus does not shrink anything and the size test below
+     * still has to agree.
+     */
+    function focused() {
+        var el = document.activeElement;
+        return !!el && el !== document.body && el !== root;
+    }
+
     function apply() {
-        var shrunk = (window.innerHeight - vv.height) > KEYBOARD;
+        // A page in the background is not laid out, and what `visualViewport` reports about one
+        // is the number it will correct on the way back. Writing it now is writing the wrong
+        // height at exactly the moment nobody can see it happen.
+        if (document.hidden) return;
+        var page = window.innerHeight;
+        var seen = vv.height;
+        var shrunk = focused() && seen > page * FLOOR && (page - seen) > KEYBOARD;
         if (shrunk) {
-            root.style.setProperty("--vvh", vv.height + "px");
+            root.style.setProperty("--vvh", seen + "px");
             root.style.setProperty("--vvt", vv.offsetTop + "px");
         } else {
             // Removed rather than set to `100dvh`: the declaration's own fallback is that, and a
@@ -82,6 +115,17 @@ export function hasKeyboard() {
             root.style.removeProperty("--vvt");
         }
     }
+    /**
+     * Measure now, and again on the next frame.
+     *
+     * Both moments below announce a change *as it starts*: `focusout` runs while the element
+     * losing the caret is in some browsers still `document.activeElement`, and the first value
+     * read after a page is restored is the one from before it was put away. One reading would
+     * be the state being left rather than the state being entered; the frame after is the page
+     * as it actually ended up.
+     */
+    function recheck() { apply(); requestAnimationFrame(apply); }
+
     vv.addEventListener("resize", apply);
     vv.addEventListener("scroll", apply);
     // And the window's own events as well, measured: resizing the frame this page was being
@@ -90,5 +134,14 @@ export function hasKeyboard() {
     // rotation, a window drag and a browser toolbar sliding away are what these are for.
     window.addEventListener("resize", apply);
     window.addEventListener("orientationchange", apply);
+    // The field losing the caret is the keyboard going away, and it is the one moment iOS is
+    // reliably quiet about: the view is back to full height before `visualViewport` has said so.
+    document.addEventListener("focusout", recheck);
+    // And coming back to a page that was left with the keyboard up. **Nothing is replayed on the
+    // way in**: iOS put the keyboard away while this page was in the background and no event is
+    // waiting for it here, so a page that only listened would go on laying itself out for a
+    // keyboard that is no longer there.
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) recheck(); });
+    window.addEventListener("pageshow", recheck);
     apply();
 })();
