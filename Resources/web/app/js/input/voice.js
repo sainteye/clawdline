@@ -137,6 +137,29 @@ export var Voice = (function () {
     var level = 0;
     var last = 0;               // when the previous frame landed, so the smoothing can be in time
 
+    /**
+     * Where a recording goes, and who is holding the button that started it.
+     *
+     * The composer's own microphone, unchanged from before this file knew about any other one.
+     */
+    var DEFAULT_JOB = {
+        host: els.voice,
+        sink: appendMsg,
+        // **The composer has gone.** Opening an agent's transcript hides it — see
+        // `renderAgentHead` — and a microphone left open behind a hidden row is one with no
+        // button left to shut it.
+        guard: function () { return els.composer.hidden; },
+        button: els.mic
+    };
+    /**
+     * The job the recorder now belongs to.
+     *
+     * There is one recorder, so there is one of these at a time — see the note on `press`. It
+     * starts out pointed at the composer for the same reason `state` starts out `"off"`: nothing
+     * has happened yet, and the first real assignment is the first press.
+     */
+    var activeJob = DEFAULT_JOB;
+
     /* ---- can this happen at all -------------------------------------------- */
 
     /**
@@ -197,7 +220,21 @@ export var Voice = (function () {
 
     /* ---- the recording ------------------------------------------------------ */
 
-    function press() {
+    /**
+     * `job` says where this press's words go, whose button lights up, and what stops it early —
+     * see `DEFAULT_JOB` above for the shape. Left out, it is `DEFAULT_JOB`, which is today's
+     * composer exactly. Another caller builds its own — see the one `command.js` passes for the
+     * list header's microphone and the sheet's "say it again" — and this file does not need to
+     * know it exists to serve it.
+     *
+     * **One recorder, so one job.** A press that lands while another is already recording does
+     * not queue behind it or start a second stream — it stops whichever one is running, the same
+     * as pressing the same button twice always has. Two microphones open at once was never a
+     * thing this page could do, and sharing the recorder is what keeps it that way rather than a
+     * rule enforced on top of two of them.
+     */
+    function press(job) {
+        job = job || DEFAULT_JOB;
         if (state === "recording") { stop(); return; }
         // Mid-transcription the button is not the way out — the row's Cancel is, and it says so.
         if (state !== "off") return;
@@ -209,6 +246,7 @@ export var Voice = (function () {
         }
         var no = why();
         if (no) { toast(no, true); return; }
+        activeJob = job;
         open();
     }
 
@@ -279,10 +317,10 @@ export var Voice = (function () {
 
     function beat(mine) {
         if (mine !== token) return;
-        // **The composer has gone.** Opening an agent's transcript hides it — see
-        // `renderAgentHead` — and a microphone left open behind a hidden row is one with no
-        // button left to shut it. Nothing is lost that was not already only a moment old.
-        if (els.composer.hidden) { cancel(); return; }
+        // Whatever this job's own reason to give up early is — the composer gone for the
+        // default job, the sheet closed for the other two. Nothing is lost that was not already
+        // only a moment old.
+        if (activeJob.guard()) { cancel(); return; }
         if (state === "recording" && elapsed() >= MAX_SECONDS) {
             toast(fill(T.webVoiceLimit, { n: Math.round(MAX_SECONDS / 60) }));
             stop();
@@ -343,7 +381,7 @@ export var Voice = (function () {
             // — and a red banner for that would be the page reporting a fault that did not occur.
             var said = String(answer.text || "").trim();
             if (!said) { toast(T.webVoiceEmpty); return; }
-            appendMsg(said);
+            activeJob.sink(said);
         }).catch(function (e) {
             if (mine !== token) return;
             quit();
@@ -660,13 +698,19 @@ export var Voice = (function () {
      * either of them occupies does not change at all.
      */
     function show() {
+        var job = activeJob;
         var live = state === "recording";
-        els.composer.dataset.voice = state;
-        els.mic.setAttribute("aria-label", live ? T.webVoiceStop : T.webVoiceStart);
-        els.mic.setAttribute("title", live ? T.webVoiceStop : T.webVoiceStart);
-        els.mic.setAttribute("aria-pressed", live ? "true" : "false");
+        // **Only the composer's own microphone reads this.** `composer.css` — which this file
+        // does not own and leaves exactly as it was — keys the icon swap off this attribute on
+        // `.composer` itself, not off the row the way everything else here is job-relative; the
+        // sheet's two microphones answer to `aria-pressed` alone, in their own stylesheet, so
+        // writing it for them would do nothing and is skipped rather than left in as clutter.
+        if (job.host === els.voice) els.composer.dataset.voice = state;
+        job.button.setAttribute("aria-label", live ? T.webVoiceStop : T.webVoiceStart);
+        job.button.setAttribute("title", live ? T.webVoiceStop : T.webVoiceStart);
+        job.button.setAttribute("aria-pressed", live ? "true" : "false");
 
-        var box = els.voice;
+        var box = job.host;
         // `opening` is the browser's own permission sheet, which is on top of the page and says
         // more than this row could. A row that appears for the length of a prompt is a flicker.
         if (state === "off" || state === "opening") {
@@ -797,7 +841,7 @@ export var Voice = (function () {
 
     /// The count, and only the count.
     function say() {
-        var box = els.voice;
+        var box = activeJob.host;
         var said = box.querySelector(".said");
         if (!said) return;
         var n = Math.floor(elapsed());

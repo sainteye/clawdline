@@ -148,7 +148,11 @@
    cannot be told apart from a hang at either length, so the seconds are the substance of this
    row and the mark beside them is the decoration. The bar on the Mac counts for exactly the
    same reason; see `docs/whisper.md`. */
-.composer .voice {
+/* The dictation row. Not `.composer .voice` any more: the same row is built inside the
+   say-what-to-start sheet, where there is no composer above it, and a selector that named one
+   place was the reason it drew there with no styling at all. The `.mic` rules below stay where
+   they are — that button *is* the composer's. */
+.voice {
     /* It wraps, and on a narrow phone in a long language it does. Cancel and Done are short in
        English and neither is short everywhere — Russian spends nine characters on the first —
        and the pair sits beside a meter and a running count. So when they will not fit they drop
@@ -159,7 +163,7 @@
     border: 1px solid var(--line); border-radius: 10px;
     background: var(--card);
 }
-.composer .voice[hidden] { display: none; }
+.voice[hidden] { display: none; }
 /* **A fixed basis rather than `auto`, which is what keeps the row from flickering.** Flexbox
    decides where to break on the *unshrunk* width of each item, so with `auto` the wrap would be
    decided by however many characters the count happens to be at that instant — and at the width
@@ -167,8 +171,8 @@
    clock rolled from 0:09 to 0:10. The number is what the count actually needs: fifteen
    characters of the mono face at 11.5px, which is "Listening… 2:57" at its widest. So the row
    breaks exactly when the words would have had to, and never between one second and the next. */
-.composer .voice .what { flex: 1 1 108px; min-width: 0; }
-.composer .voice .said {
+.voice .what { flex: 1 1 108px; min-width: 0; }
+.voice .said {
     display: block;
     color: var(--dim); font: 11.5px/1.45 var(--mono);
     /* The digits do not change width as they run, so the Cancel button beside them does not
@@ -176,20 +180,20 @@
     font-variant-numeric: tabular-nums;
 }
 /* Nearly out of room, said while there is still something to be done about it. */
-.composer .voice[data-near="1"] .said { color: var(--accent); }
+.voice[data-near="1"] .said { color: var(--accent); }
 /* Why this particular one is taking so long. Only after eight seconds: an ordinary
    transcription is under two, and a permanent apology for a wait that usually is not one would
    be the page teaching its reader to expect the slow case. */
-.composer .voice .note { display: none; }
-.composer .voice[data-slow="1"] .note {
+.voice .note { display: none; }
+.voice[data-slow="1"] .note {
     display: block; margin-top: 3px;
     color: var(--faint); font-size: 11px; line-height: 1.4;
 }
-.composer .voice .spin { flex: 0 0 auto; }
+.voice .spin { flex: 0 0 auto; }
 /* Listening. Red is the convention and the accent is what this page has; either way it is the one
    mark on screen that has to be visible from across a desk, because it means a microphone in the
    room is open. It breathes rather than blinks — a blink reads as a fault. */
-.composer .voice .dot {
+.voice .dot {
     flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
     background: var(--accent);
     animation: breathe 1.5s var(--ease) infinite;
@@ -210,8 +214,8 @@
 
    The breathing comes off here for the same reason it always did: two things writing to one
    element fight, and the one that can hear the room should win. */
-.composer .voice .dot[data-live="1"] { animation: none; }
-.composer .voice .dot[data-live="1"] .disc {
+.voice .dot[data-live="1"] { animation: none; }
+.voice .dot[data-live="1"] .disc {
     /* Centred on the dot and taken out of the flow entirely, which is the whole reason the count
        and the two ways out do not move a pixel while this swells: it is drawn over the row rather
        than given room in it. Twenty-six rather than the thirty-six the row's height would allow:
@@ -248,27 +252,27 @@
 /* The ways out, together and at the far end of the row. They are one decision with two answers —
    keep what was said, or throw it away — and a decision whose halves are at opposite ends of the
    composer is one people only find half of. */
-.composer .voice .acts {
+.voice .acts {
     flex: 0 0 auto; margin-left: auto;
     display: flex; align-items: center; gap: 8px;
 }
-.composer .voice .drop,
-.composer .voice .go {
+.voice .drop,
+.voice .go {
     flex: 0 0 auto;
     border: 1px solid var(--line); border-radius: 999px;
     background: var(--card); color: var(--dim);
     font-size: 11.5px; padding: 5px 12px; min-height: 30px;
 }
-.composer .voice .drop:hover { background: var(--card-hi); color: var(--ink); }
+.voice .drop:hover { background: var(--card-hi); color: var(--ink); }
 /* The one that keeps the words, weighted the way this page weights the second of a pair — the
    accent in the border and the letters, the same wash behind it that the recording microphone
    takes. Filled like Send would make it the loudest thing in a composer whose loudest thing
    should still be the fact that a microphone is open. */
-.composer .voice .go {
+.voice .go {
     border-color: var(--accent-ed); background: var(--accent-in); color: var(--accent);
     font-weight: 600;
 }
-.composer .voice .go:hover { background: rgba(217, 119, 87, 0.2); }
+.voice .go:hover { background: rgba(217, 119, 87, 0.2); }
 
 .composer .send {
     flex: 0 0 auto;
