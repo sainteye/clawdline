@@ -1413,6 +1413,13 @@ enum Orchestrator {
         Use "status": "failure" when you could not do it. Write it LAST — the moment it exists
         your work is considered finished.
 
+        **If you handed work on and it did not arrive, say so in the summary.** Doing it yourself
+        instead is usually right — the answer is what was asked for, not who produced it. What is
+        not right is a summary that reads as though the sessions you dispatched did the work when
+        they never started. Whoever reads this is deciding how much to trust the result, and
+        "both halves came back" and "both halves failed and I did it myself" are different amounts
+        of evidence behind the same answer.
+
         **Write it with your file-writing tool, not with a shell command.** A shell line that
         builds JSON and moves it into place gets refused by command screening on its own shape —
         quotes inside braces, a redirect it cannot analyse statically — and that refusal is a
@@ -1624,6 +1631,9 @@ enum Orchestrator {
           prompt that has no "always allow" — and there is nobody on this tab to answer it.
         - Wait for everything you handed on before writing your own result.json. Yours finishing
           is what ends theirs.
+        - A dispatch that comes back `spawn_failed` can be retried, but **only with a fresh id and
+          a fresh secret** — that task id is finished, and re-sending it just returns the record.
+          If it fails again, do the work yourself and say in your summary that you did.
 
         """
     }
