@@ -214,10 +214,12 @@
 .composer .voice .dot[data-live="1"] .disc {
     /* Centred on the dot and taken out of the flow entirely, which is the whole reason the count
        and the two ways out do not move a pixel while this swells: it is drawn over the row rather
-       than given room in it. Thirty-six is what the row's height allows — a 30px button between
-       6px of padding — before the rim would have anything to say beyond the border. */
+       than given room in it. Twenty-six rather than the thirty-six the row's height would allow:
+       the wider one was tried and read as too big — the mark beside the sentence should not be
+       the largest thing in the row, and at full voice its rim crossed both the border and the
+       first letter of the count. This one stays inside both. */
     position: absolute;
-    left: 50%; top: 50%; width: 36px; height: 36px; margin: -18px 0 0 -18px;
+    left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px;
     border-radius: 50%;
     /* **A flat fill and a hard rim, and the alpha here is a constant.** A soft-edged glow that
        brightened with the level was tried first, and it could not be sized by eye: light that
@@ -238,8 +240,7 @@
        the main thread at all. `transform` is the only property `voice.js` writes here, and that
        is why.
 
-       It reaches over the first letter of the count at its widest, which is what gave the row its
-       ceiling; `pointer-events` so that it cannot come between a thumb and anything underneath. */
+       `pointer-events` so that it cannot come between a thumb and anything underneath. */
     transform-origin: 50% 50%;
     will-change: transform;
     pointer-events: none;

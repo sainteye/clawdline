@@ -68,13 +68,19 @@ export var Voice = (function () {
      * that only changes diameter can be read the way a bar chart is read — by being a size you
      * can see the end of.
      *
-     * Twenty pixels to thirty-six, as multiples of the 36px square the stylesheet draws. Neither
-     * end reaches zero: a quiet room has to draw a small disc rather than none, or "heard
+     * Fourteen pixels to twenty-six, as multiples of the 26px square the stylesheet draws.
+     * Neither end reaches zero: a quiet room has to draw a small disc rather than none, or "heard
      * nothing" and "not running" become the same picture — which is the one thing this mark
-     * exists to tell apart. The floor keeps a visible ring clear of the 8px dot inside it, and
-     * the ceiling is what the row's own height allows before the rim would cross the border.
+     * exists to tell apart. The floor keeps a visible ring clear of the 8px dot inside it.
+     *
+     * **The ceiling is a judgement and not a limit.** It was the widest the row could hold —
+     * thirty-six — and at that size somebody looking at it said the circle was too big: a mark
+     * beside a sentence had become the largest thing in the row, and it crossed both the border
+     * and the first letter of the count on the loud syllables. Twenty-six stays inside both with
+     * a few pixels to spare and keeps very nearly the same ratio between quiet and loud, which is
+     * the part that carries the meaning. Filling the space available was never the goal.
      */
-    var NARROW = 20 / 36;
+    var NARROW = 14 / 26;
     var WIDE = 1;
     /**
      * How fast the dot follows what it hears, as time constants in milliseconds — and there are
