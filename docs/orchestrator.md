@@ -193,11 +193,25 @@ with no such choice to make.
 
 It ships with opinions rather than a comment saying "put your rules here", because a file with
 defensible rules already in it is one somebody edits and an empty one is a feature nobody finds.
-What it starts with: Codex for making things, Claude for reading and judging them; `haiku` for
-mechanical single-source work, `sonnet` for a leaf with judgement in it, `opus` for a decision
-somebody will act on or a synthesis of several children; **a verdict never runs on a model
-smaller than what produced the thing it is judging**; and breadth before depth, because two
-children splitting a job beat one child that will hand half of it on.
+It opens with the two decisions that come before any of the others:
+
+**Whether to dispatch at all.** The measurement is sharp in both directions — work that splits
+into independent pieces goes 80.9% better with several agents, work where each step depends on
+the last goes 39–70% *worse* — so the file states the test as one sentence (*can this be cut into
+pieces that need not talk to each other?*), says plainly that **"no, do it yourself" is a correct
+answer rather than a failure**, and lists the shapes that look dispatchable and are not:
+diagnosis, dozens of small jobs, anything on a path where somebody is waiting, agents that must
+talk back and forth, typed output, and work smaller than its own briefing.
+
+**Which shape.** Five named ones, so a graph is chosen rather than improvised: *split and join*
+for research, *build then read* for anything producing code, *decide then do* for a change worth
+a person's eyes at the handover, *batch with takeover* for mechanical work across modules, and
+*candidates* for comparing taste. Anything producing code is always *build then read*.
+
+After that: Codex for making things and Claude for reading them; `haiku` for mechanical
+single-source work, `sonnet` for a leaf with judgement in it, `opus` for a decision somebody will
+act on; breadth before depth; the mechanics of dispatching; and the reviewing node every
+code-producing graph ends with.
 
 Editing it is the point. Delete the lot and the paragraph disappears from every briefing — an
 empty file means there are no house rules, which is a position and not a broken setting. The

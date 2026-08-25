@@ -1446,10 +1446,15 @@ enum Orchestrator {
     /// string with `\n` in it.
     static var policyURL: URL { RemoteAuth.directory.appendingPathComponent("dispatch-policy.md") }
 
-    /// The maximum this app will carry into a briefing. Generous for house rules and small
-    /// enough that a file somebody pasted a novel into cannot push the actual task off the
-    /// bottom of a child's attention.
-    static let policyLimit = 4096
+    /// The maximum this app will carry into a briefing.
+    ///
+    /// It was 4096, which was set against "house rules" meaning a paragraph about which assistant
+    /// to use. Once the file also had to carry the decision of *whether to dispatch at all* and a
+    /// library of graph shapes, that number cut the last rule off mid-word. Twelve thousand is
+    /// room for a policy somebody has actually thought about, and still small enough that a file
+    /// with a novel pasted into it cannot push the task itself off the bottom of a child's
+    /// attention — which is what the limit is for.
+    static let policyLimit = 12_000
 
     /// The same ceiling for the graph a task carries. Both end up in one briefing beside 16 KiB
     /// of instructions, and a briefing a child skims is worse than a shorter one it reads.
@@ -1458,11 +1463,27 @@ enum Orchestrator {
     /// What this Mac says about how work should be handed out, or nil when nobody has said
     /// anything. Read at dispatch rather than at launch, so an edit takes effect on the next
     /// task instead of on the next restart.
-    static func policy() -> String? {
-        guard let raw = try? String(contentsOf: policyURL, encoding: .utf8) else { return nil }
+    static func policy() -> String? { policy(reading: try? String(contentsOf: policyURL, encoding: .utf8)) }
+
+    /// The reading half, separated so a test can hand it text instead of a file.
+    ///
+    /// **Cutting is announced, and it happens at a paragraph.** The first version took a plain
+    /// `prefix`, which put the knife wherever 4096 characters landed — and the first policy long
+    /// enough to hit it lost its last rule mid-word, silently, with the briefing reading as
+    /// though the file simply ended there. That is the failure this whole app keeps meeting: a
+    /// thing that did not happen, wearing the shape of a thing that did. So the cut falls on the
+    /// last paragraph break before the limit, and says out loud that it fell.
+    static func policy(reading raw: String?) -> String? {
+        guard let raw else { return nil }
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
-        return String(text.prefix(policyLimit))
+        guard text.count > policyLimit else { return text }
+        let head = String(text.prefix(policyLimit))
+        let body = head.range(of: "\n\n", options: .backwards)
+            .map { String(head[..<$0.lowerBound]) } ?? head
+        return body + "\n\n**[This policy was cut here.** It is longer than \(policyLimit) "
+            + "characters, and everything after this point was not included — so if a rule you "
+            + "expected is missing, that is why. Shorten the file.**]**"
     }
 
     /// Write the starting policy, once, if there is no file yet — and answer where it is either
@@ -1486,9 +1507,55 @@ enum Orchestrator {
     static let defaultPolicy = """
     # How work is handed out on this Mac
 
-    Clawdline reads this file every time a task is dispatched and copies it into the briefing of
-    every child that is allowed to dispatch in turn. Edit it freely. Delete everything and the
-    feature switches itself off — an empty file means there are no house rules.
+    Clawdline reads this file every time a task is dispatched and copies it into the briefing of every
+    child that is allowed to dispatch in turn. Edit it freely. Delete everything and the feature
+    switches itself off — an empty file means there are no house rules.
+
+    ## First: should this be dispatched at all?
+
+    **Answering "no, do this yourself" is a correct answer, not a failure.** Say it plainly and move
+    on. There is a measurement behind this and it is sharp in both directions: on work that splits
+    into independent pieces, coordinating several agents beat a single one by **80.9%**; on work where
+    every step depends on the one before it, *every* multi-agent arrangement tested was **39–70%
+    worse** than a single agent, because the handoffs break a chain that needed to stay whole.
+
+    So the question is one sentence: **can this be cut into pieces that do not need to talk to each
+    other, and joined at the end?**
+
+    Dispatch when the answer is yes. When it is no, say so and do the work here. And say so for these,
+    which are the shapes that look dispatchable and are not:
+
+    - **Diagnosis and debugging.** Every step is chosen because of what the last step found. Handing
+      that to a fresh session throws away the reasoning that made the next step obvious.
+    - **Anything needing dozens of small parallel jobs.** Every node is a real assistant cold-starting
+      and holding a terminal tab. A hundred of them is slower and dearer than the batch tool for it,
+      and nobody can read a hundred tabs.
+    - **Anything on a path where somebody is waiting.** A node takes tens of seconds to reach a prompt.
+    - **Agents that need to talk back and forth.** Dispatch is one-way: brief, wait, collect. Every
+      round trip means a whole new task.
+    - **Output that has to be typed data for a program to consume.** What comes back is a paragraph
+      and some file paths.
+    - **Work smaller than its own briefing.** If writing the instructions takes longer than doing it,
+      that is the answer.
+
+    ## Then: pick a shape
+
+    Named shapes, so a graph is chosen rather than improvised. Every one of them ends the same way —
+    see the last section.
+
+    - **Split and join** — one question, several independent pieces. Leaves gather (`haiku`), one node
+      joins and judges (`sonnet`+). The default for research, audits, and surveys.
+    - **Build then read** — anything producing code or a decision somebody acts on. Workers build;
+      a separate node reads what they built and reports what is wrong. Never the same node, never the
+      same session.
+    - **Decide then do** — one node reads and writes the plan without touching anything; a person
+      passes it; a second node (usually Codex) implements it. The value is the gap in the middle,
+      where a person can still say no cheaply.
+    - **Batch with takeover** — the same mechanical change across independent modules, one node each.
+      When one dies its tab survives with its state on screen, and a person finishes it by typing.
+    - **Candidates** — the same problem to several nodes with different instructions, each producing a
+      complete working answer. A person picks. No judging node: what is being compared is taste, and a
+      judge model has its own.
 
     ## Which assistant
 

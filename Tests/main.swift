@@ -5692,6 +5692,31 @@ group("the graph and the house rules reach the child that needs them") {
     check("the starting rules say something about models and something about shape",
           Orchestrator.defaultPolicy.contains("haiku")
               && Orchestrator.defaultPolicy.contains("Breadth before depth"))
+    // The two halves a dispatcher needs before it picks anything: whether to dispatch, and what
+    // shape to use. Both were added after a graph was dispatched to research them.
+    check("and it decides whether to dispatch before it decides how",
+          Orchestrator.defaultPolicy.contains("should this be dispatched at all")
+              && Orchestrator.defaultPolicy.contains("is a correct answer, not a failure"))
+    check("and offers named shapes rather than leaving the graph improvised",
+          Orchestrator.defaultPolicy.contains("Split and join")
+              && Orchestrator.defaultPolicy.contains("Build then read"))
+    check("and the whole of it fits inside what a briefing will carry",
+          Orchestrator.defaultPolicy.count <= Orchestrator.policyLimit)
+
+    // Cutting used to be silent and mid-word: the first policy long enough to hit the limit lost
+    // its last rule, and the briefing read as though the file simply ended there.
+    let long = (0..<400).map { "Paragraph \($0) of a policy somebody kept adding to." }
+        .joined(separator: "\n\n")
+    let cut = Orchestrator.policy(reading: long)
+    check("an over-long policy is cut", (cut?.count ?? 0) < long.count)
+    check("and says so, rather than looking like the file ended there",
+          cut?.contains("This policy was cut here") == true)
+    check("and the cut lands on a paragraph, not inside a word",
+          cut?.components(separatedBy: "\n\n").dropLast().last?.hasSuffix("kept adding to.") == true)
+    check("a policy inside the limit is handed over untouched",
+          Orchestrator.policy(reading: "  short rules  ") == "short rules")
+    check("and an empty one is still nobody having said anything",
+          Orchestrator.policy(reading: "   \n  ") == nil)
 }
 
 group("dispatching is the one thing a paired device may not do") {
