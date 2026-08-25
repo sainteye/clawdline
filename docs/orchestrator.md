@@ -124,7 +124,7 @@ session's bucket rather than out of everybody's. The ceiling below is what close
   permitted. `429 rate_limited` after that.
 - **Four hours, absolute.** `timeout_minutes` is 1…240 and 30 by default. A child that has not
   reported by then is `timeout`, whatever it is still doing.
-- **Two minutes to be briefed.** A tab that opens but never reaches a state where the first message
+- **Four minutes to be briefed.** A tab that opens but never reaches a state where the first message
   can be typed — or that never records having received it, after five attempts — is `spawn_failed`
   rather than a tab sitting there forever with a task attached to it.
   The likeliest cause of hitting it is a `project_dir` this Mac has never run that assistant in:
@@ -486,7 +486,7 @@ otherwise leave a grandchild belonging to nobody. Cancelling a single task does 
 smaller scale — what that task handed on goes with it, since it is work nobody is waiting for any
 more.
 
-**spawn_failed** — the tab never happened, or never got briefed inside two minutes, or was typed
+**spawn_failed** — the tab never happened, or never got briefed inside four minutes, or was typed
 into five times without the child ever recording the message, or the app was restarted while the
 task was still in `queued`/`spawning`. That last one is not a bug: the plaintext
 secret lived only in memory, so a task that had not been briefed before a restart can never be

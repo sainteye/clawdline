@@ -9,6 +9,63 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: opening one session card no longer stops everything else on the phone
+
+The remote server read, decided and answered every request on one queue. That is what made its
+state safe to touch without a lock, and three routes had already been moved off it for being slow
+— but the three slowest ordinary readings were still on it. Measured on this Mac: a session info
+card takes 0.531s to gather, because it runs `lsof`, reads a whole transcript, asks iTerm2 for the
+visible screen over an Apple event, and shells out to `git status`. Behind five of those, a health
+check that takes 0.001s on its own took **3.143 seconds**.
+
+It was worse than a slow page, because the event stream shares that queue: while a card was being
+gathered, session states stopped updating, task rows stopped moving, and the heartbeat stopped —
+and a stream that goes quiet is a phone that decides the Mac has died.
+
+Those three now read on a queue of their own, with the gates still where the state they read
+lives. The same health check behind the same five cards is now **0.0008s**. Four cards opened at
+once still take about two seconds between them — the expensive part is an Apple event, and iTerm2
+serves one at a time, so a wider queue would only move the line somewhere the app cannot see it.
+That cost is paid by the person who opened four cards, which is the right person.
+
+Opening a card can now come back `429 busy` when eight slow readings are already in hand. Reading
+a transcript never can: a page refetches it about once a second while a session works, and a
+refusal there used to blank the conversation on screen and print the server's English sentence to
+whoever was reading it — in whatever language they had not chosen. A refetch that fails now keeps
+what is already on screen, which is what the code always claimed it did.
+
+### Fixed: a dispatched session that was working perfectly was reported as never having started
+
+Handing work to another session identified the new session by looking up its terminal. That lookup
+is keyed on the tty and says nothing about age, so a child opened in a tab that had held an earlier
+conversation inherited **that** conversation's id. The app then looked for its own briefing in
+somebody else's transcript, never found it, and four minutes later filed the task as
+`spawn_failed` — with a summary blaming a session that never reached a prompt, while the session
+in question sat there working on exactly what it had been asked to do.
+
+Three of these are on disk, the worst pointing at a transcript from three and a half hours
+earlier. Identity now refuses anything older than the spawn it belongs to, and the transcript
+search refuses a file whose contents stopped changing before that spawn. What proves a briefing
+arrived is unchanged — it is still the marker in the assistant's own record, never a guess from
+the screen. What changed is which file gets searched for it.
+
+### Fixed: a task handed to Codex waited in the composer for somebody to press Return
+
+The first message arrived in the input box and stopped there. Every dispatched Codex session
+needed a person to press Return before it would start, which for a feature whose whole point is
+that nobody is watching that tab is the same as not working.
+
+The cause could not be reproduced on demand. Measured against a real iTerm2 across 40-byte,
+1KB and 5KB messages, both assistants, warm and cold-started, at gaps from 60ms to 600ms, the
+Return landed every single time — and yet three dispatches in a row were found waiting. What could
+be reproduced, every time it was needed, was the cure: one more Return, and it goes.
+
+So this stops trying to out-wait the problem and looks instead. After sending the Return it reads
+the composer — only the composer, since an assistant that did accept the message often echoes it
+back above the prompt, where a match would mean the opposite — and sends another only while the
+text is demonstrably still sitting there. The ordinary case costs a quarter of a second, submits
+once, and sends no second Return.
+
 ### Changed: the tick is a tick, and the end of the list says what is not in it
 
 A project's whole history is on the phone before the list is drawn — up to two hundred

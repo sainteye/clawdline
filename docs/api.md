@@ -212,6 +212,12 @@ $ curl -s "http://127.0.0.1:7717/v1/sessions/B3ACDE0D-DE72-4E58-A99A-AB845A539C9
 `limit` is the number of entries from the **end**, clamped to 1…1000, and anything unparseable
 falls back to 200 — `?limit=0` gives one entry and `?limit=9999` gives a thousand.
 
+This route stands in the same queue as [`/v1/sessions/:id/info`](#get-v1sessionsidinfo) but is
+**never** refused by its limit, deliberately: it is the cheapest of the three, a page refetches it
+about once a second while a session works, and a refusal there would replace a conversation
+somebody is reading with an error. So a client polling this does not have to handle `429 busy` —
+it can still be delayed behind slower readings, but it will be answered.
+
 `signature` is the transcript file's size and modification time joined by a dash. It is a cheap way
 to ask *would fetching this again tell me anything new*, and nothing else — do not try to read
 meaning into either half.
@@ -330,6 +336,13 @@ whatever produced it. An untrusted dev stack stays silent rather than being prob
 One card about a session and the assistant behind it — what the status line at the bottom of a
 Claude Code terminal says, for somebody who is not at that terminal.
 
+**This is the expensive one**, and it is answered off the queue every other request is read on:
+gathering it runs `lsof`, reads the whole transcript, asks iTerm2 for the visible screen over an
+Apple event, and shells out to `git status`. Eight of these and `/v1/places` may be in hand at
+once; the ninth is `429 busy`. That number is a patience bound rather than a promise about how
+long the wait is — a single card can sit inside a fifteen-second Apple event timeout, and while
+it does, the eighth in line waits minutes.
+
 ```console
 $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/info
 {"info":{
@@ -441,6 +454,9 @@ for a different reason. `/v1/projects` is "directories somebody drew an icon for
 Both assistants' records go in and the list says nothing about which of them has been run where.
 A directory is a directory: a folder you have only ever opened Claude Code in is a perfectly good
 place to open Codex.
+
+This is answered off the same queue as [`/v1/sessions/:id/info`](#get-v1sessionsidinfo) and shares
+its limit of eight, so it too can come back `429 busy`.
 
 ```console
 $ curl -s http://127.0.0.1:7717/v1/places -H "Authorization: Bearer $TOKEN" \
@@ -1270,7 +1286,7 @@ it draws them, and that is a drawing decision which does not travel over the wir
 | `already_done` | 409 | that task has already reported; the first report wins |
 | `bad_task` | 422 | a `task.json` that is missing, unparseable, or out of range. `message` names the field |
 | `rate_limited` | 429 | too many pairing attempts |
-| `busy` | 429 | `/v1/voice` only: one recording is being read and one is waiting. It drains in seconds |
+| `busy` | 429 | a queue on this Mac is full. On `/v1/voice`, one recording is being read and one is waiting. On `/v1/sessions/:id/info` and `/v1/places`, eight slow reads are already in hand — `/v1/sessions/:id/transcript` stands in that same queue but is never refused by this number. Both drain on their own, and neither is filed under an `Idempotency-Key` |
 | `over_capacity` | 429 | the dispatcher's child slots are full — `orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child — or the whole Mac's are. `retry_after` is seconds. (`rate_limited` covers the other orchestrator limit: dispatches per ten minutes) |
 | `internal` | 500, 502 | a tab that would not open; a terminal that would not take the text |
 | `no_whisper` | 503 | `/v1/voice` only: this Mac has nothing to transcribe with. `reason` is `no_binary` or `no_model` |

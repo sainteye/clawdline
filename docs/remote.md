@@ -158,10 +158,17 @@ The 300 seconds is the far end this server accepts rather than the working limit
 recording at three minutes on its own and transcribes what it has.
 
 **The transcription runs on a queue of its own, and that is the design rather than an
-optimisation.** Everything else here is read, decided and answered on one serial queue, which is
-what makes the server's state safe to touch without a lock — and whisper takes 1.6 seconds warm and
-about twelve after a reboot, so on that queue one dictation would hold every other request *and*
-`/v1/events` for as long as it ran. The queue it goes to instead is serial too: two whispers at once
+optimisation.** Answering happens on one serial queue, which is what makes the server's state safe
+to touch without a lock — and whisper takes 1.6 seconds warm and about twelve after a reboot, so on
+that queue one dictation would hold every other request *and* `/v1/events` for as long as it ran.
+
+That reasoning is not about whisper; it is about **how long an answer takes**, so anything measured
+in seconds now leaves that queue the same way. `POST /v1/intents` does, for the model turn behind
+it. So do the three slowest ordinary readings — `/v1/sessions/:id/info`, `/v1/places` and
+`/v1/sessions/:id/transcript` — which between them run `lsof`, an Apple event to iTerm2, a whole
+transcript and a `git status`, and which used to stop a 0.001s health check for 3.143 seconds when
+five of them were in flight. The gates still run on the serial queue, where the state they read
+lives; only the waiting moved. The queue it goes to instead is serial too: two whispers at once
 on one Mac are slower than two in a row, so the queue **is** the concurrency limit, and the only
 thing left to choose was how long a line is worth standing in. Two.
 

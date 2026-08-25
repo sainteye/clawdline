@@ -156,7 +156,7 @@ items:
     opened: 2026-08-19
 
   - id: B-NOTIFY-WHEN-PRESENT
-    title: Guess: notifications fire while you are sitting at the Mac
+    title: "Guess: notifications fire while you are sitting at the Mac"
     problem: >-
       Guess — the notch and the menu bar have already said it, so a phone buzzing at the same
       moment carries no new information, and a channel that is usually redundant is one people
@@ -174,3 +174,103 @@ items:
     who_hurts: user
     trigger: Notification volume rises enough that somebody starts ignoring them.
     opened: 2026-08-19
+
+  - id: B-STICKY-WRONG-PATH
+    title: A transcript path chosen before the briefing lands can never be replaced
+    problem: >-
+      Identity is relocated only while `transcriptPath` is nil, and the marker gate that would
+      catch a wrong choice is only armed while `childSessionId` is nil. A pair that lands before
+      the briefing does — which is the ordinary order, since the hook supplies an exact filename
+      before the file has been written — is therefore never re-examined for the life of that
+      task. Today nothing writes a wrong one: the hook's filename is right by definition, and the
+      unvalidated creation-time fallback that used to write bad pairs is gone. This is the
+      mechanism sitting there for the next thing that writes one.
+    evidence: >-
+      Four reviews in a row on `Sources/Orchestrator.swift` traced this shape. The relocation
+      entry is guarded on `transcriptPath == nil` and the marker gate on `childSessionId == nil`;
+      with both non-nil there is no path back. The 2026-08-25 review measured the current registry
+      at 86 of 86 records finding their own marker, which is why this is recorded rather than
+      fixed.
+    severity: noise
+    cost: days
+    who_hurts: user
+    trigger: >-
+      Anything that writes an unproven pair again — a new identity source, or a fallback added
+      for a case the hook does not cover.
+    opened: 2026-08-26
+
+  - id: B-DEPTH-UNPROVEN
+    title: Dispatch depth is the last consumer that trusts an unproven identity
+    problem: >-
+      Every other consumer of a child's session id now requires the identity to have been proved
+      against the task's own briefing marker — token accounting, grandchild matching and
+      cancellation all check. `depthOfNew` does not. It is the last unproven entry, and it is
+      left because its error is in the safe direction: a wrong answer makes a new task deeper
+      than it should be, and the depth ceiling refuses rather than permits.
+    evidence: >-
+      Traced in the 2026-08-26 review while confirming the proof gate reaches every consumer.
+      `harvestUsage` and `provenChildSessionID` require `.belongs`; `cancelInPlace` keys on the
+      terminal id; `depthOfNew` reads the session id directly.
+    severity: invisible
+    cost: hours
+    who_hurts: user
+    trigger: >-
+      A change that makes depth permit rather than refuse on a bad answer, at which point the
+      safe direction stops being safe.
+    opened: 2026-08-26
+
+  - id: B-UNTURNED-TRANSCRIPT-UNDISPROVABLE
+    title: A complete transcript holding no user turn at all can no longer be disproved
+    problem: >-
+      Proving a transcript belongs elsewhere now rests on finding a completed user turn that is
+      not this task's briefing, which is what let files past the scan ceiling be judged on what
+      was read rather than on having read all of it. The cost is at the other end: a file that is
+      complete but contains no user turn at all — an assistant that only ever wrote bookkeeping,
+      or a rollout abandoned before its first message — returns unknown forever instead of
+      "somebody else's".
+    evidence: >-
+      The 2026-08-26 review verified the new condition in both directions against a real child
+      transcript (marker at byte 517, four bookkeeping rows before it) and the repository's own
+      Codex fixture. The gap is the empty-of-turns case, which neither direction covers.
+    severity: invisible
+    cost: hours
+    who_hurts: user
+    trigger: >-
+      A stored pair pointing at such a file, which would then be kept rather than cleared.
+    opened: 2026-08-26
+
+  - id: B-CODEX-HEADS-DOUBLE-OPTIONAL
+    title: The rollout header cache carries a nested optional that no longer means anything
+    problem: >-
+      `Codex.heads` stores an optional inside an optional so that "looked and found nothing" could
+      be told from "have not looked". Now that a failed read is no longer cached, the inner nil is
+      unreachable — the cache only ever holds a header it actually read. What is left is a type
+      that invites the next reader to reason about a state that cannot happen.
+    evidence: >-
+      Noted in the 2026-08-26 review after `Sources/Codex.swift` stopped caching nil results.
+    severity: invisible
+    cost: hours
+    who_hurts: user
+    trigger: >-
+      Somebody adding a third state to that cache, or reintroducing negative caching without
+      noticing the shape is already there.
+    opened: 2026-08-26
+
+  - id: B-WORKEDIN-REREADS
+    title: A rollout whose header is unreadable is re-read on every lookup of where it worked
+    problem: >-
+      Not caching failed header reads means a rollout that had not written its first line when it
+      was first opened can be proved later. The same change makes `workedIn` re-read such a file
+      each time it is asked. That only happens on user-driven paths rather than on the polling
+      loop, and only for rollouts that never got a header, so it is a small waste rather than a
+      hot one.
+    evidence: >-
+      Identified in the 2026-08-26 review as the deliberate cost of removing the permanent nil
+      cache in `Sources/Codex.swift`.
+    severity: invisible
+    cost: hours
+    who_hurts: user
+    trigger: >-
+      A path that calls it in a loop, or a directory holding many headerless rollouts.
+    opened: 2026-08-26
+
