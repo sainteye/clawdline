@@ -4100,6 +4100,215 @@ group("the page is given the words it draws the start sheet with") {
           "fr said \((french["webStart"] as? String) ?? "nothing")")
 }
 
+// MARK: - One sentence, turned into a draft of a session
+
+/// Three projects with ids of their own, so a test can tell "the second one" from "not that one"
+/// without depending on what this Mac has been worked in.
+let plannerPlaces = [
+    StartPoints.Place(id: StartPoints.id(for: "/Users/me/code/clawdline"),
+                      path: "/Users/me/code/clawdline", label: "clawdline",
+                      at: Date(timeIntervalSince1970: 3)),
+    StartPoints.Place(id: StartPoints.id(for: "/Users/me/code/notebook"),
+                      path: "/Users/me/code/notebook", label: "notebook",
+                      at: Date(timeIntervalSince1970: 2)),
+    StartPoints.Place(id: StartPoints.id(for: "/Users/me/code/cairn"),
+                      path: "/Users/me/code/cairn", label: "cairn",
+                      at: Date(timeIntervalSince1970: 1)),
+]
+
+group("the planner is shown a numbered list and never a way to write a path") {
+    let prompt = Planner.prompt(places: plannerPlaces, assistants: [.claude, .codex])
+
+    // The numbering is the whole of the safety argument: the model answers with an index and
+    // Swift maps it back, so a list that numbered from zero would shift every choice by one.
+    check("the list starts at one", prompt.contains("1. clawdline — /Users/me/code/clawdline"))
+    check("and counts up", prompt.contains("2. notebook — /Users/me/code/notebook"))
+    check("to the last one", prompt.contains("3. cairn — /Users/me/code/cairn"))
+    check("nothing is numbered zero", !prompt.contains("0. "))
+    check("the model is told what zero means instead", prompt.contains("or 0 when none"))
+    check("and told in as many words not to write a path", prompt.contains("Never write a path"))
+
+    // Only the assistants this Mac actually has. A draft naming one that is not installed opens
+    // a tab that says "command not found" — the same reason `/v1/places` sends the list.
+    let alone = Planner.prompt(places: plannerPlaces, assistants: [.claude])
+    check("the assistants offered are the ones passed in", alone.contains("you may pick: claude."))
+    check("and codex is not one of them when it is not there", !alone.contains("codex"))
+
+    // The transcript is speech, and the measured behaviour this buys is a misheard project name
+    // matching the right project rather than being read as a new one.
+    check("the model is told the sentence came from speech",
+          prompt.contains("speech-to-text"))
+    check("and that a near miss is not a new project",
+          prompt.contains("is that project, not a new one"))
+
+    // A Mac with nowhere to start a session still has to produce a prompt, and one that listed
+    // nothing at all would leave the model to invent a project rather than answer zero.
+    let nowhere = Planner.prompt(places: [], assistants: [.claude])
+    check("an empty list says it is empty", nowhere.contains("(none"))
+    check("and still says what zero means", nowhere.contains("or 0 when none"))
+
+    // The threshold is a number in one place, and the prompt is one of the things that has to
+    // agree with it — a model told 0.7 and read at 0.5 is a model whose guesses are taken as
+    // answers.
+    check("the confidence the prompt names is the one the code reads",
+          prompt.contains("Below \(Planner.sure) when you are guessing"))
+}
+
+group("a number the planner wrote is mapped back to a place, and nothing else is") {
+    expect("one is the first", Planner.place(number: 1, in: plannerPlaces)?.path,
+           "/Users/me/code/clawdline")
+    expect("two is the second", Planner.place(number: 2, in: plannerPlaces)?.path,
+           "/Users/me/code/notebook")
+    expect("and the last number is the last row", Planner.place(number: 3, in: plannerPlaces)?.path,
+           "/Users/me/code/cairn")
+
+    // Zero is how the prompt spells "none of these fits", so it has to be nothing rather than
+    // the first row — an off-by-one here sends work to whichever project was worked in last.
+    expect("zero is not the first project", Planner.place(number: 0, in: plannerPlaces)?.path, nil)
+    expect("nor is a negative one", Planner.place(number: -1, in: plannerPlaces)?.path, nil)
+    // A model that answered 4 for a list of 3 has not picked the last one — it has picked
+    // something that is not there, and clamping would have been an invented answer.
+    expect("one past the end is nothing", Planner.place(number: 4, in: plannerPlaces)?.path, nil)
+    expect("and so is a number nowhere near it",
+           Planner.place(number: 999, in: plannerPlaces)?.path, nil)
+    expect("an empty list has no first row either", Planner.place(number: 1, in: [])?.path, nil)
+}
+
+group("what a model printed becomes a draft, or does not") {
+    func object(_ json: String) -> [String: Any] {
+        ((try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any]) ?? [:]
+    }
+    let good = """
+    {"project":2,"assistant":"codex","instructions":"Run the tests and paste anything red",\
+    "title":"Run the tests","confidence":0.9,"question":""}
+    """
+
+    // The shape `claude -p --output-format json` prints. `structured_output` is the half that
+    // went through the schema, and it is what this reads when it is there.
+    let envelope = """
+    {"type":"result","is_error":false,"duration_ms":4600,"result":"ignored",\
+    "structured_output":\(good)}
+    """
+    let fromEnvelope = Planner.object(inClaudeOutput: envelope)
+    expect("the schema-validated object is the one taken",
+           (fromEnvelope?["assistant"] as? String), "codex")
+
+    // A run whose schema did not stick still prints the text, and that text is an answer.
+    let textOnly = """
+    {"type":"result","result":\(String(data: try! JSONSerialization.data(withJSONObject: good, options: .fragmentsAllowed), encoding: .utf8)!)}
+    """
+    expect("and `result` is read when it is not there",
+           (Planner.object(inClaudeOutput: textOnly)?["title"] as? String), "Run the tests")
+
+    // Measured on other one-shot turns in this app: a model asked for JSON writes a fence around
+    // it about as often as not, and a fence is not a failure to answer.
+    let fenced = "```json\n\(good)\n```"
+    expect("a markdown fence is not an answer this throws away",
+           (Planner.object(inText: fenced)?["title"] as? String), "Run the tests")
+    expect("nor is a fence with no language on it",
+           (Planner.object(inText: "```\n\(good)\n```")?["title"] as? String), "Run the tests")
+    expect("nor a sentence in front of the object",
+           (Planner.object(inText: "Here is the draft:\n\(good)")?["title"] as? String),
+           "Run the tests")
+
+    // Half an object is not a draft, and this is the case that matters: a turn killed at its
+    // deadline leaves exactly this behind, and a parser that repaired it would be inventing the
+    // half that never arrived.
+    expect("a truncated answer is nothing", Planner.object(inText: String(good.dropLast(20)))?.count, nil)
+    expect("and so is one cut inside a string",
+           Planner.object(inText: #"{"project":2,"instructions":"Run the te"#)?.count, nil)
+    expect("prose that never became an object is nothing",
+           Planner.object(inText: "I could not work out which project you meant.")?.count, nil)
+    expect("and neither is nothing at all", Planner.object(inClaudeOutput: "")?.count, nil)
+
+    // Every field is checked on the way in, because the fallback engine's answer went through no
+    // schema at all — `codex exec` is handed the shape in words.
+    let draft = Planner.draft(from: object(good), places: plannerPlaces)
+    expect("the number became the second project's id", draft?.placeID, plannerPlaces[1].id)
+    expect("the assistant is the one named", draft?.assistant, Assistant.codex)
+    expect("and the first message came through", draft?.instructions,
+           "Run the tests and paste anything red")
+
+    let offList = Planner.draft(from: object("""
+    {"project":9,"assistant":"claude","instructions":"do a thing","title":"t","confidence":0.9,\
+    "question":""}
+    """), places: plannerPlaces)
+    expect("a project that is not on the list is no project", offList?.placeID, nil)
+    check("and the draft survives to be read anyway", offList != nil)
+
+    let invented = Planner.draft(from: object("""
+    {"project":1,"assistant":"emacs","instructions":"do a thing","title":"t","confidence":0.9,\
+    "question":""}
+    """), places: plannerPlaces)
+    expect("an assistant nobody has heard of is not passed on", invented?.assistant,
+           Assistant.claude)
+
+    // The one field with nothing to fall back to. A draft with no first message in it is not a
+    // draft — there is nothing for a person to read, edit or send.
+    let silent = Planner.draft(from: object("""
+    {"project":1,"assistant":"claude","instructions":"   ","title":"t","confidence":0.9,\
+    "question":""}
+    """), places: plannerPlaces)
+    check("a draft with no instructions in it is not a draft", silent == nil)
+}
+
+group("how sure the planner was decides whether the page asks") {
+    func draft(_ confidence: Double, question: String) -> Planner.Draft? {
+        Planner.draft(from: ["project": 1, "assistant": "claude", "instructions": "do a thing",
+                             "title": "a title", "confidence": confidence, "question": question],
+                      places: plannerPlaces)
+    }
+
+    // Below the line the question is what the page shows; at or above it there is nothing to
+    // ask, and a model that wrote a question anyway would have the page asking about a draft it
+    // had no doubts about.
+    expect("a guess keeps its question", draft(0.3, question: "which project?")?.question,
+           "which project?")
+    expect("and the threshold itself counts as sure",
+           draft(Planner.sure, question: "which project?")?.question, "")
+    expect("as does anything above it", draft(0.95, question: "which project?")?.question, "")
+    expect("a confident draft with no question was never going to ask",
+           draft(0.9, question: "")?.question, "")
+
+    // A model asked for a number between nought and one will occasionally write 12. Clamped
+    // rather than refused: the number is a hint on a draft somebody is about to read, and
+    // throwing the draft away over it would be the worse answer.
+    expect("a confidence past one is one", draft(12, question: "")?.confidence, 1)
+    expect("and one below nought is nought", draft(-3, question: "x")?.confidence, 0)
+    expect("nought is still a guess, so it still asks", draft(-3, question: "x")?.question, "x")
+}
+
+group("the sentence POST /v1/intents plans from, before it costs a model turn") {
+    func refusal(_ body: [String: Any]) -> String {
+        guard case .refused(let response) = RemoteServer.intent(from: body) else { return "" }
+        return remoteErrorCode(response)
+    }
+    func sentence(_ body: [String: Any]) -> String? {
+        guard case .text(let text) = RemoteServer.intent(from: body) else { return nil }
+        return text
+    }
+
+    expect("no text at all is a bad request", refusal([:]), "bad_request")
+    expect("and neither is a number one", refusal(["text": 7]), "bad_request")
+    expect("an empty one too", refusal(["text": ""]), "bad_request")
+    expect("and one that is only whitespace", refusal(["text": "  \n\t "]), "bad_request")
+
+    expect("an ordinary sentence gets through",
+           sentence(["text": "run the tests in clawdline"]), "run the tests in clawdline")
+    expect("and arrives trimmed",
+           sentence(["text": "  run the tests \n"]), "run the tests")
+
+    // The limit is in bytes rather than characters, because what it is protecting is what a
+    // model is paid to read — and a Chinese sentence is three bytes a character.
+    let long = String(repeating: "a", count: RemoteServer.intentLimit)
+    expect("exactly the limit is allowed", sentence(["text": long])?.count, RemoteServer.intentLimit)
+    expect("one byte past it is not", refusal(["text": long + "a"]), "bad_request")
+    let chinese = String(repeating: "字", count: RemoteServer.intentLimit / 3 + 1)
+    check("and a sentence counted in characters would have slipped past",
+          chinese.count <= RemoteServer.intentLimit && chinese.utf8.count > RemoteServer.intentLimit)
+    expect("so it is counted in bytes", refusal(["text": chinese]), "bad_request")
+}
+
 group("a deploy is news only when it stops running") {
     // The whole feature is one rule applied to two readings, and every way of getting it wrong
     // is a phone buzzing about something that did not just happen.

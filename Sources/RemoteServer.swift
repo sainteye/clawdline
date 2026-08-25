@@ -229,6 +229,16 @@ final class RemoteServer {
             transcribe(request, on: conn)
             return
         }
+        // And the planner is the third, for the same reason with a bigger number on it. Dictation
+        // is off `route` because 1.6 seconds on the shared queue stops everything; a model turn
+        // is 3.2 to 5.1 seconds measured on this Mac and 30 at its deadline, which is not a
+        // slower version of the same problem — it is a phone deciding the Mac died. The reasoning
+        // in the comment above is not about whisper, it is about *how long the answer takes*, so
+        // anything that takes seconds belongs here rather than in the switch.
+        if request.method == "POST", request.path == "/v1/intents" {
+            plan(request, on: conn)
+            return
+        }
         let response = route(request)
         send(response, on: conn)
     }
@@ -1492,6 +1502,158 @@ final class RemoteServer {
         return .json(["text": text, "ms": ms])
     }
 
+    // MARK: - Planning
+
+    /// What a `/v1/intents` body turned out to be: a sentence worth planning from, or the refusal
+    /// it earned. The shape ``Recording`` has, for the same reason it has it — a test can ask
+    /// every question on this list without a socket, a model, or an account to bill.
+    enum Sentence {
+        case text(String)
+        case refused(Response)
+    }
+
+    /// Four kibibytes of it, and that is generous rather than tight.
+    ///
+    /// The far end of this is somebody talking into a phone: five minutes of speech — the ceiling
+    /// `/v1/voice` keeps — is a few hundred words, well inside this. What the limit is really for
+    /// is the client that sends a file instead of a sentence, because every byte past the point a
+    /// person could have said it is a byte this Mac pays a model to read.
+    static let intentLimit = 4 << 10
+
+    static func intent(from body: [String: Any]) -> Sentence {
+        guard let raw = body["text"] as? String else {
+            return .refused(.error(400, "bad_request", "That needs text: what the person said."))
+        }
+        // Counted in bytes rather than characters, because the limit is about what is paid for
+        // and a Chinese sentence is three bytes a character. Counted *before* trimming, so a body
+        // that is four kilobytes of whitespace is refused for its size rather than for being
+        // empty — which is the more useful of the two sentences to be told.
+        guard raw.utf8.count <= intentLimit else {
+            return .refused(.error(400, "bad_request",
+                                   "That was \(raw.utf8.count) bytes and the limit is "
+                                   + "\(intentLimit). This plans a sentence, not a document."))
+        }
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            return .refused(.error(400, "bad_request", "That text was empty."))
+        }
+        return .text(text)
+    }
+
+    /// One spoken sentence, turned into a draft of a session — see ``Planner``.
+    ///
+    /// **Gated exactly like dictation, and for the third of the three reasons.** It starts
+    /// nothing: what it answers with is an object a person reads, edits and may throw away, and
+    /// `POST /v1/places/:id/start` remains the only thing in the app that opens a session. What
+    /// it does spend is a model turn on somebody else's account and half a minute of this Mac's
+    /// patience, and read-level access is meant to be cheap for the Mac to grant.
+    ///
+    /// Answered off the server's queue for the reason `handle` gives: five seconds on the one
+    /// queue every connection is read on is five seconds of nothing else being answered.
+    private func plan(_ request: Request, on conn: NWConnection) {
+        if let refusal = crossOriginRefusal(request) ?? writeOriginRefusal(request) {
+            send(withCachePolicy(refusal), on: conn)
+            return
+        }
+        // Not being paired before not being allowed to send, the same order dictation puts them
+        // in and for the same reason: they are different sentences and only the second is about
+        // permission. See the note in `transcribe`.
+        if case .denied = permission(for: request) {
+            send(withCachePolicy(.error(401, "unauthorized", "This needs a paired device.")),
+                 on: conn)
+            return
+        }
+        let device: String, key: String
+        switch writeGate(request) {
+        case .refused(let response), .replay(let response):
+            send(withCachePolicy(response), on: conn)
+            return
+        case .go(let allowed, let filed):
+            device = allowed
+            key = filed
+        }
+
+        let parsed = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
+        let sentence: String
+        switch Self.intent(from: parsed) {
+        case .refused(let response):
+            // Filed under the key, like dictation files a body it could not read: a sentence that
+            // is too long is a settled fact about *this request*, and a retry of it deserves the
+            // same answer rather than another look at the same four kilobytes.
+            remember(response, under: key, for: request, by: device)
+            send(withCachePolicy(response), on: conn)
+            return
+        case .text(let said):
+            sentence = said
+        }
+
+        // Neither `busy` nor `no_planner` is filed under the key, for the reason spelled out in
+        // `transcribe`: both are about this machine at this moment rather than about the request,
+        // and an answer frozen for ten minutes would tell the retry that was supposed to work
+        // that the queue is still full long after it emptied.
+        guard planQueued < Self.planDepth else {
+            send(withCachePolicy(.error(429, "busy",
+                                        "This Mac is already working out two of these. Try again "
+                                        + "in a moment.")), on: conn)
+            return
+        }
+        planQueued += 1
+        Planner.queue.async { [weak self] in
+            guard let self else { conn.cancel(); return }
+            let response = Self.planning(of: sentence, by: device)
+            // Back to the server's queue before anything is remembered or written, because the
+            // idempotency table and the counter above both belong to it and this closure does not.
+            self.queue.async {
+                self.planQueued -= 1
+                if response.status == 200 {
+                    self.remember(response, under: key, for: request, by: device)
+                }
+                self.send(self.withCachePolicy(response), on: conn)
+            }
+        }
+    }
+
+    /// How many of these are on ``Planner/queue``. Touched only from the server's queue.
+    private var planQueued = 0
+
+    /// One running, one waiting, and the third is told to come back — dictation's number, and the
+    /// same argument: this is how long somebody is willing to hold a phone, not a resource limit.
+    /// A model turn is longer than a transcription, which makes the case stronger rather than
+    /// weaker.
+    static let planDepth = 2
+
+    /// The model turn this route exists for, run on the planner's queue and nowhere else.
+    private static func planning(of sentence: String, by device: String) -> Response {
+        let started = Date()
+        let outcome = Planner.draft(for: sentence)
+        let ms = Int(Date().timeIntervalSince(started) * 1000)
+        switch outcome {
+        case .noPlanner:
+            RemoteAuth.audit("intent.plan", ["device": device, "ms": "\(ms)", "ok": "0",
+                                             "why": "no_planner"])
+            return .error(503, "no_planner",
+                          "This Mac has neither claude nor codex on it, so there is nothing here "
+                          + "to work out what you meant with.")
+        case .failed:
+            RemoteAuth.audit("intent.plan", ["device": device, "ms": "\(ms)", "ok": "0",
+                                             "why": "failed"])
+            // A 502 rather than a 500: what failed is the thing this asked, not this. The two
+            // ways it happens — a turn that ran out of its thirty seconds, and one that answered
+            // with prose instead of an object — are one sentence to whoever is holding the phone,
+            // and the log has the difference.
+            return .error(502, "plan_failed",
+                          "The planner did not come back with anything usable. Try saying it "
+                          + "again, or start the session by hand.")
+        case .drafted(let draft):
+            RemoteAuth.audit("intent.plan", ["device": device, "ms": "\(ms)",
+                                             "place": draft.placeID ?? "none",
+                                             "assistant": draft.assistant.rawValue,
+                                             "confidence": String(format: "%.2f", draft.confidence),
+                                             "ok": "1"])
+            return .json(["draft": draft.payload, "ms": ms])
+        }
+    }
+
     /// An orchestrator reply, in the envelope everything else already uses.
     private func answer(_ reply: Orchestrator.Reply) -> Response {
         switch reply {
@@ -2146,6 +2308,28 @@ final class RemoteServer {
             "webVoiceNoBinary": t.webVoiceNoBinary,
             "webVoiceNoModel": t.webVoiceNoModel,
             "webVoiceFailed": t.webVoiceFailed,
+        ])
+
+        // The command sheet: one sentence, the draft it turned into, and the four ways there is
+        // no draft to show. Three of those four are this Mac answering `POST /v1/intents` —
+        // `no_planner`, `busy` and a turn that came back with nothing — and the fourth is the
+        // page noticing it was handed an empty sentence before it spent anything asking.
+        add([
+            "webCommand": t.webCommand,
+            "webCommandLabel": t.webCommandLabel,
+            "webCommandSay": t.webCommandSay,
+            "webCommandHeard": t.webCommandHeard,
+            "webCommandThinking": t.webCommandThinking,
+            "webCommandDraft": t.webCommandDraft,
+            "webCommandWhere": t.webCommandWhere,
+            "webCommandWith": t.webCommandWith,
+            "webCommandFirst": t.webCommandFirst,
+            "webCommandGo": t.webCommandGo,
+            "webCommandUnsure": t.webCommandUnsure,
+            "webCommandFailed": t.webCommandFailed,
+            "webCommandNoPlanner": t.webCommandNoPlanner,
+            "webCommandBusy": t.webCommandBusy,
+            "webCommandEmpty": t.webCommandEmpty,
         ])
 
         // Starting a session from the page — the sheet, and the wait between the tab opening and
