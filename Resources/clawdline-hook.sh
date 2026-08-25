@@ -98,11 +98,6 @@ if [ -z "$tty" ]; then
     done
     [ -n "$tty" ] && [ -n "$session" ] && printf '%s' "$tty" > "$dir/.tty-$session" 2>/dev/null
 fi
-# No tty, no note. There is nothing to key it on, and a note nobody can match to a session on
-# screen is worse than none: the app would show it as installed and working while telling you
-# nothing. Screen reading covers this case, as it covers every case.
-[ -n "$tty" ] || exit 0
-
 # **A census, not a state.** `notification_seen` is registered without a matcher, so it receives
 # every notification Claude Code raises and appends the type to a log instead of writing a note.
 # It exists to answer one question that no filtered registration can: what, if anything, is
@@ -120,13 +115,18 @@ if [ "$kind" = "notification_seen" ]; then
         | /usr/bin/plutil -extract message raw -o - - 2>/dev/null | /usr/bin/head -c 60)
     [ -n "$seen" ] || seen="(no type field)"
     log="$dir/notification-census.log"
-    printf '%s %s %s\n' "$(date +%H:%M:%S)" "$tty" "$seen" >> "$log" 2>/dev/null
+    printf '%s %s %s\n' "$(date +%H:%M:%S)" "${tty:-no-tty}" "$seen" >> "$log" 2>/dev/null
     lines=$(/usr/bin/wc -l < "$log" 2>/dev/null | /usr/bin/tr -d ' ')
     if [ "${lines:-0}" -gt 400 ] 2>/dev/null; then
         /usr/bin/tail -n 200 "$log" > "$log.trim" 2>/dev/null && /bin/mv "$log.trim" "$log"
     fi
     exit 0
 fi
+
+# No tty, no note. There is nothing to key it on, and a note nobody can match to a session on
+# screen is worse than none: the app would show it as installed and working while telling you
+# nothing. Screen reading covers this case, as it covers every case.
+[ -n "$tty" ] || exit 0
 
 # An idle notification must never erase an authoritative question that is still unanswered.
 # PostToolUse replaces the AskUserQuestion note when the answer lands; until then the older note
