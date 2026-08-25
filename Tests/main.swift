@@ -3125,9 +3125,13 @@ group("hooks: editing somebody else's settings file") {
               })
     }
     let notifications = hooks["Notification"] as? [[String: Any]] ?? []
-    expect("Notification is split into two matcher groups",
+    // One event, three meanings, each filtered on its own. `agent_needs_input` is Claude Code's
+    // own word for somebody having to answer something now — registered to find out whether it
+    // arrives when a picker opens, which is the signal `PreToolUse` was expected to give and
+    // measurably does not.
+    expect("Notification is split per meaning, not registered once",
            Set(notifications.compactMap { $0["matcher"] as? String }),
-           Set(["permission_prompt", "idle_prompt"]))
+           Set(["permission_prompt", "idle_prompt", "agent_needs_input"]))
 
     // Pressing Install twice is a thing people do.
     let twice = HookBridge.adding("/Users/x/.config/clawdline/hook.sh", to: after)

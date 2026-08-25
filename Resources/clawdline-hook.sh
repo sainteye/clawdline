@@ -42,7 +42,7 @@ case "$event" in
     *) exit 0 ;;
 esac
 case "$kind" in
-    session_start|user_prompt_submit|stop|ask_user_question|ask_user_question_done|permission_request|permission_prompt|idle_prompt|session_end) ;;
+    session_start|user_prompt_submit|stop|ask_user_question|ask_user_question_done|permission_request|permission_prompt|idle_prompt|agent_needs_input|session_end) ;;
     *) exit 0 ;;
 esac
 

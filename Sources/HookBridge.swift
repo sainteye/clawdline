@@ -68,6 +68,12 @@ enum HookBridge {
         case permissionRequest = "permission_request"
         case permissionPrompt = "permission_prompt"
         case idlePrompt = "idle_prompt"
+        /// Claude Code's own word for "somebody has to answer something now". Registered because
+        /// `PreToolUse` filtered to `AskUserQuestion` — the obvious signal — is measured not to
+        /// fire, while `PostToolUse` on the same tool arrives on the second the answer is given.
+        /// If this one turns up when a picker opens, it is the start signal that was missing, and
+        /// the screen stops having to be guessed at.
+        case agentNeedsInput = "agent_needs_input"
         case sessionEnd = "session_end"
     }
 
@@ -90,6 +96,8 @@ enum HookBridge {
             Registration(event: .notification, matcher: "permission_prompt",
                          kind: .permissionPrompt),
             Registration(event: .notification, matcher: "idle_prompt", kind: .idlePrompt),
+            Registration(event: .notification, matcher: "agent_needs_input",
+                         kind: .agentNeedsInput),
             Registration(event: .sessionEnd, matcher: nil, kind: .sessionEnd),
         ]
     }
@@ -372,8 +380,14 @@ enum HookBridge {
             case .idlePrompt, .sessionStart:
                 // These only ask us to look. The reading that just happened is the answer.
                 continue
-            case .askUserQuestion, .askUserQuestionDone, .permissionRequest, .permissionPrompt:
+            case .askUserQuestion, .askUserQuestionDone, .permissionRequest, .permissionPrompt,
+                 .agentNeedsInput:
                 // Opening notes already gated parsing; the closing note was handled above.
+                //
+                // `agentNeedsInput` asserts nothing yet, deliberately: it is registered to find
+                // out whether Claude Code raises it when a picker opens, which is the one thing
+                // no measured signal does today. Until that is observed it behaves as a
+                // look-only note, so registering it cannot make any reading worse.
                 continue
             }
         }
