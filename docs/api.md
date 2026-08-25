@@ -978,6 +978,25 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
 A `200` means *registered and being opened*, not *running*. `state` is `queued` or `spawning` when
 this answers and the child has typed nothing yet; watch the record, or wait to be told.
 
+It may also carry `warnings` beside `task`. Today the only warning is advisory workspace overlap:
+
+```json
+{"ok":true,"task":{"id":"3f9a21bc-…","state":"spawning"},
+ "warnings":[{"code":"workspace_overlap","task":"a70c5e11-3b28-4d6f-8e10-2c94b7f0d3aa",
+              "dir":"/Users/you/code/clawdline",
+              "message":"Task 3f9a21bc-… overlaps active task a70c5e11-… at /Users/you/code/clawdline."}]}
+```
+
+In this example the active task's `project_dir` is `/Users/you/code`, while the new task uses its
+`clawdline` descendant; `dir` and the path in `message` both name the shared writable descendant.
+Each entry names an active task from another dispatch tree whose directory is equal to, an ancestor
+of, or a descendant of the new task's directory. Tree identity follows `parent_task` links back to
+the same root; an otherwise missing root session id remains unknown and therefore different. The
+warning never blocks or delays registration; with no overlaps the entire field is absent, not an
+empty array. An idempotent retry uses this same response shape and recomputes currently active
+overlaps. Both identifiable roots also receive a best-effort typed line outside the request queue,
+so terminal delivery cannot delay the response.
+
 ### `GET /v1/orchestrator/tasks`, `GET /v1/orchestrator/tasks/:id`
 
 Every task this Mac knows about, newest first, capped at the most recent 200 records — or one of

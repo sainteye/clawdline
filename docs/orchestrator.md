@@ -333,6 +333,36 @@ it is what gets a task filed under its actual parent on the first try instead of
 root's. Getting it wrong costs capacity and never buys any — [the two names are combined by taking
 the deeper answer](#depth-stops-at-two-and-the-floor-is-what-has-teeth).
 
+### When two roots share a workspace
+
+A successful dispatch also looks at every task still in `queued`, `spawning` or `briefed`. If one
+from a different root is working in the same `project_dir`, or one directory is an ancestor of the
+other, the reply carries a `warnings` array beside `task`:
+
+```json
+{"ok":true,"task":{"id":"3f9a21bc-…","state":"spawning"},
+ "warnings":[{"code":"workspace_overlap","task":"a70c5e11-3b28-4d6f-8e10-2c94b7f0d3aa",
+              "dir":"/Users/you/code/clawdline",
+              "message":"Task 3f9a21bc-… overlaps active task a70c5e11-… at /Users/you/code/clawdline."}]}
+```
+
+This is visibility, not arbitration. The task is still registered and opened, no state changes,
+and when there is no overlap the `warnings` field is absent rather than an empty array; idempotent
+retries recompute the same field from the tasks currently active. Paths are resolved and compared
+by component, so `/a/b` contains `/a/b/c` but has no relationship to
+`/a/bc`; spelling deliberately remains case-sensitive, as it is in `StartPoints.isDurablePlace`,
+even on the usual case-insensitive APFS volume. The `dir` field and the path in `message` both name
+the shared writable descendant: if an active task uses `/Users/you/code` and the new task uses
+`/Users/you/code/clawdline`, both say `/Users/you/code/clawdline`. Tree identity follows
+`parent_task` links back to the same root, so a depth-two task does not warn about its parent or
+siblings. Without such a link, a null root session id is unknown and the overlap is reported.
+
+The new task's root also gets one aggregate `[clawdline]` line for all overlaps, while every other
+root that can be found gets the line concerning its task. A root with a null session id cannot be
+found and is quietly skipped. Delivery runs outside the request queue; as with completion
+notification, a root showing a menu or a failed terminal send does not affect dispatch.
+`orchestrator_notify_root` turns these typed lines off too.
+
 ### `CHILD.md` — written by the app, read by the child
 
 The child's first message is one line:

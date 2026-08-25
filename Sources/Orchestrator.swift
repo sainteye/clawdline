@@ -524,6 +524,31 @@ enum Orchestrator {
         var plan: String?
     }
 
+    /// A live task whose working directory intersects the one being dispatched. The task is a
+    /// value snapshot: warning is advisory, so a task finishing while the new tab opens does not
+    /// turn a truthful observation at dispatch time into a reason to change the reply.
+    struct WorkspaceOverlap {
+        let task: Task
+        let sharedDir: String
+
+        func warning(for newTaskID: String) -> [String: Any] {
+            [
+                "code": "workspace_overlap",
+                "task": task.id,
+                "dir": sharedDir,
+                "message": "Task \(newTaskID) overlaps active task \(task.id) at \(sharedDir).",
+            ]
+        }
+    }
+
+    /// One best-effort terminal delivery, separated from the AppleScript side so aggregation and
+    /// missing-root decisions can be tested without a live terminal.
+    struct WorkspaceOverlapNotice {
+        let rootSessionID: String
+        let taskID: String
+        let line: String
+    }
+
     enum DraftOutcome: Equatable {
         case ok(Draft)
         case bad(String)
@@ -605,6 +630,84 @@ enum Orchestrator {
         return id.allSatisfy { ("a"..."f").contains($0) || $0.isNumber || $0 == "-" }
     }
 
+    /// The directory both tasks may write, or nil when their paths are merely string prefixes.
+    ///
+    /// Paths are resolved the way the rest of the project resolves working directories:
+    /// standardise first, then follow symlinks, and compare the resulting spelling exactly.
+    /// Comparing components is what keeps `/a/b` separate from `/a/bc`, and also handles `/`
+    /// without a special string-prefix case.
+    static func sharedWorkspaceDirectory(_ first: String, _ second: String) -> String? {
+        let first = URL(fileURLWithPath: first).standardizedFileURL
+            .resolvingSymlinksInPath().path
+        let second = URL(fileURLWithPath: second).standardizedFileURL
+            .resolvingSymlinksInPath().path
+        let firstParts = URL(fileURLWithPath: first).pathComponents
+        let secondParts = URL(fileURLWithPath: second).pathComponents
+        let common = min(firstParts.count, secondParts.count)
+        for index in 0..<common where firstParts[index] != secondParts[index] { return nil }
+        if firstParts.count == common { return second }
+        if secondParts.count == common { return first }
+        return nil
+    }
+
+    /// The root key used throughout the orchestrator, with the task table supplied explicitly so
+    /// the dispatch-time overlap rules remain a pure unit-test seam.
+    private static func rootKey(of task: Task, among existing: [String: Task]) -> String {
+        var at = task
+        var hops = 0
+        while let parentID = at.parentTaskId, let above = existing[parentID], hops < depthFloor {
+            at = above
+            hops += 1
+        }
+        return at.rootSessionId ?? "task:\(at.id)"
+    }
+
+    /// Pure half of the dispatch-time scan, kept visible to the unit suite so path boundaries,
+    /// root identity and terminal-state filtering do not need a live terminal to exercise them.
+    static func workspaceOverlaps(for newTask: Task,
+                                  among existing: [Task]) -> [WorkspaceOverlap] {
+        let indexed = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
+        let newRoot = rootKey(of: newTask, among: indexed)
+        let rooted = existing.map { (task: $0, rootKey: rootKey(of: $0, among: indexed)) }
+        return workspaceOverlaps(for: newTask, rootKey: newRoot, among: rooted)
+    }
+
+    private static func workspaceOverlaps(for newTask: Task, rootKey newRoot: String,
+                                          among existing: [(task: Task, rootKey: String)])
+        -> [WorkspaceOverlap] {
+        guard !newTask.state.isTerminal else { return [] }
+        return existing.compactMap { item -> WorkspaceOverlap? in
+            let task = item.task
+            guard task.id != newTask.id, !task.state.isTerminal,
+                  item.rootKey != newRoot,
+                  let shared = sharedWorkspaceDirectory(newTask.projectDir, task.projectDir)
+            else { return nil }
+            return WorkspaceOverlap(task: task, sharedDir: shared)
+        }.sorted { left, right in
+            if left.task.created == right.task.created { return left.task.id < right.task.id }
+            return left.task.created < right.task.created
+        }
+    }
+
+    private static func workspaceOverlaps(for newTask: Task) -> [WorkspaceOverlap] {
+        lock.lock()
+        let newRoot = rootKeyLocked(of: newTask)
+        let existing = tasks.values.map { (task: $0, rootKey: rootKeyLocked(of: $0)) }
+        lock.unlock()
+        return workspaceOverlaps(for: newTask, rootKey: newRoot, among: existing)
+    }
+
+    /// Wire payload shared by first dispatches and idempotent retries. Keeping the optional field
+    /// here makes "absent, not an empty array" explicit and independently testable.
+    static func dispatchPayload(record: [String: Any], taskID: String,
+                                overlaps: [WorkspaceOverlap]) -> [String: Any] {
+        var reply: [String: Any] = ["ok": true, "task": record]
+        if !overlaps.isEmpty {
+            reply["warnings"] = overlaps.map { $0.warning(for: taskID) }
+        }
+        return reply
+    }
+
     // MARK: - Dispatch
 
     /// Runs on the server queue. Everything filesystem- and process-shaped is safe there — the
@@ -618,7 +721,7 @@ enum Orchestrator {
         }
         // Same task again is the same answer again: the root retrying a dispatch that already
         // landed must not spawn a second child.
-        if let existing = existingRecord(taskID) { return .ok(["ok": true, "task": existing]) }
+        if let existing = held(taskID) { return successfulDispatchReply(for: existing) }
         guard secret.count == 64, secret.allSatisfy({ ("a"..."f").contains($0) || $0.isNumber }) else {
             return .refused(422, "bad_task", "secret must be 64 hex characters.")
         }
@@ -701,10 +804,18 @@ enum Orchestrator {
         save()
         DispatchQueue.main.async { SessionWatch.shared.nudge() }
         RemoteServer.shared.broadcastOrchestrator()
-        guard let record = existingRecord(taskID) else {
+        return successfulDispatchReply(for: task, notify: true)
+    }
+
+    /// One response builder for both the first request and an idempotent retry. The scan happens
+    /// after spawn so a task that failed to open is already terminal and produces no warning.
+    private static func successfulDispatchReply(for task: Task, notify: Bool = false) -> Reply {
+        guard let record = existingRecord(task.id) else {
             return .refused(500, "internal", "The task was lost while being made.")
         }
-        return .ok(["ok": true, "task": record])
+        let overlaps = workspaceOverlaps(for: task)
+        if notify { notifyWorkspaceOverlaps(newTask: task, overlaps: overlaps) }
+        return .ok(dispatchPayload(record: record, taskID: task.id, overlaps: overlaps))
     }
 
     private static func spawn(_ task: Task) -> Task {
@@ -1775,6 +1886,61 @@ enum Orchestrator {
         }
     }
 
+    /// Tell both roots that two live tasks can touch the same directory. Advisory and one-shot:
+    /// like completion notification, a missing root, a menu, or a failed send leaves the API
+    /// record as the durable answer and never changes the dispatch outcome.
+    private static func notifyWorkspaceOverlaps(newTask: Task,
+                                                overlaps: [WorkspaceOverlap]) {
+        guard Config.shared.orchestratorNotifyRoot else { return }
+        let notices = workspaceOverlapNotices(newTask: newTask, overlaps: overlaps)
+        guard !notices.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async {
+            for notice in notices {
+                sendWorkspaceOverlap(notice.line, toRootSession: notice.rootSessionID,
+                                     taskID: notice.taskID)
+            }
+        }
+    }
+
+    /// The pure notification decision. The new task gets one aggregate line; each identifiable
+    /// opposing root gets the one overlap that concerns it. Nil root ids produce no delivery.
+    static func workspaceOverlapNotices(newTask: Task,
+                                        overlaps: [WorkspaceOverlap]) -> [WorkspaceOverlapNotice] {
+        guard !overlaps.isEmpty else { return [] }
+        var notices: [WorkspaceOverlapNotice] = []
+        if let root = newTask.rootSessionId {
+            let details = overlaps.map { overlap in
+                let other = overlap.task
+                return "task \(other.id.prefix(8)) (\(other.title)) at \(overlap.sharedDir)"
+            }.joined(separator: "; ")
+            let line = "[clawdline] workspace overlap: task \(newTask.id.prefix(8)) "
+                + "(\(newTask.title)) overlaps \(overlaps.count) active "
+                + (overlaps.count == 1 ? "task: " : "tasks: ") + details
+            notices.append(WorkspaceOverlapNotice(rootSessionID: root, taskID: newTask.id,
+                                                   line: line))
+        }
+        for overlap in overlaps {
+            let other = overlap.task
+            guard let root = other.rootSessionId else { continue }
+            let line = "[clawdline] workspace overlap: task \(newTask.id.prefix(8)) "
+                + "(\(newTask.title)) and task \(other.id.prefix(8)) (\(other.title)) "
+                + "share \(overlap.sharedDir)"
+            notices.append(WorkspaceOverlapNotice(rootSessionID: root, taskID: other.id,
+                                                   line: line))
+        }
+        return notices
+    }
+
+    private static func sendWorkspaceOverlap(_ line: String, toRootSession sessionID: String,
+                                             taskID: String) {
+        guard let root = target(forRootSession: sessionID),
+              !Targets.isChoosing(root) else { return }
+        if let failure = Targets.send(line, to: root) {
+            Log.write("orchestrator: could not notify task \(taskID) root of workspace overlap"
+                      + " — \(failure)")
+        }
+    }
+
     // MARK: - Telling the person, once
 
     /// What one root's fan-out has come to, accumulated as its tasks end.
@@ -1806,13 +1972,7 @@ enum Orchestrator {
     /// A task that named nobody gets a key of its own rather than sharing one with every other
     /// anonymous dispatch — the alternative is two unrelated fan-outs waiting for each other.
     private static func rootKeyLocked(of task: Task) -> String {
-        var at = task
-        var hops = 0
-        while let parentID = at.parentTaskId, let above = tasks[parentID], hops < depthFloor {
-            at = above
-            hops += 1
-        }
-        return at.rootSessionId ?? "task:\(at.id)"
+        rootKey(of: task, among: tasks)
     }
 
     /// Main thread, from ``finalize(_:as:summary:artifacts:)``. Every ending goes through there —
@@ -2678,6 +2838,16 @@ enum Orchestrator {
     private static func target(withID id: String) -> TargetSession? {
         if Thread.isMainThread { return SessionWatch.shared.targets.first { $0.id == id } }
         return DispatchQueue.main.sync { SessionWatch.shared.targets.first { $0.id == id } }
+    }
+
+    private static func target(forRootSession sessionID: String) -> TargetSession? {
+        let find = {
+            SessionWatch.shared.targets.first {
+                HookBridge.note(for: $0)?.session == sessionID
+            }
+        }
+        if Thread.isMainThread { return find() }
+        return DispatchQueue.main.sync(execute: find)
     }
 
     /// Test seam: forget everything in memory.

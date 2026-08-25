@@ -6325,6 +6325,140 @@ group("a task id is the name of a directory, so it may not be a path") {
     check("nor nothing at all", !Orchestrator.isTaskID(""))
 }
 
+group("workspace overlap is a path-component relationship") {
+    expect("the same directory is shared",
+           Orchestrator.sharedWorkspaceDirectory("/a/b", "/a/b"), "/a/b")
+    expect("a child is the shared part of an ancestor and descendant",
+           Orchestrator.sharedWorkspaceDirectory("/a/b", "/a/b/c"), "/a/b/c")
+    expect("and order does not change that answer",
+           Orchestrator.sharedWorkspaceDirectory("/a/b/c", "/a/b"), "/a/b/c")
+    expect("a string prefix that ends mid-component is not overlap",
+           Orchestrator.sharedWorkspaceDirectory("/a/b", "/a/bc"), nil)
+    expect("case follows the repository's exact resolved-path comparisons",
+           Orchestrator.sharedWorkspaceDirectory("/a/B", "/a/b"), nil)
+    expect("standard path components are compared after dot segments are removed",
+           Orchestrator.sharedWorkspaceDirectory("/a/b/../c", "/a/c/d"), "/a/c/d")
+    expect("a trailing slash is the same directory",
+           Orchestrator.sharedWorkspaceDirectory("/a/b/", "/a/b"), "/a/b")
+}
+
+group("workspace overlap follows the whole dispatch tree") {
+    let firstRoot = "11111111-2222-3333-4444-555555555555"
+    let secondRoot = "66666666-7777-8888-9999-aaaaaaaaaaaa"
+    func task(_ id: String, dir: String, root: String?, state: Orchestrator.State = .briefed,
+              created: TimeInterval = 1) -> Orchestrator.Task {
+        Orchestrator.Task(id: id, state: state, kind: "custom", title: "a task",
+                          assistant: .claude, projectDir: dir, timeoutMinutes: 30,
+                          created: Date(timeIntervalSince1970: created),
+                          rootSessionId: root,
+                          secretHash: String(repeating: "0", count: 64))
+    }
+
+    let otherID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    let other = task(otherID, dir: "/a/b/c", root: secondRoot)
+    expect("the same known root is quiet",
+           Orchestrator.workspaceOverlaps(for: task(taskID, dir: "/a/b", root: secondRoot),
+                                          among: [other]).count, 0)
+    let newcomer = task(taskID, dir: "/a/b/c/d", root: firstRoot)
+    let across = Orchestrator.workspaceOverlaps(for: newcomer, among: [other])
+    expect("different roots warn", across.count, 1)
+    expect("different roots in unrelated directories remain quiet",
+           Orchestrator.workspaceOverlaps(
+               for: task(taskID, dir: "/unrelated", root: firstRoot), among: [other]
+           ).count, 0)
+    expect("the overlap records the shared descendant directory", across.first?.sharedDir,
+           "/a/b/c/d")
+    let warning = across.first?.warning(for: taskID)
+    check("the wire warning names its code, opposing task and shared directory consistently",
+          warning?["code"] as? String == "workspace_overlap"
+              && warning?["task"] as? String == otherID
+              && warning?["dir"] as? String == "/a/b/c/d"
+              && (warning?["message"] as? String)?.contains("at /a/b/c/d") == true)
+
+    let unknown = task("bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+                       dir: "/a/b/child", root: nil)
+    expect("an existing task with unknown root warns",
+           Orchestrator.workspaceOverlaps(for: task(taskID, dir: "/a/b", root: firstRoot),
+                                          among: [unknown]).count, 1)
+    expect("an unknown new root warns against a known root",
+           Orchestrator.workspaceOverlaps(for: task(taskID, dir: "/a/b", root: nil),
+                                          among: [other]).count, 1)
+    expect("and an unknown new root warns even against another unknown root",
+           Orchestrator.workspaceOverlaps(for: task(taskID, dir: "/a/b", root: nil),
+                                          among: [unknown]).count, 1)
+
+    var parent = task("12121212-3434-5656-7878-909090909090",
+                      dir: "/a/b", root: firstRoot)
+    parent.depth = 1
+    var grandchild = task("23232323-4545-6767-8989-010101010101",
+                          dir: "/a/b/child", root: nil)
+    grandchild.depth = 2
+    grandchild.parentTaskId = parent.id
+    var sibling = task("34343434-5656-7878-9090-121212121212",
+                       dir: "/a/b/sibling", root: nil)
+    sibling.depth = 2
+    sibling.parentTaskId = parent.id
+    expect("a grandchild inherits its parent's root and does not warn about its tree",
+           Orchestrator.workspaceOverlaps(for: grandchild,
+                                          among: [parent, sibling]).count, 0)
+
+    let finished = task("cccccccc-dddd-eeee-ffff-000000000000",
+                        dir: "/a/b", root: secondRoot, state: .success)
+    let spawnFailed = task("45454545-6767-8989-0101-232323232323",
+                           dir: "/a/b", root: secondRoot, state: .spawnFailed)
+    let scanningNewcomer = task(taskID, dir: "/a/b", root: firstRoot)
+    expect("all terminal existing tasks are outside the dispatch-time scan",
+           Orchestrator.workspaceOverlaps(for: scanningNewcomer,
+                                          among: [finished, spawnFailed]).count, 0)
+    let failedNewcomer = task(taskID, dir: "/a/b", root: firstRoot, state: .spawnFailed)
+    expect("a terminal new task does not report stale overlaps",
+           Orchestrator.workspaceOverlaps(for: failedNewcomer, among: [other]).count, 0)
+    let queued = task("dddddddd-eeee-ffff-0000-111111111111",
+                      dir: "/a/b/queued", root: secondRoot, state: .queued, created: 2)
+    let spawning = task("eeeeeeee-ffff-0000-1111-222222222222",
+                        dir: "/a/b/spawning", root: secondRoot, state: .spawning, created: 1)
+    expect("queued and spawning tasks are live just as briefed ones are",
+           Orchestrator.workspaceOverlaps(for: scanningNewcomer,
+                                          among: [queued, spawning]).count, 2)
+    expect("overlaps are sorted by creation time",
+           Orchestrator.workspaceOverlaps(for: scanningNewcomer,
+                                          among: [queued, spawning]).first?.task.id,
+           spawning.id)
+    let sameTimeLaterID = task("ffffffff-ffff-ffff-ffff-ffffffffffff",
+                               dir: "/a/b/later-id", root: secondRoot, created: 1)
+    expect("equal creation times are sorted by task id",
+           Orchestrator.workspaceOverlaps(for: scanningNewcomer,
+                                          among: [sameTimeLaterID, spawning]).first?.task.id,
+           spawning.id)
+
+    let quietReply = Orchestrator.dispatchPayload(record: ["id": taskID],
+                                                  taskID: taskID, overlaps: [])
+    check("a dispatch without overlap omits warnings rather than returning an empty array",
+          quietReply["warnings"] == nil)
+    let warnedReply = Orchestrator.dispatchPayload(record: ["id": taskID],
+                                                   taskID: taskID, overlaps: across)
+    expect("a dispatch with overlap includes one warning",
+           (warnedReply["warnings"] as? [[String: Any]])?.count, 1)
+
+    let third = task("56565656-7878-9090-1212-343434343434",
+                     dir: "/a/b/third", root: nil)
+    let notificationOverlaps = Orchestrator.workspaceOverlaps(for: scanningNewcomer,
+                                                               among: [other, third])
+    let notices = Orchestrator.workspaceOverlapNotices(newTask: scanningNewcomer,
+                                                       overlaps: notificationOverlaps)
+    let newSide = notices.filter { $0.rootSessionID == firstRoot }
+    expect("the new task's root receives one aggregate line", newSide.count, 1)
+    check("the aggregate line names every overlap",
+          newSide.first?.line.contains(other.id.prefix(8)) == true
+              && newSide.first?.line.contains(third.id.prefix(8)) == true)
+    expect("an identifiable opposing root receives its own line",
+           notices.filter { $0.rootSessionID == secondRoot }.count, 1)
+    expect("a null opposing root is quietly skipped", notices.count, 2)
+    expect("no overlap produces no notification decision",
+           Orchestrator.workspaceOverlapNotices(newTask: scanningNewcomer,
+                                                overlaps: []).count, 0)
+}
+
 group("a task secret is kept as a hash and compared as one") {
     let secret = String(repeating: "a1", count: 32)
     let stored = Orchestrator.hash(ofSecret: secret)
