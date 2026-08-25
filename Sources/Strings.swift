@@ -279,6 +279,14 @@ protocol Copy {
     /// The `0` stop, which is a sentence and not a digit: what is off is a whole level, not a
     /// count of anything.
     var settingsOrchestratorSubMaxNone: String { get }
+    /// How far a dispatched child may go before stopping to ask. Three stops, and the hint has
+    /// to carry the reason the middle one is the default — that a tab nobody is watching does
+    /// not stop for approval, it stops for good.
+    var settingsOrchestratorPermission: String { get }
+    var settingsOrchestratorPermissionHint: String { get }
+    var settingsOrchestratorPermissionAsk: String { get }
+    var settingsOrchestratorPermissionAuto: String { get }
+    var settingsOrchestratorPermissionFull: String { get }
     var settingsOrchestratorNotify: String { get }
     var settingsOrchestratorNotifyHint: String { get }
     /// What becomes of a child's tab once it has reported. Three stops — now, in a bit, never —
@@ -466,6 +474,12 @@ protocol Copy {
     /// button is in without the drawing to help.
     var webVoiceStart: String { get }
     var webVoiceStop: String { get }
+    /// And on the button in the row that counts, which is the one place ending a recording is
+    /// *read* rather than heard. One word, because by then the reader has already stopped
+    /// talking and the only question left is which of the two buttons keeps what they said —
+    /// ``webVoiceStop`` describes what happens next, which is what somebody who cannot see the
+    /// row needs and is more than a button sitting beside Cancel should be spending on itself.
+    var webVoiceDone: String { get }
     /// While it records. `{t}` is how long it has been going, as `m:ss`, replaced every second —
     /// so the words on either side of it have to read with `0:07` and with `2:41` in the middle.
     var webVoiceListening: String { get }

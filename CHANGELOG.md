@@ -34,6 +34,23 @@ one with room under it gets the whole recipe for dispatching, one standing on th
 plainly not to — spelled out rather than pointed at a skill, since half of these sessions are Codex
 and Codex has no skills.
 
+### Changed: a child no longer stops at every permission prompt
+
+Dispatched sessions ran in whatever the CLI's default permission mode is, which means they stopped
+and asked. **Nobody is watching a child's tab.** A session that stops for approval there does not
+stop for a moment — it stops until the task times out, and afterwards it reads as work that
+silently did not happen.
+
+`orchestrator_permission` is the new setting and `auto` is the default: the assistant judges what
+a person would want to be asked about, the same judgement it uses in a session somebody is sitting
+in front of. `ask` is the old behaviour, for a task you intend to supervise. `full` asks nothing
+at all.
+
+It is a ceiling as well as a default. A task can name `permission_mode` and get less than the
+setting; asking for more gets the setting instead, because the session doing the asking is not the
+one that lives with the consequences. The record and the audit line both say what was actually
+used.
+
 ### Added: a task can name its model, and this Mac can say how work should be handed out
 
 `task.json` takes a `model` — `haiku` for a mechanical pass, `opus` for a judgement somebody will

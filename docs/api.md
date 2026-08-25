@@ -773,7 +773,7 @@ Six refusals, and a client should branch on all of them:
 | `code` | status | |
 |---|---|---|
 | `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
-| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including a `model` that is not a model name, or a `plan` past 4 KiB. `message` names the field |
+| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including a `model` that is not a model name, a `permission_mode` that is not one of the three, or a `plan` past 4 KiB. `message` names the field |
 | `depth_exceeded` | 409 | **the caller is already as deep as this Mac goes.** A root's child may dispatch; that child's may not. `orchestrator_max_grandchildren` of `0` puts the floor back at one level. Not a retry — stop |
 | `over_capacity` | 429 | this dispatcher's slots are full (`orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child), or the whole Mac's are. The error object carries `retry_after` in seconds, and `message` says which |
 | `rate_limited` | 429 | more than ten dispatches in ten minutes, or more than one full tree's worth if that is larger |
@@ -819,6 +819,7 @@ The record:
   "title": "Project portrait",
   "assistant": "codex",
   "model": "gpt-5.1-codex",     // absent when the task did not name one
+  "permission": "auto",         // ask | auto | full — what was used, after this Mac's ceiling
   "projectDir": "/Users/you/code/clawdline",
   "created": 1787100000,        // integer unix seconds, like every time in this API
   "depth": 1,                   // 1 for one a person's session dispatched, 2 for one its child did

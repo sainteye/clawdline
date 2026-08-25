@@ -427,6 +427,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                        hint: L.t.settingsOrchestratorMaxHint)
         pane.right.row(L.t.settingsOrchestratorSubMax, grandchildrenPopUp(),
                        hint: L.t.settingsOrchestratorSubMaxHint)
+        pane.right.row(L.t.settingsOrchestratorPermission, permissionPopUp(),
+                       hint: L.t.settingsOrchestratorPermissionHint)
         pane.right.row(L.t.settingsOrchestratorNotify,
                        switchFor({ Config.shared.orchestratorNotifyRoot },
                                  { Config.shared.orchestratorNotifyRoot = $0 }),
@@ -485,6 +487,24 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
             ?? L.t.settingsOrchestratorPolicyOff
         policyCard = card
         return card
+    }
+
+    /// How far a dispatched child may go on its own — the most a task may ask for, and the
+    /// default for one that asks for nothing.
+    ///
+    /// Three stops in the order they escalate, and the middle one is the shipped answer. That is
+    /// the row worth understanding: on a tab somebody is watching, "ask about everything" is the
+    /// careful setting; on a tab nobody is watching it is the setting where the work quietly does
+    /// not happen and the session sits at a prompt until it times out.
+    private func permissionPopUp() -> NSView {
+        let stops: [(label: String, value: String)] = [
+            (label: L.t.settingsOrchestratorPermissionAsk, value: Permission.ask.rawValue),
+            (label: L.t.settingsOrchestratorPermissionAuto, value: Permission.auto.rawValue),
+            (label: L.t.settingsOrchestratorPermissionFull, value: Permission.full.rawValue),
+        ]
+        return popUp(stops, current: Config.shared.orchestratorPermission) {
+            Config.shared.orchestratorPermission = $0
+        }
     }
 
     /// What becomes of a child's tab after it reports. Three stops rather than a number: the

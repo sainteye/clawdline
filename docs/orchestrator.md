@@ -127,7 +127,21 @@ session's bucket rather than out of everybody's. The ceiling below is what close
 - **Two minutes to be briefed.** A tab that opens but never reaches a state where the first message
   can be typed is `spawn_failed` rather than a tab sitting there forever with a task attached to it.
 
-And one switch: `orchestrator_enabled`, default true. Off, and dispatch is refused at the door.
+And two more settings. `orchestrator_enabled`, default true — off, and dispatch is refused at the
+door. And `orchestrator_permission`, default `auto`: **how far a child may go before it stops and
+asks.**
+
+That default is a position, not a convenience. On a tab somebody is watching, "ask about
+everything" is the careful setting. On a child's tab nobody is watching, and a session that stops
+for approval does not stop for a moment — it stops until the task times out, which reads
+afterwards as work that silently did not happen. `auto` keeps the assistant's own judgement about
+what a person would want to be asked, which is the same judgement it uses in a session somebody is
+sitting in front of.
+
+The setting is a ceiling as well as a default: `full` — nothing asked at all — is unreachable
+unless this Mac has been set to it, because the session doing the asking is not the one that lives
+with the consequences. A task asking for more than the ceiling is quietly given the ceiling; the
+record says what was actually used, and so does the audit line.
 
 ### House rules
 
@@ -216,6 +230,7 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `kind` | `image` · `code-review` · `test` · `custom` |
 | `assistant` | `claude` or `codex` |
 | `model` | optional. `[a-z0-9._-]`, at most 64 characters, not starting with `-`. Absent means that assistant's own default |
+| `permission_mode` | optional. `ask` · `auto` · `full`. Absent takes `orchestrator_permission`, which is also the ceiling — asking for more than it gives you it instead |
 | `plan` | optional, ≤ 4 KiB. The whole graph this task is one node of |
 | `project_dir` | absolute, exists, and is a directory — checked at dispatch, not at planning time |
 | `title` | ≤ 200 characters |

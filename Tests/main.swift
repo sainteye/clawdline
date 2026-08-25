@@ -5188,6 +5188,12 @@ group("a task.json is read before a terminal is opened for it") {
     check("a task with no model named runs on whatever that assistant defaults to",
           made(file())?.model == nil)
     expect("one that names a model carries it", made(file(["model": "haiku"]))?.model, "haiku")
+    expect("and one that names how far it may go carries that",
+           made(file(["permission_mode": "auto"]))?.permission, .auto)
+    check("a permission nobody defined is refused rather than rounded down",
+          refused(file(["permission_mode": "whatever"])))
+    check("and saying nothing is not the same as saying ask — the ceiling decides that later",
+          made(file())?.permission == nil)
     check("and one that names something that is not a model is refused, not quietly ignored",
           refused(file(["model": "haiku; rm -rf /"])))
     expect("the graph a task is one node of comes through whole",
@@ -5269,6 +5275,9 @@ group("a model name is a name, not a fragment of a command line") {
 
     expect("the flag is written once", Assistant.claude.command(model: "haiku"),
            "claude --model haiku")
+    check("and the permission flags land after it, not instead of it",
+          Assistant.claude.command(model: "haiku", permission: .auto)
+              .hasPrefix("claude --model haiku "))
     expect("and not written at all when nothing was named", Assistant.claude.command(model: nil),
            "claude")
     check("the line a tab is opened with is still one command",
@@ -5277,6 +5286,38 @@ group("a model name is a name, not a fragment of a command line") {
     check("and a refused name reaches that line as no flag rather than as an argument",
           StartPoints.itermLine(cwd: "/tmp/x", assistant: .claude, model: "haiku; id")
               .hasSuffix("&& claude"))
+}
+
+group("how far a child may go is this Mac's answer, not the asking session's") {
+    // The setting is a *ceiling* and a default at once: a task that says nothing gets it, and one
+    // that asks for more is given it instead. What this pins down is the ordering — that more
+    // never wins — and that the words are a closed list rather than a flag somebody assembled.
+    check("the three escalate in the order they are written",
+          Permission.ask < Permission.auto && Permission.auto < Permission.full)
+    check("a word that is not one of them is not a permission",
+          Permission(rawValue: "yolo") == nil)
+
+    func granted(asked: Permission?, ceiling: Permission) -> Permission {
+        min(asked ?? ceiling, ceiling)
+    }
+    expect("asking for nothing takes the ceiling", granted(asked: nil, ceiling: .auto), .auto)
+    expect("asking for less than the ceiling is honoured",
+           granted(asked: .ask, ceiling: .full), .ask)
+    expect("asking for more than the ceiling is not",
+           granted(asked: .full, ceiling: .auto), .auto)
+    expect("and a Mac that says ask means ask, whatever a task wants",
+           granted(asked: .full, ceiling: .ask), .ask)
+
+    // The flags themselves. `ask` is each CLI's own default, so it is spelled by adding nothing —
+    // which is what keeps a task that says nothing from changing the command line at all.
+    expect("the quiet mode adds nothing to either command line",
+           Permission.ask.flags(for: .claude) + Permission.ask.flags(for: .codex), "")
+    check("and the other two do, differently, because the two CLIs spell it differently",
+          !Permission.auto.flags(for: .claude).isEmpty
+              && !Permission.auto.flags(for: .codex).isEmpty
+              && Permission.auto.flags(for: .claude) != Permission.auto.flags(for: .codex))
+    check("a bare command is still what an unasked-for permission produces",
+          Assistant.claude.command(model: nil, permission: .ask) == "claude")
 }
 
 group("a task id is the name of a directory, so it may not be a path") {

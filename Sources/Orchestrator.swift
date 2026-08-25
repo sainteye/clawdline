@@ -67,6 +67,9 @@ enum Orchestrator {
         /// The model the child was started on, when the task named one. Nil means whatever that
         /// assistant defaults to, which is the answer for most tasks and all older records.
         var model: String?
+        /// How far the child may go before stopping to ask — what was actually used, after this
+        /// Mac's ceiling was applied to what the task asked for.
+        var permission = Permission.ask
         var projectDir: String
         var timeoutMinutes: Int
         var created: Date
@@ -293,6 +296,9 @@ enum Orchestrator {
         var kind = "custom"
         var assistant = Assistant.claude
         var model: String?
+        /// What the task asked for, before the ceiling. Nil means it did not ask, and takes the
+        /// ceiling itself — the setting is the default as well as the limit.
+        var permission: Permission?
         var projectDir = ""
         var title = ""
         var instructions = ""
@@ -341,10 +347,19 @@ enum Orchestrator {
         if let plan = obj["plan"] as? String, plan.utf8.count > planLimit {
             return .bad("plan must be at most \(planLimit / 1024) KiB")
         }
+        var permission: Permission?
+        if let named = obj["permission_mode"] as? String, !named.isEmpty {
+            guard let ok = Permission(rawValue: named) else {
+                return .bad("permission_mode must be one of: "
+                          + Permission.allCases.map(\.rawValue).joined(separator: ", "))
+            }
+            permission = ok
+        }
         var made = Draft()
         made.id = id
         made.assistant = assistant
         made.model = model
+        made.permission = permission
         made.plan = (obj["plan"] as? String).flatMap {
             let text = $0.trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : text
@@ -440,8 +455,16 @@ enum Orchestrator {
                             extra: ["retry_after": 60])
         }
 
+        // The ceiling is the default as well as the limit: a task that said nothing gets it, and
+        // one that asked for more is quietly given it instead. Quietly on purpose — the work is
+        // still worth doing more carefully, and a refusal here would only teach callers to ask
+        // for less than they need. The record says what was actually used.
+        let allowed = Config.shared.orchestratorPermissionCeiling
+        let permission = min(made.permission ?? allowed, allowed)
+
         var task = Task(id: taskID, state: .queued, kind: made.kind, title: made.title,
-                        assistant: made.assistant, model: made.model, projectDir: made.projectDir,
+                        assistant: made.assistant, model: made.model,
+                        permission: permission, projectDir: made.projectDir,
                         timeoutMinutes: made.timeoutMinutes, created: Date(),
                         rootSessionId: made.rootSessionId, rootLabel: made.rootLabel,
                         depth: depth, parentTaskId: made.parentTaskId, plan: made.plan,
@@ -453,7 +476,8 @@ enum Orchestrator {
         RemoteAuth.audit("orchestrator.dispatch", ["task": taskID, "assistant": made.assistant.rawValue,
                                                    "cwd": made.projectDir, "kind": made.kind,
                                                    "depth": String(depth),
-                                                   "model": made.model ?? "default"])
+                                                   "model": made.model ?? "default",
+                                                   "permission": permission.rawValue])
 
         // Straight away rather than on the next beat: the root is holding its breath on this
         // request, and the answer should already say whether a terminal actually opened.
@@ -473,7 +497,8 @@ enum Orchestrator {
         let place = StartPoints.Place(id: StartPoints.id(for: task.projectDir),
                                       path: task.projectDir,
                                       label: task.title, at: Date())
-        switch StartPoints.start(place, assistant: task.assistant, model: task.model) {
+        switch StartPoints.start(place, assistant: task.assistant, model: task.model,
+                                 permission: task.permission) {
         case .refused(_, let code, let message, _):
             task.state = .spawnFailed
             task.summary = "\(code): \(message)"
@@ -1495,6 +1520,9 @@ enum Orchestrator {
           somebody else.
         - `assistant` is `claude` or `codex`; `model` is optional and takes lower-case letters,
           digits and `. _ -` only. Pick both against the rules below, and say in the plan why.
+        - `permission_mode` is `ask`, `auto` or `full`, and leaving it out is right almost always
+          — it takes this Mac's own setting, which is `\(Config.shared.orchestratorPermission)`.
+          Nobody watches a child's tab, so `ask` is a session that stops until it times out.
         - `plan` is the graph, not this leaf's job — the same text in every task you dispatch,
           extended with what you have added to it. It is how a leaf knows what its answer feeds.
         - The instructions have to stand on their own. That session cannot see this one, so
@@ -1675,6 +1703,7 @@ enum Orchestrator {
             "dir": "/tmp/.clawdline/\(task.id)",
         ]
         if let model = task.model { out["model"] = model }
+        out["permission"] = task.permission.rawValue
         if let at = task.spawnedAt { out["spawnedAt"] = Int(at.timeIntervalSince1970) }
         if let at = task.briefedAt { out["briefedAt"] = Int(at.timeIntervalSince1970) }
         if let at = task.finishedAt { out["finishedAt"] = Int(at.timeIntervalSince1970) }
@@ -1765,6 +1794,7 @@ enum Orchestrator {
         if let v = task.rootLabel { out["root_label"] = v }
         if let v = task.parentTaskId { out["parent_task"] = v }
         if let v = task.model { out["model"] = v }
+        out["permission"] = task.permission.rawValue
         if let v = task.plan { out["plan"] = v }
         if let v = task.childTerminalId { out["child_terminal"] = v }
         if let v = task.childBackend { out["child_backend"] = v.rawValue }
@@ -1804,6 +1834,7 @@ enum Orchestrator {
         task.rootLabel = obj["root_label"] as? String
         task.parentTaskId = obj["parent_task"] as? String
         task.model = StartPoints.modelName(obj["model"] as? String)
+        task.permission = (obj["permission"] as? String).flatMap(Permission.init(rawValue:)) ?? .ask
         task.plan = obj["plan"] as? String
         // A registry written before tasks had a depth holds only tasks a root dispatched, which
         // is exactly what 1 means.

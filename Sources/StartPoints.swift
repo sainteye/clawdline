@@ -84,8 +84,9 @@ enum StartPoints {
     /// ``modelName(_:)`` if there is one. `cwd` is quoted with the same `shellQuoted`
     /// the git plumbing uses.
     static func itermLine(cwd: String, assistant: Assistant = .claude,
-                          model: String? = nil) -> String {
-        "cd " + Project.shellQuoted(cwd) + " && " + assistant.command(model: modelName(model))
+                          model: String? = nil, permission: Permission = .ask) -> String {
+        "cd " + Project.shellQuoted(cwd) + " && "
+            + assistant.command(model: modelName(model), permission: permission)
     }
 
     /// A model name, or nil for anything that is not one.
@@ -183,7 +184,7 @@ enum StartPoints {
     /// created when there is not one already, and that is the one case where something may come
     /// forward — there is no way to make a window and not have it be a window.
     static func start(_ place: Place, assistant: Assistant = .claude,
-                      model: String? = nil) -> Outcome {
+                      model: String? = nil, permission: Permission = .ask) -> Outcome {
         guard usable(place.path), isDirectory(place.path) else {
             return .refused(status: 404, code: "not_found",
                             message: "No place named that", app: nil)
@@ -192,7 +193,8 @@ enum StartPoints {
         case .iterm:
             guard let made = ITerm.newTab(line: itermLine(cwd: place.path,
                                                           assistant: assistant,
-                                                          model: model)) else {
+                                                          model: model,
+                                                          permission: permission)) else {
                 return .refused(status: 502, code: "internal",
                                 message: "iTerm2 would not open a tab.", app: nil)
             }
@@ -205,7 +207,8 @@ enum StartPoints {
             // `modelName` is a closed alphabet rather than an escaping rule — there is nothing
             // in a name it admits for that shell to read.
             guard let pane = Tmux.newWindow(cwd: place.path,
-                                            command: assistant.command(model: modelName(model))) else {
+                                            command: assistant.command(model: modelName(model),
+                                                                       permission: permission)) else {
                 return .refused(status: 502, code: "internal",
                                 message: "tmux would not open a window.", app: nil)
             }

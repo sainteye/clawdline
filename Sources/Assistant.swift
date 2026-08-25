@@ -15,6 +15,49 @@ import Foundation
 /// The list is closed on purpose. A third one is a day's work — a screen to read, a record to
 /// find, a word to leave on — and not a plugin point, because each of those three is a shape
 /// somebody has to observe on a real terminal and keep observing.
+/// How far a dispatched session may go before it stops and asks.
+///
+/// Clawdline's own three words rather than either CLI's, because the two spell this differently
+/// and neither spelling is the one to teach: Claude Code's `--permission-mode` takes six values,
+/// Codex's `--ask-for-approval` takes two, and the overlap that means something to somebody
+/// writing a task down is three. A closed list, like the assistant itself — a name that is not on
+/// it is `bad_task`, never a flag somebody assembled.
+enum Permission: String, CaseIterable, Comparable {
+    /// Every step that would need approval stops and asks. **Nobody is watching a child's tab**,
+    /// so in practice this is a session that sits at a prompt until it times out. It is the right
+    /// answer only for a task somebody intends to sit and supervise.
+    case ask
+    /// The assistant decides what is worth asking about. The default, and the only one of the
+    /// three defensible as one: a session sent off to do a named thing should get on with it and
+    /// still stop at what a person would want to be asked about.
+    case auto
+    /// Nothing is asked. Whatever the assistant can do, it does, in the directory it was pointed
+    /// at. Behind `orchestrator_permission` — a task cannot reach this unless this Mac has said
+    /// so, because the session asking is not the person who would live with the consequences.
+    case full
+
+    private var rank: Int {
+        switch self {
+        case .ask:  return 0
+        case .auto: return 1
+        case .full: return 2
+        }
+    }
+    static func < (a: Permission, b: Permission) -> Bool { a.rank < b.rank }
+
+    /// The flags that spell this for one assistant, or nothing at all where the mode is already
+    /// that CLI's own default. Every string here is a literal: nothing a task sends reaches it.
+    func flags(for assistant: Assistant) -> String {
+        switch (self, assistant) {
+        case (.ask, _):        return ""
+        case (.auto, .claude): return "--permission-mode auto"
+        case (.auto, .codex):  return "--ask-for-approval on-request"
+        case (.full, .claude): return "--permission-mode bypassPermissions"
+        case (.full, .codex):  return "--ask-for-approval never --sandbox workspace-write"
+        }
+    }
+}
+
 enum Assistant: String, CaseIterable {
     case claude
     case codex
@@ -41,9 +84,12 @@ enum Assistant: String, CaseIterable {
     /// than a switch. The name is the single variable part of the whole line, and what keeps it
     /// from being a fragment of a command is ``StartPoints/modelName(_:)`` — pass anything that
     /// has not been through it and the guarantee in `StartPoints`' header stops being true.
-    func command(model: String?) -> String {
-        guard let model, !model.isEmpty else { return command }
-        return command + " --model " + model
+    func command(model: String?, permission: Permission = .ask) -> String {
+        var line = command
+        if let model, !model.isEmpty { line += " --model " + model }
+        let flags = permission.flags(for: self)
+        if !flags.isEmpty { line += " " + flags }
+        return line
     }
 
     /// The line that ends a session, typed at its prompt.

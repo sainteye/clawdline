@@ -384,6 +384,7 @@ claude
 | `orchestrator_enabled` | `true` | 能不能讓一個 session 把工作派給另一個 |
 | `orchestrator_max_children` | `5` | 一個 session 同時最多派幾個子 session，1–10 |
 | `orchestrator_max_grandchildren` | `3` | 每個子 session 自己又能派幾個，0–10；`0` ＝ 只有一層 |
+| `orchestrator_permission` | `auto` | 子 session 走多遠才停下來問：`ask`／`auto`／`full`。這同時是上限，任務要不到比它更多 |
 | `orchestrator_notify_root` | `true` | 做完之後往發派的 session 打一行字 |
 | `orchestrator_child_linger` | `180` | 回報過的子 session，分頁再留幾秒；`0` 馬上關，`-1` 不關 |
 

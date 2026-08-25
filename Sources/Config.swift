@@ -222,6 +222,20 @@ final class Config {
     /// was handed nothing; the further from the person at the keyboard a decision is made, the
     /// less of this Mac it should be able to spend on it.
     var orchestratorMaxGrandchildren = 3
+    /// How far a dispatched child may go before it stops and asks — the *most* a task may ask
+    /// for, not what every task gets. `ask`, `auto`, `full`; see ``Permission``.
+    ///
+    /// `auto` by default, and that is a considered position rather than a convenience. Nobody is
+    /// watching a child's tab: a session that stops for approval stops until it times out, so
+    /// "ask about everything" is not the safe setting here, it is the one where the work silently
+    /// does not happen. What `auto` keeps is the assistant's own judgement about what a person
+    /// would want to be asked, which is the same judgement it uses in a session somebody *is*
+    /// watching.
+    ///
+    /// `full` is not reachable without setting it here. A task can ask for it and be quietly
+    /// given `auto` instead, because the session doing the asking is not the one that lives with
+    /// what happens next — the person at this Mac is, and this is where they answer.
+    var orchestratorPermission = "auto"
     /// Every dispatched session on this Mac, whoever asked. One full tree's worth — a root's
     /// children and each of their children — and not a setting of its own, because it is not a
     /// choice anybody makes separately from the two numbers it is made of.
@@ -229,6 +243,11 @@ final class Config {
     /// The per-dispatcher caps say what one session may spend. This says what the machine may
     /// spend, and it is the half that still holds when a caller lies about who it is: declaring
     /// somebody else's session id moves a task into another bucket, never past this line.
+    /// The ceiling as the type, with the file's word for it read back through the closed list so
+    /// a hand-edit that says something else lands on the default rather than on nothing.
+    var orchestratorPermissionCeiling: Permission {
+        Permission(rawValue: orchestratorPermission) ?? .auto
+    }
     var orchestratorMaxDescendants: Int {
         orchestratorMaxChildren * (1 + orchestratorMaxGrandchildren)
     }
@@ -298,6 +317,10 @@ final class Config {
         if let v = obj["orchestrator_max_grandchildren"] as? Int, v >= 0, v <= 10 {
             orchestratorMaxGrandchildren = v
         }
+        if let v = obj["orchestrator_permission"] as? String,
+           Permission(rawValue: v) != nil {
+            orchestratorPermission = v
+        }
         if let v = obj["orchestrator_notify_root"] as? Bool { orchestratorNotifyRoot = v }
         if let v = obj["orchestrator_child_linger"] as? Int, v >= -1, v <= 3600 {
             orchestratorChildLinger = v
@@ -356,6 +379,7 @@ final class Config {
             "orchestrator_enabled": orchestratorEnabled,
             "orchestrator_max_children": orchestratorMaxChildren,
             "orchestrator_max_grandchildren": orchestratorMaxGrandchildren,
+            "orchestrator_permission": orchestratorPermission,
             "orchestrator_notify_root": orchestratorNotifyRoot,
             "orchestrator_child_linger": orchestratorChildLinger,
             "status_dir": statusDir,
