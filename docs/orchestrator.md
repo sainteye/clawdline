@@ -126,6 +126,10 @@ session's bucket rather than out of everybody's. The ceiling below is what close
   reported by then is `timeout`, whatever it is still doing.
 - **Two minutes to be briefed.** A tab that opens but never reaches a state where the first message
   can be typed is `spawn_failed` rather than a tab sitting there forever with a task attached to it.
+  The likeliest cause of hitting it is a `project_dir` this Mac has never run that assistant in:
+  Claude Code asks *"Do you trust this folder?"* before it will take a first message, which is a
+  door in front of the session rather than inside it — `permission_mode` does not reach it. Dispatch
+  into a directory somebody has already opened by hand.
 
 And two more settings. `orchestrator_enabled`, default true — off, and dispatch is refused at the
 door. And `orchestrator_permission`, default `auto`: **how far a child may go before it stops and
