@@ -94,6 +94,12 @@ enum Orchestrator {
         /// Machine-global operation names acquired together when this task leaves `queued`.
         /// A queued task holds none; a spawning or briefed task holds every name in this list.
         var serialize: [String] = []
+        /// Paths this task may write, relative to `projectDir`. Unlike `serialize`, these are
+        /// reserved from registration (including while queued) until every terminal outcome.
+        var claims: [String] = []
+        /// Absolute, canonical-root comparison keys frozen when the lease is registered. These
+        /// are persisted because a claim must not change identity as its target comes into being.
+        var claimKeys: [String] = []
         var childTerminalId: String?
         var childBackend: Backend?
         var childTTY: String?
@@ -620,6 +626,7 @@ enum Orchestrator {
         var parentTaskId: String?
         var plan: String?
         var serialize: [String] = []
+        var claims: [String] = []
     }
 
     /// A live task whose working directory intersects the one being dispatched. The task is a
@@ -635,6 +642,29 @@ enum Orchestrator {
                 "task": task.id,
                 "dir": sharedDir,
                 "message": "Task \(newTaskID) overlaps active task \(task.id) at \(sharedDir).",
+            ]
+        }
+    }
+
+    /// One live task whose declared write set intersects the candidate's. Claim paths are
+    /// absolute here so nested project directories compare in one namespace. `paths` names the
+    /// shared descendant for each conflicting pair, deduplicated in declaration order.
+    struct ClaimsOverlap {
+        let task: Task
+        let paths: [String]
+        let sameRoot: Bool
+        let rootsKnown: Bool
+        let rootLabel: String?
+
+        var blocks: Bool { rootsKnown && !sameRoot }
+
+        func warning(for newTaskID: String) -> [String: Any] {
+            [
+                "code": rootsKnown ? "claims_overlap" : "claims_overlap_unknown_root",
+                "task": task.id,
+                "paths": paths,
+                "message": "Task \(newTaskID) shares claimed paths with task \(task.id): "
+                    + paths.joined(separator: ", ") + ".",
             ]
         }
     }
@@ -710,6 +740,42 @@ enum Orchestrator {
             }
             if !errors.isEmpty { return .bad(errors.joined(separator: "; ")) }
         }
+        var claims: [String] = []
+        if let raw = obj["claims"] {
+            guard let values = raw as? [Any] else {
+                return .bad("claims must be an array of 1–32 relative POSIX paths")
+            }
+            var errors: [String] = []
+            if values.isEmpty || values.count > 32 {
+                errors.append("claims must contain 1–32 paths")
+            }
+            var seen: Set<String> = []
+            for (index, value) in values.enumerated() {
+                guard let path = value as? String else {
+                    errors.append("claims[\(index)] must be a string")
+                    continue
+                }
+                let duplicate = !seen.insert(path).inserted
+                if path.isEmpty || path.count > 1_024 {
+                    errors.append("claims[\(index)] must be 1–1024 characters")
+                }
+                if path.hasPrefix("/") {
+                    errors.append("claims[\(index)] must be relative to project_dir")
+                }
+                if path.split(separator: "/", omittingEmptySubsequences: false)
+                    .contains(where: { $0 == ".." }) {
+                    errors.append("claims[\(index)] must not contain a .. component")
+                }
+                if path.unicodeScalars.contains(where: { $0.value == 0 }) {
+                    errors.append("claims[\(index)] must be a POSIX path without NUL")
+                }
+                if duplicate {
+                    errors.append("claims[\(index)] duplicates \(path)")
+                }
+                claims.append(path)
+            }
+            if !errors.isEmpty { return .bad(errors.joined(separator: "; ")) }
+        }
         var permission: Permission?
         if let named = obj["permission_mode"] as? String, !named.isEmpty {
             guard let ok = Permission(rawValue: named) else {
@@ -724,6 +790,7 @@ enum Orchestrator {
         made.model = model
         made.permission = permission
         made.serialize = serialize
+        made.claims = claims
         made.plan = (obj["plan"] as? String).flatMap {
             let text = $0.trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : text
@@ -779,6 +846,70 @@ enum Orchestrator {
         serializeBlockers(for: candidate, among: Array(tasks.values))
     }
 
+    /// Freeze claims into one namespace while the validated project directory exists. Only the
+    /// root touches the filesystem; relative claims are then normalised and joined literally so
+    /// creating a target (or a symlink below the root) can never change a lease's identity.
+    static func freezeClaims(_ claims: [String], projectDir: String) -> [String] {
+        guard !claims.isEmpty else { return [] }
+        let root = URL(fileURLWithPath: projectDir, isDirectory: true)
+            .standardizedFileURL.resolvingSymlinksInPath().path
+        let separator = root == "/" ? "" : "/"
+        return claims.map { claim in
+            let relative = claim.split(separator: "/", omittingEmptySubsequences: true)
+                .filter { $0 != "." }.joined(separator: "/")
+            return relative.isEmpty ? root : root + separator + relative
+        }
+    }
+
+    /// The shared descendant of two already-frozen claim keys. This is deliberately only string
+    /// work: dispatch holds the global orchestrator lock while it compares every live lease.
+    private static func sharedClaimPath(_ first: String, _ second: String) -> String? {
+        if first == second { return first }
+        let firstPrefix = first == "/" ? "/" : first + "/"
+        if second.hasPrefix(firstPrefix) { return second }
+        let secondPrefix = second == "/" ? "/" : second + "/"
+        if first.hasPrefix(secondPrefix) { return first }
+        return nil
+    }
+
+    /// Pure dispatch-time claims scan. Unlike L1, queued tasks participate: a claim is a
+    /// reservation made at dispatch, not evidence that a tab has started touching files.
+    static func claimsOverlaps(for newTask: Task, among existing: [Task]) -> [ClaimsOverlap] {
+        guard !newTask.claimKeys.isEmpty, !newTask.state.isTerminal else { return [] }
+        let indexed = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
+        let newRoot = resolvedRootKey(of: newTask, among: indexed)
+        return existing.compactMap { task -> ClaimsOverlap? in
+            guard task.id != newTask.id, !task.state.isTerminal, !task.claimKeys.isEmpty else {
+                return nil
+            }
+            var paths: [String] = []
+            var seen: Set<String> = []
+            for claimed in newTask.claimKeys {
+                for other in task.claimKeys {
+                    if let shared = sharedClaimPath(claimed, other),
+                       seen.insert(shared).inserted {
+                        paths.append(shared)
+                    }
+                }
+            }
+            guard !paths.isEmpty else { return nil }
+            let root = rootTask(of: task, among: indexed)
+            let otherRoot = resolvedRootKey(of: task, among: indexed)
+            let rootsKnown = newRoot != nil && otherRoot != nil
+            return ClaimsOverlap(task: task, paths: paths,
+                                 sameRoot: rootsKnown && otherRoot == newRoot,
+                                 rootsKnown: rootsKnown,
+                                 rootLabel: root.rootLabel ?? task.rootLabel)
+        }.sorted { left, right in
+            if left.task.created == right.task.created { return left.task.id < right.task.id }
+            return left.task.created < right.task.created
+        }
+    }
+
+    private static func claimsOverlapsLocked(for candidate: Task) -> [ClaimsOverlap] {
+        claimsOverlaps(for: candidate, among: Array(tasks.values))
+    }
+
     /// The directory both tasks may write, or nil when their paths are merely string prefixes.
     ///
     /// Paths are resolved the way the rest of the project resolves working directories:
@@ -801,10 +932,31 @@ enum Orchestrator {
 
     /// The root key used throughout the orchestrator, with the task table supplied explicitly so
     /// the dispatch-time overlap rules remain a pure unit-test seam.
-    private static func rootKey(of task: Task, among existing: [String: Task]) -> String {
+    private static func rootTask(of task: Task, among existing: [String: Task]) -> Task {
         var at = task
         var hops = 0
         while let parentID = at.parentTaskId, let above = existing[parentID], hops < depthFloor {
+            at = above
+            hops += 1
+        }
+        return at
+    }
+
+    private static func rootKey(of task: Task, among existing: [String: Task]) -> String {
+        let at = rootTask(of: task, among: existing)
+        return at.rootSessionId ?? "task:\(at.id)"
+    }
+
+    /// Claims are a hard gate only when both trees can actually be identified. A task with an
+    /// unresolved parent and no independently supplied root session is unknown, not a new root.
+    private static func resolvedRootKey(of task: Task,
+                                        among existing: [String: Task]) -> String? {
+        var at = task
+        var hops = 0
+        while let parentID = at.parentTaskId {
+            guard hops < depthFloor, let above = existing[parentID] else {
+                return at.rootSessionId
+            }
             at = above
             hops += 1
         }
@@ -850,12 +1002,27 @@ enum Orchestrator {
     /// Wire payload shared by first dispatches and idempotent retries. Keeping the optional field
     /// here makes "absent, not an empty array" explicit and independently testable.
     static func dispatchPayload(record: [String: Any], taskID: String,
-                                overlaps: [WorkspaceOverlap]) -> [String: Any] {
+                                overlaps: [WorkspaceOverlap],
+                                claimsOverlaps: [ClaimsOverlap] = []) -> [String: Any] {
         var reply: [String: Any] = ["ok": true, "task": record]
-        if !overlaps.isEmpty {
-            reply["warnings"] = overlaps.map { $0.warning(for: taskID) }
+        let warnings = overlaps.map { $0.warning(for: taskID) }
+            + claimsOverlaps.filter { !$0.blocks }.map { $0.warning(for: taskID) }
+        if !warnings.isEmpty {
+            reply["warnings"] = warnings
         }
         return reply
+    }
+
+    /// The actionable context returned when another root already reserved a write path.
+    static func workspaceBusyExtra(_ overlap: ClaimsOverlap) -> [String: Any] {
+        [
+            "blocking_task": overlap.task.id,
+            "title": overlap.task.title,
+            "root_label": overlap.rootLabel as Any? ?? NSNull(),
+            "created": Int(overlap.task.created.timeIntervalSince1970),
+            "conflict_paths": overlap.paths,
+            "retry_after": 60,
+        ]
     }
 
     // MARK: - Dispatch
@@ -875,7 +1042,7 @@ enum Orchestrator {
         guard secret.count == 64, secret.allSatisfy({ ("a"..."f").contains($0) || $0.isNumber }) else {
             return .refused(422, "bad_task", "secret must be 64 hex characters.")
         }
-        guard rateAllowed() else {
+        guard let rateTicket = takeDispatchRate() else {
             return .refused(429, "rate_limited", "Too many dispatches; wait a few minutes.")
         }
 
@@ -936,15 +1103,34 @@ enum Orchestrator {
                         timeoutMinutes: made.timeoutMinutes, created: Date(),
                         rootSessionId: made.rootSessionId, rootLabel: made.rootLabel,
                         depth: depth, parentTaskId: made.parentTaskId, plan: made.plan,
-                        serialize: made.serialize,
+                        serialize: made.serialize, claims: made.claims,
                         secretHash: hash(ofSecret: secret))
+        task.claimKeys = freezeClaims(task.claims, projectDir: task.projectDir)
         if !task.serialize.isEmpty {
             guard let sealed = sealQueuedSecret(secret) else {
                 return .refused(500, "internal", "Could not protect the queued task secret.")
             }
             task.queuedSecret = sealed
         }
+
+        // Claims are checked and registered under the same lock. If those were separate steps,
+        // two concurrent dispatches could both observe a free path and then both reserve it.
+        // Queued serialized work enters here too: reservation starts at dispatch, not promotion.
         lock.lock()
+        let claimsOverlaps = claimsOverlapsLocked(for: task)
+        if let blocker = claimsOverlaps.first(where: \.blocks) {
+            lock.unlock()
+            refundDispatchRate(rateTicket)
+            RemoteAuth.audit("orchestrator.claims.blocked", [
+                "task": taskID,
+                "blocking_task": blocker.task.id,
+                "root": made.rootLabel ?? made.rootSessionId ?? "unknown",
+                "conflicts": blocker.paths.joined(separator: ","),
+            ])
+            return .refused(status: 409, code: "workspace_busy",
+                            message: "Another dispatch tree has reserved a path this task claims.",
+                            extra: workspaceBusyExtra(blocker))
+        }
         tasks[taskID] = task
         secrets[taskID] = secret
         lock.unlock()
@@ -965,20 +1151,31 @@ enum Orchestrator {
         save()
         DispatchQueue.main.async { SessionWatch.shared.nudge() }
         RemoteServer.shared.broadcastOrchestrator()
-        let reply = successfulDispatchReply(for: task, notify: true)
+        let reply = successfulDispatchReply(for: task, notify: true,
+                                             claimsOverlaps: claimsOverlaps)
         if needsPump { scheduleSerializePump() }
         return reply
     }
 
     /// One response builder for both the first request and an idempotent retry. The scan happens
     /// after spawn so a task that failed to open is already terminal and produces no warning.
-    private static func successfulDispatchReply(for task: Task, notify: Bool = false) -> Reply {
+    private static func successfulDispatchReply(for task: Task, notify: Bool = false,
+                                                claimsOverlaps: [ClaimsOverlap]? = nil) -> Reply {
         guard let record = existingRecord(task.id) else {
             return .refused(500, "internal", "The task was lost while being made.")
         }
         let overlaps = workspaceOverlaps(for: task)
         if notify { notifyWorkspaceOverlaps(newTask: task, overlaps: overlaps) }
-        return .ok(dispatchPayload(record: record, taskID: task.id, overlaps: overlaps))
+        let claimWarnings: [ClaimsOverlap]
+        if let claimsOverlaps {
+            claimWarnings = claimsOverlaps
+        } else {
+            lock.lock()
+            claimWarnings = claimsOverlapsLocked(for: task)
+            lock.unlock()
+        }
+        return .ok(dispatchPayload(record: record, taskID: task.id, overlaps: overlaps,
+                                   claimsOverlaps: claimWarnings))
     }
 
     private static func spawn(_ task: Task) -> Task {
@@ -1115,14 +1312,23 @@ enum Orchestrator {
     /// too, filling the allowed tree legitimately takes more than ten calls. A limit that refuses
     /// the work the caps just permitted teaches people to retry, which is the behaviour it exists
     /// to discourage.
-    private static func rateAllowed() -> Bool {
+    static func takeDispatchRate() -> Date? {
         lock.lock(); defer { lock.unlock() }
         let now = Date()
         let allowed = max(10, Config.shared.orchestratorMaxDescendants)
         dispatchTimes = dispatchTimes.filter { now.timeIntervalSince($0) < 600 }
-        guard dispatchTimes.count < allowed else { return false }
+        guard dispatchTimes.count < allowed else { return nil }
         dispatchTimes.append(now)
-        return true
+        return now
+    }
+
+    /// A claims refusal registered no work, so its provisional rate entry is returned. Dispatch
+    /// is served on one serial queue; matching the exact timestamp also keeps this safe in tests.
+    static func refundDispatchRate(_ ticket: Date) {
+        lock.lock(); defer { lock.unlock() }
+        if let index = dispatchTimes.lastIndex(of: ticket) {
+            dispatchTimes.remove(at: index)
+        }
     }
 
     private static func activeCount() -> Int {
@@ -2164,6 +2370,11 @@ enum Orchestrator {
     /// dropped in silence. What was left was the polling loop the briefing prescribes, which is a
     /// child spending turns on `sleep`. The parent task's own terminal is the answer, and
     /// ``record(of:)`` had been resolving it that way all along.
+    static func timeoutClaimNotice(for task: Task) -> String {
+        guard task.state == .timeout, !task.claims.isEmpty else { return "" }
+        return " — claims released; child tab may still be writing"
+    }
+
     private static func notifyRoot(_ task: Task) {
         guard Config.shared.orchestratorNotifyRoot else { return }
         let short = String(task.id.prefix(8))
@@ -2180,6 +2391,7 @@ enum Orchestrator {
                 : "\(outstanding) more of yours still running"
             let line = "[clawdline] your task \(short) (\(task.title)) finished:"
                 + " \(task.state.rawValue) — \(file) — \(rest)"
+                + timeoutClaimNotice(for: task)
             if let failure = Targets.send(line, to: terminal) {
                 Log.write("orchestrator: could not notify the parent task — \(failure)")
             }
@@ -2194,7 +2406,7 @@ enum Orchestrator {
         // answering a question on the root's behalf; the record is still in the app and the page.
         guard !Targets.isChoosing(root) else { return }
         let line = "[clawdline] task \(short) (\(task.title)) finished:"
-            + " \(task.state.rawValue) — \(file)"
+            + " \(task.state.rawValue) — \(file)" + timeoutClaimNotice(for: task)
         if let failure = Targets.send(line, to: root) {
             Log.write("orchestrator: could not notify the root — \(failure)")
         }
@@ -2962,6 +3174,7 @@ enum Orchestrator {
         if !child.isEmpty { out["child"] = child }
         if let summary = task.summary { out["summary"] = summary }
         if !task.artifacts.isEmpty { out["artifacts"] = task.artifacts }
+        if !task.claims.isEmpty { out["claims"] = task.claims }
         if let usage = task.usage {
             var counts: [String: Any] = [
                 "input": usage.input, "output": usage.output,
@@ -3040,6 +3253,8 @@ enum Orchestrator {
         out["permission"] = task.permission.rawValue
         if let v = task.plan { out["plan"] = v }
         if !task.serialize.isEmpty { out["serialize"] = task.serialize }
+        if !task.claims.isEmpty { out["claims"] = task.claims }
+        if !task.claimKeys.isEmpty { out["claim_keys"] = task.claimKeys }
         if let v = task.queuedSecret { out["queued_secret"] = v }
         if let v = task.childTerminalId { out["child_terminal"] = v }
         if let v = task.childBackend { out["child_backend"] = v.rawValue }
@@ -3087,6 +3302,18 @@ enum Orchestrator {
         task.serialize = (obj["serialize"] as? [String] ?? []).filter {
             StartPoints.modelName($0) == $0
         }
+        task.claims = (obj["claims"] as? [String] ?? []).filter { path in
+            !path.isEmpty && path.count <= 1_024 && !path.hasPrefix("/")
+                && !path.split(separator: "/", omittingEmptySubsequences: false)
+                    .contains(where: { $0 == ".." })
+                && !path.unicodeScalars.contains(where: { $0.value == 0 })
+        }
+        let storedClaimKeys = (obj["claim_keys"] as? [String] ?? []).filter {
+            $0.hasPrefix("/")
+        }
+        task.claimKeys = storedClaimKeys.count == task.claims.count
+            ? storedClaimKeys
+            : freezeClaims(task.claims, projectDir: task.projectDir)
         task.queuedSecret = obj["queued_secret"] as? String
         // A registry written before tasks had a depth holds only tasks a root dispatched, which
         // is exactly what 1 means.

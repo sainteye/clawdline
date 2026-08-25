@@ -274,6 +274,7 @@ holds a secret: not the orchestrator token, and not the task secret.
   "instructions": "You are in /Users/you/code/clawdline … write the SVG to artifacts/project-portrait.svg",
   "deliverables": ["artifacts/project-portrait.svg"],
   "plan": "root → 3 searchers (haiku) → this one joins them up (opus) → report.md",
+  "claims": ["Sources/Orchestrator.swift", "docs"],
   "serialize": ["build"],
   "timeout_minutes": 30,
   "created_at": "2026-08-24T10:14:02Z",
@@ -304,6 +305,7 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `model` | optional. `[a-z0-9._-]`, at most 64 characters, not starting with `-`. Absent means that assistant's own default |
 | `permission_mode` | optional. `ask` · `edits` · `full`. Absent takes `orchestrator_permission`, which is also the ceiling — asking for more than it gives you it instead |
 | `plan` | optional, ≤ 4 KiB. The whole graph this task is one node of |
+| `claims` | optional array of 1…32 unique POSIX paths relative to `project_dir`; each is 1…1024 characters, may not start with `/`, and may not contain a `..` component. A directory claim covers its whole subtree |
 | `serialize` | optional array of 0…4 unique operation names. Each uses the `model` token rule: 1…64 characters from `[a-z0-9._-]`, not starting with `-` |
 | `project_dir` | absolute, exists, and is a directory — checked at dispatch, not at planning time |
 | `title` | ≤ 200 characters |
@@ -347,6 +349,57 @@ lives in a rollout file rather than in the hook notes `root.session_id` is match
 it is what gets a task filed under its actual parent on the first try instead of being counted as a
 root's. Getting it wrong costs capacity and never buys any — [the two names are combined by taking
 the deeper answer](#depth-stops-at-two-and-the-floor-is-what-has-teeth).
+
+### Reserving declared write paths at dispatch
+
+`claims` is a dispatch-time reservation for paths a task may write. Each entry is relative to
+`project_dir`. At registration the broker standardises and resolves that existing directory once,
+then normalises `.` and empty components in each relative claim and joins them literally. The
+resulting absolute strings are frozen in the lease and compared with exact, case-sensitive
+spelling; the possibly nonexistent target is never resolved, so creating it cannot change its
+key, and `/tmp` and `/private/tmp` project-root spellings converge. Equal paths conflict, as do
+ancestors and descendants: `Sources` covers
+`Sources/Orchestrator.swift`, while `a/b` and `a/bc` are unrelated. Absolutising first is important
+when two tasks use nested project directories — `project_dir=/repo` plus `packages/app/Sources`
+is the same reservation as `project_dir=/repo/packages/app` plus `Sources`.
+
+The check and registration happen atomically as soon as the dispatch has validated. A serialized
+task reserves its claims for its entire time in `queued`; promotion is not a second gap where
+another root can enter. A live claim from a different root refuses the new dispatch immediately
+with `409 workspace_busy`, before serialization and before L1 warnings or a terminal spawn. The
+error names the blocking task, its title and root label, when it was created, every conflicting
+absolute path, and advisory `retry_after: 60`. The rejected task is not registered, and the audit
+log records `orchestrator.claims.blocked`. It also does not consume an entry in the ten-minute
+dispatch rate limiter, so following the retry advice cannot turn repeated `workspace_busy`
+answers into `rate_limited` by itself.
+
+Tasks in the same root tree may overlap because that root owns the graph and may have ordered the
+work itself. Their dispatch succeeds and adds a `claims_overlap` item to `warnings`, naming the
+other task and the conflicting absolute paths. Root identity is the same `parent_task` walk L1
+uses, not merely the immediate `root.session_id` spelling. Only two successfully resolved,
+different roots create a hard refusal. If either side is unknown, dispatch succeeds with the same
+warning shape under `claims_overlap_unknown_root`; a null root cannot hard-block somebody else.
+
+The task record is the lease: every GET record shows its declared `claims`, and every terminal
+state — `success`, `failure`, `timeout`, `cancelled`, or `spawn_failed` — stops holding them. That
+includes a queued task whose pump cannot open a child, because pump failures use the same finalizer.
+Timeout deliberately leaves the child tab open for inspection, so the tab may still be writing
+after its claims are released; the root receives a typed line that says both facts explicitly.
+Cleanup work is work too: a separately dispatched cancel, revert, rollback, or removal task must
+declare every path it may change just as an entering task does. That is what lets it collect only
+the state its own declared scope covers instead of quietly damaging another root during exit.
+
+Claims have an intentionally honest boundary. They protect only tasks that declare claims from
+one another. A task with no `claims` keeps the old behavior and receives only L1's directory-level
+visibility; the broker does not infer a write set from instructions. Claims are a dispatch gate,
+not filesystem enforcement, so a child can still write outside what it declared. Dispatch-time
+refusal is valuable precisely because it removes the human negotiation window in which both
+already-briefed tasks would otherwise keep editing while their roots decide what to do.
+
+A serialized task holds claims from dispatch throughout its entire `queued` wait. That wait has no
+independent timeout: it is bounded by its serialize blockers finishing, timing out, or being
+cancelled, and by cancellation of the queued task itself. `timeout_minutes` still starts only at
+`briefedAt`.
 
 ### Serializing a machine-global operation
 

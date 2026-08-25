@@ -6153,6 +6153,11 @@ group("a task.json is read before a terminal is opened for it") {
            ["build", "db.migration"])
     expect("an absent serialize field has no scheduling effect",
            made(file())?.serialize, [])
+    expect("a task may reserve relative write paths from dispatch",
+           made(file(["claims": ["Sources", "docs/api.md"]]))?.claims,
+           ["Sources", "docs/api.md"])
+    expect("an absent claims field preserves the old dispatch behavior",
+           made(file())?.claims, [])
     expect("one that names a model carries it", made(file(["model": "haiku"]))?.model, "haiku")
     expect("and one that names how far it may go carries that",
            made(file(["permission_mode": "edits"]))?.permission, .edits)
@@ -6231,6 +6236,29 @@ group("a task.json is read before a terminal is opened for it") {
     check("serialize reports every invalid item in one bad_task message",
           everyProblem.contains("serialize[1]") && everyProblem.contains("serialize[2]")
               && everyProblem.contains("serialize[3]"))
+    check("claims must be an array", refused(file(["claims": "Sources"])))
+    check("claims rejects an empty reservation", refused(file(["claims": []])))
+    check("claims accepts at most thirty-two paths",
+          refused(file(["claims": (0...32).map { "path-\($0)" }])))
+    check("claims names the index of a non-string path",
+          refused(file(["claims": ["Sources", 3]])))
+    check("claims rejects an empty path", refused(file(["claims": [""]])))
+    check("claims rejects a path longer than 1024 characters",
+          refused(file(["claims": [String(repeating: "a", count: 1_025)]])))
+    check("claims rejects NUL because it is not a POSIX pathname character",
+          refused(file(["claims": ["Sources\u{0}hidden"]])))
+    check("claims paths are relative to project_dir",
+          refused(file(["claims": ["/Users/me/code/thing/Sources"]])))
+    check("claims rejects dot-dot only as a complete path component",
+          refused(file(["claims": ["Sources/../docs"]]))
+              && !refused(file(["claims": ["Sources/..cache/file"]])))
+    check("claims rejects duplicate declarations",
+          refused(file(["claims": ["Sources", "Sources"]])))
+    let everyClaimProblem = refusal(file(["claims": ["ok", 3, "/absolute", "a/../b", "ok"]])) ?? ""
+    check("claims reports every invalid item in one bad_task message",
+          everyClaimProblem.contains("claims[1]") && everyClaimProblem.contains("claims[2]")
+              && everyClaimProblem.contains("claims[3]")
+              && everyClaimProblem.contains("claims[4]"))
 }
 
 group("a model name is a name, not a fragment of a command line") {
@@ -6498,6 +6526,183 @@ group("workspace overlap follows the whole dispatch tree") {
     expect("no overlap produces no notification decision",
            Orchestrator.workspaceOverlapNotices(newTask: scanningNewcomer,
                                                 overlaps: []).count, 0)
+}
+
+group("declared write claims are reserved across dispatch trees") {
+    let firstRoot = "11111111-2222-3333-4444-555555555555"
+    let secondRoot = "66666666-7777-8888-9999-aaaaaaaaaaaa"
+    func task(_ id: String, dir: String = "/repo", root: String? = firstRoot,
+              state: Orchestrator.State = .queued, claims: [String],
+              serialize: [String] = [], created: TimeInterval = 1,
+              title: String = "claimed work", rootLabel: String? = "root label")
+        -> Orchestrator.Task {
+        var made = Orchestrator.Task(id: id, state: state, kind: "custom", title: title,
+                                     assistant: .claude, projectDir: dir, timeoutMinutes: 30,
+                                     created: Date(timeIntervalSince1970: created),
+                                     rootSessionId: root, rootLabel: rootLabel,
+                                     serialize: serialize, claims: claims,
+                                     secretHash: String(repeating: "0", count: 64))
+        made.claimKeys = Orchestrator.freezeClaims(claims, projectDir: dir)
+        return made
+    }
+
+    let holderID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    let holder = task(holderID, root: secondRoot, claims: ["Sources"])
+    let exact = task(taskID, root: firstRoot, claims: ["Sources"])
+    let equal = Orchestrator.claimsOverlaps(for: exact, among: [holder])
+    expect("equal absolute claims conflict", equal.first?.paths, ["/repo/Sources"])
+    expect("a directory claim covers a descendant file",
+           Orchestrator.claimsOverlaps(
+               for: task(taskID, root: firstRoot, claims: ["Sources/Orchestrator.swift"]),
+               among: [holder]
+           ).first?.paths, ["/repo/Sources/Orchestrator.swift"])
+    expect("the ancestor relationship is symmetric",
+           Orchestrator.claimsOverlaps(
+               for: task(taskID, root: firstRoot, claims: ["Sources"]),
+               among: [task(holderID, root: secondRoot,
+                            claims: ["Sources/Orchestrator.swift"])]
+           ).first?.paths, ["/repo/Sources/Orchestrator.swift"])
+    expect("a string prefix ending mid-component is not a claim conflict",
+           Orchestrator.claimsOverlaps(
+               for: task(taskID, root: firstRoot, claims: ["a/b"]),
+               among: [task(holderID, root: secondRoot, claims: ["a/bc"])]
+           ).count, 0)
+    expect("claim path case follows L1's exact resolved spelling",
+           Orchestrator.claimsOverlaps(
+               for: task(taskID, root: firstRoot, claims: ["Sources"]),
+               among: [task(holderID, root: secondRoot, claims: ["sources"])]
+           ).count, 0)
+
+    let nested = task(holderID, dir: "/repo", root: secondRoot,
+                      claims: ["packages/app/Sources"])
+    expect("claims are absolutized before nested project directories are compared",
+           Orchestrator.claimsOverlaps(
+               for: task(taskID, dir: "/repo/packages/app", root: firstRoot,
+                         claims: ["Sources/file.swift"]),
+               among: [nested]
+           ).first?.paths, ["/repo/packages/app/Sources/file.swift"])
+
+    check("a cross-root overlap is a blocker",
+          equal.count == 1 && equal.first?.sameRoot == false)
+    let busy = equal.first.map(Orchestrator.workspaceBusyExtra) ?? [:]
+    check("workspace_busy context names the blocker, title, root, creation and paths",
+          busy["blocking_task"] as? String == holderID
+              && busy["title"] as? String == "claimed work"
+              && busy["root_label"] as? String == "root label"
+              && busy["created"] as? Int == 1
+              && busy["conflict_paths"] as? [String] == ["/repo/Sources"]
+              && busy["retry_after"] as? Int == 60)
+
+    let sibling = task(holderID, root: firstRoot, claims: ["Sources"])
+    let sameRoot = Orchestrator.claimsOverlaps(for: exact, among: [sibling])
+    check("the same root keeps authority over its own overlapping graph",
+          sameRoot.count == 1 && sameRoot.first?.sameRoot == true)
+    let warned = Orchestrator.dispatchPayload(record: ["id": taskID], taskID: taskID,
+                                              overlaps: [], claimsOverlaps: sameRoot)
+    let warning = (warned["warnings"] as? [[String: Any]])?.first
+    check("same-root overlap is admitted with a claims_overlap warning",
+          warning?["code"] as? String == "claims_overlap"
+              && warning?["task"] as? String == holderID
+              && warning?["paths"] as? [String] == ["/repo/Sources"])
+
+    var parent = task("12121212-3434-5656-7878-909090909090",
+                      root: firstRoot, state: .briefed, claims: ["elsewhere"])
+    parent.depth = 1
+    var child = task(taskID, root: nil, claims: ["Sources"])
+    child.depth = 2
+    child.parentTaskId = parent.id
+    var otherChild = task(holderID, root: nil, claims: ["Sources"], rootLabel: nil)
+    otherChild.depth = 2
+    otherChild.parentTaskId = parent.id
+    let inherited = Orchestrator.claimsOverlaps(for: child, among: [parent, otherChild])
+    check("descendants inherit root identity and label for claims just as they do for L1",
+          inherited.allSatisfy(\.sameRoot) && inherited.first?.rootLabel == "root label")
+
+    var unknown = task("89898989-8989-8989-8989-898989898989", root: nil,
+                       claims: ["Sources"])
+    unknown.depth = 2
+    unknown.parentTaskId = "99999999-9999-9999-9999-999999999999"
+    let unknownRoot = Orchestrator.claimsOverlaps(for: unknown, among: [holder])
+    let unknownReply = Orchestrator.dispatchPayload(record: ["id": taskID], taskID: taskID,
+                                                    overlaps: [], claimsOverlaps: unknownRoot)
+    let unknownWarning = (unknownReply["warnings"] as? [[String: Any]])?.first
+    check("an unresolved root degrades to a typed warning instead of a hard blocker",
+          unknownRoot.first?.blocks == false
+              && unknownWarning?["code"] as? String == "claims_overlap_unknown_root")
+    let unknownHolder = Orchestrator.claimsOverlaps(for: exact, among: [unknown])
+    check("an unresolved blocking side also lacks hard-block authority",
+          unknownHolder.first?.blocks == false
+              && unknownHolder.first?.warning(for: taskID)["code"] as? String
+                  == "claims_overlap_unknown_root")
+
+    let terminals: [Orchestrator.State] = [.success, .failure, .timeout, .cancelled, .spawnFailed]
+    for terminal in terminals {
+        let ended = task(holderID, root: secondRoot, state: terminal, claims: ["Sources"])
+        expect("\(terminal.rawValue) releases every claim",
+               Orchestrator.claimsOverlaps(for: exact, among: [ended]).count, 0)
+    }
+    let timedOut = task(holderID, root: secondRoot, state: .timeout, claims: ["Sources"])
+    check("a timeout completion line says the claims are free while the tab may still write",
+          Orchestrator.timeoutClaimNotice(for: timedOut)
+              .contains("claims released; child tab may still be writing"))
+    let queuedHolder = task(holderID, root: secondRoot, claims: ["Sources"],
+                            serialize: ["build"])
+    expect("a serialized task reserves claims for its whole queued wait",
+           Orchestrator.claimsOverlaps(for: exact, among: [queuedHolder]).count, 1)
+    expect("a candidate combining claims and serialize still checks claims while queued",
+           Orchestrator.claimsOverlaps(
+               for: task(taskID, root: firstRoot, claims: ["Sources"], serialize: ["build"]),
+               among: [queuedHolder]
+           ).count, 1)
+    expect("a task that declares no claims has exactly the old behavior",
+           Orchestrator.claimsOverlaps(
+               for: task(taskID, root: firstRoot, claims: []), among: [holder]
+           ).count, 0)
+
+    let roundTrip = Orchestrator.task(from: Orchestrator.stored(exact))
+    check("claims and their frozen comparison keys survive the registry",
+          roundTrip?.claims == ["Sources"] && roundTrip?.claimKeys == ["/repo/Sources"])
+
+    let fm = FileManager.default
+    let physicalRoot = "/private/tmp/clawdline-claim-freeze-\(UUID().uuidString)"
+    let physicalURL = URL(fileURLWithPath: physicalRoot, isDirectory: true)
+    try! fm.createDirectory(at: physicalURL.appendingPathComponent("link", isDirectory: true),
+                            withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: physicalURL) }
+    let claim = "link/created-later.txt"
+    let beforeCreation = Orchestrator.freezeClaims([claim], projectDir: physicalRoot)
+    fm.createFile(atPath: physicalURL.appendingPathComponent(claim).path,
+                  contents: Data("made later".utf8))
+    let afterCreation = Orchestrator.freezeClaims([claim], projectDir: physicalRoot)
+    expect("a frozen claim key does not change when its target file is created",
+           afterCreation, beforeCreation)
+    expect("literal joining normalises dot and empty relative components",
+           Orchestrator.freezeClaims(["./link//created-later.txt"], projectDir: physicalRoot),
+           beforeCreation)
+
+    let tmpSpelling = physicalRoot.replacingOccurrences(of: "/private/tmp/", with: "/tmp/")
+    let tmpHolder = task(holderID, dir: physicalRoot, root: secondRoot,
+                         claims: ["future/output.txt"])
+    let tmpCandidate = task(taskID, dir: tmpSpelling, root: firstRoot,
+                            claims: ["future/output.txt"])
+    check("/tmp and /private/tmp project roots reserve one canonical namespace",
+          Orchestrator.claimsOverlaps(for: tmpCandidate, among: [tmpHolder]).first?.blocks == true)
+}
+
+group("claims refusals do not spend the dispatch rate budget") {
+    Orchestrator.forget()
+    for _ in 0..<12 {
+        guard let ticket = Orchestrator.takeDispatchRate() else {
+            check("a workspace_busy retry can always reach the claims gate", false)
+            break
+        }
+        Orchestrator.refundDispatchRate(ticket)
+    }
+    let budget = max(10, Config.shared.orchestratorMaxDescendants)
+    let accepted = (0..<budget).compactMap { _ in Orchestrator.takeDispatchRate() }
+    check("refunded retries leave the full dispatch budget available",
+          accepted.count == budget && Orchestrator.takeDispatchRate() == nil)
+    Orchestrator.forget()
 }
 
 group("serialized operations are acquired atomically and globally") {
@@ -6805,7 +7010,7 @@ group("every terminal outcome really pumps the next serialized waiter") {
                 "project_dir": "/path-that-does-not-exist-clawdline-pump-test-\(index)",
                 "timeout_minutes": 30, "created": 2.0,
                 "secret_hash": Orchestrator.hash(ofSecret: secret),
-                "serialize": ["build"],
+                "serialize": ["build"], "claims": ["owned-output"],
                 "queued_secret": Orchestrator.sealQueuedSecret(secret)!, "artifacts": [],
             ],
         ]
@@ -6826,6 +7031,18 @@ group("every terminal outcome really pumps the next serialized waiter") {
               waiter?["state"] as? String == "spawn_failed"
                   && waiter?["finishedAt"] != nil
                   && (waiter?["summary"] as? String)?.contains("not_found") == true)
+        let saved = try! JSONSerialization.jsonObject(with: Data(contentsOf: store))
+            as! [String: Any]
+        let savedWaiter = (saved["tasks"] as! [[String: Any]])
+            .first { $0["id"] as? String == waiterID }
+            .flatMap(Orchestrator.task(from:))!
+        let retry = Orchestrator.Task(
+            id: taskID, state: .queued, kind: "custom", title: "retry",
+            assistant: .claude, projectDir: savedWaiter.projectDir, timeoutMinutes: 30,
+            created: Date(), rootSessionId: "a-different-root", claims: ["owned-output"],
+            secretHash: String(repeating: "0", count: 64))
+        expect("a pump spawn failure releases its queued claim",
+               Orchestrator.claimsOverlaps(for: retry, among: [savedWaiter]).count, 0)
     }
 }
 

@@ -958,12 +958,13 @@ already carried by `task_id`, which is the caller's own identifier for the work 
 per-attempt header. Send the same `task_id` twice and the second call answers `200` with the
 existing record, having opened nothing.
 
-Six refusals, and a client should branch on all of them:
+Seven refusals, and a client should branch on all of them:
 
 | `code` | status | |
 |---|---|---|
 | `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
-| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an invalid `model`, `permission_mode`, `plan`, or `serialize`. `serialize` is at most four unique 1…64-character tokens using `[a-z0-9._-]` and not starting with `-`; `message` names every invalid item |
+| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an invalid `model`, `permission_mode`, `plan`, `claims`, or `serialize`. `claims` is 1…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
+| `workspace_busy` | 409 | a live task from another definitely identified root reserved an equal, ancestor, or descendant claim. The error object carries `blocking_task`, `title`, nullable `root_label`, Unix-second `created`, absolute `conflict_paths`, and advisory `retry_after`. The rejected task is not registered and does not spend dispatch rate-limit budget |
 | `depth_exceeded` | 409 | **the caller is already as deep as this Mac goes.** A root's child may dispatch; that child's may not. `orchestrator_max_grandchildren` of `0` puts the floor back at one level. Not a retry — stop |
 | `over_capacity` | 429 | this dispatcher's slots are full (`orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child), or the whole Mac's are. Registered `queued` tasks count toward these limits even before a tab opens, preventing an unbounded queue. The error object carries `retry_after` in seconds, and `message` says which |
 | `rate_limited` | 429 | more than ten dispatches in ten minutes, or more than one full tree's worth if that is larger |
@@ -974,6 +975,22 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
     -H "X-Clawdline-Orchestrator: $ORCH" -d "{\"task_id\":\"$TASK\",\"secret\":\"$SECRET\"}"
 {"error":{"code":"over_capacity","retry_after":60,"message":"All 5 child slots for this session are busy; retry when one finishes.","request_id":"7b2c19d0-6e44-4a2f-9c31-0d5e8ab41f77"}}
 ```
+
+A claims conflict is answered before serialization, spawning, or L1 workspace warnings:
+
+```json
+{"error":{"code":"workspace_busy",
+          "message":"Another dispatch tree has reserved a path this task claims.",
+          "blocking_task":"a70c5e11-3b28-4d6f-8e10-2c94b7f0d3aa",
+          "title":"Edit the orchestrator","root_label":"clawdline main",
+          "created":1787696800,
+          "conflict_paths":["/Users/you/code/clawdline/Sources/Orchestrator.swift"],
+          "retry_after":60,"request_id":"c1e0b7a4-2f5d-4a19-8b0e-71c93d5ea882"}}
+```
+
+The failed attempt writes `orchestrator.claims.blocked` to the audit log but does not count toward
+the ten-minute dispatch rate limit. The blocking context is enough for the caller to choose
+whether to wait, coordinate with that root, or escalate.
 
 A `200` means *registered and being opened*, not *running*. `state` is `queued` or `spawning` when
 this answers and the child has typed nothing yet; watch the record, or wait to be told.
@@ -992,7 +1009,43 @@ for token rules, multi-name atomicity, and restart behavior.
 {"ok":true,"task":{"id":"3f9a21bc-…","state":"queued","waiting_on":["a70c5e11-…"]}}
 ```
 
-It may also carry `warnings` beside `task`. Today the only warning is advisory workspace overlap:
+An optional `claims` array reserves declared write paths immediately after validation, including
+while a serialized task remains `queued`. At registration the broker resolves the existing
+`project_dir` once, normalises `.` and empty components in each relative claim, and freezes the
+joined absolute strings in the lease. It never resolves the possibly nonexistent claim target,
+so its comparison key cannot change when that target is created; `/tmp` and `/private/tmp`
+project-root spellings converge at the same point. Frozen keys are compared by component:
+equality and ancestor/descendant relationships conflict, but `a/b` does not conflict with `a/bc`.
+Conflicts between two definitely identified different roots return the `409 workspace_busy` shape
+above. A same-root conflict is admitted and adds a warning beside the task:
+
+```json
+{"ok":true,"task":{"id":"3f9a21bc-…","state":"queued",
+                    "claims":["Sources/Orchestrator.swift"]},
+ "warnings":[{"code":"claims_overlap","task":"a70c5e11-…",
+              "paths":["/Users/you/code/clawdline/Sources/Orchestrator.swift"],
+              "message":"Task 3f9a21bc-… shares claimed paths with task a70c5e11-…: /Users/you/code/clawdline/Sources/Orchestrator.swift."}]}
+```
+
+If either task's root cannot be resolved, the dispatch is also admitted and the warning has the
+same fields and message with `code: "claims_overlap_unknown_root"`. An unknown root never has the
+authority to hard-block another task.
+
+Every GET record retains the declared `claims`. All terminal states release them, including a
+queued task that reaches `spawn_failed` in the serialization pump. A task with no `claims` is
+unchanged and has only the L1 directory-level warning described below. Claims protect only
+declaring tasks from one another and are a dispatch gate, not filesystem enforcement; the broker
+does not stop a child from writing outside its declaration. Cleanup, rollback, cancellation, and
+revert tasks must claim the paths they may change just like entry work does.
+
+A serialized task holds claims throughout `queued`, and that queued interval has no independent
+`timeout_minutes` clock. Its practical bound is the serialize blockers reaching a terminal state
+(including timeout or cancellation), or cancellation of the queued task itself. A timeout is a
+terminal state and releases claims immediately, but its child tab is deliberately left open for
+inspection and may still be writing; the root's typed completion line calls out that window.
+
+It may also carry `warnings` beside `task`. Besides the same-root `claims_overlap` above, L1 adds
+advisory cross-root workspace overlap:
 
 ```json
 {"ok":true,"task":{"id":"3f9a21bc-…","state":"spawning"},
