@@ -152,6 +152,9 @@ without a floor it is a fork bomb with a language model in it.
 
 **[docs/orchestrator.md](docs/orchestrator.md)** is the protocol: the file formats, the
 credentials, the lifecycle and the routes with `curl` transcripts.
+**[docs/dispatch-permissions.md](docs/dispatch-permissions.md)** is the part that bites: the four
+places a dispatched session stops to ask, which two of them no setting reaches, and why the flag
+that reads as "get on with it" quietly means the opposite on the cheapest model.
 
 ## Install
 

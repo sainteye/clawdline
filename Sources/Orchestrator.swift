@@ -938,6 +938,19 @@ enum Orchestrator {
         }
     }
 
+    /// How long a tab has to reach a prompt before the task gives up on it.
+    ///
+    /// Four minutes, and the number is set by the worst case rather than the usual one. A single
+    /// assistant starting in a warm project reaches its composer in a few seconds; four of them
+    /// starting at once — which is exactly what a two-level dispatch does — are competing for the
+    /// same CPU, the same disk, and a status line that may be shelling out to git or to a CI API
+    /// before it paints. Two minutes was enough for one and not for four, and the failure it
+    /// produced was indistinguishable from a child that was never going to come up.
+    ///
+    /// The cost of being generous is a row that says `spawning` for longer before admitting
+    /// defeat. The cost of being tight is work that silently did not happen, which is worse.
+    static let readyLimit: TimeInterval = 240
+
     /// Try to put the first message in front of a child that has just opened. True when the task
     /// record changed.
     private static func brief(_ snapshot: Task) -> Bool {
@@ -945,10 +958,12 @@ enum Orchestrator {
         // may have advanced the record.
         guard var task = held(snapshot.id), task.state == .spawning else { return false }
         guard let spawnedAt = task.spawnedAt else { return false }
-        if Date().timeIntervalSince(spawnedAt) > 120 {
+        if Date().timeIntervalSince(spawnedAt) > readyLimit {
             guard replaceTask(task, expecting: .spawning) else { return false }
             finalize(task.id, as: .spawnFailed,
-                     summary: "The child session did not become ready within two minutes.")
+                     summary: "The child session did not reach a prompt within "
+                            + "\(Int(readyLimit / 60)) minutes. If several sessions were starting "
+                            + "at once, they were competing for this Mac.")
             return false // finalize saved and broadcast already
         }
         guard let childID = task.childTerminalId,

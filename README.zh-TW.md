@@ -134,6 +134,9 @@ Clawdline 會開一個終端機分頁，把任務指定的那種助理啟動起�
 
 **[docs/orchestrator.md](docs/orchestrator.md)** 是那份協定：檔案格式、憑證、整個生命週期，
 以及帶著 `curl` 紀錄的路由說明。
+**[docs/dispatch-permissions.md](docs/dispatch-permissions.md)** 是會咬人的那一半：被派出去的
+session 會在哪四個地方停下來問、其中哪兩道任何設定都到不了，以及那個讀起來像「放手去做」的
+flag，為什麼在最便宜的模型上意思正好相反。
 
 ## 安裝
 

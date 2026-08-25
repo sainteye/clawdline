@@ -177,6 +177,12 @@ this Mac has never run that assistant in, and Claude Code's command screening, w
 offers no "always allow". The second one is why a child that dispatches is the one case that
 genuinely needs `full`.
 
+**[`docs/dispatch-permissions.md`](dispatch-permissions.md) is the whole of this subject** — all
+four gates in order, the flag-by-model table that shows `--permission-mode auto` quietly meaning
+`manual` on Haiku, how a child should write a file so screening does not refuse it, the two ways a
+spawn dies, and how to check whether a child was ever actually asked. Everything on that page was
+read off a terminal rather than taken from a help text.
+
 ### House rules
 
 `~/.config/clawdline/dispatch-policy.md` is what this Mac says about **how** work should be
