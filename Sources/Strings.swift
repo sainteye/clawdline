@@ -814,6 +814,24 @@ protocol Copy {
     /// ``webAgentsCount``, which says "{n} running" and is as true of a shell as of an agent.
     var webShells: String { get }
 
+    // Opening one of them, which lands in a panel rather than in the transcript pane: a command
+    // has no conversation, only the file it is printing into. See `ShellPanel` on the page.
+    //
+    /// Heads that panel. Singular — it is about one command, where ``webShells`` heads a list.
+    var webShellTitle: String { get }
+    /// What the row in the strip does when it is pressed.
+    var webShellOpen: String { get }
+    /// Whether anything more is coming, said above the output. **The pair carries the whole
+    /// point of the panel**: somebody opened it to watch a build land, and the moment it does
+    /// this is the only thing on screen that changes.
+    var webShellRunning: String { get }
+    var webShellEnded: String { get }
+    /// A command that has started and printed nothing — `sleep`, or the first second of anything
+    /// else. Not an error: there is nothing wrong here except that there is nothing to read.
+    var webShellQuiet: String { get }
+    var webShellFailed: String { get }
+    var webShellClose: String { get }
+
     // Reading one agent's own conversation, which both the pane and the page can now do. No
     // `web` prefix on the first four: they are said in the same words on the Mac and on a phone,
     // and one string said twice is one thing to translate rather than two to keep in step.

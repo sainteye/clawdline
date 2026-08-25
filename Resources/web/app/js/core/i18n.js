@@ -110,6 +110,15 @@ export var T = {
     // `run_in_background` outlives the turn that started it, and the terminal says so once,
     // where that turn ended, and then never again.
     webShells: "Background shells",
+    // Opening one of them. A command has no conversation, only the file it is printing into, so
+    // it lands in a panel of its own — see `input/shell-panel.js`.
+    webShellTitle: "Background shell",
+    webShellOpen: "See what this command is printing",
+    webShellRunning: "still running",
+    webShellEnded: "finished",
+    webShellQuiet: "Nothing printed yet.",
+    webShellFailed: "Could not read this command's output.",
+    webShellClose: "Close",
     // Work one session handed to another. A background agent lives inside its session; a task
     // has a whole session of its own, which is why it gets a row rather than a chip in a strip.
     webTaskRoot: "Root",

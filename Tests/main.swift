@@ -6561,6 +6561,17 @@ group("a background command is over when its own output says so") {
     expect("the real last line is still the live one", quoting.last ?? "",
            "and then it carried on")
 
+    // The other ending Claude Code writes, for a command that was stopped rather than one that
+    // ended on its own. Seven of the 114 output files on the machine this was written against.
+    let killed = reading("killed.output", "serving on :3000\n[killed]\n")
+    check("a command that was killed has ended", killed.ended)
+
+    // And the reason the rule reads the words rather than the brackets: one real output file ends
+    // with a Chrome log line, which is bracketed and is not an ending.
+    let logging = reading("logging.output",
+                          "[53966:5720383:0824/124336.389973:ERROR:x.cc:618] Network service crashed\n")
+    check("a bracketed log line is not an ending", !logging.ended)
+
     // Trailing blank lines are whitespace, not output.
     let padded = reading("padded.output", "ok\n[exited with code 1]\n\n\n")
     check("blank lines under the marker do not hide it", padded.ended)
@@ -6581,6 +6592,60 @@ group("a background command is over when its own output says so") {
     check("a file whose signature has not moved is not read again", !again.ended)
     let moved = reading(path, "finished\n[exited with code 0]\n", signature: "moved")
     check("and one whose signature has is", moved.ended)
+
+    // A command can print a hundred and fifty kilobytes without a newline in it — `curl` of an
+    // ordinary page does — and the first live reading of this put the whole of one on the wire.
+    let wide = reading("wide.output", String(repeating: "x", count: 4000) + "\n")
+    check("a line longer than a phone is cut", (wide.last ?? "").count <= 160)
+    check("and cut with a mark on it", (wide.last ?? "").hasSuffix("…"))
+}
+
+group("a file left behind by an interrupted command is not a command still running") {
+    let fm = FileManager.default
+    let dir = fm.temporaryDirectory
+        .appendingPathComponent("clawdline-announced-\(UUID().uuidString)", isDirectory: true)
+    try! fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: dir) }
+
+    // Two records off a real transcript, trimmed to what is read: the sentence Claude Code answers
+    // a backgrounded `Bash` with, and an ordinary message that says nothing of the kind.
+    let started = #"{"type":"user","message":{"content":[{"type":"tool_result","content":"Command running in background with ID: bvlp3xmku. Output is being written to: /private/tmp/claude-501/x/y/tasks/bvlp3xmku.output. You will be notified when it completes."}]}}"#
+    let ordinary = #"{"type":"assistant","message":{"content":[{"type":"text","text":"Building for debugging..."}]}}"#
+
+    let file = dir.appendingPathComponent("transcript.jsonl")
+    try! (ordinary + "\n" + started + "\n").write(to: file, atomically: true, encoding: .utf8)
+    let first = Shells.announced(in: file)
+    check("the id of a backgrounded command is found", first.contains("bvlp3xmku"))
+    expect("and nothing else is", first.count, 1)
+
+    // The whole point of the offset: a session that has been going for ninety minutes has pushed
+    // that announcement far past the end of any window a tail could afford to read.
+    let filler = String(repeating: ordinary + "\n", count: 400)
+    let second = #"{"type":"user","message":{"content":[{"type":"tool_result","content":"Command running in background with ID: bke4ijfjf. Output is being written to: /private/tmp/claude-501/x/y/tasks/bke4ijfjf.output."}]}}"#
+    let handle = try! FileHandle(forWritingTo: file)
+    try! handle.seekToEnd()
+    try! handle.write(contentsOf: Data((filler + second + "\n").utf8))
+    try! handle.close()
+
+    let grown = Shells.announced(in: file)
+    check("an announcement in the new bytes is found too", grown.contains("bke4ijfjf"))
+    check("and the one before them is still remembered", grown.contains("bvlp3xmku"))
+
+    // A half-written record at the end is not read now and not skipped forever: the scan stops at
+    // the last newline, so the next call starts where this one stopped.
+    let partial = try! FileHandle(forWritingTo: file)
+    try! partial.seekToEnd()
+    try! partial.write(contentsOf: Data(#"{"type":"user","message":{"content":[{"type":"tool_result","content":"Command running in background with ID: bhal"#.utf8))
+    try! partial.close()
+    check("half a record at the end is not read", !Shells.announced(in: file).contains("bhal"))
+
+    // A file that has shrunk was replaced rather than appended to, so the offset means nothing.
+    try! ordinary.appending("\n").write(to: file, atomically: true, encoding: .utf8)
+    check("a replaced transcript is read again from the start",
+          Shells.announced(in: file).isEmpty)
+
+    check("and a transcript that does not exist announces nothing",
+          Shells.announced(in: dir.appendingPathComponent("gone.jsonl")).isEmpty)
 }
 
 

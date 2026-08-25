@@ -12,6 +12,7 @@ import { Optimistic, Waits, listUnknown, txSkeleton } from "./waits.js";
 import { agentTokens } from "../session/agent.js";
 import { SessionActions } from "../input/detail-actions.js";
 import { GitPanel } from "../input/git-panel.js";
+import { ShellPanel } from "../input/shell-panel.js";
 
 /* ---- the transcript ------------------------------------------------------ */
 
@@ -86,7 +87,7 @@ export function renderDetailHead() {
     els["session-commit"].disabled = !s || !S.write || ending;
     els["session-push"].disabled = !s || !S.write || ending;
     els["session-end"].disabled = !s || !S.write || ending;
-    if (!s) { SessionActions.close(); GitPanel.follow(); }
+    if (!s) { SessionActions.close(); GitPanel.follow(); ShellPanel.follow(); }
 }
 
 export function renderTranscript() {

@@ -66,10 +66,9 @@
 }
 .agents .one .said { color: var(--faint); font-size: 11px; flex: 0 0 auto; }
 
-/* A background command. Same row, one thing missing: it does not lead anywhere, so it does not
-   pretend to — no pointer, and none of the hover that says "this opens". Its ring is the running
-   one above, because a shell in this strip is only ever there while it is still going. */
-.agents .one.shell { cursor: default; }
-.agents .one.shell:hover { background: none; }
-.agents .one.shell:hover .what { color: var(--dim); }
+/* A background command. The same row, leading somewhere else: an agent's opens its conversation
+   and this one opens the file the command is printing into. Its ring is the running one above,
+   because a command is only ever in this strip while it is still going — and what it says is a
+   line of build output, so it is set the way the machine's half of every other row is set. */
 .agents .one.shell .what { font: 11px/1.6 var(--mono); color: var(--faint); }
+.agents .one.shell:hover .what { color: var(--ink); }

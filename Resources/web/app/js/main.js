@@ -34,6 +34,7 @@ import "./input/keys.js";
 import "./input/swipe.js";
 import "./input/detail-actions.js";
 import "./input/git-panel.js";
+import "./input/shell-panel.js";
 import "./input/action-confirm.js";
 import { routeTo } from "./input/route.js";
 import "./input/settings.js";

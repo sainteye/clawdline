@@ -41,6 +41,8 @@ export function paintStatic() {
     text(els["git-title"], T.webGitTitle);
     text(els["git-refresh"], T.webGitRefresh);
     text(els["git-close"], T.webGitClose);
+    text(els["shell-title"], T.webShellTitle);
+    text(els["shell-close"], T.webShellClose);
     text(els["action-confirm-cancel"], T.webCancel);
     text(els["action-confirm-go"], T.webConfirm);
 

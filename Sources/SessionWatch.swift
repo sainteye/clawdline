@@ -226,10 +226,9 @@ final class SessionWatch {
             // it adds no round trip to the reading it rides along with.
             let agents = Subagents.reading(of: sessions)
 
-            // And every command they left running behind them, which the screen answers once and
-            // then forgets — the state above is what decides which sessions may be asked, so it
-            // is read here rather than beside the agents.
-            let shells = Shells.reading(of: sessions, states: states)
+            // And every command they left running behind them, which the screen answers once
+            // and then forgets.
+            let shells = Shells.reading(of: sessions)
 
             // Only the ones nothing is known about yet.
             var grids: [String: ProjectIcon.Grid] = [:]

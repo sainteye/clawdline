@@ -10,6 +10,7 @@ import { Optimistic, Waits } from "../view/waits.js";
 import { closeAgent } from "./agent.js";
 import { SessionActions } from "../input/detail-actions.js";
 import { GitPanel } from "../input/git-panel.js";
+import { ShellPanel } from "../input/shell-panel.js";
 import { ActionConfirm } from "../input/action-confirm.js";
 import { Info } from "../input/info.js";
 import { Shots } from "../input/shots.js";
@@ -94,6 +95,7 @@ export function openSession(id, keepFocus, forceRefresh) {
         Shots.clear();
         Info.follow();
         GitPanel.follow();
+    ShellPanel.follow();
         loadTranscript(id, false);
     } else if (forceRefresh) loadTranscript(id, true);
     if (phone()) {
@@ -125,6 +127,7 @@ export function closeDetail(silent) {
     Shots.clear();
     Info.follow();
     GitPanel.follow();
+    ShellPanel.follow();
     SkillPicker.close();
     if (phone()) els.app.dataset.view = "list";
     renderTranscript();

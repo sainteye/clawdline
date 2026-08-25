@@ -387,24 +387,24 @@ export function renderAgents() {
 /**
  * One command still running where nobody can see it.
  *
- * **A div rather than a button, because there is nowhere to go.** An agent's row opens its
- * conversation; a shell has no conversation, only the tail of what it has printed — and that is
- * already the line on the right of this row. A button that led nowhere would be worse than a
- * line of text, which is the same rule the menu rows follow one panel up.
+ * A button, like an agent's row, because it leads somewhere too — but somewhere else. An agent's
+ * row opens its conversation; a command has no conversation, only the file it is printing into,
+ * so this opens that instead. See `ShellPanel`.
  *
  * `shell` is not translated, for the reason `main` and `general-purpose` are not: it is the word
  * Claude Code itself uses for these, in `/bashes` and in the line it prints when a turn ends
  * with one still going.
  */
 function shellRowHTML(sh) {
-    return '<div class="one shell" data-state="running" title="' + esc(sh.id) + '">' +
+    return '<button class="one shell" type="button" data-state="running"' +
+        ' data-shell="' + esc(sh.id) + '" title="' + esc(T.webShellOpen) + '">' +
         '<span class="mark"></span>' +
         '<span class="kind">shell</span>' +
         // Its last line of output, which is the only thing here written by the command itself —
         // and a command that has printed nothing yet is named by the id, which is what `/bashes`
         // and `KillShell` call it on the Mac.
         '<span class="what">' + esc(sh.doing || sh.id) + "</span>" +
-        "</div>";
+        "</button>";
 }
 
 function agentRowHTML(a, here) {

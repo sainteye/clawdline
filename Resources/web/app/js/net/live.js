@@ -156,6 +156,13 @@ export var Live = {
                          + encodeURIComponent(agentId) + "?limit=200");
     },
 
+    /// One of that session's background commands: the tail of the file it is printing into.
+    /// Not a transcript — a command has no turns — so this answers text and whether it has ended.
+    shell: function (id, shellId) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/shells/"
+                         + encodeURIComponent(shellId));
+    },
+
     skills: function (id) {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/skills");
     },

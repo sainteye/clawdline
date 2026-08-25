@@ -487,6 +487,29 @@ export var Mock = (function () {
                 }, 220);
             });
         },
+        // And enough of a background command's output to see the panel it lands in. Bytes in
+        // the order they were written, because that is all a command has to show.
+        shell: function (id, shellId) {
+            return new Promise(function (done) {
+                setTimeout(function () {
+                    var s = sessions.filter(function (x) { return x.id === id; })[0];
+                    var meta = ((s && s.shells) || []).filter(function (h) { return h.id === shellId; })[0] || null;
+                    var lines = [];
+                    for (var i = 208; i <= 214; i++) {
+                        lines.push("[" + i + "/318] Compiling importer/" +
+                                   ["rows.rs", "csv.rs", "quote.rs", "header.rs", "sniff.rs",
+                                    "encode.rs", "errors.rs"][i - 208]);
+                    }
+                    done({
+                        shell: meta,
+                        text: lines.join("\n") + "\n",
+                        ended: false,
+                        at: Math.floor(Date.now() / 1000),
+                        signature: "mock-" + lines.length
+                    });
+                }, 140);
+            });
+        },
         // Enough of an agent's conversation to see the pane it lands in. The row itself comes
         // from the session fixture, so what the header says here is what the strip said.
         agent: function (id, agentId) {

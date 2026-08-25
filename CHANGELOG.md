@@ -45,6 +45,12 @@ afternoon reporting a cancelled `curl` as work in flight. Nothing has to be inst
 has to be restarted. `GET /v1/sessions` carries it as `shells`; see
 [`docs/api.md`](docs/api.md#the-session-object).
 
+**And the rows open.** A background command has no conversation to read — it was given its words
+when it was started and is not listening for more — so what it has to show is the file it is
+printing into, and pressing its row puts that in the transcript's space, re-read while it is open
+and stopping when the command does. `GET /v1/sessions/:id/shells/:shellId` is the same thing for
+anything else that wants it.
+
 ### Changed: reloading the web interface no longer means a second and a half of black
 
 The page is a document, fourteen stylesheets and forty modules, and until now every one of them

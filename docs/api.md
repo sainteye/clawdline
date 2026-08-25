@@ -80,6 +80,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/sessions/:id` | token | `read` |
 | `GET` | `/v1/sessions/:id/transcript` | token | `read` |
 | `GET` | `/v1/sessions/:id/agents/:agentId` | token | `read` |
+| `GET` | `/v1/sessions/:id/shells/:shellId` | token | `read` |
 | `GET` | `/v1/sessions/:id/links` | token | `read` |
 | `GET` | `/v1/sessions/:id/info` | token | `read` |
 | `GET` | `/v1/sessions/:id/skills` | token | `read` |
@@ -247,6 +248,34 @@ about half an hour after it last wrote anything. The transcript still reads.
 **Claude Code only.** A Codex session has no `subagents` directory, so every agent id under one
 is a `404` — the same answer as an id that was never this session's, and as an id shaped like a
 path. The id is checked before it is used to name a file.
+
+### `GET /v1/sessions/:id/shells/:shellId?bytes=65536`
+
+One of that session's background commands: the row `GET /v1/sessions` already showed for it, and
+what it has printed.
+
+**Text, not entries.** Everything else here that can be opened is a conversation and has turns;
+this is a command's stdout, so it comes back as the bytes in the order they were written — the
+tail of the file Claude Code names in the tool result, which is the same file `/bashes` reads on
+the Mac. `bytes` is how much of the end to send: 64 KB by default, 1 KB to 1 MB.
+
+```console
+$ curl -s "http://127.0.0.1:7717/v1/sessions/09BB6254-A0C9-43D0-B7ED-0A67E6B293FD/shells/b9b2ki73h" \
+    -H "Authorization: Bearer $TOKEN"
+{"shell":{"id":"b9b2ki73h","at":1787645469,"doing":"[3/100] Compiling something.rs"},
+ "text":"[1/100] Compiling something.rs\n[2/100] Compiling something.rs\n",
+ "ended":false,"at":1787645478,"signature":"186-1787645478"}
+```
+
+`ended` is the fact the bytes do not carry, and the one worth polling for: the session list only
+ever carries commands that are still running, so a client watching one land has nothing else that
+would tell it. `signature` moves when the file does — ask again, and redraw only when it changed.
+
+`shell` is the same object the session carries in its own `shells` array. It is **absent** once
+the command has ended and dropped off that list, which is also when a client should stop asking.
+
+**Claude Code only**, and an id shaped like a path is a `404` — the same answer as an id that was
+never this session's. The id is checked before it is used to name a file.
 
 ### `GET /v1/projects`
 
@@ -1032,14 +1061,14 @@ command is still going exactly once, on the line where the turn ended — "Cooke
 shell still running" — and then draws an ordinary prompt for as long as the command takes. Every
 reading after that says what a session with nothing left to do says.
 
-It is worked out from the output files Claude Code keeps under `/tmp/claude-<uid>/…/tasks`, because
-that is where the two facts are: a background command gets `[exited with code 0]` written under its
-last line when it ends, and a *foreground* one has its file deleted the moment it returns. So a file
-with no marker under it belongs to something that has not finished. **Present only on a session that
-is not `working`**, and that is the one ambiguity these files have rather than a saving: while a
-session is working, the file a foreground command is writing to looks exactly like the file a
-background one is writing to, and a session that is working already looks like a session that is
-working.
+It is worked out from two things Claude Code already writes. Every `Bash` call gets an output file
+under `/tmp/claude-<uid>/…/tasks`, and a background one has `[exited with code 0]` written under its
+last line when it ends — so a file with no marker under it belongs to something that has not
+finished. That is not enough on its own: a *foreground* command normally has its file deleted when
+it returns, but one that was interrupted leaves it behind looking exactly like a build still going.
+So the transcript settles it. Claude Code answers a backgrounded `Bash` with *"Command running in
+background with ID: …"*, which is what says an id was ever a background command at all, and a file
+counts only when it was announced **and** has no ending under it.
 
 ## The transcript Entry
 

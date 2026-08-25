@@ -5,6 +5,10 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { api } from "../net/api.js";
 import { SessionActions } from "./detail-actions.js";
+// The two panels share the transcript's space and the attribute that says so, so each has to put
+// the other down. They import each other, which is fine here and only here: neither touches the
+// other while its own module is being evaluated — only later, inside `open`.
+import { ShellPanel } from "./shell-panel.js";
 
 /**
  * A read-only view of the open session's repository, occupying the transcript's space.
@@ -96,9 +100,10 @@ export var GitPanel = (function () {
         open: function () {
             if (!S.openId) return;
             SessionActions.close();
+            ShellPanel.close(false);
             forId = S.openId;
             els["git-panel"].hidden = false;
-            els["pane-detail"].dataset.git = "on";
+            els["pane-detail"].dataset.panel = "git";
             load();
             els["git-close"].focus({ preventScroll: true });
         },
@@ -108,7 +113,7 @@ export var GitPanel = (function () {
             ticket += 1;
             forId = null; snapshot = null; loading = false; error = null;
             els["git-panel"].hidden = true;
-            delete els["pane-detail"].dataset.git;
+            delete els["pane-detail"].dataset.panel;
             if (restore && !els["detail-focus"].disabled) {
                 els["detail-focus"].focus({ preventScroll: true });
             }

@@ -459,17 +459,23 @@ function fillRow(node, s) {
     // A local turn is a fact about the trip to the Mac, not a replacement for the state the
     // Mac reported. Keep `data-state` untouched and give the transient trip its own shape; a
     // waiting row keeps its louder request for attention alongside the quieter delivery note.
-    var shape = closingVisible ? "closing" : (pending ? "pending-" + s.state : s.state);
+    // **The kind of line this is, and the cache key for it, are two different strings.** They used
+    // to be one, and folding the shell count into it broke the case it was not about: `kind` is
+    // what the branches below switch on, `shape` is only ever compared with the last one drawn.
+    // A row that says `working+sh1` is still a working row, and a spinner it decided not to draw
+    // is a canvas left at the 300×150 an undrawn canvas defaults to — which is a rectangle of
+    // nothing the height of three rows, sitting in the middle of the list.
+    var kind = closingVisible ? "closing" : (pending ? "pending" : s.state);
     // What this session left running where nobody can see it — see `Shells` on the Mac. It is
-    // part of the shape because it is part of the markup: a row whose build finished while the
+    // part of the *shape* because it is part of the markup: a row whose build finished while the
     // page was open has to lose the line, and a row that starts one has to grow it.
     var shells = ((s && s.shells) || []).length;
     var shellsSaid = !shells ? "" : '<span class="shells">' +
         esc(shells === 1 ? T.sessionShellOne : fill(T.sessionShellMany, { n: shells })) + "</span>";
-    shape += shells ? "+sh" + shells : "";
+    var shape = kind + "-" + s.state + (shells ? "+sh" + shells : "");
     if (state.dataset.shape !== shape) {
         state.dataset.shape = shape;
-        if (shape === "closing") {
+        if (kind === "closing") {
             state.innerHTML = '<canvas class="spin"></canvas><span class="line">' +
                 esc(T.webClosing) + "</span>";
         } else if (pending) {
@@ -480,7 +486,9 @@ function fillRow(node, s) {
         } else if (s.state === "waiting") {
             state.innerHTML = '<span class="wants">' + esc(T.sessionWaiting) + "</span>" + shellsSaid;
         } else if (s.state === "working") {
-            state.innerHTML = '<canvas class="spin"></canvas><span class="line"></span>';
+            // The shells go after the live line rather than instead of it. A session can be
+            // working on one thing and still have a build it started three turns ago going.
+            state.innerHTML = '<canvas class="spin"></canvas><span class="line"></span>' + shellsSaid;
         } else if (s.state === "unknown") {
             // Not silence — a screen that could not be read is a different fact from "idle",
             // and drawing it as idle would be a confident wrong answer about someone's work.
@@ -492,9 +500,9 @@ function fillRow(node, s) {
             state.innerHTML = shellsSaid;
         }
     }
-    if (pending || shape === "working" || shape === "closing") {
+    if (kind === "pending" || kind === "working" || kind === "closing") {
         state.querySelector(".line").textContent = pending ? T.webPending :
-            (shape === "closing" ? T.webClosing : (s.line || ""));
+            (kind === "closing" ? T.webClosing : (s.line || ""));
         var canvas = state.querySelector(".spin");
         drawSpinner(canvas, spinPhase);
         spinners.push(canvas);

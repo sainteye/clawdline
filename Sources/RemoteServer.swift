@@ -477,6 +477,15 @@ final class RemoteServer {
                 let agent = parts[2].removingPercentEncoding ?? parts[2]
                 return agentPayload(for: session, agent: agent, limit: limit)
             }
+            // One background command's own output. An agent has a conversation and this has a
+            // file it is appending to, so the two routes sit beside each other and answer
+            // differently — see `shellPayload`.
+            if parts.count == 3, parts[1] == "shells" {
+                let bytes = min(max(Int(request.query["bytes"] ?? "") ?? (64 << 10), 1 << 10),
+                                1 << 20)
+                let shell = parts[2].removingPercentEncoding ?? parts[2]
+                return shellPayload(for: session, shell: shell, bytes: bytes)
+            }
             return .error(404, "not_found", "No such route")
 
         // Subscribing is read-level, deliberately. It does not go through `writing` — that gate is
@@ -1808,6 +1817,39 @@ final class RemoteServer {
         return .json(out)
     }
 
+    /// What one background command has printed, plus the row the strip is showing for it.
+    ///
+    /// **Text and not entries.** Everything else on this server that a reader can open is a
+    /// conversation, and a conversation has turns; this is a command's stdout, and the only
+    /// honest shape for it is the bytes in the order they were written. `ended` is the fact the
+    /// page cannot work out for itself — the last line under a finished command says so, and
+    /// the strip only ever lists running ones, so a reader who has been watching one land needs
+    /// this to be told it has.
+    ///
+    /// The tail is taken twice when the file moved under the first read, the same bargain
+    /// `agentPayload` strikes: a command printing hard is the ordinary case here, not the rare
+    /// one, and half a read is worse than a slightly older one.
+    private func shellPayload(for session: TargetSession, shell id: String,
+                              bytes: Int) -> Response {
+        guard var read = Shells.output(of: session, id: id, bytes: bytes) else {
+            return .error(404, "not_found", "No command named that")
+        }
+        if let fresh = Shells.output(of: session, id: id, bytes: bytes),
+           fresh.signature != read.signature {
+            read = fresh
+        }
+        var out: [String: Any] = [
+            "text": read.text,
+            "ended": read.ended,
+            "at": Int(read.at.timeIntervalSince1970),
+            "signature": read.signature,
+        ]
+        if let shell = SessionWatch.shared.shells(of: session.id).first(where: { $0.id == id }) {
+            out["shell"] = json(of: shell)
+        }
+        return .json(out)
+    }
+
     /// Entries as the page reads them. One shape for both transcripts, because a reader following
     /// an agent should meet the same pane they left.
     private func rows(of entries: [Transcript.Entry]) -> [[String: Any]] {
@@ -2158,6 +2200,13 @@ final class RemoteServer {
             "agentBack": t.agentBack,
             "webAgentOpen": t.webAgentOpen,
             "webShells": t.webShells,
+            "webShellTitle": t.webShellTitle,
+            "webShellOpen": t.webShellOpen,
+            "webShellRunning": t.webShellRunning,
+            "webShellEnded": t.webShellEnded,
+            "webShellQuiet": t.webShellQuiet,
+            "webShellFailed": t.webShellFailed,
+            "webShellClose": t.webShellClose,
         ])
 
         // The chips on a root session and on the child it sent off — see `Orchestrator`.

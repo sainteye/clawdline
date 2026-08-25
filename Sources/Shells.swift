@@ -19,12 +19,19 @@ import Foundation
 ///     <task-id>.output   ← appended to while the command runs
 /// ```
 ///
-/// **Two shapes tell the whole story, and both were observed rather than documented.** A command
-/// that has finished in the background has `[exited with code 0]` written under its last line and
-/// keeps its file; a command running in the foreground has its file *deleted* the moment it
-/// returns. So a file with no exit marker under it is a command that has not finished — and the
-/// only way it can be a foreground one is if the session is working, which is the state this
-/// reading refuses to answer for. See ``reading(of:states:)``.
+/// **The file alone does not settle it, and the first version of this file believed it did.** A
+/// command that finished in the background has `[exited with code 0]` written under its last line
+/// and keeps its file; a foreground one has its file *deleted* when it returns. That reads like a
+/// complete rule and is not: a foreground command that was **interrupted** — Esc at the keyboard,
+/// a session that went away mid-command — leaves its file behind with no marker under it, looking
+/// exactly like a build that is still going. Half an hour after this was first written it was
+/// reporting a `curl` somebody had cancelled an hour earlier as running work.
+///
+/// So two facts are required, and the second one is the transcript's. Claude Code answers a
+/// backgrounded `Bash` with *"Command running in background with ID: bvlp3xmku"* and answers a
+/// foreground one with its output, so the transcript says which ids were ever backgrounded at
+/// all — see ``announced(in:)``. A file is a running command only when its id was announced
+/// **and** nothing has written an ending under it.
 ///
 /// Nothing here is promised by anybody and all of it can change. Same rule as everywhere else:
 /// recognise a shape, and a session whose files say nothing recognisable has no shells rather
@@ -64,23 +71,12 @@ enum Shells {
     /// Every session's running background commands, keyed by session id. Sessions with none are
     /// absent.
     ///
-    /// **A working session is skipped, and that is a correctness rule rather than a saving.** The
-    /// file a foreground `Bash` is writing to right now looks exactly like the file a background
-    /// one is writing to right now — no marker under either, because neither has finished. What
-    /// separates them is the session: a foreground command *is* the session being busy, so
-    /// nothing that is running in the foreground can belong to a session that is not working.
-    /// Asking only the sessions that are between turns removes the one ambiguity these files
-    /// have, and it removes it in the only state this reading is for. A session that is working
-    /// already looks like a session that is working.
-    ///
     /// Claude Code only, and `isClaude` rather than `isAssistant` says so on purpose: Codex keeps
     /// no such directory, so asking would be a `stat` that can only come back empty, once per
     /// session per beat.
-    static func reading(of sessions: [TargetSession],
-                        states: [String: SessionState]) -> [String: [Shell]] {
+    static func reading(of sessions: [TargetSession]) -> [String: [Shell]] {
         var out: [String: [Shell]] = [:]
         for session in sessions where session.isClaude {
-            if case .working = states[session.id] ?? .unknown { continue }
             let found = shells(of: session)
             if !found.isEmpty { out[session.id] = found }
         }
@@ -91,14 +87,14 @@ enum Shells {
     ///
     /// A session between turns has had its foreground output files deleted behind it and has no
     /// background ones, so its `tasks` directory is empty and this costs one `readdir`. Only a
-    /// session that actually has a file in there ever reads a byte.
+    /// session with a file in there and no ending under it opens a transcript.
     static func shells(of session: TargetSession) -> [Shell] {
         guard let folder = folder(of: session) else { return [] }
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { return [] }
 
         let now = Date()
-        var shells: [Shell] = []
+        var unfinished: [Shell] = []
         for name in names where name.hasSuffix(".output") {
             let id = String(name.dropLast(".output".count))
             guard !id.isEmpty else { continue }
@@ -106,12 +102,109 @@ enum Shells {
             guard let at = modified(file), now.timeIntervalSince(at) < liveWindow else { continue }
             let tail = read(file, signature: "\(at.timeIntervalSince1970)-\(size(file))")
             guard !tail.ended else { continue }
-            shells.append(Shell(id: id, at: at, doing: tail.last))
+            unfinished.append(Shell(id: id, at: at, doing: tail.last))
         }
+        guard !unfinished.isEmpty else { return [] }
+
+        // Only now is a transcript opened, and only to answer the one thing the files cannot: of
+        // these unfinished commands, which were ever backgrounded rather than interrupted.
+        guard let transcript = Subagents.transcript(of: session) else { return [] }
+        let backgrounded = announced(in: transcript)
 
         // Newest first: the one that printed a second ago is the one somebody is waiting on.
-        shells.sort { $0.at > $1.at }
-        return Array(shells.prefix(shown))
+        return Array(unfinished.filter { backgrounded.contains($0.id) }
+            .sorted { $0.at > $1.at }
+            .prefix(shown))
+    }
+
+    // MARK: - Reading one of them
+
+    /// What one command has printed, as the tail of its own output file.
+    ///
+    /// **The whole of what there is to show.** A background command has no conversation and no
+    /// transcript — it has a file it is appending to, which is what the terminal's own `/bashes`
+    /// reads and what `Read` on the path in the tool result reads. So this is that file, from the
+    /// end, and `ended` says whether anything more is coming.
+    ///
+    /// **The id is checked rather than trusted**, exactly as ``Subagents/transcript(of:agent:)``
+    /// checks one: it arrives from a URL and is about to become a path component. An id Claude
+    /// Code wrote is letters and digits; anything with a dot or a slash in it is somebody asking
+    /// for a file somewhere else on this disk, and the answer to that is nothing at all.
+    static func output(of session: TargetSession, id: String,
+                       bytes: Int) -> (text: String, ended: Bool, at: Date, signature: String)? {
+        guard isID(id), let folder = folder(of: session) else { return nil }
+        let file = folder.appendingPathComponent("\(id).output")
+        guard FileManager.default.fileExists(atPath: file.path), let at = modified(file) else {
+            return nil
+        }
+        let signature = Transcript.signature(of: file)
+        let text = Transcript.tail(of: file, bytes: bytes) ?? ""
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return (text, lines.last.map(isEnding) ?? false, at, signature)
+    }
+
+    /// Whether a string could be one of Claude Code's task ids. Deliberately narrower than "does
+    /// not escape the directory": a name that cannot be an id is not worth a `stat`.
+    static func isID(_ id: String) -> Bool {
+        !id.isEmpty && id.count <= 128 && id.allSatisfy {
+            $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_")
+        }
+    }
+
+    // MARK: - Which of them were ever backgrounded
+
+    /// The ids this transcript has announced as running in the background.
+    ///
+    /// **Read forward from where we stopped last time, not from the end** — the same rule, and the
+    /// same reason, as ``Subagents/notices(in:)``. A transcript is append-only and runs to tens of
+    /// megabytes; tailing a fixed window would be cheaper per call and wrong in exactly the case
+    /// that matters, because the command still running after ninety minutes is the one whose
+    /// announcement is furthest back. A file that has shrunk was replaced rather than appended to,
+    /// and the offset is dropped.
+    ///
+    /// No JSON is parsed. The sentence is written by one program in one shape and the id follows
+    /// it, so this is a substring and a scan — which matters, because the alternative is decoding
+    /// every record of a forty-megabyte file to read one line in a thousand. A sentence quoting
+    /// this at Claude adds an id that names no file, which changes nothing.
+    private static let announcement = "Command running in background with ID: "
+    private static var starts: [String: (offset: UInt64, found: Set<String>)] = [:]
+
+    static func announced(in url: URL) -> Set<String> {
+        lock.lock()
+        let seen = starts[url.path]
+        lock.unlock()
+
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return seen?.found ?? [] }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+
+        var offset = seen?.offset ?? 0
+        var found = seen?.found ?? []
+        if size < offset { offset = 0; found = [] }
+        guard size > offset else { return found }
+
+        try? handle.seek(toOffset: offset)
+        guard let data = try? handle.readToEnd(), !data.isEmpty else { return found }
+        let text = String(decoding: data, as: UTF8.self)
+        // Stop at the last complete line. The writer may be mid-append, and half a record read
+        // now would be skipped now and never looked at again.
+        guard let end = text.lastIndex(of: "\n") else { return found }
+        let whole = text[text.startIndex...end]
+
+        var rest = whole[whole.startIndex...]
+        while let hit = rest.range(of: announcement) {
+            let id = rest[hit.upperBound...].prefix { $0.isASCII && ($0.isLetter || $0.isNumber) }
+            if !id.isEmpty { found.insert(String(id)) }
+            rest = rest[hit.upperBound...]
+        }
+
+        let advanced = offset + UInt64(whole.utf8.count)
+        lock.lock()
+        starts[url.path] = (advanced, found)
+        lock.unlock()
+        return found
     }
 
     // MARK: - Where the files are
@@ -146,11 +239,17 @@ enum Shells {
         var last: String?
     }
 
-    /// The marker Claude Code writes under a background command once it is over. Observed, and
-    /// the one string in here that decides anything — so it is matched at the end of the file and
-    /// nowhere else. A build that happens to print a line like this in the middle of its own
-    /// output says nothing about whether it has finished, and this does not ask.
-    private static let exitMarker = "[exited"
+    /// The two markers Claude Code writes under a background command once it is over: `[exited
+    /// with code 0]` for one that ended on its own and `[killed]` for one that was stopped. Both
+    /// observed — 114 output files off this machine had one of these two under them and nothing
+    /// else — and both matched at the end of the file and nowhere else.
+    ///
+    /// **Narrower than "a line in brackets" on purpose.** One of those files ends with
+    /// `[53966:5720383:…:ERROR:…] Network service crashed`, which is Chrome logging and not an
+    /// ending; a rule that read the brackets rather than the words would have called it one.
+    private static func isEnding(_ line: String) -> Bool {
+        (line.hasPrefix("[exited") && line.hasSuffix("]")) || line == "[killed]"
+    }
 
     /// Read once per version of the file. A command that has printed nothing since the last beat
     /// has the same size and the same mtime, and re-reading it would be eight kilobytes of I/O
@@ -175,10 +274,10 @@ enum Shells {
             if let last = lines.last {
                 // The marker is the last line or it is not the marker. Anything under it would be
                 // output printed after the command ended, which cannot happen.
-                if last.hasPrefix(exitMarker), last.hasSuffix("]") {
+                if isEnding(last) {
                     ending.ended = true
                 } else {
-                    ending.last = last
+                    ending.last = clipped(last)
                 }
             }
         }
@@ -187,6 +286,18 @@ enum Shells {
         reads[url.path] = (signature, ending)
         lock.unlock()
         return ending
+    }
+
+    /// How much of a command's last line is worth carrying.
+    ///
+    /// **A line is not a sentence.** `curl` of an ordinary web page prints a hundred and fifty
+    /// kilobytes without a newline in it, and the first live reading of this put the whole of one
+    /// on the wire and into a row that is one line tall. This is the width of a phone rather than
+    /// a guess at what output looks like: past it, nothing is read anyway.
+    private static let room = 160
+
+    private static func clipped(_ line: String) -> String {
+        line.count > room ? String(line.prefix(room - 1)) + "…" : line
     }
 
     // MARK: - Odds and ends
@@ -206,6 +317,7 @@ enum Shells {
     static func forget() {
         lock.lock()
         reads = [:]
+        starts = [:]
         lock.unlock()
     }
 }

@@ -280,13 +280,23 @@ document.documentElement.className = "booting";
                 <div class="sub" id="agent-sub"></div>
             </div>
         </div>
-        <section class="git-panel" id="git-panel" aria-labelledby="git-title" hidden>
-            <div class="git-panel-head">
+        <section class="panel-view" id="git-panel" aria-labelledby="git-title" hidden>
+            <div class="panel-view-head">
                 <h2 id="git-title">Git changes</h2>
                 <button class="chip" id="git-refresh" type="button">Refresh</button>
                 <button class="chip" id="git-close" type="button">Close</button>
             </div>
-            <div class="scroller git-panel-body" id="git-body" aria-live="polite"></div>
+            <div class="scroller panel-view-body" id="git-body" aria-live="polite"></div>
+        </section>
+        <!-- The same furniture, showing one background command's output. It has no Refresh: a
+             command that is still running is re-read on its own while this is open, which is the
+             whole reason somebody opened it. -->
+        <section class="panel-view" id="shell-panel" aria-labelledby="shell-title" hidden>
+            <div class="panel-view-head">
+                <h2 id="shell-title">Background shell</h2>
+                <button class="chip" id="shell-close" type="button">Close</button>
+            </div>
+            <div class="scroller panel-view-body" id="shell-body" aria-live="polite"></div>
         </section>
         <div class="scroller tx-scroll" id="tx-scroll"><div class="tx" id="tx"></div></div>
         <!-- The session and the work it sent away, as one short tree: `main` at the root and a

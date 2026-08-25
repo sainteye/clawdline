@@ -132,29 +132,51 @@
     border-top: 1px solid var(--line); border-radius: 0 0 7px 7px;
     color: #d88f7b; font-family: var(--ui);
 }
-.git-panel {
+/* A view of the open session that takes the transcript's space rather than floating over it.
+   There are two — the repository's changes, and one background command's output — and they are
+   the same piece of furniture, which is why none of this is named after either of them. The
+   header stays put; only the transcript and the things under it step aside. `data-panel` names
+   which one is up, and there is never more than one. */
+.panel-view {
     flex: 1 1 auto; min-height: 0;
     display: flex; flex-direction: column;
     background: #101014;
 }
-.git-panel[hidden] { display: none; }
-/* It is a view of the same session in the same space as the transcript, not a sheet floating
-   over the whole app. The header stays put; only the transcript and its furniture step aside. */
-.pane-detail[data-git="on"] > .tx-scroll,
-.pane-detail[data-git="on"] > .live,
-.pane-detail[data-git="on"] > .agents,
-.pane-detail[data-git="on"] > .composer { display: none; }
-.git-panel-head {
+.panel-view[hidden] { display: none; }
+.pane-detail[data-panel] > .tx-scroll,
+.pane-detail[data-panel] > .live,
+.pane-detail[data-panel] > .agents,
+.pane-detail[data-panel] > .composer { display: none; }
+.panel-view-head {
     flex: 0 0 auto;
     display: flex; align-items: center; gap: 9px;
     padding: 13px 16px 12px 18px;
     border-bottom: 1px solid var(--line);
 }
-.git-panel-head h2 {
+.panel-view-head h2 {
     min-width: 0; flex: 1 1 auto;
     margin: 0; color: var(--ink); font-size: 14px; font-weight: 600;
 }
-.git-panel-body { flex: 1 1 auto; padding: 16px 18px 24px; }
+.panel-view-body { flex: 1 1 auto; padding: 16px 18px 24px; }
+
+/* What a background command has printed, which is bytes in the order they were written and not
+   a conversation. So: the terminal's own typeface, its own wrapping, and no attempt to make a
+   build log look like prose. */
+.shell-out {
+    margin: 0; color: var(--dim); font: 12px/1.65 var(--mono);
+    white-space: pre-wrap; overflow-wrap: anywhere;
+}
+/* Above it, the two facts the bytes do not carry: which command this is, and whether anything
+   more is coming. */
+.shell-said {
+    margin: 0 0 12px; color: var(--faint); font: 11.5px/1.5 var(--mono);
+    display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+}
+.shell-said .dot {
+    flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent); opacity: 0.8;
+}
+.shell-said[data-ended="1"] .dot { background: var(--faint); opacity: 1; }
 .git-branch {
     margin: 0 0 12px; color: var(--dim);
     font: 12px/1.5 var(--mono);
