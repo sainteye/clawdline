@@ -9,6 +9,29 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: say what to start, and the Mac works out where
+
+There is a microphone beside the plus in the session list now. Press it and say what you want
+done — *go run the tests in clawdline and paste anything red* — and the sentence comes back on
+screen as text you can correct. Press Start and the Mac plans from it: which project you meant,
+which assistant, and what the first message should say.
+
+That draft is shown before anything is opened, and the sentence in it stays editable, because it
+is not what you said — it is what a model wrote out of what you said, and it is the thing that
+will actually be typed into the agent. A planner asked to open a session somewhere that is not
+one of your projects will refuse the project and still write the request into that sentence,
+which is exactly why it is put in front of you rather than used.
+
+When the planner is confident it carries on and opens the session itself. When it is not — no
+project named, or one that does not exist here — it stops and asks, with the list underneath.
+Either way Cancel stays live the whole time: reading the draft and deciding against it works
+right up until the message lands.
+
+It plans with Claude Code when the Mac has it and falls back to Codex when it does not. Nothing
+new is opened up: the page starts the session and sends the message with the two permissions a
+paired device already had, rather than a route that would do both at once.
+
+
 ### Fixed: a hole in the middle of every sheet with chips in it, on a phone
 
 The session list's row class is `row`, and the phone breakpoint gives it thirteen points of padding
