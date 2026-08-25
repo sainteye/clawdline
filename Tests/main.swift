@@ -7352,6 +7352,57 @@ group("nothing is signalled until it is known whose process it is") {
 }
 
 
+// MARK: - The list of background sessions
+
+// Pressing ← opens the list of background sessions, and doing that is what moves the conversation
+// you were in to the background — the banner across the middle of this capture is Claude Code
+// saying so out loud. So this screen is what a parked tab shows whenever nobody has pressed enter
+// to step back into the conversation, which is most of the time: parking is what happens when you
+// go to look at something else.
+//
+// It is worth pinning down because it is nearly the shape of a dialog — a flush-left list, a
+// marker in front of every row, a composer underneath — and a wrong reading here would put
+// buttons on a phone whose real actions are "cancel this job" and "start a new session", neither
+// of which is an answer to anything. It is not a dialog, and the reason is narrow: a row here
+// carries no number, and ``SessionState/option(_:)`` counts nothing without one.
+//
+// The real screen pads some forty blank lines between the last row and the composer, so the
+// default window would never reach the rows at all. That padding is dropped here on purpose —
+// what is being pinned is the shape of the rows, not the luck of where they sat.
+group("the list of background sessions is a list of jobs, not a question") {
+    let screen = """
+     ▐▛███▛█   Claude Code v2.1.245
+    ▝▜██████▀  Opus 5 · ~/code/clawdline
+      ▝▝ ▝▝    1 awaiting input · 1 working · 2 completed
+
+    Your conversation moved to the background — enter opens it · esc returns to it · ctrl+c twice quits
+
+    Needs input
+     ✻ 修正瀏覽器問答               press option 1 on phone, then Return to submit                 2h
+
+    Working
+     ✽ sleep 300                    請執行 sleep 300 這個指令                                       2s
+
+    Completed
+     ✻ workspace status check       修正沒有停，但卡在一個誤判                                      3m
+     ✻ debug dialog text detection  程式碼是對的，寫下來的理由是錯的                                 9m
+
+    ─────────────────────────────────────────────────────────
+    ❯ describe a task for a new session
+    ─────────────────────────────────────────────────────────
+      ⏵⏵ auto mode · enter to return · space to reply · ctrl+x to delete · ? for shortcuts
+    """
+    check("a job with a spinner in front of it is not an option to choose",
+          SessionState.menu(screen) == nil)
+    // The gate is what a `waiting` status opens, and a parked tab now carries the status of the
+    // conversation that moved into the background — so this is the pairing that matters, and the
+    // one that did not exist before a tab could speak for a session it is only mirroring.
+    check("nor with the gate a waiting session opens",
+          SessionState.menu(screen, hookWaiting: true) == nil)
+    check("and the composer under it is still a composer",
+          SessionState.isChoosing(screen, hookWaiting: true) == false)
+}
+
 // MARK: - Result
 
 print("")
