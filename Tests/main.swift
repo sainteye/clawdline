@@ -6464,6 +6464,47 @@ group("an orchestrated Claude child keeps its process identity") {
                 == .refuseForeignProcess(seen: 100))
 }
 
+group("an orchestrated Claude child prefers registry identity") {
+    let registryID = "8e29b3df-1af7-40af-996f-3f969782c064"
+    let legacyID = "6a2b2ad0-3574-40eb-ba41-50c93c83c201"
+    let projectDir = "/tmp/a project"
+    var task = Orchestrator.Task(id: taskID, state: .spawning, kind: "custom",
+                                 title: "a task", assistant: .claude,
+                                 projectDir: projectDir, timeoutMinutes: 30,
+                                 created: Date(), secretHash: String(repeating: "0", count: 64))
+    let registryTranscript = Transcript.projectDirectory(forCwd: projectDir)
+        .appendingPathComponent("\(registryID).jsonl")
+    let withRegistry = Orchestrator.ChildObservation(pid: 100, procStart: Date(),
+                                                     registrySessionID: registryID)
+    let withoutRegistry = Orchestrator.ChildObservation(pid: 100, procStart: Date())
+
+    // Removing the registry branch in `identityStep` must fail this compound source-order check.
+    check("registry is primary before a transcript exists and absence falls through",
+          Orchestrator.identityStep(for: task, seeing: withRegistry)
+            == .useRegistry(sessionID: registryID, transcript: registryTranscript)
+            && Orchestrator.identityStep(for: task, seeing: withoutRegistry) == .none)
+
+    task.childSessionId = legacyID
+    task.transcriptPath = "/tmp/legacy.jsonl"
+    let mismatch = Orchestrator.identityComparison(registrySessionID: registryID,
+                                                   registryTranscript: registryTranscript,
+                                                   legacyTask: task)
+    var agreeing = task
+    agreeing.childSessionId = registryID
+    agreeing.transcriptPath = nil
+
+    // Removing the session-id mismatch guard must make the agreeing half of this check fail.
+    check("the audit comparison carries both answers and ignores only a missing old path",
+          mismatch == Orchestrator.IdentityComparison(
+            registrySessionID: registryID,
+            registryTranscriptPath: registryTranscript.path,
+            legacySessionID: legacyID,
+            legacyTranscriptPath: "/tmp/legacy.jsonl"
+          ) && Orchestrator.identityComparison(registrySessionID: registryID,
+                                               registryTranscript: registryTranscript,
+                                               legacyTask: agreeing) == nil)
+}
+
 group("an orchestrated child only inherits identity from this spawn") {
     let spawnedAt = Date(timeIntervalSince1970: 2_000)
     let old = HookBridge.Note(event: .sessionStart, tty: "ttys004",

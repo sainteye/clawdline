@@ -129,25 +129,52 @@ enum Orchestrator {
     struct ChildObservation: Equatable {
         var pid: Int32?
         var procStart: Date?
+        var registrySessionID: String? = nil
     }
 
     enum IdentityStep: Equatable {
         case none
+        case useRegistry(sessionID: String, transcript: URL)
         case refuseForeignProcess(seen: Int32?)
+    }
+
+    struct IdentityComparison: Equatable {
+        var registrySessionID: String
+        var registryTranscriptPath: String
+        var legacySessionID: String?
+        var legacyTranscriptPath: String?
     }
 
     /// A terminal belongs to a tab, while this identity belongs to the Claude process that was
     /// first observed inside it. A later process on the same tab cannot contribute any identity.
     static func identityStep(for task: Task, seeing observation: ChildObservation) -> IdentityStep {
-        guard task.assistant == .claude, let recordedPID = task.childPID else { return .none }
-        guard observation.pid == recordedPID else {
-            return .refuseForeignProcess(seen: observation.pid)
+        guard task.assistant == .claude else { return .none }
+        if let recordedPID = task.childPID {
+            guard observation.pid == recordedPID else {
+                return .refuseForeignProcess(seen: observation.pid)
+            }
+            if let recordedStart = task.childProcStart, let seenStart = observation.procStart,
+               abs(seenStart.timeIntervalSince(recordedStart)) > SessionRegistry.startTolerance {
+                return .refuseForeignProcess(seen: observation.pid)
+            }
         }
-        if let recordedStart = task.childProcStart, let seenStart = observation.procStart,
-           abs(seenStart.timeIntervalSince(recordedStart)) > SessionRegistry.startTolerance {
-            return .refuseForeignProcess(seen: observation.pid)
+        if let sessionID = observation.registrySessionID {
+            let transcript = Transcript.projectDirectory(forCwd: task.projectDir)
+                .appendingPathComponent("\(sessionID).jsonl")
+            return .useRegistry(sessionID: sessionID, transcript: transcript)
         }
         return .none
+    }
+
+    /// A transcript can legitimately be absent while both sources already name the same session.
+    /// Compare the durable identity, while retaining both paths as evidence when the ids diverge.
+    static func identityComparison(registrySessionID: String, registryTranscript: URL,
+                                   legacyTask: Task) -> IdentityComparison? {
+        guard registrySessionID != legacyTask.childSessionId else { return nil }
+        return IdentityComparison(registrySessionID: registrySessionID,
+                                  registryTranscriptPath: registryTranscript.path,
+                                  legacySessionID: legacyTask.childSessionId,
+                                  legacyTranscriptPath: legacyTask.transcriptPath)
     }
 
     static let briefingAttemptLimit = 5
@@ -1317,9 +1344,10 @@ enum Orchestrator {
         switch task.assistant {
         case .claude:
             let observation = ChildObservation(pid: Targets.pid(of: child),
-                                               procStart: Targets.processStart(of: child))
-            if case let .refuseForeignProcess(seen) = identityStep(for: task,
-                                                                   seeing: observation) {
+                                               procStart: Targets.processStart(of: child),
+                                               registrySessionID: SessionRegistry.sessionID(of: child))
+            let step = identityStep(for: task, seeing: observation)
+            if case let .refuseForeignProcess(seen) = step {
                 RemoteAuth.audit("orchestrator.identity.foreign", [
                     "task": task.id,
                     "recorded_pid": task.childPID.map(String.init) ?? "?",
@@ -1340,60 +1368,43 @@ enum Orchestrator {
                 task.childProcStart = started
                 changed = true
             }
-            changed = noteTranscriptProof(in: &task) || changed
-            if let noted = childSessionID(from: HookBridge.note(for: child),
-                                          spawnedAt: task.spawnedAt),
-               task.childSessionId != noted {
-                if task.childSessionId == nil, task.transcriptPath == nil {
-                    // The first current hook supplies an exact filename before Claude has made
-                    // the file or received the briefing. It is useful for delivery, but does not
-                    // become proven ownership until the marker appears below.
-                    task.childSessionId = noted
+            // Run the former ladder even when the registry answers. Its result is both the exact
+            // fallback for a missing registry entry and a temporary control for the new source.
+            var legacyTask = task
+            if case .useRegistry = step {
+                // Keep the control independent of identity previously supplied by the registry.
+                // This asks what note + locate can establish on this beat, from their own facts.
+                legacyTask.childSessionId = nil
+                legacyTask.transcriptPath = nil
+                legacyTask.transcriptProven = false
+            }
+            let legacyChanged = noteClaudeIdentityFromLegacySources(child, in: &legacyTask)
+            switch step {
+            case let .useRegistry(sessionID, transcript):
+                if let comparison = identityComparison(registrySessionID: sessionID,
+                                                       registryTranscript: transcript,
+                                                       legacyTask: legacyTask) {
+                    RemoteAuth.audit("orchestrator.identity.mismatch", [
+                        "task": task.id,
+                        "registry_session": comparison.registrySessionID,
+                        "registry_transcript": comparison.registryTranscriptPath,
+                        "legacy_session": comparison.legacySessionID ?? "?",
+                        "legacy_transcript": comparison.legacyTranscriptPath ?? "?",
+                    ])
+                }
+                if task.childSessionId != sessionID || task.transcriptPath != transcript.path {
+                    task.childSessionId = sessionID
+                    task.transcriptPath = transcript.path
                     task.transcriptProven = false
                     changed = true
-                } else {
-                    // A tty survives the assistant process inside it. A later hook can therefore
-                    // be a user-started conversation in a lingering child tab, not a correction
-                    // to this task. Replace an existing identity only as one atomic, marker-proven
-                    // pair; until its exact transcript carries this task's turn, keep the old one.
-                    let candidate = Transcript.locate(cwd: task.projectDir,
-                                                      tabTitle: child.name,
-                                                      startedAt: task.spawnedAt,
-                                                      sessionID: noted)
-                    if let replacement = replacementChildTranscript(
-                        currentSessionID: task.childSessionId, notedSessionID: noted,
-                        transcript: candidate, taskID: task.id
-                    ) {
-                        task.childSessionId = noted
-                        task.transcriptPath = replacement.path
-                        task.transcriptProven = true
-                        changed = true
-                    }
                 }
+                changed = noteTranscriptProof(in: &task) || changed
+            case .none:
+                task = legacyTask
+                changed = legacyChanged || changed
+            case .refuseForeignProcess:
+                break
             }
-            // Without an id, timestamps and titles only rank candidates, so the delivered task
-            // marker must prove the winner. A current hook instead names the exact file needed to
-            // verify delivery before that marker has appeared; proof is recorded once it does.
-            let accepting: ((URL) -> Bool)?
-            if task.childSessionId == nil {
-                let taskID = task.id
-                accepting = { url in
-                    transcriptBelongsToTask(url, assistant: .claude, taskID: taskID)
-                }
-            } else {
-                accepting = nil
-            }
-            if task.transcriptPath == nil,
-               let found = Transcript.locate(cwd: task.projectDir, tabTitle: child.name,
-                                               startedAt: task.spawnedAt,
-                                               sessionID: task.childSessionId,
-                                               accepting: accepting) {
-                task.transcriptPath = found.path
-                task.childSessionId = found.deletingPathExtension().lastPathComponent
-                task.transcriptProven = accepting != nil
-                changed = true
-            }
-            changed = noteTranscriptProof(in: &task) || changed
         case .codex:
             if task.transcriptPath == nil,
                let rollout = Codex.locate(cwd: task.projectDir, startedAt: task.spawnedAt,
@@ -1414,6 +1425,67 @@ enum Orchestrator {
             }
             changed = noteTranscriptProof(in: &task) || changed
         }
+        return changed
+    }
+
+    /// The pre-registry Claude identity ladder. It remains intact below the registry path and is
+    /// also evaluated beside it during the transition so disagreements leave an audit receipt.
+    private static func noteClaudeIdentityFromLegacySources(_ child: TargetSession,
+                                                            in task: inout Task) -> Bool {
+        var changed = noteTranscriptProof(in: &task)
+        if let noted = childSessionID(from: HookBridge.note(for: child),
+                                      spawnedAt: task.spawnedAt),
+           task.childSessionId != noted {
+            if task.childSessionId == nil, task.transcriptPath == nil {
+                // The first current hook supplies an exact filename before Claude has made
+                // the file or received the briefing. It is useful for delivery, but does not
+                // become proven ownership until the marker appears below.
+                task.childSessionId = noted
+                task.transcriptProven = false
+                changed = true
+            } else {
+                // A tty survives the assistant process inside it. A later hook can therefore
+                // be a user-started conversation in a lingering child tab, not a correction
+                // to this task. Replace an existing identity only as one atomic, marker-proven
+                // pair; until its exact transcript carries this task's turn, keep the old one.
+                let candidate = Transcript.locate(cwd: task.projectDir,
+                                                  tabTitle: child.name,
+                                                  startedAt: task.spawnedAt,
+                                                  sessionID: noted)
+                if let replacement = replacementChildTranscript(
+                    currentSessionID: task.childSessionId, notedSessionID: noted,
+                    transcript: candidate, taskID: task.id
+                ) {
+                    task.childSessionId = noted
+                    task.transcriptPath = replacement.path
+                    task.transcriptProven = true
+                    changed = true
+                }
+            }
+        }
+        // Without an id, timestamps and titles only rank candidates, so the delivered task
+        // marker must prove the winner. A current hook instead names the exact file needed to
+        // verify delivery before that marker has appeared; proof is recorded once it does.
+        let accepting: ((URL) -> Bool)?
+        if task.childSessionId == nil {
+            let taskID = task.id
+            accepting = { url in
+                transcriptBelongsToTask(url, assistant: .claude, taskID: taskID)
+            }
+        } else {
+            accepting = nil
+        }
+        if task.transcriptPath == nil,
+           let found = Transcript.locate(cwd: task.projectDir, tabTitle: child.name,
+                                         startedAt: task.spawnedAt,
+                                         sessionID: task.childSessionId,
+                                         accepting: accepting) {
+            task.transcriptPath = found.path
+            task.childSessionId = found.deletingPathExtension().lastPathComponent
+            task.transcriptProven = accepting != nil
+            changed = true
+        }
+        changed = noteTranscriptProof(in: &task) || changed
         return changed
     }
 
