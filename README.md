@@ -500,6 +500,7 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 | [Project status files](docs/project-status.md) | the mark, the colour, the deploy, the backlog |
 | [From somewhere else](docs/remote.md) · [the API](docs/api.md) | the threat model in full, and the HTTP surface |
 | [Hooks](docs/hooks.md) | the eight events, and why the screen still decides |
+| [Notifications](docs/notifications.md) | who hears what, and why depth decides the audience rather than the volume |
 | [Waiting](docs/waiting.md) | where the work runs, and the two ways waiting for a subprocess has broken this |
 | [Backgrounded conversations](docs/background-conversations.md) | the tab that stops writing its own file, and what reads it instead |
 | [Whisper](docs/whisper.md) | dictating in more than one language |
