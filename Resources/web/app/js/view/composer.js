@@ -10,6 +10,7 @@ import { byId } from "./derive.js";
 import { closingID } from "./list.js";
 import { Shots } from "../input/shots.js";
 import { msgText, sending } from "../input/composer.js";
+import { Voice } from "../input/voice.js";
 
 /**
  * An attribute written only when it is about to change.
@@ -66,7 +67,8 @@ export function renderComposer() {
     setAttr(els.msg, "enterkeyhint", hasKeyboard() ? "send" : "enter");
     // A picture on its own is a message. The server takes text, images, or both, and refuses
     // only the one that is neither — so the button follows the same rule.
-    els.send.disabled = !on || sending || Shots.busy() || (!msgText() && !Shots.count());
+    els.send.disabled = !on || sending || Shots.busy() || Voice.busy()
+        || (!msgText() && !Shots.count());
     // **The width is pinned before the word changes.** "Send" and "Sending…" are different
     // lengths in every language, and swapping them mid-press moved the button, which moved the
     // box under it — so the press that started a send also made the thing you pressed jump. The
@@ -89,6 +91,17 @@ export function renderComposer() {
     // is what a tooltip is for.
     els.send.title = hasKeyboard() ? T.webSendTip : "";
     els.attach.disabled = !on || sending;
+    // The microphone takes the same permission as the attachment beside it — there is no point
+    // offering to dictate into a box that will not accept words — and it goes dead for the two
+    // waits in between as well, because during those it is not the control that does anything
+    // and a button that can be pressed to no effect is worse than one that is visibly not for
+    // pressing. The row above it carries the Cancel for exactly that stretch.
+    //
+    // **Except while it is recording.** A session that closes, or a send that starts, under an
+    // open microphone must not disable the only control that can shut it: the light would stay
+    // on with nothing left on screen to press, which is the one thing a page is never allowed to
+    // do with a microphone.
+    els.mic.disabled = Voice.live() ? false : (!on || sending || Voice.busy());
     // Only ever the reason the box will not take what you type. There used to be a line here
     // saying that Return sends and Shift-Return starts a line, and it was true and it was in the
     // way: a row of every screen, forever, to teach something once. When there is nothing to

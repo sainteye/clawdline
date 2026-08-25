@@ -216,3 +216,58 @@ your correction.
 
 **Silence costs nothing.** Under a quarter of a second is dropped, so a mis-click does not spin
 up a model.
+
+---
+
+## And your phone can dictate into it
+
+Installing this for the bar installs it for the web page in the same move — there is nothing else
+to switch on beyond the one that was already needed to type from a phone at all
+([docs/remote.md](remote.md)). A paired device that may send gets a microphone next to its send
+button; what it records is uploaded, read by the model on this disk, and comes back as text in the
+box.
+
+**The point is where the audio does not go.** Every phone already has a recogniser behind a
+permission prompt, and it is good, and it is free — and what it costs is that the sentence goes to
+whoever wrote it. That is the same trade the top of this page is about, met a second time on a
+smaller screen, and answered the same way. Nothing about the recording leaves this Mac, and the
+language it is read in is not the phone's to choose: `voice_language` and `voice_vocabulary` here
+decide, exactly as they do for the bar, so a project's own names come out spelled the same on both.
+
+**There is no live text on a phone, and that is not an omission.** The words that appear while you
+speak on the Mac are Apple's recogniser, which runs on the Mac and cannot hear a microphone in
+another room; whisper.cpp cannot stream at all. So a phone records the whole thing, sends it when
+you stop, and the box fills in a second or so later, all at once. It is a different shape of
+interaction rather than a worse version of the same one — you watch a timer instead of watching
+words.
+
+| | the Mac's microphone | a phone's |
+|---|---|---|
+| while you speak | Apple writes it out live | a timer, and the seconds counting up |
+| when you stop | Whisper replaces the run | Whisper writes the only version there is |
+| a two-second pause | ends a stretch and reads it | nothing — one recording, read once |
+| if Whisper is missing | Apple's text stands | there is nothing to fall back to, and the page says so |
+| how long it can run | until four seconds of silence | three minutes, then it transcribes what it has |
+
+**It needs https.** A browser will not open a microphone on a page served over plain `http` —
+`getUserMedia` is simply absent outside a secure context, so there is not even a prompt to refuse.
+A tunnel gives you https without doing anything else; a phone pointed at `http://192.168.…` on the
+same wifi does not, and no setting on this side can change that. The page says which of the two it
+is in rather than leaving a dead button.
+
+The measurements are the ones [above](#models) plus a network: **1.6 s** to read back three seconds
+of speech once the model is warm, **about 12 s** for the first one after a reboot. The page counts
+those seconds out loud for exactly the reason the bar does — twelve seconds of turning arc and no
+number beside it cannot be told apart from a hang — and says what is being waited for once the
+count runs long.
+
+**One at a time on this Mac, and two is the queue.** Transcription runs on a queue of its own, so
+that a phone's dictation cannot hold up the event stream and every other page in the house while it
+runs; that queue is serial, because two whispers at once on one machine finish later than two in a
+row. A third recording arriving while two are outstanding is told to come back rather than made to
+wait — five seconds is long enough for whoever recorded it to have given up and pressed the button
+again, and *busy* now is the more useful answer than a transcript nobody is still waiting for.
+
+**Nothing heard is an answer here too.** Silence, a recording of a room, a clip whisper decided was
+a rhythm — all of them come back empty, the page says so, and whatever was already in the box is
+left alone.

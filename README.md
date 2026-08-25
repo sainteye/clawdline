@@ -259,6 +259,16 @@ the assistant leaves, the bare shell drops off the list and the page has nothing
 **bring a session's tab to the front** on the Mac without saying where it is. Typing `/` on the page
 opens the same skill menu the bar has, over the same metadata-only route.
 
+**With [Whisper](docs/whisper.md) installed, a phone can dictate into that box too.** The microphone
+beside the send button records, your Mac reads it back with the model already on it, and the words
+land in the box for you to edit before anything is sent — same engine, same language and same
+vocabulary as the bar's own dictation, and the audio goes no further than your Mac. Every phone
+already has a recogniser behind a permission prompt; what that one costs is the sentence. There is
+no live text on a phone, because Whisper reads a finished recording rather than a stream, so you
+watch a timer instead of words. It needs an https address, which a tunnel gives you, and it sits
+behind the sending switch: a device that may only read has nowhere to put a sentence once it has
+one.
+
 **[docs/remote.md](docs/remote.md)** has the threat model in full, including what this does *not*
 defend against. **[docs/api.md](docs/api.md)** is the HTTP surface a script or a plugin talks to:
 every session, every transcript, an event stream, and `curl` as the only SDK.

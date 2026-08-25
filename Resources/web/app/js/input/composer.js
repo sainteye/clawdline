@@ -11,6 +11,7 @@ import { renderComposer } from "../view/composer.js";
 import { Optimistic } from "../view/waits.js";
 import { atBottom, closeDetail, loadTranscript, toBottom } from "../session/open.js";
 import { carriesPicture, Shots } from "./shots.js";
+import { Voice } from "./voice.js";
 
 /* ---- the composer -------------------------------------------------------- */
 
@@ -74,6 +75,43 @@ function insertText(text) {
     range.collapse(true);
     selection.removeAllRanges();
     selection.addRange(range);
+}
+
+/**
+ * Words onto the end of whatever is already in the box.
+ *
+ * What dictation does with a transcription, and **all** it does with one: the sentence is put
+ * where a typed one would have gone and the reader presses Send, or does not. Nothing here
+ * sends, and that is a product decision rather than a missing feature — a recogniser that
+ * mishears is a typo when the words are sitting in a box and an incident when they have already
+ * been posted to a terminal.
+ *
+ * At the end rather than at the caret. A transcription arrives a second or two after the button
+ * was pressed, and where the caret happens to be by then is not an instruction — dropping half
+ * a spoken sentence into the middle of a typed one is the kind of surprise nobody can undo in
+ * one press. The exception is a box somebody is actually writing in: there the caret is moved
+ * to the end first, so the insert goes through `execCommand` and Undo still knows about it.
+ */
+export function appendMsg(text) {
+    var said = String(text || "");
+    if (!said) return;
+    // Whitespace only is nothing: a box holding the `<br>` a browser left behind must not put a
+    // leading space in front of the first thing dictated into it.
+    var had = msgText() ? rawMsgText() : "";
+    var join = had && !/\s$/.test(had) ? " " : "";
+    if (document.activeElement === els.msg) {
+        caretToEnd();
+        insertText(join + said);
+    } else {
+        els.msg.textContent = had + join + said;
+    }
+    blankness();
+    renderComposer();
+    // The box may have been `/rec` a moment ago, with the menu open on it. It is a sentence now.
+    SkillPicker.changed();
+    // The box scrolls at 140px and a dictated paragraph is longer than that. The end is the part
+    // worth seeing: it is what just arrived, and it is where the next word would go.
+    els.msg.scrollTop = els.msg.scrollHeight;
 }
 
 /**
@@ -265,7 +303,12 @@ els.composer.addEventListener("submit", function (ev) { ev.preventDefault(); sub
 export var sending = false;
 
 function submit() {
-    if (sending || Shots.busy()) return;
+    // A picture still shrinking, or a sentence still being transcribed, is part of this message
+    // and has not arrived yet. Sending now would post the half of it that happened to be ready
+    // and leave the rest to land in an empty box afterwards, looking like the start of the next
+    // one. Return goes through here as well as the button, which is the whole reason this guard
+    // is in the function rather than on the button alone.
+    if (sending || Shots.busy() || Voice.busy()) return;
     if (SkillPicker.accept()) return;
     var text = msgText();
     var pictures = Shots.urls();

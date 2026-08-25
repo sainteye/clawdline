@@ -303,6 +303,19 @@ export var Mock = (function () {
     // nowhere to start at all.
     var MOCK_START = params.get("start") || "";
 
+    // Dictation, which is the one fixture that cannot fake its own half of the job: the
+    // microphone is the browser's and it really does record. What is faked is the Mac at the
+    // other end, and every state it can be in. `?voice=slow` is the twelve seconds a Whisper
+    // model takes to come off disk the first time after a reboot — the case the counter in the
+    // composer exists for, and the one nobody can reproduce on purpose.
+    var MOCK_VOICE = params.get("voice") || "";
+    // Two of them, so a second dictation shows what happens to a box that already has words in
+    // it. The first is the sentence `docs/whisper.md` holds up as the whole reason Whisper is
+    // here at all: two languages, one breath, and Apple's recogniser cannot hear it.
+    var HEARD = ["cambia el retry a exponential backoff",
+                 "and put a note above it saying why"];
+    var heard = 0;
+
     var live = false;
     var beat = 0;
     var admitted = !MOCK_DOOR;   // ?door=1 arrives with nothing, the way a phone does
@@ -525,6 +538,37 @@ export var Mock = (function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Focus is not enabled on this server."), { code: "write_disabled" })); return; }
                     done({ ok: true });
                 }, 150);
+            });
+        },
+
+        /**
+         * The Mac's half of a dictation. It ignores the audio entirely — what it is standing in
+         * for is the wait and the four answers, which is everything the composer has to be able
+         * to draw. Not behind `MOCK_WRITE`: transcribing is not a write, and a fixture that
+         * refused it would hide the whole feature from the mode built to look at it.
+         *
+         * 1.6s is what `docs/whisper.md` measured on an M4 with the turbo model.
+         */
+        voice: function (audio, rate) {
+            return new Promise(function (done, fail) {
+                var ms = MOCK_VOICE === "slow" ? 12000 : 1600;
+                setTimeout(function () {
+                    if (MOCK_VOICE === "busy") {
+                        fail(Object.assign(new Error("Two transcriptions are already queued."),
+                                           { code: "busy" }));
+                        return;
+                    }
+                    if (MOCK_VOICE === "nowhisper" || MOCK_VOICE === "nomodel") {
+                        fail(Object.assign(new Error("This Mac has no Whisper."),
+                                           { code: "no_whisper",
+                                             reason: MOCK_VOICE === "nomodel" ? "no_model" : "no_binary" }));
+                        return;
+                    }
+                    // A recording of a quiet room. Not an error, and the composer says so in its
+                    // own words rather than showing a failure for something that merely happened.
+                    if (MOCK_VOICE === "silent") { done({ text: "", ms: ms }); return; }
+                    done({ text: HEARD[heard++ % HEARD.length], ms: ms });
+                }, ms);
             });
         },
 

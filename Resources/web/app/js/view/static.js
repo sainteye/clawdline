@@ -50,6 +50,11 @@ export function paintStatic() {
 
     attr(els.attach, "aria-label", T.webAttach);
     attr(els.attach, "title", T.webAttach);
+    // The microphone at rest. What it says while it is recording belongs to `Voice.show()`,
+    // for the same reason the send button's word belongs to `renderComposer`: one owner for a
+    // label that changes, and this one only ever paints the state the page comes up in.
+    attr(els.mic, "aria-label", T.webVoiceStart);
+    attr(els.mic, "title", T.webVoiceStart);
     els.msg.setAttribute("data-placeholder", T.placeholder);
     attr(els.msg, "aria-label", T.placeholder);
     // The send button's words and its hover text belong to `renderComposer`: both of them change

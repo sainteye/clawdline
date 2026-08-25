@@ -117,6 +117,82 @@
    inside the edge so it cannot be the thing that makes the page scroll. */
 .pane-detail.dropping { outline: 2px dashed var(--accent-ed); outline-offset: -8px; }
 
+/* The microphone — the attachment's twin in every measurement, because it is the same kind of
+   thing standing in the same row: a way of putting something into the message that is not
+   typing. Two of them is sixty pixels of the left edge on a phone, which is why neither carries
+   a word. */
+.composer .mic {
+    flex: 0 0 auto;
+    width: 30px; min-height: 30px;
+    border-radius: 8px;
+    color: var(--dim);
+    display: flex; align-items: center; justify-content: center;
+}
+.composer .mic:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
+.composer .mic:disabled { opacity: 0.45; cursor: default; }
+.composer .mic .ico { display: block; width: 18px; height: 18px; }
+.composer .mic .ico-stop { display: none; }
+/* **Recording: the icon becomes what the next press will do, not what the last one did.** A
+   button that still shows a microphone while it is recording is a button people press twice —
+   once to start, once to start again — and the second press is the one that loses the sentence.
+   The accent, which on this page means "you are needed", is the right loudness for the one
+   control that is currently holding a microphone open. */
+.composer[data-voice="recording"] .mic { color: var(--accent); background: var(--accent-in); }
+.composer[data-voice="recording"] .mic .ico-mic { display: none; }
+.composer[data-voice="recording"] .mic .ico-stop { display: block; }
+
+/* The row that counts.
+   ---------------------------------------------------------------------------
+   Both halves of this wait can be long: three minutes of talking, and a transcription that
+   spends its first twelve seconds reading a 600MB model off a disk. A mark that only turns
+   cannot be told apart from a hang at either length, so the seconds are the substance of this
+   row and the mark beside them is the decoration. The bar on the Mac counts for exactly the
+   same reason; see `docs/whisper.md`. */
+.composer .voice {
+    display: flex; align-items: center; gap: 9px;
+    margin-bottom: 9px; padding: 6px 8px 6px 11px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--card);
+}
+.composer .voice[hidden] { display: none; }
+.composer .voice .what { flex: 1 1 auto; min-width: 0; }
+.composer .voice .said {
+    display: block;
+    color: var(--dim); font: 11.5px/1.45 var(--mono);
+    /* The digits do not change width as they run, so the Cancel button beside them does not
+       shuffle sideways once a second. */
+    font-variant-numeric: tabular-nums;
+}
+/* Nearly out of room, said while there is still something to be done about it. */
+.composer .voice[data-near="1"] .said { color: var(--accent); }
+/* Why this particular one is taking so long. Only after eight seconds: an ordinary
+   transcription is under two, and a permanent apology for a wait that usually is not one would
+   be the page teaching its reader to expect the slow case. */
+.composer .voice .note { display: none; }
+.composer .voice[data-slow="1"] .note {
+    display: block; margin-top: 3px;
+    color: var(--faint); font-size: 11px; line-height: 1.4;
+}
+.composer .voice .spin { flex: 0 0 auto; }
+/* Listening. Red is the convention and the accent is what this page has; either way it is the
+   one mark on screen that has to be visible from across a desk, because it means a microphone
+   in the room is open. It breathes rather than blinks — a blink reads as a fault. */
+.composer .voice .dot {
+    flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    animation: breathe 1.5s var(--ease) infinite;
+}
+/* Under reduced motion the global rule stops this on its last frame, which is the dot at full
+   strength — still the loudest thing in the row, with nothing moving. */
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.composer .voice .drop {
+    flex: 0 0 auto;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card); color: var(--dim);
+    font-size: 11.5px; padding: 5px 12px; min-height: 30px;
+}
+.composer .voice .drop:hover { background: var(--card-hi); color: var(--ink); }
+
 .composer .send {
     flex: 0 0 auto;
     background: var(--accent); color: #17110e;

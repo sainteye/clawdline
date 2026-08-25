@@ -128,6 +128,27 @@ export var T = {
     webShotsTooBig: "Those pictures are too big to send together",
     webShotUnreadable: "That picture could not be read",
     webShotNeedsSession: "Open a session to send a picture to it",
+    // Dictation. The phone records, the Mac transcribes, and the words land in the box — they
+    // are never sent from here, which is why nothing below says "sent". Most of these are the
+    // reasons it could not happen, because a microphone that does nothing and says nothing is
+    // the one failure this feature cannot afford.
+    webVoiceStart: "Dictate a message",
+    webVoiceStop: "Stop and transcribe",
+    webVoiceListening: "Listening… {t}",
+    webVoiceReading: "Transcribing on the Mac… {n}s",
+    webVoiceSlow: "The first one after a restart loads the model first — about twelve seconds.",
+    webVoiceLimit: "{n} minutes is as long as one recording goes. Transcribing what there is.",
+    webVoiceEmpty: "Nothing was heard in that.",
+    webVoiceTooShort: "That was too short to hear.",
+    webVoiceDenied: "The microphone was refused. This browser's own settings for this site are where that is turned back on.",
+    webVoiceNoMic: "No microphone was found on this device.",
+    webVoiceInUse: "The microphone is busy — something else on this device has it.",
+    webVoiceInsecure: "A microphone needs a secure connection. Open Clawdline over https and this works.",
+    webVoiceUnsupported: "This browser cannot record audio.",
+    webVoiceBusy: "The Mac is already transcribing two of these. Try again in a moment.",
+    webVoiceNoBinary: "Whisper is not installed on the Mac, so there is nothing there to transcribe with.",
+    webVoiceNoModel: "Whisper is on the Mac but has no model to read with. One ggml file in ~/.cache/whisper is all it wants.",
+    webVoiceFailed: "That could not be transcribed.",
     webHintMove: "move",
     webHintOpen: "open",
     webHintFilter: "filter",

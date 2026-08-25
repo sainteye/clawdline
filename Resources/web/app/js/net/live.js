@@ -181,6 +181,23 @@ export var Live = {
                          post({ key: String(press) }, { "Idempotency-Key": uuid() }));
     },
 
+    /// Words said out loud, turned back into words.
+    ///
+    /// **Not a session route, and not a send.** The Mac transcribes and answers with the text;
+    /// what happens to it afterwards is the composer's business, and what the composer does is
+    /// put it in the box. Nothing on this path can reach a terminal, which is what makes a
+    /// dictation that heard the wrong thing a typo rather than an incident.
+    ///
+    /// The audio goes up as base64 of little-endian Int16 mono at 16 kHz, because whisper.cpp
+    /// takes 16 kHz and nothing else — the resampling is done in the browser rather than on the
+    /// Mac, which has no ffmpeg and could not open an Opus file if it wanted to. A minute of it
+    /// is about 2.6MB encoded, against a body limit of twenty; see the ceiling in `voice.js`.
+    /// The key is minted once per recording, so a retry of *this* request is not a second read.
+    voice: function (audio, rate) {
+        return jsonFetch("/v1/voice", post({ audio: audio, rate: rate },
+                                           { "Idempotency-Key": uuid() }));
+    },
+
     focus: function (id) {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/focus",
                          post({}, { "Idempotency-Key": uuid() }));

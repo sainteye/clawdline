@@ -42,6 +42,7 @@ import "./input/status-line.js";
 import "./input/info.js";
 import { Push } from "./input/push.js";
 import "./input/shots.js";
+import "./input/voice.js";
 import "./input/composer.js";
 import "./input/edges.js";
 

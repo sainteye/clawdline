@@ -284,9 +284,29 @@ document.documentElement.className = "booting";
                  directly above the box, at the end of the transcript. -->
             <div class="waiting" id="waiting" role="status" hidden></div>
             <div class="shots" id="shots"></div>
+            <!-- The microphone's own row: what it is doing and how long it has been doing it.
+                 The seconds are the point. Both halves of this wait can be long — three minutes
+                 of talking, and a first transcription that spends twelve of its seconds reading
+                 a model off disk — and a mark that only turns cannot be told apart from a hang.
+                 The bar on the Mac counts for the same reason; see `docs/whisper.md`. -->
+            <div class="voice" id="voice" role="status" hidden></div>
             <div class="skill-menu" id="skill-menu" role="listbox" aria-label="Claude Code skills" hidden></div>
             <div class="box">
                 <button class="attach" id="attach" type="button" aria-label="Attach a picture" title="Attach a picture" disabled>+</button>
+                <!-- Beside the attachment because it is the same kind of thing: a way of putting
+                     something into the message that is not typing. Two icons and never a label —
+                     the words are the `aria-label`, which is swapped for "stop" while it records
+                     so that a screen reader is told what the second press will do. -->
+                <button class="mic" id="mic" type="button" aria-label="Dictate a message" title="Dictate a message" aria-pressed="false" disabled>
+                    <svg class="ico ico-mic" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"></rect>
+                        <path d="M5.75 11.75v0.5a6.25 6.25 0 0 0 12.5 0v-0.5M12 18.5V21" fill="none"
+                              stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+                    </svg>
+                    <svg class="ico ico-stop" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor"></rect>
+                    </svg>
+                </button>
                 <!-- See the note on `.composer .msg`. `role`/`aria-multiline` because the
                      browser no longer knows what this is on its own, and the label carries the
                      same words as the placeholder rather than a second wording of them. -->

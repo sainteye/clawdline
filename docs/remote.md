@@ -100,6 +100,75 @@ Mac against its own copy of the directory. There is still no field anywhere on t
 directory or a command could be written into, which is the property that mattered before there was
 anything to choose between. [The route in full →](api.md#post-v1placesidstart-post-v1placesidstartassistant)
 
+**Dictating from a phone is behind this switch as well**, and not because transcribing writes
+anything — it writes nothing at all. Two reasons, and neither is about the audio.
+
+A device that may only read has **nowhere to put a sentence** once it has one. It cannot send, so
+the best the feature could do for it is put words in a box that will not open. A microphone offered
+on those terms is a microphone that lies about what pressing it achieves.
+
+And transcribing **costs this Mac twelve seconds of every core it has**, on demand, from a device
+that is not in the room. Read-level access is meant to be something you can hand out without
+thinking hard about it: it copies a reading this app had already done for its own windows. This is
+not that. It is the one read-shaped thing here that spends real money, so it rides with the switch
+that already means *this device may cost me something*.
+
+#### `POST /v1/voice`
+
+Base64 of little-endian 16-bit mono PCM and the rate it was sampled at, behind the same
+`Idempotency-Key` as every other write:
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/voice \
+    -H "Authorization: Bearer $(cat ~/.config/clawdline/remote-token)" \
+    -H 'Idempotency-Key: 3f9a1c04-77e2' \
+    -d '{"audio":"'"$(base64 < clip.raw | tr -d '\n')"'","rate":16000}'
+{"text":"change the retry to exponential backoff","ms":1640}
+```
+
+**`rate` is required, and the only value it may have is `16000`.** Checked rather than resampled:
+16 kHz is what the recorder produces and what whisper wants, so a body naming 48 kHz has not made a
+small mistake — it has sent something that would transcribe as a voice three times too fast, and
+quietly correcting it would hide that from whoever wrote the client. The browser does the decoding
+and the resampling before it uploads, which is also why nothing here needs `ffmpeg` to accept a
+recording from a phone.
+
+**An empty `text` with a `200` is an answer, not a failure.** Whisper comes back with nothing for
+silence, for a recording of a room, and for a clip it decided was a rhythm rather than a voice. The
+question the route was asked is *what was said*, and "nothing" answers it; a `4xx` there would have
+a page apologising for a microphone that had worked perfectly.
+
+| | when |
+|---|---|
+| `400 bad_request` | no `Idempotency-Key`; no `audio`, not base64, `rate` missing or not `16000`, under 0.25 s, over 300 s |
+| `401 unauthorized` | no token, or one this Mac does not know |
+| `403 write_disabled`, `403 forbidden` | the switch above; or `Host`, `Origin`, `Sec-Fetch-Site` |
+| `429 busy` | two recordings are already in the queue, and the third is refused rather than made to wait |
+| `503 no_whisper` | nothing here to transcribe with — `error.reason` is `no_binary` or `no_model` |
+
+The 300 seconds is the far end this server accepts rather than the working limit; the page stops a
+recording at three minutes on its own and transcribes what it has.
+
+**The transcription runs on a queue of its own, and that is the design rather than an
+optimisation.** Everything else here is read, decided and answered on one serial queue, which is
+what makes the server's state safe to touch without a lock — and whisper takes 1.6 seconds warm and
+about twelve after a reboot, so on that queue one dictation would hold every other request *and*
+`/v1/events` for as long as it ran. The queue it goes to instead is serial too: two whispers at once
+on one Mac are slower than two in a row, so the queue **is** the concurrency limit, and the only
+thing left to choose was how long a line is worth standing in. Two.
+
+The language is not the phone's to name. `voice_language` on this Mac decides, exactly as it does
+for the bar, and what comes back is put through `voice_vocabulary` the same way — same binary, same
+model, same words this project has taught it. [docs/whisper.md](whisper.md) is where all of that is
+set, and the phone inherits it by not being asked.
+
+**A `429` and a `503` are the two answers that are not filed under the idempotency key**, and
+everything else is, refusals included. Those two are facts about this machine at this moment — the
+queue drains, whisper gets installed — and an answer frozen for ten minutes would mean the retry
+that was supposed to work is told *busy* by a cache long after the queue emptied. A repeated key
+within those ten minutes otherwise hands back the same transcript rather than reading the same audio
+twice.
+
 ### The same four things in `~/.config/clawdline/config.json`
 
 The settings window writes this file and hand-editing it takes the same path, so the two cannot
@@ -446,11 +515,17 @@ Every line has `at` (Unix seconds) and `event`. The rest depends on the event:
 | `session.send` | **text typed into a session** | `id`, `tty`, `chars`, `ok` |
 | `place.start` | a session started from outside | `place`, `cwd`, `assistant`, `ok`, and `id` or `why` |
 | `session.focus` | a session brought to the front | `id` |
+| `voice.transcribe` | **a recording was read on this Mac** | `device`, `seconds`, `ms`, `chars`, `ok` |
 
 `session.send` records the length of what was sent and not the text, and `ok` is `"1"` or `"0"` —
 a send that failed is still a send that was attempted, and it is written down before the answer goes
 back. The audit log is a record of access, and turning it into a copy of everything anybody ever
 typed would make it the most sensitive file on the machine.
+
+`voice.transcribe` keeps the same rule for the same reason: `seconds` is how long the recording was,
+`chars` how long the transcript came out, and the words themselves are nowhere in the line. It is
+also the one event here that records **what a device made this Mac spend** — `ms` is wall-clock time
+in whisper — which is worth having when the question is why the fans came on.
 
 Two things worth knowing before you read it. **`device` on a `pair.begin` is whatever the requester
 called itself** — it is a label, not an identity, and only `pair.done` means anything happened.

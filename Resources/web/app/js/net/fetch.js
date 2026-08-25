@@ -21,10 +21,13 @@ export function jsonFetch(path, options) {
                 e2.code = err.code;
                 // `code` and `message` are on every refusal this server makes; a route may add
                 // one more field, and dropping it here would cost the page its own sentence.
-                // Today there is exactly one: both 409s from starting a session carry `app`,
-                // the terminal's name as macOS spells it, so that a phone can say "Ghostty is
-                // not running" in the reader's language instead of showing the English.
+                // Today there are two. Both 409s from starting a session carry `app`, the
+                // terminal's name as macOS spells it, so that a phone can say "Ghostty is not
+                // running" in the reader's language instead of showing the English. And the 503
+                // from dictation carries `reason`, which is the difference between "install
+                // Whisper" and "Whisper is there but has no model" — two different afternoons.
                 if (typeof err.app === "string") e2.app = err.app;
+                if (typeof err.reason === "string") e2.reason = err.reason;
                 throw e2;
             }
             if (!data) throw new Error(T.webNotJSON);

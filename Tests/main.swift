@@ -4221,6 +4221,94 @@ group("the key route is gated like every other write") {
     expect("and tab is a good key", key(writer.token, "{\"key\":\"tab\"}").status, 404)
 }
 
+group("a recording arrives as base64 and is refused before it costs a second of CPU") {
+    // Little-endian 16-bit mono, which is the only shape /v1/voice takes -- and the shape the
+    // bar's own recorder converts to before it calls the same transcriber. Two bytes a sample.
+    func spoken(seconds: Double) -> Data {
+        var out = Data()
+        for i in 0..<Int(RemoteServer.voiceRate * seconds) {
+            withUnsafeBytes(of: Int16(truncatingIfNeeded: i &* 37).littleEndian) {
+                out.append(contentsOf: $0)
+            }
+        }
+        return out
+    }
+    // The same length without the arithmetic, for the cases that are about size and not content.
+    func bytes(seconds: Double) -> Data {
+        Data(repeating: 7, count: Int(RemoteServer.voiceRate * seconds) * 2)
+    }
+    func body(_ audio: Data, rate: Any? = 16_000) -> [String: Any] {
+        var out: [String: Any] = ["audio": audio.base64EncodedString()]
+        if let rate { out["rate"] = rate }
+        return out
+    }
+    func samples(_ body: [String: Any]) -> Data? {
+        if case .samples(let data) = RemoteServer.voiceSamples(from: body) { return data }
+        return nil
+    }
+    func refusal(_ body: [String: Any]) -> RemoteServer.Response? {
+        if case .refused(let response) = RemoteServer.voiceSamples(from: body) { return response }
+        return nil
+    }
+
+    // The whole of the encoding's job: what the phone recorded is what whisper is handed, byte
+    // for byte. A round trip that dropped one byte would shift every sample after it by half a
+    // sample, and the recording would transcribe as noise rather than fail.
+    let recording = spoken(seconds: 1)
+    expect("a second of audio is 16000 samples", recording.count, 32_000)
+    expect("and survives base64 whole", samples(body(recording)), recording)
+
+    // An encoder that wraps its lines is not a client making a mistake, and neither is one that
+    // pads with a newline at the end.
+    let encoded = Array(recording.base64EncodedString())
+    let wrapped = stride(from: 0, to: encoded.count, by: 76)
+        .map { String(encoded[$0..<min($0 + 76, encoded.count)]) }
+        .joined(separator: "\n")
+    expect("wrapped base64 is the same recording",
+           samples(["audio": wrapped, "rate": 16_000]), recording)
+
+    // Every refusal below is the same code on purpose: they are one kind of mistake -- a body
+    // this cannot read -- and a route that answered three codes for one condition would make a
+    // page write three cases out of it.
+    expect("a missing audio field is a bad request", refusal(["rate": 16_000])?.status, 400)
+    expect("and says so in the code", remoteErrorCode(refusal(["rate": 16_000])!), "bad_request")
+    expect("an empty string is not audio",
+           refusal(["audio": "", "rate": 16_000])?.status, 400)
+    expect("and neither is something that is not base64 at all",
+           refusal(["audio": "!!!!", "rate": 16_000])?.status, 400)
+
+    // 16 kHz is what whisper wants and what the recorder produces, so a body naming another rate
+    // has not made a small mistake: resampled by hand it would come out three times too fast, and
+    // resampling it here quietly would hide that from whoever sent it.
+    for wrong in [8_000, 22_050, 44_100, 48_000, 16_001] {
+        expect("rate \(wrong) is refused", refusal(body(recording, rate: wrong))?.status, 400)
+    }
+    expect("a rate given as a string is not a rate",
+           refusal(body(recording, rate: "16000"))?.status, 400)
+    expect("and a body with no rate at all is refused rather than assumed",
+           refusal(body(recording, rate: nil))?.status, 400)
+    check("16000 written as a decimal is still 16000",
+          samples(body(recording, rate: 16_000.0)) == recording)
+
+    // The floor is the one whisper keeps for itself, said here as well so the answer can explain
+    // itself: whisper's way of refusing is nil, which this route would have to report as silence.
+    expect("a tenth of a second is a tap, not a sentence",
+           refusal(body(bytes(seconds: 0.1)))?.status, 400)
+    expect("and so is nothing at all", refusal(body(Data()))?.status, 400)
+    check("a quarter of a second is exactly enough", samples(body(bytes(seconds: 0.25))) != nil)
+    check("and so is a second and a half", samples(body(bytes(seconds: 1.5))) != nil)
+
+    // The far end is about what it costs rather than about the shape of the request: whisper runs
+    // at something near real time, so a long upload holds the queue with nobody able to call it
+    // back.
+    check("five minutes is still allowed", samples(body(bytes(seconds: 300))) != nil)
+    expect("a little over is not", refusal(body(bytes(seconds: 301)))?.status, 400)
+
+    // One running, one waiting. The third is told to come back rather than answered five seconds
+    // after it was spoken, by which time whoever spoke it has pressed the button again.
+    expect("the queue is two deep", RemoteServer.voiceDepth, 2)
+}
+
 group("Git porcelain and numstat become the web status payload") {
     let status = """
     # branch.oid d5c61e9f91c46a77

@@ -431,6 +431,61 @@ protocol Copy {
     var webShotUnreadable: String { get }
     var webShotNeedsSession: String { get }
 
+    // Dictating into the composer from a phone — the microphone beside the send button, and
+    // `POST /v1/voice` behind it.
+    //
+    // **This is not the bar's dictation said again.** On the Mac, Apple's recogniser writes while
+    // you speak and Whisper reads the recording back afterwards; a browser has neither of those to
+    // offer, so the phone records, sends the samples, and waits for the Mac to answer. What these
+    // words are mostly about is therefore the waiting — and the two quite different places it can
+    // go wrong, because a microphone the browser will not open and a Mac with no model on it are
+    // fixed in different buildings.
+
+    /// On the microphone itself: what it will do, and then what it will do next. Never seen —
+    /// it is an icon — so these are read aloud, and each has to say which of the two states the
+    /// button is in without the drawing to help.
+    var webVoiceStart: String { get }
+    var webVoiceStop: String { get }
+    /// While it records. `{t}` is how long it has been going, as `m:ss`, replaced every second —
+    /// so the words on either side of it have to read with `0:07` and with `2:41` in the middle.
+    var webVoiceListening: String { get }
+    /// And while the Mac reads it back, where `{n}` is whole seconds counted from the upload. A
+    /// number rather than a spinner for the reason the bar counts too: twelve seconds of turning
+    /// arc cannot be told apart from a hang.
+    var webVoiceReading: String { get }
+    /// Added under that count once the wait has run past a few seconds. The twelve is the model
+    /// being read off disk and it happens once per boot, which is worth saying before somebody
+    /// concludes the feature is broken and stops using it.
+    var webVoiceSlow: String { get }
+    /// The recording being cut off at the client's own ceiling, where `{n}` is that in minutes.
+    /// It ends by saying what happens next rather than by apologising: nothing was lost, and the
+    /// audio up to the cut is on its way.
+    var webVoiceLimit: String { get }
+    /// An empty transcript, which the Mac answers with `200` and an empty string. **Not an
+    /// error**, and it must not read as one — a microphone that worked perfectly in a quiet room
+    /// has nothing to be sorry about.
+    var webVoiceEmpty: String { get }
+    var webVoiceTooShort: String { get }
+    /// The four the browser decides, and they are four rather than one because only the first has
+    /// somewhere to go. A permission that was refused can be given back, and the place that is
+    /// done is inside the browser rather than anywhere in this app — so that sentence says so,
+    /// and the other three describe a device instead of asking for a press.
+    var webVoiceDenied: String { get }
+    var webVoiceNoMic: String { get }
+    var webVoiceInUse: String { get }
+    /// `getUserMedia` is absent outside a secure context, so over plain `http` there is no
+    /// permission prompt to refuse — nothing happens at all. Naming https is the whole of the
+    /// fix, and a tunnel already gives you one.
+    var webVoiceInsecure: String { get }
+    var webVoiceUnsupported: String { get }
+    /// And the three the Mac decides. `busy` is a queue two deep that drains in seconds, so it
+    /// asks for a retry; the other two are a machine nobody has set up, where trying again is the
+    /// one thing that cannot help — so those name what is missing instead.
+    var webVoiceBusy: String { get }
+    var webVoiceNoBinary: String { get }
+    var webVoiceNoModel: String { get }
+    var webVoiceFailed: String { get }
+
     /// The key row along the bottom of a desktop window. Same rule as ``hintSend`` and the rest:
     /// one row, no wrapping, so a long word here pushes another one off the end.
     var webHintMove: String { get }

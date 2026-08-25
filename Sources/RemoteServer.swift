@@ -219,12 +219,26 @@ final class RemoteServer {
             openStream(on: conn)
             return
         }
+        // Dictation is the other route that cannot go through `route`, and for the opposite
+        // reason: it does answer and close, but not for a second and a half. `route` runs on the
+        // one queue every connection is read on, and whisper-cli takes 1.6 seconds warm and about
+        // twelve after a reboot — measured, docs/whisper.md. Left in `route`, one recording would
+        // stop every other request, the event stream and its heartbeat for as long as it took,
+        // and a stream that goes quiet for twelve seconds is a phone that decides the Mac died.
+        if request.method == "POST", request.path == "/v1/voice" {
+            transcribe(request, on: conn)
+            return
+        }
         let response = route(request)
         send(response, on: conn)
     }
 
     /// Every route that answers with a body and closes. Split out from the connection handling so
     /// that a test can ask it a question without opening a socket.
+    func route(_ request: Request) -> Response {
+        withCachePolicy(dispatch(request))
+    }
+
     /// Everything that leaves here, with a cache policy applied at the door.
     ///
     /// **A response with no `Cache-Control` is not uncached — it is cached by guesswork.** With no
@@ -237,8 +251,12 @@ final class RemoteServer {
     ///
     /// So: `no-store` unless a route asked for something else. The only routes that do are the
     /// drawn icons and splashes, which are the same picture for everybody and are worth a day.
-    func route(_ request: Request) -> Response {
-        var response = dispatch(request)
+    ///
+    /// A step of its own rather than four lines inside `route`, because dictation does not go
+    /// through `route` — it is written to the connection from another queue — and an answer that
+    /// went out around the door would be the one response here a browser is free to guess about.
+    private func withCachePolicy(_ response: Response) -> Response {
+        var response = response
         if response.headers["Cache-Control"] == nil {
             response.headers["Cache-Control"] = "no-store"
         }
@@ -293,14 +311,7 @@ final class RemoteServer {
                 return .error(401, "unauthorized", "This needs a paired device.")
             }
         }
-        // A cookie is sent by the browser whether or not the page asking wanted it to be, so a
-        // mutating route additionally has to be sure the request came from our own page. `Origin`
-        // is set by the browser and cannot be forged by script — and the JSON content type below
-        // is the second half of it, because the shapes a cross-site form can send do not include
-        // one. Reads are exempt: they are already gated by the token.
-        if request.method != "GET", let origin = request.headers["origin"], !isOurs(origin) {
-            return .error(403, "forbidden", "That request did not come from this page.")
-        }
+        if let refusal = writeOriginRefusal(request) { return refusal }
 
         switch (request.method, request.path) {
 
@@ -980,6 +991,21 @@ final class RemoteServer {
         return host.hasSuffix(".trycloudflare.com")
     }
 
+    /// A cookie is sent by the browser whether or not the page asking wanted it to be, so a
+    /// mutating route additionally has to be sure the request came from our own page. `Origin` is
+    /// set by the browser and cannot be forged by script — and the JSON content type is the second
+    /// half of it, because the shapes a cross-site form can send do not include one. Reads are
+    /// exempt: they are already gated by the token.
+    ///
+    /// A function rather than four lines inside `dispatch`, because there is now a mutating route
+    /// that never reaches `dispatch`: dictation is taken a step earlier, and a write that answered
+    /// without this check would be a hole in exactly the shape this closes.
+    func writeOriginRefusal(_ request: Request) -> Response? {
+        guard request.method != "GET", let origin = request.headers["origin"], !isOurs(origin)
+        else { return nil }
+        return .error(403, "forbidden", "That request did not come from this page.")
+    }
+
     // MARK: - Pairing
 
     private func beginPairing(_ request: Request) -> Response {
@@ -1044,40 +1070,313 @@ final class RemoteServer {
 
     // MARK: - Writing
 
+    /// What the three gates in front of a mutating route decided.
+    ///
+    /// A verdict rather than a call, because one of the routes behind this gate does not finish in
+    /// the same breath it starts: dictation hands its work to another queue and comes back a
+    /// second and a half later, so it needs the decision as a value it can carry rather than as a
+    /// closure it can be called inside. The rules are the ones `writing` used to keep to itself,
+    /// and they moved here so that there is one copy of them and not two.
+    enum WriteGate {
+        /// One of the gates said no, and this is what the device is told.
+        case refused(Response)
+        /// This key was answered inside the last ten minutes, and the old answer is the answer.
+        case replay(Response)
+        /// Every gate passed. `device` is for the log; `key` is what the answer will be filed under.
+        case go(device: String, key: String)
+    }
+
     /// Everything a mutating route has to be true before it happens, in one place.
     ///
     /// Three separate gates, and they are separate on purpose: the switch is a decision the owner
     /// of the Mac made, the capability is a decision about *this* device, and the idempotency key
     /// is about the network. A route that forgot one of them would be a route that quietly did
     /// something the other two were meant to prevent.
-    private func writing(_ request: Request,
-                         _ body: ([String: Any]) -> Response) -> Response {
+    ///
+    /// Asked on the server's own queue and nowhere else — it only reads, but what it reads is
+    /// written by `remember` on that queue, and that is the whole of the locking here.
+    private func writeGate(_ request: Request) -> WriteGate {
         guard Config.shared.remoteWrite else {
-            return .error(403, "write_disabled",
-                          "Sending is switched off. Settings → Remote turns it on, and it is off "
-                          + "by default because typing into a session runs code on this Mac.")
+            return .refused(.error(403, "write_disabled",
+                                   "Sending is switched off. Settings → Remote turns it on, and it "
+                                   + "is off by default because typing into a session runs code on "
+                                   + "this Mac."))
         }
         guard case .allowed(let device, let caps) = permission(for: request), caps.contains(.send) else {
-            return .error(403, "forbidden", "This device may read, and not send.")
+            return .refused(.error(403, "forbidden", "This device may read, and not send."))
         }
         // **A retried POST must not be a second prompt.** Phones change networks mid-request and
         // clients retry; typing the same instruction into somebody's agent twice is not something
         // that can be taken back, so the key is required rather than merely honoured.
         guard let key = request.headers["idempotency-key"], !key.isEmpty else {
-            return .error(400, "bad_request", "That needs an Idempotency-Key header.")
+            return .refused(.error(400, "bad_request", "That needs an Idempotency-Key header."))
         }
         if let seen = idempotent[key], Date().timeIntervalSince(seen.at) < 600 {
-            return seen.response
+            return .replay(seen.response)
         }
-        let parsed = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
-        let response = body(parsed)
+        return .go(device: device, key: key)
+    }
+
+    /// File an answer under its key, and write the line that says what happened.
+    ///
+    /// The sweep is here rather than on a timer because the only moment this table can grow is
+    /// the moment something is written into it, so that is the moment to throw away what has
+    /// expired.
+    private func remember(_ response: Response, under key: String,
+                          for request: Request, by device: String) {
         idempotent = idempotent.filter { Date().timeIntervalSince($0.value.at) < 600 }
         idempotent[key] = (Date(), response)
         Log.write("remote: \(request.method) \(request.path) by \(device) → \(response.status)")
-        return response
+    }
+
+    private func writing(_ request: Request,
+                         _ body: ([String: Any]) -> Response) -> Response {
+        switch writeGate(request) {
+        case .refused(let response), .replay(let response):
+            return response
+        case .go(let device, let key):
+            let parsed = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
+            let response = body(parsed)
+            remember(response, under: key, for: request, by: device)
+            return response
+        }
     }
 
     private var idempotent: [String: (at: Date, response: Response)] = [:]
+
+    // MARK: - Dictation
+
+    /// A recording made on a phone, turned into words by this Mac and nobody else's.
+    ///
+    /// The point of the route is where the audio does *not* go. A browser can already dictate —
+    /// every phone has a recogniser behind a permission prompt — and what that costs is that the
+    /// sentence goes to whoever wrote the recogniser. This app's position on that is stated
+    /// everywhere else it comes up: the text lives on the Mac. So the phone records, the samples
+    /// come here, and the model that reads them is the one already on this disk for the bar's own
+    /// dictation — same binary, same model, same language setting, and no client may name a
+    /// different one.
+    ///
+    /// **Answered from another queue, and that is the design rather than an optimisation.**
+    /// Everything else here is read, decided and answered on one serial queue, which is what makes
+    /// the state safe to touch without a lock. Whisper takes 1.6 seconds warm and about twelve
+    /// after a reboot, so on that queue a single dictation would hold every other request and the
+    /// event stream for as long as it ran. The gates are therefore checked here, where the state
+    /// they read lives, and only the second and a half goes elsewhere.
+    ///
+    /// The queue it goes to is serial too, which is the other half: two whispers at once on one
+    /// machine are slower than two in a row, so the queue *is* the concurrency limit and the only
+    /// thing left to choose is how long a line is worth standing in.
+    private func transcribe(_ request: Request, on conn: NWConnection) {
+        if let refusal = crossOriginRefusal(request) ?? writeOriginRefusal(request) {
+            send(withCachePolicy(refusal), on: conn)
+            return
+        }
+        // **Write, not read, and the reason is not that this writes anything.** It is that a
+        // device which may only read has nowhere to put a sentence — it cannot send one — while
+        // transcribing costs this Mac ten seconds of every core it has. Read-level access is
+        // meant to be cheap for the Mac to grant; this is not.
+        let device: String, key: String
+        switch writeGate(request) {
+        case .refused(let response), .replay(let response):
+            send(withCachePolicy(response), on: conn)
+            return
+        case .go(let allowed, let filed):
+            device = allowed
+            key = filed
+        }
+
+        let parsed = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
+        let samples: Data
+        switch Self.voiceSamples(from: parsed) {
+        case .refused(let response):
+            // Filed under the key like any other answer: a body that cannot be read is a settled
+            // fact about *this request*, so a retry of it deserves the same sentence rather than
+            // another look at the same broken audio.
+            remember(response, under: key, for: request, by: device)
+            send(withCachePolicy(response), on: conn)
+            return
+        case .samples(let audio):
+            samples = audio
+        }
+
+        // **Not filed under the key, and neither is a 503.** Both of those refusals are about this
+        // machine at this moment rather than about the request — the queue drains, whisper gets
+        // installed — and an answer frozen for ten minutes would mean the retry that was supposed
+        // to work is told "busy" by a cache long after the queue emptied. The cache exists so that
+        // a retry cannot repeat an effect, and a refusal had no effect to repeat.
+        guard voiceQueued < Self.voiceDepth else {
+            send(withCachePolicy(.error(429, "busy",
+                                        "Two recordings are already waiting to be transcribed on "
+                                        + "this Mac. Try again in a moment.")), on: conn)
+            return
+        }
+        voiceQueued += 1
+        voiceQueue.async { [weak self] in
+            guard let self else { conn.cancel(); return }
+            let response = Self.transcription(of: samples, by: device)
+            // Back to the server's queue before anything is remembered or written, because the
+            // idempotency table belongs to it and this closure does not.
+            self.queue.async {
+                self.voiceQueued -= 1
+                // A transcript is worth keeping under the key; a machine that had no whisper a
+                // second ago is not. Two identical keys arriving while the first is still running
+                // will both transcribe — nothing is filed until there is something to file — and
+                // the depth above is what keeps that from being unbounded.
+                if response.status == 200 {
+                    self.remember(response, under: key, for: request, by: device)
+                }
+                self.send(self.withCachePolicy(response), on: conn)
+            }
+        }
+    }
+
+    /// The queue the second and a half happens on. Serial, so this Mac only ever runs one whisper
+    /// at a time no matter how many phones are pointed at it.
+    private let voiceQueue = DispatchQueue(label: "dev.sainteye.clawdline.remote.voice")
+
+    /// How many recordings are on it. Touched only from the server's queue, like everything else
+    /// that is not behind a lock here.
+    private var voiceQueued = 0
+
+    /// One running, one waiting, and the third is told to come back.
+    ///
+    /// Not a resource limit — it is how long somebody is willing to hold a phone. A third
+    /// recording accepted now would be answered five seconds after it was spoken, by which time
+    /// its author has given up and pressed the button again; `busy` arriving straight away is the
+    /// smaller answer and the more useful one, because it can be acted on.
+    static let voiceDepth = 2
+
+    /// The only sample rate this takes, and the shape that comes with it: little-endian 16-bit
+    /// mono. Not a preference — `Whisper.transcribe` writes the WAV header around these bytes
+    /// itself, and the bar's own recorder converts to exactly this before calling the same
+    /// function. One rate is what makes the phone's path and the Mac's path the same path.
+    static let voiceRate = 16_000.0
+
+    /// Under a quarter of a second is a button pressed by accident, not a sentence. The same floor
+    /// `Whisper.transcribe` keeps for itself, said here as well because the answer here can
+    /// explain itself: whisper's way of refusing is `nil`, which this route would otherwise have
+    /// to report as "nothing was said".
+    static let voiceFloor = 0.25
+
+    /// And five minutes is the far end.
+    ///
+    /// Not about the size of the request — a twenty-megabyte body already stops at about eight
+    /// minutes of audio — but about what it costs. Whisper runs at something near real time on
+    /// this hardware, so an eight-minute upload holds the queue for minutes with nobody able to
+    /// call it back, and every dictation behind it waits. Five minutes is far past anything
+    /// somebody says into a phone in one breath, and it bounds the worst a paired device can do
+    /// here without inventing a refusal for the ordinary case.
+    static let voiceCeiling = 300.0
+
+    /// What a `/v1/voice` body turned out to be: samples worth handing to whisper, or the refusal
+    /// they earned.
+    enum Recording {
+        case samples(Data)
+        case refused(Response)
+    }
+
+    /// Read the body, and decide everything that can be decided before any of it costs a second of
+    /// somebody's CPU.
+    ///
+    /// Split out and static for the reason `route` is split out from the connection handling: a
+    /// test can ask it every question on this list without opening a socket, owning a microphone,
+    /// or having whisper installed at all.
+    ///
+    /// The rate is read before the audio is decoded — the cheap field first, because a body that
+    /// names the wrong rate is a body whose megabytes are not worth turning into bytes. And it is
+    /// checked rather than resampled: 16 kHz is what the recorder produces and what whisper wants,
+    /// so a client sending 48 kHz has not made a small mistake, it has sent something that would
+    /// transcribe as a voice three times too fast. Refusing says that; resampling would hide it.
+    static func voiceSamples(from body: [String: Any]) -> Recording {
+        guard let rate = (body["rate"] as? NSNumber)?.doubleValue, rate == voiceRate else {
+            return .refused(.error(400, "bad_request",
+                                   "rate must be \(Int(voiceRate)). That is the only rate this "
+                                   + "transcribes, and quietly resampling somebody's voice is a "
+                                   + "worse answer than saying no."))
+        }
+        guard let encoded = body["audio"] as? String, !encoded.isEmpty else {
+            return .refused(.error(400, "bad_request",
+                                   "That needs audio: base64 of little-endian 16-bit mono PCM."))
+        }
+        // Unknown characters ignored, because an encoder that wraps its lines is not a client
+        // making a mistake. Something that is not base64 at all still arrives as nothing, which is
+        // the refusal underneath.
+        guard let samples = Data(base64Encoded: encoded, options: [.ignoreUnknownCharacters]),
+              !samples.isEmpty else {
+            return .refused(.error(400, "bad_request", "That audio was not base64."))
+        }
+        let seconds = Double(samples.count) / (rate * 2)      // two bytes a sample, one channel
+        guard seconds >= voiceFloor else {
+            return .refused(.error(400, "bad_request",
+                                   "That was \(String(format: "%.2f", seconds)) seconds of audio "
+                                   + "and anything under \(voiceFloor) is a tap, not a sentence."))
+        }
+        guard seconds <= voiceCeiling else {
+            return .refused(.error(400, "bad_request",
+                                   "That was \(Int(seconds)) seconds of audio and the limit is "
+                                   + "\(Int(voiceCeiling)). Send it in pieces."))
+        }
+        return .samples(samples)
+    }
+
+    /// The second and a half this route exists for, run on the dictation queue and nowhere else.
+    ///
+    /// Static because none of it belongs to the server: it takes bytes and the name of the device
+    /// that sent them, and everything else it reads — binary, model, language, vocabulary — is
+    /// the same config the bar's own dictation reads, from the same place.
+    private static func transcription(of samples: Data, by device: String) -> Response {
+        // Asked here rather than at the door on purpose. `Whisper.status` walks a few directories
+        // and, on a Mac that has none of this, shells out to `which` — small, but the server's
+        // queue is the one place where a small cost is paid by every other connection. Nothing
+        // queues behind this answer anyway: a machine with no whisper has no transcription to be
+        // slow about.
+        switch Whisper.status(binary: Config.shared.whisperBinary, model: Config.shared.whisperModel) {
+        case .noBinary:
+            return .error(503, "no_whisper",
+                          "This Mac has no whisper-cli, so there is nothing here to read a "
+                          + "recording with. See docs/whisper.md.",
+                          extra: ["reason": "no_binary"])
+        case .noModel:
+            // The commonest half of the two, and the reason `Whisper.Status` tells them apart at
+            // all: `brew install whisper-cpp` leaves you here, and "no whisper" would send
+            // somebody to check the thing they already did.
+            return .error(503, "no_whisper",
+                          "whisper-cli is installed on this Mac and has no model to read with. "
+                          + "See docs/whisper.md.",
+                          extra: ["reason": "no_model"])
+        case .ready:
+            break
+        }
+
+        let started = Date()
+        // **No vocabulary, and that is not this route's decision to make.** `Whisper.transcribe`
+        // takes the list and documents at length why it does not put it in the prompt: the prompt
+        // is a writing sample, and a list of words in it costs the transcript its punctuation. The
+        // repair happens afterwards instead, a few lines below, which is where the bar does it
+        // too.
+        let heard = Whisper.transcribe(samples, rate: voiceRate, vocabulary: [],
+                                       language: Config.shared.voiceLanguage)
+        let ms = Int(Date().timeIntervalSince(started) * 1000)
+        // The same repair `Voice.emit` puts in front of everything on its way to the box, so that
+        // a phone and the bar spell this project's own name the same way. `transcribe` has already
+        // settled the script and the spacing; this is only the names it cannot be expected to know.
+        let text = heard.map {
+            Whisper.applyVocabulary($0, terms: Voice.alwaysExpected + Config.shared.voiceVocabulary)
+        } ?? ""
+        let seconds = Double(samples.count) / (voiceRate * 2)
+        // Written from this queue rather than after the hop back, because an audit line is a file
+        // append and the server's queue is where every other connection is waiting.
+        RemoteAuth.audit("voice.transcribe", ["device": device,
+                                              "seconds": String(format: "%.1f", seconds),
+                                              "ms": "\(ms)",
+                                              "chars": "\(text.count)",
+                                              "ok": heard == nil ? "0" : "1"])
+        // **Nothing heard is a 200.** Whisper answers `nil` for silence, for a clip it decided was
+        // a groove, and for a recording of a room — and none of those is a failure of the request.
+        // What was asked is "what was said", and "nothing" is an answer to that; a 4xx here would
+        // have a page apologising for a microphone that was working perfectly.
+        return .json(["text": text, "ms": ms])
+    }
 
     /// An orchestrator reply, in the envelope everything else already uses.
     private func answer(_ reply: Orchestrator.Reply) -> Response {
@@ -1625,6 +1924,30 @@ final class RemoteServer {
             "webShotsTooBig": t.webShotsTooBig,
             "webShotUnreadable": t.webShotUnreadable,
             "webShotNeedsSession": t.webShotNeedsSession,
+        ])
+
+        // The microphone in the composer, and everything `POST /v1/voice` can come back with.
+        // Four of these refusals are the browser's own and three are this Mac's, and the page
+        // picks between them by what it was handed — so all seven have to arrive translated or a
+        // phone is told in English why a Mac it cannot see has no model on it.
+        add([
+            "webVoiceStart": t.webVoiceStart,
+            "webVoiceStop": t.webVoiceStop,
+            "webVoiceListening": t.webVoiceListening,
+            "webVoiceReading": t.webVoiceReading,
+            "webVoiceSlow": t.webVoiceSlow,
+            "webVoiceLimit": t.webVoiceLimit,
+            "webVoiceEmpty": t.webVoiceEmpty,
+            "webVoiceTooShort": t.webVoiceTooShort,
+            "webVoiceDenied": t.webVoiceDenied,
+            "webVoiceNoMic": t.webVoiceNoMic,
+            "webVoiceInUse": t.webVoiceInUse,
+            "webVoiceInsecure": t.webVoiceInsecure,
+            "webVoiceUnsupported": t.webVoiceUnsupported,
+            "webVoiceBusy": t.webVoiceBusy,
+            "webVoiceNoBinary": t.webVoiceNoBinary,
+            "webVoiceNoModel": t.webVoiceNoModel,
+            "webVoiceFailed": t.webVoiceFailed,
         ])
 
         // Starting a session from the page — the sheet, and the wait between the tab opening and
@@ -2280,6 +2603,7 @@ extension RemoteServer {
             case 429: return "Too Many Requests"
             case 413: return "Payload Too Large"
             case 431: return "Request Header Fields Too Large"
+            case 503: return "Service Unavailable"
             default:  return "Error"
             }
         }

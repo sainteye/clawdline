@@ -75,6 +75,41 @@ the calling thread, with no timeout — so when the HAL was wedged the main thre
 not come back. The app kept its window and answered nothing: not the bar, not the hotkey, not
 HTTP. It now reaches for the node only when this session actually put a tap on it.
 
+### Dictating to a session from a phone
+
+The composer on the page took typing and pictures, which is the wrong shape for what a phone is
+actually for here: answering a session in one sentence on the way out of the building. Every phone
+can already dictate — and every phone's dictation hands the sentence to whoever wrote the
+recogniser, which is the one thing this app spends its whole design not doing.
+
+- **A microphone beside the send button.** Press it, talk, press it again. The recording goes to
+  the Mac, the Whisper already installed there reads it, and the words arrive in the box where you
+  can edit them. Nothing is sent until you send it.
+- **The audio stops at your Mac.** Same binary, same model, same `voice_language` and
+  `voice_vocabulary` as the bar's own dictation. The phone is not asked which language it is
+  speaking and cannot name one, so this project's own names come out spelled the same on both
+  screens.
+- **`POST /v1/voice`, behind the switch that already governs sending** — and not because it writes
+  anything. A device that may only read has nowhere to put a sentence once it has one, and
+  transcribing spends ten-plus seconds of every core this Mac has on demand. Read-level access is
+  meant to be cheap to grant; this is the one read-shaped thing here that is not.
+- **No live text on a phone, and the page says so rather than pretending.** whisper.cpp cannot
+  stream and Apple's recogniser runs on the Mac, so a phone records, waits, and gets the whole
+  sentence at once. It counts the seconds while it waits, and adds that the first one after a
+  restart loads the model first — twelve seconds of nothing looks exactly like a hang.
+- **One at a time, one more in the queue, and the third is told to come back.** Transcription runs
+  on a queue of its own, so a dictation cannot hold the event stream and every other page in the
+  house for as long as it takes. Recording stops at three minutes on its own.
+- **Every way it can refuse says which one it was, in all fourteen languages.** A microphone that
+  was refused says where it is switched back on; a page opened over plain `http` says that a
+  microphone needs https; a Mac with `whisper-cli` and no model says which of the two is missing,
+  rather than "dictation failed".
+- **`voice.transcribe` in the audit log** — device, seconds, milliseconds, characters, ok. How long
+  the recording was and how long the transcript came out, and not a word of either.
+
+Needs Whisper on the Mac ([docs/whisper.md](docs/whisper.md)) and an https address, which a tunnel
+already gives you ([docs/remote.md](docs/remote.md)).
+
 ### Following a background agent into its own conversation
 
 The strip that says *three agents are out* was the end of the road: it named them, said what each

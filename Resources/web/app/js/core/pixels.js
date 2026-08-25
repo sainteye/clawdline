@@ -125,9 +125,14 @@ export var confirmSpin = null;
 /// The composer's own spinner. Kept out of `spinners`, which the list throws away and rebuilds
 /// on every render — this one belongs to the pane and outlives that.
 var liveSpin = null;
+/// The one beside the dictation counter, while the Mac reads back what was recorded. On this
+/// clock and not one of its own for the reason above: a transcription that starts while a
+/// session is working puts two arcs on the same screen, and two arcs turning at their own
+/// speeds is what makes a page look like two pages.
+var voiceSpin = null;
 setInterval(function () {
     if (reduced || (!spinners.length && !optimisticSpinners.length &&
-                    !bandSpin && !startSpin && !confirmSpin && !liveSpin)) return;
+                    !bandSpin && !startSpin && !confirmSpin && !liveSpin && !voiceSpin)) return;
     spinPhase = (spinPhase + 1) % 8;
     for (var i = 0; i < spinners.length; i++) drawSpinner(spinners[i], spinPhase);
     for (var j = 0; j < optimisticSpinners.length; j++) drawSpinner(optimisticSpinners[j], spinPhase);
@@ -135,9 +140,10 @@ setInterval(function () {
     if (startSpin) drawSpinner(startSpin, spinPhase);
     if (confirmSpin) drawSpinner(confirmSpin, spinPhase);
     if (liveSpin) drawSpinner(liveSpin, spinPhase);
+    if (voiceSpin) drawSpinner(voiceSpin, spinPhase);
 }, SPIN.step);
 
-// Six of the handles above are set from somewhere else — the render or the sheet that owns the
+// Seven of the handles above are set from somewhere else — the render or the sheet that owns the
 // canvas — and a module cannot assign to a name it imported. So the variable stays here where the
 // clock can see it, and the write becomes a call.
 export function setSpinners(list) { spinners = list; }
@@ -146,3 +152,4 @@ export function setBandSpin(canvas) { bandSpin = canvas; }
 export function setStartSpin(canvas) { startSpin = canvas; }
 export function setConfirmSpin(canvas) { confirmSpin = canvas; }
 export function setLiveSpin(canvas) { liveSpin = canvas; }
+export function setVoiceSpin(canvas) { voiceSpin = canvas; }
