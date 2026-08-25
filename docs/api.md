@@ -556,6 +556,13 @@ $ curl -s http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/sessions \
 Two hundred at most, newest first, and `id` is the conversation's own — which is also what its
 transcript is named, and the only part of a row that goes back to the server.
 
+**`more` says the two hundred was a cap and not the end.** The server asks its own reader for one
+more than it sends, so this is a fact rather than a guess, and a client that draws the list has
+something true to say at the bottom of it. There is no cursor to follow it with: a project's whole
+history arrives in one reply, which is what lets a client's filter box search all of it instead of
+only what is on screen. `more` is therefore a limit worth telling somebody about, not a page to
+turn — say so rather than ending the list in silence.
+
 **Only conversations somebody had.** Half of what is in a project folder is not one, and both
 exclusions are read off a field rather than guessed at from the contents:
 

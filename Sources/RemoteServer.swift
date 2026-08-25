@@ -1782,11 +1782,17 @@ final class RemoteServer {
     /// a person needs to know before tapping a row — resuming it would put a second process on
     /// the same file.
     private func pastPayload(_ place: StartPoints.Place) -> [String: Any] {
-        [
+        // One more than is sent, so the reply can say whether there were any. A list that simply
+        // ends at its cap is a list that lies by omission — which is the bug this whole route
+        // already had once, at forty, and it is not one to leave a second copy of at two hundred.
+        let cap = 200
+        let found = StartPoints.past(in: place, limit: cap + 1)
+        return [
             "at": Int(Date().timeIntervalSince1970),
             "place": place.id,
             "assistant": Assistant.claude.rawValue,
-            "sessions": StartPoints.past(in: place).map { past -> [String: Any] in
+            "more": found.count > cap,
+            "sessions": found.prefix(cap).map { past -> [String: Any] in
                 [
                     "id": past.id,
                     "title": past.title,
@@ -2390,6 +2396,8 @@ final class RemoteServer {
             "webResumeGone": t.webResumeGone,
             "webResumeClaudeOnly": t.webResumeClaudeOnly,
             "webResuming": t.webResuming,
+            "webResumeMore": t.webResumeMore,
+            "webResumeCapped": t.webResumeCapped,
         ])
 
         // The key row along the bottom, on a desk.

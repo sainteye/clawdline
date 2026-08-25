@@ -407,6 +407,8 @@ struct Turkish: Copy {
     let webResumeGone = "O konuşma artık Mac'te değil."
     let webResumeClaudeOnly = "Sürdürülebilir konuşmaları yalnızca Claude Code saklar."
     let webResuming = "Kaldığı yerden açılıyor…"
+    let webResumeMore = "{n} tane daha"
+    let webResumeCapped = "Bunlardan eskiler bu listede yok."
     let webCommand = "Ne başlatılacağını söyle"
     let webCommandLabel = "Ne yapılacağını söyleyerek oturum başlat"
     let webCommandSay = "Aşağıdaki Başlat'a basana kadar hiçbir şey gönderilmez."

@@ -52,6 +52,12 @@ import { openSession } from "../session/open.js";
 export var Start = (function () {
     var HOLD = 15000;    // how long the band waits before it admits it has stopped waiting
     var MANY = 8;        // places, past which a box to filter them earns its row
+    // Conversations drawn at once, and each press of the row at the bottom. A project's whole
+    // history arrives in one reply — which is what lets the filter box search all of it rather
+    // than only what is on screen — so this is about the scroll, not about the fetching. Forty
+    // rows in a sheet that is a third of a phone is a list you arrive at the bottom of by
+    // accident; twenty-five is about a screen and a half.
+    var PAGE = 25;
 
     var places = null;   // as the Mac sent them; null until an answer has arrived
     var assistants = [];  // what the Mac will start — [{ id, label }], its list and not this one
@@ -62,7 +68,9 @@ export var Start = (function () {
     var resume = false;  // whether the next press picks a conversation up rather than starting one
     var at = null;       // the place whose conversations are on screen; null while showing places
     var pasts = null;    // as the Mac sent them, for `at`; null until an answer has arrived
+    var capped = false;  // the Mac stopped listing before the end, and said so
     var reading = false;
+    var shown = 0;       // how many rows of the current list have been unfolded
     var wait = null;     // { id, from, late, place } — started, and not in the list yet
     var timer = null;
     var placeholderNode = null;
@@ -225,7 +233,15 @@ export var Start = (function () {
         var chip = document.createElement("button");
         chip.type = "button";
         chip.className = "chip check" + (resume && resumable() ? " on" : "");
-        chip.textContent = T.webResumeWith;
+        // The box and the tick as one path each, on one fourteen-unit grid, so the mark sits
+        // where it was drawn rather than where a rotate and a translate happen to land it.
+        chip.innerHTML = '<svg class="tick" viewBox="0 0 14 14" aria-hidden="true"'
+            + ' focusable="false">'
+            + '<rect class="box" x="0.5" y="0.5" width="13" height="13" rx="3.5"></rect>'
+            + '<path class="mark" d="M3.6 7.1 5.9 9.4 10.4 4.6"'
+            + ' stroke-linecap="round" stroke-linejoin="round"></path></svg>'
+            + '<span class="label"></span>';
+        chip.querySelector(".label").textContent = T.webResumeWith;
         // Off and unpressable while Codex is chosen, and the sentence under the list says why.
         chip.disabled = !!pressing || !!wait || !resumable();
         chip.setAttribute("aria-pressed", resume && resumable() ? "true" : "false");
@@ -340,7 +356,9 @@ export var Start = (function () {
         if (box.hidden && box.value) { box.value = ""; find = ""; }
 
         list.innerHTML = "";
-        matchingPast().forEach(function (r) {
+        var all = matchingPast();
+        var upTo = Math.min(shown, all.length);
+        all.slice(0, upTo).forEach(function (r) {
             var li = document.createElement("li");
             var row = document.createElement("button");
             row.type = "button";
@@ -374,6 +392,28 @@ export var Start = (function () {
             li.appendChild(row);
             list.appendChild(li);
         });
+
+        // What is left, and then — only once nothing is left — what the Mac itself left out.
+        // The two are different facts and only one of them can be acted on, so they are never
+        // both on screen: a button that unfolds more, or a line saying there is no more to
+        // unfold from here.
+        if (upTo < all.length) {
+            var li = document.createElement("li");
+            var more = document.createElement("button");
+            more.type = "button";
+            more.className = "more";
+            more.textContent = fill(T.webResumeMore, { n: all.length - upTo });
+            more.disabled = !!pressing || !!wait;
+            more.onclick = function () { shown += PAGE; draw(); };
+            li.appendChild(more);
+            list.appendChild(li);
+        } else if (capped && all.length) {
+            var note = document.createElement("li");
+            note.className = "more note";
+            note.setAttribute("role", "status");
+            note.textContent = T.webResumeCapped;
+            list.appendChild(note);
+        }
         edge();
     }
 
@@ -408,6 +448,8 @@ export var Start = (function () {
     function enter(place) {
         at = place;
         pasts = null;
+        capped = false;
+        shown = PAGE;
         find = "";
         els["start-filter"].value = "";
         said("");
@@ -416,6 +458,7 @@ export var Start = (function () {
         api.pastSessions(place.id).then(function (d) {
             if (!at || at.id !== place.id) return;   // gone back while this was in flight
             pasts = (d && d.sessions) || [];
+            capped = !!(d && d.more);
         }).catch(function (e) {
             if (!at || at.id !== place.id) return;
             pasts = pasts || [];
@@ -438,6 +481,8 @@ export var Start = (function () {
     function leave() {
         at = null;
         pasts = null;
+        capped = false;
+        shown = 0;
         reading = false;
         find = "";
         els["start-filter"].value = "";
@@ -652,7 +697,9 @@ export var Start = (function () {
         close: close,
         press: press,
         pick: pick,
-        typed: function (value) { find = value; draw(); },
+        // Typing makes a different list, and a fold that carried over from the old one would
+        // leave somebody looking at "show 3 more" over a list of four.
+        typed: function (value) { find = value; shown = PAGE; draw(); },
         scrolled: edge,
         placeholder: placeholder,
         arrange: arrange,

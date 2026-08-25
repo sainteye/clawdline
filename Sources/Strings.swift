@@ -737,6 +737,12 @@ protocol Copy {
     /// nothing to offer rather than nothing to resume.
     var webResumeClaudeOnly: String { get }
     var webResuming: String { get }
+    /// The row under a part-drawn list. `{n}` is how many are still folded away.
+    var webResumeMore: String { get }
+    /// Said when the **Mac** stopped listing rather than the page — a project with more
+    /// conversations in it than one reply carries. Nothing below it can be reached by scrolling,
+    /// which is exactly why it has to be said out loud.
+    var webResumeCapped: String { get }
 
     // Starting a session by saying it, rather than picking it — the microphone beside the plus,
     // the sheet it opens, and `POST /v1/intents` behind it. Whisper hears the sentence; a planner

@@ -9,6 +9,21 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Changed: the history unfolds twenty-five at a time, and the tick is a tick
+
+Forty conversations in a sheet a third of a phone tall is a list you reach the bottom of by
+accident. It now draws twenty-five and offers *Show N more*; the whole project still arrives in
+one reply, which is what keeps the filter box searching all of it rather than only what has been
+unfolded. When the Mac itself stopped short of the end — two hundred conversations in one project
+— the row at the bottom says so instead of the list simply ending.
+
+And the tick in the switch above it was two CSS boxes: a rounded pseudo-element, and a checkmark
+made from two borders of an empty box turned forty-five degrees and pulled back over it by a
+percentage of its own size. That trick's two strokes are the same length and meet at a right
+angle, where a real checkmark's do neither, and where it lands depends on rounding a translate
+against a rotate. It read as leaning. It is one small SVG now — box and mark on one grid, at the
+coordinates they were drawn at.
+
 ### Fixed: the list of conversations to pick back up was mostly not conversations
 
 The first version of it listed what was in the project folder, newest first, capped at forty. In

@@ -405,6 +405,8 @@ struct Korean: Copy {
     let webResumeGone = "그 대화는 이제 Mac에 없습니다."
     let webResumeClaudeOnly = "이어서 열 수 있는 대화를 남기는 건 Claude Code뿐입니다."
     let webResuming = "이어서 여는 중…"
+    let webResumeMore = "{n}개 더 보기"
+    let webResumeCapped = "이보다 오래된 것은 이 목록에 없습니다."
     let webCommand = "무엇을 시작할지 말하기"
     let webCommandLabel = "말해서 세션 시작하기"
     let webCommandSay = "아래 시작을 누르기 전에는 아무것도 보내지 않습니다."

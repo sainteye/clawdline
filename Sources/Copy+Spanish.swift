@@ -407,6 +407,8 @@ struct Spanish: Copy {
     let webResumeGone = "Esa conversación ya no está en el Mac."
     let webResumeClaudeOnly = "Solo Claude Code guarda conversaciones que se puedan retomar."
     let webResuming = "Retomándola…"
+    let webResumeMore = "Ver {n} más"
+    let webResumeCapped = "Las más antiguas no están en esta lista."
     let webCommand = "Di qué quieres empezar"
     let webCommandLabel = "Empezar una sesión diciendo qué debe hacer"
     let webCommandSay = "No se envía nada hasta que pulses Empezar más abajo."

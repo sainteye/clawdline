@@ -407,6 +407,8 @@ struct Russian: Copy {
     let webResumeGone = "Этого разговора больше нет на Mac."
     let webResumeClaudeOnly = "Только Claude Code хранит разговоры, которые можно продолжить."
     let webResuming = "Продолжаем…"
+    let webResumeMore = "Показать ещё {n}"
+    let webResumeCapped = "Более старых в этом списке нет."
     let webCommand = "Скажите, что начать"
     let webCommandLabel = "Начать сессию, сказав, что она должна сделать"
     let webCommandSay = "Ничего не отправляется, пока вы не нажмёте «Начать» внизу."

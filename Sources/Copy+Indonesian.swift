@@ -407,6 +407,8 @@ struct Indonesian: Copy {
     let webResumeGone = "Percakapan itu sudah tidak ada di Mac."
     let webResumeClaudeOnly = "Hanya Claude Code yang menyimpan percakapan yang bisa dilanjutkan."
     let webResuming = "Membukanya kembali…"
+    let webResumeMore = "Tampilkan {n} lagi"
+    let webResumeCapped = "Yang lebih lama tidak ada di daftar ini."
     let webCommand = "Katakan yang mau dimulai"
     let webCommandLabel = "Mulai sesi dengan mengatakan yang harus dilakukan"
     let webCommandSay = "Belum ada yang dikirim sebelum menekan Mulai di bawah."

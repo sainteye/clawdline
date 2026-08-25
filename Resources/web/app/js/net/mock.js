@@ -268,7 +268,25 @@ export var Mock = (function () {
             { id: "5bdc0c33-7a95-4c11-9e48-0db362f7a5c9", title: "One place to see every session at once", live: false },
             { id: "8e29b3df-0f74-4a86-93b2-c15e7d049a83", title: "Several requests arriving at once", live: false },
             { id: "1f47c762-60e9-4dc1-8967-fadb4038448c", title: "The list's arrival animation", live: false },
-            { id: "0ded3be9-4b90-401c-b8dc-0c7631ad65a7", title: "Why the shell panel draws nothing", live: false }
+            { id: "0ded3be9-4b90-401c-b8dc-0c7631ad65a7", title: "Why the shell panel draws nothing", live: false },
+            { id: "5c2edf02-6a19-4d78-b0f4-9e2a1c73d845", title: "Subagent rows, and the mark that says whose they are", live: false },
+            { id: "782d360b-4e91-42a7-9c05-6db8f3e21a47", title: "Codex session management from the phone", live: false },
+            { id: "af32d66f-1b83-4c60-a7e9-0524c8fb1d93", title: "The README, rewritten around what it is for", live: false },
+            { id: "56e45cef-9d20-4a15-8b73-e1f60c9a4c25", title: "Three stacks that would not start", live: false },
+            { id: "d04b6901-77c4-4e39-a1b8-5c0fe2739b6d", title: "Background agents, counted from a directory", live: false },
+            { id: "a2937509-3f18-4b52-9de0-71c4a8065f3e", title: "Whether the notch island can be done at all", live: false },
+            { id: "e949e849-2c67-4d80-b3a5-98f107e2ba14", title: "Controlling a session from a phone browser", live: false },
+            { id: "655f2cce-8b34-41e6-97d2-3a05be71cf28", title: "A Mac app that restarts servers on its own", live: false },
+            { id: "d7f953f4-f92c-41f0-939c-6c99b7403ce0", title: "Moving the prompt to the top of the screen", live: false },
+            { id: "62dc0257-5a91-4e08-8f36-b7c204ed19a5", title: "Splitting the page into modules", live: false },
+            { id: "808b9569-0e42-4c73-a19b-d5f83162e7c4", title: "Pasting into the composer on a phone", live: false },
+            { id: "985eb7c3-6d15-4820-93af-1c7e05b4d962", title: "The iTerm popup when a session is closed from the web", live: false },
+            { id: "2c9c9b0f-4f76-4a31-b8e2-90c53d17f6ab", title: "Safe area under the status bar", live: false },
+            { id: "76b5b985-1a58-4de9-87c0-64f2b90e3d17", title: "Shimmer timing on the waiting row", live: false },
+            { id: "21fff81e-9c03-4b47-a2d8-e6015f7c8b39", title: "What a waiting session looks like on the web", live: false },
+            { id: "d055e58f-3e81-4062-95c7-b8a1f4270de6", title: "Changelog, release notes and both READMEs", live: false },
+            { id: "a9e58ab5-7b26-4f19-80d3-c542e7169fa8", title: "A model switch the browser could not show", live: false },
+            { id: "7d552a7f-2d90-4a53-b716-3f80c95e2417", title: "What the header should say about the project", live: false }
         ],
         "24f9bac626da56ea": [
             { id: "045286cb-22ea-4d0e-91d6-74c8fd0f53dc", title: "First pass at the importer", live: false }
@@ -866,6 +884,9 @@ export var Mock = (function () {
                     var rows = (MOCK_START === "nopast" ? [] : (past[id] || []));
                     done({
                         at: now, place: id, assistant: "claude",
+                        // `?start=capped` is the Mac having stopped before the end of a project's
+                        // history — the one thing on this screen that scrolling cannot reach.
+                        more: MOCK_START === "capped",
                         sessions: rows.map(function (r, i) {
                             return { id: r.id, title: r.title, live: r.live, at: now - i * 5400 };
                         })
