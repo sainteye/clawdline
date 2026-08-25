@@ -702,6 +702,48 @@ protocol Copy {
     var webStartTerminalUnsupported: String { get }
     var webStartOff: String { get }
 
+    // Starting a session by saying it, rather than picking it — the microphone beside the plus,
+    // the sheet it opens, and `POST /v1/intents` behind it. Whisper hears the sentence; a planner
+    // on the Mac turns it into a draft; a person reads the draft and edits it; only the button at
+    // the bottom sends anything anywhere.
+    //
+    // **Nothing here may say or imply that a session has started, or that anything has been sent,
+    // before the last button is pressed.** The same rule as the composer's own dictation strings,
+    // and for the same reason: the words are read before the action they describe is true, not
+    // after, right up until the person decides otherwise.
+    var webCommand: String { get }
+    /// The header button's aria-label — a whole sentence, since the button carries no text of
+    /// its own for a screen reader to fall back on.
+    var webCommandLabel: String { get }
+    /// One line under the title. Says nothing has happened yet, not what the feature is.
+    var webCommandSay: String { get }
+    /// Placeholder for the box holding what Whisper heard, before anyone has edited it.
+    var webCommandHeard: String { get }
+    /// Shown for the few seconds the planner takes to turn a sentence into a draft.
+    var webCommandThinking: String { get }
+    /// Heading over the draft half of the sheet — the project, the assistant, and the first
+    /// message, once the planner has answered.
+    var webCommandDraft: String { get }
+    /// Label for the project list within the draft.
+    var webCommandWhere: String { get }
+    /// Label for the choice of assistant. Only worth a row when there is a choice to make.
+    var webCommandWith: String { get }
+    /// Label for the editable first message — editable because the planner's writing, in
+    /// `instructions`, is read by a person before anything reaches a terminal.
+    var webCommandFirst: String { get }
+    /// The button that actually starts it. The one place in this block where something happens.
+    var webCommandGo: String { get }
+    /// Shown when the planner could not tell which project was meant — a person has to pick.
+    var webCommandUnsure: String { get }
+    /// `POST /v1/intents` failed for a reason other than the two below.
+    var webCommandFailed: String { get }
+    /// 503 `no_planner` — this Mac has no Claude Code installed to plan with.
+    var webCommandNoPlanner: String { get }
+    /// 429 `busy` — one sentence is already on its way to becoming a draft.
+    var webCommandBusy: String { get }
+    /// Whisper returned nothing to plan from.
+    var webCommandEmpty: String { get }
+
     // The addresses a project has — see `GET /v1/sessions/:id/links` and the sheet the Links
     // chip opens. `webLinksLocal` and `webLinksFile` are the two that matter: one address only
     // resolves on the Mac's network and the other is not a web address at all, and a link that

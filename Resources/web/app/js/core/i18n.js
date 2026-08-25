@@ -262,6 +262,26 @@ export var T = {
     webStartTerminalUnsupported: "A session cannot be started in {app} from here. Run tmux in it and this works.",
     webStartOff: "Starting a session is switched off. Settings → Remote on the Mac turns it on.",
 
+    // Starting a session by saying it, rather than picking it — see the web section of
+    // `Sources/Strings.swift` for the fifteen keys and what each is for. Nothing here may say or
+    // imply that a session has started, or that anything has been sent, before the last button —
+    // the same rule as the composer's own dictation strings, and for the same reason.
+    webCommand: "Say what to start",
+    webCommandLabel: "Start a session by saying what to do",
+    webCommandSay: "Nothing is sent until you press Start below.",
+    webCommandHeard: "What should it do?",
+    webCommandThinking: "Thinking…",
+    webCommandDraft: "Draft",
+    webCommandWhere: "Where",
+    webCommandWith: "With",
+    webCommandFirst: "First message",
+    webCommandGo: "Start",
+    webCommandUnsure: "Not sure which project — pick one below.",
+    webCommandFailed: "Could not turn that into a draft.",
+    webCommandNoPlanner: "This Mac has no Claude Code to turn that into a draft.",
+    webCommandBusy: "Already turning one sentence into a draft — try again in a moment.",
+    webCommandEmpty: "Heard nothing",
+
     // Where this project can be opened. Three of these exist to be honest about a row that
     // cannot be opened from wherever this page is being read — which is the only reason the
     // list is worth having rather than a page of links that time out.
