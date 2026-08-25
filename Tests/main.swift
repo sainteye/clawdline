@@ -35,6 +35,17 @@ func group(_ title: String, _ body: () -> Void) {
     print("  \(mark) \(title)")
 }
 
+/// Keep main available to background work that completes with `DispatchQueue.main.sync`, while
+/// retaining a hard ceiling so an asynchronous regression fails instead of hanging the suite.
+func eventually(timeout: TimeInterval = 3, _ predicate: () -> Bool) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    repeat {
+        if predicate() { return true }
+        _ = RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01))
+    } while Date() < deadline
+    return predicate()
+}
+
 /// What build.sh stamps into the bundle, read out of build.sh itself — the tests have no bundle
 /// to ask, and a version that lives in two places is a version that disagrees with itself.
 func appVersion() -> String {
@@ -6129,10 +6140,19 @@ group("a task.json is read before a terminal is opened for it") {
         if case .bad = read(obj, expecting: expecting) { return true }
         return false
     }
+    func refusal(_ obj: [String: Any]) -> String? {
+        if case .bad(let why) = read(obj) { return why }
+        return nil
+    }
 
     expect("a whole task is taken as written", made(file())?.assistant, .codex)
     check("a task with no model named runs on whatever that assistant defaults to",
           made(file())?.model == nil)
+    expect("a task may name machine-global operations to serialize",
+           made(file(["serialize": ["build", "db.migration"]]))?.serialize,
+           ["build", "db.migration"])
+    expect("an absent serialize field has no scheduling effect",
+           made(file())?.serialize, [])
     expect("one that names a model carries it", made(file(["model": "haiku"]))?.model, "haiku")
     expect("and one that names how far it may go carries that",
            made(file(["permission_mode": "edits"]))?.permission, .edits)
@@ -6193,6 +6213,24 @@ group("a task.json is read before a terminal is opened for it") {
     check("a project_dir that is not a path at all", refused(file(["project_dir": "thing"])))
     check("a timeout past four hours", refused(file(["timeout_minutes": 999])))
     check("and one of zero minutes", refused(file(["timeout_minutes": 0])))
+    check("serialize must be an array", refused(file(["serialize": "build"])))
+    check("serialize accepts at most four tokens",
+          refused(file(["serialize": ["a", "b", "c", "d", "e"]])))
+    check("serialize names the index of a non-string token",
+          refused(file(["serialize": ["build", 3]])))
+    check("serialize rejects an empty token", refused(file(["serialize": [""]])))
+    check("serialize rejects a token longer than 64 characters",
+          refused(file(["serialize": [String(repeating: "a", count: 65)]])))
+    check("serialize uses the same closed alphabet as model",
+          refused(file(["serialize": ["Build", "release now", "$(id)"]])))
+    check("serialize tokens may not begin with a dash",
+          refused(file(["serialize": ["-build"]])))
+    check("serialize tokens may not repeat",
+          refused(file(["serialize": ["build", "build"]])))
+    let everyProblem = refusal(file(["serialize": ["build", 3, "Build", "build"]])) ?? ""
+    check("serialize reports every invalid item in one bad_task message",
+          everyProblem.contains("serialize[1]") && everyProblem.contains("serialize[2]")
+              && everyProblem.contains("serialize[3]"))
 }
 
 group("a model name is a name, not a fragment of a command line") {
@@ -6417,9 +6455,12 @@ group("workspace overlap follows the whole dispatch tree") {
                       dir: "/a/b/queued", root: secondRoot, state: .queued, created: 2)
     let spawning = task("eeeeeeee-ffff-0000-1111-222222222222",
                         dir: "/a/b/spawning", root: secondRoot, state: .spawning, created: 1)
-    expect("queued and spawning tasks are live just as briefed ones are",
+    expect("queued tasks are absent from L1 while spawning tasks remain active",
            Orchestrator.workspaceOverlaps(for: scanningNewcomer,
-                                          among: [queued, spawning]).count, 2)
+                                          among: [queued, spawning]).count, 1)
+    let queuedNewcomer = task(taskID, dir: "/a/b", root: firstRoot, state: .queued)
+    expect("a queued newcomer does not warn before it can touch the workspace",
+           Orchestrator.workspaceOverlaps(for: queuedNewcomer, among: [other]).count, 0)
     expect("overlaps are sorted by creation time",
            Orchestrator.workspaceOverlaps(for: scanningNewcomer,
                                           among: [queued, spawning]).first?.task.id,
@@ -6457,6 +6498,335 @@ group("workspace overlap follows the whole dispatch tree") {
     expect("no overlap produces no notification decision",
            Orchestrator.workspaceOverlapNotices(newTask: scanningNewcomer,
                                                 overlaps: []).count, 0)
+}
+
+group("serialized operations are acquired atomically and globally") {
+    func task(_ id: String, _ state: Orchestrator.State, _ tokens: [String],
+              created: TimeInterval, root: String? = nil) -> Orchestrator.Task {
+        Orchestrator.Task(id: id, state: state, kind: "custom", title: "a task",
+                          assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30,
+                          created: Date(timeIntervalSince1970: created),
+                          rootSessionId: root, serialize: tokens,
+                          secretHash: String(repeating: "0", count: 64))
+    }
+    let running = task("11111111-1111-1111-1111-111111111111", .briefed, ["build"],
+                       created: 1, root: "root-a")
+    let first = task("22222222-2222-2222-2222-222222222222", .queued, ["build"],
+                     created: 2, root: "root-a")
+    let second = task("33333333-3333-3333-3333-333333333333", .queued, ["build"],
+                      created: 3, root: "root-b")
+    let free = task("44444444-4444-4444-4444-444444444444", .queued, ["release"],
+                    created: 4, root: "root-b")
+    expect("a live holder blocks the first waiter",
+           Orchestrator.serializeBlockers(for: first, among: [running, first, second, free])
+               .map(\.id), [running.id])
+    expect("FIFO makes an older queued task a blocker",
+           Orchestrator.serializeBlockers(for: second, among: [running, first, second, free])
+               .map(\.id), [running.id, first.id])
+    expect("a different root does not create a different mutex namespace",
+           Orchestrator.serializeBlockers(for: second, among: [first, second]).map(\.id),
+           [first.id])
+    expect("a disjoint operation can start while build is held",
+           Orchestrator.serializeBlockers(for: free, among: [running, first, second, free])
+               .map(\.id), [])
+
+    let holdsA = task("55555555-5555-5555-5555-555555555555", .briefed, ["a"], created: 1)
+    let both = task("66666666-6666-6666-6666-666666666666", .queued, ["a", "b"], created: 2)
+    let crossed = task("77777777-7777-7777-7777-777777777777", .queued, ["b", "a"],
+                       created: 3)
+    expect("a multi-token waiter acquires nothing while any token is held",
+           Orchestrator.serializeBlockers(for: both, among: [holdsA, both, crossed]).map(\.id),
+           [holdsA.id])
+    expect("crossed token order queues behind the older atomic request without deadlock",
+           Orchestrator.serializeBlockers(for: crossed, among: [both, crossed]).map(\.id),
+           [both.id])
+
+    for terminal in [Orchestrator.State.success, .failure, .timeout, .cancelled, .spawnFailed] {
+        let ended = task(running.id, terminal, ["build"], created: 1)
+        expect("\(terminal.rawValue) releases its serialized operation",
+               Orchestrator.serializeBlockers(for: first, among: [ended, first]).map(\.id), [])
+    }
+    let ordinary = task("88888888-8888-8888-8888-888888888888", .queued, [], created: 5)
+    expect("a task without serialize has zero scheduling behavior",
+           Orchestrator.serializeBlockers(for: ordinary, among: [running, first, ordinary])
+               .map(\.id), [])
+}
+
+group("a serialized waiter survives a store round trip without a plaintext secret") {
+    let secret = String(repeating: "c3", count: 32)
+    let sealed = Orchestrator.sealQueuedSecret(secret)
+    check("the queued secret is sealed rather than stored in plaintext",
+          sealed != nil && sealed != secret && !sealed!.contains(secret))
+    expect("the installation can reopen it after a restart",
+           sealed.flatMap(Orchestrator.openQueuedSecret), secret)
+    let keyData = try? Data(contentsOf: Orchestrator.archiveKeyURL)
+    let keyText = keyData.flatMap { String(data: $0, encoding: .utf8) }
+    check("the archive key is an independent 32-byte random key",
+          keyText.flatMap { Data(base64Encoded: $0) }?.count == 32)
+    let keyMode = (try? FileManager.default.attributesOfItem(
+        atPath: Orchestrator.archiveKeyURL.path)[.posixPermissions] as? NSNumber)?.intValue
+    expect("the archive key file is private", keyMode, 0o600)
+
+    // A dispatch-capable child is told how to read this credential. Rotating it must therefore
+    // have no effect on the separate at-rest capability.
+    try? Data(RemoteAuth.newToken().utf8).write(to: Orchestrator.tokenURL, options: .atomic)
+    expect("rotating the orchestrator token cannot decrypt or invalidate queued secrets",
+           sealed.flatMap(Orchestrator.openQueuedSecret), secret)
+    check("an invalid sealed value is refused",
+          Orchestrator.openQueuedSecret("not a sealed secret") == nil)
+
+    try? Data("not a key".utf8).write(to: Orchestrator.archiveKeyURL, options: .atomic)
+    let resealed = Orchestrator.sealQueuedSecret(secret)
+    let replacement = try? Data(contentsOf: Orchestrator.archiveKeyURL)
+    check("an unparsable archive key is replaced with a fresh valid one",
+          replacement != keyData
+              && replacement.flatMap { String(data: $0, encoding: .utf8) }
+                  .flatMap { Data(base64Encoded: $0) }?.count == 32)
+    expect("sealing continues after archive-key recovery",
+           resealed.flatMap(Orchestrator.openQueuedSecret), secret)
+
+    var task = Orchestrator.Task(id: taskID, state: .queued, kind: "custom", title: "a task",
+                                 assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30,
+                                 created: Date(), serialize: ["build"],
+                                 secretHash: Orchestrator.hash(ofSecret: secret))
+    task.queuedSecret = sealed
+    let loaded = Orchestrator.task(from: Orchestrator.stored(task))
+    check("restart state keeps the tokens and recoverable secret until the pump starts it",
+          loaded?.serialize == ["build"] && loaded?.queuedSecret == sealed
+              && loaded?.spawnedAt == nil && loaded?.briefedAt == nil)
+}
+
+group("a queued serialized task reports its blockers and cancels immediately") {
+    Orchestrator.forget()
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before {
+            try? before.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Orchestrator.forget()
+    }
+    let holderID = "99999999-9999-9999-9999-999999999999"
+    let waiterID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    func row(_ id: String, state: String, created: Double, sealed: String? = nil)
+        -> [String: Any] {
+        var out: [String: Any] = [
+            "id": id, "state": state, "kind": "custom", "title": "a task",
+            "assistant": "claude", "project_dir": "/tmp", "timeout_minutes": 30,
+            "created": created, "secret_hash": String(repeating: "0", count: 64),
+            "serialize": ["build"], "artifacts": [],
+        ]
+        if let sealed { out["queued_secret"] = sealed }
+        return out
+    }
+    let rows = [
+        row(holderID, state: "briefed", created: 1),
+        row(waiterID, state: "queued", created: 2, sealed: "unused in this test"),
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: ["version": 1, "tasks": rows])
+    try! FileManager.default.createDirectory(at: store.deletingLastPathComponent(),
+                                             withIntermediateDirectories: true)
+    try! data.write(to: store, options: .atomic)
+
+    expect("GET records identify the task currently blocking a serialized waiter",
+           Orchestrator.record(id: waiterID)?["waiting_on"] as? [String], [holderID])
+    _ = Orchestrator.cancel(taskID: waiterID)
+    check("cancelling queued work is observable before cancel returns and opens no child",
+          Orchestrator.record(id: waiterID)?["state"] as? String == "cancelled"
+              && Orchestrator.record(id: waiterID)?["child"] == nil)
+}
+
+group("a queued task scans and types workspace warnings only when promoted") {
+    Orchestrator.forget()
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        Orchestrator.workspaceOverlapObserverForTesting = nil
+        Orchestrator.drainSerializePumpForTesting()
+        if let before {
+            try? before.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Orchestrator.forget()
+    }
+    let holderID = "a1000000-0000-0000-0000-000000000001"
+    let activeID = "a2000000-0000-0000-0000-000000000002"
+    let waiterID = "a3000000-0000-0000-0000-000000000003"
+    let secret = String(repeating: "ab", count: 32)
+    let rows: [[String: Any]] = [
+        [
+            "id": holderID, "state": "briefed", "kind": "custom", "title": "holder",
+            "assistant": "claude", "project_dir": "/unrelated", "timeout_minutes": 30,
+            "created": 1.0, "root_session": "root-holder",
+            "secret_hash": String(repeating: "0", count: 64),
+            "serialize": ["build"], "artifacts": [],
+        ],
+        [
+            "id": activeID, "state": "briefed", "kind": "custom", "title": "active",
+            "assistant": "claude", "project_dir": "/a/b", "timeout_minutes": 30,
+            "created": 2.0, "root_session": "root-active",
+            "secret_hash": String(repeating: "0", count: 64), "artifacts": [],
+        ],
+        [
+            "id": waiterID, "state": "queued", "kind": "custom", "title": "waiter",
+            "assistant": "claude", "project_dir": "/a/b/child", "timeout_minutes": 30,
+            "created": 3.0, "root_session": "root-waiter",
+            "secret_hash": Orchestrator.hash(ofSecret: secret),
+            "serialize": ["build"],
+            "queued_secret": Orchestrator.sealQueuedSecret(secret)!, "artifacts": [],
+        ],
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: ["version": 1, "tasks": rows])
+    try! data.write(to: store, options: .atomic)
+    Orchestrator.load()
+
+    let observedLock = NSLock()
+    var observed: [Orchestrator.WorkspaceOverlapNotice] = []
+    var observedOffMain = false
+    Orchestrator.workspaceOverlapObserverForTesting = { task, overlaps in
+        guard task.id == waiterID else { return }
+        let notices = Orchestrator.workspaceOverlapNotices(newTask: task, overlaps: overlaps)
+        observedLock.lock()
+        observed = notices
+        observedOffMain = !Thread.isMainThread
+        observedLock.unlock()
+    }
+    check("the queued waiter has no dispatch-time workspace warning",
+          Orchestrator.workspaceOverlaps(
+            for: Orchestrator.task(from: rows[2])!,
+            among: [Orchestrator.task(from: rows[1])!]
+          ).isEmpty)
+
+    Orchestrator.finalize(holderID, as: .success, summary: "release")
+    let warned = eventually {
+        observedLock.lock(); defer { observedLock.unlock() }
+        return observed.count == 2
+    }
+    Orchestrator.drainSerializePumpForTesting()
+    observedLock.lock()
+    let lines = observed.map(\.line)
+    let offMain = observedOffMain
+    observedLock.unlock()
+    check("promotion runs the current overlap scan through typed-line notification",
+          warned && lines.allSatisfy { $0.contains("workspace overlap") }
+              && lines.contains { $0.contains(activeID.prefix(8)) })
+    check("promotion and its following terminal spawn run off the main thread", offMain)
+}
+
+group("startup pumps a recoverable serialized waiter exactly once") {
+    Orchestrator.forget()
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before {
+            try? before.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Orchestrator.forget()
+    }
+    let id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    let secret = String(repeating: "d4", count: 32)
+    let row: [String: Any] = [
+        "id": id, "state": "queued", "kind": "custom", "title": "a task",
+        "assistant": "claude", "project_dir": "/path-that-does-not-exist-clawdline-test",
+        "timeout_minutes": 30, "created": Date().timeIntervalSince1970,
+        "secret_hash": Orchestrator.hash(ofSecret: secret), "serialize": ["build"],
+        "queued_secret": Orchestrator.sealQueuedSecret(secret)!, "artifacts": [],
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: ["version": 1, "tasks": [row]])
+    try! data.write(to: store, options: .atomic)
+    Orchestrator.forget()
+
+    Orchestrator.resumeAfterRestart()
+    let pumped = eventually {
+        Orchestrator.record(id: id)?["state"] as? String == "spawn_failed"
+    }
+    Orchestrator.drainSerializePumpForTesting()
+    let record = Orchestrator.record(id: id)
+    check("startup recovered and pumped the waiter rather than leaving it queued",
+          pumped && record?["state"] as? String == "spawn_failed"
+              && (record?["summary"] as? String)?.contains("not_found") == true)
+    let saved = try! JSONSerialization.jsonObject(with: Data(contentsOf: store))
+        as! [String: Any]
+    let savedRow = (saved["tasks"] as! [[String: Any]]).first!
+    check("crossing the startup pump deletes the recoverable secret before opening",
+          savedRow["queued_secret"] == nil && savedRow["state"] as? String == "spawn_failed")
+}
+
+group("every terminal outcome really pumps the next serialized waiter") {
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        Orchestrator.drainSerializePumpForTesting()
+        if let before {
+            try? before.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Orchestrator.forget()
+    }
+    let outcomes: [Orchestrator.State] = [
+        .success, .failure, .timeout, .cancelled, .spawnFailed,
+    ]
+    let holderIDs = [
+        "c0000000-0000-0000-0000-000000000001",
+        "c0000000-0000-0000-0000-000000000002",
+        "c0000000-0000-0000-0000-000000000003",
+        "c0000000-0000-0000-0000-000000000004",
+        "c0000000-0000-0000-0000-000000000005",
+    ]
+    let waiterIDs = [
+        "d0000000-0000-0000-0000-000000000001",
+        "d0000000-0000-0000-0000-000000000002",
+        "d0000000-0000-0000-0000-000000000003",
+        "d0000000-0000-0000-0000-000000000004",
+        "d0000000-0000-0000-0000-000000000005",
+    ]
+
+    for index in outcomes.indices {
+        Orchestrator.forget()
+        let holderID = holderIDs[index]
+        let waiterID = waiterIDs[index]
+        let secret = String(repeating: String(index + 1), count: 64)
+        let rows: [[String: Any]] = [
+            [
+                "id": holderID, "state": "briefed", "kind": "custom", "title": "holder",
+                "assistant": "claude", "project_dir": "/tmp", "timeout_minutes": 30,
+                "created": 1.0, "secret_hash": String(repeating: "0", count: 64),
+                "serialize": ["build"], "artifacts": [],
+            ],
+            [
+                "id": waiterID, "state": "queued", "kind": "custom", "title": "waiter",
+                "assistant": "claude",
+                "project_dir": "/path-that-does-not-exist-clawdline-pump-test-\(index)",
+                "timeout_minutes": 30, "created": 2.0,
+                "secret_hash": Orchestrator.hash(ofSecret: secret),
+                "serialize": ["build"],
+                "queued_secret": Orchestrator.sealQueuedSecret(secret)!, "artifacts": [],
+            ],
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: ["version": 1, "tasks": rows])
+        try! data.write(to: store, options: .atomic)
+        Orchestrator.load()
+
+        Orchestrator.finalize(holderID, as: outcomes[index], summary: "terminal test")
+        let pumped = eventually {
+            Orchestrator.record(id: waiterID)?["state"] as? String == "spawn_failed"
+        }
+        Orchestrator.drainSerializePumpForTesting()
+        let holder = Orchestrator.record(id: holderID)
+        let waiter = Orchestrator.record(id: waiterID)
+        check("\(outcomes[index].rawValue) schedules the pump",
+              pumped && holder?["state"] as? String == outcomes[index].rawValue)
+        check("\(outcomes[index].rawValue) pump spawn failure uses full finalization",
+              waiter?["state"] as? String == "spawn_failed"
+                  && waiter?["finishedAt"] != nil
+                  && (waiter?["summary"] as? String)?.contains("not_found") == true)
+    }
 }
 
 group("a task secret is kept as a hash and compared as one") {
@@ -6846,6 +7216,8 @@ group("a child is told whether it may hand work on, and never has to find out by
           allowed.contains("result.json"))
     check("the token stays this Mac's, not something to pass down",
           allowed.contains("do not hand it to anything you dispatch"))
+    check("the at-rest archive key is never named in a child briefing",
+          !allowed.contains("orchestrator-archive-key") && !allowed.contains("archive key"))
 
     let floor = brief(depth: 2, allowance: 3)
     check("a child already on the floor is told not to dispatch",

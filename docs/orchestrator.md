@@ -47,11 +47,21 @@ So there are three credentials in this feature and they are not interchangeable.
 
 | credential | where it lives | what it can do | what it cannot |
 |---|---|---|---|
-| **Orchestrator token** | `~/.config/clawdline/orchestrator-token`, mode `0600`, minted when the server starts | dispatch, cancel, read every task | it is never served over HTTP, never given to a child, never written under `/tmp`, and never accepted from a device that merely holds a device token |
-| **Task secret** | 64 hex characters, made by the root, handed to the child inside the injected first message | say "this one task is finished" | nothing else. It names one task, it dies with that task, and the app keeps only its SHA-256 |
+| **Orchestrator token** | `~/.config/clawdline/orchestrator-token`, mode `0600`, minted when the server starts | dispatch, cancel, read every task | it is never served over HTTP, never written under `/tmp`, cannot recover a task secret, and is never accepted from a device that merely holds a device token |
+| **Task secret** | 64 hex characters, made by the root, handed to the child inside the injected first message | say "this one task is finished" | nothing else. It names one task and dies with it. Its durable identity is a SHA-256; only a serialized waiter has a temporary encrypted copy for restart recovery |
 | **Device token** | `~/.config/clawdline/remote.json` — the paired phones and browsers from [`docs/remote.md`](remote.md) | read task state; cancel a task, if it has `send` and the write switch is on | **dispatch.** Not with `send`, not with `admin`, not over a tunnel, not ever |
 
 Everything below follows from that table.
+
+There is also one secret that is deliberately **not a credential**:
+`~/.config/clawdline/orchestrator-archive-key`, a random 32-byte key in its own mode-`0600` file.
+The app creates it lazily and replaces it only when the stored bytes do not parse. It encrypts a
+serialized waiter's temporary registry copy at rest so the queue can resume after a restart; it is
+not derived from the orchestrator token, is not accepted by any route, and is never named or
+copied into a child briefing. A child allowed to dispatch may read the orchestrator token exactly
+as its dispatch instructions say, but that ability cannot be exchanged for this at-rest key or a
+queued sibling's task secret. That is how the three request credentials remain non-interchangeable
+without sacrificing restart recovery.
 
 ### Source address means nothing here, exactly as it means nothing there
 
@@ -72,7 +82,10 @@ subresource. An orchestrator route is not a hole in either.
 
 **What this is not a defence against is the same thing nothing at this layer defends against.**
 Something already running as your user can read `orchestrator-token` exactly as it can read
-`~/.ssh/id_ed25519`. If that has happened, this feature is not your problem.
+`~/.ssh/id_ed25519`; it can also directly read the mode-`0600` archive key. Same-uid compromise is
+outside this threat model. The separation above protects the narrower capability boundary of a
+child following its briefing and reading only the orchestrator token, not hostile code already
+running with unrestricted access to the account.
 
 ### Depth stops at two, and the floor is what has teeth
 
@@ -261,6 +274,7 @@ holds a secret: not the orchestrator token, and not the task secret.
   "instructions": "You are in /Users/you/code/clawdline … write the SVG to artifacts/project-portrait.svg",
   "deliverables": ["artifacts/project-portrait.svg"],
   "plan": "root → 3 searchers (haiku) → this one joins them up (opus) → report.md",
+  "serialize": ["build"],
   "timeout_minutes": 30,
   "created_at": "2026-08-24T10:14:02Z",
   "root": {
@@ -290,6 +304,7 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `model` | optional. `[a-z0-9._-]`, at most 64 characters, not starting with `-`. Absent means that assistant's own default |
 | `permission_mode` | optional. `ask` · `edits` · `full`. Absent takes `orchestrator_permission`, which is also the ceiling — asking for more than it gives you it instead |
 | `plan` | optional, ≤ 4 KiB. The whole graph this task is one node of |
+| `serialize` | optional array of 0…4 unique operation names. Each uses the `model` token rule: 1…64 characters from `[a-z0-9._-]`, not starting with `-` |
 | `project_dir` | absolute, exists, and is a directory — checked at dispatch, not at planning time |
 | `title` | ≤ 200 characters |
 | `instructions` | non-empty, ≤ 16 KiB |
@@ -333,9 +348,44 @@ it is what gets a task filed under its actual parent on the first try instead of
 root's. Getting it wrong costs capacity and never buys any — [the two names are combined by taking
 the deeper answer](#depth-stops-at-two-and-the-floor-is-what-has-teeth).
 
+### Serializing a machine-global operation
+
+`serialize` names scarce operations rather than directories. For example, two tasks that both run
+the build can use `"serialize":["build"]` when the build writes a fixed binary under `TMPDIR`.
+Without that mutex, two otherwise unrelated roots can overwrite the same output — `test.sh`'s
+fixed `${TMPDIR}/clawdline-tests` path is a real example.
+
+The namespace is machine-global and deliberately ignores roots. A task acquires all of its names
+together as it leaves `queued`, and holds them through `spawning` and `briefed` until any terminal
+state. If any name is held, it stays queued. Waiters sharing a name are FIFO by creation time (task
+id breaks an equal timestamp), including waiters from another root. A multi-name request never
+holds a subset: `['build','database']` waits until both are free, so crossed token orders cannot
+deadlock. Tasks with no `serialize` field take the old path unchanged.
+
+A queued response and every GET record include `"waiting_on":["<task-id>",…]` when blockers
+exist; the field is absent when there are none. It can name a current holder or an older queued
+waiter entitled to a shared name first. Cancelling a queued task is immediate, opens no tab, and
+pumps the next eligible waiter. Every other terminal outcome pumps the same queue, and startup
+pumps it once as well. A queued task already occupies its dispatcher's children/grandchildren
+slot and the machine-wide descendants slot; counting registration rather than open tabs prevents
+an unbounded queue from bypassing the capacity limits.
+
+To make that startup handoff possible, only a serialized task still waiting has an encrypted copy
+of its task secret in the app's `0600` orchestrator registry. The independent random at-rest key
+described in the credential section persists across restarts; neither the orchestrator token nor
+any device or task credential can derive it. The sealed copy is removed before the task starts
+opening; a spawning task still follows the existing fail-closed restart rule. Waiting does not
+consume the work timeout: as for every task, `timeout_minutes` begins at `briefedAt`.
+
+Queued tasks are excluded from workspace-overlap scans because they have opened no tab and touched
+no file. When the background pump promotes one to `spawning`, it scans the then-current active
+tasks. The original dispatch response has already returned, so any overlap warning is delivered as
+the same best-effort typed `[clawdline]` line at promotion rather than retroactively added to that
+response.
+
 ### When two roots share a workspace
 
-A successful dispatch also looks at every task still in `queued`, `spawning` or `briefed`. If one
+A successful dispatch also looks at every task in `spawning` or `briefed`. If one
 from a different root is working in the same `project_dir`, or one directory is an ancestor of the
 other, the reply carries a `warnings` array beside `task`:
 
@@ -392,10 +442,11 @@ from the moment it appears; and a Codex child's thread is named the same way thr
 app-server, so `codex resume` lists it by what it did rather than by the first line it was handed. A tab that opens and starts working in silence is a tab nobody can tell apart from a
 stray one; a tab that says what it was sent to do is a child.
 
-**The secret is in the message and not in the file**, and that asymmetry is the whole design.
-`CHILD.md` sits in a directory; the message goes into a terminal's input. A file on disk is a thing
-that can be read later, by something else, after the task is over. The plaintext secret exists in
-the app's memory from dispatch until injection and is dropped the moment the line lands.
+**The secret is in the message and not in the task directory**, and that asymmetry is the whole
+design. `CHILD.md` sits in a directory; the message goes into a terminal's input. A file there is a
+thing that can be read later, by something else, after the task is over. The plaintext secret stays
+in app memory until the child's own transcript proves the line landed. A serialized waiter also
+has the temporary encrypted registry copy described above; it is deleted before spawning.
 
 ### `result.json` — written by the child, and it *is* the signal
 
@@ -436,13 +487,14 @@ queued ──▶ spawning ──▶ briefed ──┬─▶ success
 ```
 
 **queued** — registered. The task.json validated, the secret's hash stored, the caps checked. A task
-is in this state for as long as it takes to ask the terminal for a tab, which is normally not long
-enough to observe.
+without `serialize` is here only until the terminal is asked for a tab. A serialized task remains
+here until every requested operation is free; `waiting_on` says which older tasks stand ahead.
 
-**spawning** — a tab exists. The app asked its normal start-a-session machinery for one, in
-`project_dir`, running the requested assistant — the same path `POST /v1/places/:id/start` uses, so
-a Mac where that works is a Mac where this works. A refusal here (no terminal running, a terminal
-that cannot be driven) is `spawn_failed` with the reason kept.
+**spawning** — all serialized operations, if any, have been acquired and the app is opening a tab.
+Once it exists, `spawnedAt` and `child.terminalId` appear. The app uses its normal start-a-session
+machinery in `project_dir`, running the requested assistant — the same path
+`POST /v1/places/:id/start` uses, so a Mac where that works is a Mac where this works. A refusal
+here (no terminal running, a terminal that cannot be driven) is `spawn_failed` with the reason kept.
 
 **briefed** — the child's own record shows the first message as a turn it received. Getting here is
 the fiddly part, and it is worth knowing what the app is waiting for, because it explains the delay.
@@ -518,9 +570,9 @@ more.
 
 **spawn_failed** — the tab never happened, or never got briefed inside four minutes, or was typed
 into five times without the child ever recording the message, or the app was restarted while the
-task was still in `queued`/`spawning`. That last one is not a bug: the plaintext
-secret lived only in memory, so a task that had not been briefed before a restart can never be
-briefed, and saying so beats leaving a row that will sit at `spawning` forever.
+task was in `spawning`. That last one is not a bug: once a task starts opening, the recoverable
+queued secret is gone, so the app fails closed rather than risk opening the same global operation
+twice. A serialized task that was still `queued` is recovered and pumped instead.
 
 **A briefed task survives a restart.** Its secret is on disk as a hash, `result.json` is on disk as
 a file, and the timeout is arithmetic on a stored timestamp. So the app comes back up, reads the

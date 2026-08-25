@@ -14,7 +14,8 @@ import Foundation
 /// **Two credentials, deliberately not one.** Dispatching is gated by a token in a `0600` file —
 /// the same boundary `remote-token` uses, and for the same reason: through a tunnel every request
 /// arrives from 127.0.0.1, so "local" is a thing only the filesystem can prove, and a paired
-/// phone must never be able to start sessions. A child never sees that token. It gets a per-task
+/// phone must never be able to start sessions. A child allowed to dispatch can read that token;
+/// it still cannot exchange it for another task's secret. Every child gets its own per-task
 /// secret, typed into its first message and good for exactly one thing: finishing its own task.
 /// Only the secret's SHA-256 is kept once the child has been briefed.
 enum Orchestrator {
@@ -90,6 +91,9 @@ enum Orchestrator {
         /// the briefing so a leaf knows what its output feeds — which is the difference between
         /// a usable answer and an essay.
         var plan: String?
+        /// Machine-global operation names acquired together when this task leaves `queued`.
+        /// A queued task holds none; a spawning or briefed task holds every name in this list.
+        var serialize: [String] = []
         var childTerminalId: String?
         var childBackend: Backend?
         var childTTY: String?
@@ -101,6 +105,9 @@ enum Orchestrator {
         /// expire when Claude rotates the file or the file is temporarily unavailable.
         var transcriptProven = false
         var secretHash: String
+        /// The task secret encrypted with a key local to this installation. It exists only while
+        /// a serialized task waits, so a restart can resume the queue without storing plaintext.
+        var queuedSecret: String?
         var summary: String?
         var artifacts: [String] = []
         var usage: Usage?
@@ -405,8 +412,19 @@ enum Orchestrator {
 
     static var storeURL: URL { RemoteAuth.directory.appendingPathComponent("orchestrator.json") }
     static var tokenURL: URL { RemoteAuth.directory.appendingPathComponent("orchestrator-token") }
+    static var archiveKeyURL: URL {
+        RemoteAuth.directory.appendingPathComponent("orchestrator-archive-key")
+    }
 
     private static let lock = NSLock()
+    /// Opening a terminal is bounded, not cheap: iTerm automation alone may wait 15 seconds.
+    /// Pumps arrive from main-thread finalization and startup as well as the remote server, so
+    /// they get the same off-main serial shape as ordinary dispatch without competing pumps.
+    private static let serializePumpQueue = DispatchQueue(
+        label: "dev.sainteye.clawdline.orchestrator.serialize")
+    /// A background pump and a new remote dispatch may both persist. Serializing the whole
+    /// snapshot-and-write prevents an older snapshot from winning the atomic rename last.
+    private static let storeSaveLock = NSLock()
     private static var loaded = false
     private static var tasks: [String: Task] = [:]
     /// How many `beat` walks are inside the loop, and which walk this is. Both exist to catch the
@@ -416,6 +434,8 @@ enum Orchestrator {
     /// Plaintext secrets, held only between dispatch and briefing. Never on disk.
     private static var secrets: [String: String] = [:]
     private static var dispatchTimes: [Date] = []
+    /// Test seam: observes the warning decision before optional terminal delivery.
+    static var workspaceOverlapObserverForTesting: ((Task, [WorkspaceOverlap]) -> Void)?
     /// Child terminal id → task title, rebuilt whenever the tasks change. Read on every redraw
     /// of every session row, which is why it is a dictionary and not a walk over the tasks.
     private static var titlesByTerminal: [String: String] = [:]
@@ -538,6 +558,47 @@ enum Orchestrator {
         RemoteAuth.hex(SHA256.hash(data: Data(secret.utf8)))
     }
 
+    /// The at-rest key is not a request credential and is deliberately unrelated to every one.
+    /// It is minted lazily, persists so queued work survives a restart, and is replaced only when
+    /// the file is missing or no longer parses as exactly 32 random bytes.
+    static func archiveKey() -> SymmetricKey {
+        lock.lock(); defer { lock.unlock() }
+        let encoded = try? String(contentsOf: archiveKeyURL, encoding: .utf8)
+        if let encoded,
+           let seed = Data(base64Encoded:
+                encoded.trimmingCharacters(in: .whitespacesAndNewlines)),
+           seed.count == 32 {
+            return SymmetricKey(data: seed)
+        }
+        if encoded != nil {
+            Log.write("orchestrator: the stored archive key will not parse — minting a new one; "
+                + "serialized tasks queued under the old key will fail closed")
+        }
+        let made = SymmetricKey(size: .bits256)
+        let seed = made.withUnsafeBytes { Data($0) }
+        try? FileManager.default.createDirectory(at: archiveKeyURL.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        try? Data(seed.base64EncodedString().utf8).write(to: archiveKeyURL, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                               ofItemAtPath: archiveKeyURL.path)
+        return made
+    }
+
+    /// A serialized waiter has to survive an app restart, but the secret eventually typed into
+    /// its child must not be stored as plaintext. The sealed value is removed before the task
+    /// starts opening.
+    static func sealQueuedSecret(_ secret: String) -> String? {
+        return (try? ChaChaPoly.seal(Data(secret.utf8), using: archiveKey()).combined)?
+            .base64EncodedString()
+    }
+
+    static func openQueuedSecret(_ sealed: String) -> String? {
+        guard let data = Data(base64Encoded: sealed),
+              let box = try? ChaChaPoly.SealedBox(combined: data) else { return nil }
+        guard let clear = try? ChaChaPoly.open(box, using: archiveKey()) else { return nil }
+        return String(data: clear, encoding: .utf8)
+    }
+
     // MARK: - Reading the task a root wrote
 
     /// Everything a task.json has to say before anything is spawned from it. Pure, so a test can
@@ -558,6 +619,7 @@ enum Orchestrator {
         var rootLabel: String?
         var parentTaskId: String?
         var plan: String?
+        var serialize: [String] = []
     }
 
     /// A live task whose working directory intersects the one being dispatched. The task is a
@@ -623,6 +685,31 @@ enum Orchestrator {
         if let plan = obj["plan"] as? String, plan.utf8.count > planLimit {
             return .bad("plan must be at most \(planLimit / 1024) KiB")
         }
+        var serialize: [String] = []
+        if let raw = obj["serialize"] {
+            guard let values = raw as? [Any] else {
+                return .bad("serialize must be an array of at most 4 tokens")
+            }
+            var errors: [String] = []
+            if values.count > 4 { errors.append("serialize must contain at most 4 tokens") }
+            var seen: Set<String> = []
+            for (index, value) in values.enumerated() {
+                guard let token = value as? String else {
+                    errors.append("serialize[\(index)] must be a string")
+                    continue
+                }
+                let duplicate = !seen.insert(token).inserted
+                if StartPoints.modelName(token) != token {
+                    errors.append("serialize[\(index)] must be 1–64 lower-case letters, digits, "
+                                + ". _ -, and not begin with -")
+                }
+                if duplicate {
+                    errors.append("serialize[\(index)] duplicates \(token)")
+                }
+                serialize.append(token)
+            }
+            if !errors.isEmpty { return .bad(errors.joined(separator: "; ")) }
+        }
         var permission: Permission?
         if let named = obj["permission_mode"] as? String, !named.isEmpty {
             guard let ok = Permission(rawValue: named) else {
@@ -636,6 +723,7 @@ enum Orchestrator {
         made.assistant = assistant
         made.model = model
         made.permission = permission
+        made.serialize = serialize
         made.plan = (obj["plan"] as? String).flatMap {
             let text = $0.trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : text
@@ -664,6 +752,31 @@ enum Orchestrator {
     static func isTaskID(_ id: String) -> Bool {
         guard id.count == 36 else { return false }
         return id.allSatisfy { ("a"..."f").contains($0) || $0.isNumber || $0 == "-" }
+    }
+
+    /// Current holders followed by older waiters entitled to a shared token first. Roots are
+    /// deliberately absent from this comparison: the namespace covers the whole machine. Every
+    /// token in a request is considered together, so a queued multi-token task holds none of them.
+    static func serializeBlockers(for candidate: Task, among existing: [Task]) -> [Task] {
+        guard candidate.state == .queued, !candidate.serialize.isEmpty else { return [] }
+        let wanted = Set(candidate.serialize)
+        func earlier(_ task: Task) -> Bool {
+            task.created < candidate.created
+                || (task.created == candidate.created && task.id < candidate.id)
+        }
+        return existing.filter { task in
+            guard task.id != candidate.id,
+                  !wanted.isDisjoint(with: task.serialize) else { return false }
+            if task.state == .spawning || task.state == .briefed { return true }
+            return task.state == .queued && earlier(task)
+        }.sorted { left, right in
+            if left.created == right.created { return left.id < right.id }
+            return left.created < right.created
+        }
+    }
+
+    private static func serializeBlockersLocked(for candidate: Task) -> [Task] {
+        serializeBlockers(for: candidate, among: Array(tasks.values))
     }
 
     /// The directory both tasks may write, or nil when their paths are merely string prefixes.
@@ -711,10 +824,11 @@ enum Orchestrator {
     private static func workspaceOverlaps(for newTask: Task, rootKey newRoot: String,
                                           among existing: [(task: Task, rootKey: String)])
         -> [WorkspaceOverlap] {
-        guard !newTask.state.isTerminal else { return [] }
+        guard newTask.state == .spawning || newTask.state == .briefed else { return [] }
         return existing.compactMap { item -> WorkspaceOverlap? in
             let task = item.task
-            guard task.id != newTask.id, !task.state.isTerminal,
+            guard task.id != newTask.id,
+                  task.state == .spawning || task.state == .briefed,
                   item.rootKey != newRoot,
                   let shared = sharedWorkspaceDirectory(newTask.projectDir, task.projectDir)
             else { return nil }
@@ -822,7 +936,14 @@ enum Orchestrator {
                         timeoutMinutes: made.timeoutMinutes, created: Date(),
                         rootSessionId: made.rootSessionId, rootLabel: made.rootLabel,
                         depth: depth, parentTaskId: made.parentTaskId, plan: made.plan,
+                        serialize: made.serialize,
                         secretHash: hash(ofSecret: secret))
+        if !task.serialize.isEmpty {
+            guard let sealed = sealQueuedSecret(secret) else {
+                return .refused(500, "internal", "Could not protect the queued task secret.")
+            }
+            task.queuedSecret = sealed
+        }
         lock.lock()
         tasks[taskID] = task
         secrets[taskID] = secret
@@ -834,13 +955,19 @@ enum Orchestrator {
                                                    "permission": permission.rawValue])
 
         // Straight away rather than on the next beat: the root is holding its breath on this
-        // request, and the answer should already say whether a terminal actually opened.
-        task = spawn(task)
-        _ = replaceTask(task, expecting: .queued, discardSecret: task.state.isTerminal)
+        // request, and the answer should already say whether a terminal opened or which older
+        // serialized work left this task queued.
+        let needsPump = !task.serialize.isEmpty
+        if !needsPump {
+            task = spawn(task)
+            _ = replaceTask(task, expecting: .queued, discardSecret: task.state.isTerminal)
+        }
         save()
         DispatchQueue.main.async { SessionWatch.shared.nudge() }
         RemoteServer.shared.broadcastOrchestrator()
-        return successfulDispatchReply(for: task, notify: true)
+        let reply = successfulDispatchReply(for: task, notify: true)
+        if needsPump { scheduleSerializePump() }
+        return reply
     }
 
     /// One response builder for both the first request and an idempotent retry. The scan happens
@@ -856,6 +983,7 @@ enum Orchestrator {
 
     private static func spawn(_ task: Task) -> Task {
         var task = task
+        task.queuedSecret = nil
         let place = StartPoints.Place(id: StartPoints.id(for: task.projectDir),
                                       path: task.projectDir,
                                       label: task.title, at: Date())
@@ -888,6 +1016,97 @@ enum Orchestrator {
             task.childBackend = backend
         }
         return task
+    }
+
+    /// Move one eligible waiter to `spawning` under the scheduling lock before opening anything.
+    /// That state change is the atomic acquisition of all its names. Persisting it first also
+    /// makes a crash fail closed: startup will not open a second tab for an operation that may
+    /// already have crossed the external side-effect boundary.
+    private static func startQueuedTaskIfEligible(_ id: String) -> Task? {
+        lock.lock()
+        guard let snapshot = tasks[id], snapshot.state == .queued,
+              serializeBlockersLocked(for: snapshot).isEmpty else {
+            lock.unlock()
+            return nil
+        }
+        let inMemorySecret = secrets[id]
+        lock.unlock()
+
+        let clear = inMemorySecret ?? snapshot.queuedSecret.flatMap(openQueuedSecret)
+        guard let clear,
+              RemoteAuth.constantTimeEquals(snapshot.secretHash, hash(ofSecret: clear)) else {
+            let fail = {
+                finalize(id, as: .spawnFailed,
+                         summary: "The queued task secret could not be recovered.",
+                         pumpQueue: false)
+            }
+            if Thread.isMainThread { fail() } else { DispatchQueue.main.sync(execute: fail) }
+            return held(id)
+        }
+
+        lock.lock()
+        guard var starting = tasks[id], starting.state == .queued,
+              serializeBlockersLocked(for: starting).isEmpty else {
+            lock.unlock()
+            return nil
+        }
+        starting.state = .spawning
+        starting.queuedSecret = nil
+        tasks[id] = starting
+        secrets[id] = clear
+        lock.unlock()
+        save()
+
+        // A queued task has not touched the workspace and is excluded from L1. Promotion is the
+        // first moment its warning is meaningful, so queued dispatches receive it as a typed line
+        // instead of in the HTTP response that has already gone back.
+        let overlaps = workspaceOverlaps(for: starting)
+        notifyWorkspaceOverlaps(newTask: starting, overlaps: overlaps)
+
+        let opened = spawn(starting)
+        if opened.state == .spawnFailed {
+            let fail = {
+                finalize(id, as: .spawnFailed, summary: opened.summary, pumpQueue: false)
+            }
+            if Thread.isMainThread { fail() } else { DispatchQueue.main.sync(execute: fail) }
+            return held(id)
+        }
+        guard replaceTask(opened, expecting: .spawning) else { return nil }
+        return held(id)
+    }
+
+    /// Start every queued serialized task that can acquire all of its names together. A pass may
+    /// start several disjoint operations; FIFO keeps a later user behind every older shared name.
+    @discardableResult
+    private static func pumpSerializeQueue() -> Bool {
+        var changed = false
+        while true {
+            lock.lock()
+            let next = tasks.values
+                .filter { $0.state == .queued && !$0.serialize.isEmpty }
+                .sorted {
+                    if $0.created == $1.created { return $0.id < $1.id }
+                    return $0.created < $1.created
+                }
+                .first { serializeBlockersLocked(for: $0).isEmpty }
+            lock.unlock()
+            guard let next else { break }
+            guard startQueuedTaskIfEligible(next.id) != nil else { continue }
+            changed = true
+        }
+        if changed {
+            save()
+            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+            RemoteServer.shared.broadcastOrchestrator()
+        }
+        return changed
+    }
+
+    /// Serialize pumps rather than opening on their callers. A pump-triggered spawn failure
+    /// finalizes on main with `pumpQueue: false`; the outer pass is already responsible for the
+    /// next waiter, so it cannot recurse back into itself.
+    private static func scheduleSerializePump() {
+        serializePumpQueue.async { _ = pumpSerializeQueue() }
     }
 
     /// Ten dispatches in ten minutes, or one full tree's worth, whichever is more.
@@ -982,11 +1201,25 @@ enum Orchestrator {
             guard let below = held(id) else { continue }
             RemoteAuth.audit("orchestrator.cancel", ["task": id, "why": "parent_cancelled",
                                                      "parent": taskID])
-            cancelInPlace(below)
+            if below.state == .queued {
+                let finish = {
+                    finalize(below.id, as: .cancelled, summary: "Cancelled with its parent.",
+                             pumpQueue: false)
+                }
+                if Thread.isMainThread { finish() }
+                else { DispatchQueue.main.sync(execute: finish) }
+            } else {
+                cancelInPlace(below)
+            }
         }
-        cancelInPlace(task)
-        // The record it answers with still says the old state — finalize runs on main a moment
-        // later — so the state is overridden here for the reply alone.
+        if task.state == .queued {
+            let finish = { finalize(task.id, as: .cancelled, summary: "Cancelled.") }
+            if Thread.isMainThread { finish() } else { DispatchQueue.main.sync(execute: finish) }
+        } else {
+            cancelInPlace(task)
+        }
+        // A running child's polite exit finalizes asynchronously. A waiter has no child to end
+        // and is finalized synchronously, so cancelling queued work is immediately observable.
         var record = existingRecord(taskID) ?? [:]
         record["state"] = State.cancelled.rawValue
         return .ok(["ok": true, "task": record])
@@ -1231,21 +1464,7 @@ enum Orchestrator {
         // its first dispatch, and a file that appears only after a request nobody can make yet
         // is a door that opens from the inside.
         _ = dispatchToken()
-        // Anything the previous process was mid-way through briefing is unbriefable now: the
-        // plaintext secret died with that process, and typing a secret we no longer hold is not
-        // a thing that can be retried.
-        var orphaned: [String] = []
-        lock.lock()
-        for (id, task) in tasks where task.state == .queued || task.state == .spawning {
-            var dead = task
-            dead.state = .spawnFailed
-            dead.summary = "The app restarted before the child was briefed."
-            dead.finishedAt = Date()
-            tasks[id] = dead
-            orphaned.append(id)
-        }
-        lock.unlock()
-        if !orphaned.isEmpty { save() }
+        resumeAfterRestart()
         cleanup()
         SessionWatch.shared.observers["orchestrator"] = { beat(fromTimer: false) }
         let t = Timer(timeInterval: 5, repeats: true) { _ in beat(fromTimer: true) }
@@ -1254,6 +1473,46 @@ enum Orchestrator {
         let c = Timer(timeInterval: 6 * 3600, repeats: true) { _ in cleanup() }
         RunLoop.main.add(c, forMode: .common)
         cleanupTimer = c
+    }
+
+    /// Recover waiters and fail tasks whose pre-briefing secret died with the previous process.
+    /// Separate from timer wiring so the restart handoff can be exercised without opening a live
+    /// app lifecycle in the unit suite.
+    static func resumeAfterRestart() {
+        load()
+        // Anything mid-way through briefing is unbriefable now: its plaintext secret died with
+        // the process. A serialized task that never left queued is different — its temporary
+        // sealed copy can be opened with this installation's at-rest key and pumped below.
+        var orphaned: [String] = []
+        var recovered: [String: String] = [:]
+        lock.lock()
+        let restartRows = tasks.values.filter { $0.state == .queued || $0.state == .spawning }
+        lock.unlock()
+        for task in restartRows where task.state == .queued && !task.serialize.isEmpty {
+            if let sealed = task.queuedSecret, let secret = openQueuedSecret(sealed),
+               RemoteAuth.constantTimeEquals(task.secretHash, hash(ofSecret: secret)) {
+                recovered[task.id] = secret
+            }
+        }
+        lock.lock()
+        for (id, task) in tasks where task.state == .queued || task.state == .spawning {
+            if task.state == .queued, let secret = recovered[id] {
+                secrets[id] = secret
+                continue
+            }
+            var dead = task
+            dead.state = .spawnFailed
+            dead.summary = task.state == .queued && !task.serialize.isEmpty
+                ? "The app restarted but could not recover the queued task secret."
+                : "The app restarted before the child was briefed."
+            dead.finishedAt = Date()
+            dead.queuedSecret = nil
+            tasks[id] = dead
+            orphaned.append(id)
+        }
+        lock.unlock()
+        if !orphaned.isEmpty { save() }
+        scheduleSerializePump()
     }
 
     /// Main thread. Advances every live task one step; cheap when nothing is live.
@@ -1789,12 +2048,14 @@ enum Orchestrator {
     // MARK: - Finalize
 
     /// Main thread. The one place a task ends, whatever ended it.
-    private static func finalize(_ taskID: String, as outcome: State,
-                                 summary: String?, artifacts: [String] = []) {
+    static func finalize(_ taskID: String, as outcome: State,
+                         summary: String?, artifacts: [String] = [],
+                         pumpQueue: Bool = true) {
         lock.lock()
         guard var task = tasks[taskID], !task.state.isTerminal else { lock.unlock(); return }
         task.state = outcome
         task.finishedAt = Date()
+        task.queuedSecret = nil
         if let summary { task.summary = summary }
         if !artifacts.isEmpty { task.artifacts = artifacts }
         secrets.removeValue(forKey: taskID)
@@ -1844,6 +2105,7 @@ enum Orchestrator {
         notifyRoot(task)
         noteEnded(task)
         endWorkHandedOnBy(task)
+        if pumpQueue { scheduleSerializePump() }
     }
 
     /// A finished task takes whatever it handed on with it.
@@ -1855,13 +2117,28 @@ enum Orchestrator {
     /// watching its tab, and on the list it sits at the top level with a `Child` chip and no row
     /// above it, which is the shape somebody reported as a bug in the grouping.
     ///
-    /// Off the main thread on purpose: `cancelInPlace` types a quit word and waits for the tab to
-    /// actually go. `finalize` runs on main.
+    /// Queued descendants are finalized on main before the serialize pump can open them. Running
+    /// descendants move off the main thread because `cancelInPlace` types a quit word and waits
+    /// for the tab to actually go.
     private static func endWorkHandedOnBy(_ task: Task) {
         let below = liveTasks(under: [task.id])
         guard !below.isEmpty else { return }
+        var running: [String] = []
+        for id in below {
+            guard let child = held(id) else { continue }
+            if child.state == .queued {
+                RemoteAuth.audit("orchestrator.cancel", ["task": id, "why": "parent_finished",
+                                                         "parent": task.id,
+                                                         "parentState": task.state.rawValue])
+                finalize(id, as: .cancelled, summary: "Cancelled because its parent finished.",
+                         pumpQueue: false)
+            } else {
+                running.append(id)
+            }
+        }
+        guard !running.isEmpty else { return }
         DispatchQueue.global(qos: .utility).async {
-            for id in below {
+            for id in running {
                 guard let child = held(id) else { continue }
                 RemoteAuth.audit("orchestrator.cancel", ["task": id, "why": "parent_finished",
                                                          "parent": task.id,
@@ -1928,6 +2205,7 @@ enum Orchestrator {
     /// record as the durable answer and never changes the dispatch outcome.
     private static func notifyWorkspaceOverlaps(newTask: Task,
                                                 overlaps: [WorkspaceOverlap]) {
+        workspaceOverlapObserverForTesting?(newTask, overlaps)
         guard Config.shared.orchestratorNotifyRoot else { return }
         let notices = workspaceOverlapNotices(newTask: newTask, overlaps: overlaps)
         guard !notices.isEmpty else { return }
@@ -2662,6 +2940,12 @@ enum Orchestrator {
         ]
         if let model = task.model { out["model"] = model }
         out["permission"] = task.permission.rawValue
+        if task.state == .queued, !task.serialize.isEmpty {
+            lock.lock()
+            let waiting = serializeBlockersLocked(for: task).map(\.id)
+            lock.unlock()
+            if !waiting.isEmpty { out["waiting_on"] = waiting }
+        }
         if let at = task.spawnedAt { out["spawnedAt"] = Int(at.timeIntervalSince1970) }
         if let at = task.briefedAt { out["briefedAt"] = Int(at.timeIntervalSince1970) }
         if let at = task.finishedAt { out["finishedAt"] = Int(at.timeIntervalSince1970) }
@@ -2712,6 +2996,7 @@ enum Orchestrator {
     }
 
     private static func save() {
+        storeSaveLock.lock(); defer { storeSaveLock.unlock() }
         lock.lock()
         reindex()
         let rows = tasks.values.sorted { $0.created < $1.created }.map { stored($0) }
@@ -2754,6 +3039,8 @@ enum Orchestrator {
         if let v = task.model { out["model"] = v }
         out["permission"] = task.permission.rawValue
         if let v = task.plan { out["plan"] = v }
+        if !task.serialize.isEmpty { out["serialize"] = task.serialize }
+        if let v = task.queuedSecret { out["queued_secret"] = v }
         if let v = task.childTerminalId { out["child_terminal"] = v }
         if let v = task.childBackend { out["child_backend"] = v.rawValue }
         if let v = task.childTTY { out["child_tty"] = v }
@@ -2797,6 +3084,10 @@ enum Orchestrator {
         task.model = StartPoints.modelName(obj["model"] as? String)
         task.permission = (obj["permission"] as? String).flatMap(Permission.init(rawValue:)) ?? .ask
         task.plan = obj["plan"] as? String
+        task.serialize = (obj["serialize"] as? [String] ?? []).filter {
+            StartPoints.modelName($0) == $0
+        }
+        task.queuedSecret = obj["queued_secret"] as? String
         // A registry written before tasks had a depth holds only tasks a root dispatched, which
         // is exactly what 1 means.
         task.depth = (obj["depth"] as? Int).map { min(max($0, 1), 9) } ?? 1
@@ -2893,11 +3184,31 @@ enum Orchestrator {
         tasks = [:]
         secrets = [:]
         dispatchTimes = []
+        workspaceOverlapObserverForTesting = nil
         titlesByTerminal = [:]
         loaded = false
         lock.unlock()
         ownershipLock.lock()
         ownershipCache = [:]
         ownershipLock.unlock()
+    }
+
+    /// Test seam: wait until every pump already scheduled has finished. Callers first keep the
+    /// main run loop moving until any main-thread finalization has happened, so this cannot wait
+    /// on a pump that is itself waiting on main.
+    @discardableResult
+    static func drainSerializePumpForTesting(timeout: TimeInterval = 3) -> Bool {
+        let done = DispatchSemaphore(value: 0)
+        serializePumpQueue.async { done.signal() }
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if done.wait(timeout: .now()) == .success { return true }
+            if Thread.isMainThread {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            } else {
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+        } while Date() < deadline
+        return done.wait(timeout: .now()) == .success
     }
 }

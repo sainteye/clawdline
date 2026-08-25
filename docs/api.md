@@ -963,9 +963,9 @@ Six refusals, and a client should branch on all of them:
 | `code` | status | |
 |---|---|---|
 | `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
-| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including a `model` that is not a model name, a `permission_mode` that is not one of the three, or a `plan` past 4 KiB. `message` names the field |
+| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an invalid `model`, `permission_mode`, `plan`, or `serialize`. `serialize` is at most four unique 1…64-character tokens using `[a-z0-9._-]` and not starting with `-`; `message` names every invalid item |
 | `depth_exceeded` | 409 | **the caller is already as deep as this Mac goes.** A root's child may dispatch; that child's may not. `orchestrator_max_grandchildren` of `0` puts the floor back at one level. Not a retry — stop |
-| `over_capacity` | 429 | this dispatcher's slots are full (`orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child), or the whole Mac's are. The error object carries `retry_after` in seconds, and `message` says which |
+| `over_capacity` | 429 | this dispatcher's slots are full (`orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child), or the whole Mac's are. Registered `queued` tasks count toward these limits even before a tab opens, preventing an unbounded queue. The error object carries `retry_after` in seconds, and `message` says which |
 | `rate_limited` | 429 | more than ten dispatches in ten minutes, or more than one full tree's worth if that is larger |
 | `not_found` | 404 | this build has no orchestrator |
 
@@ -977,6 +977,20 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
 
 A `200` means *registered and being opened*, not *running*. `state` is `queued` or `spawning` when
 this answers and the child has typed nothing yet; watch the record, or wait to be told.
+
+An optional `serialize` array in `task.json` makes named operations machine-global mutexes. A task
+leaves `queued` only when it can acquire every name together; shared names are FIFO across roots,
+and every terminal state releases all of them. While blocked, the response's task record carries
+`"waiting_on":["<task-id>",…]`; the field is absent when nothing blocks it. Queue waiting does not
+consume `timeout_minutes`, whose clock starts at `briefedAt`. Cancelling a queued task is immediate.
+Queued tasks do count toward children/grandchildren and machine-wide descendant capacity from the
+moment they are registered.
+See [Serializing a machine-global operation](orchestrator.md#serializing-a-machine-global-operation)
+for token rules, multi-name atomicity, and restart behavior.
+
+```json
+{"ok":true,"task":{"id":"3f9a21bc-…","state":"queued","waiting_on":["a70c5e11-…"]}}
+```
 
 It may also carry `warnings` beside `task`. Today the only warning is advisory workspace overlap:
 
@@ -996,6 +1010,11 @@ warning never blocks or delays registration; with no overlaps the entire field i
 empty array. An idempotent retry uses this same response shape and recomputes currently active
 overlaps. Both identifiable roots also receive a best-effort typed line outside the request queue,
 so terminal delivery cannot delay the response.
+
+`queued` tasks are not active for this overlap scan: they have not opened a tab or touched a file.
+When a serialized task is promoted to `spawning`, the pump runs the scan against the active world
+at that moment. Its dispatch response is already gone, so a newly found overlap is sent only as the
+same best-effort typed line to identifiable roots; it is not added retroactively to the response.
 
 ### `GET /v1/orchestrator/tasks`, `GET /v1/orchestrator/tasks/:id`
 
@@ -1046,8 +1065,11 @@ The record:
 }
 ```
 
-**The secret is not in here and never will be** — the app keeps its SHA-256 and nothing else, so
-there is no shape of this reply that could disclose it.
+**The secret is not in here and never will be.** The durable identity is its SHA-256. While a
+serialized task is still queued, the app also keeps a temporary encrypted copy in its private
+registry so startup can resume the queue; it is removed before spawning and never enters an API
+record. The at-rest key is a dedicated random 32-byte value in the app's private config directory,
+not a value derived from any request credential.
 
 `child.terminalId` is in the same space as every `id` in `/v1/sessions`, which is what makes the
 child row in a session list joinable to the task that opened it. `root.terminalId` is resolved live
@@ -1058,6 +1080,8 @@ the floor, so a client never has to draw a third level. `usage` appears at final
 is best-effort: `costUsd` is `null` for any model without a published per-token price, which is
 every OpenAI one, since Codex bills against a plan. Tokens are still counted. Null fields are
 omitted the way they are everywhere else on this API — read by name, and treat absent as unknown.
+`waiting_on` follows the same rule: it is present only on a queued serialized task with blockers,
+and it may name a current holder or an older FIFO waiter.
 
 The same payload goes out on [the event stream](#the-event-stream) as an `orchestrator` frame
 whenever any record changes, and once when a stream opens, right after `hello` and `sessions`.
