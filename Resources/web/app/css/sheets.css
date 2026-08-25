@@ -39,7 +39,16 @@
 /* A key named inside one of these sentences, drawn the way the shortcuts card draws one — the
    strings mark it with backticks, and what is between them here is something to press. */
 .sheet .block .say code { font: 500 11px/1 var(--ui); border: 1px solid #2c2c35; border-radius: 5px; padding: 2px 5px; color: var(--ink); background: #191920; }
-.sheet .block .row { display: flex; flex-wrap: wrap; gap: 8px; }
+/* A sheet's control row is not a session row, and it says so here rather than by being called
+   something else. `.row` is the list's class and the phone breakpoint gives it thirteen points of
+   padding and a margin — which landed on every chip row in every sheet as well, because that
+   selector is not scoped to the list. It went unnoticed while there was one such row; two of them
+   stacked is a hole in the middle of the sheet. Specificity wins this, whatever the source order,
+   so the breakpoint keeps its rule and the sheets stop paying for it. */
+.sheet .block .row {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    padding: 0; margin: 0;
+}
 .sheet .block .row .chip { padding: 7px 12px; font-size: 12.5px; }
 .sheet .assistant-icon-setting { display: inline-flex; align-items: center; gap: 7px; }
 .sheet .assistant-icon-setting .marks { display: inline-flex; align-items: center; gap: 3px; }
@@ -80,6 +89,14 @@
 .sheet .find:focus { outline: none; border-color: var(--accent-ed); background: var(--card-hi); }
 .sheet .find[hidden] { display: none; }
 .sheet .places { list-style: none; margin: 0; padding: 0; max-height: min(46vh, 340px); overflow-y: auto; }
+/* There is more below, and the row at the edge is cut in half saying so. Unfaded, that cut lands
+   flat against the button under it and reads as something that failed to draw rather than as a
+   list that goes on. The flag is set from the script — a mask that is always there would fade the
+   last row once you had scrolled to it, which is the one moment nothing is being hidden. */
+.sheet .places[data-more="1"] {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+}
 .sheet .places li { margin: 0; }
 .sheet .place {
     display: grid;
@@ -97,9 +114,12 @@
 .sheet .place:hover:not(:disabled) { background: var(--card-hi); }
 .sheet .place:active:not(:disabled) { background: var(--line); }
 .sheet .place:disabled { opacity: 0.45; cursor: default; }
-.sheet #start-with { align-items: center; gap: 6px; margin: 2px 0 10px 0; flex-wrap: wrap; }
+.sheet #start-with { align-items: center; gap: 6px; margin: 2px 0 8px 0; flex-wrap: wrap; }
 .sheet #start-with .with-label { font-size: 11.5px; color: var(--dim); margin-right: 2px; }
-.sheet #start-resume { align-items: center; gap: 6px; margin: 0 0 10px 0; flex-wrap: wrap; }
+/* Tight under the chips above it, because the two of them are one question about what the next
+   press does and a gap between them would make it look like two. */
+.sheet #start-resume { align-items: center; gap: 6px; margin: 0 0 12px 0; flex-wrap: wrap; }
+.sheet #start-resume:empty { display: none; }
 /* A tick box drawn as a chip, because a chip is what every other switch in this sheet is and a
    native checkbox on a phone is a nine-pixel target next to a forty-four-pixel one. The box is
    a pseudo-element so the label stays one run of text that can wrap and be read out. */
@@ -112,7 +132,12 @@
     width: 13px; height: 13px; border-radius: 3px;
     border: 1px solid var(--line); background: transparent;
 }
-.sheet .chip.check.on::before { border-color: var(--accent-ed); background: var(--accent); }
+/* Ticked, and still not shouting. `.chip.on` turns a chip's border and its label the accent —
+   right for the two above it, which are a choice among options where the accent says *this one*.
+   A tick box is a switch, the box is the switch, and a second orange pill stacked under the
+   first read as two selections rather than one selection and one setting. */
+.sheet .chip.check.on { color: var(--ink); border-color: var(--line); }
+.sheet .chip.check.on::before { border-color: var(--accent); background: var(--accent); }
 /* The tick: two borders of an empty box, turned. Not a glyph — a checkmark character sits on a
    different baseline in every font this page can end up in, and half of them draw it as a cross. */
 .sheet .chip.check.on::after {
@@ -123,17 +148,49 @@
     transform: translate(-50%, -62%) rotate(45deg);
 }
 .sheet .chip.check:disabled { opacity: 0.45; cursor: default; }
-.sheet .chip.back { font-size: 12px; }
+/* The way back, and the only thing on either screen that says which project these conversations
+   belong to. It was an arrow and four words on its own, which read as a stray control; with the
+   project's own mark and name in it, it is a heading that happens to be pressable. */
+.sheet .chip.back {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 12px 6px 9px;
+    font-size: 12.5px;
+}
+.sheet .chip.back .arrow { color: var(--faint); font-size: 13px; line-height: 1; }
+.sheet .chip.back canvas { display: block; image-rendering: pixelated; opacity: 0.9; }
+.sheet .chip.back canvas.none { width: 16px; height: 12px; border-radius: 2px; background: #202028; }
+.sheet .chip.back .name { font-weight: 500; }
 
-/* A recorded conversation. No mark: every row in this list is the same project, so a column of
-   identical creatures would be a column of nothing. The title takes the whole width instead,
-   which is what somebody is reading down the list for. */
-.sheet .place.past { grid-template-columns: minmax(0, 1fr); }
-.sheet .place.past .name { grid-column: 1; font-weight: 400; white-space: normal; }
-.sheet .place.past .where { grid-column: 1; }
-/* Open right now, and therefore not something to resume. It reads as a state rather than as a
-   label — the same accent the list uses for a row that wants you. */
-.sheet .place.past[data-live="1"] .where { color: var(--accent); font-family: var(--ui); }
+/* A recorded conversation.
+   No mark: every row in this list is the same project, so a column of identical creatures would
+   be a column of nothing — the project is named once, on the chip above.
+   The state goes to the **right of the title**, not under it. Under it, on a list where most rows
+   are open at once, "open" became a second full line of accent under every title and the screen
+   read as an alarm. In a narrow right-hand column it is a state on a row rather than a wall. */
+.sheet .place.past {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 10px;
+    align-items: baseline;
+    padding: 9px 10px;
+}
+.sheet .place.past .name {
+    grid-column: 1; grid-row: 1;
+    font-weight: 400; line-height: 1.35;
+    /* Wrapped, not cut. This is the one list on the page that is read *by* its titles and
+       searched by typing part of one, and an ellipsis hides the half somebody is looking for. */
+    white-space: normal; overflow: visible;
+}
+.sheet .place.past .where {
+    grid-column: 2; grid-row: 1;
+    justify-self: end; white-space: nowrap;
+    /* Prose, not a path: "3 minutes ago" is a sentence and the mono face spaces it like a
+       column of figures. The project screen keeps mono, where the same slot holds a path. */
+    font-family: var(--ui); font-size: 11px;
+}
+/* Open right now. Still the accent, because it is the one thing on this screen that changes what
+   pressing a row does — but a word wide rather than a line. */
+.sheet .place.past[data-live="1"] .where { color: var(--accent); }
+.sheet .place.past[data-busy="1"] .where { justify-self: end; }
 .sheet .place canvas { grid-row: 1 / span 2; align-self: center; justify-self: start; display: block; image-rendering: pixelated; opacity: 0.9; }
 .sheet .place canvas.none { width: 16px; height: 12px; border-radius: 2px; background: #202028; }
 .sheet .place .name {

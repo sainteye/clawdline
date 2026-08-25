@@ -9,6 +9,14 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: a hole in the middle of every sheet with chips in it, on a phone
+
+The session list's row class is `row`, and the phone breakpoint gives it thirteen points of padding
+and a margin. That selector was never scoped to the list, so it also landed on the chip rows inside
+sheets — *Start with*, the Transcript order in Settings, the command sheet's assistant row — each of
+which quietly carried twenty-six points of padding it was never meant to have. One such row looked
+like generous spacing; two of them stacked looked like something had failed to draw.
+
 ### Added: picking a conversation back up from the phone
 
 *Start a session* could only ever begin a new one. The conversation you were in an hour ago — the

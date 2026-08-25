@@ -153,7 +153,10 @@ export var Start = (function () {
      */
     function drawWith() {
         var row = els["start-with"];
-        row.hidden = assistants.length < 2;
+        // Gone once a project's conversations are on screen. Not merely irrelevant there — a
+        // press on the other chip would have to leave the list to mean anything, and a control
+        // that silently throws away the screen you are on is worse than one that is not offered.
+        row.hidden = assistants.length < 2 || !!at;
         if (row.hidden) { row.innerHTML = ""; return; }
         row.innerHTML = "";
         var label = document.createElement("span");
@@ -201,7 +204,18 @@ export var Start = (function () {
             var back = document.createElement("button");
             back.type = "button";
             back.className = "chip back";
-            back.textContent = "\u2190 " + T.webResumeBack;
+            // The project, in its own mark and its own colour. It is the only thing on this
+            // screen that says which project these conversations are from — every row below is
+            // a title and nothing else — and it is the way out, which is one control doing two
+            // jobs that were always the same job.
+            back.innerHTML = '<span class="arrow">\u2190</span><canvas></canvas>'
+                + '<span class="name"></span>';
+            var mark = back.querySelector("canvas");
+            if (!drawIcon(mark, at.icon, 4)) mark.classList.add("none");
+            var name = back.querySelector(".name");
+            name.textContent = at.label || shortPath(at.path);
+            name.style.color = at.icon ? tint(at.icon.accent) : "";
+            back.setAttribute("aria-label", T.webResumeBack);
             back.disabled = !!pressing || !!wait;
             back.onclick = function () { leave(); draw(); };
             row.appendChild(back);
@@ -217,6 +231,15 @@ export var Start = (function () {
         chip.setAttribute("aria-pressed", resume && resumable() ? "true" : "false");
         chip.onclick = function () { resume = !resume; draw(); };
         row.appendChild(chip);
+    }
+
+    /** Whether the list is hiding anything below its own edge, which is what the fade at the
+     *  bottom of it answers to. Read straight after the rows are put in — the layout is forced by
+     *  asking, which is the point — and again whenever it is scrolled. */
+    function edge() {
+        var list = els["start-list"];
+        var more = list.scrollHeight - list.scrollTop - list.clientHeight > 2;
+        list.dataset.more = more ? "1" : "0";
     }
 
     function draw() {
@@ -293,6 +316,7 @@ export var Start = (function () {
             li.appendChild(row);
             list.appendChild(li);
         });
+        edge();
     }
 
     /**
@@ -350,6 +374,7 @@ export var Start = (function () {
             li.appendChild(row);
             list.appendChild(li);
         });
+        edge();
     }
 
     /** Asked afresh every time the sheet opens: a directory can go away between two looks, and
@@ -628,6 +653,7 @@ export var Start = (function () {
         press: press,
         pick: pick,
         typed: function (value) { find = value; draw(); },
+        scrolled: edge,
         placeholder: placeholder,
         arrange: arrange,
         arriving: function (id) { return !!(wait && wait.id === id); },
@@ -684,6 +710,7 @@ els.start.addEventListener("click", function () { Start.close(); });
 els["start-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
 els["start-close"].addEventListener("click", function () { Start.close(); });
 els["start-filter"].addEventListener("input", function () { Start.typed(this.value); });
+els["start-list"].addEventListener("scroll", function () { Start.scrolled(); }, { passive: true });
 els["start-list"].addEventListener("click", function (ev) {
     var row = ev.target.closest ? ev.target.closest(".place") : null;
     if (!row || row.disabled) return;
