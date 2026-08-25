@@ -470,10 +470,15 @@ this"* into a dispatch. Six steps:
 1. **Find the door.** `remote_port` out of `config.json` (7717 if absent),
    `~/.config/clawdline/orchestrator-token` for the token. Either one missing is a full stop with an
    explanation, not a workaround.
-2. **Decide the work.** How many (the cap is 3), and which assistant — the user's word if they gave
-   one, otherwise Codex for generating and running things and Claude for reading and judging them.
-   Instructions have to stand on their own: the child cannot see the conversation they came from,
-   so *"do what we discussed"* is an empty file with extra steps.
+2. **Draw the graph, then decide the work.** The house rules first — `dispatch-policy.md`, which
+   outranks every default below it. Then the whole graph before any of it is sent: what each leaf
+   produces, who joins those answers together, what the top hands back. Then per node, which
+   assistant (the user's word if they gave one, otherwise Codex for generating and running things
+   and Claude for reading and judging them) and which model. Breadth before depth: two children
+   splitting a job beat one child that will hand half of it on. Instructions have to stand on
+   their own — the child cannot see the conversation they came from, so *"do what we discussed"*
+   is an empty file with extra steps — and the graph goes in `plan`, the same text in every task
+   of the batch.
 3. **Make the directory.** `uuidgen`, `openssl rand -hex 32`, `umask 077`, and a `task.json` built
    with `jq -n` rather than string concatenation.
 4. **Find its own session id**, best-effort, with a nonce: `echo clawdline-nonce-<task-id>` puts
