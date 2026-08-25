@@ -814,7 +814,7 @@ final class RemoteServer {
                 response.body = Data()
                 return response
             }
-            return page()
+            return page(for: request)
 
         case ("GET", "/manifest.webmanifest"):
             return manifest()
@@ -2226,13 +2226,96 @@ final class RemoteServer {
         return response
     }
 
-    private func page() -> Response {
+    /// The page, with the three things done to it that only this end can do.
+    ///
+    /// The document on disk is the one the dev server and the `file://` mock read, so none of this
+    /// may be baked into it — every step below is a substitution made on the way out, and the file
+    /// is still a working page without any of them.
+    ///
+    /// 1. **Every `/app/` URL gets this build's stamp in its path**, so the stylesheets and modules
+    ///    can be cached forever (see `asset`). The stamp goes in the *path* rather than a query
+    ///    string because a module's own `import "./core/env.js"` resolves against the directory it
+    ///    was served from and drops any query — `/app/v123/js/main.js` pulls its imports out of
+    ///    `/app/v123/js/`, and a bare `?v=` would have versioned exactly one file out of forty.
+    /// 2. **The interface's words are written into the document** instead of fetched. They were a
+    ///    round trip that could not even *start* until all forty modules had arrived and run, and
+    ///    the page is held blank until they land — so on a phone through the tunnel it was the last
+    ///    half-second of the dark rectangle, and often past the two-second fallback that gives up
+    ///    and shows English.
+    /// 3. **Every module is named in the head**, so the browser asks for all forty at once rather
+    ///    than learning about thirty-nine of them after `main.js` has been fetched and parsed.
+    private func page(for request: Request) -> Response {
         guard let url = Bundle.main.url(forResource: "index", withExtension: "html",
                                         subdirectory: "web"),
-              let data = try? Data(contentsOf: url) else {
+              var html = try? String(contentsOf: url, encoding: .utf8) else {
             return .error(404, "not_found", "The web interface is not in this build")
         }
-        return Response(status: 200, headers: ["Content-Type": "text/html; charset=utf-8"], body: data)
+        // Only ever inside `href="` / `src="` — the sole other mention of `/app/` in that document
+        // is prose inside a comment, and it is not quoted.
+        html = html.replacingOccurrences(of: "\"/app/", with: "\"/app/\(Self.assetVersion)/")
+        html = html.replacingOccurrences(of: Self.stringsSlot, with: stringsScript(for: request))
+        html = html.replacingOccurrences(of: Self.modulesSlot, with: Self.modulePreloads)
+        return Response(status: 200, headers: ["Content-Type": "text/html; charset=utf-8"],
+                        body: Data(html.utf8))
+    }
+
+    /// The comments in `index.html` that this end writes over. They are comments so that the copy
+    /// on disk stays a page: served by `tools/web-serve.py`, or opened off a disk in mock mode,
+    /// each one stays exactly what it looks like and the page falls back to fetching its strings.
+    private static let stringsSlot = "<!-- clawdline:strings -->"
+    private static let modulesSlot = "<!-- clawdline:modules -->"
+
+    /// The path segment that makes this build's copy of a file a different file.
+    ///
+    /// The executable's modification time, for the reason `/v1/health` gives: it is the one thing
+    /// about a build that cannot be forgotten to be bumped. Because the URL changes whenever the
+    /// binary does, the files underneath it can be `immutable` — a rebuilt Mac serves a page that
+    /// names *different* URLs, so there is no version of this that can hand somebody a stale
+    /// stylesheet. `index.html` itself stays `no-store`, which is what makes that true.
+    static let assetVersion = "v\(buildStamp)"
+
+    /// A `modulepreload` for every module except the entry point.
+    ///
+    /// Read from the bundle rather than from `main.js`'s import list, because that list is the
+    /// page's own manifest and copying it here would be a second one to keep in step. The
+    /// directory *is* the list: a module nobody imports never runs, so anything in there that is
+    /// not reached is already a bug, and preloading it costs a request that was going to be made.
+    ///
+    /// Order does not matter — this is a fetch hint, and what executes in what order is still
+    /// decided by the import graph.
+    private static let modulePreloads: String = {
+        guard let root = Bundle.main.resourceURL?
+                .appendingPathComponent("web", isDirectory: true)
+                .appendingPathComponent("app", isDirectory: true)
+                .appendingPathComponent("js", isDirectory: true),
+              let walk = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
+        else { return "" }
+        let base = root.standardizedFileURL.path + "/"
+        var names: [String] = []
+        for case let file as URL in walk where file.pathExtension == "js" {
+            let path = file.standardizedFileURL.path
+            guard path.hasPrefix(base) else { continue }
+            let name = String(path.dropFirst(base.count))
+            if name == "main.js" { continue }       // already a `<script type="module">` below
+            names.append(name)
+        }
+        return names.sorted()
+            .map { "<link rel=\"modulepreload\" href=\"/app/\(assetVersion)/js/\($0)\">" }
+            .joined(separator: "\n")
+    }()
+
+    /// The interface's words, as a line of script rather than a request.
+    ///
+    /// `<` is escaped throughout — a `</script>` anywhere inside a sentence would otherwise end
+    /// this element early, and the escape is legal JSON and legal JavaScript wherever it can
+    /// appear. The two line separators go with it: JSON allows them raw inside a string and older
+    /// JavaScript did not, and the cost of being sure is one more pass.
+    private func stringsScript(for request: Request) -> String {
+        guard var json = String(data: strings(for: request).body, encoding: .utf8) else { return "" }
+        json = json.replacingOccurrences(of: "<", with: "\\u003c")
+        json = json.replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+        json = json.replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+        return "<script>window.__strings = \(json);</script>"
     }
 
     /// One file from under `Resources/web/app`, and only from under there.
@@ -2243,6 +2326,16 @@ final class RemoteServer {
     /// below. A segment may only be letters, digits, `.`, `-`, `_`; segments are separated by `/`;
     /// no empty segment, no `.` and no `..`; and the extension has to be one this app knows how to
     /// label. Everything else is a 404 before a path is ever built.
+    ///
+    /// **A leading `v<digits>` is a version, not a directory.** `page` writes this build's stamp
+    /// into every URL it hands out, so what arrives is `/app/v1756100000/js/core/env.js`; the
+    /// segment is taken off here and the file is read from where it has always been. It earns the
+    /// request a year of `immutable` cache, which is the whole point: a reload then asks for the
+    /// document and nothing else, because every stylesheet and module it names is a URL the
+    /// browser already has and has been told will never change. A stamp that is *not* this
+    /// build's gets the same bytes without the promise — that only happens to a tab left open
+    /// across a rebuild, and caching today's file under yesterday's name is how a page ends up
+    /// holding a mixture of the two.
     private func asset(_ name: String) -> Response {
         let types = ["css": "text/css; charset=utf-8",
                      "js": "text/javascript; charset=utf-8"]
@@ -2251,7 +2344,12 @@ final class RemoteServer {
         // in the bundle ourselves". It also keeps this compiling on the older Swift in CI.
         let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_")
 
-        let parts = name.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        var parts = name.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        var stamp: String?
+        if let first = parts.first, first.count > 1, first.hasPrefix("v"),
+           first.dropFirst().allSatisfy({ $0.isNumber }) {
+            stamp = parts.removeFirst()
+        }
         let plain = { (part: String) -> Bool in
             if part.isEmpty || part == "." || part == ".." { return false }
             return part.allSatisfy { allowed.contains($0) }
@@ -2277,7 +2375,15 @@ final class RemoteServer {
               let data = try? Data(contentsOf: url) else {
             return .error(404, "not_found", "No such file")
         }
-        return Response(status: 200, headers: ["Content-Type": type], body: data)
+        var headers = ["Content-Type": type]
+        if stamp == Self.assetVersion {
+            // A year, and `immutable` on top of it: without that word a plain reload revalidates
+            // every subresource, which through a tunnel is the entire saving given back. `public`
+            // is the truth about these files — they are served to anyone who asks, before any
+            // token, and they name no session, repository or path.
+            headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        }
+        return Response(status: 200, headers: headers, body: data)
     }
 
     /// The service worker, which exists for one reason: **a page cannot receive a push while it

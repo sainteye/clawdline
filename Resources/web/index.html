@@ -95,6 +95,17 @@ document.documentElement.lang = "en";
 document.documentElement.className = "booting";
 </script>
 
+<!-- The interface's words, written in by the server rather than asked for.
+     The comment below is the slot: `RemoteServer.page` replaces it with one line setting
+     `window.__strings`, and `main.js` boots off that instead of fetching `/v1/strings`.
+     It was the last round trip in front of the first paint and the worst-placed one — it could
+     not even be *sent* until all forty modules had arrived and run, and the page is deliberately
+     blank until it lands. Through a tunnel that is half a second on the end of a dark rectangle,
+     and often past the two-second fallback, which gives up and shows the English below.
+     Left as a comment by anything that is not the app — the dev server, a `file://` copy in mock
+     mode — and `main.js` falls back to the fetch, which is what it did before this existed. -->
+<!-- clawdline:strings -->
+
 <!-- The page's own styles, split out of this file and served from `/app/css/`. The order below is
      the order they were written in, and it is load-bearing: several rules are overridden later by a
      rule with exactly the same specificity — `.app[data-pane="off"] .pane-detail` is set in
@@ -115,6 +126,15 @@ document.documentElement.className = "booting";
 <link rel="stylesheet" href="/app/css/sheets.css">
 <link rel="stylesheet" href="/app/css/door.css">
 <link rel="stylesheet" href="/app/css/responsive.css">
+
+<!-- Every module, named here so that all forty are asked for at once.
+     `main.js` is the only script this document mentions, and a browser cannot know what it
+     imports until it has fetched and parsed it — so the modules used to arrive one full round
+     trip behind the stylesheets, which through a tunnel is most of a second of nothing. The
+     server fills the comment below with a `modulepreload` for each of them, read out of the
+     bundle rather than copied from `main.js`'s import list, so there is still only one manifest.
+     These are hints, not imports: what runs, and in what order, is still decided by that list. -->
+<!-- clawdline:modules -->
 
 <header class="top">
     <!-- The wordmark is the way into the app's own settings. Tapping a product mark to reach

@@ -9,6 +9,39 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Changed: reloading the web interface no longer means a second and a half of black
+
+The page is a document, fourteen stylesheets and forty modules, and until now every one of them
+was sent `no-store` — so a reload fetched all fifty-five again, and through a tunnel a request
+costs the same half-second whether it returns three kilobytes or three hundred. Worse, they did
+not arrive together. The browser learns about the stylesheets from the document, about `main.js`
+from the document, and about the other thirty-nine modules only after `main.js` has arrived and
+been parsed; then the page asked for its own words, which it could not do until all forty modules
+had run, and it is deliberately blank until those land. Four round trips, in a line, in front of
+a dark rectangle — measured at about 2.5 seconds, which is past the two-second fallback that
+gives up and draws the interface in English.
+
+Three changes, and none of them touches what the page does:
+
+**Every stylesheet and module URL now carries the build in its path** — `/app/v1756100000/js/…` —
+and is served with a year of `immutable` cache. The stamp is the executable's modification time,
+the same one `/v1/health` reports, so a rebuilt Mac serves a document naming *different* URLs and
+the old ones are simply never asked for again. There is no version of this that can hand somebody
+a stale stylesheet, because the document itself stays `no-store`. A reload now asks for the
+document and nothing else.
+
+**The interface's words are written into the document** instead of fetched from `/v1/strings`.
+That request was the worst-placed one on the page: last to be sent, first thing the paint waits
+for. It is now a line of script in the head, and the fallback fetch stays for the dev server and
+for a copy opened off a disk.
+
+**Every module is named in the head**, as `modulepreload`, so all forty are asked for at once
+instead of thirty-nine of them a round trip behind `main.js`. The list is read out of the bundle
+rather than copied from `main.js`'s imports, so there is still only one manifest.
+
+The file on disk is unchanged by all this — the two slots are HTML comments, and a page served by
+`tools/web-serve.py` or opened as `file://` still works exactly as before.
+
 ### Fixed: shelling out could let the app re-enter itself
 
 Waiting for a subprocess is supposed to be the most boring thing a program does. On macOS it is

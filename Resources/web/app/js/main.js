@@ -102,7 +102,13 @@ function boot(data) {
     Push.start();
 }
 
-if (location.protocol === "file:") {
+if (window.__strings) {
+    // The ordinary path, and the fast one: the app writes the words into the document it serves,
+    // so by the time this line runs they are already here and the page can be drawn in the frame
+    // the modules finished in. The fetch below is what this replaced — a round trip that could
+    // not be sent until every module had arrived and run, in front of a page held blank.
+    boot(window.__strings);
+} else if (location.protocol === "file:") {
     // A copy opened off a disk has no server to ask, and asking one that is not there is the
     // failed request in an otherwise clean console that teaches somebody to stop reading it.
     boot(null);
