@@ -1520,6 +1520,16 @@ enum Orchestrator {
       does not writes an essay.
     - Leaves are narrow enough to state in a sentence. If a child's instructions need three
       paragraphs to say what "done" means, it is two children.
+
+    ## Dispatching itself
+
+    - **Stagger them.** Wait 30–45 seconds between one dispatch and the next. Every child is a
+      real assistant cold-starting on this Mac, and started together they compete — a tab that
+      has not reached a prompt in four minutes is `spawn_failed`. A minute of waiting buys the
+      whole batch.
+    - **A `spawn_failed` retry needs a fresh id and a fresh secret.** That task id is terminal.
+    - **Say when you did it yourself.** If a dispatch failed twice and you did the work instead,
+      that is usually right — but the summary has to say so.
     """
 
     /// The graph this task is one node of, when the dispatcher wrote one down.
