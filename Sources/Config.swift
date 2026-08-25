@@ -231,19 +231,23 @@ final class Config {
     /// less of this Mac it should be able to spend on it.
     var orchestratorMaxGrandchildren = 3
     /// How far a dispatched child may go before it stops and asks — the *most* a task may ask
-    /// for, not what every task gets. `ask`, `auto`, `full`; see ``Permission``.
+    /// for, not what every task gets. `ask`, `auto`, `edits`, `full`; see ``Permission``.
     ///
-    /// `auto` by default, and that is a considered position rather than a convenience. Nobody is
+    /// `edits` by default, and that is a considered position rather than a convenience. Nobody is
     /// watching a child's tab: a session that stops for approval stops until it times out, so
     /// "ask about everything" is not the safe setting here, it is the one where the work silently
-    /// does not happen. What `auto` keeps is the assistant's own judgement about what a person
-    /// would want to be asked, which is the same judgement it uses in a session somebody *is*
-    /// watching.
+    /// does not happen.
+    ///
+    /// It is `edits` rather than `auto` because of what a dispatched session is *for*. It reads a
+    /// briefing, works, and writes a result — and under `auto` it stopped on the last of those,
+    /// one keystroke from done, asking whether it might create the file it was sent to create.
+    /// Everything that is not a file write still goes through the assistant's own judgement about
+    /// what a person would want to be asked.
     ///
     /// `full` is not reachable without setting it here. A task can ask for it and be quietly
-    /// given `auto` instead, because the session doing the asking is not the one that lives with
+    /// given this instead, because the session doing the asking is not the one that lives with
     /// what happens next — the person at this Mac is, and this is where they answer.
-    var orchestratorPermission = "auto"
+    var orchestratorPermission = "edits"
     /// Every dispatched session on this Mac, whoever asked. One full tree's worth — a root's
     /// children and each of their children — and not a setting of its own, because it is not a
     /// choice anybody makes separately from the two numbers it is made of.
@@ -254,7 +258,7 @@ final class Config {
     /// The ceiling as the type, with the file's word for it read back through the closed list so
     /// a hand-edit that says something else lands on the default rather than on nothing.
     var orchestratorPermissionCeiling: Permission {
-        Permission(rawValue: orchestratorPermission) ?? .auto
+        Permission(rawValue: orchestratorPermission) ?? .edits
     }
     var orchestratorMaxDescendants: Int {
         orchestratorMaxChildren * (1 + orchestratorMaxGrandchildren)

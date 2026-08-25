@@ -422,7 +422,7 @@ itself.
 | `orchestrator_enabled` | `true` | may a session hand work to another |
 | `orchestrator_max_children` | `5` | child sessions one session may have out, 1–10 |
 | `orchestrator_max_grandchildren` | `3` | and what each of those may have out, 0–10; `0` stops the tree one level up |
-| `orchestrator_permission` | `auto` | how far a child goes before it asks: `ask` · `auto` · `full`. Also the ceiling — a task cannot ask for more |
+| `orchestrator_permission` | `edits` | how far a child goes before it asks: `ask` · `edits` · `full`. Also the ceiling — a task cannot ask for more |
 | `orchestrator_notify_root` | `true` | type a line back into the session that asked |
 | `orchestrator_child_linger` | `180` | seconds a reported child's tab stays open; `0` closes it at once, `-1` never |
 

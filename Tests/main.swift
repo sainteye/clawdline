@@ -5201,7 +5201,9 @@ group("a task.json is read before a terminal is opened for it") {
           made(file())?.model == nil)
     expect("one that names a model carries it", made(file(["model": "haiku"]))?.model, "haiku")
     expect("and one that names how far it may go carries that",
-           made(file(["permission_mode": "auto"]))?.permission, .auto)
+           made(file(["permission_mode": "edits"]))?.permission, .edits)
+    check("`auto` is not one of them — Claude Code names it and then gives you `manual`",
+          refused(file(["permission_mode": "auto"])))
     check("a permission nobody defined is refused rather than rounded down",
           refused(file(["permission_mode": "whatever"])))
     check("and saying nothing is not the same as saying ask — the ceiling decides that later",
@@ -5288,7 +5290,7 @@ group("a model name is a name, not a fragment of a command line") {
     expect("the flag is written once", Assistant.claude.command(model: "haiku"),
            "claude --model haiku")
     check("and the permission flags land after it, not instead of it",
-          Assistant.claude.command(model: "haiku", permission: .auto)
+          Assistant.claude.command(model: "haiku", permission: .edits)
               .hasPrefix("claude --model haiku "))
     expect("and not written at all when nothing was named", Assistant.claude.command(model: nil),
            "claude")
@@ -5305,18 +5307,23 @@ group("how far a child may go is this Mac's answer, not the asking session's") {
     // that asks for more is given it instead. What this pins down is the ordering — that more
     // never wins — and that the words are a closed list rather than a flag somebody assembled.
     check("the three escalate in the order they are written",
-          Permission.ask < Permission.auto && Permission.auto < Permission.full)
+          Permission.ask < Permission.edits && Permission.edits < Permission.full)
     check("a word that is not one of them is not a permission",
           Permission(rawValue: "yolo") == nil)
+    // Dropped after a terminal disagreed with the help text: `--permission-mode auto` is listed
+    // as a choice and produces `manual`, the mode where everything is asked. A word for it would
+    // have been a setting that reads as "get on with it" and does the opposite.
+    check("nor is `auto`, whatever Claude Code's --help says",
+          Permission(rawValue: "auto") == nil)
 
     func granted(asked: Permission?, ceiling: Permission) -> Permission {
         min(asked ?? ceiling, ceiling)
     }
-    expect("asking for nothing takes the ceiling", granted(asked: nil, ceiling: .auto), .auto)
+    expect("asking for nothing takes the ceiling", granted(asked: nil, ceiling: .edits), .edits)
     expect("asking for less than the ceiling is honoured",
            granted(asked: .ask, ceiling: .full), .ask)
     expect("asking for more than the ceiling is not",
-           granted(asked: .full, ceiling: .auto), .auto)
+           granted(asked: .full, ceiling: .edits), .edits)
     expect("and a Mac that says ask means ask, whatever a task wants",
            granted(asked: .full, ceiling: .ask), .ask)
 
@@ -5325,9 +5332,13 @@ group("how far a child may go is this Mac's answer, not the asking session's") {
     expect("the quiet mode adds nothing to either command line",
            Permission.ask.flags(for: .claude) + Permission.ask.flags(for: .codex), "")
     check("and the other two do, differently, because the two CLIs spell it differently",
-          !Permission.auto.flags(for: .claude).isEmpty
-              && !Permission.auto.flags(for: .codex).isEmpty
-              && Permission.auto.flags(for: .claude) != Permission.auto.flags(for: .codex))
+          !Permission.edits.flags(for: .claude).isEmpty
+              && !Permission.edits.flags(for: .codex).isEmpty
+              && Permission.edits.flags(for: .claude) != Permission.edits.flags(for: .codex))
+    // The exact strings, because these were read off a status line one at a time and getting one
+    // wrong is silent: the session starts, the flag is ignored, and the mode is `manual`.
+    expect("files-without-asking is spelled acceptEdits for Claude Code",
+           Permission.edits.flags(for: .claude), "--permission-mode acceptEdits")
     check("a bare command is still what an unasked-for permission produces",
           Assistant.claude.command(model: nil, permission: .ask) == "claude")
 }

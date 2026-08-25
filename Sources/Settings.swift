@@ -492,14 +492,16 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     /// How far a dispatched child may go on its own — the most a task may ask for, and the
     /// default for one that asks for nothing.
     ///
-    /// Three stops in the order they escalate, and the middle one is the shipped answer. That is
-    /// the row worth understanding: on a tab somebody is watching, "ask about everything" is the
+    /// Three stops in the order they escalate, and the middle one is the shipped answer. That is the
+    /// row worth understanding: on a tab somebody is watching, "ask about everything" is the
     /// careful setting; on a tab nobody is watching it is the setting where the work quietly does
-    /// not happen and the session sits at a prompt until it times out.
+    /// not happen and the session sits at a prompt until it times out. The middle rather than the
+    /// first because a dispatched session's whole output is files, and the first stops before
+    /// writing one.
     private func permissionPopUp() -> NSView {
         let stops: [(label: String, value: String)] = [
             (label: L.t.settingsOrchestratorPermissionAsk, value: Permission.ask.rawValue),
-            (label: L.t.settingsOrchestratorPermissionAuto, value: Permission.auto.rawValue),
+            (label: L.t.settingsOrchestratorPermissionEdits, value: Permission.edits.rawValue),
             (label: L.t.settingsOrchestratorPermissionFull, value: Permission.full.rawValue),
         ]
         return popUp(stops, current: Config.shared.orchestratorPermission) {

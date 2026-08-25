@@ -132,20 +132,36 @@ session's bucket rather than out of everybody's. The ceiling below is what close
   into a directory somebody has already opened by hand.
 
 And two more settings. `orchestrator_enabled`, default true — off, and dispatch is refused at the
-door. And `orchestrator_permission`, default `auto`: **how far a child may go before it stops and
+door. And `orchestrator_permission`, default `edits`: **how far a child may go before it stops and
 asks.**
 
 That default is a position, not a convenience. On a tab somebody is watching, "ask about
 everything" is the careful setting. On a child's tab nobody is watching, and a session that stops
 for approval does not stop for a moment — it stops until the task times out, which reads
-afterwards as work that silently did not happen. `auto` keeps the assistant's own judgement about
-what a person would want to be asked, which is the same judgement it uses in a session somebody is
-sitting in front of.
+afterwards as work that silently did not happen.
+
+It is `edits` rather than something narrower because of what a dispatched session is *for*. It
+reads a briefing, works, and writes a result; under the narrower setting it stopped on the last of
+those three, one keystroke from done, asking whether it might create the file it was sent to
+create. Running a command still stops.
+
+**The three words here are Clawdline's, and each one was read back off a real status line.** That
+matters more than it sounds: `--permission-mode auto` is one of the values Claude Code's own
+`--help` lists, and passing it produces `manual` — the mode where everything is asked. A Clawdline
+word for it would have been a setting that reads as "get on with it" and does the opposite, which
+is the expensive direction. There is no `auto` here for that reason.
 
 The setting is a ceiling as well as a default: `full` — nothing asked at all — is unreachable
 unless this Mac has been set to it, because the session doing the asking is not the one that lives
 with the consequences. A task asking for more than the ceiling is quietly given the ceiling; the
 record says what was actually used, and so does the audit line.
+
+**What still stops even at `full`.** Two doors sit in front of the session rather than inside it,
+and no permission setting reaches either: the *"Do you trust this folder?"* prompt on a directory
+this Mac has never run that assistant in, and Claude Code's command screening, which refuses a
+`jq -n '{…}'` line on the shape of it alone (a brace beside a quote reads as obfuscation) and
+offers no "always allow". The second one is why a child that dispatches is the one case that
+genuinely needs `full`.
 
 ### House rules
 
@@ -234,7 +250,7 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `kind` | `image` · `code-review` · `test` · `custom` |
 | `assistant` | `claude` or `codex` |
 | `model` | optional. `[a-z0-9._-]`, at most 64 characters, not starting with `-`. Absent means that assistant's own default |
-| `permission_mode` | optional. `ask` · `auto` · `full`. Absent takes `orchestrator_permission`, which is also the ceiling — asking for more than it gives you it instead |
+| `permission_mode` | optional. `ask` · `edits` · `full`. Absent takes `orchestrator_permission`, which is also the ceiling — asking for more than it gives you it instead |
 | `plan` | optional, ≤ 4 KiB. The whole graph this task is one node of |
 | `project_dir` | absolute, exists, and is a directory — checked at dispatch, not at planning time |
 | `title` | ≤ 200 characters |

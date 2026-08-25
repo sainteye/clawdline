@@ -285,7 +285,8 @@ protocol Copy {
     var settingsOrchestratorPermission: String { get }
     var settingsOrchestratorPermissionHint: String { get }
     var settingsOrchestratorPermissionAsk: String { get }
-    var settingsOrchestratorPermissionAuto: String { get }
+    /// The stop that is the default: files written without asking, everything else still judged.
+    var settingsOrchestratorPermissionEdits: String { get }
     var settingsOrchestratorPermissionFull: String { get }
     var settingsOrchestratorNotify: String { get }
     var settingsOrchestratorNotifyHint: String { get }

@@ -1,5 +1,66 @@
 import Foundation
 
+/// How far a dispatched session may go before it stops and asks.
+///
+/// Clawdline's own three words rather than either CLI's, because the two spell this differently
+/// and neither spelling is the one to teach: Claude Code's `--permission-mode` names six values,
+/// Codex's `--ask-for-approval` takes two, and the overlap that means something to somebody
+/// writing a task down is three. A closed list, like the assistant itself — a name that is not on
+/// it is `bad_task`, never a flag somebody assembled.
+///
+/// **Every value here was checked against a real terminal, and one of them had to be dropped.**
+/// `--permission-mode auto` is in Claude Code's own `--help`, and passing it silently produces
+/// `manual` — the mode where everything is asked. So a Clawdline word for it would have been a
+/// setting that reads as "get on with it" and does the opposite, which is the worst kind of
+/// wrong: the tab sits at a prompt nobody is watching and the task times out looking like work
+/// that was never done. What is here is what a status line was observed to say afterwards.
+enum Permission: String, CaseIterable, Comparable {
+    /// Every step that would need approval stops and asks — Claude Code's `manual`, which is also
+    /// what it does with no flag at all. **Nobody is watching a child's tab**, so in practice this
+    /// is a session that sits at a prompt until it times out. It is the right answer only for a
+    /// task somebody intends to sit and supervise.
+    case ask
+    /// Files are written without asking; running a command still stops.
+    ///
+    /// The default, and the one measured against what a dispatched session actually does. A child
+    /// reads a briefing, works, and writes a result — and before this it stopped on the last of
+    /// those three, one keystroke from done, with nobody in the room. What it does *not* widen is
+    /// running commands, which is the half worth still being asked about.
+    case edits
+    /// Nothing is asked. Whatever the assistant can do, it does, in the directory it was pointed
+    /// at. Behind `orchestrator_permission` — a task cannot reach this unless this Mac has said
+    /// so, because the session asking is not the person who would live with the consequences.
+    ///
+    /// The one thing that genuinely needs it is a child that dispatches: the `jq` line that
+    /// writes a task file trips Claude Code's command screening on its own shape (a brace next
+    /// to a quote reads as obfuscation), and that screening offers no "always allow".
+    case full
+
+    private var rank: Int {
+        switch self {
+        case .ask:   return 0
+        case .edits: return 1
+        case .full:  return 2
+        }
+    }
+    static func < (a: Permission, b: Permission) -> Bool { a.rank < b.rank }
+
+    /// The flags that spell this for one assistant, or nothing at all where the mode is already
+    /// that CLI's own default. Every string here is a literal: nothing a task sends reaches it,
+    /// and every one of them was read back off a status line rather than taken from `--help`.
+    func flags(for assistant: Assistant) -> String {
+        switch (self, assistant) {
+        case (.ask, _):        return ""
+        // Codex writes inside its workspace without asking already, so the flag that widens
+        // Claude Code to match is the whole of the difference on that side.
+        case (.edits, .claude): return "--permission-mode acceptEdits"
+        case (.edits, .codex):  return "--ask-for-approval on-request --sandbox workspace-write"
+        case (.full, .claude): return "--permission-mode bypassPermissions"
+        case (.full, .codex):  return "--ask-for-approval never --sandbox workspace-write"
+        }
+    }
+}
+
 /// Which assistant is running in a session, and the few facts that differ between them.
 ///
 /// The app started out able to see exactly one thing: a terminal with `claude` in it. Every
@@ -15,49 +76,6 @@ import Foundation
 /// The list is closed on purpose. A third one is a day's work — a screen to read, a record to
 /// find, a word to leave on — and not a plugin point, because each of those three is a shape
 /// somebody has to observe on a real terminal and keep observing.
-/// How far a dispatched session may go before it stops and asks.
-///
-/// Clawdline's own three words rather than either CLI's, because the two spell this differently
-/// and neither spelling is the one to teach: Claude Code's `--permission-mode` takes six values,
-/// Codex's `--ask-for-approval` takes two, and the overlap that means something to somebody
-/// writing a task down is three. A closed list, like the assistant itself — a name that is not on
-/// it is `bad_task`, never a flag somebody assembled.
-enum Permission: String, CaseIterable, Comparable {
-    /// Every step that would need approval stops and asks. **Nobody is watching a child's tab**,
-    /// so in practice this is a session that sits at a prompt until it times out. It is the right
-    /// answer only for a task somebody intends to sit and supervise.
-    case ask
-    /// The assistant decides what is worth asking about. The default, and the only one of the
-    /// three defensible as one: a session sent off to do a named thing should get on with it and
-    /// still stop at what a person would want to be asked about.
-    case auto
-    /// Nothing is asked. Whatever the assistant can do, it does, in the directory it was pointed
-    /// at. Behind `orchestrator_permission` — a task cannot reach this unless this Mac has said
-    /// so, because the session asking is not the person who would live with the consequences.
-    case full
-
-    private var rank: Int {
-        switch self {
-        case .ask:  return 0
-        case .auto: return 1
-        case .full: return 2
-        }
-    }
-    static func < (a: Permission, b: Permission) -> Bool { a.rank < b.rank }
-
-    /// The flags that spell this for one assistant, or nothing at all where the mode is already
-    /// that CLI's own default. Every string here is a literal: nothing a task sends reaches it.
-    func flags(for assistant: Assistant) -> String {
-        switch (self, assistant) {
-        case (.ask, _):        return ""
-        case (.auto, .claude): return "--permission-mode auto"
-        case (.auto, .codex):  return "--ask-for-approval on-request"
-        case (.full, .claude): return "--permission-mode bypassPermissions"
-        case (.full, .codex):  return "--ask-for-approval never --sandbox workspace-write"
-        }
-    }
-}
-
 enum Assistant: String, CaseIterable {
     case claude
     case codex
