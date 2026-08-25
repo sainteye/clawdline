@@ -5202,7 +5202,7 @@ group("a task.json is read before a terminal is opened for it") {
     expect("one that names a model carries it", made(file(["model": "haiku"]))?.model, "haiku")
     expect("and one that names how far it may go carries that",
            made(file(["permission_mode": "edits"]))?.permission, .edits)
-    check("`auto` is not one of them — Claude Code names it and then gives you `manual`",
+    check("`auto` is not one of them — on Haiku that flag quietly means `manual`",
           refused(file(["permission_mode": "auto"])))
     check("a permission nobody defined is refused rather than rounded down",
           refused(file(["permission_mode": "whatever"])))
@@ -5310,10 +5310,10 @@ group("how far a child may go is this Mac's answer, not the asking session's") {
           Permission.ask < Permission.edits && Permission.edits < Permission.full)
     check("a word that is not one of them is not a permission",
           Permission(rawValue: "yolo") == nil)
-    // Dropped after a terminal disagreed with the help text: `--permission-mode auto` is listed
-    // as a choice and produces `manual`, the mode where everything is asked. A word for it would
-    // have been a setting that reads as "get on with it" and does the opposite.
-    check("nor is `auto`, whatever Claude Code's --help says",
+    // Dropped because it is model-dependent, not because it is broken: `--permission-mode auto`
+    // selects auto mode on Sonnet and Opus, and produces `manual` — everything asked — on Haiku,
+    // silently. A word a task fills in has to mean the same thing to every session it can name.
+    check("nor is `auto`, which means one thing on Opus and the opposite on Haiku",
           Permission(rawValue: "auto") == nil)
 
     func granted(asked: Permission?, ceiling: Permission) -> Permission {

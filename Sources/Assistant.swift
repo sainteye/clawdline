@@ -8,17 +8,22 @@ import Foundation
 /// writing a task down is three. A closed list, like the assistant itself — a name that is not on
 /// it is `bad_task`, never a flag somebody assembled.
 ///
-/// **Every value here was checked against a real terminal, and one of them had to be dropped.**
-/// `--permission-mode auto` is in Claude Code's own `--help`, and passing it silently produces
-/// `manual` — the mode where everything is asked. So a Clawdline word for it would have been a
-/// setting that reads as "get on with it" and does the opposite, which is the worst kind of
-/// wrong: the tab sits at a prompt nobody is watching and the task times out looking like work
-/// that was never done. What is here is what a status line was observed to say afterwards.
+/// **Every value here was checked against a real terminal, on more than one model.** That second
+/// half is why `auto` is not on the list. Claude Code has an `auto` mode and `--permission-mode
+/// auto` selects it — on Sonnet and on Opus. On Haiku the same flag produces `manual`, the mode
+/// where everything is asked, with no error and no warning.
+///
+/// So it is not a broken value; it is a **model-dependent** one, which is worse for something
+/// with this job. A word here has to mean the same thing to every session a task can name, and a
+/// word that quietly becomes the *strictest* setting on the cheapest model is the failure nobody
+/// catches: the tab sits at a prompt nobody is watching, and the task times out looking like work
+/// that was simply never done. The three below behave the same on every model tried.
 enum Permission: String, CaseIterable, Comparable {
     /// Every step that would need approval stops and asks — Claude Code's `manual`, which is also
-    /// what it does with no flag at all. **Nobody is watching a child's tab**, so in practice this
-    /// is a session that sits at a prompt until it times out. It is the right answer only for a
-    /// task somebody intends to sit and supervise.
+    /// what it does with no flag at all, and what Haiku falls back to when handed a mode it does
+    /// not have. **Nobody is watching a child's tab**, so in practice this is a session that sits
+    /// at a prompt until it times out. It is the right answer only for a task somebody intends to
+    /// sit and supervise.
     case ask
     /// Files are written without asking; running a command still stops.
     ///

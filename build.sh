@@ -82,6 +82,38 @@ codesign --force --sign - --identifier dev.sainteye.clawdline "$STAGED_APP" >/de
 echo "→ installing finished build"
 WAS_RUNNING=0
 pgrep -x Clawdline >/dev/null 2>&1 && WAS_RUNNING=1
+
+# A dispatched task lives through a restart once it has been briefed: its secret is on disk as a
+# hash and its child is a terminal tab this script does not touch. In the seconds *before* that,
+# it does not — the plaintext secret is only in the old process's memory, so a child whose tab has
+# opened but whose first message has not been typed can never be briefed, and comes back as
+# `spawn_failed: the app restarted before the child was briefed`.
+#
+# That window is about a second wide per task, which is small until several people share this
+# working copy: one session runs ./build.sh, another one's grandchildren die, and the message it
+# gets back blames the app rather than the person who rebuilt it. So look, and say so. Not a
+# refusal — this is somebody's own machine and their own build — just the one fact that turns a
+# baffling failure into an obvious one.
+if [ "$WAS_RUNNING" = 1 ] && command -v curl >/dev/null 2>&1; then
+  PORT=$(/usr/bin/python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.config/clawdline/config.json"))).get("remote_port",7717))' 2>/dev/null || echo 7717)
+  TOKEN_FILE="$HOME/.config/clawdline/orchestrator-token"
+  if [ -r "$TOKEN_FILE" ]; then
+    MIDFLIGHT=$(curl -s --max-time 2 "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+        -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" 2>/dev/null \
+      | /usr/bin/python3 -c 'import json,sys
+try: t = json.load(sys.stdin).get("tasks", [])
+except Exception: raise SystemExit
+for x in t:
+    if x.get("state") in ("queued", "spawning"):
+        print("  %s  %s" % (x.get("id","")[:8], x.get("title","")[:48]))' 2>/dev/null)
+    if [ -n "$MIDFLIGHT" ]; then
+      echo "!! a dispatched task is mid-spawn — restarting now will kill it:"
+      echo "$MIDFLIGHT"
+      echo "   (a briefed task survives a restart; one still opening its tab does not)"
+    fi
+  fi
+fi
+
 pkill -x Clawdline 2>/dev/null || true
 # **`pkill` asks; it does not wait.** Moving the bundle while a process on its way out is still
 # reading it can make AppKit teardown ask CoreFoundation for files that have just moved away.

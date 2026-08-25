@@ -146,16 +146,24 @@ dispatched session's whole job is running commands and writing files, so every s
 last one stops it somewhere: `ask` stops on the first thing it does, which is reading its own
 briefing; `edits` gets it past writing a result but not past `cat`, `mkdir`, `curl` or `sleep`,
 which is most of what handing work on consists of. No flag covers those and stops short of `full`.
+On Haiku there is not even a middle option to reach for, since the mode that would have been one
+is the one that model does not have.
 
 What this does not widen is *who may dispatch*. That is still a `0600` file only a local process
 can read, and a child already has a shell — the setting changes how many buttons a person has to
 press for work they already authorised, not what that work can reach.
 
-**The three words here are Clawdline's, and each one was read back off a real status line.** That
-matters more than it sounds: `--permission-mode auto` is one of the values Claude Code's own
-`--help` lists, and passing it produces `manual` — the mode where everything is asked. A Clawdline
-word for it would have been a setting that reads as "get on with it" and does the opposite, which
-is the expensive direction. There is no `auto` here for that reason.
+**The three words here are Clawdline's, and each one was read back off a real status line — on
+more than one model.** That second half is the interesting part. Claude Code has an `auto` mode,
+and `--permission-mode auto` selects it on Sonnet and on Opus. On Haiku the same flag produces
+`manual`, the mode where everything is asked, silently.
+
+So `auto` is not a broken value, it is a **model-dependent** one, and that is disqualifying for a
+field a task fills in. A word here has to mean the same thing to every session a task can name;
+one that quietly becomes the *strictest* setting on the cheapest model is the failure nobody
+catches, because what it looks like afterwards is a task that timed out having done nothing.
+There is no `auto` here for that reason, and the three that are here were checked on all three
+models.
 
 The setting is a ceiling as well as a default: `full` — nothing asked at all — is unreachable
 unless this Mac has been set to it, because the session doing the asking is not the one that lives
