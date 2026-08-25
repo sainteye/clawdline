@@ -49,6 +49,11 @@ enum Shells {
         /// The last line it printed. The closest thing to a live line something with no screen
         /// has, and the same slot ``Subagents/Agent/doing`` fills for an agent.
         let doing: String?
+        /// The command line that started it. Empty only when the two records it is joined from
+        /// straddled a read — see ``announced(in:)``.
+        let command: String
+        /// The description written beside it, when there was one.
+        let what: String?
     }
 
     /// How long after its last write a command is still worth reporting.
@@ -102,19 +107,22 @@ enum Shells {
             guard let at = modified(file), now.timeIntervalSince(at) < liveWindow else { continue }
             let tail = read(file, signature: "\(at.timeIntervalSince1970)-\(size(file))")
             guard !tail.ended else { continue }
-            unfinished.append(Shell(id: id, at: at, doing: tail.last))
+            unfinished.append(Shell(id: id, at: at, doing: tail.last, command: "", what: nil))
         }
         guard !unfinished.isEmpty else { return [] }
 
-        // Only now is a transcript opened, and only to answer the one thing the files cannot: of
-        // these unfinished commands, which were ever backgrounded rather than interrupted.
+        // Only now is a transcript opened, and only for what the files cannot say: of these
+        // unfinished commands, which were ever backgrounded rather than interrupted — and, for
+        // the ones that were, what somebody actually asked for.
         guard let transcript = Subagents.transcript(of: session) else { return [] }
-        let backgrounded = announced(in: transcript)
+        let asked = announced(in: transcript)
 
         // Newest first: the one that printed a second ago is the one somebody is waiting on.
-        return Array(unfinished.filter { backgrounded.contains($0.id) }
-            .sorted { $0.at > $1.at }
-            .prefix(shown))
+        return Array(unfinished.compactMap { shell -> Shell? in
+            guard let was = asked[shell.id] else { return nil }
+            return Shell(id: shell.id, at: shell.at, doing: shell.doing,
+                         command: was.command, what: was.what)
+        }.sorted { $0.at > $1.at }.prefix(shown))
     }
 
     // MARK: - Reading one of them
@@ -153,9 +161,19 @@ enum Shells {
         }
     }
 
-    // MARK: - Which of them were ever backgrounded
+    // MARK: - Which of them were ever backgrounded, and what each one was asked to do
 
-    /// The ids this transcript has announced as running in the background.
+    /// What a session asked for when it started one.
+    struct Asked: Equatable {
+        /// The command line itself, which is what `/bashes` shows and the only thing here that
+        /// somebody can match against what they remember asking for.
+        var command: String
+        /// The one-line description written beside it, when there was one. Prose rather than
+        /// shell, and the same field an agent's row calls `what`.
+        var what: String?
+    }
+
+    /// Every background command this transcript has announced, by id.
     ///
     /// **Read forward from where we stopped last time, not from the end** — the same rule, and the
     /// same reason, as ``Subagents/notices(in:)``. A transcript is append-only and runs to tens of
@@ -164,25 +182,32 @@ enum Shells {
     /// announcement is furthest back. A file that has shrunk was replaced rather than appended to,
     /// and the offset is dropped.
     ///
-    /// No JSON is parsed. The sentence is written by one program in one shape and the id follows
-    /// it, so this is a substring and a scan — which matters, because the alternative is decoding
-    /// every record of a forty-megabyte file to read one line in a thousand. A sentence quoting
-    /// this at Claude adds an id that names no file, which changes nothing.
+    /// **Two records, joined by the tool call between them.** The assistant's record carries the
+    /// command and is marked `run_in_background`; the reply to it carries the id Claude Code
+    /// minted, and points back with `tool_use_id`. The assistant's comes first in an append-only
+    /// file, so one forward pass does it.
+    ///
+    /// **Almost nothing is parsed.** Every line is tested with two substrings before anything is
+    /// decoded, and both are rare — a transcript of a thousand records had fifteen backgrounded
+    /// commands in it. The alternative is decoding forty megabytes of JSON to read one line in a
+    /// hundred. A message quoting either sentence at Claude adds an id that names no file, which
+    /// changes nothing.
     private static let announcement = "Command running in background with ID: "
-    private static var starts: [String: (offset: UInt64, found: Set<String>)] = [:]
+    private static let backgrounded = "run_in_background"
+    private static var starts: [String: (offset: UInt64, found: [String: Asked])] = [:]
 
-    static func announced(in url: URL) -> Set<String> {
+    static func announced(in url: URL) -> [String: Asked] {
         lock.lock()
         let seen = starts[url.path]
         lock.unlock()
 
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return seen?.found ?? [] }
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return seen?.found ?? [:] }
         defer { try? handle.close() }
         let size = (try? handle.seekToEnd()) ?? 0
 
         var offset = seen?.offset ?? 0
-        var found = seen?.found ?? []
-        if size < offset { offset = 0; found = [] }
+        var found = seen?.found ?? [:]
+        if size < offset { offset = 0; found = [:] }
         guard size > offset else { return found }
 
         try? handle.seek(toOffset: offset)
@@ -193,11 +218,32 @@ enum Shells {
         guard let end = text.lastIndex(of: "\n") else { return found }
         let whole = text[text.startIndex...end]
 
-        var rest = whole[whole.startIndex...]
-        while let hit = rest.range(of: announcement) {
-            let id = rest[hit.upperBound...].prefix { $0.isASCII && ($0.isLetter || $0.isNumber) }
-            if !id.isEmpty { found.insert(String(id)) }
-            rest = rest[hit.upperBound...]
+        // Only within this pass. A command whose two records straddle the boundary between two
+        // reads loses its command line and keeps its id, which is the right way round to fail:
+        // the id is what decides whether anything is running at all.
+        var asked: [String: Asked] = [:]
+
+        for line in whole.split(separator: "\n") {
+            if line.contains(backgrounded), let row = record(line) {
+                for block in blocks(of: row) where block["type"] as? String == "tool_use" {
+                    guard let id = block["id"] as? String,
+                          let input = block["input"] as? [String: Any],
+                          input[backgrounded] as? Bool == true,
+                          let command = input["command"] as? String else { continue }
+                    asked[id] = Asked(command: clipped(oneLine(command)),
+                                      what: (input["description"] as? String)
+                                          .map { clipped(oneLine($0)) })
+                }
+            }
+            guard line.contains(announcement), let row = record(line) else { continue }
+            for block in blocks(of: row) where block["type"] as? String == "tool_result" {
+                let text = (block["content"] as? String) ?? ""
+                guard let hit = text.range(of: announcement) else { continue }
+                let id = text[hit.upperBound...].prefix { $0.isASCII && ($0.isLetter || $0.isNumber) }
+                guard !id.isEmpty else { continue }
+                let call = block["tool_use_id"] as? String
+                found[String(id)] = call.flatMap { asked[$0] } ?? Asked(command: "", what: nil)
+            }
         }
 
         let advanced = offset + UInt64(whole.utf8.count)
@@ -205,6 +251,24 @@ enum Shells {
         starts[url.path] = (advanced, found)
         lock.unlock()
         return found
+    }
+
+    private static func record(_ line: Substring) -> [String: Any]? {
+        guard let data = line.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    private static func blocks(of row: [String: Any]) -> [[String: Any]] {
+        ((row["message"] as? [String: Any])?["content"] as? [[String: Any]]) ?? []
+    }
+
+    /// A command as one line. Somebody writes a `for` loop or a heredoc, and this goes into a row
+    /// one line tall — so the newlines become the spaces they read as anyway.
+    private static func oneLine(_ text: String) -> String {
+        text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     // MARK: - Where the files are

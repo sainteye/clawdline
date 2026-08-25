@@ -396,14 +396,19 @@ export function renderAgents() {
  * with one still going.
  */
 function shellRowHTML(sh) {
+    // The command, in the slot an agent's row gives the description somebody wrote — because
+    // that is what it is: the thing a reader can match against what they remember asking for.
+    // A row with neither is named by its id, which is what `/bashes` and `KillShell` call it.
+    var name = sh.command || sh.id;
     return '<button class="one shell" type="button" data-state="running"' +
-        ' data-shell="' + esc(sh.id) + '" title="' + esc(T.webShellOpen) + '">' +
+        ' data-shell="' + esc(sh.id) + '"' +
+        ' title="' + esc([sh.what, sh.command, T.webShellOpen].filter(Boolean).join("\n")) + '">' +
         '<span class="mark"></span>' +
         '<span class="kind">shell</span>' +
-        // Its last line of output, which is the only thing here written by the command itself —
-        // and a command that has printed nothing yet is named by the id, which is what `/bashes`
-        // and `KillShell` call it on the Mac.
-        '<span class="what">' + esc(sh.doing || sh.id) + "</span>" +
+        '<span class="what">' + esc(name) + "</span>" +
+        // And its last line of output on the right, which is the only thing on this row written
+        // by the command itself. Same slot, same reason, as an agent's `doing`.
+        (sh.doing ? '<span class="doing">' + esc(sh.doing) + "</span>" : "") +
         "</button>";
 }
 

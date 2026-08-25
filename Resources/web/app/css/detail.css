@@ -166,8 +166,15 @@
     margin: 0; color: var(--dim); font: 12px/1.65 var(--mono);
     white-space: pre-wrap; overflow-wrap: anywhere;
 }
-/* Above it, the two facts the bytes do not carry: which command this is, and whether anything
-   more is coming. */
+/* Leading it, the command itself. The one thing on this screen somebody can match against what
+   they remember asking for, so it is the thing set largest — and set in the terminal's typeface,
+   because it is a line of shell and not a sentence. */
+.shell-cmd {
+    margin: 0 0 8px; color: var(--ink); font: 12.5px/1.6 var(--mono);
+    white-space: pre-wrap; overflow-wrap: anywhere;
+}
+/* Under it, the two facts the bytes do not carry: what it was for, and whether anything more is
+   coming. */
 .shell-said {
     margin: 0 0 12px; color: var(--faint); font: 11.5px/1.5 var(--mono);
     display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
@@ -177,6 +184,9 @@
     background: var(--accent); opacity: 0.8;
 }
 .shell-said[data-ended="1"] .dot { background: var(--faint); opacity: 1; }
+/* Claude Code's own word for this command, kept because it is what `/bashes` and `KillShell` take
+   on the Mac — and kept quiet, because to anybody else it is nine random characters. */
+.shell-said .id { color: var(--line); }
 .git-branch {
     margin: 0 0 12px; color: var(--dim);
     font: 12px/1.5 var(--mono);

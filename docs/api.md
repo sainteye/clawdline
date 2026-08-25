@@ -271,8 +271,10 @@ $ curl -s "http://127.0.0.1:7717/v1/sessions/09BB6254-A0C9-43D0-B7ED-0A67E6B293F
 ever carries commands that are still running, so a client watching one land has nothing else that
 would tell it. `signature` moves when the file does — ask again, and redraw only when it changed.
 
-`shell` is the same object the session carries in its own `shells` array. It is **absent** once
-the command has ended and dropped off that list, which is also when a client should stop asking.
+`shell` is the same object the session carries in its own `shells` array, so a client that
+followed a link has the command line and the description without a second request. It is
+**absent** once the command has ended and dropped off that list, which is also when a client
+should stop asking.
 
 **Claude Code only**, and an id shaped like a path is a `404` — the same answer as an id that was
 never this session's. The id is checked before it is used to name a file.
@@ -1052,9 +1054,18 @@ only: a command that has finished is already in the transcript as a tool result.
 {
   "id": "bvlp3xmku",                              // Claude Code's id for it, the one /bashes shows
   "at": 1787049596,                               // when it last printed something
+  "command": "cargo build --release",             // the command line it was started with
+  "what": "Build the importer",                   // the description written beside it, if any
   "doing": "[214/318] Compiling importer/rows.rs" // its last line of output, when it has printed one
 }
 ```
+
+`command` is the only field here somebody can match against what they remember asking for, and it
+is joined from two transcript records — the assistant's call, marked `run_in_background`, and the
+reply that carries the id Claude Code minted for it. Newlines become spaces and both it and `what`
+are cut at 160 characters: this goes in a row one line tall, and a heredoc is not a label. Both are
+**absent** when the two records straddled a read of the transcript, which loses the command and
+never the id — the id is what decides whether anything is running at all.
 
 **This is the field that stops an idle session reading as a finished one.** The terminal says a
 command is still going exactly once, on the line where the turn ended — "Cooked for 1h 25m 13s · 1

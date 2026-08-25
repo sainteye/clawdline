@@ -72,7 +72,9 @@ export var Mock = (function () {
           cwd: "/Users/x/code/notebook", state: "idle", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: creature,
           shells: [
-              { id: "bvlp3xmku", at: now - 6, doing: "[214/318] Compiling importer/rows.rs" }
+              { id: "bvlp3xmku", at: now - 6, command: "cargo build --release 2>&1 | tail -40",
+                what: "Build the importer with the new row parser",
+                doing: "[214/318] Compiling importer/rows.rs" }
           ] },
         { id: "A15E-77", backend: "tmux", tty: "tmux:%12", label: "docs pass before the release",
           cwd: "/Users/x/code/clawdline/docs", state: "idle", line: null,

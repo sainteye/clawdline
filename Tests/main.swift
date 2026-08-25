@@ -6609,27 +6609,40 @@ group("a file left behind by an interrupted command is not a command still runni
 
     // Two records off a real transcript, trimmed to what is read: the sentence Claude Code answers
     // a backgrounded `Bash` with, and an ordinary message that says nothing of the kind.
-    let started = #"{"type":"user","message":{"content":[{"type":"tool_result","content":"Command running in background with ID: bvlp3xmku. Output is being written to: /private/tmp/claude-501/x/y/tasks/bvlp3xmku.output. You will be notified when it completes."}]}}"#
+    let started = #"{"type":"user","message":{"content":[{"tool_use_id":"toolu_01FU5QVdeqA1fDXfF254GFnk","type":"tool_result","content":"Command running in background with ID: bvlp3xmku. Output is being written to: /private/tmp/claude-501/x/y/tasks/bvlp3xmku.output. You will be notified when it completes."}]}}"#
     let ordinary = #"{"type":"assistant","message":{"content":[{"type":"text","text":"Building for debugging..."}]}}"#
+    // The assistant's side of the same command, which carries what was actually asked for and
+    // points at the reply above through `tool_use_id`. It comes first in an append-only file.
+    let asked = #"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_01FU5QVdeqA1fDXfF254GFnk","name":"Bash","input":{"command":"swift build 2>&1 | tail -30","description":"Compile the package","run_in_background":true}}]}}"#
 
     let file = dir.appendingPathComponent("transcript.jsonl")
-    try! (ordinary + "\n" + started + "\n").write(to: file, atomically: true, encoding: .utf8)
+    try! (asked + "\n" + ordinary + "\n" + started + "\n")
+        .write(to: file, atomically: true, encoding: .utf8)
     let first = Shells.announced(in: file)
-    check("the id of a backgrounded command is found", first.contains("bvlp3xmku"))
+    check("the id of a backgrounded command is found", first["bvlp3xmku"] != nil)
     expect("and nothing else is", first.count, 1)
+    // Joined to the call that started it, which is the only place the command line exists.
+    expect("the command it was asked to run comes with it",
+           first["bvlp3xmku"]?.command ?? "", "swift build 2>&1 | tail -30")
+    expect("and the description written beside it",
+           first["bvlp3xmku"]?.what ?? "", "Compile the package")
 
     // The whole point of the offset: a session that has been going for ninety minutes has pushed
     // that announcement far past the end of any window a tail could afford to read.
     let filler = String(repeating: ordinary + "\n", count: 400)
-    let second = #"{"type":"user","message":{"content":[{"type":"tool_result","content":"Command running in background with ID: bke4ijfjf. Output is being written to: /private/tmp/claude-501/x/y/tasks/bke4ijfjf.output."}]}}"#
+    let second = #"{"type":"user","message":{"content":[{"tool_use_id":"toolu_0139kcvC1WTpjRsFSKeU9KWC","type":"tool_result","content":"Command running in background with ID: bke4ijfjf. Output is being written to: /private/tmp/claude-501/x/y/tasks/bke4ijfjf.output."}]}}"#
     let handle = try! FileHandle(forWritingTo: file)
     try! handle.seekToEnd()
     try! handle.write(contentsOf: Data((filler + second + "\n").utf8))
     try! handle.close()
 
     let grown = Shells.announced(in: file)
-    check("an announcement in the new bytes is found too", grown.contains("bke4ijfjf"))
-    check("and the one before them is still remembered", grown.contains("bvlp3xmku"))
+    check("an announcement in the new bytes is found too", grown["bke4ijfjf"] != nil)
+    check("and the one before them is still remembered", grown["bvlp3xmku"] != nil)
+    // Its own call is not in this file at all, so the join cannot be made. The id is what decides
+    // whether anything is running and it survives; the command line is what is lost.
+    expect("an announcement with no call to join to still counts",
+           grown["bke4ijfjf"]?.command ?? "", "")
 
     // A half-written record at the end is not read now and not skipped forever: the scan stops at
     // the last newline, so the next call starts where this one stopped.
@@ -6637,7 +6650,7 @@ group("a file left behind by an interrupted command is not a command still runni
     try! partial.seekToEnd()
     try! partial.write(contentsOf: Data(#"{"type":"user","message":{"content":[{"type":"tool_result","content":"Command running in background with ID: bhal"#.utf8))
     try! partial.close()
-    check("half a record at the end is not read", !Shells.announced(in: file).contains("bhal"))
+    check("half a record at the end is not read", Shells.announced(in: file)["bhal"] == nil)
 
     // A file that has shrunk was replaced rather than appended to, so the offset means nothing.
     try! ordinary.appending("\n").write(to: file, atomically: true, encoding: .utf8)

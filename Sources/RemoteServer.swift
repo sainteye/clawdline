@@ -1740,6 +1740,11 @@ final class RemoteServer {
             "id": shell.id,
             "at": Int(shell.at.timeIntervalSince1970),
         ]
+        // What somebody asked for, which is the only thing here they can match against what they
+        // remember asking for. Absent rather than empty when the two records it is joined from
+        // straddled a read of the transcript — see `Shells.announced(in:)`.
+        if !shell.command.isEmpty { out["command"] = shell.command }
+        if let what = shell.what { out["what"] = what }
         if let doing = shell.doing { out["doing"] = doing }
         return out
     }

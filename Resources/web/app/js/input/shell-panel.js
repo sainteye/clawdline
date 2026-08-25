@@ -30,32 +30,65 @@ export var ShellPanel = (function () {
     var error = null;
     var ticket = 0;
     var timer = null;
+    var drawn = false;
 
     /** How often a live command is re-read. Slower than the session list, which it is not. */
     var beat = 1500;
 
-    function said(shell) {
+    /**
+     * What was asked for, and whether anything more is coming.
+     *
+     * **The command leads.** It is the one thing on this screen a reader can match against what
+     * they remember asking for — the id is Claude Code's word for it, useful for `/bashes` on the
+     * Mac and meaningless to somebody holding a phone. It is absent only when the two transcript
+     * records it is joined from straddled a read, and then the id is all there is.
+     */
+    function cmdHTML() {
+        var command = ((snapshot && snapshot.shell) || {}).command;
+        return command ? '<p class="shell-cmd">' + esc(command) + "</p>" : "";
+    }
+
+    function saidHTML() {
+        var shell = (snapshot && snapshot.shell) || {};
         var ended = snapshot && snapshot.ended;
         return '<p class="shell-said" data-ended="' + (ended ? "1" : "0") + '">' +
-            '<span class="dot"></span><span>' + esc(shellId || "") + "</span>" +
+            '<span class="dot"></span>' +
+            (shell.what ? "<span>" + esc(shell.what) + "</span>" : "") +
+            '<span class="id">' + esc(shellId || "") + "</span>" +
             "<span>" + esc(ended ? T.webShellEnded : T.webShellRunning) + "</span></p>";
+    }
+
+    /**
+     * Drawn, and left where a reader watching a log expects to be left.
+     *
+     * **The newest line is the one they came for.** A build log is read from the bottom, and a
+     * panel that opens at line one of four hundred is a panel somebody has to scroll every time
+     * it redraws. So: to the bottom on the first draw, and to the bottom on every draw after
+     * that *unless* they have scrolled up — which is them reading something further back, and
+     * yanking them away from it would be worse than being one screen behind.
+     */
+    function draw(html) {
+        var box = els["shell-body"];
+        var stick = !snapshot || !drawn ||
+            box.scrollTop + box.clientHeight >= box.scrollHeight - 24;
+        box.innerHTML = html;
+        drawn = true;
+        if (stick) box.scrollTop = box.scrollHeight;
     }
 
     function render() {
         if (loading && !snapshot) {
-            els["shell-body"].innerHTML = '<div class="git-note" role="status">' +
-                esc(T.webLoading) + "</div>";
+            draw('<div class="git-note" role="status">' + esc(T.webLoading) + "</div>");
             return;
         }
         if (error) {
-            els["shell-body"].innerHTML = '<div class="git-note err" role="alert">' +
-                esc(error) + "</div>";
+            draw('<div class="git-note err" role="alert">' + esc(error) + "</div>");
             return;
         }
         var text = (snapshot && snapshot.text) || "";
-        els["shell-body"].innerHTML = said() + (text.trim()
+        draw(cmdHTML() + saidHTML() + (text.trim()
             ? '<pre class="shell-out">' + esc(text) + "</pre>"
-            : '<div class="git-note">' + esc(T.webShellQuiet) + "</div>");
+            : '<div class="git-note">' + esc(T.webShellQuiet) + "</div>"));
     }
 
     function load(quiet) {
@@ -71,8 +104,12 @@ export var ShellPanel = (function () {
             // second would throw away the reader's scroll position once a second with it.
             var same = snapshot && snapshot.signature && snapshot.signature === data.signature;
             snapshot = data;
-            if (!same) render(); else if (els["shell-body"].querySelector(".shell-said")) {
-                els["shell-body"].querySelector(".shell-said").outerHTML = said();
+            if (!same) render();
+            else {
+                // Only the line that can change without the bytes changing: a command that ended
+                // having printed nothing new. Redrawing the output would take the scroll with it.
+                var line = els["shell-body"].querySelector(".shell-said");
+                if (line) line.outerHTML = saidHTML();
             }
             if (data.ended) stopBeat();
         }).catch(function (e) {
@@ -113,6 +150,7 @@ export var ShellPanel = (function () {
             ticket += 1;
             stopBeat();
             forId = null; shellId = null; snapshot = null; loading = false; error = null;
+            drawn = false;
             els["shell-panel"].hidden = true;
             delete els["pane-detail"].dataset.panel;
             if (restore && !els["detail-focus"].disabled) {
