@@ -414,7 +414,10 @@ function fillRow(node, s) {
     // The chip is a claim about this session, which is true whether or not its root is on
     // screen — a child whose root has closed is still a child, and still worth saying so.
     var under = kid ? rowDepth(s.id) : 0;
-    var roots = S.tasks.length && !kid ? tasksOfRoot(s.id) : [];
+    var roots = S.tasks.length ? tasksOfRoot(s.id) : [];
+    var titles = function () {
+        return T.webTaskTasks + ": " + roots.map(function (t) { return t.title || t.id; }).join(" · ");
+    };
     var mine = node.querySelector(".task-chip");
     var glyph = node.querySelector(".kid");
     if (kid) {
@@ -422,8 +425,12 @@ function fillRow(node, s) {
         glyph.hidden = !under;
         mine.hidden = false;
         mine.dataset.live = taskLive(kid) ? "1" : "0";
+        // A child that handed work on in turn stays drawn as a child: the rows indented under it
+        // are the visible half, and a chip saying both would say neither in the width it has.
+        // What it sent away goes in the same tooltip as its own task.
         mine.textContent = T.webTaskChild + " · " + taskWord(kid);
-        mine.title = kid.title || "";
+        mine.title = [kid.title || "", roots.length ? titles() : ""]
+            .filter(Boolean).join("\n");
     } else {
         delete node.dataset.depth;
         glyph.hidden = true;
@@ -431,7 +438,7 @@ function fillRow(node, s) {
             mine.hidden = false;
             mine.dataset.live = roots.some(taskLive) ? "1" : "0";
             mine.textContent = T.webTaskRoot + " · " + roots.length;
-            mine.title = T.webTaskTasks + ": " + roots.map(function (t) { return t.title || t.id; }).join(" · ");
+            mine.title = titles();
         } else {
             mine.hidden = true;
             mine.textContent = "";
