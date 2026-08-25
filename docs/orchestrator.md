@@ -16,11 +16,11 @@ be told when it is done.
 - **Broker** — Clawdline. It checks the ask, records it, opens a terminal tab, types the first
   message into it, watches for the answer, adds up what it cost, and tells the root.
 - **Child** — the session the broker opened. It does exactly one task and writes down what
-  happened.
+  happened. It may hand parts of that task to children of its own; those may not.
 
 The root never touches a terminal and never learns the child's id until the broker tells it. The
-child never learns who asked. Neither of them can dispatch on the other's behalf, and the child
-cannot dispatch at all — [that is a rule with teeth](#depth-is-one-and-that-is-not-a-default).
+child never learns who asked. Neither of them can dispatch on the other's behalf, and a child may
+dispatch only one level further — [that is a rule with teeth](#depth-stops-at-two-and-the-floor-is-what-has-teeth).
 
 **The transcripts on this page are written to the protocol rather than pasted out of a run.** Every
 route, field and code below is the contract; where a reply is shown it is what a correct
@@ -74,36 +74,54 @@ subresource. An orchestrator route is not a hole in either.
 Something already running as your user can read `orchestrator-token` exactly as it can read
 `~/.ssh/id_ed25519`. If that has happened, this feature is not your problem.
 
-### Depth is one, and that is not a default
+### Depth stops at two, and the floor is what has teeth
 
-A child that can dispatch is a fork bomb with a language model in it. One task becomes three becomes
-nine, each one a real terminal tab running a real assistant against a real API bill, and the failure
-mode is not "it got slow" — it is a Mac with sixty tabs open and no obvious way to tell which of
-them started it.
+Dispatch without a floor is a fork bomb with a language model in it. One task becomes five becomes
+twenty-five, each one a real terminal tab running a real assistant against a real API bill, and the
+failure mode is not "it got slow" — it is a Mac with sixty tabs open and no obvious way to tell
+which of them started it.
 
-So there are two independent stops.
+So the tree has a bottom, and it is close to the top. **A root's children may dispatch. Their
+children may not.** That is not a number picked to be safe; it is where the arithmetic stops being
+something a person can hold in their head. Five and three is twenty at full stretch, which is
+already more terminals than anybody wants to audit. Five, three and three would be sixty-five.
 
-**The skill refuses.** `~/.claude/skills/clawdline/SKILL.md` opens with the check: if this session's
-first message was `You are a Clawdline CHILD agent…`, or it has been asked to read a `CHILD.md`, or
-it is holding a `TASK_SECRET`, it stops and says so. `CHILD.md` says the same thing to the child in
-its own words. That covers the honest case, which is most of them.
+The floor is enforced twice, and the two fail differently.
 
-**The app refuses.** A dispatch declares its root — session id, and the tty it came from is known
-either way — and if that root matches the child of any *active* task, the dispatch is
-`409 depth_exceeded`. This is the one that holds when the first one does not: a child that has been
-talked into ignoring its instructions still cannot get a task registered, because the refusal does
-not depend on the child's cooperation.
+**The briefing says so.** `CHILD.md` tells every child which level it is on: one with room under it
+gets the whole recipe for dispatching — including `root.parent_task`, the field that says where the
+new task hangs — and one standing on the floor is told plainly not to. `~/.claude/skills/clawdline/SKILL.md`
+carries the same rule for a root. A child that follows its instructions never has to find the limit
+by hitting it.
 
-Two stops rather than one, because they fail differently. The skill fails to a confused agent; the
-app fails to a wrong answer about which terminal is which. Neither failure is silent.
+**The app refuses.** A dispatch names who is asking — the task it hangs under, the session id, or
+both — and the new task lands one level below whatever that turns out to be. Past the floor it is
+`409 depth_exceeded`. This is the stop that holds when the first one does not: a child talked into
+ignoring its briefing still cannot get a task registered, because the refusal does not depend on its
+cooperation.
+
+**The two names are combined by taking the deeper answer.** A caller can lie about either one. It
+cannot lie its way *up*: claiming a shallower parent than it has is worth nothing when the other
+signal still says otherwise, and claiming somebody else's identity moves the task into that
+session's bucket rather than out of everybody's. The ceiling below is what closes the rest.
 
 ### Caps
 
-- **Three children at once**, by default — `orchestrator_max_children` in
-  `~/.config/clawdline/config.json`, valid 1…10. A fourth dispatch is `429 over_capacity` and
-  carries `retry_after` so a client waits instead of spinning.
-- **Ten dispatches per ten minutes**, the same rolling window the pairing route uses.
-  `429 rate_limited` after that.
+- **Five children at once, per session** — `orchestrator_max_children` in
+  `~/.config/clawdline/config.json`, valid 1…10. Counted per dispatcher rather than per Mac: what
+  the number bounds is how much work one conversation can have out at a time. A sixth is
+  `429 over_capacity`, carrying `retry_after` so a client waits instead of spinning.
+- **Three of those, for a child** — `orchestrator_max_grandchildren`, valid 0…10. `0` is the rule
+  this app had before the second level existed: a child that tries is refused at the door. It is a
+  stop on the same list rather than a switch of its own, because "how many" and "whether" are the
+  same question asked twice.
+- **One full tree, for the Mac** — `orchestrator_max_children × (1 + orchestrator_max_grandchildren)`,
+  twenty by default, and not a setting because it is not a choice separate from the two it is made
+  of. The per-session caps are the ones a caller could sidestep by claiming to be somebody else;
+  this is the one that still holds when it does.
+- **Ten dispatches per ten minutes**, the same rolling window the pairing route uses, or one full
+  tree's worth if that is more — a brake on a loop should not refuse the work the caps just
+  permitted. `429 rate_limited` after that.
 - **Four hours, absolute.** `timeout_minutes` is 1…240 and 30 by default. A child that has not
   reported by then is `timeout`, whatever it is still doing.
 - **Two minutes to be briefed.** A tab that opens but never reaches a state where the first message
@@ -153,7 +171,8 @@ holds a secret: not the orchestrator token, and not the task secret.
     "session_id": "841cbb8d-58b1-4765-9a71-bcdba19bcfef",
     "assistant": "claude",
     "project_dir": "/Users/you/code/clawdline",
-    "label": "clawdline main"
+    "label": "clawdline main",
+    "parent_task": null
   }
 }
 ```
@@ -177,11 +196,20 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `instructions` | non-empty, ≤ 16 KiB |
 | `timeout_minutes` | 1…240; absent means 30 |
 | `root.session_id` | a Claude Code session UUID, or `null` |
+| `root.parent_task` | the dispatcher's **own** task id, when the dispatcher is a child. `null` from a root. A value that is not a task id is read as `null` |
 
 `root.session_id` being nullable is deliberate. A root that cannot work out its own id — Claude
 Code has no route to ask — still gets to dispatch; it just does not get told when the task finishes
 and has to poll instead. **A best-effort field must not be a required one**, or the honest answer
 "I don't know" becomes a reason to invent something.
+
+`root.parent_task` is the same field one level down, and it exists because a child knows its own
+task id from the first line it was ever sent, long before this app has worked out what the session
+in that tab calls itself. For a Codex child it is the only usable answer at all: its session id
+lives in a rollout file rather than in the hook notes `root.session_id` is matched against. Naming
+it is what gets a task filed under its actual parent on the first try instead of being counted as a
+root's. Getting it wrong costs capacity and never buys any — [the two names are combined by taking
+the deeper answer](#depth-stops-at-two-and-the-floor-is-what-has-teeth).
 
 ### `CHILD.md` — written by the app, read by the child
 
@@ -193,7 +221,7 @@ You are a Clawdline CHILD agent for task 3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234. R
 
 One line, because it is typed into a terminal and Return ends it. Everything that would not fit is
 in `CHILD.md`, which the app writes immediately before injecting: where the task is, where the
-outputs go, how long it has, that it must not dispatch, that it must not read other task
+outputs go, how long it has, whether it may dispatch and how many, that it must not read other task
 directories, and exactly what `result.json` has to look like.
 
 It also says what language to speak. The briefing itself is English so every assistant reads it
@@ -305,9 +333,15 @@ restart has none while its tab is plainly still there, and the page decides the 
 **Only an explicit close cascades.** Closing the tab by hand does not. The app never watches a root
 for signs of death, because "not in this reading" is a sentence that is also true of a terminal that
 lost its accessibility permission for a moment, and the cost of being wrong there is somebody's work
-killed mid-turn. Nor is there a second level to reach: a child may not dispatch
-(`depth_exceeded`), so one root's children are all the children there are. A busy child gets no
-grace period either; somebody pressed a button that says close.
+killed mid-turn. A busy child gets no grace period either; somebody pressed a button that says close.
+
+**The cascade reaches both levels, deepest first.** A child's own children go before it does — the
+level below is found through the session id its parent goes by, and that stops being a useful thing
+to match on the moment that parent's tab is gone. It is gathered from the *finished* children too,
+not only the live ones: a child that reported while the work it handed on is still running would
+otherwise leave a grandchild belonging to nobody. Cancelling a single task does the same thing on a
+smaller scale — what that task handed on goes with it, since it is work nobody is waiting for any
+more.
 
 **spawn_failed** — the tab never happened, or never got briefed inside two minutes, or the app was
 restarted while the task was still in `queued`/`spawning`. That last one is not a bug: the plaintext
@@ -405,12 +439,16 @@ this"* into a dispatch. Six steps:
    `~/.claude/projects/<slug>/*.jsonl` finds which file it landed in. The basename is the id. Not
    found is `null` and the task still runs.
 5. **Dispatch**, and branch on `code`: `over_capacity` waits or asks for fewer, `bad_task` is a file
-   to fix and re-send under the same id, and **`depth_exceeded` means this session is itself a child
-   and must stop** rather than find another way.
+   to fix and re-send under the same id, and **`depth_exceeded` means this session is already as
+   deep as this Mac goes** — the work is its own to do, not something to find another way to hand
+   on.
 6. **Report, then get out of the way.** No polling loop. The notification arrives on its own, and
    `GET /v1/orchestrator/tasks/:id` answers when somebody asks.
 
-The one rule the skill states before any of them: **a child never dispatches.**
+The one rule stated before any of them: **a child dispatches only if its briefing said it could,
+and what it opens opens nothing.** `CHILD.md` is where a child reads that, and it carries the same
+six steps in miniature — spelled out rather than pointed at the skill, because half of these
+sessions are Codex and Codex has no skills.
 
 ---
 

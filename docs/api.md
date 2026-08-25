@@ -637,9 +637,11 @@ for Codex and `/exit` for Claude Code, because each refuses the other's.
 task is matched to its root through the hook note on the tty of the tab about to go, so after the
 fact there is nothing left to match. A task still running is cancelled with its tab; one that
 already finished keeps its record and loses only the tab, because `success` is a fact about work
-that happened and the tab was being held for a reader who is leaving. Closing a tab by hand
-cascades to nothing: only this route does. The audit log carries `orchestrator.cancel` for the
-first kind and `orchestrator.close` for the second, both with `why=root_ended`.
+that happened and the tab was being held for a reader who is leaving. **Both levels go**, deepest
+first: what this session's children handed on in turn goes before they do, and it is collected
+from the finished children as well as the live ones. Closing a tab by hand cascades to nothing:
+only this route does. The audit log carries `orchestrator.cancel` for the first kind and
+`orchestrator.close` for the second, both with `why=root_ended`.
 
 `502 internal` carries what actually failed; the session is left as it was found.
 
@@ -772,15 +774,15 @@ Six refusals, and a client should branch on all of them:
 |---|---|---|
 | `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
 | `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range. `message` names the field |
-| `depth_exceeded` | 409 | **the caller is itself a child.** A task registered under a session or tty that is currently running somebody's task cannot register another one. Not a retry — stop |
-| `over_capacity` | 429 | `orchestrator_max_children` are already running. The error object carries `retry_after` in seconds |
-| `rate_limited` | 429 | more than ten dispatches in ten minutes |
+| `depth_exceeded` | 409 | **the caller is already as deep as this Mac goes.** A root's child may dispatch; that child's may not. `orchestrator_max_grandchildren` of `0` puts the floor back at one level. Not a retry — stop |
+| `over_capacity` | 429 | this dispatcher's slots are full (`orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child), or the whole Mac's are. The error object carries `retry_after` in seconds, and `message` says which |
+| `rate_limited` | 429 | more than ten dispatches in ten minutes, or more than one full tree's worth if that is larger |
 | `not_found` | 404 | this build has no orchestrator |
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
     -H "X-Clawdline-Orchestrator: $ORCH" -d "{\"task_id\":\"$TASK\",\"secret\":\"$SECRET\"}"
-{"error":{"code":"over_capacity","retry_after":60,"message":"Three child sessions are already running. Wait for one to finish.","request_id":"7b2c19d0-6e44-4a2f-9c31-0d5e8ab41f77"}}
+{"error":{"code":"over_capacity","retry_after":60,"message":"All 5 child slots for this session are busy; retry when one finishes.","request_id":"7b2c19d0-6e44-4a2f-9c31-0d5e8ab41f77"}}
 ```
 
 A `200` means *registered and being opened*, not *running*. `state` is `queued` or `spawning` when
@@ -818,11 +820,13 @@ The record:
   "assistant": "codex",
   "projectDir": "/Users/you/code/clawdline",
   "created": 1787100000,        // integer unix seconds, like every time in this API
+  "depth": 1,                   // 1 for one a person's session dispatched, 2 for one its child did
   "spawnedAt": 1787100002,      // absent until a tab exists
   "briefedAt": 1787100014,      // absent until the first message landed
   "finishedAt": null,
   "dir": "/tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234",
-  "root":  {"sessionId": "841cbb8d-…", "label": "clawdline main", "terminalId": "27439AEE-…"},
+  "root":  {"sessionId": "841cbb8d-…", "label": "clawdline main", "terminalId": "27439AEE-…",
+            "taskId": "a70c5e11-…"},   // the parent task — depth 2 only, and only when it said so
   "child": {"terminalId": "9A1F…", "backend": "iterm", "sessionId": "0f2b91ac-…"},
   "summary": "…",               // finished tasks; the child's own sentence
   "artifacts": ["artifacts/project-portrait.svg"],
@@ -836,7 +840,10 @@ there is no shape of this reply that could disclose it.
 
 `child.terminalId` is in the same space as every `id` in `/v1/sessions`, which is what makes the
 child row in a session list joinable to the task that opened it. `root.terminalId` is resolved live
-from the root's session id and is absent when that session has gone. `usage` appears at finalize and
+— from `root.taskId` when there is one, otherwise from the root's session id — and is absent when
+that session has gone. `depth` and `root.taskId` are what a client nests a list by: a `depth` of 2
+means the row belongs under another *child* row, not under a root, and `taskId` says which. Two is
+the floor, so a client never has to draw a third level. `usage` appears at finalize and
 is best-effort: `costUsd` is `null` for any model without a published per-token price, which is
 every OpenAI one, since Codex bills against a plan. Tokens are still counted. Null fields are
 omitted the way they are everywhere else on this API — read by name, and treat absent as unknown.
@@ -878,6 +885,11 @@ Stop it. The task goes to `cancelled` and the child's terminal is ended the poli
 [`/v1/sessions/:id/end`](#post-v1sessionsidend) does it — the assistant is asked to leave through its
 own word, then the tab closes. A task that is already finished answers `200` with its record
 unchanged; there is nothing to cancel and nothing went wrong.
+
+**What the task handed on goes with it**, deepest first and for the same reason a closing root
+takes both levels: work whose asker has just been stopped is work nobody is waiting for. Those
+cancellations carry `why=parent_cancelled` in the audit log. The reply names only the task that
+was asked for — read the list if a client needs to know what else moved.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/cancel \
@@ -1042,12 +1054,12 @@ it draws them, and that is a drawing decision which does not travel over the wir
 | `not_found` | 404 | no such session, no such place, or no such route |
 | `terminal_closed` | 409 | the terminal a session would start in is not running |
 | `terminal_unsupported` | 409 | the terminal in Settings is not one a session can be started in |
-| `depth_exceeded` | 409 | a Clawdline child session tried to dispatch a task of its own |
+| `depth_exceeded` | 409 | a session already at the bottom of the tree tried to dispatch a task of its own |
 | `already_done` | 409 | that task has already reported; the first report wins |
 | `bad_task` | 422 | a `task.json` that is missing, unparseable, or out of range. `message` names the field |
 | `rate_limited` | 429 | too many pairing attempts |
 | `busy` | 429 | `/v1/voice` only: one recording is being read and one is waiting. It drains in seconds |
-| `over_capacity` | 429 | as many child sessions are running as `orchestrator_max_children` allows. `retry_after` is seconds. (`rate_limited` covers the other orchestrator limit: ten dispatches in ten minutes) |
+| `over_capacity` | 429 | the dispatcher's child slots are full — `orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child — or the whole Mac's are. `retry_after` is seconds. (`rate_limited` covers the other orchestrator limit: dispatches per ten minutes) |
 | `internal` | 500, 502 | a tab that would not open; a terminal that would not take the text |
 | `no_whisper` | 503 | `/v1/voice` only: this Mac has nothing to transcribe with. `reason` is `no_binary` or `no_model` |
 

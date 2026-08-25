@@ -137,8 +137,10 @@ model has a published price, in dollars.
 
 **Dispatching has a door of its own.** It sits behind a `0600` file only a local process can read,
 so a paired phone can watch the tasks and never start one — typing into a session and spawning
-three more are not the same right. And **depth is one**: a session this app briefed as a child
-cannot dispatch tasks of its own, which is the difference between a fleet and a fork bomb.
+five more are not the same right. And **the tree has a bottom**: a session may have five children
+out at once and each of those may have three, but what *they* open, nothing opens under. Five and
+three is twenty terminals at full stretch, which is already more than anybody wants to audit;
+without a floor it is a fork bomb with a language model in it.
 
 **[docs/orchestrator.md](docs/orchestrator.md)** is the protocol: the file formats, the
 credentials, the lifecycle and the routes with `curl` transcripts.
@@ -410,7 +412,8 @@ itself.
 | `cloudflared_path` | `""` | empty looks where package managers put it |
 | `push_on_finish` · `push_on_deploy` | `true` · `false` | when a phone should buzz |
 | `orchestrator_enabled` | `true` | may a session hand work to another |
-| `orchestrator_max_children` | `3` | child sessions at once, 1–10 |
+| `orchestrator_max_children` | `5` | child sessions one session may have out, 1–10 |
+| `orchestrator_max_grandchildren` | `3` | and what each of those may have out, 0–10; `0` stops the tree one level up |
 | `orchestrator_notify_root` | `true` | type a line back into the session that asked |
 | `orchestrator_child_linger` | `180` | seconds a reported child's tab stays open; `0` closes it at once, `-1` never |
 

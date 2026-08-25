@@ -9,6 +9,31 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: a child can hand work on, one level further
+
+A session dispatched a task and that was the end of the line — the child it opened was refused if
+it tried to dispatch anything itself. That floor is now one step lower. A session may have **five**
+children out at once, and each of those may have **three** of its own. What *they* open, nothing
+opens under.
+
+Both numbers are yours: `orchestrator_max_children` and `orchestrator_max_grandchildren` in
+Settings → Remote, or in `~/.config/clawdline/config.json`. Setting the second to zero is the rule
+this app had before — a child that tries is refused at the door — and it is a stop on the same
+list rather than a switch of its own.
+
+The first number is now counted **per session** rather than per Mac, which is the part worth
+knowing if you had raised it: five is what one conversation may have out, not what the machine may.
+Over both there is a ceiling nobody sets — one full tree, twenty by default — because the
+per-session caps are the ones a caller could sidestep by claiming to be somebody else.
+
+Everything downstream follows the shape. The list on the Mac and on the phone indents twice, so a
+grandchild sits under its parent rather than beside it. Closing a session takes both levels with
+it, deepest first, including work handed on by a child that has already reported. Cancelling one
+task does the same on a smaller scale. And `CHILD.md` now tells each child which level it is on:
+one with room under it gets the whole recipe for dispatching, one standing on the floor is told
+plainly not to — spelled out rather than pointed at a skill, since half of these sessions are Codex
+and Codex has no skills.
+
 ### Fixed: a task could be reported as failed while its child was working
 
 A dispatched task was marked `spawn_failed` with "the task's secret was lost before briefing",

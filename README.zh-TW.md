@@ -120,9 +120,10 @@ Codex 子 session、把 diff 交給一個 Claude Code 子 session；app 需要�
 模型有公開價格的時候，也一起算成錢。
 
 **派工有自己的一道門。** 它擋在一個只有本機行程讀得到的 `0600` 檔案後面，所以配對過的手機看得到
-這些任務、卻永遠開不了新的——往一個 session 打字，跟再生出三個 session 來，本來就不是同一種
-權限。而且**深度只有一層**：被這個 app 交代成子 session 的那一個，不能再往下派——這就是一支艦隊
-跟一顆 fork bomb 的差別。
+這些任務、卻永遠開不了新的——往一個 session 打字，跟再生出五個 session 來，本來就不是同一種
+權限。而且**這棵樹有底**：一個 session 同時可以派五個，那五個各自還能再派三個，但**它們派出來
+的那些，底下就沒有了**。五乘三，全開也就二十個終端機，這數字已經是一個人盯得完的上限；沒有這個
+底，它就是一顆裝了語言模型的 fork bomb。
 
 **[docs/orchestrator.md](docs/orchestrator.md)** 是那份協定：檔案格式、憑證、整個生命週期，
 以及帶著 `curl` 紀錄的路由說明。
@@ -374,7 +375,8 @@ claude
 | `cloudflared_path` | `""` | 空的 ＝ 去套件管理器慣用的位置找 |
 | `push_on_finish` · `push_on_deploy` | `true` · `false` | 手機什麼時候該震 |
 | `orchestrator_enabled` | `true` | 能不能讓一個 session 把工作派給另一個 |
-| `orchestrator_max_children` | `3` | 同時最多幾個子 session，1–10 |
+| `orchestrator_max_children` | `5` | 一個 session 同時最多派幾個子 session，1–10 |
+| `orchestrator_max_grandchildren` | `3` | 每個子 session 自己又能派幾個，0–10；`0` ＝ 只有一層 |
 | `orchestrator_notify_root` | `true` | 做完之後往發派的 session 打一行字 |
 | `orchestrator_child_linger` | `180` | 回報過的子 session，分頁再留幾秒；`0` 馬上關，`-1` 不關 |
 
