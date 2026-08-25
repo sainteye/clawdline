@@ -89,6 +89,27 @@ export function paintStatic() {
     // The × is a shape, not a word; the word is what it is called.
     attr(els["starting-close"], "aria-label", T.webClose);
 
+    // Saying what to start, instead of picking where. The header microphone names what pressing
+    // it leads to, the way `start-go` names its own sheet a few lines up; the sheet's "say it
+    // again" button is doing nothing but dictation once the sheet is already open, so it keeps
+    // the composer's own words for that rather than a second phrase for the same act. Either
+    // button's words while it is actually recording belong to `Voice.show()` — same reasoning as
+    // `els.mic` above — and this only paints the state each one comes up in.
+    attr(els["voice-go"], "title", T.webCommand);
+    attr(els["voice-go"], "aria-label", T.webCommandLabel);
+    attr(els["command-sheet"], "aria-label", T.webCommandLabel);
+    text(els["command-title"], T.webCommand);
+    attr(els["command-mic"], "aria-label", T.webVoiceStart);
+    attr(els["command-mic"], "title", T.webVoiceStart);
+    // The words this box is asking for — the same question the fallback placeholder already
+    // asked, translated. `command.js` owns everything the sheet says once a person has acted on
+    // it; this is the one line still true before that.
+    els["command-text"].placeholder = T.webCommandHeard;
+    attr(els["command-list"], "aria-label", T.webCommandWhere);
+    attr(els["command-instructions"], "aria-label", T.webCommandFirst);
+    text(els["command-cancel"], T.webCancel);
+    text(els["command-go"], T.webCommandGo);
+
     // The transcript's left margin. Claude's own name is not in the strings and is not
     // translated — it is a name, and it is the same name in fourteen languages.
     WHO.user = T.webWhoYou;

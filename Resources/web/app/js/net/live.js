@@ -213,6 +213,16 @@ export var Live = {
                                            { "Idempotency-Key": uuid() }));
     },
 
+    /// One sentence, turned into a draft session: which project, which assistant, what to say
+    /// first. Gated exactly like `voice` above — the write switch, the `send` capability, a
+    /// key — because thinking about it spends this Mac's CPU and the speaker's own model quota,
+    /// which is the same reason dictation is gated rather than left as a read. It is also the
+    /// slowest ordinary request this page makes: 4.6-5.1 seconds measured, so the caller is the
+    /// one that has to say so honestly rather than sit on a sheet that looks stuck.
+    intents: function (text) {
+        return jsonFetch("/v1/intents", post({ text: text }, { "Idempotency-Key": uuid() }));
+    },
+
     focus: function (id) {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/focus",
                          post({}, { "Idempotency-Key": uuid() }));

@@ -365,7 +365,18 @@ a.dep:hover .host { color: var(--accent); }
    comparable to each other: what was heard, and the message that was written from it. The rule
    between them is the seam — above it are the speaker's own words, below it is a machine's
    rewrite of them, and reading the second is the entire point of the sheet. */
-.command-sheet { width: min(520px, 100%); }
+.command-sheet {
+    width: min(520px, 100%);
+    /* The only sheet tall enough to need this. It stacks a title, a promise, a dictation row, two
+       textareas, a list of projects and two buttons, and measured at 518x793 it came to 817px with
+       `top: -12` — Cancel and Start below the fold of a fixed overlay that cannot be scrolled, so
+       there was no way to reach them at all. `--vvh` rather than `dvh`, which is
+       what `.info-sheet` above already uses: it is written from `visualViewport` by `core/env.js`,
+       so it shrinks when the software keyboard opens — which is exactly when this sheet has a
+       textarea focused. */
+    max-height: calc(var(--vvh) - 48px);
+    overflow-y: auto;
+}
 .command-sheet .block { display: flex; align-items: flex-start; gap: 8px; }
 .command-sheet textarea {
     min-height: 68px; resize: vertical;
@@ -394,3 +405,11 @@ a.dep:hover .host { color: var(--accent); }
 .command-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
 .command-sheet .confirm-go { border-color: var(--accent-ed); color: var(--accent); }
 .command-sheet .confirm-go[disabled] { opacity: 0.5; }
+/* Last, and with the specificity spelled out, because `hidden` has to beat every rule above it.
+   The user agent's `[hidden] { display: none }` is (0,0,1) and loses to all of them: the empty
+   draft frame sat on screen from the moment the sheet opened — the exact "reads as something
+   already broken" the markup warns against — and the assistant row drew itself on a Mac with only
+   one assistant to offer. Measured before this: `#command-draft.hidden === true` with a computed
+   `display: block`. The second selector is for `.sheet .block .row`, which is (0,3,0). */
+.command-sheet [hidden] { display: none; }
+.command-sheet .block .row[hidden] { display: none; }

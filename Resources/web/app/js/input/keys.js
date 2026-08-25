@@ -9,6 +9,7 @@ import { closeAgent, move, select } from "../session/agent.js";
 import { ActionConfirm } from "./action-confirm.js";
 import { Settings } from "./settings.js";
 import { Start } from "./start.js";
+import { Command } from "./command.js";
 import { Info } from "./info.js";
 
 /* ==========================================================================
@@ -63,6 +64,9 @@ document.addEventListener("keydown", function (ev) {
     if (key === "Escape") {
         if (!els.info.hidden) { Info.close(); return; }
         if (!els.start.hidden) { Start.close(); return; }
+        // `Command.close` no-ops on its own while a request is in flight — see the comment there
+        // — so this needs no extra check: Escape either closes the sheet or does nothing.
+        if (!els.command.hidden) { Command.close(); return; }
         if (!els.settings.hidden) { Settings.close(); return; }
         if (!els.keys.hidden) { els.keys.hidden = true; return; }
         if (document.activeElement === els.filter) {
@@ -81,7 +85,7 @@ document.addEventListener("keydown", function (ev) {
     if (typing(document.activeElement)) return;
     if (meta || ev.altKey) return;
     // A sheet is over the page, so `j` is not "move down the list behind it".
-    if (!els.settings.hidden || !els.start.hidden) return;
+    if (!els.settings.hidden || !els.start.hidden || !els.command.hidden) return;
 
     switch (key) {
         case "ArrowDown": case "j": ev.preventDefault(); move(1); break;

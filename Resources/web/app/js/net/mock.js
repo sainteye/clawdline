@@ -670,6 +670,59 @@ export var Mock = (function () {
             });
         },
 
+        /**
+         * The planner's answer to one sentence, fixtured for `input/command.js`. Unlike `voice`
+         * above this one *is* behind `MOCK_WRITE`: the real route is gated exactly like `/v1/send`
+         * — see the contract in `Command`'s own file — and the write-off path is worth being able
+         * to see from a file:// copy same as everywhere else it applies.
+         *
+         * `?intents=` picks which of the measured shapes comes back: `noplanner` and `busy` are
+         * the two refusals, `unsure` is a low-confidence guess with a question attached, and `etc`
+         * reproduces the exact case in `Planner.swift`'s own header — a model that would not pick
+         * a directory outside the list but still wrote a sentence about one into `instructions`.
+         * Anything else is the ordinary confident answer, aimed at whichever project is first.
+         */
+        intents: function (text) {
+            return new Promise(function (done, fail) {
+                // The measured range is 4.6-5.1s; kept in that range here rather than sped up, so
+                // the sheet's honest "about five seconds" is something this mode can actually see.
+                var ms = 4800;
+                setTimeout(function () {
+                    if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
+                    var mode = params.get("intents") || "";
+                    if (mode === "noplanner") {
+                        fail(Object.assign(new Error("This Mac has neither claude nor codex on it."),
+                                           { code: "no_planner" }));
+                        return;
+                    }
+                    if (mode === "busy") {
+                        fail(Object.assign(new Error("This Mac is already working out two of these."),
+                                           { code: "busy" }));
+                        return;
+                    }
+                    if (mode === "unsure") {
+                        done({ draft: { place_id: null, assistant: "claude", instructions: text,
+                                        title: text.slice(0, 20), confidence: 0.3,
+                                        question: "Which project is this for?" }, ms: ms });
+                        return;
+                    }
+                    if (mode === "etc") {
+                        done({ draft: { place_id: null, assistant: "claude",
+                                        title: "print hosts", confidence: 0.3,
+                                        question: "/etc is not one of the projects on this Mac.",
+                                        instructions: "Open a session in /etc and print hosts" },
+                               ms: ms });
+                        return;
+                    }
+                    var place = places[0];
+                    done({ draft: { place_id: place ? place.id : null, assistant: "claude",
+                                    instructions: "Understood: " + text,
+                                    title: (text.slice(0, 20) || "a session"),
+                                    confidence: 0.82, question: "" }, ms: ms });
+                }, ms);
+            });
+        },
+
         end: function (id) {
             return new Promise(function (done, fail) {
                 setTimeout(function () {

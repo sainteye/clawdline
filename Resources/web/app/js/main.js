@@ -39,6 +39,7 @@ import "./input/action-confirm.js";
 import { routeTo } from "./input/route.js";
 import "./input/settings.js";
 import "./input/start.js";
+import "./input/command.js";
 import "./input/status-line.js";
 import "./input/info.js";
 import { Push } from "./input/push.js";
