@@ -130,9 +130,14 @@ var liveSpin = null;
 /// session is working puts two arcs on the same screen, and two arcs turning at their own
 /// speeds is what makes a page look like two pages.
 var voiceSpin = null;
+/// The say-what-to-start sheet, while the Mac plans from a sentence. On this clock too, and for
+/// the same reason as the one above it: this arc turns for about five seconds beside a line of
+/// text, and it is the only thing on that sheet saying the wait is a wait rather than a stop.
+export var commandSpin = null;
 setInterval(function () {
     if (reduced || (!spinners.length && !optimisticSpinners.length &&
-                    !bandSpin && !startSpin && !confirmSpin && !liveSpin && !voiceSpin)) return;
+                    !bandSpin && !startSpin && !confirmSpin && !liveSpin && !voiceSpin &&
+                    !commandSpin)) return;
     spinPhase = (spinPhase + 1) % 8;
     for (var i = 0; i < spinners.length; i++) drawSpinner(spinners[i], spinPhase);
     for (var j = 0; j < optimisticSpinners.length; j++) drawSpinner(optimisticSpinners[j], spinPhase);
@@ -141,9 +146,10 @@ setInterval(function () {
     if (confirmSpin) drawSpinner(confirmSpin, spinPhase);
     if (liveSpin) drawSpinner(liveSpin, spinPhase);
     if (voiceSpin) drawSpinner(voiceSpin, spinPhase);
+    if (commandSpin) drawSpinner(commandSpin, spinPhase);
 }, SPIN.step);
 
-// Seven of the handles above are set from somewhere else — the render or the sheet that owns the
+// Eight of the handles above are set from somewhere else — the render or the sheet that owns the
 // canvas — and a module cannot assign to a name it imported. So the variable stays here where the
 // clock can see it, and the write becomes a call.
 export function setSpinners(list) { spinners = list; }
@@ -153,3 +159,4 @@ export function setStartSpin(canvas) { startSpin = canvas; }
 export function setConfirmSpin(canvas) { confirmSpin = canvas; }
 export function setLiveSpin(canvas) { liveSpin = canvas; }
 export function setVoiceSpin(canvas) { voiceSpin = canvas; }
+export function setCommandSpin(canvas) { commandSpin = canvas; }

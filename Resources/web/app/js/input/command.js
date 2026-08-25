@@ -1,4 +1,5 @@
 import { T, fill } from "../core/i18n.js";
+import { commandSpin, drawSpinner, setCommandSpin, spinPhase } from "../core/pixels.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { shortPath, tint } from "../core/util.js";
@@ -51,7 +52,18 @@ export var Command = (function () {
     function busy() { return phase === "thinking" || phase === "opening"; }
 
     function sayTop(words) { els["command-say"].textContent = words || ""; }
-    function sayStatus(words) { els["command-said"].textContent = words || ""; }
+    /** The status line. `waiting` puts an arc beside the words, on the page's one spinner clock —
+     *  the planner takes about five seconds, and five seconds of a sentence that does not move is
+     *  the same picture as a sheet that has given up. Anything that is not a wait clears it, so a
+     *  refusal never sits there next to something still turning. */
+    function sayStatus(words, waiting) {
+        var box = els["command-said"];
+        if (!waiting) { setCommandSpin(null); box.textContent = words || ""; return; }
+        box.innerHTML = '<canvas class="wait-spin"></canvas><span></span>';
+        box.lastChild.textContent = words || "";
+        setCommandSpin(box.firstChild);
+        drawSpinner(commandSpin, spinPhase);
+    }
 
     /* ---- painting ---------------------------------------------------------- */
 
@@ -239,7 +251,7 @@ export var Command = (function () {
         if (typeof api.intents !== "function") { manualDraft(text); return; }
 
         phase = "thinking";
-        sayStatus(T.webCommandThinking);
+        sayStatus(T.webCommandThinking, true);
         paint();
         api.intents(text).then(function (d) {
             if (phase !== "thinking") return;   // superseded — the sheet was closed or redone
@@ -274,7 +286,7 @@ export var Command = (function () {
         if (typeof api.startPlace !== "function") { finish(T.webCommandFailed); return; }
         var mine = ++run;
         phase = "opening";
-        sayStatus(T.webStarting);
+        sayStatus(T.webStarting, true);
         paint();
         api.startPlace(placeId, assistant).then(function (d) {
             if (mine !== run) return;   // cancelled while the tab was opening
@@ -314,7 +326,7 @@ export var Command = (function () {
 
     function sendInstructions(id, instructions, triesLeft, mine) {
         if (mine !== run) return;
-        sayStatus(T.webSending);
+        sayStatus(T.webSending, true);
         api.send(id, instructions).then(function () {
             if (mine !== run) return;
             // `close` refuses to run while `busy()` is true, on purpose — Escape and the backdrop

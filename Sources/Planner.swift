@@ -150,7 +150,11 @@ enum Planner {
         path.
         - assistant: the first one on the list unless the speaker named another.
         - instructions: the first message to send to that session. Say what the speaker wants \
-        done, in their words, complete enough to act on without them saying anything more.
+        done, in their words, complete enough to act on without them saying anything more. \
+        Leave out the part that chose the project. That session will already be open there, so a \
+        first message beginning "open the astro project" asks for something that has already \
+        happened, and the assistant will go and do it a second time. When choosing the project \
+        was the whole request, say they are ready for what comes next instead of repeating it.
         - title: what to call the session, 6-20 characters.
         - confidence: 0 to 1. Below \(sure) when you are guessing which project, or when the \
         sentence does not say enough to act on.
