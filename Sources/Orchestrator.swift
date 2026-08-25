@@ -1539,20 +1539,30 @@ enum Orchestrator {
     job is to find what is wrong with it. Not a fifth worker — a reader.
 
     - **It produces nothing.** It reads the other nodes' artifacts and writes findings. Fixing is
-      the next round's job, or a person's. A node that both writes and judges its own work does
-      neither well.
-    - **It did not help build the thing.** Give it the outputs, not the conversation that made
-      them, and never the node that made them.
-    - **Different assistant where you can.** Codex wrote it, Claude reads it. Two models sharing
-      a blind spot is the failure this node exists to catch, and the surest way to share one is
-      to be the same model.
-    - **Never a smaller model than the one being judged.** A review by something weaker than the
-      thing reviewed is a rubber stamp with a token cost.
-    - **Name the paths.** Its instructions must list the exact `/tmp/.clawdline/<id>/artifacts/`
-      directories to read — that is what makes reading them allowed, and what stops it reviewing
-      the wrong thing.
-    - **Ask it for a verdict, not an essay.** "What is wrong with this, most serious first, and
-      is it safe to ship" — a review that ends without a position is one nobody can act on.
+      the next round's job, or a person's — and that holds even when it is sure it knows the fix,
+      because a repair is a fast way to bury the judgement somebody needed to see.
+    - **It did not help build the thing.** Self-review is measurably bad at this: a model judging
+      its own output misses about a third of its own semantic drift, and the mechanism is
+      structural rather than a capability gap — a judge favours low-perplexity text, and a
+      model's own output is low-perplexity to it by construction. (Giving it the outputs rather
+      than the conversation behind them is the same idea extended one step; that half is
+      reasoning, not a measured result.)
+    - **A different assistant helps, and does not solve it.** Codex wrote it, Claude reads it —
+      but do not mistake that for independence. A panel of nine frontier models was measured to
+      carry only about two votes' worth of independent information, because different models get
+      the same items wrong. Where a review really matters, use *several* reviewers and take the
+      majority, and pick them for being complementary rather than merely different.
+    - **Opus-class, always.** Not "no weaker than what it judges" — an absolute floor. A review is
+      worth exactly what the reviewer's judgement is worth, and a missed finding travels all the
+      way to the end. Measured here: a Sonnet reviewer, in the middle of correctly explaining that
+      judging is prone to hallucination, invented a specific citation — it claimed a document
+      disputed a term the document never mentions.
+    - **Name the paths it may read.** List the exact `/tmp/.clawdline/<id>/artifacts/`
+      directories. This is how the rule above is enforced rather than merely stated: without it a
+      reviewer can wander into the production conversation it was supposed to be kept out of.
+    - **A verdict, with its receipts.** "What is wrong, worst first, is it safe to ship" — and
+      every finding names the artifact and the passage it rests on. A verdict without sources is
+      the exact shape a hallucinating judge produces, and it costs nothing to require.
     """
 
     /// The graph this task is one node of, when the dispatcher wrote one down.
