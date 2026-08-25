@@ -34,11 +34,15 @@ nothing after its title, the phone drew it the same way, and the fleet count cal
 the one session that still had work in flight was indistinguishable from the four that were done.
 That is the wrong answer in the direction that costs something: you close the laptop on a build.
 
-The row now says `1 shell running`, on the Mac and on the phone, and the strip above the transcript
-lists them next to the background agents with the last line each one printed. It is worked out from
-the output files Claude Code already keeps — a background command gets `[exited with code 0]`
-written under it when it ends, a foreground one has its file deleted when it returns — so nothing
-has to be installed and nothing has to be restarted. `GET /v1/sessions` carries it as `shells`; see
+The row now says `1 shell running`, on the Mac and on the phone, the header can no longer call a
+fleet "all quiet" over a build, and the strip above the transcript lists the commands next to the
+background agents with the last line each one printed. It is worked out from what Claude Code
+already writes down — the output file a command prints into, which gets `[exited with code 0]` under
+it when a background one ends, and the line in the transcript that says an id was backgrounded in
+the first place. Both are needed: a foreground command that somebody interrupted leaves its file
+behind looking exactly like a build still going, which is how the first version of this spent an
+afternoon reporting a cancelled `curl` as work in flight. Nothing has to be installed and nothing
+has to be restarted. `GET /v1/sessions` carries it as `shells`; see
 [`docs/api.md`](docs/api.md#the-session-object).
 
 ### Changed: reloading the web interface no longer means a second and a half of black
@@ -159,15 +163,47 @@ and asked. **Nobody is watching a child's tab.** A session that stops for approv
 stop for a moment — it stops until the task times out, and afterwards it reads as work that
 silently did not happen.
 
-`orchestrator_permission` is the new setting and `auto` is the default: the assistant judges what
-a person would want to be asked about, the same judgement it uses in a session somebody is sitting
-in front of. `ask` is the old behaviour, for a task you intend to supervise. `full` asks nothing
-at all.
+`orchestrator_permission` is the new setting, and `full` is the default — arrived at by trying the
+narrower ones and watching each of them fail against a real task. A dispatched session's whole job
+is running commands and writing files, so every stop short of the last one stops it somewhere:
+`ask` on the first thing it does, which is reading its own briefing; `edits` past writing a result
+but not past `cat`, `mkdir`, `curl` or `sleep`, which is most of what handing work on consists of.
+What it does not widen is who may dispatch — still a `0600` file — or what a child could reach,
+since it already has a shell.
 
 It is a ceiling as well as a default. A task can name `permission_mode` and get less than the
 setting; asking for more gets the setting instead, because the session doing the asking is not the
 one that lives with the consequences. The record and the audit line both say what was actually
 used.
+
+**There is no `auto`, and the reason is worth knowing before you go looking for it.** Claude Code
+has an `auto` mode and `--permission-mode auto` selects it — on Sonnet and on Opus. On Haiku the
+same flag produces `manual`, everything asked, with no error. A word a task fills in has to mean
+the same thing to every session that task can name, and one that quietly becomes the *strictest*
+setting on the cheapest model is the failure nobody catches.
+
+Two doors no setting here reaches, now written down in
+[`docs/dispatch-permissions.md`](docs/dispatch-permissions.md) along with the rest of this: the
+trust prompt on a directory this Mac has never run that assistant in, and Claude Code's command
+screening, which refuses a `jq -n '{…}'` line on its shape alone and offers no "always allow". The
+briefing a child reads was itself telling it to write files in the refused shape; it now says to
+use the file tool and a heredoc.
+
+### Fixed: a dispatched task that ended left the work it had handed on running
+
+Closing a session cascaded and cancelling a task cascaded, but a task simply *finishing* did not.
+A child that timed out, failed, or reported before its own children were done left grandchildren
+running for a session that no longer existed — and on the list, a row with a `Child` chip and
+nothing above it.
+
+A `spawn_failed` that never reached briefing now also closes its tab at once, where before every
+failed spawn kept one. That was not free: each is a live assistant holding a slot, and the usual
+reason a tab fails to reach a prompt is that too many sessions were starting at once — so the
+failure fed itself. A `timeout` still keeps its screen, which is the case where something is
+written on it.
+
+The window for reaching a prompt is four minutes rather than two. Two was measured against one
+session starting; a two-level dispatch starts three at once by definition.
 
 ### Added: a task can name its model, and this Mac can say how work should be handed out
 
