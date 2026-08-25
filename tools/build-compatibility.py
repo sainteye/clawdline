@@ -75,10 +75,14 @@ def render():
         "",
         f"- Built and used against Claude Code **{built}**.",
         *([f"- And against Codex **{built_codex}**."] if built_codex else []),
-        (f"- The oldest that everything here works with is **{minimum}**, and only one feature "
-         "cares." if minimum else "- No feature here has a known floor."),
-        "- Nothing refuses to run on an older one. What you lose is the one feature whose floor",
-        "  you are under, and the second table below says which.",
+        # Counted rather than spelled out: this said "only one feature cares" while that was
+        # true, and a second floor arriving would have made the page quietly wrong.
+        (f"- The oldest that everything here works with is **{minimum}**. "
+         f"{'One row' if len(floors) == 1 else f'{len(floors)} rows'} below "
+         f"{'names' if len(floors) == 1 else 'name'} a floor at all; the rest have none known."
+         if minimum else "- No feature here has a known floor."),
+        "- Nothing refuses to run on an older one. What you lose is whichever of those rows names",
+        "  a floor you are under, and the second table below says which.",
         "- A **newer** Claude Code is the normal state of the world and is not warned about.",
         "",
         "## Tested against",

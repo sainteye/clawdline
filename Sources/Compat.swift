@@ -86,10 +86,12 @@ enum Compat {
             what: "The AskUserQuestion picker, whose caret sits flush left — the same column as "
                 + "the caret in front of the composer, which is why a hook note has to open the "
                 + "gate before that shape is trusted",
-            where_: "SessionState.swift, HookBridge.swift",
+            where_: "SessionState.swift, HookBridge.swift, SessionRegistry.swift",
             symptom: "A question waiting for an answer reads as ordinary output and is never "
-                   + "surfaced; or an echoed numbered list is offered as a picker, and the "
-                   + "answer lands in the composer as a stray digit",
+                   + "surfaced — only while the registry below is unavailable too, since that "
+                   + "opens the same gate without anything being installed; or an echoed "
+                   + "numbered list is offered as a picker, and the answer lands in the composer "
+                   + "as a stray digit",
             since: "not known to have a floor"),
         Dependency(
             program: "Claude Code",
@@ -108,6 +110,35 @@ enum Compat {
                    + "reading waits for the next poll again; or a question comes through with "
                    + "no options on it",
             since: "not known to have a floor"),
+        Dependency(
+            program: "Claude Code",
+            what: "The session registry: one file per session at ~/.claude/sessions/<pid>.json, "
+                + "stating `peerProtocol: 1`, and the `status` in it — `idle`, `busy`, "
+                + "`waiting`, `shell` — kept current by the session itself",
+            where_: "SessionRegistry.swift",
+            symptom: "Every reading falls back to the screen: a question is only noticed once "
+                   + "its menu is recognised, and away from the panel that can be twenty "
+                   + "seconds after it was asked",
+            // 2.1.224 is where `ListAgents` arrived, and one session can only discover another
+            // through the file it wrote. A real floor, but a soft one: under it this feature is
+            // absent rather than broken, which is the whole of how it was built.
+            since: "2.1.224"),
+        Dependency(
+            program: "Claude Code",
+            what: "`procStart` in that file: the process start time as "
+                + "`LC_ALL=C TZ=UTC ps -o lstart=` prints it, which is what says a leftover "
+                + "file is not about the process now holding its pid",
+            where_: "SessionRegistry.swift",
+            symptom: "Nothing visible, and that is the point — the check failing quietly means "
+                   + "every registry entry is discarded and the screen answers alone",
+            since: "2.1.224"),
+        Dependency(
+            program: "Claude Code",
+            what: "`sessionId` in that file naming the session's own transcript",
+            where_: "SessionRegistry.swift, Transcript.swift",
+            symptom: "⌘J falls back to matching by project, tab title and modification time, "
+                   + "and can land on a background agent's transcript instead",
+            since: "2.1.224"),
         Dependency(
             program: "Claude Code",
             what: "The empty composer: a bare `❯`, or the grey `Try \"…\"` suggestion a new "

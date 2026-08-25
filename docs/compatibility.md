@@ -13,9 +13,9 @@ being true.
 
 - Built and used against Claude Code **2.1.235**.
 - And against Codex **0.149.0**.
-- The oldest that everything here works with is **1.0.93**, and only one feature cares.
-- Nothing refuses to run on an older one. What you lose is the one feature whose floor
-  you are under, and the second table below says which.
+- The oldest that everything here works with is **2.1.224**. 4 rows below name a floor at all; the rest have none known.
+- Nothing refuses to run on an older one. What you lose is whichever of those rows names
+  a floor you are under, and the second table below says which.
 - A **newer** Claude Code is the normal state of the world and is not warned about.
 
 ## Tested against
@@ -48,9 +48,12 @@ then a missing feature really is missing rather than broken here.
 | Claude Code | The tab title, and the status glyph Claude Code puts in front of it | `Transcript.swift` | not known to have a floor | The wrong conversation in ⌘J, or a stray glyph in the name |
 | Claude Code | Reading an image off the system pasteboard on Ctrl-V, as [Image #N] | `Targets.swift` | 1.0.93 | A dropped image arrives as nothing, and the prompt points at a picture that is not there |
 | Claude Code | Its dialogs: numbered rows marked with an indented caret, drawn inside a box frame, with the question in the lines above them | `SessionState.swift` | not known to have a floor | A session waiting on a permission dialog or a `/model` menu looks idle, and cannot be answered from a phone |
-| Claude Code | The AskUserQuestion picker, whose caret sits flush left — the same column as the caret in front of the composer, which is why a hook note has to open the gate before that shape is trusted | `SessionState.swift, HookBridge.swift` | not known to have a floor | A question waiting for an answer reads as ordinary output and is never surfaced; or an echoed numbered list is offered as a picker, and the answer lands in the composer as a stray digit |
+| Claude Code | The AskUserQuestion picker, whose caret sits flush left — the same column as the caret in front of the composer, which is why a hook note has to open the gate before that shape is trusted | `SessionState.swift, HookBridge.swift, SessionRegistry.swift` | not known to have a floor | A question waiting for an answer reads as ordinary output and is never surfaced — only while the registry below is unavailable too, since that opens the same gate without anything being installed; or an echoed numbered list is offered as a picker, and the answer lands in the composer as a stray digit |
 | Claude Code | `/exit` ending a session, and a bare digit answering a picker | `Assistant.swift, Targets.swift` | not known to have a floor | "End" closes the tab on a session that is still running; a menu answer does nothing |
 | Claude Code | The hook contract: nine matcher groups under eight event names, the notification types those groups match on, and the `tool_input.questions` shape a PreToolUse note carries | `HookBridge.swift, Resources/clawdline-hook.sh` | not known to have a floor | Hooks report themselves installed and no note ever arrives, so every reading waits for the next poll again; or a question comes through with no options on it |
+| Claude Code | The session registry: one file per session at ~/.claude/sessions/<pid>.json, stating `peerProtocol: 1`, and the `status` in it — `idle`, `busy`, `waiting`, `shell` — kept current by the session itself | `SessionRegistry.swift` | 2.1.224 | Every reading falls back to the screen: a question is only noticed once its menu is recognised, and away from the panel that can be twenty seconds after it was asked |
+| Claude Code | `procStart` in that file: the process start time as `LC_ALL=C TZ=UTC ps -o lstart=` prints it, which is what says a leftover file is not about the process now holding its pid | `SessionRegistry.swift` | 2.1.224 | Nothing visible, and that is the point — the check failing quietly means every registry entry is discarded and the screen answers alone |
+| Claude Code | `sessionId` in that file naming the session's own transcript | `SessionRegistry.swift, Transcript.swift` | 2.1.224 | ⌘J falls back to matching by project, tab title and modification time, and can land on a background agent's transcript instead |
 | Claude Code | The empty composer: a bare `❯`, or the grey `Try "…"` suggestion a new session draws instead | `Orchestrator.swift` | not known to have a floor | A session opened to be handed work is never seen as ready for it, and the instructions are never typed in |
 | Claude Code | The name of a project's transcript folder: the working directory with every character that is not a letter or a digit turned into a dash | `Transcript.swift, StartPoints.swift` | not known to have a floor | One project has no transcripts at all while every other project is fine — the ones whose path holds a space, a dot or an underscore |
 | Claude Code | What a transcript record holds inside: `type`, `isSidechain`, `quotaLimits` and `rate_limits`, `<command-name>`, and the `Set model to …` line a `/model` prints | `Transcript.swift, SessionInfo.swift` | not known to have a floor | A subagent's conversation leaks into the pane, or a card stops saying which model it is on and how much of the window is left |
