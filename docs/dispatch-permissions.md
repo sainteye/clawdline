@@ -146,6 +146,32 @@ a fresh secret.
 
 ---
 
+## When a dispatch fails, three things follow
+
+**A failed spawn used to leave a live assistant behind.** The tab was kept — the rule being that
+whatever went wrong is written on the screen — but a spawn that never reached briefing has nothing
+of the task on its screen at all. Meanwhile it holds a slot, and *the usual reason a tab fails to
+reach a prompt is that too many sessions were starting at once*. So the failure fed itself: four
+dead tabs still running, and the next two spawns failing for the reason the first four had. Those
+tabs now close immediately. A `timeout` still keeps its screen, which is the case where something
+is actually written on it.
+
+**A rebuild has to wait for a tab that is mid-spawn.** `build.sh` asks the running app whether any
+task is `queued` or `spawning` and waits up to ninety seconds before restarting. Printing a warning
+was tried first and does not work on a shared machine: whoever runs `./build.sh` there is usually
+another agent, and it does not stop to read a line it did not ask for. Twice in one afternoon a
+rebuild landed in the second between a tab opening and its first message being typed.
+
+**A child that gave up on dispatching and did the work itself has to say so.** One two-level task
+came back `success` saying "the European group and the Asian group each completed their review".
+Both grandchildren were `spawn_failed` and had never run a turn — the parent had done all of it
+alone, and done it correctly. Falling back like that is the right call; the answer is what was
+asked for, not who produced it. But whoever reads the summary is deciding how much to trust the
+result, and *both halves reported* and *both halves failed and I did it myself* are different
+amounts of evidence behind the same answer. `CHILD.md` now asks for that sentence.
+
+---
+
 ## Verifying that a child was never asked
 
 **Only by watching the screen while it runs.** Match `Do you want to proceed?` or `Allow command`
@@ -201,3 +227,5 @@ it stops mid-task and cannot even write the handover saying what it finished.
   attributed to a child?
 - Is "was it ever asked?" being answered by watching the screen, not by reading the transcript
   afterwards?
+- Does a failed spawn close its tab, or is it leaving a live assistant to slow down the next one?
+- Does the summary distinguish "my children reported" from "my children failed and I did it myself"?
