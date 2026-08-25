@@ -95,6 +95,9 @@ enum Orchestrator {
         var childTTY: String?
         var childSessionId: String?
         var transcriptPath: String?
+        /// The task marker was observed in `transcriptPath`. Persisted because that fact does not
+        /// expire when Claude rotates the file or the file is temporarily unavailable.
+        var transcriptProven = false
         var secretHash: String
         var summary: String?
         var artifacts: [String] = []
@@ -191,6 +194,90 @@ enum Orchestrator {
         return Transcript.parse(transcript, assistant: assistant, limit: 100).contains { entry in
             entry.kind == .user && entry.text.contains(marker)
         }
+    }
+
+    enum TranscriptOwnership: Equatable {
+        case belongs, other, unavailable
+    }
+
+    private static let ownershipLock = NSLock()
+    private static var ownershipCache: [String: (signature: String,
+                                                  ownership: TranscriptOwnership)] = [:]
+    private static let ownershipCacheLimit = 1_024
+    /// A child is a fresh conversation and the briefing is its first user turn. One MiB leaves
+    /// ample room for startup bookkeeping while putting a hard ceiling on every main-thread
+    /// ownership check.
+    private static let ownershipScanBytes = 1_048_576
+
+    /// A guessed or restored path becomes identity only when the child's own first turn names
+    /// this task. Timestamps narrow the files worth opening; they do not prove ownership.
+    static func transcriptOwnership(_ url: URL, assistant: Assistant,
+                                    taskID: String) -> TranscriptOwnership {
+        let key = "\(assistant.rawValue)\u{0}\(taskID)\u{0}\(url.path)"
+        let signature = Transcript.signature(of: url)
+        ownershipLock.lock()
+        if let cached = ownershipCache[key], cached.signature == signature {
+            ownershipLock.unlock()
+            return cached.ownership
+        }
+        ownershipLock.unlock()
+
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return .unavailable }
+        defer { try? handle.close() }
+        let data: Data
+        do {
+            data = try handle.read(upToCount: ownershipScanBytes) ?? Data()
+        } catch {
+            return .unavailable
+        }
+        let marker = Data("\(briefingMark) \(taskID)".utf8)
+        var from = data.startIndex
+        while from < data.endIndex,
+              let hit = data.range(of: marker, in: from..<data.endIndex) {
+            var low = hit.lowerBound
+            while low > data.startIndex, data[data.index(before: low)] != 0x0A {
+                low = data.index(before: low)
+            }
+            var high = hit.upperBound
+            while high < data.endIndex, data[high] != 0x0A { high = data.index(after: high) }
+            if let row = String(data: data[low..<high], encoding: .utf8),
+               transcriptContainsBriefing(row, assistant: assistant, taskID: taskID) {
+                cacheOwnership(.belongs, key: key, signature: signature)
+                return .belongs
+            }
+            from = hit.upperBound
+        }
+        let text = String(decoding: data, as: UTF8.self)
+        if Transcript.containsUserTurn(text, assistant: assistant) {
+            // The briefing is the fresh child's first user turn. Finding another completed user
+            // turn in the bounded prefix is positive disproof even when a long file continues;
+            // its expected marker cannot first appear beyond a conversation already in progress.
+            cacheOwnership(.other, key: key, signature: signature)
+            return .other
+        }
+        // An empty file, startup metadata, or a prefix cut before any complete user row says
+        // nothing about ownership. Cache that answer by signature so an unchanged large prefix
+        // is not reread every polling beat; growth naturally invalidates it.
+        cacheOwnership(.unavailable, key: key, signature: signature)
+        return .unavailable
+    }
+
+    private static func cacheOwnership(_ ownership: TranscriptOwnership, key: String,
+                                       signature: String) {
+        ownershipLock.lock(); defer { ownershipLock.unlock() }
+        if ownershipCache[key] == nil, ownershipCache.count >= ownershipCacheLimit,
+           let oldest = ownershipCache.keys.first {
+            ownershipCache.removeValue(forKey: oldest)
+        }
+        ownershipCache[key] = (signature, ownership)
+    }
+
+    static func transcriptBelongsToTask(_ url: URL, assistant: Assistant,
+                                        taskID: String) -> Bool {
+        if case .belongs = transcriptOwnership(url, assistant: assistant, taskID: taskID) {
+            return true
+        }
+        return false
     }
 
     /// Pure policy for the asynchronous hand-off. A retry needs all three facts: enough time has
@@ -782,7 +869,11 @@ enum Orchestrator {
         let above = parents.compactMap { tasks[$0] }
         guard !above.isEmpty else { return [] }
         let ids = Set(above.map { $0.id })
-        let sessions = Set(above.compactMap { $0.childSessionId })
+        // `childSessionId` can survive from a registry written before ownership proofs were
+        // persisted. It may describe a sibling, so it becomes a cancellation key only after the
+        // task marker has proved the paired path. This lazy check touches at most the requested
+        // parents, never every historical transcript during app startup.
+        let sessions = Set(above.compactMap { provenChildSessionID(of: $0) })
         return tasks.values
             .filter { task in
                 guard keep(task), !ids.contains(task.id) else { return false }
@@ -792,6 +883,22 @@ enum Orchestrator {
             }
             .sorted { $0.created < $1.created }
             .map { $0.id }
+    }
+
+    private static func provenChildSessionID(of task: Task) -> String? {
+        guard let sessionID = task.childSessionId,
+              let path = task.transcriptPath else { return nil }
+        if task.transcriptProven { return sessionID }
+        let transcript = URL(fileURLWithPath: path)
+        guard case .belongs = transcriptOwnership(transcript, assistant: task.assistant,
+                                                  taskID: task.id) else { return nil }
+        switch task.assistant {
+        case .claude:
+            let fromPath = transcript.deletingPathExtension().lastPathComponent
+            return fromPath == sessionID ? sessionID : nil
+        case .codex:
+            return Codex.head(of: transcript)?.id == sessionID ? sessionID : nil
+        }
     }
 
     /// Ending a root session ends the work it dispatched. Two things happen, and they are not the
@@ -1181,31 +1288,66 @@ enum Orchestrator {
         var changed = false
         switch task.assistant {
         case .claude:
-            if task.childSessionId == nil, let noted = HookBridge.note(for: child)?.session {
-                task.childSessionId = noted
-                changed = true
+            changed = noteTranscriptProof(in: &task) || changed
+            if let noted = childSessionID(from: HookBridge.note(for: child),
+                                          spawnedAt: task.spawnedAt),
+               task.childSessionId != noted {
+                if task.childSessionId == nil, task.transcriptPath == nil {
+                    // The first current hook supplies an exact filename before Claude has made
+                    // the file or received the briefing. It is useful for delivery, but does not
+                    // become proven ownership until the marker appears below.
+                    task.childSessionId = noted
+                    task.transcriptProven = false
+                    changed = true
+                } else {
+                    // A tty survives the assistant process inside it. A later hook can therefore
+                    // be a user-started conversation in a lingering child tab, not a correction
+                    // to this task. Replace an existing identity only as one atomic, marker-proven
+                    // pair; until its exact transcript carries this task's turn, keep the old one.
+                    let candidate = Transcript.locate(cwd: task.projectDir,
+                                                      tabTitle: child.name,
+                                                      startedAt: task.spawnedAt,
+                                                      sessionID: noted)
+                    if let replacement = replacementChildTranscript(
+                        currentSessionID: task.childSessionId, notedSessionID: noted,
+                        transcript: candidate, taskID: task.id
+                    ) {
+                        task.childSessionId = noted
+                        task.transcriptPath = replacement.path
+                        task.transcriptProven = true
+                        changed = true
+                    }
+                }
             }
-            if task.transcriptPath == nil, let sessionID = task.childSessionId {
-                task.transcriptPath = StartPoints.projectsRoot
-                    .appendingPathComponent(StartPoints.slug(of: task.projectDir), isDirectory: true)
-                    .appendingPathComponent(sessionID + ".jsonl").path
-                changed = true
+            // Without an id, timestamps and titles only rank candidates, so the delivered task
+            // marker must prove the winner. A current hook instead names the exact file needed to
+            // verify delivery before that marker has appeared; proof is recorded once it does.
+            let accepting: ((URL) -> Bool)?
+            if task.childSessionId == nil {
+                let taskID = task.id
+                accepting = { url in
+                    transcriptBelongsToTask(url, assistant: .claude, taskID: taskID)
+                }
+            } else {
+                accepting = nil
             }
-            // With hooks disabled the file itself is the first durable identity available. A
-            // delivered first turn creates it, so it can still confirm the ordinary one-send
-            // path; absence without an identity is intentionally not enough to trigger a retry.
             if task.transcriptPath == nil,
                let found = Transcript.locate(cwd: task.projectDir, tabTitle: child.name,
-                                               startedAt: task.spawnedAt) {
+                                               startedAt: task.spawnedAt,
+                                               sessionID: task.childSessionId,
+                                               accepting: accepting) {
                 task.transcriptPath = found.path
                 task.childSessionId = found.deletingPathExtension().lastPathComponent
+                task.transcriptProven = accepting != nil
                 changed = true
             }
+            changed = noteTranscriptProof(in: &task) || changed
         case .codex:
             if task.transcriptPath == nil,
                let rollout = Codex.locate(cwd: task.projectDir, startedAt: task.spawnedAt,
                                            pid: Targets.pid(of: child)) {
                 task.transcriptPath = rollout.path
+                task.transcriptProven = false
                 changed = true
             }
             if task.childSessionId == nil, let path = task.transcriptPath,
@@ -1218,8 +1360,73 @@ enum Orchestrator {
                     CodexNaming.shared.name(task.title, thread: threadID, target: child)
                 }
             }
+            changed = noteTranscriptProof(in: &task) || changed
         }
         return changed
+    }
+
+    /// A later hook is allowed to replace identity only when its exact filename independently
+    /// carries this task's marker. Kept as a pure seam so the dangerous replacement policy is
+    /// tested directly rather than merely through candidate ranking.
+    static func replacementChildTranscript(currentSessionID: String?, notedSessionID: String,
+                                           transcript: URL?, taskID: String) -> URL? {
+        guard let currentSessionID, currentSessionID != notedSessionID,
+              let transcript,
+              transcript.deletingPathExtension().lastPathComponent == notedSessionID,
+              transcriptBelongsToTask(transcript, assistant: .claude, taskID: taskID)
+        else { return nil }
+        return transcript
+    }
+
+    /// Promote a candidate path only after its immutable first user turn proves ownership.
+    /// Every result is cached while the file signature is unchanged; growth after delivery
+    /// naturally causes the pre-briefing candidate to be read and proved again.
+    static func noteTranscriptProof(in task: inout Task) -> Bool {
+        guard !task.transcriptProven, let path = task.transcriptPath else { return false }
+        let transcript = URL(fileURLWithPath: path)
+        let ownership = transcriptOwnership(transcript, assistant: task.assistant, taskID: task.id)
+        return applyTranscriptOwnership(ownership, transcript: transcript, to: &task)
+    }
+
+    /// Consume the three-state read separately from doing it, so restoration policy can be
+    /// exercised without depending on a polling beat or a live terminal.
+    static func applyTranscriptOwnership(_ ownership: TranscriptOwnership, transcript: URL,
+                                         to task: inout Task) -> Bool {
+        switch ownership {
+        case .unavailable:
+            return false
+        case .other:
+            // Before delivery, another first turn merely means the nominated file was observed
+            // too early; clearing it here would also erase the exact path needed to verify and
+            // retry this child's briefing. Once briefed, it disproves a restored identity pair.
+            guard task.state == .briefed else { return false }
+            task.childSessionId = nil
+            task.transcriptPath = nil
+            task.transcriptProven = false
+            return true
+        case .belongs:
+            break
+        }
+        switch task.assistant {
+        case .claude:
+            task.childSessionId = transcript.deletingPathExtension().lastPathComponent
+        case .codex:
+            guard let id = Codex.head(of: transcript)?.id else { return false }
+            task.childSessionId = id
+        }
+        task.transcriptProven = true
+        return true
+    }
+
+    /// A tty belongs to the tab, not to the assistant process inside it. Until the new process
+    /// emits a hook, the note keyed by that tty can still identify the session that used the tab
+    /// before this task was spawned.
+    static func childSessionID(from note: HookBridge.Note?, spawnedAt: Date?) -> String? {
+        // The hook writes integer epoch seconds while `Date()` retains subsecond precision. `>=`
+        // deliberately accepts the exact-second boundary; a genuinely later note truncated to
+        // just before `spawnedAt` is rejected safely until a subsequent hook refreshes it.
+        guard let note, let spawnedAt, note.at >= spawnedAt else { return nil }
+        return note.session
     }
 
     /// Close a reported child's terminal once its linger has run out. True when the record changed.
@@ -2001,24 +2208,18 @@ enum Orchestrator {
         return (dollars / 1_000_000 * 10_000).rounded() / 10_000
     }
 
-    private static func harvestUsage(_ task: Task) -> Usage? {
-        guard let path = task.transcriptPath.map(URL.init(fileURLWithPath:))
-            ?? locateTranscript(task) else { return nil }
+    static func harvestUsage(_ task: Task) -> Usage? {
+        // Usage is accounting, so an absent proven path is an absent answer. Reconstructing a
+        // Claude filename from an unverified stored session id charged a sibling's transcript to
+        // the wrong task; Codex's time-only lookup has the same identity weakness after a restart.
+        guard let path = task.transcriptPath.map(URL.init(fileURLWithPath:)) else { return nil }
+        if !task.transcriptProven,
+           transcriptOwnership(path, assistant: task.assistant, taskID: task.id) != .belongs {
+            return nil
+        }
         switch task.assistant {
         case .claude: return claudeUsage(transcript: path)
         case .codex:  return codexUsage(rollout: path)
-        }
-    }
-
-    private static func locateTranscript(_ task: Task) -> URL? {
-        switch task.assistant {
-        case .claude:
-            guard let sessionID = task.childSessionId else { return nil }
-            return StartPoints.projectsRoot
-                .appendingPathComponent(StartPoints.slug(of: task.projectDir), isDirectory: true)
-                .appendingPathComponent(sessionID + ".jsonl")
-        case .codex:
-            return Codex.locate(cwd: task.projectDir, startedAt: task.spawnedAt, pid: nil)
         }
     }
 
@@ -2235,6 +2436,7 @@ enum Orchestrator {
         if let v = task.childTTY { out["child_tty"] = v }
         if let v = task.childSessionId { out["child_session"] = v }
         if let v = task.transcriptPath { out["transcript"] = v }
+        if task.transcriptProven { out["transcript_proven"] = true }
         if let v = task.summary { out["summary"] = v }
         if let usage = task.usage {
             var counts: [String: Any] = ["input": usage.input, "output": usage.output,
@@ -2247,7 +2449,7 @@ enum Orchestrator {
         return out
     }
 
-    private static func task(from obj: [String: Any]) -> Task? {
+    static func task(from obj: [String: Any]) -> Task? {
         guard let id = obj["id"] as? String, isTaskID(id),
               let state = (obj["state"] as? String).flatMap(State.init(rawValue:)),
               let assistant = (obj["assistant"] as? String).flatMap(Assistant.init(rawValue:)),
@@ -2278,6 +2480,16 @@ enum Orchestrator {
         task.childTTY = obj["child_tty"] as? String
         task.childSessionId = obj["child_session"] as? String
         task.transcriptPath = obj["transcript"] as? String
+        task.transcriptProven = obj["transcript_proven"] as? Bool == true
+            && task.childSessionId != nil && task.transcriptPath != nil
+        if task.transcriptProven, task.assistant == .claude,
+           let path = task.transcriptPath, let sessionID = task.childSessionId,
+           URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent != sessionID {
+            // A proof belongs to the path/session pair, not merely to the row. A malformed pair
+            // is retained for diagnosis but cannot participate in cascade ownership; usage may
+            // still independently re-prove the path from its task marker.
+            task.transcriptProven = false
+        }
         task.summary = obj["summary"] as? String
         task.artifacts = obj["artifacts"] as? [String] ?? []
         if let counts = obj["usage"] as? [String: Any] {
@@ -2346,5 +2558,8 @@ enum Orchestrator {
         titlesByTerminal = [:]
         loaded = false
         lock.unlock()
+        ownershipLock.lock()
+        ownershipCache = [:]
+        ownershipLock.unlock()
     }
 }

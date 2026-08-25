@@ -68,6 +68,21 @@ enum Transcript {
         }
     }
 
+    /// Whether the bounded beginning of a transcript contains any completed user turn.
+    /// Startup metadata alone cannot disprove an identity: both assistants create their file
+    /// before the first message is durable, so that state must remain eligible for another read.
+    static func containsUserTurn(_ jsonl: String, assistant: Assistant) -> Bool {
+        switch assistant {
+        case .claude:
+            for line in jsonl.split(separator: "\n") {
+                if entries(inRow: line).contains(where: { $0.kind == .user }) { return true }
+            }
+            return false
+        case .codex:
+            return Codex.firstUserMessage(in: jsonl) != nil
+        }
+    }
+
     struct Entry {
         enum Kind {
             case user
@@ -212,17 +227,24 @@ enum Transcript {
     /// to, so when a hook has told us the id there is nothing left to work out — and everything
     /// below is working out what a name would have said. Only ever an improvement: with no hooks
     /// installed it is nil, and the matching underneath is what it always was.
+    ///
+    /// `accepting` is deliberately optional. Ordinary session discovery has no task marker to
+    /// prove, while the orchestrator does; applying its proof while candidates are still being
+    /// ranked lets a sibling be rejected without hiding the right file behind it.
     static func locate(cwd: String, tabTitle: String, startedAt: Date? = nil,
-                       sessionID: String? = nil) -> URL? {
+                       sessionID: String? = nil,
+                       accepting: ((URL) -> Bool)? = nil) -> URL? {
         locate(in: projectDirectory(forCwd: cwd), tabTitle: tabTitle,
-               startedAt: startedAt, sessionID: sessionID)
+               startedAt: startedAt, sessionID: sessionID, accepting: accepting)
     }
 
     /// The same choice with its directory supplied, so identity failures can be exercised
     /// without making a test write into somebody's real Claude history.
     static func locate(in dir: URL, tabTitle: String, startedAt: Date? = nil,
-                       sessionID: String? = nil) -> URL? {
+                       sessionID: String? = nil,
+                       accepting: ((URL) -> Bool)? = nil) -> URL? {
         let fm = FileManager.default
+        let accepts: (URL) -> Bool = { accepting?($0) ?? true }
 
         if let sessionID, !sessionID.isEmpty {
             let named = dir.appendingPathComponent("\(sessionID).jsonl")
@@ -231,7 +253,13 @@ enum Transcript {
             // two-minute window — commonly one of the project's background agents. Once Claude
             // has named the session, an empty pane is the only honest fallback: another file can
             // never be this session, however close its timestamp or title looks.
-            return fm.fileExists(atPath: named.path) ? named : nil
+            guard fm.fileExists(atPath: named.path) else { return nil }
+            // A tty can still carry the previous process's session id until the new SessionStart
+            // hook arrives. The exact filename is not sufficient identity when every byte in it
+            // predates the process this lookup is for.
+            guard startedAt.map({ modified(named) >= $0 }) ?? true else { return nil }
+            guard accepts(named) else { return nil }
+            return named
         }
         guard let names = try? fm.contentsOfDirectory(atPath: dir.path) else { return nil }
         // Stat once per file and sort the answers. Asking inside the comparator looked tidier and
@@ -239,6 +267,10 @@ enum Transcript {
         // what a year of work looks like, spent several hundred of them to order fifty-six names.
         let files = names.filter { $0.hasSuffix(".jsonl") }
             .map { (url: dir.appendingPathComponent($0), at: modified(dir.appendingPathComponent($0))) }
+            // Creation times below allow slack because a session and its file are born through
+            // different paths. Modification time needs none: a transcript whose newest byte
+            // predates this process cannot contain a turn delivered after the process began.
+            .filter { candidate in startedAt.map { candidate.at >= $0 } ?? true }
             .sorted { $0.at > $1.at }
             .map(\.url)
         guard !files.isEmpty else { return nil }
@@ -247,7 +279,8 @@ enum Transcript {
         if !wanted.isEmpty {
             // Only the recent ones: an old session can share a title with a live one, and
             // reading every transcript in a busy project is not free.
-            for file in files.prefix(12) where cleanTitle(title(ofTranscript: file) ?? "") == wanted {
+            for file in files.prefix(12)
+                where cleanTitle(title(ofTranscript: file) ?? "") == wanted && accepts(file) {
                 return file
             }
         }
@@ -258,13 +291,15 @@ enum Transcript {
         // A session's own transcript is created when the session starts, so the process start
         // time tells them apart. Slack either way for the gap between the two.
         if let startedAt {
-            let mine = files.filter { abs(created($0).timeIntervalSince(startedAt)) < 120
-                                        || created($0) > startedAt }
+            let mine = files.filter {
+                (abs(created($0).timeIntervalSince(startedAt)) < 120
+                    || created($0) > startedAt) && accepts($0)
+            }
             // Nothing of its own yet is the honest answer for a tab that has not spoken.
             return mine.min { abs(created($0).timeIntervalSince(startedAt))
                                 < abs(created($1).timeIntervalSince(startedAt)) }
         }
-        return files.first
+        return files.first(where: accepts)
     }
 
     /// When a transcript was created — the session's own birthday, unlike its modification date.

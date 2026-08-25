@@ -856,6 +856,22 @@ group("a hook session id is an identity boundary") {
     let other = dir.appendingPathComponent("somebody-else.jsonl")
     try! Data("{}\n".utf8).write(to: other)
 
+    let spawnedAt = Date()
+    let staleNote = HookBridge.Note(event: .sessionStart, tty: "ttys004",
+                                    at: spawnedAt.addingTimeInterval(-60),
+                                    session: "previous-session")
+    let stale = dir.appendingPathComponent("previous-session.jsonl")
+    try! Data("{}\n".utf8).write(to: stale)
+    try! fm.setAttributes([.modificationDate: spawnedAt.addingTimeInterval(-30)],
+                          ofItemAtPath: stale.path)
+
+    // Reusing a tty leaves the previous SessionStart note in HookBridge until Claude emits a
+    // note for the new process. Its named transcript is still an identity boundary, but it is
+    // the boundary of the previous session and its contents predate this spawn.
+    check("a session id from an old note cannot name a pre-spawn transcript",
+          Transcript.locate(in: dir, tabTitle: "Claude Code", startedAt: spawnedAt,
+                            sessionID: staleNote.session) == nil)
+
     // SessionStart fires before Claude creates its own jsonl. The old fallback chose `other`
     // because it was the only recent file, making a new browser-started tab show an existing
     // conversation until its own transcript appeared.
@@ -865,9 +881,220 @@ group("a hook session id is an identity boundary") {
 
     let exact = dir.appendingPathComponent("brand-new.jsonl")
     try! Data("{}\n".utf8).write(to: exact)
+    try! fm.setAttributes([.modificationDate: spawnedAt.addingTimeInterval(1)],
+                          ofItemAtPath: exact.path)
     expect("the exact transcript appears as soon as Claude creates it",
-           Transcript.locate(in: dir, tabTitle: "Claude Code", startedAt: Date(),
+           Transcript.locate(in: dir, tabTitle: "Claude Code", startedAt: spawnedAt,
                              sessionID: "brand-new"), exact)
+}
+
+group("a task marker is the fallback transcript identity") {
+    let fm = FileManager.default
+    let dir = fm.temporaryDirectory
+        .appendingPathComponent("clawdline-transcript-marker-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: dir) }
+
+    let spawnedAt = Date()
+    let markerTaskID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+    let receipt = #"{"type":"user","message":{"role":"user","content":"You are a Clawdline CHILD agent for task "#
+        + markerTaskID + #"."}}"#
+    let somebodyElse = #"{"type":"user","message":{"role":"user","content":"You are a Clawdline CHILD agent for task 11111111-2222-3333-4444-555555555555."}}"#
+    let sameTitle = #"{"customTitle":"Claude Code"}"#
+    let stale = dir.appendingPathComponent("stale-own.jsonl")
+    let sibling = dir.appendingPathComponent("sibling.jsonl")
+    try! Data((receipt + "\n" + sameTitle + "\n").utf8).write(to: stale)
+    try! Data((somebodyElse + "\n" + sameTitle + "\n").utf8).write(to: sibling)
+    try! fm.setAttributes([.modificationDate: spawnedAt.addingTimeInterval(-1)],
+                          ofItemAtPath: stale.path)
+    try! fm.setAttributes([.modificationDate: spawnedAt.addingTimeInterval(1)],
+                          ofItemAtPath: sibling.path)
+
+    let acceptsMine: (URL) -> Bool = {
+        Orchestrator.transcriptBelongsToTask($0, assistant: .claude, taskID: markerTaskID)
+    }
+    expect("a missing transcript is unknown rather than evidence for another task",
+           Orchestrator.transcriptOwnership(dir.appendingPathComponent("missing.jsonl"),
+                                            assistant: .claude, taskID: markerTaskID),
+           .unavailable)
+    let empty = dir.appendingPathComponent("empty.jsonl")
+    try! Data().write(to: empty)
+    expect("a zero-byte transcript is still awaiting its first turn",
+           Orchestrator.transcriptOwnership(empty, assistant: .claude,
+                                            taskID: markerTaskID), .unavailable)
+    let starting = dir.appendingPathComponent("starting.jsonl")
+    try! Data(#"{"type":"system","subtype":"startup"}"#.utf8).write(to: starting)
+    expect("startup metadata without a user turn cannot disprove ownership",
+           Orchestrator.transcriptOwnership(starting, assistant: .claude,
+                                            taskID: markerTaskID), .unavailable)
+    expect("a readable sibling is positive evidence that this is not its task",
+           Orchestrator.transcriptOwnership(sibling, assistant: .claude,
+                                            taskID: markerTaskID), .other)
+    check("a pre-spawn file is excluded even when it carries the requested marker",
+          Transcript.locate(in: dir, tabTitle: "Claude Code", startedAt: spawnedAt,
+                            accepting: acceptsMine) == nil)
+
+    let own = dir.appendingPathComponent("own.jsonl")
+    try! Data((receipt + "\n" + sameTitle + "\n").utf8).write(to: own)
+    try! fm.setAttributes([.modificationDate: spawnedAt.addingTimeInterval(2)],
+                          ofItemAtPath: own.path)
+    try! fm.setAttributes([.modificationDate: spawnedAt.addingTimeInterval(3)],
+                          ofItemAtPath: sibling.path)
+    let sharedBirth = spawnedAt.addingTimeInterval(0.5)
+    try! fm.setAttributes([.creationDate: sharedBirth], ofItemAtPath: sibling.path)
+    try! fm.setAttributes([.creationDate: sharedBirth], ofItemAtPath: own.path)
+    expect("the creation-time fixture really puts both siblings in the same second",
+           Int(Transcript.created(sibling).timeIntervalSince1970),
+           Int(Transcript.created(own).timeIntervalSince1970))
+    expect("a same-window sibling cannot win over the file with this task's marker",
+           Transcript.locate(in: dir, tabTitle: "Claude Code", startedAt: spawnedAt,
+                             accepting: acceptsMine), own)
+    check("a later exact hook id cannot replace proven identity without the task marker",
+          Transcript.locate(in: dir, tabTitle: "Claude Code", startedAt: spawnedAt,
+                            sessionID: "sibling", accepting: acceptsMine) == nil)
+    expect("an exact hook id carrying the marker is eligible to replace an earlier guess",
+           Transcript.locate(in: dir, tabTitle: "Claude Code", startedAt: spawnedAt,
+                             sessionID: "own", accepting: acceptsMine), own)
+    check("the orchestrator keeps proven identity when a later tty note names a user session",
+          Orchestrator.replacementChildTranscript(currentSessionID: "previously-proven",
+                                                  notedSessionID: "sibling", transcript: sibling,
+                                                  taskID: markerTaskID) == nil)
+    expect("the replacement policy admits a later identity after its own marker is proven",
+           Orchestrator.replacementChildTranscript(currentSessionID: "earlier-guess",
+                                                   notedSessionID: "own", transcript: own,
+                                                   taskID: markerTaskID), own)
+    expect("the creation-time fallback rejects a same-second sibling too",
+           Transcript.locate(in: dir, tabTitle: "A title neither file has", startedAt: spawnedAt,
+                             accepting: acceptsMine), own)
+
+    let long = receipt + "\n" + (0..<150).map { index in
+        "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\","
+            + "\"content\":\"later \(index)\"}}"
+    }.joined(separator: "\n")
+    try! Data((long + "\n").utf8).write(to: own)
+    check("restoring identity searches past the receipt-sized tail",
+          Orchestrator.transcriptBelongsToTask(own, assistant: .claude,
+                                               taskID: markerTaskID))
+
+    let newlyProven = somebodyElse + "\n" + receipt + "\n" + sameTitle + "\n"
+    try! Data(newlyProven.utf8).write(to: sibling)
+    check("a cached rejection is retried when the transcript grows",
+          Orchestrator.transcriptBelongsToTask(sibling, assistant: .claude,
+                                               taskID: markerTaskID))
+
+    let beyondLimit = dir.appendingPathComponent("marker-beyond-limit.jsonl")
+    var beyondLimitData = Data(repeating: 0x20, count: 1_048_577)
+    beyondLimitData.append(Data(("\n" + receipt + "\n").utf8))
+    try! beyondLimitData.write(to: beyondLimit)
+    expect("a marker beyond the bounded scan leaves ownership unknown",
+           Orchestrator.transcriptOwnership(beyondLimit, assistant: .claude,
+                                            taskID: markerTaskID), .unavailable)
+
+    let longSibling = dir.appendingPathComponent("long-sibling.jsonl")
+    var longSiblingData = Data((somebodyElse + "\n").utf8)
+    longSiblingData.append(Data(repeating: 0x20, count: 1_048_577))
+    try! longSiblingData.write(to: longSibling)
+    expect("a bounded first user turn disproves even an oversized sibling",
+           Orchestrator.transcriptOwnership(longSibling, assistant: .claude,
+                                            taskID: markerTaskID), .other)
+}
+
+group("transcript ownership repairs only identities it disproves") {
+    let fm = FileManager.default
+    let ownershipTaskID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+    let dir = fm.temporaryDirectory
+        .appendingPathComponent("clawdline-transcript-ownership-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: dir) }
+
+    func task(assistant: Assistant, childSession: String?, transcript: URL) -> Orchestrator.Task {
+        var made = Orchestrator.Task(id: ownershipTaskID, state: .briefed, kind: "custom",
+                                     title: "a task",
+                                     assistant: assistant, projectDir: "/tmp", timeoutMinutes: 30,
+                                     created: Date(), secretHash: String(repeating: "0", count: 64))
+        made.childSessionId = childSession
+        made.transcriptPath = transcript.path
+        return made
+    }
+
+    let sibling = dir.appendingPathComponent("sibling.jsonl")
+    let siblingReceipt = #"{"type":"user","message":{"role":"user","content":"You are a Clawdline CHILD agent for task 11111111-2222-3333-4444-555555555555."}}"#
+    try! Data((siblingReceipt + "\n").utf8).write(to: sibling)
+    var preBriefing = Orchestrator.Task(
+        id: ownershipTaskID, state: .spawning, kind: "custom", title: "a task",
+        assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30,
+        created: Date(), secretHash: String(repeating: "0", count: 64)
+    )
+    preBriefing.childSessionId = "sibling"
+    preBriefing.transcriptPath = sibling.path
+    check("a pre-briefing identity pair survives an ownership polling beat",
+          !Orchestrator.noteTranscriptProof(in: &preBriefing)
+            && preBriefing.childSessionId == "sibling"
+            && preBriefing.transcriptPath == sibling.path)
+    let ready = "❯\n\n  ? for shortcuts"
+    expect("the surviving path keeps the second briefing attempt reachable",
+           Orchestrator.briefingDecision(screen: ready, assistant: .claude,
+                                         transcript: nil,
+                                         transcriptKnown: preBriefing.transcriptPath != nil,
+                                         taskID: ownershipTaskID, attempts: 1,
+                                         secondsSinceAttempt: 60), .send)
+    expect("the surviving path keeps the briefing ceiling reachable",
+           Orchestrator.briefingDecision(screen: ready, assistant: .claude,
+                                         transcript: nil,
+                                         transcriptKnown: preBriefing.transcriptPath != nil,
+                                         taskID: ownershipTaskID,
+                                         attempts: Orchestrator.briefingAttemptLimit,
+                                         secondsSinceAttempt: 60), .exhausted)
+    var disproved = task(assistant: .claude, childSession: "sibling", transcript: sibling)
+    check("a readable transcript belonging elsewhere changes the restored identity",
+          Orchestrator.applyTranscriptOwnership(.other, transcript: sibling, to: &disproved))
+    check("and clears both halves so discovery can locate this task again",
+          disproved.childSessionId == nil && disproved.transcriptPath == nil)
+
+    let missing = dir.appendingPathComponent("missing.jsonl")
+    var unavailable = task(assistant: .claude, childSession: "still-possible", transcript: missing)
+    check("an unavailable transcript is not treated as a disproof",
+          !Orchestrator.applyTranscriptOwnership(.unavailable, transcript: missing,
+                                                  to: &unavailable))
+    check("and keeps the pair for a later retry",
+          unavailable.childSessionId == "still-possible"
+            && unavailable.transcriptPath == missing.path)
+
+    let codex = dir.appendingPathComponent("codex.jsonl")
+    let codexReceipt = """
+    {"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage",\
+    "content":[{"type":"text","text":"You are a Clawdline CHILD agent for task 12345678-1234-1234-1234-123456789abc."}]}}}
+    """
+    try! Data((codexReceipt + "\n").utf8).write(to: codex)
+    var unpaired = Orchestrator.Task(
+        id: "12345678-1234-1234-1234-123456789abc", state: .briefed, kind: "custom",
+        title: "a task", assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30,
+        created: Date(), secretHash: String(repeating: "0", count: 64)
+    )
+    unpaired.transcriptPath = codex.path
+    check("a Codex marker without a rollout id cannot prove an identity pair",
+          !Orchestrator.applyTranscriptOwnership(.belongs, transcript: codex, to: &unpaired)
+            && !unpaired.transcriptProven)
+
+    let threadID = "01a02f3e-8f2c-7011-bb6d-49d2aaabd2a8"
+    let pairedCodex = dir.appendingPathComponent("paired-codex.jsonl")
+    let head = """
+    {"type":"session_meta","payload":{"session_id":"01a02f3e-8f2c-7011-bb6d-49d2aaabd2a8","cwd":"/tmp",\
+    "originator":"codex-tui"}}
+    """
+    try! Data((head + "\n" + codexReceipt + "\n").utf8).write(to: pairedCodex)
+    unpaired.transcriptPath = pairedCodex.path
+    check("the same marker becomes proof once Codex establishes the paired id",
+          Orchestrator.applyTranscriptOwnership(.belongs, transcript: pairedCodex, to: &unpaired)
+            && unpaired.transcriptProven && unpaired.childSessionId == threadID)
+
+    let startingCodex = dir.appendingPathComponent("starting-codex.jsonl")
+    try! Data((head + "\n").utf8).write(to: startingCodex)
+    expect("an unbriefed Codex rollout is not evidence of another task",
+           Orchestrator.transcriptOwnership(startingCodex, assistant: .codex,
+                                            taskID: unpaired.id), .unavailable)
 }
 
 group("transcript rendering") {
@@ -3956,6 +4183,82 @@ func remoteErrorMessage(_ response: RemoteServer.Response) -> String {
     return ((body?["error"] as? [String: Any])?["message"] as? String) ?? ""
 }
 
+group("the expensive remote reads take exactly one bounded side door") {
+    func slow(_ path: String) -> Bool { RemoteServer.isSlowReading(path) }
+    func limited(_ path: String) -> Bool { RemoteServer.isLimitedSlowReading(path) }
+
+    check("the places list leaves the shared server queue", slow("/v1/places"))
+    check("session info leaves it", slow("/v1/sessions/ABC/info"))
+    check("the session transcript leaves it", slow("/v1/sessions/ABC/transcript"))
+    check("an encoded session id is still one segment", slow("/v1/sessions/A%2FB/info"))
+
+    check("a places subroute is not selected", !slow("/v1/places/anything"))
+    check("the sessions list is not selected", !slow("/v1/sessions"))
+    check("an empty session id is not selected", !slow("/v1/sessions//info"))
+    check("an agent transcript is not the session transcript",
+          !slow("/v1/sessions/ABC/agents/child/transcript"))
+    check("a deeper route with the same suffix is not selected",
+          !slow("/v1/sessions/ABC/anything/info"))
+    check("a trailing slash is not selected", !slow("/v1/sessions/ABC/info/"))
+
+    check("places consumes the shared depth", limited("/v1/places"))
+    check("info consumes it", limited("/v1/sessions/ABC/info"))
+    check("transcript deliberately does not",
+          !limited("/v1/sessions/ABC/transcript"))
+    check("nor does an unrelated path", !limited("/v1/health"))
+}
+
+group("the slow-reading gate agrees with dispatch") {
+    let request = remoteRequest("GET", "/v1/places")
+    let atDoor = RemoteServer.shared.slowReadingRefusal(request)
+    let throughDispatch = RemoteServer.shared.route(request)
+
+    expect("the side door refuses an unpaired reader with 401", atDoor?.status, 401)
+    expect("dispatch gives the same status", throughDispatch.status, atDoor?.status)
+    expect("both refusals use the same code", remoteErrorCode(throughDispatch),
+           atDoor.map(remoteErrorCode) ?? "")
+    expect("and the same sentence", remoteErrorMessage(throughDispatch),
+           atDoor.map(remoteErrorMessage) ?? "")
+}
+
+group("the slow-reading depth is paired on every exit") {
+    let info = "/v1/sessions/ABC/info"
+
+    var refused = RemoteServer.ReadingLimiter()
+    for n in 0..<RemoteServer.readingDepth {
+        check("bounded reading \(n + 1) is admitted",
+              refused.admit(info, depth: RemoteServer.readingDepth))
+    }
+    let full = refused.count
+    check("the next bounded reading is refused",
+          !refused.admit("/v1/places", depth: RemoteServer.readingDepth))
+    expect("refusal did not increment the counter", refused.count, full)
+    for _ in 0..<RemoteServer.readingDepth { refused.finish(info) }
+    expect("the admitted work can all leave", refused.count, 0)
+
+    var normal = RemoteServer.ReadingLimiter()
+    check("an ordinary reading enters", normal.admit(info, depth: RemoteServer.readingDepth))
+    normal.finish(info)
+    expect("an ordinary answer leaves no count behind", normal.count, 0)
+
+    var interrupted = RemoteServer.ReadingLimiter()
+    check("a reading whose connection will close still enters",
+          interrupted.admit(info, depth: RemoteServer.readingDepth))
+    // The worker still completes after its NWConnection is cancelled. `readSlowly` calls this
+    // before attempting to send, so interruption changes the write and not the accounting.
+    interrupted.finish(info)
+    expect("an interrupted connection leaves no count behind", interrupted.count, 0)
+
+    var transcript = RemoteServer.ReadingLimiter()
+    for n in 0..<(RemoteServer.readingDepth + 2) {
+        check("transcript refresh \(n + 1) is never refused by the shared depth",
+              transcript.admit("/v1/sessions/ABC/transcript",
+                               depth: RemoteServer.readingDepth))
+        transcript.finish("/v1/sessions/ABC/transcript")
+    }
+    expect("transcript never changes the bounded count", transcript.count, 0)
+}
+
 group("a project folder says which directory it is, and is not taken at its word") {
     // Claude Code names the folder after the working directory with every character that is not
     // a letter or a digit turned into a dash. That map is many-to-one, so the name can never be
@@ -5347,6 +5650,15 @@ group("a rollout says where its session is working") {
           Codex.head(inText: head)?.isUser == true)
     check("and an old rollout remains a CLI session",
           Codex.head(inText: head)?.isInteractiveCLI == true)
+
+    let growing = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-growing-head-\(UUID().uuidString).jsonl")
+    defer { try? FileManager.default.removeItem(at: growing) }
+    try! Data().write(to: growing)
+    _ = Codex.head(of: growing)
+    try! Data((head + "\n").utf8).write(to: growing)
+    expect("a newly appended session_meta is reconsidered after an earlier nil",
+           Codex.head(of: growing)?.id, "01a02f3e-8f2c-7011-bb6d-49d2aaabd2a8")
 }
 
 group("the rollout a Codex process is holding open") {
@@ -6078,6 +6390,37 @@ group("what a child's turn cost, at the prices this app knows") {
           Orchestrator.cost(of: unpriced) == nil)
 }
 
+group("token accounting reads only a transcript proved for its task") {
+    let fm = FileManager.default
+    let dir = fm.temporaryDirectory
+        .appendingPathComponent("clawdline-usage-identity-\(UUID().uuidString)", isDirectory: true)
+    try! fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: dir) }
+
+    let usage = #"{"type":"assistant","message":{"model":"claude-opus-5","usage":{"input_tokens":37,"output_tokens":5}}}"#
+    func receipt(_ id: String) -> String {
+        """
+        {"type":"user","message":{"role":"user",\
+        "content":"You are a Clawdline CHILD agent for task \(id)."}}
+        """
+    }
+    let sibling = dir.appendingPathComponent("sibling.jsonl")
+    try! Data((receipt("11111111-2222-3333-4444-555555555555") + "\n" + usage + "\n").utf8)
+        .write(to: sibling)
+    let own = dir.appendingPathComponent("own.jsonl")
+    try! Data((receipt(taskID) + "\n" + usage + "\n").utf8).write(to: own)
+
+    var task = Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
+                                 assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30,
+                                 created: Date(), secretHash: String(repeating: "0", count: 64))
+    task.transcriptPath = sibling.path
+    check("a sibling's usage is not charged to an unproven task",
+          Orchestrator.harvestUsage(task) == nil)
+    task.transcriptPath = own.path
+    expect("the same unpersisted identity may be proved from its own marker",
+           Orchestrator.harvestUsage(task)?.input, 37)
+}
+
 group("orchestrator task states only move forward") {
     check("a briefed task cannot become spawning again",
           !Orchestrator.mayReplaceState(.briefed, with: .spawning))
@@ -6089,6 +6432,23 @@ group("orchestrator task states only move forward") {
           Orchestrator.mayReplaceState(.spawning, with: .spawnFailed))
     check("same-state field enrichment remains possible",
           Orchestrator.mayReplaceState(.briefed, with: .briefed))
+}
+
+group("an orchestrated child only inherits identity from this spawn") {
+    let spawnedAt = Date(timeIntervalSince1970: 2_000)
+    let old = HookBridge.Note(event: .sessionStart, tty: "ttys004",
+                              at: Date(timeIntervalSince1970: 1_000), session: "previous")
+    let current = HookBridge.Note(event: .sessionStart, tty: "ttys004",
+                                  at: Date(timeIntervalSince1970: 2_001), session: "current")
+    let equal = HookBridge.Note(event: .sessionStart, tty: "ttys004",
+                                at: spawnedAt, session: "same-second")
+
+    expect("a note left on the tty before this spawn has no child identity",
+           Orchestrator.childSessionID(from: old, spawnedAt: spawnedAt), nil)
+    expect("a note emitted after this spawn supplies the child identity",
+           Orchestrator.childSessionID(from: current, spawnedAt: spawnedAt), "current")
+    expect("the integer-second equality boundary is accepted",
+           Orchestrator.childSessionID(from: equal, spawnedAt: spawnedAt), "same-second")
 }
 
 group("an orchestrated child is briefed only at a real composer") {
@@ -6419,6 +6779,23 @@ group("finishing a task takes that task's secret and nothing else") {
     expect("and says nothing else about it", remoteErrorCode(unknown), "not_found")
 }
 
+group("loading an unavailable stored transcript preserves an unrefuted identity") {
+    let missing = "/tmp/transcript-rotated-away-\(UUID().uuidString).jsonl"
+    let childSession = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"
+    let row: [String: Any] = [
+        "id": taskID, "state": "briefed", "kind": "custom", "title": "a task",
+        "assistant": "claude", "project_dir": "/tmp", "timeout_minutes": 30,
+        "created": Date().timeIntervalSince1970,
+        "secret_hash": String(repeating: "0", count: 64), "artifacts": [],
+        "child_session": childSession, "transcript": missing,
+    ]
+    let loaded = Orchestrator.task(from: row)
+    expect("loading preserves the session id it could not disprove",
+           loaded?.childSessionId, childSession)
+    expect("and preserves the unavailable path for the same reason",
+           loaded?.transcriptPath, missing)
+}
+
 group("closing a root session takes the work it dispatched with it") {
     // The cascade behind `POST /v1/sessions/:id/end`. What is asserted here is the *selection* —
     // which tasks a closing root takes down — because the acting half ends terminal tabs, and a
@@ -6437,9 +6814,14 @@ group("closing a root session takes the work it dispatched with it") {
     let root = "8967a1ee-9718-45ed-94d5-c81178870072"
     let stranger = "1c9a4d55-6f31-4b02-8d77-0a2e3c4b5d61"
     let born = Date().timeIntervalSince1970
+    let identityDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-stored-identities-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! FileManager.default.createDirectory(at: identityDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: identityDir) }
     func row(_ id: String, _ state: String, rootSession: String?, at: Double,
              child: String? = nil, childSession: String? = nil,
-             parentTask: String? = nil) -> [String: Any] {
+             transcript: String? = nil, parentTask: String? = nil) -> [String: Any] {
         var out: [String: Any] = ["id": id, "state": state, "kind": "custom", "title": "a task",
                                   "assistant": "claude", "project_dir": "/tmp",
                                   "timeout_minutes": 30, "created": at,
@@ -6448,6 +6830,7 @@ group("closing a root session takes the work it dispatched with it") {
         if let rootSession { out["root_session"] = rootSession }
         if let child { out["child_terminal"] = child }
         if let childSession { out["child_session"] = childSession }
+        if let transcript { out["transcript"] = transcript }
         if let parentTask { out["parent_task"] = parentTask }
         return out
     }
@@ -6462,12 +6845,23 @@ group("closing a root session takes the work it dispatched with it") {
     // of its own to be named by; `done` reported already, and the work it handed on is still
     // running under it — which is the case that decides whether a grandchild belongs to anybody.
     let liveSession = "aaaa1111-2222-3333-4444-555555555555"
+    let liveTranscript = identityDir.appendingPathComponent(liveSession + ".jsonl")
+    let liveReceipt = #"{"type":"user","message":{"role":"user","content":"You are a Clawdline CHILD agent for task "#
+        + live + #"."}}"#
+    try! Data((liveReceipt + "\n").utf8).write(to: liveTranscript)
     let below = "88888888-9999-aaaa-bbbb-cccccccccccd"
     let belowDone = "99999999-aaaa-bbbb-cccc-dddddddddddd"
     let belowDead = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    let staleParent = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+    let staleSession = "cccccccc-dddd-eeee-ffff-000000000000"
+    let staleTranscript = identityDir.appendingPathComponent(staleSession + ".jsonl")
+    let wrongReceipt = #"{"type":"user","message":{"role":"user","content":"You are a Clawdline CHILD agent for task 11111111-2222-3333-4444-555555555555."}}"#
+    try! Data((wrongReceipt + "\n").utf8).write(to: staleTranscript)
+    let underStale = "dddddddd-eeee-ffff-0000-111111111111"
     let rows: [[String: Any]] = [
         row(alsoLive, "queued", rootSession: root, at: born + 1),
-        row(live, "briefed", rootSession: root, at: born, childSession: liveSession),
+        row(live, "briefed", rootSession: root, at: born, childSession: liveSession,
+            transcript: liveTranscript.path),
         row(done, "success", rootSession: root, at: born + 2, child: "%tab-done%"),
         row(below, "briefed", rootSession: liveSession, at: born + 7),
         row(belowDone, "success", rootSession: nil, at: born + 8, child: "%tab-below%",
@@ -6477,6 +6871,9 @@ group("closing a root session takes the work it dispatched with it") {
         row(orphan, "briefed", rootSession: nil, at: born + 4),
         row(alsoDone, "failure", rootSession: root, at: born + 5, child: "%tab-also%"),
         row(noTab, "spawn_failed", rootSession: root, at: born + 6),
+        row(staleParent, "spawn_failed", rootSession: stranger, at: born + 10,
+            childSession: staleSession, transcript: staleTranscript.path),
+        row(underStale, "briefed", rootSession: staleSession, at: born + 11),
     ]
     let stored = (try? JSONSerialization.data(withJSONObject: ["version": 1, "tasks": rows])) ?? Data()
     try? FileManager.default.createDirectory(at: store.deletingLastPathComponent(),
@@ -6516,6 +6913,8 @@ group("closing a root session takes the work it dispatched with it") {
     // in a rollout file rather than in the hook notes.
     expect("a grandchild is reached through the session id its parent goes by",
            Orchestrator.liveTasks(under: [live]), [below])
+    expect("an unproved session id restored from disk does not claim another task",
+           Orchestrator.liveTasks(under: [staleParent]), [])
     expect("and through the task it named as its parent, even one that has already reported",
            Orchestrator.liveTasks(under: [done]), [belowDead])
     expect("a finished grandchild's tab is collected the same way its parent's is",

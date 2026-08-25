@@ -106,13 +106,14 @@ enum Codex {
         var isInteractiveCLI: Bool
     }
 
-    /// Read that, cheaply and once.
+    /// Read that cheaply, and remember it once it exists.
     ///
     /// Only the first few kilobytes, because `session_meta` is the first record and the part
     /// worth having is at the front of it — the rest is the system prompt, which is thousands of
     /// words nobody here is going to read. Remembered against the path alone rather than against
     /// a stamp: a rollout's first line is written when the session starts and never rewritten, so
-    /// there is nothing for a stamp to catch.
+    /// there is nothing for a stamp to catch. Absence is not stable: `lsof` can reveal a newly
+    /// opened rollout before Codex has appended `session_meta`, so a nil result must be retried.
     private static let headLock = NSLock()
     private static var heads: [String: Head?] = [:]
 
@@ -122,9 +123,11 @@ enum Codex {
         headLock.unlock()
 
         let found = readHead(of: url)
-        headLock.lock()
-        heads[url.path] = found
-        headLock.unlock()
+        if let found {
+            headLock.lock()
+            heads[url.path] = found
+            headLock.unlock()
+        }
         return found
     }
 
