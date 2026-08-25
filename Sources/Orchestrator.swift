@@ -242,19 +242,66 @@ enum Orchestrator {
     /// of every session row, which is why it is a dictionary and not a walk over the tasks.
     private static var titlesByTerminal: [String: String] = [:]
 
+    /// Terminal id → where that tab sits in the tree. Rebuilt beside ``titlesByTerminal``.
+    private static var rolesByTerminal: [String: Role] = [:]
+
+    /// Where a session sits in the tree, for anything that has to decide who to tell.
+    ///
+    /// **Nil is the definition of a root.** A session this app did not open for a task is one a
+    /// person opened for themselves, and a person is the only audience that gets interrupted for
+    /// its own sake. Everything below one is working for somebody, and that somebody is a
+    /// program that can be told directly.
+    struct Role: Equatable {
+        let taskID: String
+        /// 1 for a task a person's session dispatched, 2 for one dispatched by a child of theirs.
+        let depth: Int
+        let title: String
+        /// When the task gives up on itself, so a notification can say how long is left to
+        /// answer it. Nil before the child has been briefed — there is no clock yet.
+        let deadline: Date?
+        /// Whether anything is still waiting on this tab. A child's terminal lingers for three
+        /// minutes after its task ends (see `orchestratorChildLinger`), and for those three
+        /// minutes it is a child's tab with nobody behind it.
+        let live: Bool
+    }
+
     /// What a terminal this app opened for a task is called. Nil for every other session.
     static func title(forTerminal id: String) -> String? {
         lock.lock(); defer { lock.unlock() }
         return titlesByTerminal[id]
     }
 
+    /// Where that terminal sits in the tree. Nil for every session a person opened themselves.
+    ///
+    /// `load()` first, unlike ``title(forTerminal:)`` beside it, and the asymmetry is deliberate:
+    /// a title that is briefly missing is a row drawn with the tab's own name, while a role that
+    /// is briefly missing is a child mistaken for a person — which is the one wrong answer this
+    /// whole arrangement exists to avoid. It costs a flag check after the first call.
+    static func role(forTerminal id: String) -> Role? {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        return rolesByTerminal[id]
+    }
+
     /// Under the lock.
     private static func reindex() {
         var found: [String: String] = [:]
+        var roles: [String: Role] = [:]
         for task in tasks.values {
-            if let terminal = task.childTerminalId { found[terminal] = task.title }
+            guard let terminal = task.childTerminalId else { continue }
+            found[terminal] = task.title
+            let role = Role(taskID: task.id, depth: task.depth, title: task.title,
+                            deadline: task.briefedAt?
+                                .addingTimeInterval(Double(task.timeoutMinutes) * 60),
+                            live: !task.state.isTerminal)
+            // A tab is normally one task's for its whole life. When two records name the same
+            // one — a terminal id reused after a tab closed and another opened in its place —
+            // the live task is the one anything asking this question means.
+            if let existing = roles[terminal], existing.live, !role.live { continue }
+            roles[terminal] = role
         }
         titlesByTerminal = found
+        rolesByTerminal = roles
     }
 
     /// Commit a value copy only while the record is still the state the caller worked from.
@@ -937,6 +984,11 @@ enum Orchestrator {
                               "main": String(Thread.isMainThread),
                               "thread": Thread.current.description])
         }
+        // Before the early return on purpose. With `orchestratorChildLinger` set to never keep a
+        // tab, the last task of a fan-out leaves nothing in `liveIDs` at all — and a batch that
+        // announces only while something is still on the list is one that never announces.
+        sweepBatches()
+
         guard !liveIDs.isEmpty else { return }
 
         var changed = false
@@ -1311,6 +1363,7 @@ enum Orchestrator {
         RemoteAuth.audit("orchestrator.finish", ["task": taskID, "state": outcome.rawValue])
         RemoteServer.shared.broadcastOrchestrator()
         notifyRoot(task)
+        noteEnded(task)
         endWorkHandedOnBy(task)
     }
 
@@ -1339,22 +1392,164 @@ enum Orchestrator {
         }
     }
 
-    /// One line typed into the root session, so the conversation that asked for the work is the
-    /// conversation that hears it finished.
+    /// One line typed into whatever is waiting for this task, so the conversation that asked for
+    /// the work is the conversation that hears it finished.
+    ///
+    /// **Two readers, told different things.** A root is a conversation with a person behind it,
+    /// and what it needs is enough to go and look: the id, the state, the file. A child is a
+    /// program on a deadline with siblings still running, and it has exactly one question — may I
+    /// write my own result.json yet — so it is told the answer to that instead.
+    ///
+    /// **Finding the reader only ever worked one level down, and that was a bug rather than a
+    /// design.** A root writes `root.session_id` into the task it dispatches, so a depth-1 task
+    /// can be traced back to a tab through the hook notes. The briefing tells a child to dispatch
+    /// with `root.parent_task` and nothing else — deliberately, because a Codex child has no hook
+    /// note to be found by — so at depth 2 this guard failed on the first line and the line was
+    /// dropped in silence. What was left was the polling loop the briefing prescribes, which is a
+    /// child spending turns on `sleep`. The parent task's own terminal is the answer, and
+    /// ``record(of:)`` had been resolving it that way all along.
     private static func notifyRoot(_ task: Task) {
-        guard Config.shared.orchestratorNotifyRoot, let rootID = task.rootSessionId else { return }
+        guard Config.shared.orchestratorNotifyRoot else { return }
+        let short = String(task.id.prefix(8))
+        let file = "read /tmp/.clawdline/\(task.id)/result.json"
+
+        if let parentID = task.parentTaskId, let parent = held(parentID),
+           !parent.state.isTerminal, let terminalID = parent.childTerminalId,
+           let terminal = target(withID: terminalID) {
+            // Words into a menu confirm the highlighted row instead of typing.
+            guard !Targets.isChoosing(terminal) else { return }
+            let outstanding = liveTasks(under: [parentID]).count
+            let rest = outstanding == 0
+                ? "nothing else you handed on is still running"
+                : "\(outstanding) more of yours still running"
+            let line = "[clawdline] your task \(short) (\(task.title)) finished:"
+                + " \(task.state.rawValue) — \(file) — \(rest)"
+            if let failure = Targets.send(line, to: terminal) {
+                Log.write("orchestrator: could not notify the parent task — \(failure)")
+            }
+            return
+        }
+
+        guard let rootID = task.rootSessionId else { return }
         guard let root = SessionWatch.shared.targets.first(where: {
             HookBridge.note(for: $0)?.session == rootID
         }) else { return }
         // Words into a menu confirm the highlighted row instead of typing. Skip rather than risk
         // answering a question on the root's behalf; the record is still in the app and the page.
         guard !Targets.isChoosing(root) else { return }
-        let short = String(task.id.prefix(8))
-        let line = "[clawdline] task \(short) (\(task.title)) finished: \(task.state.rawValue)"
-            + " — read /tmp/.clawdline/\(task.id)/result.json"
+        let line = "[clawdline] task \(short) (\(task.title)) finished:"
+            + " \(task.state.rawValue) — \(file)"
         if let failure = Targets.send(line, to: root) {
             Log.write("orchestrator: could not notify the root — \(failure)")
         }
+    }
+
+    // MARK: - Telling the person, once
+
+    /// What one root's fan-out has come to, accumulated as its tasks end.
+    ///
+    /// **A phone hears about a batch and never about a task, and the arithmetic is the argument.**
+    /// Five children with three of their own is twenty sessions, every one of them a terminal
+    /// that goes idle when it is done — so before this existed a fan-out was up to twenty
+    /// identical "finished a long run" notifications, none of which said which tree it belonged
+    /// to or whether anything was still outstanding. That is the same mistake ``StateHook``'s own
+    /// comment argues against for root sessions, made one level down where nobody had looked.
+    ///
+    /// The one fact a person actually wants out of all twenty is that the work they asked for has
+    /// come back, and how much of it failed. That is one sentence, and it arrives once.
+    private struct Batch {
+        var done = 0
+        var failed = 0
+        var rootLabel: String?
+        var projectDir: String?
+    }
+
+    /// Root key → tally. In memory only: a process that restarts in the middle of a fan-out has
+    /// already interrupted it, and inventing a count for work it did not watch would be worse
+    /// than saying nothing.
+    private static var batches: [String: Batch] = [:]
+
+    /// Under the lock. The session a whole tree hangs from, so a grandchild is counted in the
+    /// same batch as the child that dispatched it.
+    ///
+    /// A task that named nobody gets a key of its own rather than sharing one with every other
+    /// anonymous dispatch — the alternative is two unrelated fan-outs waiting for each other.
+    private static func rootKeyLocked(of task: Task) -> String {
+        var at = task
+        var hops = 0
+        while let parentID = at.parentTaskId, let above = tasks[parentID], hops < depthFloor {
+            at = above
+            hops += 1
+        }
+        return at.rootSessionId ?? "task:\(at.id)"
+    }
+
+    /// Main thread, from ``finalize(_:as:summary:artifacts:)``. Every ending goes through there —
+    /// success, failure, timeout, cancellation, a tab that closed under a child — so this counts
+    /// all of them and not only the tidy ones.
+    private static func noteEnded(_ task: Task) {
+        lock.lock()
+        let key = rootKeyLocked(of: task)
+        var batch = batches[key] ?? Batch()
+        batch.done += 1
+        if task.state != .success { batch.failed += 1 }
+        if batch.projectDir == nil { batch.projectDir = task.projectDir }
+        if batch.rootLabel == nil { batch.rootLabel = task.rootLabel }
+        batches[key] = batch
+        lock.unlock()
+    }
+
+    /// Announce any batch that has nothing left running. Called from the beat rather than from
+    /// `finalize`, and that is a correctness point rather than tidiness: `finalize` cancels the
+    /// work its task handed on **asynchronously**, so at the moment it ends, a grandchild about
+    /// to be taken down still counts as live. Asking again a beat later is asking after the dust
+    /// has settled, and it covers the same ground for cancellation, timeouts, and a tab somebody
+    /// closed by hand.
+    private static func sweepBatches() {
+        lock.lock()
+        guard !batches.isEmpty else { lock.unlock(); return }
+        var ready: [(String, Batch)] = []
+        for (key, batch) in batches {
+            let running = tasks.values.contains {
+                !$0.state.isTerminal && rootKeyLocked(of: $0) == key
+            }
+            guard !running else { continue }
+            ready.append((key, batch))
+            batches.removeValue(forKey: key)
+        }
+        lock.unlock()
+        for (key, batch) in ready { announce(batch, rootKey: key) }
+    }
+
+    /// The two lines a finished fan-out is worth. Pure half in ``batchMessage(project:done:failed:)``.
+    private static func announce(_ batch: Batch, rootKey key: String) {
+        // The "it finished" class, so it takes the preference that class already has. A batch
+        // that ended badly is still a batch that ended: whatever is worth doing about it is
+        // waiting in the root's own conversation, which was told the moment each part came back.
+        guard Config.shared.pushOnFinish else { return }
+        let project = batch.projectDir.map { StateHook.projectName(forDirectory: $0) } ?? "Clawdline"
+        let message = batchMessage(project: project, label: batch.rootLabel,
+                                   done: batch.done, failed: batch.failed)
+        var url = "/"
+        if !key.hasPrefix("task:"),
+           let root = SessionWatch.shared.targets.first(where: {
+               HookBridge.note(for: $0)?.session == key
+           }) {
+            url = "/#session=\(root.id)"
+        }
+        WebPush.send(title: message.title, body: message.body, url: url,
+                     // Keyed on the root and not on a task, so a second fan-out from the same
+                     // session replaces the first rather than stacking under it.
+                     tag: "batch-\(key)",
+                     icon: RemoteIcon.projectPath(
+                        for: batch.projectDir.flatMap { ProjectIcon.grid(forCwd: $0) }))
+    }
+
+    /// Pure, so the wording can be checked without a terminal, a phone or a clock.
+    static func batchMessage(project: String, label: String?,
+                             done: Int, failed: Int) -> StateHook.PushMessage {
+        StateHook.PushMessage(title: label ?? project,
+                              body: "\(project) \(L.t.pushBatchDone(done: done, failed: failed))")
     }
 
     // MARK: - What the child is told

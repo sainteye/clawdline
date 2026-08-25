@@ -3609,6 +3609,125 @@ group("push notifications identify the session and its project") {
            StateHook.PushMessage(title: "fix the webhook", body: "clawdline deploy failed"))
 }
 
+group("a notification goes to whoever is actually blocked") {
+    func role(depth: Int, live: Bool = true, deadline: Date? = nil) -> Orchestrator.Role {
+        Orchestrator.Role(taskID: "t", depth: depth, title: "a task",
+                          deadline: deadline, live: live)
+    }
+
+    // A person's own session behaves exactly as it always has. This is the case that must not
+    // move: it is the one notification in the app that earns an interruption.
+    // Routed against `L.t` rather than against English, so the test says what it means — which
+    // string this event picks — on a machine in any language.
+    expect("a root that is waiting still says so",
+           StateHook.pushDecision(.waiting, role: nil, minutesLeft: nil),
+           .send(L.t.pushWaiting))
+    expect("and a root that finished still says so",
+           StateHook.pushDecision(.finished, role: nil, minutesLeft: nil),
+           .send(L.t.pushFinished))
+
+    // The whole point: twenty tabs finishing is one batch, not twenty notifications.
+    expect("a child that finished is silent",
+           StateHook.pushDecision(.finished, role: role(depth: 1), minutesLeft: nil), .silent)
+    expect("and so is a grandchild",
+           StateHook.pushDecision(.finished, role: role(depth: 2), minutesLeft: nil), .silent)
+
+    // The one below a root that is *more* urgent than a root, because nobody is on that tab.
+    expect("a child that is waiting says which kind of session it is",
+           StateHook.pushDecision(.waiting, role: role(depth: 1), minutesLeft: nil),
+           .send(L.t.pushChildWaiting(minutes: nil)))
+    expect("and carries the clock when there is one",
+           StateHook.pushDecision(.waiting, role: role(depth: 1), minutesLeft: 12),
+           .send(L.t.pushChildWaiting(minutes: 12)))
+    check("which is a different sentence from a root's, not a politer one",
+          L.t.pushChildWaiting(minutes: nil) != L.t.pushWaiting)
+
+    let en = English()
+    expect("in English, the clock is on the end", en.pushChildWaiting(minutes: 12),
+           "has a child session waiting — 12 min left")
+    expect("and absent rather than blank when there is none", en.pushChildWaiting(minutes: nil),
+           "has a child session waiting")
+    expect("a tab whose task is over has nobody behind it",
+           StateHook.pushDecision(.waiting, role: role(depth: 1, live: false), minutesLeft: 5),
+           .silent)
+
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    expect("minutes left are whole minutes",
+           StateHook.minutesLeft(for: role(depth: 1, deadline: now.addingTimeInterval(750)),
+                                 now: now), 12)
+    check("a task with no clock yet has no number",
+          StateHook.minutesLeft(for: role(depth: 1), now: now) == nil)
+    check("and neither does one that has already run out",
+          StateHook.minutesLeft(for: role(depth: 1, deadline: now.addingTimeInterval(-60)),
+                                now: now) == nil)
+    check("nor one with less than a minute to go — 0 reads as a number somebody forgot",
+          StateHook.minutesLeft(for: role(depth: 1, deadline: now.addingTimeInterval(20)),
+                                now: now) == nil)
+}
+
+group("a fan-out is one sentence, whatever it cost") {
+    expect("the root's own name is the title, so it is clear whose work came back",
+           Orchestrator.batchMessage(project: "clawdline", label: "ship the parser",
+                                     done: 5, failed: 0).title,
+           "ship the parser")
+    expect("the project and the count are the body",
+           Orchestrator.batchMessage(project: "clawdline", label: nil, done: 5, failed: 0).body,
+           "clawdline " + L.t.pushBatchDone(done: 5, failed: 0))
+
+    let copy = English()
+    expect("in English, a clean batch is a count", copy.pushBatchDone(done: 5, failed: 0),
+           "finished 5 tasks")
+    expect("a batch that lost some says how many", copy.pushBatchDone(done: 5, failed: 2),
+           "finished 5 tasks, 2 failed")
+    expect("and one task is one task", copy.pushBatchDone(done: 1, failed: 0), "finished 1 task")
+    expect("and with no root label the project stands in for it",
+           Orchestrator.batchMessage(project: "clawdline", label: nil, done: 1, failed: 0).title,
+           "clawdline")
+
+    // The project of a finished fan-out has to come off a path: every tab it ran in is closed
+    // by the time there is anything to say.
+    expect("a directory names its own project", StateHook.projectName(forDirectory: "/x/y/parser"),
+           "parser")
+    expect("and a path with nothing on the end falls back",
+           StateHook.projectName(forDirectory: "/", fallback: "Clawdline"), "Clawdline")
+}
+
+group("a project mark small enough to be a URL") {
+    let cells: [[NSColor?]] = [
+        [nil, ProjectIcon.color(hex: "#D97757"), nil],
+        [ProjectIcon.color(hex: "#141416"), nil, ProjectIcon.color(hex: "#0E0E11")],
+    ]
+    let packed = RemoteIcon.pack(cells)
+    check("a grid packs", packed != nil)
+
+    let back = packed.flatMap(RemoteIcon.unpack)
+    check("and comes back the same shape", back?.count == 2 && back?.first?.count == 3)
+    expect("with the holes still holes", back?[0][0] == nil && back?[1][1] == nil, true)
+    expect("and the colours to the byte", back.map { ProjectIcon.hex($0[0][1]!) }, "#D97757")
+    expect("including the ones that are nearly the ground", back.map { ProjectIcon.hex($0[1][2]!) },
+           "#0E0E11")
+
+    // The whole reason for the format: it has to survive being a path component.
+    let text = packed ?? ""
+    check("the packing is URL-safe", !text.contains("+") && !text.contains("/")
+          && !text.contains("="))
+    check("and a 7x4 registry drawing stays short", (RemoteIcon.pack(
+        Array(repeating: Array(repeating: NSColor.red as NSColor?, count: 7), count: 4)) ?? "")
+        .count < 200)
+
+    // Everything below arrives from outside as a string somebody could have typed.
+    check("a truncated body is refused", RemoteIcon.unpack(String(text.dropLast(4))) == nil)
+    check("nonsense is refused", RemoteIcon.unpack("not-base64-at-all!!") == nil)
+    check("an empty string is refused", RemoteIcon.unpack("") == nil)
+    check("a grid claiming to be enormous is refused",
+          RemoteIcon.unpack(WebPush.base64url(Data([255, 255, 0, 0, 0, 0]))) == nil)
+    check("a header with no cells behind it is refused",
+          RemoteIcon.unpack(WebPush.base64url(Data([2, 2]))) == nil)
+    check("a grid with no rows is refused", RemoteIcon.pack([]) == nil)
+    check("a grid too wide to draw is refused",
+          RemoteIcon.pack([Array(repeating: NSColor.red as NSColor?, count: 33)]) == nil)
+}
+
 group("state hook: finding the program") {
     // A GUI app has launchd's PATH, not a login shell's, so a bare name has to be looked for in
     // more places than PATH names — otherwise everything installed by Homebrew is unreachable.

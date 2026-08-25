@@ -163,6 +163,14 @@ struct Turkish: Copy {
     let pushFinished = "uzun bir işi bitirdi"
     let pushDeployOk = "deploy başarıyla bitti"
     let pushDeployFail = "deploy hata verdi"
+    func pushChildWaiting(minutes: Int?) -> String {
+        guard let minutes else { return "alt oturumu yanıt bekliyor" }
+        return "alt oturumu yanıt bekliyor — \(minutes) dk kaldı"
+    }
+    func pushBatchDone(done: Int, failed: Int) -> String {
+        let all = "\(done) görevi bitirdi"
+        return failed == 0 ? all : "\(all), \(failed) başarısız"
+    }
     let settingsPushFinish = "Uzun bir iş bitince haber ver"
     let settingsPushFinishHint = "Yalnızca iki dakikayı geçenler."
     let settingsPushDeploy = "Deploy bitince haber ver"

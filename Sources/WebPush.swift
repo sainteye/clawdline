@@ -481,7 +481,13 @@ enum WebPush {
     /// that phone**, not every device anybody has ever paired: a test whose blast radius is
     /// larger than the thing being tested teaches you to be careful with it, which is the
     /// opposite of what a test button is for.
+    /// `icon` is a path on this origin — see ``RemoteIcon/projectPath(for:size:)``. It is a URL
+    /// and not the picture itself for a reason worth stating: the picture would fit, just, and
+    /// then the message would be a notification competing with its own decoration for the 3993
+    /// octets a push service is obliged to accept. A 169-character path costs nothing and the
+    /// phone fetches the mark once a year.
     static func send(title: String, body: String, url: String?, tag: String? = nil,
+                     icon: String? = nil,
                      device: String? = nil, completion: (() -> Void)? = nil) {
         let targets = device.map { id in subscriptions.filter { $0.device == id } } ?? subscriptions
         guard !targets.isEmpty else {
@@ -494,10 +500,23 @@ enum WebPush {
                                       "at": Int(Date().timeIntervalSince1970)]
         if let url, !url.isEmpty { payload["url"] = url }
         if let tag, !tag.isEmpty { payload["tag"] = topic(for: tag) }
+        if let icon, !icon.isEmpty { payload["icon"] = icon }
 
         DispatchQueue.global(qos: .utility).async {
-            guard let plaintext = try? JSONSerialization.data(
-                withJSONObject: payload, options: [.withoutEscapingSlashes]) else {
+            var payload = payload
+            var made = try? JSONSerialization.data(
+                withJSONObject: payload, options: [.withoutEscapingSlashes])
+            // **The decoration goes before the message does.** A title is a task name and a
+            // body is a project name, and both come from outside; between them they can crowd
+            // out the octets a push service is obliged to accept. Losing the mark costs a
+            // picture on one platform; losing the message costs the thing the file exists for.
+            if let over = made, over.count > maxPayload, payload["icon"] != nil {
+                Log.write("push: the mark did not fit in \(maxPayload) octets — sending without it")
+                payload.removeValue(forKey: "icon")
+                made = try? JSONSerialization.data(
+                    withJSONObject: payload, options: [.withoutEscapingSlashes])
+            }
+            guard let plaintext = made else {
                 Log.write("push: could not serialise the payload — nothing sent")
                 if let completion { DispatchQueue.main.async(execute: completion) }
                 return

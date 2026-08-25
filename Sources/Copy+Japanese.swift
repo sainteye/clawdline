@@ -161,6 +161,14 @@ struct Japanese: Copy {
     let pushFinished = "の長い実行が終わりました"
     let pushDeployOk = "のデプロイが成功しました"
     let pushDeployFail = "のデプロイが失敗しました"
+    func pushChildWaiting(minutes: Int?) -> String {
+        guard let minutes else { return "の子セッションが答えを待っています" }
+        return "の子セッションが答えを待っています — 残り \(minutes) 分"
+    }
+    func pushBatchDone(done: Int, failed: Int) -> String {
+        let all = "の \(done) 件のタスクが終わりました"
+        return failed == 0 ? all : "\(all)（\(failed) 件失敗）"
+    }
     let settingsPushFinish = "長い作業が終わったら知らせる"
     let settingsPushFinishHint = "2 分を超えたものだけです。"
     let settingsPushDeploy = "デプロイが終わったら知らせる"

@@ -163,6 +163,14 @@ struct Russian: Copy {
     let pushFinished = "долгая работа закончена"
     let pushDeployOk = "деплой прошёл успешно"
     let pushDeployFail = "деплой не удался"
+    func pushChildWaiting(minutes: Int?) -> String {
+        guard let minutes else { return "дочерняя сессия ждёт ответа" }
+        return "дочерняя сессия ждёт ответа — осталось \(minutes) мин"
+    }
+    func pushBatchDone(done: Int, failed: Int) -> String {
+        let all = "задач завершено: \(done)"
+        return failed == 0 ? all : "\(all), с ошибкой: \(failed)"
+    }
     let settingsPushFinish = "Сообщать, когда долгая работа закончится"
     let settingsPushFinishHint = "Только дольше двух минут."
     let settingsPushDeploy = "Сообщать, когда закончится деплой"

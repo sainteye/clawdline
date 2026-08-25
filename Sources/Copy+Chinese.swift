@@ -164,6 +164,14 @@ struct TraditionalChinese: Copy {
     let pushFinished = "跑完一段長工作了"
     let pushDeployOk = "deploy 成功了"
     let pushDeployFail = "deploy 失敗了"
+    func pushChildWaiting(minutes: Int?) -> String {
+        guard let minutes else { return "有子 session 在等回答" }
+        return "有子 session 在等回答，還剩 \(minutes) 分鐘"
+    }
+    func pushBatchDone(done: Int, failed: Int) -> String {
+        let all = "跑完 \(done) 件任務"
+        return failed == 0 ? all : "\(all)，\(failed) 件失敗"
+    }
     let settingsPushFinish = "一段長工作跑完時通知我"
     let settingsPushFinishHint = "只有跑超過兩分鐘的才算。"
     let settingsPushDeploy = "deploy 結束時通知我"
@@ -701,6 +709,14 @@ struct SimplifiedChinese: Copy {
     let pushFinished = "跑完一段长任务了"
     let pushDeployOk = "deploy 成功了"
     let pushDeployFail = "deploy 失败了"
+    func pushChildWaiting(minutes: Int?) -> String {
+        guard let minutes else { return "有子 session 在等回答" }
+        return "有子 session 在等回答，还剩 \(minutes) 分钟"
+    }
+    func pushBatchDone(done: Int, failed: Int) -> String {
+        let all = "跑完 \(done) 件任务"
+        return failed == 0 ? all : "\(all)，\(failed) 件失败"
+    }
     let settingsPushFinish = "一段长任务跑完时通知我"
     let settingsPushFinishHint = "只有跑超过两分钟的才算。"
     let settingsPushDeploy = "deploy 结束时通知我"

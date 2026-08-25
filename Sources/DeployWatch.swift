@@ -109,7 +109,8 @@ enum DeployWatch {
             WebPush.send(title: message.title,
                          body: message.body,
                          url: "/#session=\(row.session.id)",
-                         tag: "deploy-\(change.repo)")
+                         tag: "deploy-\(change.repo)",
+                         icon: RemoteIcon.projectPath(for: StateHook.projectMark(for: row.session)))
         }
     }
 }

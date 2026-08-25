@@ -210,4 +210,169 @@ enum RemoteIcon {
         out.append(png)
         return out
     }
+
+    // MARK: - The other mark
+
+    /// A project's pixel mark, drawn on the same tile as the app's own.
+    ///
+    /// **This exists for one surface only: the icon on a push notification.** A phone showing
+    /// "clawdline is waiting for an answer" is showing it beside the app's creature, which is
+    /// correct and useless — every notification this app has ever sent looks like that one. What
+    /// tells two of them apart at a glance is the thing the status line and the list already use
+    /// to tell projects apart, and it costs nothing to draw it here too.
+    ///
+    /// On the app's own ground rather than on nothing, for the reason in ``ground``, and with a
+    /// second consequence that only matters here: a notification drawn by the operating system
+    /// sits on a background this app does not choose and cannot read. The dark tile is what makes
+    /// the mark the same mark on a lock screen at night and in a notification centre at noon.
+    ///
+    /// Smoothing off for the cells and on for the tile, which is a size decision rather than a
+    /// taste one — see ``project(cells:size:)``.
+    static func project(cells: [[NSColor?]], size: Int) -> Data? {
+        let key = "\(size)|\(signature(of: cells))"
+        lock.lock()
+        if let hit = projects[key] { lock.unlock(); return hit }
+        lock.unlock()
+
+        let made = onMain { renderProject(cells: cells, size: size) }
+        guard let made else { return nil }
+        lock.lock()
+        // Bounded, and emptied rather than evicted one at a time. These are a kilobyte each and
+        // arrive at the rate somebody starts projects, so the cap is never reached in a day's
+        // use; what it is for is the case where it would grow without one.
+        if projects.count >= 64 { projects.removeAll() }
+        projects[key] = made
+        lock.unlock()
+        return made
+    }
+
+    private static var projects: [String: Data] = [:]
+
+    private static func signature(of cells: [[NSColor?]]) -> String {
+        pack(cells) ?? "?"
+    }
+
+    private static func renderProject(cells: [[NSColor?]], size: Int) -> Data? {
+        let columns = cells.map(\.count).max() ?? 0
+        guard columns > 0, !cells.isEmpty else { return nil }
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+
+        let side = CGFloat(size)
+        // The tile is the one curve here, so it is the one thing smoothed. Everything after it is
+        // an axis-aligned rectangle, and smoothing those costs bytes twice over: a soft edge is a
+        // gradient, a gradient does not run-length encode, and this PNG is measured — with
+        // smoothing left on for the cells the same drawing came out 45% larger, which matters
+        // because it travels to a phone.
+        NSGraphicsContext.current?.shouldAntialias = true
+        ground.setFill()
+        NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: side, height: side),
+                     xRadius: side / 5, yRadius: side / 5).fill()
+        NSGraphicsContext.current?.shouldAntialias = false
+
+        // Fitted by whichever way round the mark is, so a 7x4 registry drawing and a square
+        // hand-drawn one both sit inside the same margin instead of one of them overflowing it.
+        let lines = CGFloat(cells.count)
+        let across = CGFloat(columns)
+        let cell = ((side * 0.78) / max(across, lines)).rounded()
+        let originX = ((side - cell * across) / 2).rounded()
+        let originY = ((side - cell * lines) / 2).rounded()
+
+        for (row, line) in cells.enumerated() {
+            for (column, colour) in line.enumerated() {
+                guard let colour else { continue }
+                colour.setFill()
+                // Rows are written top-down and AppKit's origin is at the bottom.
+                NSBezierPath(rect: NSRect(x: originX + CGFloat(column) * cell,
+                                          y: originY + (lines - 1 - CGFloat(row)) * cell,
+                                          width: cell, height: cell)).fill()
+            }
+        }
+
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.representation(using: .png, properties: [:])
+    }
+
+    // MARK: - A mark that fits in a URL
+
+    /// The largest grid that may travel this way, per side.
+    ///
+    /// The registry's own drawings are 7x4 and a hand-drawn one is a few rows more, so this is
+    /// far above anything real. It is here because the packed form arrives from outside as a
+    /// string somebody could have written by hand, and "how big a bitmap will you allocate for
+    /// me" is not a question to leave open.
+    static let projectGridLimit = 32
+
+    /// A grid packed small enough to be a path component.
+    ///
+    /// **The picture is the name.** The alternative was an id — a hash of the project's path, or
+    /// the session's — and both of them put a handle to a particular project into a URL that has
+    /// to be fetchable without credentials, because the fetch is made by the operating system
+    /// drawing a notification and not by the page. This carries the colours themselves and
+    /// nothing else: no path, no session, no project id, nothing to enumerate, and two projects
+    /// that happen to look alike honestly do share a URL. It is also why the answer can be cached
+    /// for a year — a URL that is its own content can never go stale.
+    ///
+    /// One byte of width, one of height, then four bytes a cell, alpha zero for the ones that are
+    /// not there. 7x4 comes to 114 bytes and 152 characters.
+    static func pack(_ cells: [[NSColor?]]) -> String? {
+        let columns = cells.map(\.count).max() ?? 0
+        guard columns > 0, columns <= projectGridLimit,
+              !cells.isEmpty, cells.count <= projectGridLimit else { return nil }
+        var out = Data([UInt8(columns), UInt8(cells.count)])
+        for row in cells {
+            for column in 0..<columns {
+                let colour = column < row.count ? row[column] : nil
+                guard let c = colour?.usingColorSpace(.sRGB) else {
+                    out.append(contentsOf: [0, 0, 0, 0]); continue
+                }
+                func byte(_ v: CGFloat) -> UInt8 { UInt8(max(0, min(255, (v * 255).rounded()))) }
+                out.append(contentsOf: [byte(c.redComponent), byte(c.greenComponent),
+                                        byte(c.blueComponent), 255])
+            }
+        }
+        return WebPush.base64url(out)
+    }
+
+    /// The inverse, and it is the only thing that reads the string — a route hands it whatever
+    /// was in the path, so every length and every byte count is checked here rather than trusted.
+    static func unpack(_ text: String) -> [[NSColor?]]? {
+        guard let data = WebPush.base64urlDecoded(text), data.count >= 2 else { return nil }
+        let bytes = [UInt8](data)
+        let columns = Int(bytes[0]), lines = Int(bytes[1])
+        guard columns > 0, columns <= projectGridLimit,
+              lines > 0, lines <= projectGridLimit,
+              bytes.count == 2 + columns * lines * 4 else { return nil }
+        var cells: [[NSColor?]] = []
+        var at = 2
+        for _ in 0..<lines {
+            var row: [NSColor?] = []
+            for _ in 0..<columns {
+                let a = bytes[at + 3]
+                row.append(a == 0 ? nil : NSColor(srgbRed: CGFloat(bytes[at]) / 255,
+                                                  green: CGFloat(bytes[at + 1]) / 255,
+                                                  blue: CGFloat(bytes[at + 2]) / 255,
+                                                  alpha: CGFloat(a) / 255))
+                at += 4
+            }
+            cells.append(row)
+        }
+        return cells
+    }
+
+    /// The path a notification points its icon at, or nothing when there is no mark to draw.
+    ///
+    /// A path and not the picture itself, and that is a measured choice rather than a cautious
+    /// one: an iPhone ignores the field either way, and on the platforms that honour it the fetch
+    /// is made once and cached for a year, where carrying 2 KB of PNG would be paid on every
+    /// message. See the `push` handler in `RemoteServer.serviceWorker()` for what was measured.
+    static func projectPath(for grid: ProjectIcon.Grid?, size: Int = 192) -> String? {
+        guard let grid, let packed = pack(grid.cells) else { return nil }
+        return "/project-\(size)-\(packed).png"
+    }
 }

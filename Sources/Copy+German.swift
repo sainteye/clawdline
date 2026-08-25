@@ -163,6 +163,14 @@ struct German: Copy {
     let pushFinished = "hat einen langen Durchlauf beendet"
     let pushDeployOk = "das Deploy hat geklappt"
     let pushDeployFail = "das Deploy ist fehlgeschlagen"
+    func pushChildWaiting(minutes: Int?) -> String {
+        guard let minutes else { return "hat eine wartende Unter-Sitzung" }
+        return "hat eine wartende Unter-Sitzung — noch \(minutes) Min."
+    }
+    func pushBatchDone(done: Int, failed: Int) -> String {
+        let all = done == 1 ? "hat 1 Aufgabe beendet" : "hat \(done) Aufgaben beendet"
+        return failed == 0 ? all : "\(all), \(failed) fehlgeschlagen"
+    }
     let settingsPushFinish = "Bescheid sagen, wenn ein langer Durchlauf fertig ist"
     let settingsPushFinishHint = "Nur ab zwei Minuten."
     let settingsPushDeploy = "Bescheid sagen, wenn ein Deploy endet"

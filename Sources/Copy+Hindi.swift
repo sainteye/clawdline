@@ -167,6 +167,14 @@ struct Hindi: Copy {
     let pushFinished = "ने एक लंबा काम पूरा किया"
     let pushDeployOk = "का deploy सफल रहा"
     let pushDeployFail = "का deploy फ़ेल हो गया"
+    func pushChildWaiting(minutes: Int?) -> String {
+        guard let minutes else { return "में एक चाइल्ड सेशन जवाब का इंतज़ार कर रहा है" }
+        return "में एक चाइल्ड सेशन जवाब का इंतज़ार कर रहा है — \(minutes) मिनट बाकी"
+    }
+    func pushBatchDone(done: Int, failed: Int) -> String {
+        let all = "के \(done) काम पूरे हुए"
+        return failed == 0 ? all : "\(all), \(failed) फ़ेल"
+    }
     let settingsPushFinish = "लंबा काम पूरा होने पर बताएँ"
     let settingsPushFinishHint = "सिर्फ़ दो मिनट से लंबे कामों के लिए।"
     let settingsPushDeploy = "deploy ख़त्म होने पर बताएँ"

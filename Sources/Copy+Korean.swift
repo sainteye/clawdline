@@ -161,6 +161,14 @@ struct Korean: Copy {
     let pushFinished = "의 긴 작업이 끝났습니다"
     let pushDeployOk = "의 배포가 성공했습니다"
     let pushDeployFail = "의 배포가 실패했습니다"
+    func pushChildWaiting(minutes: Int?) -> String {
+        guard let minutes else { return "의 하위 세션이 답을 기다리는 중" }
+        return "의 하위 세션이 답을 기다리는 중 — \(minutes)분 남음"
+    }
+    func pushBatchDone(done: Int, failed: Int) -> String {
+        let all = "의 작업 \(done)개가 끝났습니다"
+        return failed == 0 ? all : "\(all), \(failed)개 실패"
+    }
     let settingsPushFinish = "긴 작업이 끝나면 알리기"
     let settingsPushFinishHint = "2분이 넘는 작업만입니다."
     let settingsPushDeploy = "배포가 끝나면 알리기"

@@ -163,6 +163,14 @@ struct Indonesian: Copy {
     let pushFinished = "selesai setelah berjalan lama"
     let pushDeployOk = "berhasil di-deploy"
     let pushDeployFail = "gagal di-deploy"
+    func pushChildWaiting(minutes: Int?) -> String {
+        guard let minutes else { return "punya sesi anak yang menunggu jawaban" }
+        return "punya sesi anak yang menunggu jawaban — sisa \(minutes) mnt"
+    }
+    func pushBatchDone(done: Int, failed: Int) -> String {
+        let all = "menyelesaikan \(done) tugas"
+        return failed == 0 ? all : "\(all), \(failed) gagal"
+    }
     let settingsPushFinish = "Beri tahu kalau pekerjaan panjang selesai"
     let settingsPushFinishHint = "Hanya yang lebih dari dua menit."
     let settingsPushDeploy = "Beri tahu kalau deploy selesai"

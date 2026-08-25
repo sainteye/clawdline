@@ -166,6 +166,14 @@ struct Portuguese: Copy {
     let pushFinished = "terminou uma tarefa longa"
     let pushDeployOk = "o deploy deu certo"
     let pushDeployFail = "o deploy falhou"
+    func pushChildWaiting(minutes: Int?) -> String {
+        guard let minutes else { return "tem uma sessão filha à espera" }
+        return "tem uma sessão filha à espera — faltam \(minutes) min"
+    }
+    func pushBatchDone(done: Int, failed: Int) -> String {
+        let all = done == 1 ? "terminou 1 tarefa" : "terminou \(done) tarefas"
+        return failed == 0 ? all : "\(all), \(failed) falharam"
+    }
     let settingsPushFinish = "Avisar quando uma tarefa longa terminar"
     let settingsPushFinishHint = "Só as que passam de dois minutos."
     let settingsPushDeploy = "Avisar quando um deploy terminar"

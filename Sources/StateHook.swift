@@ -282,16 +282,28 @@ enum StateHook {
         finishTracker = FinishTracker()
     }
 
-    /// What to call the project a session belongs to on a lock screen.
-    static func projectName(for session: TargetSession) -> String {
-        let fallback = session.assistant?.label ?? "Clawdline"
-        guard let cwd = Targets.workingDirectory(of: session) else { return fallback }
+    /// What to call a directory on a lock screen: the registry's name for the project, or the
+    /// last component of the path when it has none.
+    ///
+    /// Split from the session-shaped version below because a finished fan-out has a project and
+    /// no session — every tab it ran in has been closed by the time there is anything to say.
+    static func projectName(forDirectory cwd: String, fallback: String = "Clawdline") -> String {
         if let registry = ProjectIcon.row(forCwd: cwd), let label = registry["label"] as? String,
            !label.isEmpty {
             return label
         }
+        // `/` is its own last component, so the emptiness check alone lets a notification say
+        // the project is called "/". A session is never opened there, but a task's `project_dir`
+        // arrives over HTTP and is only checked for being an absolute directory.
         let name = (cwd as NSString).lastPathComponent
-        return name.isEmpty ? fallback : name
+        return name.isEmpty || name == "/" ? fallback : name
+    }
+
+    /// What to call the project a session belongs to on a lock screen.
+    static func projectName(for session: TargetSession) -> String {
+        let fallback = session.assistant?.label ?? "Clawdline"
+        guard let cwd = Targets.workingDirectory(of: session) else { return fallback }
+        return projectName(forDirectory: cwd, fallback: fallback)
     }
 
     /// The two lines a session notification shows.
@@ -304,6 +316,53 @@ enum StateHook {
         let body: String
     }
 
+    /// The two things a session can do that a phone might hear about.
+    enum PushEvent { case waiting, finished }
+
+    /// Whether a phone hears about it at all, and in what words.
+    enum PushDecision: Equatable {
+        case send(String)
+        case silent
+    }
+
+    /// **Depth decides the audience, and this is where it decides it.**
+    ///
+    /// A session with no ``Orchestrator/Role`` is one a person opened for themselves, and it
+    /// behaves exactly as it always has. Everything below one is working for somebody, and that
+    /// somebody is a program — so the rule is to tell whoever is actually blocked, in the channel
+    /// they can act in, rather than to tell the phone about everything and let a person sort it out.
+    ///
+    /// - **A child that finished is silent here.** Not because it does not matter, but because
+    ///   the same fact arrives once from the tree — see ``Orchestrator/sweepBatches()`` — instead
+    ///   of once per tab. Twenty tabs is the ceiling, and twenty was what a fan-out used to send.
+    /// - **A child that is waiting is louder than a root that is waiting**, and carries a clock.
+    ///   Nobody is looking at that tab at all, its timeout is counting down, and a person is the
+    ///   only thing that can answer a permission prompt. The briefing warns about this failure
+    ///   twice; before this it arrived looking like every other notification.
+    /// - **A tab whose task is over says nothing.** It lingers for a few minutes after the work
+    ///   ends, and during those minutes there is nobody behind it to be blocked.
+    static func pushDecision(_ event: PushEvent, role: Orchestrator.Role?,
+                             minutesLeft: Int?) -> PushDecision {
+        switch event {
+        case .waiting:
+            guard let role else { return .send(L.t.pushWaiting) }
+            guard role.live else { return .silent }
+            return .send(L.t.pushChildWaiting(minutes: minutesLeft))
+        case .finished:
+            guard role == nil else { return .silent }
+            return .send(L.t.pushFinished)
+        }
+    }
+
+    /// Whole minutes left before a child's task gives up on itself, or nothing when there is no
+    /// clock yet or it has already run out. Nothing rather than zero or a negative: "0 min left"
+    /// on a lock screen reads as a number somebody forgot to fill in.
+    static func minutesLeft(for role: Orchestrator.Role?, now: Date) -> Int? {
+        guard let deadline = role?.deadline else { return nil }
+        let minutes = Int((deadline.timeIntervalSince(now) / 60).rounded(.down))
+        return minutes > 0 ? minutes : nil
+    }
+
     /// Pure formatting half, kept apart from ``projectName(for:)`` so the lock-screen wording can
     /// be checked without asking a terminal for its working directory.
     static func pushMessage(for session: TargetSession, project: String,
@@ -311,12 +370,23 @@ enum StateHook {
         PushMessage(title: session.displayLabel, body: "\(project) \(event)")
     }
 
+    /// The picture beside the two lines: the project's own pixel mark, the same one the status
+    /// line and the list draw. Taken from the reading rather than resolved here, because the
+    /// reading has already paid the `lsof` and remembers the answer for the life of the session.
+    ///
+    /// Nothing when the project is unknown, and the notification then carries the app's creature
+    /// as it always did — a missing mark is a picture, not an error.
+    static func projectMark(for session: TargetSession) -> ProjectIcon.Grid? {
+        SessionWatch.shared.grid(of: session.id)
+    }
+
     private static func sendPush(for session: TargetSession, event: String) {
         let message = pushMessage(for: session, project: projectName(for: session), event: event)
         WebPush.send(title: message.title,
                      body: message.body,
                      url: "/#session=\(session.id)",
-                     tag: session.id)
+                     tag: session.id,
+                     icon: RemoteIcon.projectPath(for: projectMark(for: session)))
     }
 
     private static func react() {
@@ -340,18 +410,27 @@ enum StateHook {
         //
         // Above the guard below on purpose: sending to a phone has nothing to do with whether
         // this machine has a command configured to run.
+        let now = Date()
         for change in changes where change.to == .waiting {
-            sendPush(for: change.session, event: L.t.pushWaiting)
+            let role = Orchestrator.role(forTerminal: change.session.id)
+            if case .send(let event) = pushDecision(.waiting, role: role,
+                                                    minutesLeft: minutesLeft(for: role, now: now)) {
+                sendPush(for: change.session, event: event)
+            }
         }
 
         // "It finished" — thresholded even when enabled. See `finishThreshold` for why the
         // unthresholded version is the mistake. Tracking still runs while the preference is off,
         // so turning it on cannot announce a turn that already ended.
-        let now = Date()
         let finished = finishTracker.update(states: states, sessions: sessions, changes: changes,
                                             now: now, threshold: finishThreshold)
         if Config.shared.pushOnFinish {
-            for session in finished { sendPush(for: session, event: L.t.pushFinished) }
+            for session in finished {
+                let role = Orchestrator.role(forTerminal: session.id)
+                if case .send(let event) = pushDecision(.finished, role: role, minutesLeft: nil) {
+                    sendPush(for: session, event: event)
+                }
+            }
         }
 
         let argv = Config.shared.onStateChange

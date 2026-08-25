@@ -266,6 +266,15 @@ protocol Copy {
     /// that has to be unmistakable at a glance.
     var pushDeployOk: String { get }
     var pushDeployFail: String { get }
+    /// A child session has stopped to ask something, and nobody is on that tab.
+    ///
+    /// Separate from ``pushWaiting`` because it is a different fact, not a politer version of the
+    /// same one: a root that is waiting has a person a few feet away who will see it, and a child
+    /// that is waiting has a timeout counting down and nobody looking. `minutes` is how long is
+    /// left, and absent when there is no clock yet or it has already run out.
+    func pushChildWaiting(minutes: Int?) -> String
+    /// A whole fan-out has come back — every task under one root, counted once.
+    func pushBatchDone(done: Int, failed: Int) -> String
     var settingsPushFinish: String { get }
     var settingsPushFinishHint: String { get }
     var settingsPushDeploy: String { get }

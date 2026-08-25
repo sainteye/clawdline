@@ -301,10 +301,19 @@ final class RemoteServer {
         // everybody, and it is in a public repository.
         // The service worker with them: a browser fetches it outside the page's own credentials in
         // some flows, and what it contains is a push handler and nothing else.
+        // `/project-<size>-<packed>.png` is here for a different reason and it is worth writing
+        // down. That one is not the same drawing for everybody — it is a project's own mark. It
+        // is open because the fetch is not the page's: an operating system drawing a notification
+        // goes and gets the icon itself, with none of this device's credentials, so a route
+        // behind the gate is a notification with no picture on it. What keeps that honest is the
+        // shape of the URL — it carries the colours and nothing else, no path, no session id, no
+        // project id — so answering it discloses exactly what the caller already wrote down. See
+        // `RemoteIcon.pack`.
         let icon = request.path == "/sw.js"
             || (request.path.hasPrefix("/splash-") && request.path.hasSuffix(".png"))
             || request.path == "/favicon.ico"
             || (request.path.hasPrefix("/icon-") && request.path.hasSuffix(".png"))
+            || (request.path.hasPrefix("/project-") && request.path.hasSuffix(".png"))
         // The orchestrator speaks with a credential of its own — a 0600 file only a local
         // process running as the user can read — because through a tunnel every request arrives
         // from 127.0.0.1, and a paired phone must never be able to start sessions. Reads without
@@ -531,6 +540,10 @@ final class RemoteServer {
                 return .error(409, "not_subscribed",
                               "This device has not asked for notifications yet.")
             }
+            // One, and it says what it is. The only other way to see a notification is to
+            // make a session ask you a question and wait, which is a long way to go to find out
+            // whether a key was minted correctly — and a test that arrived must never be
+            // mistaken for a session that needs you, so it carries no project and no mark.
             WebPush.send(title: "Clawdline", body: L.t.pushTest, url: "/", tag: "test",
                          device: device)
             RemoteAuth.audit("push.test", ["device": device])
@@ -977,6 +990,24 @@ final class RemoteServer {
             return Response(status: 200,
                             headers: ["Content-Type": "image/png",
                                       "Cache-Control": "public, max-age=86400"],
+                            body: data)
+
+        case ("GET", let path) where path.hasPrefix("/project-") && path.hasSuffix(".png"):
+            // `/project-192-<packed>.png`. The size first, because the packed grid is base64url
+            // and contains hyphens of its own — splitting from the front is the only way round
+            // that never has to guess where one field ends.
+            let body = path.dropFirst("/project-".count).dropLast(".png".count)
+            guard let dash = body.firstIndex(of: "-"), let want = Int(body[body.startIndex..<dash]),
+                  [64, 96, 128, 192, 256].contains(want),
+                  let cells = RemoteIcon.unpack(String(body[body.index(after: dash)...])),
+                  let data = RemoteIcon.project(cells: cells, size: want) else {
+                return .error(404, "not_found", "No mark that size")
+            }
+            return Response(status: 200,
+                            headers: ["Content-Type": "image/png",
+                                      // A year, and `immutable`, because the URL is the content:
+                                      // this answer can never become the wrong answer.
+                                      "Cache-Control": "public, max-age=31536000, immutable"],
                             body: data)
 
         default:
@@ -2854,6 +2885,19 @@ final class RemoteServer {
                 // about a session, not six.
                 tag: payload.tag || "clawdline",
                 renotify: true,
+                // The project's own mark, so two notifications from two projects are told apart
+                // before either sentence is read. Falls back to the app's creature, which is what
+                // every notification looked like before this existed.
+                //
+                // **Honoured by Chrome and by Firefox, and ignored by iOS.** Measured on a real
+                // iPhone on 2026-08-25: a home-screen web app draws the icon from the manifest
+                // whatever this says, whether the mark is fetched from a URL or carried whole
+                // inside the sealed message, and `image` is ignored the same way. That matches
+                // what everybody else reports — the Apple forum thread about it has no reply and
+                // no workaround. So on an iPhone a notification is told apart by its words alone,
+                // and there is nothing this end can do about that. This line stays for the
+                // platforms that do honour it, and costs one field.
+                icon: payload.icon || "/icon-192.png",
                 data: { url: payload.url || "/" }
             }));
         });
