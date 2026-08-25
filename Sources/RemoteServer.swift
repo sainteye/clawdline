@@ -1944,6 +1944,7 @@ final class RemoteServer {
         add([
             "webVoiceStart": t.webVoiceStart,
             "webVoiceStop": t.webVoiceStop,
+            "webVoiceDone": t.webVoiceDone,
             "webVoiceListening": t.webVoiceListening,
             "webVoiceReading": t.webVoiceReading,
             "webVoiceSlow": t.webVoiceSlow,

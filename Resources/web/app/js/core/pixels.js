@@ -106,58 +106,6 @@ export function drawSpinner(canvas, phase) {
     }
 }
 
-/**
- * The dictation meter: what the microphone is actually hearing, as columns of cells.
- *
- * Drawn rather than typeset for the same reason as everything else in this file, and drawn as
- * whole cells rather than as a curve because a smooth line here would be the one thing on the
- * page pretending to be from somewhere else. It is the spinner's cell and the spinner's gap, so
- * the two marks that can appear one after the other in the same row — listening, then reading —
- * are made of the same squares.
- *
- * The bottom row is always lit and dim, and it is the point of the shape: a silent room draws a
- * flat line rather than nothing at all, so "heard nothing" and "not running" stay two different
- * pictures. `levels` is one whole number of cells *above* that floor per column, oldest first,
- * which makes the newest reading the right-hand column and the last second and a bit of talking
- * the width of the mark.
- *
- * **This one does not ride the clock below.** Every other mark here turns on its own schedule
- * and would drift if it kept its own timer; this one is answering to a microphone, so it is
- * driven by whoever is holding that microphone open — see `paint` in `voice.js`.
- */
-export var WAVE = {
-    cols: 13, rows: 5, cell: 3, gap: 1.5,
-    /// How often a column is pushed in, in milliseconds. Ten a second: fast enough to be
-    /// answering the voice and slow enough that the eye reads columns rather than a blur.
-    step: 100,
-    colour: "217, 119, 87"    // --accent, the same warmth the recording microphone takes
-};
-
-export function drawWave(canvas, levels) {
-    var ratio = dpr();
-    var cell = Math.max(1, Math.round(WAVE.cell * ratio));
-    var gap = Math.max(1, Math.round(WAVE.gap * ratio));
-    var w = WAVE.cols * cell + (WAVE.cols - 1) * gap;
-    var h = WAVE.rows * cell + (WAVE.rows - 1) * gap;
-    if (canvas.width !== w || canvas.height !== h) {
-        canvas.width = w;
-        canvas.height = h;
-        canvas.style.width = (w / ratio) + "px";
-        canvas.style.height = (h / ratio) + "px";
-    }
-    var g = canvas.getContext("2d");
-    g.imageSmoothingEnabled = false;
-    g.clearRect(0, 0, w, h);
-    for (var x = 0; x < WAVE.cols; x++) {
-        var up = levels && levels[x] ? levels[x] : 0;
-        if (up > WAVE.rows - 1) up = WAVE.rows - 1;
-        for (var y = 0; y <= up; y++) {
-            g.fillStyle = "rgba(" + WAVE.colour + "," + (y ? 0.9 : 0.3) + ")";
-            g.fillRect(x * (cell + gap), (WAVE.rows - 1 - y) * (cell + gap), cell, cell);
-        }
-    }
-}
-
 // One clock for every spinner on the page. Eight separate timers would drift apart and the
 // list would look like eight machines rather than one.
 export var spinPhase = 0;

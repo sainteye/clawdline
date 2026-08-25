@@ -2,7 +2,7 @@ import { T, fill } from "../core/i18n.js";
 import { els } from "../core/dom.js";
 import { reduced } from "../core/env.js";
 import { toast } from "../core/util.js";
-import { drawSpinner, drawWave, setVoiceSpin, spinPhase, WAVE } from "../core/pixels.js";
+import { drawSpinner, setVoiceSpin, spinPhase } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { renderComposer } from "../view/composer.js";
 import { appendMsg } from "./composer.js";
@@ -52,6 +52,28 @@ export var Voice = (function () {
     /// numbers are picked so the first fills most of the mark and the second none of it.
     var QUIET_DB = -50;
     var LOUD_DB = -20;
+    /// How big the dot goes, as a multiple of the 8px the stylesheet gives it. It never reaches
+    /// zero: a quiet room has to draw a small dot rather than no dot, or "heard nothing" and
+    /// "not running" become the same picture — which is the one thing this mark exists to tell
+    /// apart. The ceiling is what fits in the row's own padding without touching the words.
+    var SMALL = 0.8;
+    var BIG = 2.1;
+    /**
+     * How fast the dot follows what it hears, as time constants in milliseconds — and there are
+     * two of them, which is the whole difference between a pulse and a twitch.
+     *
+     * The raw reading jumps by half its range between one frame and the next, because speech is
+     * mostly gaps: every consonant and every breath is a hole in the level. A dot wired straight
+     * to it flickers, and a dot smoothed evenly in both directions arrives late on the syllable
+     * that started it. So it rises almost as fast as the voice does and falls back over about a
+     * quarter of a second — long enough to carry across the hole between two syllables, short
+     * enough that the end of a sentence is visibly the end of one.
+     *
+     * They are time constants and not per-frame fractions because a phone that draws at 120Hz
+     * would otherwise smooth twice as hard as one that draws at 60, and iPhones do both.
+     */
+    var ATTACK_MS = 45;
+    var RELEASE_MS = 260;
 
     var state = "off";          // off | opening | recording | reading
     var stream = null;
@@ -81,16 +103,15 @@ export var Voice = (function () {
 
     /* The meter. `heard` is an audio context of its own, held open only while the microphone is
        — it is not the one `decode` builds afterwards, and the note on `listen` says why they
-       cannot be the same one. `levels` is the last second and a bit of loudness, one whole
-       number of cells per column, and `peak` is the loudest frame since the last of them went in. */
+       cannot be the same one. `level` is where the dot currently is between `SMALL` and `BIG`,
+       which is not what the microphone just said: see `paint` for the distance between them. */
     var heard = null;
     var ears = null;            // the AnalyserNode reading the stream that is being recorded
     var samples = null;         // its scratch buffer, allocated once rather than sixty times a second
-    var bars = null;            // the canvas in the row, or null when nothing is drawing
+    var pip = null;             // the dot in the row, or null when nothing is driving one
     var frame = null;           // the outstanding `requestAnimationFrame`
-    var levels = [];
-    var peak = 0;
-    var pushed = 0;
+    var level = 0;
+    var last = 0;               // when the previous frame landed, so the smoothing can be in time
 
     /* ---- can this happen at all -------------------------------------------- */
 
@@ -358,16 +379,16 @@ export var Voice = (function () {
      * A mark that pulses on a clock says the page is doing something. It does not say the
      * microphone is hearing anything, and those are two different facts to somebody holding a
      * phone at arm's length in a room with other people talking — the first question of a
-     * dictation that came back empty is always "was it even picking me up". So the level is read
-     * off the stream itself, and a flat line means a quiet room rather than meaning broken.
+     * dictation that came back empty is always "was it even picking me up". So the size is read
+     * off the stream itself, and a dot that sits still means a quiet room rather than broken.
      *
      * **The context is opened here, in the same turn the recording starts, rather than at the
      * first frame that wants it.** iOS gives a page that asks inside a gesture a context that is
      * already running and a page that asks afterwards one that is suspended — and a suspended
-     * analyser reads a flat line, which is exactly the picture a microphone hearing nothing
-     * would draw. The failure would look like an answer, which is the worst way for this to be
-     * wrong. It is closed again the moment the recording ends either way: an audio session left
-     * open is one iOS may route or duck something else for.
+     * analyser reads silence, which is exactly the picture a microphone hearing nothing would
+     * draw. The failure would look like an answer, which is the worst way for this to be wrong.
+     * It is closed again the moment the recording ends either way: an audio session left open is
+     * one iOS may route or duck something else for.
      *
      * This is not the context `decode` builds. That one is opened long after any gesture, has no
      * reason to be running, and closes itself when the bytes are decoded.
@@ -400,20 +421,19 @@ export var Voice = (function () {
     /**
      * One frame.
      *
-     * **Read every frame and drawn ten times a second, which is two rates on purpose.** The
-     * analyser only ever holds the last twenty milliseconds or so, so a loop that looked once
-     * per column would miss four fifths of what was said and flatten the syllables it did catch;
-     * the loudest reading between columns is the one that gets kept. And a column per frame
-     * would be a blur travelling sixty pixels a second, which is something to watch rather than
-     * something to glance at.
+     * **Read and drawn every frame, at whatever rate this screen runs.** The analyser only ever
+     * holds the last twenty milliseconds or so, so anything slower than the display would be
+     * throwing away most of what was said and sampling the rest at random; and the thing being
+     * driven is a size rather than a picture that scrolls, so there is nothing here that needs
+     * a slower clock of its own to stay legible.
      *
      * `requestAnimationFrame` rather than a timer because a page in the background stops being
-     * given frames, and a meter still drawing to a canvas nobody can see is a phone warming in
-     * a pocket for nothing.
+     * given frames, and a meter still measuring a room nobody can see is a phone warming in a
+     * pocket for nothing.
      */
     function paint() {
         frame = requestAnimationFrame(paint);
-        if (!ears || !bars) return;
+        if (!ears || !pip) return;
         ears.getByteTimeDomainData(samples);
         var sum = 0;
         for (var i = 0; i < samples.length; i++) {
@@ -421,45 +441,61 @@ export var Voice = (function () {
             var d = (samples[i] - 128) / 128;
             sum += d * d;
         }
-        var lit = cells(Math.sqrt(sum / samples.length));
-        if (lit > peak) peak = lit;
-        var now = Date.now();
-        if (now - pushed < WAVE.step) return;
-        pushed = now;
-        levels.push(peak);
-        levels.shift();
-        peak = 0;
-        drawWave(bars, levels);
+        var want = loud(Math.sqrt(sum / samples.length));
+        var now = clock();
+        var step = last ? now - last : 16;
+        last = now;
+        // A tab that has been in the background comes back holding a gap of seconds, and an
+        // exponential handed that lands exactly on the target in one frame — which is a jump.
+        if (step > 100) step = 100;
+        var tau = want > level ? ATTACK_MS : RELEASE_MS;
+        level += (want - level) * (1 - Math.exp(-step / tau));
+        size();
     }
 
-    /// A root-mean-square in [0, 1] as whole cells above the floor. **In decibels**, because the
-    /// linear number spends its entire life in the bottom tenth — ordinary speech a phone's
-    /// length away sits around 0.03 — and a mark drawn straight from it is a flat line with an
-    /// occasional twitch in it, which is the picture this exists to avoid.
-    function cells(rms) {
+    /// The dot, at whatever size `level` currently says. **A transform and not a width**: the row
+    /// is a flex line with buttons in it, and a mark that changed its own box would push the
+    /// count and the two ways out sideways sixty times a second.
+    function size() {
+        if (!pip) return;
+        pip.style.transform = "scale(" + (SMALL + level * (BIG - SMALL)).toFixed(3) + ")";
+    }
+
+    /// A root-mean-square in [0, 1] as a place between the floor and the ceiling. **In
+    /// decibels**, because the linear number spends its entire life in the bottom tenth —
+    /// ordinary speech a phone's length away sits around 0.03 — and a dot sized straight from it
+    /// barely moves except for an occasional twitch, which is the picture this exists to avoid.
+    function loud(rms) {
         var db = 20 * Math.log10(rms || 1e-6);
         var t = (db - QUIET_DB) / (LOUD_DB - QUIET_DB);
-        if (t < 0) t = 0; else if (t > 1) t = 1;
-        return Math.round(t * (WAVE.rows - 1));
+        if (t < 0) return 0;
+        if (t > 1) return 1;
+        return t;
     }
 
-    /// Stop drawing, because the canvas is being thrown away by whatever is rebuilding the row.
-    /// The microphone may still be open — this says nothing about that.
+    /// A monotonic millisecond where there is one. `Date.now` steps when the clock is set and
+    /// would hand the smoothing a negative interval; it is here only so that the one browser
+    /// without `performance` still gets a dot rather than an exception.
+    function clock() {
+        return (window.performance && performance.now) ? performance.now() : Date.now();
+    }
+
+    /// Stop driving the dot, because the row it lives in is being rebuilt underneath it. The
+    /// microphone may still be open — this says nothing about that.
     function still() {
         if (frame !== null) cancelAnimationFrame(frame);
         frame = null;
-        bars = null;
+        pip = null;
     }
 
-    /// Stop drawing and give the audio session back. Called wherever the microphone is handed
+    /// Stop driving it and give the audio session back. Called wherever the microphone is handed
     /// back, which is the moment this has any further reason to be open.
     function deaf() {
         still();
         ears = null;
         samples = null;
-        levels = [];
-        peak = 0;
-        pushed = 0;
+        level = 0;
+        last = 0;
         var ctx = heard;
         heard = null;
         shut(ctx);
@@ -588,9 +624,8 @@ export var Voice = (function () {
      *
      * Rebuilding it on every tick would take the buttons out from under a thumb four times a
      * second, which is the same lesson `renderWaiting` learned about its own. So only the count
-     * is written after this, into a text node that is already on screen — and the meter is a
-     * canvas that is also already on screen, whose *contents* change while the element it is
-     * drawn on does not move.
+     * is written after this, into a text node that is already on screen — and the meter is a dot
+     * that is also already on screen, whose *size* changes while the box it occupies does not.
      */
     function show() {
         var live = state === "recording";
@@ -631,28 +666,32 @@ export var Voice = (function () {
                 setVoiceSpin(spin);
                 drawSpinner(spin, spinPhase);
             } else if (ears) {
+                // The dot this row has always drawn, breathing to the room instead of to a
+                // clock. That is the whole of the difference: a mark on a timer says the page is
+                // doing something, and this one says the microphone can hear you — which is the
+                // first question anybody asks of a dictation that came back empty.
+                //
+                // `data-live` is what takes the CSS animation off it. Two things writing a size
+                // onto one element fight, and the one that knows what is being heard should win.
+                //
                 // Decoration, and only decoration: the seconds beside it are the substance of
-                // this row and are what a screen reader is given. `aria-hidden` rather than a
-                // label, because a live region that announced a picture of loudness ten times a
-                // second would talk over the one sentence in here worth hearing.
+                // this row and are what a screen reader is given.
                 setVoiceSpin(null);
-                var wave = document.createElement("canvas");
-                wave.className = "wave";
-                wave.setAttribute("aria-hidden", "true");
-                box.appendChild(wave);
-                bars = wave;
-                levels = [];
-                while (levels.length < WAVE.cols) levels.push(0);
-                peak = 0;
-                pushed = 0;
-                // Drawn once before the first frame, so the row opens on the flat line rather
-                // than on an empty space that fills in a sixtieth of a second later.
-                drawWave(wave, levels);
+                var meter = document.createElement("span");
+                meter.className = "dot";
+                meter.setAttribute("data-live", "1");
+                box.appendChild(meter);
+                pip = meter;
+                level = 0;
+                last = 0;
+                // Sized once before the first frame, so the row opens on a dot at rest rather
+                // than at whatever the last recording left behind a sixtieth of a second ago.
+                size();
                 frame = requestAnimationFrame(paint);
             } else {
                 // No analyser: reduced motion, or a browser that would not build the graph. The
-                // dot this row has always drawn, which under reduced motion the global rule
-                // stops on its brightest frame.
+                // same dot, left to the stylesheet — under reduced motion the global rule stops
+                // it on its brightest frame.
                 setVoiceSpin(null);
                 var dot = document.createElement("span");
                 dot.className = "dot";
@@ -686,7 +725,7 @@ export var Voice = (function () {
             var acts = document.createElement("div");
             acts.className = "acts";
             acts.appendChild(way(T.webCancel, "drop", cancel));
-            if (state === "recording") acts.appendChild(way(T.webVoiceStop, "go", stop));
+            if (state === "recording") acts.appendChild(way(T.webVoiceDone, "go", stop));
             box.appendChild(acts);
             box.hidden = false;
         }
@@ -696,8 +735,14 @@ export var Voice = (function () {
 
     /// One of them. The `mousedown` is the one Send and the attachment carry for the same
     /// reason: pressing this must not close the keyboard of somebody who was typing while they
-    /// dictated. No new words — "Stop and transcribe" is what the microphone already calls
-    /// itself while it is recording, and one action said twice should be said the same way.
+    /// dictated.
+    ///
+    /// **One word on the one that keeps the recording, and a sentence on the microphone.** They
+    /// are the same action and this used to say the same thing twice — but "Stop and transcribe"
+    /// is eighteen characters sitting next to Cancel, describing a mechanism to somebody who has
+    /// just stopped talking and only wants to know which button keeps it. Read aloud it is worth
+    /// every one of those characters, because a screen reader has no row to look at; so the
+    /// microphone keeps it as its label and the button here says "Done".
     function way(words, kind, go) {
         var b = document.createElement("button");
         b.type = "button";

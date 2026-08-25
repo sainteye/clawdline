@@ -134,6 +134,7 @@ export var T = {
     // the one failure this feature cannot afford.
     webVoiceStart: "Dictate a message",
     webVoiceStop: "Stop and transcribe",
+    webVoiceDone: "Done",
     webVoiceListening: "Listening… {t}",
     webVoiceReading: "Transcribing on the Mac… {n}s",
     webVoiceSlow: "The first one after this Mac reboots loads the model first — about twelve seconds.",
