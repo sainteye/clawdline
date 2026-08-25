@@ -42,7 +42,7 @@ case "$event" in
     *) exit 0 ;;
 esac
 case "$kind" in
-    session_start|user_prompt_submit|stop|ask_user_question|ask_user_question_done|permission_request|permission_prompt|idle_prompt|agent_needs_input|session_end) ;;
+    session_start|user_prompt_submit|stop|ask_user_question|ask_user_question_done|permission_request|permission_prompt|idle_prompt|agent_needs_input|notification_seen|session_end) ;;
     *) exit 0 ;;
 esac
 
@@ -102,6 +102,31 @@ fi
 # screen is worse than none: the app would show it as installed and working while telling you
 # nothing. Screen reading covers this case, as it covers every case.
 [ -n "$tty" ] || exit 0
+
+# **A census, not a state.** `notification_seen` is registered without a matcher, so it receives
+# every notification Claude Code raises and appends the type to a log instead of writing a note.
+# It exists to answer one question that no filtered registration can: what, if anything, is
+# raised at the moment a picker opens. `PreToolUse` filtered to the tool is measured not to fire,
+# `PostToolUse` on the same tool fires on the answer, and the gate that decides whether a
+# flush-left caret counts is meanwhile opened by permission traffic auto mode generates on its
+# own. Until the real name is known, that gate is guesswork wearing a signal's clothes.
+#
+# It writes nothing a reading depends on, so it cannot make any state worse; the log is capped so
+# it cannot grow without bound either.
+if [ "$kind" = "notification_seen" ]; then
+    seen=$(printf '%s' "$payload" \
+        | /usr/bin/plutil -extract notification_type raw -o - - 2>/dev/null)
+    [ -n "$seen" ] || seen=$(printf '%s' "$payload" \
+        | /usr/bin/plutil -extract message raw -o - - 2>/dev/null | /usr/bin/head -c 60)
+    [ -n "$seen" ] || seen="(no type field)"
+    log="$dir/notification-census.log"
+    printf '%s %s %s\n' "$(date +%H:%M:%S)" "$tty" "$seen" >> "$log" 2>/dev/null
+    lines=$(/usr/bin/wc -l < "$log" 2>/dev/null | /usr/bin/tr -d ' ')
+    if [ "${lines:-0}" -gt 400 ] 2>/dev/null; then
+        /usr/bin/tail -n 200 "$log" > "$log.trim" 2>/dev/null && /bin/mv "$log.trim" "$log"
+    fi
+    exit 0
+fi
 
 # An idle notification must never erase an authoritative question that is still unanswered.
 # PostToolUse replaces the AskUserQuestion note when the answer lands; until then the older note

@@ -74,6 +74,10 @@ enum HookBridge {
         /// If this one turns up when a picker opens, it is the start signal that was missing, and
         /// the screen stops having to be guessed at.
         case agentNeedsInput = "agent_needs_input"
+        /// Every notification, unfiltered, appended to a log instead of becoming a note. A census
+        /// rather than a state: the filtered registrations can only report the types somebody
+        /// already guessed, and the type raised when a picker opens is exactly what is not known.
+        case notificationSeen = "notification_seen"
         case sessionEnd = "session_end"
     }
 
@@ -98,6 +102,7 @@ enum HookBridge {
             Registration(event: .notification, matcher: "idle_prompt", kind: .idlePrompt),
             Registration(event: .notification, matcher: "agent_needs_input",
                          kind: .agentNeedsInput),
+            Registration(event: .notification, matcher: nil, kind: .notificationSeen),
             Registration(event: .sessionEnd, matcher: nil, kind: .sessionEnd),
         ]
     }
@@ -381,7 +386,7 @@ enum HookBridge {
                 // These only ask us to look. The reading that just happened is the answer.
                 continue
             case .askUserQuestion, .askUserQuestionDone, .permissionRequest, .permissionPrompt,
-                 .agentNeedsInput:
+                 .agentNeedsInput, .notificationSeen:
                 // Opening notes already gated parsing; the closing note was handled above.
                 //
                 // `agentNeedsInput` asserts nothing yet, deliberately: it is registered to find
