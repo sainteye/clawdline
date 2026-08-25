@@ -1481,9 +1481,10 @@ enum Orchestrator {
         sub=$(uuidgen | tr '[:upper:]' '[:lower:]'); sub_secret=$(openssl rand -hex 32)
         umask 077 && mkdir -p "/tmp/.clawdline/$sub/artifacts"
         jq -n --arg id "$sub" --arg dir "\(task.projectDir)" --arg what "<the instructions>" \\
-          '{clawdline_protocol:1, task_id:$id, assistant:"claude", project_dir:$dir,
-            title:"<short title>", instructions:$what, timeout_minutes:30,
-            root:{parent_task:"\(task.id)"}}' > "/tmp/.clawdline/$sub/task.json"
+              --arg plan "<the whole graph, the same text for every one of them>" \\
+          '{clawdline_protocol:1, task_id:$id, assistant:"claude", model:"haiku",
+            project_dir:$dir, title:"<short title>", instructions:$what, plan:$plan,
+            timeout_minutes:30, root:{parent_task:"\(task.id)"}}' > "/tmp/.clawdline/$sub/task.json"
         curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks \\
           -H "X-Clawdline-Orchestrator: $TOKEN" -H 'Content-Type: application/json' \\
           -d "{\\"task_id\\":\\"$sub\\",\\"secret\\":\\"$sub_secret\\"}"
@@ -1492,6 +1493,10 @@ enum Orchestrator {
         - `root.parent_task` must be exactly `\(task.id)` — your own task id. It is how the app
           knows where the new task sits; get it wrong and the dispatch is refused or filed under
           somebody else.
+        - `assistant` is `claude` or `codex`; `model` is optional and takes lower-case letters,
+          digits and `. _ -` only. Pick both against the rules below, and say in the plan why.
+        - `plan` is the graph, not this leaf's job — the same text in every task you dispatch,
+          extended with what you have added to it. It is how a leaf knows what its answer feeds.
         - The instructions have to stand on their own. That session cannot see this one, so
           "as described above" reaches it as an empty file.
         - Branch on the reply's `code`: `over_capacity` means wait or ask for fewer,

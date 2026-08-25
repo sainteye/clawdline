@@ -129,6 +129,28 @@ session's bucket rather than out of everybody's. The ceiling below is what close
 
 And one switch: `orchestrator_enabled`, default true. Off, and dispatch is refused at the door.
 
+### House rules
+
+`~/.config/clawdline/dispatch-policy.md` is what this Mac says about **how** work should be
+handed out, as opposed to how much of it. It is read fresh on every dispatch — an edit reaches
+the next task, not the next launch — and copied into the briefing of every child that is allowed
+to dispatch in turn. A leaf never sees it: rules about choosing a model are noise to a session
+with no such choice to make.
+
+It ships with opinions rather than a comment saying "put your rules here", because a file with
+defensible rules already in it is one somebody edits and an empty one is a feature nobody finds.
+What it starts with: Codex for making things, Claude for reading and judging them; `haiku` for
+mechanical single-source work, `sonnet` for a leaf with judgement in it, `opus` for a decision
+somebody will act on or a synthesis of several children; **a verdict never runs on a model
+smaller than what produced the thing it is judging**; and breadth before depth, because two
+children splitting a job beat one child that will hand half of it on.
+
+Editing it is the point. Delete the lot and the paragraph disappears from every briefing — an
+empty file means there are no house rules, which is a position and not a broken setting. The
+file is written once, on first use, and never rewritten: a default that grew back after being
+deleted would be a setting that does not stay set. Settings → Remote has a card saying whether
+there are any and a button that opens the file in whatever you write prose in.
+
 ---
 
 ## The filesystem is the protocol
@@ -161,10 +183,12 @@ holds a secret: not the orchestrator token, and not the task secret.
   "task_id": "3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234",
   "kind": "image",
   "assistant": "codex",
+  "model": "gpt-5.1-codex",
   "project_dir": "/Users/you/code/clawdline",
   "title": "Project portrait, medieval hand-drawn",
   "instructions": "You are in /Users/you/code/clawdline … write the SVG to artifacts/project-portrait.svg",
   "deliverables": ["artifacts/project-portrait.svg"],
+  "plan": "root → 3 searchers (haiku) → this one joins them up (opus) → report.md",
   "timeout_minutes": 30,
   "created_at": "2026-08-24T10:14:02Z",
   "root": {
@@ -191,6 +215,8 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `task_id` | `^[a-f0-9-]{36}$`, and **equal to the directory name and to the id in the dispatch body**. Three places, all three checked |
 | `kind` | `image` · `code-review` · `test` · `custom` |
 | `assistant` | `claude` or `codex` |
+| `model` | optional. `[a-z0-9._-]`, at most 64 characters, not starting with `-`. Absent means that assistant's own default |
+| `plan` | optional, ≤ 4 KiB. The whole graph this task is one node of |
 | `project_dir` | absolute, exists, and is a directory — checked at dispatch, not at planning time |
 | `title` | ≤ 200 characters |
 | `instructions` | non-empty, ≤ 16 KiB |
@@ -202,6 +228,21 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 Code has no route to ask — still gets to dispatch; it just does not get told when the task finishes
 and has to poll instead. **A best-effort field must not be a required one**, or the honest answer
 "I don't know" becomes a reason to invent something.
+
+`model` is the **only** string a dispatch puts on a command line, and it is shaped so that
+saying so is not alarming: not a fragment of a command but a name out of a closed alphabet. No
+character it admits is one a shell reads — no space, no quote, no `$`, no `;` — so
+`claude --model <name>` stays one command with one argument whatever arrives. It is checked in
+two places on purpose: here, where a typo can be answered with `bad_task` while somebody is still
+holding the request, and again in `StartPoints.modelName` on the way to the tab, where a name
+that fails becomes *no flag* rather than no session. The route a phone can reach passes nothing.
+
+`plan` is the graph, not this task's job — the same text in every task of one dispatch. It goes
+near the top of `CHILD.md`, above even the language rule, because it is the context every other
+line is read in: a child that knows its answer is one of four being joined together writes
+something joinable, and one that does not writes a report. Leaves get it too, and that is the
+half that matters — a leaf that knows what its output feeds is the difference between an answer
+and an essay.
 
 `root.parent_task` is the same field one level down, and it exists because a child knows its own
 task id from the first line it was ever sent, long before this app has worked out what the session
@@ -221,8 +262,9 @@ You are a Clawdline CHILD agent for task 3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234. R
 
 One line, because it is typed into a terminal and Return ends it. Everything that would not fit is
 in `CHILD.md`, which the app writes immediately before injecting: where the task is, where the
-outputs go, how long it has, whether it may dispatch and how many, that it must not read other task
-directories, and exactly what `result.json` has to look like.
+outputs go, how long it has, the graph it is one node of, whether it may dispatch and how many,
+this Mac's house rules if it may, that it must not read other task directories, and exactly what
+`result.json` has to look like.
 
 It also says what language to speak. The briefing itself is English so every assistant reads it
 the same way, but the person watching the tab is whoever set Clawdline's language — so the file

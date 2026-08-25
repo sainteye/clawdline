@@ -34,6 +34,23 @@ one with room under it gets the whole recipe for dispatching, one standing on th
 plainly not to — spelled out rather than pointed at a skill, since half of these sessions are Codex
 and Codex has no skills.
 
+### Added: a task can name its model, and this Mac can say how work should be handed out
+
+`task.json` takes a `model` — `haiku` for a mechanical pass, `opus` for a judgement somebody will
+act on — and a `plan`, the whole graph the task is one node of. The plan goes near the top of
+every child's briefing, leaves included: a child that knows what its answer feeds writes
+something joinable, one that does not writes a report.
+
+`~/.config/clawdline/dispatch-policy.md` is the house rules — which assistant, which model, what
+shape the graph should be. Read fresh on every dispatch and copied into the briefing of every
+child that may dispatch in turn. It arrives with opinions in it and Settings → Remote has a
+button that opens it; delete the contents and the whole paragraph disappears from every briefing.
+
+The one string a dispatch now puts on a command line is the model name, and it is a name out of a
+closed alphabet rather than a fragment of a command: `[a-z0-9._-]`, at most 64, never opening with
+`-`. Nothing that admits is a character a shell reads. The route a paired phone can reach still
+passes nothing.
+
 ### Fixed: a task could be reported as failed while its child was working
 
 A dispatched task was marked `spawn_failed` with "the task's secret was lost before briefing",
