@@ -76,21 +76,31 @@ export var Mock = (function () {
           isClaude: false, assistant: "codex", sessionId: null, icon: null },
         { id: "C0FF-3E", backend: "iterm", tty: "ttys021", label: "build box over ssh",
           cwd: "/Users/x", state: "unknown", line: null,
-          isClaude: true, assistant: "claude", sessionId: null, icon: null }
+          isClaude: true, assistant: "claude", sessionId: null, icon: null },
+        { id: "5E20-8B", backend: "tmux", tty: "tmux:%14", label: "check the German strings",
+          cwd: "/Users/x/code/clawdline", state: "working", line: "Reading Copy+German.swift",
+          isClaude: true, assistant: "claude", sessionId: null, icon: clawdline }
     ];
 
-    // What the top session sent away. Both of them hang off `8F3A-1C`, and their children are
-    // two of the rows above — which is the only way to see the grouping work: the codex row is
-    // near the bottom of the list on its own merits and belongs directly under its root.
+    // What the top session sent away. The first two hang off `8F3A-1C`, and their children are
+    // rows from the list above — which is the only way to see the grouping work: the codex row
+    // is near the bottom on its own merits and belongs directly under its root.
     //
     // One of each kind that matters. The codex one is still going and has no cost to show —
     // that plan is not billed per token — and the Claude one has landed, which is what puts a
     // figure in the header. A task that finished ten minutes ago stops moving its row; this one
     // is three minutes old, so it is still drawn under the session that asked for it.
+    //
+    // The third is the second level: a task the *child* `A15E-77` dispatched, indented twice and
+    // still running under a parent that has already reported. It names its parent by `taskId`
+    // as well as by session, which is the pair the app matches on — and it is the case worth
+    // having in the mock, because a grandchild outliving its parent is the one that decides
+    // whether a row is drawn under something or floats free.
     var tasks = [
         { id: "6f1b3d84-2a17-4c95-91ce-70b5a4e2d011", state: "briefed", kind: "image",
           title: "Draw the project portrait", assistant: "codex", projectDir: "/Users/x/tmp/notes",
           created: now - 260, spawnedAt: now - 254, briefedAt: now - 248, finishedAt: null,
+          depth: 1,
           dir: "/tmp/.clawdline/6f1b3d84-2a17-4c95-91ce-70b5a4e2d011",
           root: { sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38",
                   label: "investigate the webhook", terminalId: "8F3A-1C" },
@@ -102,6 +112,7 @@ export var Mock = (function () {
           title: "Read the docs pass for holes", assistant: "claude",
           projectDir: "/Users/x/code/clawdline/docs",
           created: now - 900, spawnedAt: now - 894, briefedAt: now - 888, finishedAt: now - 180,
+          depth: 1,
           dir: "/tmp/.clawdline/b70e51c9-84af-4d2e-a6d1-1c2f9e330447",
           root: { sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38",
                   label: "investigate the webhook", terminalId: "8F3A-1C" },
@@ -109,7 +120,20 @@ export var Mock = (function () {
           summary: "Three sentences say where the file goes and none of them agree.",
           artifacts: ["artifacts/notes.md"],
           usage: { input: 9600, output: 4200, cacheRead: 61000, cacheWrite: 800,
-                   total: 75600, model: "claude-sonnet-4-5", costUsd: 0.0913 } }
+                   total: 75600, model: "claude-sonnet-4-5", costUsd: 0.0913 } },
+        { id: "c9d47a30-51be-4f88-b0a2-3e6d81c4f592", state: "briefed", kind: "review",
+          title: "Check the German strings against the English", assistant: "claude",
+          projectDir: "/Users/x/code/clawdline",
+          created: now - 700, spawnedAt: now - 694, briefedAt: now - 688, finishedAt: null,
+          depth: 2,
+          dir: "/tmp/.clawdline/c9d47a30-51be-4f88-b0a2-3e6d81c4f592",
+          root: { sessionId: "1f0c8a44-9d21-4b6e-8f30-2ab7c5e91d62",
+                  label: "docs pass before the release", terminalId: "A15E-77",
+                  taskId: "b70e51c9-84af-4d2e-a6d1-1c2f9e330447" },
+          child: { terminalId: "5E20-8B", backend: "tmux", sessionId: null },
+          artifacts: [],
+          usage: { input: 3100, output: 900, cacheRead: 24000, cacheWrite: 400,
+                   total: 28400, model: "claude-haiku-4-5", costUsd: 0.0094 } }
     ];
 
     // The line that cannot wrap, five hundred characters of it, because this is the shape that

@@ -104,6 +104,25 @@ export function taskOfChild(id) {
     return best;
 }
 
+/**
+ * How far a row is indented: one step for the session that asked for it, another if that session
+ * is somebody's child too. Two is the floor, matching the app — and it stops early at a link
+ * pointing off screen, because an indent is a claim about the row above and there isn't one.
+ */
+export function rowDepth(id) {
+    var n = 0, at = id, seen = {};
+    while (n < 2) {
+        var t = taskOfChild(at);
+        if (!t || !taskShaping(t) || !t.root || !t.root.terminalId) break;
+        var up = t.root.terminalId;
+        if (up === at || seen[up] || !byId(up)) break;
+        seen[at] = true;
+        at = up;
+        n++;
+    }
+    return n;
+}
+
 /** The tasks a session is the root of, of the ones still shaping the list. */
 export function tasksOfRoot(id) {
     return S.tasks.filter(function (t) {
@@ -143,11 +162,20 @@ function grouped(list) {
         if (!here[kid] || !here[root]) return;
         childOf[kid] = root;
     });
-    // A root that is itself somebody's child cannot carry anyone: the app refuses to dispatch
-    // that deep, so it means a stale record, and moving a row under a row that is itself moving
-    // is how a list loses one. Depth stays one, here as well as over there.
+    // Two levels, the same floor the app dispatches to. A link that would put a row deeper than
+    // that, or that leads round in a circle, is a record this page has no business believing:
+    // the link is dropped and the row stands on its own rather than being threaded onto a chain
+    // nobody can follow. Depths are read off the original links in one pass, so a broken chain
+    // costs its own rows their indent and never anybody else's.
     Object.keys(childOf).forEach(function (kid) {
-        if (childOf[childOf[kid]]) delete childOf[kid];
+        var n = 0, at = kid, seen = {};
+        while (childOf[at] && n <= 2) {
+            if (seen[at]) { n = 99; break; }
+            seen[at] = true;
+            at = childOf[at];
+            n++;
+        }
+        if (n > 2) delete childOf[kid];
     });
     var moved = Object.keys(childOf);
     if (!moved.length) return list;
@@ -158,11 +186,11 @@ function grouped(list) {
         if (root) (kids[root] || (kids[root] = [])).push(s);
     });
     var out = [];
-    list.forEach(function (s) {
-        if (childOf[s.id]) return;
+    var place = function (s) {
         out.push(s);
-        if (kids[s.id]) kids[s.id].forEach(function (k) { out.push(k); });
-    });
+        if (kids[s.id]) kids[s.id].forEach(place);
+    };
+    list.forEach(function (s) { if (!childOf[s.id]) place(s); });
     // Nothing this does is worth a row going missing. If the count moved, the grouping was
     // wrong about something and the ungrouped list is the honest answer.
     return out.length === list.length ? out : list;

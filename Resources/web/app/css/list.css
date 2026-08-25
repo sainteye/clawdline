@@ -83,6 +83,7 @@
    language for it would suggest a second kind of importance that is not there. Only the one
    still running gets its edge lit, and even that is the accent at a third of its strength. */
 .row[data-depth="1"] { margin-left: 22px; }
+.row[data-depth="2"] { margin-left: 44px; }
 .row .kid {
     position: absolute; left: -15px; top: 50%; transform: translateY(-50%);
     color: var(--faint); font: 12px/1 var(--mono);

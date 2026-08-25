@@ -5,7 +5,7 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { shortPath, tint } from "../core/util.js";
 import { ASSISTANT_LOGOS, assistantLogo, assistantName, drawIcon, drawSpinner, setSpinners, spinPhase, spinners } from "../core/pixels.js";
-import { byId, ordered, revisionOf, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
+import { byId, ordered, revisionOf, rowDepth, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
 import { renderDetailHead } from "./transcript.js";
 import { renderAgents, renderComposer, renderWaiting } from "./composer.js";
 import { Optimistic, Waits, drawListSkeleton, listUnknown } from "./waits.js";
@@ -409,16 +409,16 @@ function fillRow(node, s) {
     // just a session again, and a chip that never goes away is furniture.
     var task = S.tasks.length ? taskOfChild(s.id) : null;
     var kid = task && taskShaping(task) ? task : null;
-    // The indent is a claim about the row above, so it is only drawn when that row is there.
+    // The indent is a claim about the row above, so it is only drawn when that row is there —
+    // and it is two steps for a session dispatched by a session that was itself dispatched.
     // The chip is a claim about this session, which is true whether or not its root is on
     // screen — a child whose root has closed is still a child, and still worth saying so.
-    var under = !!(kid && kid.root && kid.root.terminalId && kid.root.terminalId !== s.id
-                   && byId(kid.root.terminalId));
+    var under = kid ? rowDepth(s.id) : 0;
     var roots = S.tasks.length && !kid ? tasksOfRoot(s.id) : [];
     var mine = node.querySelector(".task-chip");
     var glyph = node.querySelector(".kid");
     if (kid) {
-        if (under) node.dataset.depth = "1"; else delete node.dataset.depth;
+        if (under) node.dataset.depth = String(under); else delete node.dataset.depth;
         glyph.hidden = !under;
         mine.hidden = false;
         mine.dataset.live = taskLive(kid) ? "1" : "0";
