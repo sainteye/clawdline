@@ -72,6 +72,14 @@ enum Orchestrator {
         var finishedAt: Date?
         var rootSessionId: String?
         var rootLabel: String?
+        /// How far from the person at the keyboard this task is: `1` for one a human's session
+        /// dispatched, `2` for one dispatched by a child of theirs. Stored rather than derived —
+        /// the parent may be over and gone by the time anybody asks, and the answer should not
+        /// change when it goes.
+        var depth = 1
+        /// The task whose child dispatched this one, when it said so. Nil at depth 1, and nil at
+        /// depth 2 when the parent was recognised by session id instead.
+        var parentTaskId: String?
         var childTerminalId: String?
         var childBackend: Backend?
         var childTTY: String?
@@ -283,6 +291,7 @@ enum Orchestrator {
         var timeoutMinutes = 30
         var rootSessionId: String?
         var rootLabel: String?
+        var parentTaskId: String?
     }
 
     enum DraftOutcome: Equatable {
@@ -323,6 +332,12 @@ enum Orchestrator {
         let rootObj = obj["root"] as? [String: Any] ?? [:]
         made.rootSessionId = rootObj["session_id"] as? String
         made.rootLabel = (rootObj["label"] as? String).map { String($0.prefix(120)) }
+        // A child knows its own task id — it is in the first line it was ever sent — long before
+        // this app has worked out what the session inside that tab calls itself. Naming it here
+        // is how a dispatch from one level down is recognised as such on the first try, and for
+        // a Codex child it is the only way: its session id lives in a rollout file rather than in
+        // the hook notes `rootSessionId` is matched against.
+        made.parentTaskId = (rootObj["parent_task"] as? String).flatMap { isTaskID($0) ? $0 : nil }
         return .ok(made)
     }
 
@@ -365,18 +380,35 @@ enum Orchestrator {
         case .ok(let ok): made = ok
         }
 
-        // Depth 1. A session this app briefed as a child is not allowed to be anybody's root:
-        // its declared identity is checked against every live child. Best-effort — a caller can
-        // lie about who it is — but a child following its briefing declares itself truthfully,
-        // and the global cap bounds what lying buys.
-        if let declared = made.rootSessionId, isActiveChild(sessionID: declared) {
+        // How deep this one sits. A dispatch names who asked, and if who asked is itself a live
+        // child then this task is one level below that child's. Best-effort in the sense that a
+        // caller can lie about its identity — but lying only ever moves a task *down* (the two
+        // signals are combined by taking the deeper answer) or into somebody else's bucket, and
+        // `orchestratorMaxDescendants` sits over the whole machine either way.
+        let depth = depthOfNew(parentTask: made.parentTaskId, rootSession: made.rootSessionId)
+        let floor = depthFloor
+        if depth > floor {
             return .refused(409, "depth_exceeded",
-                            "A child session cannot dispatch tasks of its own.")
+                            floor == 1
+                            ? "A child session cannot dispatch tasks of its own."
+                            : "Tasks go two levels deep; a child of a child cannot dispatch.")
         }
-        let cap = Config.shared.orchestratorMaxChildren
-        if activeCount() >= cap {
+        let cap = depth == 1 ? Config.shared.orchestratorMaxChildren
+                             : Config.shared.orchestratorMaxGrandchildren
+        if activeCount(dispatchedBy: made.rootSessionId, parentTask: made.parentTaskId) >= cap {
             return .refused(status: 429, code: "over_capacity",
-                            message: "All \(cap) child slots are busy; retry when one finishes.",
+                            message: "All \(cap) child slots for this session are busy; "
+                                   + "retry when one finishes.",
+                            extra: ["retry_after": 60])
+        }
+        // And the ceiling over everyone. The per-dispatcher caps are what one session may spend;
+        // this is what the Mac may, and it is the one a caller cannot talk its way around by
+        // claiming to be somebody else.
+        let ceiling = Config.shared.orchestratorMaxDescendants
+        if activeCount() >= ceiling {
+            return .refused(status: 429, code: "over_capacity",
+                            message: "All \(ceiling) child sessions on this Mac are busy; "
+                                   + "retry when one finishes.",
                             extra: ["retry_after": 60])
         }
 
@@ -384,13 +416,15 @@ enum Orchestrator {
                         assistant: made.assistant, projectDir: made.projectDir,
                         timeoutMinutes: made.timeoutMinutes, created: Date(),
                         rootSessionId: made.rootSessionId, rootLabel: made.rootLabel,
+                        depth: depth, parentTaskId: made.parentTaskId,
                         secretHash: hash(ofSecret: secret))
         lock.lock()
         tasks[taskID] = task
         secrets[taskID] = secret
         lock.unlock()
         RemoteAuth.audit("orchestrator.dispatch", ["task": taskID, "assistant": made.assistant.rawValue,
-                                                   "cwd": made.projectDir, "kind": made.kind])
+                                                   "cwd": made.projectDir, "kind": made.kind,
+                                                   "depth": String(depth)])
 
         // Straight away rather than on the next beat: the root is holding its breath on this
         // request, and the answer should already say whether a terminal actually opened.
@@ -424,11 +458,18 @@ enum Orchestrator {
         return task
     }
 
+    /// Ten dispatches in ten minutes, or one full tree's worth, whichever is more.
+    ///
+    /// The window is a brake on a loop, not a second capacity cap — and once a child can dispatch
+    /// too, filling the allowed tree legitimately takes more than ten calls. A limit that refuses
+    /// the work the caps just permitted teaches people to retry, which is the behaviour it exists
+    /// to discourage.
     private static func rateAllowed() -> Bool {
         lock.lock(); defer { lock.unlock() }
         let now = Date()
+        let allowed = max(10, Config.shared.orchestratorMaxDescendants)
         dispatchTimes = dispatchTimes.filter { now.timeIntervalSince($0) < 600 }
-        guard dispatchTimes.count < 10 else { return false }
+        guard dispatchTimes.count < allowed else { return false }
         dispatchTimes.append(now)
         return true
     }
@@ -438,9 +479,38 @@ enum Orchestrator {
         return tasks.values.filter { !$0.state.isTerminal }.count
     }
 
-    private static func isActiveChild(sessionID: String) -> Bool {
+    /// The live tasks already dispatched by whoever is asking now.
+    ///
+    /// Two ways of naming the same session, either of which is enough: the task it is the child
+    /// of, and the session id it calls itself by. A dispatch that gives neither is nobody's in
+    /// particular, and shares a bucket with every other anonymous one — which is the right answer
+    /// for a caller that declined to say who it is, and the ceiling covers the rest.
+    private static func activeCount(dispatchedBy session: String?, parentTask: String?) -> Int {
         lock.lock(); defer { lock.unlock() }
-        return tasks.values.contains { !$0.state.isTerminal && $0.childSessionId == sessionID }
+        return tasks.values.filter { task in
+            guard !task.state.isTerminal else { return false }
+            if let parentTask, task.parentTaskId == parentTask { return true }
+            if let session { return task.rootSessionId == session }
+            return task.rootSessionId == nil && task.parentTaskId == nil
+        }.count
+    }
+
+    /// The depth a task dispatched right now would sit at: one below its parent, or 1 when the
+    /// caller is not a child of anything this app is running.
+    ///
+    /// **The deeper of the two answers wins.** A child names its parent task and, when it can,
+    /// its own session id; either alone identifies it. Taking the maximum means a caller that
+    /// gets one of them wrong — or invents one — can only end up further down, never nearer the
+    /// top, so the mistake costs it capacity instead of buying any.
+    private static func depthOfNew(parentTask: String?, rootSession: String?) -> Int {
+        lock.lock(); defer { lock.unlock() }
+        var parent = 0
+        for task in tasks.values where !task.state.isTerminal {
+            let isParent = (parentTask != nil && task.id == parentTask)
+                || (rootSession != nil && task.childSessionId == rootSession)
+            if isParent { parent = max(parent, task.depth) }
+        }
+        return parent + 1
     }
 
     // MARK: - Completion over HTTP
@@ -473,6 +543,15 @@ enum Orchestrator {
             return .refused(409, "already_done", "That task already finished.")
         }
         RemoteAuth.audit("orchestrator.cancel", ["task": taskID])
+        // Deepest first, for the same reason the root cascade goes that way: whatever this child
+        // handed on is work nobody asked for any more, and left alone it would carry on reporting
+        // into a tab that is being ended right now.
+        for id in liveTasks(under: [taskID]) {
+            guard let below = held(id) else { continue }
+            RemoteAuth.audit("orchestrator.cancel", ["task": id, "why": "parent_cancelled",
+                                                     "parent": taskID])
+            cancelInPlace(below)
+        }
         cancelInPlace(task)
         // The record it answers with still says the old state — finalize runs on main a moment
         // later — so the state is overridden here for the reply alone.
@@ -537,6 +616,41 @@ enum Orchestrator {
             .map { $0.id }
     }
 
+    /// The live tasks dispatched from inside the tabs these tasks opened — the level below a
+    /// cascade's first.
+    ///
+    /// A child is recognised by whichever of the two names it managed to give: the parent task
+    /// it declared, or the session id it calls itself by, which this app only learns once it has
+    /// read the child's transcript. Either is enough, and a child that gave neither is not
+    /// collected — it is not filed under anyone, so there is no one whose leaving takes it.
+    static func liveTasks(under parents: [String]) -> [String] {
+        tasksUnder(parents) { !$0.state.isTerminal }
+    }
+
+    /// The finished-but-still-tabbed tasks one level below these — `lingeringTasks`' other half.
+    static func lingeringTasks(under parents: [String]) -> [String] {
+        tasksUnder(parents) { $0.state.isTerminal && $0.childTerminalId != nil }
+    }
+
+    private static func tasksUnder(_ parents: [String], where keep: (Task) -> Bool) -> [String] {
+        guard !parents.isEmpty else { return [] }
+        load()
+        lock.lock(); defer { lock.unlock() }
+        let above = parents.compactMap { tasks[$0] }
+        guard !above.isEmpty else { return [] }
+        let ids = Set(above.map { $0.id })
+        let sessions = Set(above.compactMap { $0.childSessionId })
+        return tasks.values
+            .filter { task in
+                guard keep(task), !ids.contains(task.id) else { return false }
+                if let parent = task.parentTaskId, ids.contains(parent) { return true }
+                if let root = task.rootSessionId, sessions.contains(root) { return true }
+                return false
+            }
+            .sorted { $0.created < $1.created }
+            .map { $0.id }
+    }
+
     /// Ending a root session ends the work it dispatched. Two things happen, and they are not the
     /// same thing: a task still running is cancelled and its child's tab ended, while a task that
     /// already finished keeps its record — `success` is a fact about work that happened — and
@@ -553,9 +667,15 @@ enum Orchestrator {
     /// reading" is also true of a terminal that lost its accessibility permission for a moment,
     /// and being wrong about that would kill somebody's work mid-turn.
     ///
-    /// **One level, and the second is not missing.** `dispatch` refuses a root that is itself a
-    /// live child, so the depth is capped at 1 — a child has no children of its own to collect
-    /// and recursion here would only be a loop that never runs twice.
+    /// **Two levels, deepest first.** A child may dispatch in turn, so a root's leaving has to
+    /// reach the tasks its children asked for as well. They are collected before anything is
+    /// cancelled — a grandchild is found through its parent's `child_session`, which stops being
+    /// a useful thing to match on the moment that parent's tab goes — and ended from the bottom
+    /// up, so no tab is closed while something it is still holding open is being read for.
+    ///
+    /// The level below is gathered from the finished children too, not only the live ones: a
+    /// child that reported while the work it handed on is still running leaves a grandchild that
+    /// belongs to nobody otherwise.
     ///
     /// A busy child gets `cancel`'s decisiveness rather than `closeChild`'s ten minutes of
     /// patience. Those are different moments: one is tidying up after work that finished, this is
@@ -570,7 +690,11 @@ enum Orchestrator {
     @discardableResult
     static func cancelChildren(ofRoot session: TargetSession) -> [String] {
         guard let rootSession = rootIdentity(of: session) else { return [] }
-        let live = liveTasks(dispatchedBy: rootSession)
+        let mine = liveTasks(dispatchedBy: rootSession)
+        let lingering = lingeringTasks(dispatchedBy: rootSession)
+        let below = liveTasks(under: mine + lingering)
+        let lingeringBelow = lingeringTasks(under: mine + lingering)
+        let live = below + mine
         for id in live {
             guard let task = held(id) else { continue }
             // `why` is what tells this row apart from a task somebody cancelled on purpose: this
@@ -580,7 +704,7 @@ enum Orchestrator {
             cancelInPlace(task)
         }
         var closed: [String] = []
-        for id in lingeringTasks(dispatchedBy: rootSession) where closeChildTab(ofTask: id, root: session.id) {
+        for id in lingeringBelow + lingering where closeChildTab(ofTask: id, root: session.id) {
             closed.append(id)
         }
         if !closed.isEmpty {
@@ -1101,8 +1225,23 @@ enum Orchestrator {
         return english == native ? english : "\(english) (\(native))"
     }
 
+    /// How many levels of dispatch this Mac is set up for: 1 when a child may not dispatch at
+    /// all, 2 when it may. There is no third stop, and that is a decision rather than an
+    /// oversight — the numbers multiply, and a tree deeper than one somebody can hold in their
+    /// head is a tree nobody can be asked to supervise.
+    static var depthFloor: Int { Config.shared.orchestratorMaxGrandchildren > 0 ? 2 : 1 }
+
     static func childBrief(for task: Task) -> String {
         let dir = "/tmp/.clawdline/\(task.id)"
+        // What this one may hand on in turn: the configured allowance while there is a level
+        // below it, and nothing at all once it is standing on the floor. Written into the
+        // briefing rather than left to be discovered, because a child that finds out by being
+        // refused has already spent a turn on it.
+        let allowance = task.depth < depthFloor ? Config.shared.orchestratorMaxGrandchildren : 0
+        let handOnRule = allowance > 0
+            ? "You may hand parts of this on to at most \(allowance) child sessions of your own, "
+                + "which cannot hand anything on further — see \"Handing work on\" below."
+            : "Do not dispatch Clawdline tasks of your own."
         return """
         # Clawdline child briefing — task \(task.id)
 
@@ -1126,10 +1265,11 @@ enum Orchestrator {
 
         - Work inside \(task.projectDir). Put every file you produce in \(dir)/artifacts/
           (create the directory if it is missing).
-        - Do not dispatch Clawdline tasks of your own. Do not read any other directory under
-          /tmp/.clawdline/. Do not do work the task did not ask for.
+        - \(handOnRule)
+        - Do not read any directory under /tmp/.clawdline/ other than the ones named here.
+        - Do not do work the task did not ask for.
         - You have \(task.timeoutMinutes) minutes before the task is marked timed out.
-
+        \(handOnSection(for: task, allowance: allowance))
         ## Reporting — this is the completion signal, do it exactly
 
         When the work is done (or has failed for good), write \(dir)/result.json:
@@ -1153,6 +1293,57 @@ enum Orchestrator {
            -H "X-Clawdline-Task-Secret: <TASK_SECRET>" -H 'Content-Type: application/json' \\
            -d '{"status":"success","summary":"..."}'`
         This is never required; the file alone is enough.
+        """
+    }
+
+    /// The paragraph that makes a child a dispatcher, or nothing at all when it is not one.
+    ///
+    /// Spelled out in full rather than pointed at a skill, because half the sessions this is
+    /// written for are Codex and Codex has no skills — and because the one field that matters,
+    /// `root.parent_task`, is the one nothing else would tell it. A child knows its own task id
+    /// from the first line it was ever sent, so naming its parent is the one identification it
+    /// can always make correctly, whatever this app has managed to work out about it.
+    private static func handOnSection(for task: Task, allowance: Int) -> String {
+        guard allowance > 0 else { return "" }
+        return """
+
+        ## Handing work on
+
+        Parts of this task that stand entirely on their own may go to child sessions of yours —
+        at most \(allowance) alive at once. They are the last level: what they open, nothing
+        opens under. Only do it where a part really is separate work, since briefing a session
+        costs more than most of what you would hand it, and never for something you could do in
+        the time it takes to write the instructions.
+
+        For each one, a fresh id, a fresh secret and its own directory:
+
+        ```bash
+        TOKEN=$(cat ~/.config/clawdline/orchestrator-token)
+        sub=$(uuidgen | tr '[:upper:]' '[:lower:]'); sub_secret=$(openssl rand -hex 32)
+        umask 077 && mkdir -p "/tmp/.clawdline/$sub/artifacts"
+        jq -n --arg id "$sub" --arg dir "\(task.projectDir)" --arg what "<the instructions>" \\
+          '{clawdline_protocol:1, task_id:$id, assistant:"claude", project_dir:$dir,
+            title:"<short title>", instructions:$what, timeout_minutes:30,
+            root:{parent_task:"\(task.id)"}}' > "/tmp/.clawdline/$sub/task.json"
+        curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks \\
+          -H "X-Clawdline-Orchestrator: $TOKEN" -H 'Content-Type: application/json' \\
+          -d "{\\"task_id\\":\\"$sub\\",\\"secret\\":\\"$sub_secret\\"}"
+        ```
+
+        - `root.parent_task` must be exactly `\(task.id)` — your own task id. It is how the app
+          knows where the new task sits; get it wrong and the dispatch is refused or filed under
+          somebody else.
+        - The instructions have to stand on their own. That session cannot see this one, so
+          "as described above" reaches it as an empty file.
+        - Branch on the reply's `code`: `over_capacity` means wait or ask for fewer,
+          `depth_exceeded` means this Mac goes no deeper and the work is yours to do.
+        - The orchestrator token is this Mac's credential, not yours to pass on. Do not write it
+          into a file, do not put it in /tmp, do not hand it to anything you dispatch.
+        - Its answer arrives as `/tmp/.clawdline/$sub/result.json`. The file appearing is the
+          completion signal — poll for it, then read it. Those directories are the only ones
+          besides your own you may look inside.
+        - Wait for everything you handed on before writing your own result.json. Yours finishing
+          is what ends theirs.
         """
     }
 
@@ -1292,7 +1483,13 @@ enum Orchestrator {
 
     private static func record(of task: Task) -> [String: Any] {
         var rootTerminal: String?
-        if let rootID = task.rootSessionId {
+        // The parent task first, when there is one. A dispatcher one level down is sitting in a
+        // tab this app opened, so its terminal id is written in that task's record — whereas the
+        // hook notes below only know sessions that write them, which a Codex child never does.
+        if let parent = task.parentTaskId, let above = held(parent) {
+            rootTerminal = above.childTerminalId
+        }
+        if rootTerminal == nil, let rootID = task.rootSessionId {
             rootTerminal = SessionWatch.shared.targets.first {
                 HookBridge.note(for: $0)?.session == rootID
             }?.id
@@ -1309,6 +1506,7 @@ enum Orchestrator {
             "assistant": task.assistant.rawValue,
             "projectDir": task.projectDir,
             "created": Int(task.created.timeIntervalSince1970),
+            "depth": task.depth,
             "dir": "/tmp/.clawdline/\(task.id)",
         ]
         if let at = task.spawnedAt { out["spawnedAt"] = Int(at.timeIntervalSince1970) }
@@ -1318,6 +1516,7 @@ enum Orchestrator {
         if let id = task.rootSessionId { root["sessionId"] = id }
         if let label = task.rootLabel { root["label"] = label }
         if let terminal = rootTerminal { root["terminalId"] = terminal }
+        if let parent = task.parentTaskId { root["taskId"] = parent }
         if !root.isEmpty { out["root"] = root }
         var child: [String: Any] = [:]
         if let id = task.childTerminalId { child["terminalId"] = id }
@@ -1389,6 +1588,7 @@ enum Orchestrator {
             "project_dir": task.projectDir,
             "timeout_minutes": task.timeoutMinutes,
             "created": task.created.timeIntervalSince1970,
+            "depth": task.depth,
             "secret_hash": task.secretHash,
             "artifacts": task.artifacts,
         ]
@@ -1397,6 +1597,7 @@ enum Orchestrator {
         if let at = task.finishedAt { out["finished_at"] = at.timeIntervalSince1970 }
         if let v = task.rootSessionId { out["root_session"] = v }
         if let v = task.rootLabel { out["root_label"] = v }
+        if let v = task.parentTaskId { out["parent_task"] = v }
         if let v = task.childTerminalId { out["child_terminal"] = v }
         if let v = task.childBackend { out["child_backend"] = v.rawValue }
         if let v = task.childTTY { out["child_tty"] = v }
@@ -1433,6 +1634,10 @@ enum Orchestrator {
         task.finishedAt = (obj["finished_at"] as? Double).map(Date.init(timeIntervalSince1970:))
         task.rootSessionId = obj["root_session"] as? String
         task.rootLabel = obj["root_label"] as? String
+        task.parentTaskId = obj["parent_task"] as? String
+        // A registry written before tasks had a depth holds only tasks a root dispatched, which
+        // is exactly what 1 means.
+        task.depth = (obj["depth"] as? Int).map { min(max($0, 1), 9) } ?? 1
         task.childTerminalId = obj["child_terminal"] as? String
         task.childBackend = (obj["child_backend"] as? String).flatMap(Backend.init(rawValue:))
         task.childTTY = obj["child_tty"] as? String

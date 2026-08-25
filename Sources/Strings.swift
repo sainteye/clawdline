@@ -270,6 +270,15 @@ protocol Copy {
     /// about whether it is the one that was chosen for you.
     var settingsOrchestratorMax: String { get }
     var settingsOrchestratorMaxHint: String { get }
+    /// The second cap, 0 to 10: what a session that is itself doing somebody's errand may hand
+    /// on in turn. Zero is a real setting rather than a disabled one — it is the rule this app
+    /// had before the level existed, and the hint has to say so, because "none" in a list of
+    /// numbers looks like something broken rather than something chosen.
+    var settingsOrchestratorSubMax: String { get }
+    var settingsOrchestratorSubMaxHint: String { get }
+    /// The `0` stop, which is a sentence and not a digit: what is off is a whole level, not a
+    /// count of anything.
+    var settingsOrchestratorSubMaxNone: String { get }
     var settingsOrchestratorNotify: String { get }
     var settingsOrchestratorNotifyHint: String { get }
     /// What becomes of a child's tab once it has reported. Three stops — now, in a bit, never —
@@ -454,11 +463,16 @@ protocol Copy {
     /// arc cannot be told apart from a hang.
     var webVoiceReading: String { get }
     /// Added under that count once the wait has run past a few seconds. The twelve is the model
-    /// being read off disk and it happens once per boot, which is worth saying before somebody
+    /// being read off disk, and it happens once per boot of the Mac rather than once per launch of
+    /// this app — a difference the sentence has to make, or somebody who quit Clawdline and opened
+    /// it again waits twelve seconds expecting one and a half. Worth saying at all before somebody
     /// concludes the feature is broken and stops using it.
     var webVoiceSlow: String { get }
     /// The recording being cut off at the client's own ceiling, where `{n}` is that in minutes.
-    /// It ends by saying what happens next rather than by apologising: nothing was lost, and the
+    /// It opens with what just happened rather than with the rule, because whoever reads it was
+    /// talking a second ago and the recording stopped without being asked to — a sentence that
+    /// only states the limit leaves them working out which of the two they are looking at. Then
+    /// it ends by saying what happens next rather than by apologising: nothing was lost, and the
     /// audio up to the cut is on its way.
     var webVoiceLimit: String { get }
     /// An empty transcript, which the Mac answers with `200` and an empty string. **Not an
@@ -469,18 +483,26 @@ protocol Copy {
     /// The four the browser decides, and they are four rather than one because only the first has
     /// somewhere to go. A permission that was refused can be given back, and the place that is
     /// done is inside the browser rather than anywhere in this app — so that sentence says so,
-    /// and the other three describe a device instead of asking for a press.
+    /// as an instruction and not as a fact about where a setting lives. The difference is not a
+    /// matter of taste: a sentence whose subject is *the settings* and whose verb is *are where
+    /// that happens* does not come apart into anything a translator can put back together in
+    /// Chinese, Japanese, Korean or Hindi. The other three describe a device instead of asking
+    /// for a press.
     var webVoiceDenied: String { get }
     var webVoiceNoMic: String { get }
     var webVoiceInUse: String { get }
     /// `getUserMedia` is absent outside a secure context, so over plain `http` there is no
-    /// permission prompt to refuse — nothing happens at all. Naming https is the whole of the
-    /// fix, and a tunnel already gives you one.
+    /// permission prompt to refuse — nothing happens at all. The two ways to reach this page do
+    /// not have the same fix, which is why the sentence keeps them apart: a tunnel arrives with
+    /// https and needs nothing said about it, and `http://192.168…` on the local network has no
+    /// setting anywhere that would give it one. Telling that second reader to open it over https
+    /// reads as one press away and is not.
     var webVoiceInsecure: String { get }
     var webVoiceUnsupported: String { get }
-    /// And the three the Mac decides. `busy` is a queue two deep that drains in seconds, so it
-    /// asks for a retry; the other two are a machine nobody has set up, where trying again is the
-    /// one thing that cannot help — so those name what is missing instead.
+    /// And the three the Mac decides. `busy` is a queue two deep — one recording being read and
+    /// one waiting behind it, never two being read at once — and it drains in seconds, so it asks
+    /// for a retry; the other two are a machine nobody has set up, where trying again is the one
+    /// thing that cannot help — so those name what is missing instead.
     var webVoiceBusy: String { get }
     var webVoiceNoBinary: String { get }
     var webVoiceNoModel: String { get }

@@ -208,11 +208,30 @@ final class Config {
     /// switch is a preference, not the boundary. Off refuses dispatch outright while leaving the
     /// task records readable.
     var orchestratorEnabled = true
-    /// How many child sessions may be alive at once.
+    /// How many child sessions one root may have alive at once.
     ///
-    /// The cap is most of the safety story: a runaway root, a retry loop, or a child that found a
-    /// way to dispatch cannot open terminals past this number, whatever else goes wrong.
-    var orchestratorMaxChildren = 3
+    /// Per dispatcher rather than per Mac, because a child may now dispatch in turn and the two
+    /// levels are not the same appetite: five errands from the session a person is sitting in,
+    /// three from a session that is itself an errand. `orchestratorMaxGrandchildren` is the
+    /// second number, and `orchestratorMaxDescendants` is the ceiling over both.
+    var orchestratorMaxChildren = 5
+    /// How many child sessions a *child* may have alive at once. `0` forbids it outright, which
+    /// is the old behaviour: depth stops at one and a child that tries is refused at the door.
+    ///
+    /// Smaller than the root's number on purpose. A child was handed one job by a session that
+    /// was handed nothing; the further from the person at the keyboard a decision is made, the
+    /// less of this Mac it should be able to spend on it.
+    var orchestratorMaxGrandchildren = 3
+    /// Every dispatched session on this Mac, whoever asked. One full tree's worth — a root's
+    /// children and each of their children — and not a setting of its own, because it is not a
+    /// choice anybody makes separately from the two numbers it is made of.
+    ///
+    /// The per-dispatcher caps say what one session may spend. This says what the machine may
+    /// spend, and it is the half that still holds when a caller lies about who it is: declaring
+    /// somebody else's session id moves a task into another bucket, never past this line.
+    var orchestratorMaxDescendants: Int {
+        orchestratorMaxChildren * (1 + orchestratorMaxGrandchildren)
+    }
     /// Type one line into the root session when a task it dispatched finishes, so the
     /// conversation that asked for the work is the one that hears it is done.
     var orchestratorNotifyRoot = true
@@ -276,6 +295,9 @@ final class Config {
         if let v = obj["orchestrator_max_children"] as? Int, v >= 1, v <= 10 {
             orchestratorMaxChildren = v
         }
+        if let v = obj["orchestrator_max_grandchildren"] as? Int, v >= 0, v <= 10 {
+            orchestratorMaxGrandchildren = v
+        }
         if let v = obj["orchestrator_notify_root"] as? Bool { orchestratorNotifyRoot = v }
         if let v = obj["orchestrator_child_linger"] as? Int, v >= -1, v <= 3600 {
             orchestratorChildLinger = v
@@ -333,6 +355,7 @@ final class Config {
             "codex_path": codexPath,
             "orchestrator_enabled": orchestratorEnabled,
             "orchestrator_max_children": orchestratorMaxChildren,
+            "orchestrator_max_grandchildren": orchestratorMaxGrandchildren,
             "orchestrator_notify_root": orchestratorNotifyRoot,
             "orchestrator_child_linger": orchestratorChildLinger,
             "status_dir": statusDir,
