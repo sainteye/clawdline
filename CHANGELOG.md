@@ -9,6 +9,24 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: shelling out could let the app re-enter itself
+
+Waiting for a subprocess is supposed to be the most boring thing a program does. On macOS it is
+not: `waitUntilExit()` polls the run loop while it waits, so on the main thread every timer and
+every queued block runs *inside* the wait. Any function here that shelled out was therefore a
+function that could be re-entered halfway through, at a point nobody writing it had to think
+about.
+
+That is how one walk of the dispatched-task list came to start inside another one. The outer walk
+typed a briefing into a terminal through `osascript`, the timer fired during that wait, and the
+second walk carried on from a copy of a task the first was about to advance — which is what
+reported a task as failed while the child it opened was doing the work and finished it.
+
+Every wait for a subprocess now happens where a run loop turning costs nothing, and the twelve
+places that shell out — for git status, the assistant versions, tmux, the terminal, dev-stack
+commands, transcription — go through it. Measured before the change, a one-second wait on the
+main thread let a timer fire five times; after it, none.
+
 ### Changed: a session waiting for you says so itself, instead of being caught at it
 
 Until now, "this session is waiting for an answer" was something Clawdline worked out by looking:

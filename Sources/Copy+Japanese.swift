@@ -172,7 +172,7 @@ struct Japanese: Copy {
     let settingsOrchestratorSubMaxHint = "既定は 3 つ。誰かの用事をこなしているセッションも自分の分を開けます。その下はもうありません。"
     let settingsOrchestratorSubMaxNone = "出せない（ここで打ち止め）"
     let settingsOrchestratorPermission = "子セッションがどこまで自分で進むか"
-    let settingsOrchestratorPermissionHint = "子セッションのタブは誰も見ていないので、承認待ちで止まったセッションはタイムアウトまで止まったままです。既定は三番目です。書くように指示されたファイルは確認せずに書き、それ以外は今までどおり自分で判断します。タスクはこれより控えめに要求できますが、これを超えることはできません。"
+    let settingsOrchestratorPermissionHint = "子セッションのタブは誰も見ていないので、承認待ちで止まったセッションはタイムアウトまで止まったままです。そして派遣されたセッションの仕事はまるごとコマンドの実行とファイルの書き込みなので、最後の段より手前だとどこかで必ず止まります。タスクはこれより控えめに要求できますが、これを超えることはできません。"
     let settingsOrchestratorPermissionAsk = "一歩ごとに確認する"
     let settingsOrchestratorPermissionEdits = "ファイルの書き込みは確認しない"
     let settingsOrchestratorPermissionFull = "確認しない"

@@ -174,7 +174,7 @@ struct Italian: Copy {
     let settingsOrchestratorSubMaxHint = "Tre di base. Una sessione che sta già facendo una commissione può aprirne di sue; sotto quelle non si apre nulla."
     let settingsOrchestratorSubMaxNone = "Nessuna — una figlia non passa lavoro"
     let settingsOrchestratorPermission = "Fin dove può spingersi una figlia"
-    let settingsOrchestratorPermissionHint = "Nessuno guarda la scheda di una sessione figlia: una che si ferma per un'autorizzazione si ferma fino alla scadenza. Di base è la terza voce: scrive senza chiedere i file per cui è stata mandata, e tutto il resto passa ancora dal suo giudizio. Un compito può chiedere meno di così, mai di più."
+    let settingsOrchestratorPermissionHint = "Nessuno guarda la scheda di una sessione figlia: una che si ferma per un'autorizzazione si ferma fino alla scadenza — e il lavoro di una sessione delegata consiste tutto nell'eseguire comandi e scrivere file, quindi qualsiasi cosa prima dell'ultima voce la ferma da qualche parte. Un compito può chiedere meno di così, mai di più."
     let settingsOrchestratorPermissionAsk = "Chiedere a ogni passo"
     let settingsOrchestratorPermissionEdits = "Scrivere file senza chiedere"
     let settingsOrchestratorPermissionFull = "Non chiedere mai"

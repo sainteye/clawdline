@@ -359,7 +359,7 @@ enum Compat {
         task.standardError = FileHandle.nullDevice
         guard (try? task.run()) != nil else { return nil }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
+        task.waitQuietly()
         guard task.terminationStatus == 0 else { return nil }
         return String(decoding: data, as: UTF8.self)
     }

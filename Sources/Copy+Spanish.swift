@@ -174,7 +174,7 @@ struct Spanish: Copy {
     let settingsOrchestratorSubMaxHint = "Tres por defecto. Una sesión que ya está haciendo un encargo puede abrir las suyas; debajo de esas no se abre nada."
     let settingsOrchestratorSubMaxNone = "Nada — una hija no delega"
     let settingsOrchestratorPermission = "Hasta dónde puede llegar una hija"
-    let settingsOrchestratorPermissionHint = "Nadie está mirando la pestaña de una sesión hija, así que una que se detiene a pedir permiso se detiene hasta que expira. La opción predeterminada es la tercera: escribe sin preguntar los archivos que se le encargaron, y todo lo demás sigue pasando por su propio criterio. Una tarea puede pedir menos que esto, nunca más."
+    let settingsOrchestratorPermissionHint = "Nadie está mirando la pestaña de una sesión hija, así que una que se detiene a pedir permiso se detiene hasta que expira — y el trabajo de una sesión despachada consiste por completo en ejecutar comandos y escribir archivos, así que cualquier cosa por debajo de la última opción la detiene en algún punto. Una tarea puede pedir menos que esto, nunca más."
     let settingsOrchestratorPermissionAsk = "Preguntar en cada paso"
     let settingsOrchestratorPermissionEdits = "Escribir archivos sin preguntar"
     let settingsOrchestratorPermissionFull = "No preguntar nunca"

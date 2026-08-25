@@ -128,7 +128,7 @@ enum ITerm {
             _ = done.wait(timeout: .now() + 2)
             return ("", true)
         }
-        p.waitUntilExit()
+        p.waitQuietly()
         return (String(data: sink.data, encoding: .utf8) ?? "", false)
     }
 

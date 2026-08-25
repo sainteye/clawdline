@@ -488,7 +488,7 @@ enum Whisper {
         task.standardError = FileHandle.nullDevice
         do { try task.run() } catch { return nil }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
+        task.waitQuietly()
         return String(data: data, encoding: .utf8)
     }
 }

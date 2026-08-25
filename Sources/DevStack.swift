@@ -531,7 +531,7 @@ enum DevStack {
         let deadline = Date().addingTimeInterval(timeout)
         while task.isRunning, Date() < deadline { usleep(50_000) }
         if task.isRunning { task.terminate(); return nil }
-        task.waitUntilExit()
+        task.waitQuietly()
         reader.sync {}
         lock.lock(); let out = data; lock.unlock()
         return String(data: out, encoding: .utf8)

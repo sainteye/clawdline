@@ -174,7 +174,7 @@ struct French: Copy {
     let settingsOrchestratorSubMaxHint = "Trois par défaut. Une session qui fait déjà une course pour quelqu'un peut ouvrir les siennes ; en dessous, rien ne s'ouvre."
     let settingsOrchestratorSubMaxNone = "Rien — une session fille ne délègue pas"
     let settingsOrchestratorPermission = "Jusqu'où une session fille peut aller"
-    let settingsOrchestratorPermissionHint = "Personne ne regarde l'onglet d'une session fille : celle qui s'arrête pour demander une autorisation s'arrête jusqu'à l'expiration du délai. Le troisième choix est celui par défaut : elle écrit sans demander les fichiers qu'on l'a envoyée écrire, et le reste passe toujours par son propre jugement. Une tâche peut demander moins que cela, jamais plus."
+    let settingsOrchestratorPermissionHint = "Personne ne regarde l'onglet d'une session fille : celle qui s'arrête pour demander une autorisation s'arrête jusqu'à l'expiration du délai — et le travail d'une session déléguée consiste entièrement à lancer des commandes et à écrire des fichiers, donc tout ce qui n'est pas le dernier cran l'arrête quelque part. Une tâche peut demander moins que cela, jamais plus."
     let settingsOrchestratorPermissionAsk = "Demander à chaque étape"
     let settingsOrchestratorPermissionEdits = "Écrire des fichiers sans demander"
     let settingsOrchestratorPermissionFull = "Ne jamais demander"

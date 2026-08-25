@@ -516,7 +516,7 @@ enum SessionInfo {
         let killer = DispatchWorkItem { if task.isRunning { task.terminate() } }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: killer)
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
+        task.waitQuietly()
         killer.cancel()
         guard task.terminationStatus == 0 else { return nil }
         return String(data: data, encoding: .utf8)

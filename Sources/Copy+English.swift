@@ -173,7 +173,7 @@ struct English: Copy {
     let settingsOrchestratorSubMaxHint = "Three by default. A session already running somebody's errand can open its own; nothing opens under those."
     let settingsOrchestratorSubMaxNone = "Nothing — a child cannot dispatch"
     let settingsOrchestratorPermission = "How far a child may go"
-    let settingsOrchestratorPermissionHint = "Nobody is watching a child's tab, so one that stops for approval stops until it times out. The default is the third: a child writes the files it was sent to write without asking, and everything else still goes through its own judgement. A task may ask for less than this; never for more."
+    let settingsOrchestratorPermissionHint = "Nobody is watching a child's tab, so one that stops for approval stops until it times out — and a dispatched session's whole job is running commands and writing files, so anything short of the last stop stops it somewhere. A task may ask for less than this; never for more."
     let settingsOrchestratorPermissionAsk = "Ask before every step"
     let settingsOrchestratorPermissionEdits = "Write files without asking"
     let settingsOrchestratorPermissionFull = "Never ask"

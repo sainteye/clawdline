@@ -178,7 +178,7 @@ struct Hindi: Copy {
     let settingsOrchestratorSubMaxHint = "डिफ़ॉल्ट तीन। किसी का काम कर रहा session अपने खुद के खोल सकता है; उनके नीचे कुछ नहीं खुलता।"
     let settingsOrchestratorSubMaxNone = "कुछ नहीं — चाइल्ड आगे नहीं भेजता"
     let settingsOrchestratorPermission = "चाइल्ड कहाँ तक खुद जा सकता है"
-    let settingsOrchestratorPermissionHint = "चाइल्ड के टैब को कोई नहीं देख रहा होता, इसलिए मंज़ूरी के लिए रुका हुआ session समय ख़त्म होने तक रुका रहता है। डिफ़ॉल्ट तीसरा है: जो फ़ाइलें लिखने भेजा गया है वे बिना पूछे लिखता है, बाक़ी सब पर उसका अपना विवेक चलता है। कोई काम इससे कम माँग सकता है, ज़्यादा नहीं।"
+    let settingsOrchestratorPermissionHint = "चाइल्ड के टैब को कोई नहीं देख रहा होता, इसलिए मंज़ूरी के लिए रुका हुआ session समय ख़त्म होने तक रुका रहता है — और भेजे गए session का पूरा काम ही कमांड चलाना और फ़ाइलें लिखना है, तो आख़िरी विकल्प से कम कुछ भी उसे कहीं न कहीं रोक देगा। कोई काम इससे कम माँग सकता है, ज़्यादा नहीं।"
     let settingsOrchestratorPermissionAsk = "हर क़दम पर पूछे"
     let settingsOrchestratorPermissionEdits = "फ़ाइल लिखते समय न पूछे"
     let settingsOrchestratorPermissionFull = "कभी न पूछे"

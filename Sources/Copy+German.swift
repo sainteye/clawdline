@@ -174,7 +174,7 @@ struct German: Copy {
     let settingsOrchestratorSubMaxHint = "Standard sind drei. Eine Sitzung, die schon eine Besorgung erledigt, darf eigene öffnen; darunter kommt nichts mehr."
     let settingsOrchestratorSubMaxNone = "Nichts — eine Kindsitzung gibt nichts weiter"
     let settingsOrchestratorPermission = "Wie weit eine Kindsitzung gehen darf"
-    let settingsOrchestratorPermissionHint = "Auf den Tab einer Kindsitzung schaut niemand: Eine, die auf eine Freigabe wartet, wartet bis zum Zeitlimit. Voreingestellt ist die dritte Stufe: Sie schreibt die Dateien, für die sie losgeschickt wurde, ohne zu fragen, alles andere geht weiter durch ihr eigenes Urteil. Eine Aufgabe darf weniger verlangen, nie mehr."
+    let settingsOrchestratorPermissionHint = "Auf den Tab einer Kindsitzung schaut niemand: Eine, die auf eine Freigabe wartet, wartet bis zum Zeitlimit — und die ganze Arbeit einer vergebenen Sitzung besteht daraus, Befehle auszuführen und Dateien zu schreiben, also hält sie alles unterhalb der letzten Stufe irgendwo an. Eine Aufgabe darf weniger verlangen, nie mehr."
     let settingsOrchestratorPermissionAsk = "Vor jedem Schritt fragen"
     let settingsOrchestratorPermissionEdits = "Dateien ohne Nachfrage schreiben"
     let settingsOrchestratorPermissionFull = "Nie fragen"

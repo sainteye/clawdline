@@ -294,7 +294,7 @@ final class CodexNaming {
         while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
         if process.isRunning {
             process.terminate()
-            process.waitUntilExit()
+            process.waitQuietly()
             Log.write("codex name: exec timed out")
             return nil
         }
@@ -417,7 +417,7 @@ private final class CodexNameServer {
         output.fileHandleForReading.readabilityHandler = nil
         try? input.fileHandleForWriting.close()
         if process.isRunning { process.terminate() }
-        process.waitUntilExit()
+        process.waitQuietly()
     }
 
     deinit { stop() }

@@ -172,7 +172,7 @@ struct Korean: Copy {
     let settingsOrchestratorSubMaxHint = "기본값은 세 개. 남의 심부름을 하는 세션도 자기 것을 열 수 있고, 그 아래로는 없습니다."
     let settingsOrchestratorSubMaxNone = "없음 — 자식은 다시 맡기지 못합니다"
     let settingsOrchestratorPermission = "자식 세션이 어디까지 스스로 갈지"
-    let settingsOrchestratorPermissionHint = "자식 세션의 탭은 아무도 보고 있지 않아서, 승인을 기다리며 멈춘 세션은 시간이 다 될 때까지 멈춰 있습니다. 기본값은 세 번째입니다. 쓰라고 보낸 파일은 묻지 않고 쓰고, 나머지는 여전히 스스로 판단합니다. 작업은 이보다 조심스럽게 요청할 수 있지만, 더 나아갈 수는 없습니다."
+    let settingsOrchestratorPermissionHint = "자식 세션의 탭은 아무도 보고 있지 않아서, 승인을 기다리며 멈춘 세션은 시간이 다 될 때까지 멈춰 있습니다. 그리고 맡겨진 세션의 일이란 곧 명령을 실행하고 파일을 쓰는 것이므로, 마지막 칸이 아니면 어딘가에서 멈춥니다. 작업은 이보다 조심스럽게 요청할 수 있지만, 더 나아갈 수는 없습니다."
     let settingsOrchestratorPermissionAsk = "한 걸음마다 묻기"
     let settingsOrchestratorPermissionEdits = "파일 쓰기는 묻지 않기"
     let settingsOrchestratorPermissionFull = "묻지 않기"

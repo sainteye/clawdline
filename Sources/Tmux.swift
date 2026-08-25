@@ -43,12 +43,12 @@ enum Tmux {
             input.fileHandleForWriting.write(Data(stdin.utf8))
             input.fileHandleForWriting.closeFile()
             let data = out.fileHandleForReading.readDataToEndOfFile()
-            p.waitUntilExit()
+            p.waitQuietly()
             return (String(data: data, encoding: .utf8) ?? "", p.terminationStatus == 0)
         }
         do { try p.run() } catch { return ("", false) }
         let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
+        p.waitQuietly()
         return (String(data: data, encoding: .utf8) ?? "", p.terminationStatus == 0)
     }
 

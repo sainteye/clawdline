@@ -5604,7 +5604,13 @@ group("a child is told whether it may hand work on, and never has to find out by
     check("and gets the recipe rather than a pointer to a skill — half of them are Codex",
           allowed.contains("## Handing work on") && allowed.contains("/v1/orchestrator/tasks"))
     check("with its own task id already filled in as the parent, since that is the field nothing else would tell it",
-          allowed.contains("root:{parent_task:\"\(taskID)\"}"))
+          allowed.contains("\"root\": {\"parent_task\": \"\(taskID)\"}"))
+    check("and the task file is built with a heredoc, since screening refuses a quoted jq filter",
+          allowed.contains("cat > /tmp/.clawdline/$sub/task.json <<JSON"))
+    check("with the reason stated, so a child does not helpfully rewrite it as one",
+          allowed.contains("not with `jq -n` and a quoted filter"))
+    check("and reporting says to use the file tool rather than a shell line",
+          allowed.contains("Write it with your file-writing tool, not with a shell command"))
     check("and it is told where the answer will appear",
           allowed.contains("result.json"))
     check("the token stays this Mac's, not something to pass down",
@@ -5869,6 +5875,15 @@ group("closing a root session takes the work it dispatched with it") {
           !Orchestrator.liveTasks(under: [live]).contains(live))
     check("and the level below is not swept up by the level above's own selection",
           !Orchestrator.liveTasks(dispatchedBy: root).contains(below))
+
+    // The selection a *finishing* task makes, which is the same one — the point being that it is
+    // made at all. A child that reported early, timed out, or failed used to leave its
+    // grandchildren running for a session that no longer existed: no one waiting for the answer,
+    // no one watching the tab, and a row on the list with a `Child` chip and nothing above it.
+    expect("a task that ends takes what it handed on with it",
+           Orchestrator.liveTasks(under: [live]), [below])
+    check("one that handed nothing on has nothing to take",
+          Orchestrator.liveTasks(under: [alsoLive]).isEmpty)
 
     // The identity half. A session that never left a hook note cannot be matched to a task, and
     // the answer to that is *nothing* — the failure worth guarding against is a nil id quietly
@@ -6452,6 +6467,34 @@ group("session registry: which files get read, and when a change is worth a look
           SessionRegistry.statuses(SessionRegistry.entries(in: dir, pids: [10407, 73886]))
               != SessionRegistry.statuses(before))
 }
+
+group("waiting for a subprocess does not run anything else on this thread") {
+    // `waitUntilExit()` polls the current run loop, so on the main thread it lets timers and
+    // queued blocks run *inside* the wait — which is how one walk of the orchestrator's task list
+    // came to start inside another one's. This is the invariant that stopped it, and it is worth a
+    // real subprocess rather than a mock: the behaviour being pinned belongs to Foundation, not to
+    // anything written here.
+    var fired = 0
+    let ticker = Timer(timeInterval: 0.05, repeats: true) { _ in fired += 1 }
+    RunLoop.main.add(ticker, forMode: .common)
+    defer { ticker.invalidate() }
+
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/bin/sleep")
+    p.arguments = ["0.4"]
+    let started = Date()
+    try? p.run()
+    p.waitQuietly()
+    let waited = Date().timeIntervalSince(started)
+
+    check("nothing on the main run loop ran while the wait was in progress", fired == 0,
+          "a timer fired \(fired) times, so the wait is polling the run loop again")
+    // Without these two the check above passes just as well when the wait returns immediately,
+    // which is the way this test would go quietly useless.
+    check("and it really waited", waited >= 0.35, "returned after \(waited)s")
+    check("and the process was reaped", !p.isRunning)
+}
+
 
 // MARK: - Result
 

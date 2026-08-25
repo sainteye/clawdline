@@ -430,7 +430,7 @@ final class RemoteTunnel {
         task.standardError = Pipe()
         guard (try? task.run()) != nil else { return "" }
         let data = out.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
+        task.waitQuietly()
         return String(data: data, encoding: .utf8) ?? ""
     }
 

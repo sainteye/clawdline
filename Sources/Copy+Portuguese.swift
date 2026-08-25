@@ -177,7 +177,7 @@ struct Portuguese: Copy {
     let settingsOrchestratorSubMaxHint = "Três por omissão. Uma sessão que já está a fazer um recado pode abrir as suas; por baixo dessas não se abre nada."
     let settingsOrchestratorSubMaxNone = "Nada — uma filha não passa adiante"
     let settingsOrchestratorPermission = "Até onde uma sessão filha pode ir"
-    let settingsOrchestratorPermissionHint = "Ninguém está a olhar para o separador de uma sessão filha, por isso uma que pára à espera de autorização fica parada até expirar. A predefinição é a terceira: escreve sem perguntar os ficheiros que foi mandada escrever, e tudo o resto continua a passar pelo seu próprio critério. Uma tarefa pode pedir menos do que isto, nunca mais."
+    let settingsOrchestratorPermissionHint = "Ninguém está a olhar para o separador de uma sessão filha, por isso uma que pára à espera de autorização fica parada até expirar — e o trabalho de uma sessão despachada consiste todo em executar comandos e escrever ficheiros, portanto qualquer coisa aquém da última opção pára-a nalgum ponto. Uma tarefa pode pedir menos do que isto, nunca mais."
     let settingsOrchestratorPermissionAsk = "Perguntar a cada passo"
     let settingsOrchestratorPermissionEdits = "Escrever ficheiros sem perguntar"
     let settingsOrchestratorPermissionFull = "Nunca perguntar"

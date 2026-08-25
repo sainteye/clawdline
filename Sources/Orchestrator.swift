@@ -883,14 +883,15 @@ enum Orchestrator {
     static func beat(fromTimer: Bool) {
         // Two walkers at once is the shape a task once failed in: one of them had copied a record
         // before the other advanced it, and acted on that copy afterwards. Every caller reachable
-        // from here is on the main thread, so that overlap should be impossible — and it happened
-        // anyway, which means the list of callers or the assumption is wrong.
+        // from here is on the main thread, which was taken to mean the overlap was impossible —
+        // it is not, and this counter is what proved it. `Process.waitUntilExit()` polls the run
+        // loop, so typing into a terminal from here let the five-second timer fire *inside* the
+        // walk. `waitQuietly()` is the fix and lives in ``Subprocess``; this stays because a
+        // second cause would look exactly like the first one did, and silence is not evidence.
         //
-        // So this counts rather than blocks. Blocking would make the next occurrence invisible,
-        // and invisible is what made the first one take a day to reason about; the record can no
-        // longer be damaged by a stale copy either way, because `replaceTask` refuses to move a
-        // task backwards. What is missing is evidence of who the second walker is, and a walker
-        // that is quietly dropped never leaves any.
+        // It counts rather than blocks, and that is still deliberate. A dropped walker leaves
+        // nothing to read, and the record cannot be damaged by a stale copy anyway: `replaceTask`
+        // refuses to move a task backwards.
         lock.lock()
         beatSequence += 1
         let sequence = beatSequence
@@ -1255,6 +1256,32 @@ enum Orchestrator {
         RemoteAuth.audit("orchestrator.finish", ["task": taskID, "state": outcome.rawValue])
         RemoteServer.shared.broadcastOrchestrator()
         notifyRoot(task)
+        endWorkHandedOnBy(task)
+    }
+
+    /// A finished task takes whatever it handed on with it.
+    ///
+    /// The briefing tells a child to wait for its own children before reporting, and a child that
+    /// followed it leaves nothing here to do. This is for the other endings: a `timeout`, a
+    /// `failure`, a child that reported early. What those leave behind is a grandchild still
+    /// running for a session that no longer exists — nobody is waiting for its answer, nobody is
+    /// watching its tab, and on the list it sits at the top level with a `Child` chip and no row
+    /// above it, which is the shape somebody reported as a bug in the grouping.
+    ///
+    /// Off the main thread on purpose: `cancelInPlace` types a quit word and waits for the tab to
+    /// actually go. `finalize` runs on main.
+    private static func endWorkHandedOnBy(_ task: Task) {
+        let below = liveTasks(under: [task.id])
+        guard !below.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async {
+            for id in below {
+                guard let child = held(id) else { continue }
+                RemoteAuth.audit("orchestrator.cancel", ["task": id, "why": "parent_finished",
+                                                         "parent": task.id,
+                                                         "parentState": task.state.rawValue])
+                cancelInPlace(child)
+            }
+        }
     }
 
     /// One line typed into the root session, so the conversation that asked for the work is the

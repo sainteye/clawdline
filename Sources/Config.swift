@@ -233,21 +233,27 @@ final class Config {
     /// How far a dispatched child may go before it stops and asks — the *most* a task may ask
     /// for, not what every task gets. `ask`, `auto`, `edits`, `full`; see ``Permission``.
     ///
-    /// `edits` by default, and that is a considered position rather than a convenience. Nobody is
-    /// watching a child's tab: a session that stops for approval stops until it times out, so
-    /// "ask about everything" is not the safe setting here, it is the one where the work silently
-    /// does not happen.
+    /// `full` by default, arrived at by trying the narrower settings and watching them fail.
     ///
-    /// It is `edits` rather than `auto` because of what a dispatched session is *for*. It reads a
-    /// briefing, works, and writes a result — and under `auto` it stopped on the last of those,
-    /// one keystroke from done, asking whether it might create the file it was sent to create.
-    /// Everything that is not a file write still goes through the assistant's own judgement about
-    /// what a person would want to be asked.
+    /// **Nobody is watching a child's tab.** A session that stops for approval there does not
+    /// stop for a moment; it stops until the task times out, and afterwards it reads as work that
+    /// silently did not happen. So the usual intuition inverts: "ask about everything" is not the
+    /// careful setting here, it is the one where nothing gets done and nobody finds out why.
     ///
-    /// `full` is not reachable without setting it here. A task can ask for it and be quietly
+    /// The narrower stops were each tried against a real child and each stopped it somewhere. A
+    /// dispatched session's whole job is running commands and writing files: `ask` stops on the
+    /// first thing it does, which is reading its own briefing; `edits` gets it past writing but
+    /// not past `cat`, `mkdir`, `curl` or `sleep`, which is most of what handing work on consists
+    /// of. There is no flag that covers those and stops short of this one.
+    ///
+    /// What this is *not* is a widening of who may dispatch. That is still a `0600` file only a
+    /// local process can read, and a child already has a shell — this changes how many buttons a
+    /// person has to press for work they already authorised, not what the work can reach.
+    ///
+    /// Still a ceiling as well as a default: set it lower and a task asking for more is quietly
     /// given this instead, because the session doing the asking is not the one that lives with
-    /// what happens next — the person at this Mac is, and this is where they answer.
-    var orchestratorPermission = "edits"
+    /// what happens next.
+    var orchestratorPermission = "full"
     /// Every dispatched session on this Mac, whoever asked. One full tree's worth — a root's
     /// children and each of their children — and not a setting of its own, because it is not a
     /// choice anybody makes separately from the two numbers it is made of.
@@ -258,7 +264,7 @@ final class Config {
     /// The ceiling as the type, with the file's word for it read back through the closed list so
     /// a hand-edit that says something else lands on the default rather than on nothing.
     var orchestratorPermissionCeiling: Permission {
-        Permission(rawValue: orchestratorPermission) ?? .edits
+        Permission(rawValue: orchestratorPermission) ?? .full
     }
     var orchestratorMaxDescendants: Int {
         orchestratorMaxChildren * (1 + orchestratorMaxGrandchildren)

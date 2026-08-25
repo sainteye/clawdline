@@ -823,7 +823,7 @@ The record:
   "title": "Project portrait",
   "assistant": "codex",
   "model": "gpt-5.1-codex",     // absent when the task did not name one
-  "permission": "edits",        // ask | edits | full — what was used, after this Mac's ceiling
+  "permission": "full",         // ask | edits | full — what was used, after this Mac's ceiling
   "projectDir": "/Users/you/code/clawdline",
   "created": 1787100000,        // integer unix seconds, like every time in this API
   "depth": 1,                   // 1 for one a person's session dispatched, 2 for one its child did

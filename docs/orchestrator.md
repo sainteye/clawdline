@@ -132,7 +132,7 @@ session's bucket rather than out of everybody's. The ceiling below is what close
   into a directory somebody has already opened by hand.
 
 And two more settings. `orchestrator_enabled`, default true — off, and dispatch is refused at the
-door. And `orchestrator_permission`, default `edits`: **how far a child may go before it stops and
+door. And `orchestrator_permission`, default `full`: **how far a child may go before it stops and
 asks.**
 
 That default is a position, not a convenience. On a tab somebody is watching, "ask about
@@ -140,10 +140,15 @@ everything" is the careful setting. On a child's tab nobody is watching, and a s
 for approval does not stop for a moment — it stops until the task times out, which reads
 afterwards as work that silently did not happen.
 
-It is `edits` rather than something narrower because of what a dispatched session is *for*. It
-reads a briefing, works, and writes a result; under the narrower setting it stopped on the last of
-those three, one keystroke from done, asking whether it might create the file it was sent to
-create. Running a command still stops.
+**That default was arrived at by trying the narrower ones and watching each of them fail.** A
+dispatched session's whole job is running commands and writing files, so every stop short of the
+last one stops it somewhere: `ask` stops on the first thing it does, which is reading its own
+briefing; `edits` gets it past writing a result but not past `cat`, `mkdir`, `curl` or `sleep`,
+which is most of what handing work on consists of. No flag covers those and stops short of `full`.
+
+What this does not widen is *who may dispatch*. That is still a `0600` file only a local process
+can read, and a child already has a shell — the setting changes how many buttons a person has to
+press for work they already authorised, not what that work can reach.
 
 **The three words here are Clawdline's, and each one was read back off a real status line.** That
 matters more than it sounds: `--permission-mode auto` is one of the values Claude Code's own

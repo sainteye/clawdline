@@ -174,7 +174,7 @@ struct Turkish: Copy {
     let settingsOrchestratorSubMaxHint = "Varsayılan üç. Birinin işini yapan bir oturum kendi alt oturumlarını açabilir; onların altında bir şey açılmaz."
     let settingsOrchestratorSubMaxNone = "Yok — alt oturum devretmez"
     let settingsOrchestratorPermission = "Alt oturum kendi başına nereye kadar"
-    let settingsOrchestratorPermissionHint = "Bir alt oturumun sekmesine kimse bakmıyor; onay için duran bir oturum süresi dolana kadar durur. Varsayılan üçüncüsü: yazmakla görevlendirildiği dosyaları sormadan yazar, geri kalan her şey yine kendi muhakemesinden geçer. Bir görev bundan azını isteyebilir, fazlasını asla."
+    let settingsOrchestratorPermissionHint = "Bir alt oturumun sekmesine kimse bakmıyor; onay için duran bir oturum süresi dolana kadar durur — ve görevlendirilen bir oturumun işi baştan sona komut çalıştırmak ve dosya yazmaktır, dolayısıyla son basamağın altındaki her şey onu bir yerde durdurur. Bir görev bundan azını isteyebilir, fazlasını asla."
     let settingsOrchestratorPermissionAsk = "Her adımdan önce sor"
     let settingsOrchestratorPermissionEdits = "Dosya yazarken sorma"
     let settingsOrchestratorPermissionFull = "Hiç sorma"

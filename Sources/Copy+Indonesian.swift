@@ -174,7 +174,7 @@ struct Indonesian: Copy {
     let settingsOrchestratorSubMaxHint = "Tiga secara bawaan. Sesi yang sedang mengerjakan pesanan orang boleh membuka miliknya sendiri; di bawah itu tidak ada lagi."
     let settingsOrchestratorSubMaxNone = "Tidak ada — sesi anak tidak meneruskan"
     let settingsOrchestratorPermission = "Sejauh mana sesi anak boleh jalan"
-    let settingsOrchestratorPermissionHint = "Tidak ada yang menonton tab sesi anak, jadi yang berhenti menunggu persetujuan akan berhenti sampai waktunya habis. Bawaannya yang ketiga: ia menulis berkas yang memang ditugaskan tanpa bertanya, sisanya tetap lewat pertimbangannya sendiri. Sebuah tugas boleh meminta lebih sedikit dari ini, tidak pernah lebih."
+    let settingsOrchestratorPermissionHint = "Tidak ada yang menonton tab sesi anak, jadi yang berhenti menunggu persetujuan akan berhenti sampai waktunya habis — dan seluruh pekerjaan sesi yang ditugaskan adalah menjalankan perintah dan menulis berkas, sehingga apa pun selain pilihan terakhir akan menghentikannya di suatu tempat. Sebuah tugas boleh meminta lebih sedikit dari ini, tidak pernah lebih."
     let settingsOrchestratorPermissionAsk = "Tanya sebelum tiap langkah"
     let settingsOrchestratorPermissionEdits = "Menulis berkas tanpa bertanya"
     let settingsOrchestratorPermissionFull = "Jangan pernah bertanya"
