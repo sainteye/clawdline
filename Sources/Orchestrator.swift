@@ -93,6 +93,8 @@ enum Orchestrator {
         var childTerminalId: String?
         var childBackend: Backend?
         var childTTY: String?
+        var childPID: Int32?
+        var childProcStart: Date?
         var childSessionId: String?
         var transcriptPath: String?
         /// The task marker was observed in `transcriptPath`. Persisted because that fact does not
@@ -120,6 +122,32 @@ enum Orchestrator {
 
     enum BriefingDecision: Equatable {
         case send, wait, accepted, exhausted
+    }
+
+    /// The process facts observed from one polling beat. Keeping these as values makes the
+    /// identity boundary testable without asking a unit test to own a terminal or run `ps`.
+    struct ChildObservation: Equatable {
+        var pid: Int32?
+        var procStart: Date?
+    }
+
+    enum IdentityStep: Equatable {
+        case none
+        case refuseForeignProcess(seen: Int32?)
+    }
+
+    /// A terminal belongs to a tab, while this identity belongs to the Claude process that was
+    /// first observed inside it. A later process on the same tab cannot contribute any identity.
+    static func identityStep(for task: Task, seeing observation: ChildObservation) -> IdentityStep {
+        guard task.assistant == .claude, let recordedPID = task.childPID else { return .none }
+        guard observation.pid == recordedPID else {
+            return .refuseForeignProcess(seen: observation.pid)
+        }
+        if let recordedStart = task.childProcStart, let seenStart = observation.procStart,
+           abs(seenStart.timeIntervalSince(recordedStart)) > SessionRegistry.startTolerance {
+            return .refuseForeignProcess(seen: observation.pid)
+        }
+        return .none
     }
 
     static let briefingAttemptLimit = 5
@@ -1288,6 +1316,30 @@ enum Orchestrator {
         var changed = false
         switch task.assistant {
         case .claude:
+            let observation = ChildObservation(pid: Targets.pid(of: child),
+                                               procStart: Targets.processStart(of: child))
+            if case let .refuseForeignProcess(seen) = identityStep(for: task,
+                                                                   seeing: observation) {
+                RemoteAuth.audit("orchestrator.identity.foreign", [
+                    "task": task.id,
+                    "recorded_pid": task.childPID.map(String.init) ?? "?",
+                    "seen_pid": seen.map(String.init) ?? "?",
+                    "recorded_proc_start": task.childProcStart
+                        .map { String($0.timeIntervalSince1970) } ?? "?",
+                    "seen_proc_start": observation.procStart
+                        .map { String($0.timeIntervalSince1970) } ?? "?",
+                ])
+                return false
+            }
+            if task.childPID == nil, let pid = observation.pid {
+                task.childPID = pid
+                task.childProcStart = observation.procStart
+                changed = true
+            } else if task.childPID == observation.pid, task.childProcStart == nil,
+                      let started = observation.procStart {
+                task.childProcStart = started
+                changed = true
+            }
             changed = noteTranscriptProof(in: &task) || changed
             if let noted = childSessionID(from: HookBridge.note(for: child),
                                           spawnedAt: task.spawnedAt),
@@ -2408,7 +2460,7 @@ enum Orchestrator {
                                                ofItemAtPath: storeURL.path)
     }
 
-    private static func stored(_ task: Task) -> [String: Any] {
+    static func stored(_ task: Task) -> [String: Any] {
         var out: [String: Any] = [
             "id": task.id,
             "state": task.state.rawValue,
@@ -2434,6 +2486,8 @@ enum Orchestrator {
         if let v = task.childTerminalId { out["child_terminal"] = v }
         if let v = task.childBackend { out["child_backend"] = v.rawValue }
         if let v = task.childTTY { out["child_tty"] = v }
+        if let v = task.childPID { out["child_pid"] = Int(v) }
+        if let v = task.childProcStart { out["child_proc_start"] = v.timeIntervalSince1970 }
         if let v = task.childSessionId { out["child_session"] = v }
         if let v = task.transcriptPath { out["transcript"] = v }
         if task.transcriptProven { out["transcript_proven"] = true }
@@ -2478,6 +2532,9 @@ enum Orchestrator {
         task.childTerminalId = obj["child_terminal"] as? String
         task.childBackend = (obj["child_backend"] as? String).flatMap(Backend.init(rawValue:))
         task.childTTY = obj["child_tty"] as? String
+        task.childPID = (obj["child_pid"] as? Int).flatMap(Int32.init(exactly:))
+        task.childProcStart = (obj["child_proc_start"] as? Double)
+            .map(Date.init(timeIntervalSince1970:))
         task.childSessionId = obj["child_session"] as? String
         task.transcriptPath = obj["transcript"] as? String
         task.transcriptProven = obj["transcript_proven"] as? Bool == true

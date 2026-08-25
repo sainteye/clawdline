@@ -6434,6 +6434,36 @@ group("orchestrator task states only move forward") {
           Orchestrator.mayReplaceState(.briefed, with: .briefed))
 }
 
+group("an orchestrated Claude child keeps its process identity") {
+    let started = Date(timeIntervalSince1970: 2_000)
+    var task = Orchestrator.Task(id: taskID, state: .spawning, kind: "custom",
+                                 title: "a task", assistant: .claude,
+                                 projectDir: "/tmp", timeoutMinutes: 30,
+                                 created: Date(), secretHash: String(repeating: "0", count: 64))
+    task.childPID = 100
+    task.childProcStart = started
+
+    let stored = Orchestrator.stored(task)
+    let loaded = Orchestrator.task(from: stored)
+    check("the recorded process pair survives a store round trip",
+          loaded?.childPID == 100 && loaded?.childProcStart == started)
+
+    // These checks start at the observation boundary. Removing the pid/start guard in
+    // `identityStep` must make this compound assertion fail; a hand-written policy input would
+    // test the caller's arithmetic rather than what the polling caller actually observed.
+    let same = Orchestrator.ChildObservation(pid: 100,
+                                             procStart: started.addingTimeInterval(5))
+    let foreignPID = Orchestrator.ChildObservation(pid: 200, procStart: started)
+    let recycledPID = Orchestrator.ChildObservation(pid: 100,
+                                                    procStart: started.addingTimeInterval(6))
+    check("a live process match is unchanged while a foreign or recycled process is refused",
+          Orchestrator.identityStep(for: task, seeing: same) == .none
+            && Orchestrator.identityStep(for: task, seeing: foreignPID)
+                == .refuseForeignProcess(seen: 200)
+            && Orchestrator.identityStep(for: task, seeing: recycledPID)
+                == .refuseForeignProcess(seen: 100))
+}
+
 group("an orchestrated child only inherits identity from this spawn") {
     let spawnedAt = Date(timeIntervalSince1970: 2_000)
     let old = HookBridge.Note(event: .sessionStart, tty: "ttys004",
