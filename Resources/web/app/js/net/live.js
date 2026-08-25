@@ -163,6 +163,14 @@ export var Live = {
                          + encodeURIComponent(shellId));
     },
 
+    /// Stop one. **The second route on this server that destroys something**, after `end`, and
+    /// it takes the same key so that a retry of *this* press is not a second signal.
+    killShell: function (id, shellId) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/shells/"
+                         + encodeURIComponent(shellId) + "/kill",
+                         post({}, { "Idempotency-Key": uuid() }));
+    },
+
     skills: function (id) {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/skills");
     },

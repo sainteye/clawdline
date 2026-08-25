@@ -161,6 +161,97 @@ enum Shells {
         }
     }
 
+    // MARK: - Stopping one
+
+    /// What happened when somebody asked for a command to stop.
+    enum Stop: Equatable {
+        /// A signal went to it.
+        case stopped
+        /// No such command, or it had already finished.
+        case gone
+        /// **It could not be proved which process this is, so nothing was signalled.** The one
+        /// answer this must be able to give: everything below identifies a process before it
+        /// signals anything, and a kill sent on a guess is a kill sent at whatever else on the
+        /// machine happens to hold that number.
+        case unidentified
+    }
+
+    /// Stop one of a session's background commands.
+    ///
+    /// **Three facts have to line up before a signal goes anywhere**, and the shape of this is
+    /// the whole of its safety:
+    ///
+    /// 1. The id is one this session announced as a background command — the same test that
+    ///    decides whether it is listed at all, so nothing that is not on screen can be stopped.
+    /// 2. Something is holding its output file open. A finished command holds nothing, so this
+    ///    is also the check that it is still running.
+    /// 3. **That holder is a child of this session's Claude Code.** This is the ownership proof.
+    ///    Claude Code runs a background command as `zsh -c …` under itself, so the process whose
+    ///    parent is this session's pid is the command and nothing else is.
+    ///
+    /// The signal goes to its **process group**, not to the one process. A one-liner is a shell
+    /// and whatever it is currently running; signalling only the shell leaves the `sleep` or the
+    /// compiler in the middle of it with nobody waiting on it. The group is the shell's own —
+    /// checked against Claude Code's, because signalling *that* group would take the session down
+    /// with the command.
+    ///
+    /// `SIGTERM` first, and `SIGKILL` five seconds later only if the file is still held. A
+    /// background command is somebody's build, and a build that cleans up after itself should be
+    /// allowed to; one that ignores the ask should not get to stay.
+    ///
+    /// **Nothing here has to be told to Claude Code.** It is waiting on that process, so it sees
+    /// the exit, writes `[killed]` under the output and posts its own notification — which is
+    /// exactly what a command stopped from the Mac already looks like, and what ``read(_:signature:)``
+    /// already recognises as an ending.
+    static func stop(_ id: String, of session: TargetSession) -> Stop {
+        guard isID(id), let folder = folder(of: session) else { return .gone }
+        let file = folder.appendingPathComponent("\(id).output")
+        guard FileManager.default.fileExists(atPath: file.path),
+              let transcript = Subagents.transcript(of: session),
+              announced(in: transcript)[id] != nil else { return .gone }
+
+        guard let claude = Targets.pid(of: session),
+              let lineage = ITerm.lineage(ofPID: claude) else { return .unidentified }
+        let holders = ITerm.holders(ofPath: file.path)
+        guard !holders.isEmpty else { return .gone }
+        guard let group = group(among: holders, under: claude, avoiding: lineage.group) else {
+            return .unidentified
+        }
+
+        kill(-group, SIGTERM)
+        // Only if it is still there. Re-checked rather than assumed, because the ordinary case is
+        // that this second signal is never sent and the first one was enough.
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
+            guard ITerm.holders(ofPath: file.path).contains(where: { holder in
+                ITerm.lineage(ofPID: holder)?.group == group
+            }) else { return }
+            kill(-group, SIGKILL)
+        }
+        return .stopped
+    }
+
+    /// Which process group among a file's holders belongs to this session's Claude Code.
+    ///
+    /// Split out from the `ps` and the `lsof` so a test can hand it a list, the way
+    /// ``Codex/rollout(among:)`` is. Every rule that could get somebody's work killed is in here
+    /// and in nothing that needs a machine to be in a particular state to exercise.
+    ///
+    /// `lineage` is a parameter rather than a call so this stays a decision: a caller with a list
+    /// of processes and their parents gets an answer, and nothing here can go and find another
+    /// one it likes better.
+    static func group(among holders: [Int32], under claude: Int32, avoiding own: Int32,
+                      lineage: (Int32) -> (parent: Int32, group: Int32)?
+                          = { ITerm.lineage(ofPID: $0) }) -> Int32? {
+        for holder in holders {
+            guard let line = lineage(holder), line.parent == claude else { continue }
+            // A group of 0, 1, or Claude Code's own is not a command — it is everything, the
+            // init process, or the session itself. None of the three is a thing to signal.
+            guard line.group > 1, line.group != own, line.group != claude else { return nil }
+            return line.group
+        }
+        return nil
+    }
+
     // MARK: - Which of them were ever backgrounded, and what each one was asked to do
 
     /// What a session asked for when it started one.

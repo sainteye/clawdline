@@ -489,6 +489,12 @@ export var Mock = (function () {
                 }, 220);
             });
         },
+        // Stopping one, which the fixtures answer and do not act on: there is no process behind
+        // any of this, and a mock that pretended otherwise would be the one place this feature
+        // looked like it worked when it did not.
+        killShell: function () {
+            return new Promise(function (done) { setTimeout(done, 200, { ok: true }); });
+        },
         // And enough of a background command's output to see the panel it lands in. Bytes in
         // the order they were written, because that is all a command has to show.
         shell: function (id, shellId) {

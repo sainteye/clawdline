@@ -253,6 +253,33 @@ enum ITerm {
             .map { String($0.dropFirst()) }
     }
 
+    /// The other direction: every process holding one file open.
+    ///
+    /// `openFiles(ofPID:)` answers "what has this process got open", which is the question when
+    /// you already know the process. This is the question when you know the *file* and want to
+    /// find out whose it is — see ``Shells/stop(_:of:)``, where the file is a background
+    /// command's output and the answer decides what may be signalled.
+    static func holders(ofPath path: String) -> [Int32] {
+        shell("/usr/sbin/lsof", ["-t", "--", path]).out
+            .split(separator: "\n")
+            .compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
+    }
+
+    /// A process's parent and its process group, or nothing when `ps` has no answer — which is
+    /// what a process that has already gone looks like.
+    ///
+    /// Both halves matter to the one caller. The parent is the ownership proof: a command
+    /// Claude Code started is a child of Claude Code. The group is what gets signalled, because
+    /// a shell one-liner is a shell and whatever it has spawned, and killing only the shell
+    /// leaves the `sleep` in the middle of it running with nobody waiting on it.
+    static func lineage(ofPID pid: Int32) -> (parent: Int32, group: Int32)? {
+        let fields = shell("/bin/ps", ["-o", "ppid=,pgid=", "-p", "\(pid)"]).out
+            .split(whereSeparator: { $0 == " " || $0 == "\n" })
+            .compactMap { Int32($0) }
+        guard fields.count >= 2 else { return nil }
+        return (fields[0], fields[1])
+    }
+
     // MARK: - API
 
     static func snapshot() -> Targets.Snapshot {

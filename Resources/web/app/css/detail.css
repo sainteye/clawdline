@@ -218,6 +218,12 @@
 .chip:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
 .chip:disabled { opacity: 0.4; cursor: default; }
 .chip.on { border-color: var(--accent-ed); color: var(--accent); }
+/* A chip that destroys something. The same restrained red the confirm sheet's own button takes
+   for ending a session — enough that it does not read as one more thing to press idly, not so
+   much that it competes with a session actually asking for an answer. */
+.chip.danger { border-color: #57362e; color: #e09985; }
+.chip.danger:hover:not(:disabled) { background: #2f2322; color: #f0b6a2; }
+.chip[hidden] { display: none; }
 /* An icon on each of the two buttons in the transcript header. They used to be two words in two
    identical chips — one a sort control and one a thing that reaches out and moves a window on
    another machine — and reading as the same kind of control is how "Reveal" came to mean nothing

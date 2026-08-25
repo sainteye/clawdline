@@ -16,19 +16,34 @@ export var ActionConfirm = {
     pending: null,
     busy: false,
 
-    open: function (kind, sessionID, opener) {
+    /**
+     * `ask` is for a caller that owns its own destructive action.
+     *
+     * The two kinds this knew by name — ending a session, and a slash command — are the two it
+     * also knows how to *carry out*. A background command being stopped is neither: the panel
+     * showing it is the only thing that knows which command, and the request is its own. So it
+     * hands over the two sentences and a function, and this stays what it is — the second press
+     * before something irreversible reaches the transport.
+     *
+     * `ask.go` returns a promise. The sheet stays up, with both ways out disabled, until it
+     * settles, for the same reason ending a session does: the decision should not disappear
+     * before the Mac has answered it.
+     */
+    open: function (kind, sessionID, opener, ask) {
         var id = sessionID || S.openId;
         if (!id || !S.write) return;
         var action = kind === "end" ? T.webEndSession : kind;
         var returnFocus = opener || SessionActions.opener || els["detail-focus"];
         SessionActions.close();
-        this.pending = { id: id, kind: kind, action: action, opener: returnFocus };
+        this.pending = { id: id, kind: kind, action: action, opener: returnFocus, ask: ask || null };
         this.busy = false;
         els["action-confirm-sheet"].dataset.kind = kind;
-        els["action-confirm-title"].textContent = kind === "end"
-            ? T.webConfirmEndTitle : fill(T.webConfirmActionTitle, { action: action });
-        els["action-confirm-say"].textContent = kind === "end"
-            ? T.webConfirmEndSay : fill(T.webConfirmActionSay, { action: action });
+        els["action-confirm-title"].textContent = (ask && ask.title) ? ask.title
+            : (kind === "end" ? T.webConfirmEndTitle
+                              : fill(T.webConfirmActionTitle, { action: action }));
+        els["action-confirm-say"].textContent = (ask && ask.say) ? ask.say
+            : (kind === "end" ? T.webConfirmEndSay
+                              : fill(T.webConfirmActionSay, { action: action }));
         els["action-confirm"].hidden = false;
         this.sync();
         els["action-confirm-go"].focus({ preventScroll: true });
@@ -48,6 +63,14 @@ export var ActionConfirm = {
     run: function () {
         var pending = this.pending;
         if (!pending || this.busy) return;
+        if (pending.ask && pending.ask.go) {
+            var self = this;
+            this.busy = true;
+            this.sync();
+            Promise.resolve(pending.ask.go()).then(function () { self.finish(); },
+                                                   function () { self.finish(); });
+            return;
+        }
         if (pending.kind === "end") {
             // The decision stays on screen until the Mac has answered. Disabling both ways out
             // makes the one request the only action in flight; the spinner itself waits for the

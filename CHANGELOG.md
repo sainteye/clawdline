@@ -53,6 +53,17 @@ with **the command itself**, joined from the call that started it, because nine 
 of task id are Claude Code's word for a command and not anybody else's.
 `GET /v1/sessions/:id/shells/:shellId` is the same thing for anything else that wants it.
 
+**And they can be stopped.** Claude Code has always let the person at the keyboard do this —
+`/tasks` — and a phone could only watch. The panel now has a Stop, behind the two gates that
+ending a session is behind: a device allowed to write, and a second press over a sheet naming the
+command line rather than its id. What makes it safe enough to offer at all is that the app
+identifies the process before it signals one: the id has to be a command this session announced,
+something has to still be holding its output file open, and that holder has to be a child of this
+session's Claude Code. The signal goes to that process's group — a one-liner is a shell and
+whatever it is running — and never to Claude Code's own. If any of it cannot be established,
+`409` says so and nothing is signalled. `SIGTERM`, then `SIGKILL` five seconds later only if it
+is still there.
+
 ### Changed: reloading the web interface no longer means a second and a half of black
 
 The page is a document, fourteen stylesheets and forty modules, and until now every one of them

@@ -59,7 +59,8 @@
 }
 .confirm-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
 .confirm-sheet .confirm-go { border-color: var(--accent-ed); color: var(--accent); }
-.confirm-sheet[data-kind="end"] .confirm-go { border-color: #57362e; color: #e09985; }
+.confirm-sheet[data-kind="end"] .confirm-go,
+.confirm-sheet[data-kind="shell-stop"] .confirm-go { border-color: #57362e; color: #e09985; }
 .confirm-sheet .confirm-go .busy {
     display: inline-flex; align-items: center; justify-content: center; gap: 7px;
 }

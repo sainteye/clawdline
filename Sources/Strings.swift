@@ -832,6 +832,22 @@ protocol Copy {
     var webShellFailed: String { get }
     var webShellClose: String { get }
 
+    // Stopping one. **The second thing on the page that destroys something**, after ending a
+    // session, and it destroys the more ordinary thing — so the words carry the two facts
+    // somebody needs before they press: what is about to be stopped, and that it does not undo
+    // anything the command already did.
+    //
+    /// The button, in the panel's own header. One word, next to Close.
+    var webShellStop: String { get }
+    var webShellStopTitle: String { get }
+    /// `{command}` is the command line itself, because that is what somebody is agreeing to stop
+    /// — the id is nine random characters and is not a description of anything.
+    var webShellStopSay: String { get }
+    /// **"Asked it to stop", not "stopped it".** The signal is sent from here; what happens next
+    /// is between the command and the kernel, and the panel says which it was a moment later.
+    var webShellStopped: String { get }
+    var webShellStopFailed: String { get }
+
     // Reading one agent's own conversation, which both the pane and the page can now do. No
     // `web` prefix on the first four: they are said in the same words on the Mac and on a phone,
     // and one string said twice is one thing to translate rather than two to keep in step.

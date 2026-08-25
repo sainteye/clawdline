@@ -94,6 +94,7 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/sessions/:id/key` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/focus` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/end` | token + key | `send` **and** the write switch |
+| `POST` | `/v1/sessions/:id/shells/:shellId/kill` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/voice` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/auth/pair` | — | — |
 | `POST` | `/v1/auth/pair/confirm` | — | — |
@@ -650,6 +651,35 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/focus \
 
 It only moves a window, and it is behind the same gate as sending anyway — one switch, so there is
 never a question about which of them a device has.
+
+### `POST /v1/sessions/:id/shells/:shellId/kill`
+
+Stop one of that session's background commands. **The second route here that destroys
+something**, after `/end`, and behind the same gate — a build somebody is forty minutes into dies
+on a mis-tap, and nothing brings it back.
+
+What makes it defensible is that the app proves which process it is signalling before it signals.
+Three facts have to line up: the id is one this session announced as a background command,
+something is still holding its output file open, and **that holder is a child of this session's
+Claude Code process**. The signal goes to that process's group — a shell one-liner is a shell and
+whatever it is currently running — checked against Claude Code's own group, because signalling
+that would end the session along with the command. `SIGTERM` first; `SIGKILL` five seconds later
+only if the file is still held.
+
+```console
+$ curl -s -X POST "http://127.0.0.1:7717/v1/sessions/$ID/shells/bao9i2a93/kill" \
+    -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: $(uuidgen)" -d '{}'
+{"ok":true}
+```
+
+`404 not_found` is a command that is not running — finished, never this session's, or an id shaped
+like a path. **`409 unidentified` is the one worth handling**: the process could not be tied to
+this session, so *nothing was signalled*. It is what a machine that will not answer `lsof` or `ps`
+looks like, and the answer to it is to stop the command on the Mac with `/tasks`, never to retry.
+
+Nothing has to be told to Claude Code afterwards. It is waiting on that process, so it sees the
+exit, writes `[exited with code 144]` under the output and posts its own notification — the same
+thing that happens when a command is stopped from the Mac.
 
 ### `POST /v1/sessions/:id/end`
 

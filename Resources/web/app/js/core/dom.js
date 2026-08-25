@@ -8,7 +8,7 @@ export var els = {};
  "action-confirm-cancel", "action-confirm-go",
  "tx-refresh", "tx-refresh-label", "tx-focus", "tx-focus-label", "live", "stale-shut",
  "git-panel", "git-title", "git-refresh", "git-close", "git-body",
- "shell-panel", "shell-title", "shell-close", "shell-body",
+ "shell-panel", "shell-title", "shell-stop", "shell-close", "shell-body",
  "composer", "msg", "send", "why", "waiting", "agents", "skill-menu", "stale", "stale-say", "stale-go",
  "detail-head", "agent-head", "agent-back", "agent-back-label", "agent-name", "agent-sub",
  "status-line", "status-line-open", "status-line-files", "status-line-deploy", "status-line-limits", "keys", "toast", "brand", "brand-mark",

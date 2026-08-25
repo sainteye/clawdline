@@ -6662,6 +6662,58 @@ group("a file left behind by an interrupted command is not a command still runni
 }
 
 
+group("nothing is signalled until it is known whose process it is") {
+    // The shape off a real machine: Claude Code (13655) started `zsh -c …` (86319), which is the
+    // group leader, and the `sleep` inside it (37626) is in that same group. Both hold the
+    // command's output file open, and only the shell is a child of the session.
+    let real: [Int32: (parent: Int32, group: Int32)] = [
+        37626: (parent: 86319, group: 86319),
+        86319: (parent: 13655, group: 86319),
+    ]
+    func lineage(_ map: [Int32: (parent: Int32, group: Int32)]) -> (Int32) -> (parent: Int32, group: Int32)? {
+        { map[$0] }
+    }
+
+    expect("the group signalled is the shell the session started",
+           Shells.group(among: [37626, 86319], under: 13655, avoiding: 13655,
+                        lineage: lineage(real)) ?? -1, 86319)
+    // The holders come off `lsof` in whatever order it lists them; the descendant is first here.
+    expect("and finding it does not depend on the order lsof listed them",
+           Shells.group(among: [86319, 37626], under: 13655, avoiding: 13655,
+                        lineage: lineage(real)) ?? -1, 86319)
+
+    // Somebody else's session. The file is open, the processes are real, and none of them is
+    // this session's to stop.
+    check("a holder belonging to another session is not ours to signal",
+          Shells.group(among: [37626, 86319], under: 99999, avoiding: 99999,
+                       lineage: lineage(real)) == nil)
+
+    check("nothing holding it open is nothing to signal",
+          Shells.group(among: [], under: 13655, avoiding: 13655, lineage: lineage(real)) == nil)
+
+    check("a process ps has no answer for is not signalled",
+          Shells.group(among: [55555], under: 13655, avoiding: 13655,
+                       lineage: lineage(real)) == nil)
+
+    // **The three that would take something else down with the command.** A group of 0 is every
+    // process in the session, 1 is init, and Claude Code's own group is the session itself —
+    // which is the one mistake here that would end somebody's conversation to stop their build.
+    for (name, group) in [("everything", Int32(0)), ("init", Int32(1)),
+                          ("the session itself", Int32(13655))] {
+        let bad: [Int32: (parent: Int32, group: Int32)] = [86319: (parent: 13655, group: group)]
+        check("a command whose group is \(name) is refused, not signalled",
+              Shells.group(among: [86319], under: 13655, avoiding: 13655,
+                           lineage: lineage(bad)) == nil)
+    }
+    // And the same when Claude Code's own group is not its pid — which is what a session started
+    // from a shell script looks like.
+    let shared: [Int32: (parent: Int32, group: Int32)] = [86319: (parent: 13655, group: 4242)]
+    check("nor is the group Claude Code itself is in",
+          Shells.group(among: [86319], under: 13655, avoiding: 4242,
+                       lineage: lineage(shared)) == nil)
+}
+
+
 // MARK: - Result
 
 print("")

@@ -119,6 +119,13 @@ export var T = {
     webShellQuiet: "Nothing printed yet.",
     webShellFailed: "Could not read this command's output.",
     webShellClose: "Close",
+    // Stopping one — the second thing on this page that destroys something, after ending a
+    // session, and behind the same two gates: a device allowed to write, and a second press.
+    webShellStop: "Stop",
+    webShellStopTitle: "Stop this command?",
+    webShellStopSay: "{command} is still running. It is asked to stop, and killed five seconds later if it does not. Nothing it has already done is undone.",
+    webShellStopped: "Asked it to stop.",
+    webShellStopFailed: "Could not stop it.",
     // Work one session handed to another. A background agent lives inside its session; a task
     // has a whole session of its own, which is why it gets a row rather than a chip in a strip.
     webTaskRoot: "Root",

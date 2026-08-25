@@ -697,6 +697,40 @@ final class RemoteServer {
                 return .json(["ok": true])
             }
 
+        // Stopping one of a session's background commands.
+        //
+        // **The second route on this server that destroys something**, after `/end`, and behind
+        // the same gate for the same reason: a build somebody is forty minutes into dies on a
+        // mis-tap, and nothing brings it back. What makes it defensible at all is that the app
+        // proves which process it is signalling before it signals — see `Shells.stop(_:of:)` —
+        // so `409` here means "could not identify it", never "signalled something and hoped".
+        case ("POST", let path) where path.hasSuffix("/kill") && path.hasPrefix("/v1/sessions/")
+            && path.contains("/shells/"):
+            let rest = String(path.dropFirst("/v1/sessions/".count).dropLast("/kill".count))
+            let parts = rest.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+            guard parts.count == 3, parts[1] == "shells" else {
+                return .error(404, "not_found", "No such route")
+            }
+            let id = parts[0].removingPercentEncoding ?? parts[0]
+            let shell = parts[2].removingPercentEncoding ?? parts[2]
+            return writing(request) { _ in
+                guard let session = self.session(withID: id) else {
+                    return .error(404, "not_found", "No session named that")
+                }
+                RemoteAuth.audit("shell.kill", ["id": session.id, "shell": shell])
+                switch Shells.stop(shell, of: session) {
+                case .stopped:
+                    SessionWatch.shared.nudge()
+                    return .json(["ok": true])
+                case .gone:
+                    return .error(404, "not_found", "That command is not running")
+                case .unidentified:
+                    return .error(409, "unidentified",
+                                  "Could not tell which process that command is, so nothing was "
+                                  + "signalled. Stop it on the Mac with /tasks.")
+                }
+            }
+
         case ("POST", let path) where path.hasSuffix("/key") && path.hasPrefix("/v1/sessions/"):
             let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/key".count))
             return writing(request) { body in
@@ -2212,6 +2246,11 @@ final class RemoteServer {
             "webShellQuiet": t.webShellQuiet,
             "webShellFailed": t.webShellFailed,
             "webShellClose": t.webShellClose,
+            "webShellStop": t.webShellStop,
+            "webShellStopTitle": t.webShellStopTitle,
+            "webShellStopSay": t.webShellStopSay,
+            "webShellStopped": t.webShellStopped,
+            "webShellStopFailed": t.webShellStopFailed,
         ])
 
         // The chips on a root session and on the child it sent off — see `Orchestrator`.

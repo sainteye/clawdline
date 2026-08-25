@@ -3,7 +3,6 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { toast } from "../core/util.js";
 import { api } from "../net/api.js";
-import { ShellPanel } from "./shell-panel.js";
 import { closingID, render, renderList, setClosingID } from "../view/list.js";
 import { renderTranscript } from "../view/transcript.js";
 import { Optimistic, Waits } from "../view/waits.js";
@@ -41,11 +40,8 @@ els.back.addEventListener("click", function () { closeDetail(); });
 // reaches for a tool, and rebinding half a dozen buttons a second to do nothing new is work
 // nobody would get back.
 els.agents.addEventListener("click", function (ev) {
-    // A background command, which is the other kind of row in this strip. It has no conversation
-    // to open — only the file it is printing into — so it goes to a panel of its own rather than
-    // into the transcript pane.
-    var shell = ev.target.closest ? ev.target.closest("[data-shell]") : null;
-    if (shell) { ShellPanel.open(shell.getAttribute("data-shell")); return; }
+    // The strip's other kind of row — a background command — is listened for by the panel that
+    // opens it, next to everything else that panel owns. See `input/shell-panel.js`.
     var row = ev.target.closest ? ev.target.closest("[data-agent]") : null;
     if (!row) return;
     // An empty id is the root row: the way back to the session, which is what closing an agent
