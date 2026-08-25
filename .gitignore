@@ -20,3 +20,6 @@ artifacts/
 
 # Python bytecode from tools/, which are scripts and not a package.
 __pycache__/
+
+# Personal Claude Code skills for this checkout, not part of the app.
+.claude/skills/

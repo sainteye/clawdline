@@ -90,8 +90,8 @@ The floor is enforced twice, and the two fail differently.
 
 **The briefing says so.** `CHILD.md` tells every child which level it is on: one with room under it
 gets the whole recipe for dispatching — including `root.parent_task`, the field that says where the
-new task hangs — and one standing on the floor is told plainly not to. `~/.claude/skills/clawdline/SKILL.md`
-carries the same rule for a root. A child that follows its instructions never has to find the limit
+new task hangs — and one standing on the floor is told plainly not to.
+[`skills/clawdline/SKILL.md`](../skills/clawdline/SKILL.md) carries the same rule for a root. A child that follows its instructions never has to find the limit
 by hitting it.
 
 **The app refuses.** A dispatch names who is asking — the task it hangs under, the session id, or
@@ -571,9 +571,18 @@ task shows tokens and no cost, and that is the honest reading rather than a gap.
 
 ## The skill
 
-A root session does not talk to this API by hand. `~/.claude/skills/clawdline/SKILL.md` is a global
-Claude Code skill — every project, this machine only — and it is what turns *"get codex to draw
-this"* into a dispatch. Six steps:
+A root session does not talk to this API by hand. [`skills/clawdline/`](../skills/clawdline/) in
+this repository is a Claude Code skill — copy it to `~/.claude/skills/clawdline/` and it covers
+every project on that machine and no other — and it is what turns *"get codex to draw this"* into a
+dispatch:
+
+```bash
+mkdir -p ~/.claude/skills/clawdline
+cp skills/clawdline/SKILL.md ~/.claude/skills/clawdline/SKILL.md      # or SKILL.zh-TW.md
+```
+
+There is an English `SKILL.md` and a Traditional Chinese `SKILL.zh-TW.md` of the same text. Install
+one of them, not both — they declare the same `name:`. Six steps:
 
 1. **Find the door.** `remote_port` out of `config.json` (7717 if absent),
    `~/.config/clawdline/orchestrator-token` for the token. Either one missing is a full stop with an
@@ -599,6 +608,14 @@ this"* into a dispatch. Six steps:
    on.
 6. **Report, then get out of the way.** No polling loop. The notification arrives on its own, and
    `GET /v1/orchestrator/tasks/:id` answers when somebody asks.
+
+**Drawing is a real branch inside step 2.** Codex has an image model built in — `image_gen`, on by
+default, no API key, billed to the account the child is already signed in as — so *"draw this"*
+comes back as a PNG rather than a hand-written SVG whenever what was asked for is an illustration.
+It cannot be told where to save: the file lands under `~/.codex/generated_images/<session>/`, so the
+briefing has to tell the child to copy it into the task's `artifacts/` afterwards, or the task
+finishes with a picture nobody can reach. Vector is still the right ask for diagrams, icons, and
+anything that has to stay editable.
 
 The one rule stated before any of them: **a child dispatches only if its briefing said it could,
 and what it opens opens nothing.** `CHILD.md` is where a child reads that, and it carries the same

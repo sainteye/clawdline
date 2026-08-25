@@ -125,9 +125,10 @@ the child's answer, adds up what it spent, and tells the session that asked.
 to a Codex child and the diff to a Claude Code one in the same breath, and name `haiku` for a
 mechanical pass or `opus` for a judgement somebody will act on; what the app has to know is which
 binary to start and which screen to read afterwards, and it knows both already — which is why one
-Mac runs a mixed fleet without a framework in the middle of it. Dispatching is a plain local HTTP
-route, so anything running as you can ask for a child; the skill that writes the task down ships
-for Claude Code.
+Mac runs a mixed fleet without a framework in the middle of it. And the drawing is a real drawing:
+Codex has an image model built in, so what comes back is a PNG rather than a description of one.
+Dispatching is a plain local HTTP route, so anything running as you can ask for a child; the skill
+that writes the task down is [in this repository](skills/clawdline/), for Claude Code.
 
 **How work gets handed out is a file you edit.** `~/.config/clawdline/dispatch-policy.md` — read
 on every dispatch, copied into the briefing of every child that may dispatch in turn. Which

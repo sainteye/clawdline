@@ -1,0 +1,550 @@
+---
+name: clawdline
+version: 2.0.0
+description: |
+  把工作派給另一個 session 做：透過 Clawdline app 開一個 child session（Claude 或 Codex），
+  注入第一句話、等它寫回 result.json，完成時回報給你。適合「這件事我不想在這條對話裡做」
+  的雜活——生圖、跑測試、審一份 diff、長時間的整理。
+  觸發時機：使用者說「派任務」「派給 codex 做」「開一個 child／子 session」「背景幫我做 X」
+  「dispatch 一個任務」「另開一個 session 去跑」「用 codex 生一張圖」「叫另一個 agent 去審」，
+  或一次要平行做好幾件彼此不相干的事。
+  不要觸發：這條對話自己動手就好的小事（開 child 的成本遠大於直接做）、Task/subagent 就能解決
+  的檢索與分析（那是 subagent，不是 Clawdline child）、單純想知道現在有哪些 session 在跑
+  （那是看 Clawdline 面板或 GET /v1/sessions）。**這個 session 自己就是 child 時，依據是 CHILD.md 不是這裡**——
+  見 §0。
+user-invocable: true
+last-updated: 2026-08-26
+---
+
+> 這是英文正本 [`SKILL.md`](SKILL.md) 的繁體中文對照版，內容同步。裝哪一份都可以，
+> 但同一台機器只裝一份——兩份的 `name:` 都是 `clawdline`。
+
+# 派任務給 child session
+
+你現在是 **Root**。Clawdline app 是 **broker**：你寫檔、按一下 HTTP，它去終端機開一個新分頁、
+把第一句話打進去、盯著完成、算 token、回頭通知你。**Child** 是被開出來的那個 session，
+它只做一件事，做完寫 `result.json`。
+
+整條路只有六步，照順序做完就對了。
+
+---
+
+## 0. 先確認你在哪一層——這條決定你能不能往下派
+
+**下面任何一條成立，你就是 child：**
+
+- 這條對話的**第一句**是 `You are a Clawdline CHILD agent for task <id>…`
+- 你讀過、或被要求去讀 `/tmp/.clawdline/<id>/CHILD.md`
+- 你手上有一個 `TASK_SECRET=`
+
+**你是 child 的話，依據不是這份 skill，是 `CHILD.md`。** 去讀它的「Handing work on」那一段：
+
+- **那一段在** → 照它做就好。它已經把整份指令寫死給你了，包括 `root.parent_task` 要填你自己那件
+  task 的 id——那是這裡唯一沒有人會替你填的欄位。下面的 §1–§6 只是同一件事的長版，可以參考，
+  但衝突時以 `CHILD.md` 為準。
+- **那一段不在** → 你這一層已經是底。**立刻停止**，告訴使用者「這個 session 已經在最底層，
+  不能再往下派」，然後自己把事情做掉。
+
+這棵樹只有兩層：使用者的 session 派 child，child 再派一層，就沒有了。沒有底的話，
+一件事變五件變二十五件，一台 Mac 開到爆。app 端有擋（dispatch 會回 `depth_exceeded`），
+但那是最後一道，不是第一道——**第一道是你自己**。
+
+---
+
+## 1. 找到 port 和 token
+
+```bash
+PORT=$(jq -r '.remote_port // 7717' ~/.config/clawdline/config.json 2>/dev/null || echo 7717)
+TOKEN=$(cat ~/.config/clawdline/orchestrator-token 2>/dev/null)
+[ -n "$TOKEN" ] || echo "NO TOKEN"
+curl -s "http://127.0.0.1:$PORT/v1/health"
+```
+
+- `NO TOKEN`／檔案不存在 → **停下來**，告訴使用者：Clawdline 沒開，或版本太舊沒有 orchestrator。
+  請他開 Clawdline、到 Settings → Remote 打開 **Answer over HTTP**，token 會在 server 起來時自己生出來。
+- `curl` 連不上 → 同上，server 沒在跑。
+- health 回得出來但 token 檔沒有 → 這台的 Clawdline 還沒有這個功能，請使用者更新。
+
+**這個 token 是「我是本機、以你的身分在跑的程式」的證明。** 不要寫進任何檔案、不要交給 child、
+不要放進 `/tmp`、不要貼進回覆裡。
+
+---
+
+## 2. 先把整張圖畫出來，再決定派給誰
+
+### 2.0 先讀政策，然後先回答「這件事該不該派」
+
+**每一次派工之前，第一個動作是讀這台 Mac 的政策檔：**
+
+```bash
+cat ~/.config/clawdline/dispatch-policy.md 2>/dev/null
+```
+
+那份檔案**由 app 提供出廠內容、由使用者持續修改**，所以它會隨著這個專案的認識一起長。
+**它的優先權高於這份 skill 裡的任何一條。** 兩邊牴觸時照它做，並在回報時說你照了哪一條。
+檔案不存在或是空的，才照這份 skill 的預設走。使用者可以在 Settings → Remote →「派工的規矩」
+裡編輯它，你也可以在他要求時幫他改。
+
+讀完之後，**先回答政策開頭那個問題：這件事該不該派？**
+
+判準是一句話：**這件事能不能切成幾塊互不相干、各自做完再合起來的工作？** 背後有量測——
+能切開的工作，多 agent 比單 agent 好 **80.9%**；每一步都依賴前一步的工作，
+**每一種**多 agent 安排都比單 agent 差 **39–70%**，因為交接會把本來該完整的推理鏈打斷。
+
+**答案是「不該派」的時候，那是建議，不是否決。** 講出來、用一句話說明理由、然後**問使用者**，
+他說什麼就做什麼。他有這份判斷看不到的理由——可能是想讓 Codex 接這一件、想把自己這條對話的
+context 留給別的事、或單純想在一個分頁裡看著它跑。**他說派就派**，不用再勸、也不用附帶條件；
+你欠的只是那個理由，而且要在動手之前講，不是事後才說。
+
+反過來也一樣：不要為了「用到這個功能」硬派。最常見的「看起來能派、其實不能」是：
+診斷與除錯（每一步都取決於上一步查到什麼）、幾十個細瑣的小工作（每個節點都是一個真的
+終端機，開一百個既慢又貴又沒人看得完）、有人在等的即時路徑、需要 agent 之間來回討論的、
+產出必須是程式直接吃的結構化資料、以及**寫指令比自己做還久的小事**。
+
+### 2.1 該派的話，先挑一個形狀
+
+政策檔的「pick a shape」一節列了幾個具名的形狀，**挑一個，不要即興**。摘要：
+
+| 形狀 | 什麼時候用 | 節點怎麼配 |
+|---|---|---|
+| **Split and join** | 一個問題切成幾塊獨立調查 | 葉節點 `haiku` 各查一塊，一個 `sonnet`＋的節點彙整判斷 |
+| **Build then read** | **產出是程式碼、或有人會照著做的決定** | 幾個節點做事，**外加一個獨立的審查節點只讀不寫** |
+| **Decide then do** | 要改動重要的東西 | 一個節點只定方案不動手 → **人看過** → 另一個節點（通常 codex）實作 |
+| **Batch with takeover** | 同一種機械修改跨多個獨立模組 | 一個模組一個節點；死掉的分頁留著讓人接手 |
+| **Candidates** | 設計取捨、要比較的是品味 | 幾個節點各做一個完整方案，**人直接挑，不設 judge 節點** |
+
+**寫新功能一律是 Build then read。** 產出程式碼的圖，最後一定要有一個獨立的審查節點——
+規則在 §2.2 的最後一段。
+
+### 2.2 先畫圖，不要邊派邊想
+
+在送出**任何一件**之前，先把整張圖寫下來：
+
+```
+root（你）
+├── A  搜 X            claude/haiku   → artifacts/x.md
+├── B  搜 Y            claude/haiku   → artifacts/y.md
+└── C  彙整 A、B 的產出 claude/opus    → artifacts/report.md
+```
+
+要決定的是四件事：**葉節點各自產出什麼、誰負責把它們接起來、每個節點用哪個助理和模型、
+最上面要交回什麼**。想不清楚就不要送——一個沒想清楚的 graph，錯誤會在最深的那一層才浮出來。
+
+**廣度優先。** 兩個 child 各做一半，比一個 child 做一半再往下派好：後者多一層延遲、多一次
+轉述失真。只有在「第二層要做什麼，非得等第一層答完才講得出來」的時候，才往下走一層。
+
+**產出是程式碼、或是有人會照著做的決定時，圖的最後要有一個審查節點。** 它不是第五個工人，
+是一個讀者：只讀別人的產出、只寫「哪裡有問題」，不動手修（修是下一輪或人的事，就算它確定
+知道怎麼改也一樣——順手修掉等於把人本來該看到的判斷埋了）。五條規則：
+
+1. **它沒有參與生產。** 自審是量測過的差：模型審自己的產出會漏掉約三分之一的語意漂移，
+   而且機制是結構性的不是能力問題——judge 偏好低困惑度的文本，而模型自己的輸出對它自己
+   必然是低困惑度。**更強的模型不會修好這件事。**
+2. **換一個助理有幫助，但不等於解決。** codex 寫的給 claude 讀是對的，但別誤以為那就叫獨立：
+   九個 frontier 模型組成的 panel，實測只有約兩票的獨立資訊，因為不同模型會在同一題上犯同樣
+   的錯。真正重要的審查要**派好幾個審查者取多數**，而且挑「互補」的而不是隨便挑個不同的。
+3. **審查一律用 opus 等級的模型。** 不是「不弱於被審者」，是絕對下限。審查的價值完全等於
+   審查者的判斷力，而漏掉的問題會一路傳到最後。實測過：一個 sonnet 審查節點在正確說明
+   「judging 本身會 hallucinate」的同一份裁決裡，編造了一個具體引用——宣稱某份文件在質疑
+   某個術語，而那份文件根本沒提過那個詞。
+4. **指令裡要指名它可以讀哪幾個 `/tmp/.clawdline/<id>/artifacts/`。** 這是把第 1 條真的執行
+   出來的方法：不指名，審查者就可能翻到它本來該被隔開的生產過程。
+5. **要結論，而且要附出處。**「有什麼問題、最嚴重的在前面、這樣能不能出」，每一條問題都要
+   指名它依據哪份 artifact 的哪一段。沒有出處的裁決，正是一個在 hallucinate 的 judge
+   會產出的形狀。
+
+**每個節點都要收到整張圖**，不是只有自己那一格——這就是 `task.json` 的 `plan` 欄位。
+知道自己的產出要餵給誰的葉節點，會寫出接得起來的東西；不知道的會寫一篇心得。
+
+### 2.3 件數
+
+一個 session 預設同時最多 5 個 child（`orchestrator_max_children`，1…10）——這個數字是
+**每個 session 各自算的**，不是整台 Mac 算的。你自己就是 child 的話，你的額度是 3
+（`orchestrator_max_grandchildren`，0…10；`0` ＝ 不能往下派）。超過會回 `over_capacity`。
+
+### 2.4 哪個助理
+
+使用者講明了就照講的做。沒講的話：
+
+| | 給它 | 因為 |
+|---|---|---|
+| **codex** | 寫程式、**生圖**、手寫 SVG、跑 build 到綠、大量機械性改檔 | 它擅長「做出一個看得到的東西」，而且是 plan 制不按 token 計費 |
+| **claude** | 審 diff、讀程式碼找原因、上網搜尋並判斷、寫給人看的字 | 它擅長「讀懂並判斷」 |
+
+**codex 的 sandbox 預設禁外連**——要上網的任務不要給它，會卡在核准或直接失敗。
+（生圖不受這條影響，見 §2.5。）
+
+### 2.5 產出是圖的時候
+
+**codex 有真的影像模型。** 那不是退而求其次，也不需要 API key：`image_gen` 是它的內建工具、
+預設開著，用的是 child 本來就登入的那個 Codex 帳號。一行可以查：
+
+```bash
+codex features list | grep image_generation      # → image_generation  stable  true
+```
+
+這個工具有兩個性質，直接決定指令要怎麼寫：
+
+- **它不能被指定存到哪裡。** PNG 只會落在 `~/.codex/generated_images/<session-id>/*.png`，
+  codex 自己的指引也明講不要依賴 destination 參數。**所以指令裡一定要寫：生完之後把檔案
+  複製到 `/tmp/.clawdline/<id>/artifacts/`。** 漏掉這句，任務會以「圖存在但沒人拿得到、
+  `artifacts/` 是空的」收場。
+- **sandbox 擋不到它。** 畫圖發生在模型那一端，不是 child 自己連外，所以 §2.4 的禁外連
+  跟這件事無關。2026-08-26 實測（codex-cli 0.149.1）：`codex exec -s workspace-write`，
+  35 秒，約 14k tokens，產出 1254×1254 的 PNG。
+
+**點陣還是向量是一個真的選擇，不是變通：**
+
+| 要什麼 | 什麼時候 | 因為 |
+|---|---|---|
+| **`image_gen` 產的 PNG** | 插畫、材質、照片感的東西、hero 圖 | 那是一張畫，而且看起來就像一張畫 |
+| **codex 手寫的 SVG** | 示意圖、icon、要能繼續改、要縮放、要能 diff 的東西 | 向量、檔案小，而且事後有人可以只改一條路徑 |
+
+要透明背景就直接跟 `image_gen` 要、保留它的 alpha，不要因為「PNG 不能透明」就改寫 SVG。
+另外還有一條需要 `OPENAI_API_KEY` 的 CLI 路徑（`gpt-image-2`、`gpt-image-1.5`）——child 沒有
+理由用它，更不可以在內建工具就在手邊的時候悄悄降級過去。
+
+### 2.6 哪個模型
+
+`task.json` 的 `model` 欄位（選填，不寫就是那個助理的預設）。**只寫小寫字母、數字、`.`、`_`、`-`**，
+其他字元 app 會回 `bad_task`。
+
+| 模型 | 什麼時候 |
+|---|---|
+| `haiku` | 機械性、單一來源的活：抓一頁、抽三個事實、改格式。錯了一眼看得出來的那種 |
+| `sonnet` | 一般有判斷成分的工作，葉節點的預設選擇 |
+| `opus` | 有人會直接照著做的決定，以及**把好幾個 child 的答案合起來**的那個節點 |
+
+**做審查的模型，不能比被審的東西所用的模型弱。** 用小模型去審大模型寫的東西，是花錢蓋橡皮圖章。
+
+Codex 那邊同一個欄位填它的 slug（例如 `gpt-5.1-codex`）。
+
+### 2.7 child 會不會卡在權限確認
+
+**child 的分頁沒有人在看。** 一個停下來等你按「允許」的 session，會一路停到逾時——事後看起來
+就是「這件事沒做」，而且沒有人知道為什麼。
+
+`task.json` 的 `permission_mode` 有三個值（**沒有 `auto`**，見下面的警告）：
+
+| 值 | 對到什麼 | 什麼時候用 |
+|---|---|---|
+| `ask` | 不帶 flag（＝ Claude Code 的 manual） | 只有你打算全程盯著那個分頁時 |
+| `edits` | `--permission-mode acceptEdits` | 只讀檔寫檔、不跑指令的葉節點 |
+| `full` | `--permission-mode bypassPermissions` | **預設**，也是實際上唯一跑得完的 |
+
+**為什麼預設是 `full`。** 一個 dispatched session 的工作內容就是跑指令和寫檔案，比 `full` 窄的
+每一格都會在某處停住：`ask` 停在它做的第一件事（讀自己的 CHILD.md），`edits` 過得了寫檔
+但過不了 `cat`／`mkdir`／`curl`／`sleep`——而那些正是「往下派工」的全部內容。沒有任何 flag
+蓋得住那些又停在 `full` 之前。這不放寬「誰能派工」（那還是 `0600` 的 token 檔）。
+
+**⚠️ `auto` 是模型相依的，所以 Clawdline 不提供它。** 實測：`--permission-mode auto` 在
+**Sonnet 與 Opus 上會得到 auto mode，在 Haiku 上會得到 `manual`**——每一步都問，比不帶 flag
+還糟，而且沒有任何錯誤訊息。一個「在最便宜的模型上悄悄變成最嚴格」的值，不能放進派工的欄位。
+更廣的教訓：**驗證 flag 的時候，模型也是一個變數。** 只用一個模型測會得到錯的結論。
+
+**四道門，由內而外，前兩道 Clawdline 已經幫你處理好：**
+1. 跨目錄**讀**（child 的任務在 `/tmp/.clawdline/` 而工作目錄不是）→ app 自動加 `--add-dir`
+2. 跨目錄**寫**（寫自己的 result.json）→ `edits` 以上
+3. **指令篩檢**——`jq -n` 加單引號 filter 會被判「大括號緊鄰引號 ＝ 混淆」，
+   `... > f.tmp && mv` 會被判「無法靜態分析的 shell 語法」，**而且這兩個提示都沒有
+   「總是允許」**。只有 `full` 過得去。所以**寫 JSON 用 heredoc，寫檔用 Write 工具**。
+4. **信任目錄**——沒造訪過的目錄會先問 "Do you trust this folder?"，**任何 permission 設定
+   都到不了**，任務會在兩分鐘後變成 `spawn_failed`。派工前那個目錄要有人手動開過一次。
+
+**這台 Mac 的上限**在 Settings → Remote →「child 可以自己走多遠」（config.json 的
+`orchestrator_permission`）。任務要得比上限多會被安靜降到上限，實際生效的值寫在 task record
+的 `permission` 欄位裡，可以查。
+
+**要驗證 child 有沒有被問過，只能即時看那個分頁的畫面。** 事後讀 transcript 看不出來——
+被問然後被允許，跟從來沒問過，寫下來一模一樣；child 自己回報「沒被擋住」也不算數。
+
+### 2.8 指令要自己站得住
+
+child 讀不到這條對話，它只有 `task.json` 裡的 `instructions` 和 `plan`。「照剛剛講的做」在那裡
+等於什麼都沒說。路徑寫絕對路徑，產出寫清楚要放哪個檔名。**葉節點的指令要窄到一句話講得完**——
+要寫三段才講得清楚「做完」是什麼意思，那就是兩個 child。
+
+---
+
+## 3. 建目錄、生 id 和 secret
+
+```bash
+task_id=$(uuidgen | tr '[:upper:]' '[:lower:]')
+secret=$(openssl rand -hex 32)
+umask 077 && mkdir -p "/tmp/.clawdline/$task_id/artifacts" && chmod 700 /tmp/.clawdline "/tmp/.clawdline/$task_id"
+echo "$task_id"
+```
+
+`umask` 和 `mkdir` 一定要在**同一個** bash 呼叫裡——每次工具呼叫都是新的 shell，分開寫 umask 就沒了。
+
+`secret` 是 child 回報完成時的憑證，64 個 hex 字元。**它只走一條路**：由你交給 app（dispatch 的
+body），app 再放進注入給 child 的第一句話。app 只留 SHA-256。
+**不要把它寫進 `task.json`、不要寫進任何 `/tmp` 下的檔案。**
+
+## 4. 寫 task.json
+
+用 `jq -n` 組，不要手拼字串——`instructions` 裡有引號或換行時手拼一定會壞。
+
+```bash
+jq -n \
+  --arg id "$task_id" \
+  --arg kind "image" \
+  --arg assistant "codex" \
+  --arg dir "$PWD" \
+  --arg title "專案肖像圖" \
+  --arg instructions "……完整的任務說明……" \
+  --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg root_session "$ROOT_SESSION" \
+  --arg root_label "clawdline 主控 session" \
+  --arg model "haiku" \
+  --arg plan "$PLAN" \
+  '{clawdline_protocol:1, task_id:$id, kind:$kind, assistant:$assistant, model:$model,
+    permission_mode:"full",
+    project_dir:$dir, title:$title, instructions:$instructions, plan:$plan,
+    deliverables:["artifacts/out.png"], timeout_minutes:30, created_at:$created,
+    root:{session_id:(if $root_session=="" then null else $root_session end),
+          assistant:"claude", project_dir:$dir, label:$root_label}}' \
+  > "/tmp/.clawdline/$task_id/task.json"
+```
+
+`$PLAN` 就是 §2.1 那張圖，**每一件都放同一份**——那是整張圖，不是這一件的說明。
+
+欄位規則（違反就是 `422 bad_task`，app 不會幫你補）：
+
+| 欄位 | 規則 |
+|---|---|
+| `clawdline_protocol` | 一定是 `1` |
+| `task_id` | 小寫 UUID，**要跟目錄名、跟 dispatch body 裡的三者一致** |
+| `kind` | `image` · `code-review` · `test` · `custom` |
+| `assistant` | `claude` 或 `codex` |
+| `project_dir` | 絕對路徑，而且那個目錄現在要存在 |
+| `title` | ≤ 200 字，人看的一句話 |
+| `instructions` | 非空、≤ 16 KiB |
+| `deliverables` | 相對於 task 目錄的路徑，慣例是 `artifacts/…` |
+| `model` | 選填。小寫字母、數字、`.` `_` `-`，最多 64 字元。不寫 ＝ 該助理的預設模型 |
+| `permission_mode` | 選填。`ask`／`edits`／`full`。不寫 ＝ 這台 Mac 的上限值（預設 `full`）。寫別的字（包括 `auto`）＝ `bad_task` |
+| `plan` | 選填但**強烈建議**：整張圖，≤ 4 KiB。同一批任務全部放同一份 |
+| `timeout_minutes` | 1…240，沒寫當 30 |
+| `root.session_id` | 下面那招查出來的；查不到就 `null`，不要瞎編 |
+| `root.parent_task` | **只有你自己是 child 才要填**——填你自己那件 task 的 id（第一句話裡那個）。root 派工不用寫。填錯只會讓這件任務被算到別人頭上或被算得更深，不會佔到便宜 |
+
+### 查自己的 session id（best-effort，查不到就 null）
+
+Claude Code 沒有辦法直接問「我是誰」，所以用一個 nonce 去自己的 transcript 裡撈。
+**這招必須拆成兩個工具呼叫**——某個呼叫的指令文字，要等**那個呼叫結束之後**才會被寫進
+transcript，所以「echo nonce 之後在同一個呼叫裡 grep」永遠撈不到（實測過，加 retry 也沒用）：
+
+```bash
+# 呼叫 A（跟步驟 3 同一個呼叫就行）：把 nonce 留進 transcript
+echo "clawdline-nonce-$task_id"
+```
+
+```bash
+# 呼叫 B（下一個工具呼叫，跟步驟 4、5 放同一個呼叫）：這時候才撈得到
+slug=$(printf '%s' "$PWD" | sed 's/[^a-zA-Z0-9]/-/g')
+f=$(grep -l "clawdline-nonce-<task_id>" "$HOME/.claude/projects/$slug/"*.jsonl 2>/dev/null | head -1)
+ROOT_SESSION=$(if [ -n "$f" ]; then basename "$f" .jsonl; fi)
+echo "root session = ${ROOT_SESSION:-null}"
+```
+
+原理：nonce 隨呼叫 A 的紀錄落進 transcript，呼叫 B 用 `grep -l` 找到的那個檔名（去掉 `.jsonl`）
+就是本 session 的 id。slug 的規則是 `$PWD` 裡每一個非英數字元都換成 `-`。
+`<task_id>` 記得代入真的 id——呼叫 B 是新的 shell，呼叫 A 的變數已經不在了。
+
+**這一步要在主線做，不要丟給 subagent。** subagent 的 transcript 在
+`~/.claude/projects/<slug>/<session-id>/subagents/agent-*.jsonl`，`*.jsonl` 這個 glob 抓不到它
+（實測過），你會拿到空字串。真的在 subagent 裡跑到了，用這條補救——**那個檔案的上兩層目錄名
+就是 session id**：
+
+```bash
+p=$(grep -rl "clawdline-nonce-$task_id" "$HOME/.claude/projects/$slug/" 2>/dev/null | head -1)
+case "$p" in
+  */subagents/*) ROOT_SESSION=$(basename "$(dirname "$(dirname "$p")")") ;;   # 上兩層＝session id
+  *.jsonl)       ROOT_SESSION=$(basename "$p" .jsonl) ;;
+esac
+echo "root session = ${ROOT_SESSION:-null}"
+```
+
+呼叫 B 還是撈到空的，就再隔一個呼叫補撈一次；仍然沒有就填 `null` 往下走，不要卡在這裡。
+
+**這件事有兩個用途，第二個很容易忘：** 一是完成時 app 要知道該回頭通知哪個終端機；二是
+**清單裡那個 child 的 row 要縮排掛在你底下**，靠的就是這個 id。填 `null` 的話任務照樣跑，
+但完成通知只能自己 poll，而且那一行會孤零零地浮在清單中間——上面標著 `Child`，卻不在任何人
+底下，看起來像分組壞掉。查不到就填 `null`（不要瞎編），但查得到就一定要填。`ROOT_SESSION` 要跟步驟 4 的 `jq` 在同一個
+bash 呼叫裡，不然變數不會留下來——或者直接把查到的字串貼進 `--arg`。
+
+---
+
+## 5. Dispatch
+
+```bash
+curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+  -H "X-Clawdline-Orchestrator: $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\"}"
+```
+
+成功長這樣（`state` 會是 `queued` 或 `spawning`，分頁還沒開完）：
+
+```json
+{"ok":true,"task":{"id":"…","state":"spawning","kind":"image","title":"專案肖像圖",
+ "assistant":"codex","projectDir":"/Users/you/code/clawdline","created":1787100000,
+ "spawnedAt":1787100002,"dir":"/tmp/.clawdline/…","child":{"terminalId":"…","backend":"iterm"}}}
+```
+
+失敗一律是 `{"error":{"code":…,"message":…,"request_id":…}}`。**branch 在 `code` 上**：
+
+| `code` | 意思 | 做什麼 |
+|---|---|---|
+| `depth_exceeded` | **你已經在樹的最底層** | 立刻停，照 §0 回報使用者，然後這件事自己做。不要繞路重試 |
+| `over_capacity` | 額度滿了 | `message` 會說是你這個 session 的額度滿了、還是整台 Mac 的。錯誤物件裡有 `retry_after`（秒）。等它再送，或減件數／分批。**不要連續重打** |
+| `bad_task` | `task.json` 不合格 | 讀 `message`，改檔案，同一個 `task_id` 再送一次（同 id 是冪等的）。`model` 打錯也走這條 |
+| `forbidden` | token 錯或沒帶 | 重讀 token 檔；還是不行就是 app 重生過 token，請使用者重開 Clawdline |
+| `rate_limited` | 10 分鐘內派超過 10 次 | 等窗口滾過去 |
+| `not_found` | 路由不存在 | 這台的 Clawdline 沒有 orchestrator，請使用者更新 |
+
+**同一個 `task_id` 重送是安全的**，回的是已登記的那筆，不會開第二個分頁。所以逾時重試照送即可，
+不需要 `Idempotency-Key`。
+
+---
+
+## 6. 回報、等完成
+
+派完馬上告訴使用者：**幾件、各是什麼、給誰做、產出會在哪**。一行一件，附 `task_id` 前 8 碼就夠了。
+
+完成有兩條路，你不用選：
+
+1. **被通知**——app 會往你的終端機打一行進來：
+   ```
+   [clawdline] task 3f9a21bc (專案肖像圖) finished: success — see /tmp/.clawdline/<id>/result.json
+   ```
+   看到這行就去讀 `result.json` 和 `artifacts/`，然後把結論講給使用者。
+2. **自己 poll**——`root.session_id` 沒查到、或使用者現在就要知道：
+
+```bash
+curl -s "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id" \
+  -H "X-Clawdline-Orchestrator: $TOKEN" | jq '.task | {state, summary, artifacts, usage}'
+```
+
+`state` 走 `queued → spawning → briefed → success | failure | timeout | cancelled | spawn_failed`。
+**`briefed` 就是「child 正在做」**，那個狀態可以停很久，不是卡住。
+
+**不要開一個 while loop 在那裡等。** 每隔一段時間、在使用者問起時查一次就好；child 動輒十幾分鐘，
+把 root session 綁在輪詢上是最貴的用法。
+
+要提早收掉：
+
+```bash
+curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id/cancel" \
+  -H "X-Clawdline-Orchestrator: $TOKEN"
+```
+
+讀結果：
+
+```bash
+cat "/tmp/.clawdline/$task_id/result.json"
+ls -la "/tmp/.clawdline/$task_id/artifacts/"
+```
+
+`result.json` 裡的 `summary` 是 child 自己寫的一句話，`artifacts` 是它宣稱的產出——
+**宣稱歸宣稱，檔案在不在自己 `ls` 一次**。任務目錄在完成 24 小時後會被清掉，
+使用者要留的東西要複製出來。
+
+---
+
+## 一個完整的例子——叫 codex 畫一張這個專案的肖像
+
+使用者說：「幫我叫 codex 畫一張這個 project 的樣子，中世紀手繪風格。」
+
+**呼叫 A**——確認環境、建目錄、留 nonce（secret 這裡還不需要）：
+
+```bash
+PORT=$(jq -r '.remote_port // 7717' ~/.config/clawdline/config.json 2>/dev/null || echo 7717)
+TOKEN=$(cat ~/.config/clawdline/orchestrator-token)
+task_id=$(uuidgen | tr '[:upper:]' '[:lower:]')
+umask 077 && mkdir -p "/tmp/.clawdline/$task_id/artifacts" && chmod 700 /tmp/.clawdline "/tmp/.clawdline/$task_id"
+echo "clawdline-nonce-$task_id"
+echo "task_id=$task_id"
+```
+
+**呼叫 B**——撈 session id、生 secret、寫 task.json、dispatch（`task_id` 代入呼叫 A 印出的那個）：
+
+```bash
+PORT=$(jq -r '.remote_port // 7717' ~/.config/clawdline/config.json 2>/dev/null || echo 7717)
+TOKEN=$(cat ~/.config/clawdline/orchestrator-token)
+task_id=<呼叫A印出的id>
+secret=$(openssl rand -hex 32)
+
+slug=$(printf '%s' "$PWD" | sed 's/[^a-zA-Z0-9]/-/g')
+f=$(grep -l "clawdline-nonce-$task_id" "$HOME/.claude/projects/$slug/"*.jsonl 2>/dev/null | head -1)
+ROOT_SESSION=$(if [ -n "$f" ]; then basename "$f" .jsonl; fi)
+
+jq -n --arg id "$task_id" --arg dir "$PWD" --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --arg rs "$ROOT_SESSION" \
+  '{clawdline_protocol:1, task_id:$id, kind:"image", assistant:"codex",
+    project_dir:$dir, title:"專案肖像：中世紀手繪風",
+    instructions:"你在 /Users/you/code/clawdline，這是一個 macOS 選單列 app，會盯著終端機裡的 Claude Code 與 Codex session，把它們的狀態畫在選單列、瀏海和一個浮動面板上。請先讀 README.md 和 docs/interface.md 弄懂它在做什麼，然後畫一張代表這個專案的圖：中世紀手抄本插畫風格，要有裝飾性邊框與手繪筆觸，高度藝術性。請用你的內建 image_gen 工具，橫幅、高品質。image_gen 只會寫到 ~/.codex/generated_images/<session>/、不能指定存檔位置，所以生完之後把那個 PNG 複製到 /tmp/.clawdline/<TASK_ID>/artifacts/project-portrait.png，並用 ls -la 確認檔案在。完成後照 CHILD.md 寫 result.json。",
+    deliverables:["artifacts/project-portrait.png"], timeout_minutes:30, created_at:$created,
+    root:{session_id:(if $rs=="" then null else $rs end), assistant:"claude",
+          project_dir:$dir, label:"clawdline 主控"}}' \
+  > "/tmp/.clawdline/$task_id/task.json"
+
+curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+  -H "X-Clawdline-Orchestrator: $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"task_id\":\"$task_id\",\"secret\":\"$secret\"}"
+```
+
+（`instructions` 裡的 `<TASK_ID>` 記得換成真的 id——child 只會照字面讀。
+實測：這樣拆兩個呼叫，session id 一次就撈到；擠在同一個呼叫裡則一定是空的。）
+
+然後對使用者說：
+
+> 派出去了：**專案肖像：中世紀手繪風**（`3f9a21bc`，codex，30 分鐘上限）。
+> 它會用 codex 的內建影像模型畫，然後把 PNG 複製到
+> `/tmp/.clawdline/3f9a21bc-…/artifacts/project-portrait.png`。
+> 它做完會有一行通知進來，我再幫你看。
+
+要的如果是示意圖或 icon 而不是插畫，同一件任務就改成請它手寫 SVG——見 §2.5。
+
+---
+
+## 幾條容易踩的
+
+- **secret 只在 dispatch 的 body 裡出現一次。** 它會留在你這條 transcript 裡（0600，跟 token 檔同一個
+  信任邊界），但**不可以**進 `task.json`、`CHILD.md` 或任何 child 讀得到的地方。
+- **`/tmp/.clawdline` 底下不是你的公共空間。** 只碰自己這一件的目錄，不要去讀別人的 task。
+- **一件事一個 child。** 「順便把測試也跑一下」寫進同一個 `instructions`，等於一個 child 兩個目標，
+  失敗時你分不出是哪一半壞了。
+- **葉節點跑完不等於圖跑完。** 如果圖裡有一個「彙整」節點，那個節點要等所有葉節點的
+  `result.json` 都在了才派得出去——它的 `instructions` 要指名去讀哪幾個
+  `/tmp/.clawdline/<id>/artifacts/`。這是 root 的責任，app 不會替你排順序。
+- **工作樹裡多出來的東西，先假設不是 child 做的。** 這台 Mac 上通常有好幾個 session 共用同一個
+  工作區，而它們也在改檔案、也在 commit。派工之後看到 `git status` 多了幾個檔、或 `git log`
+  多了一筆，**那不是 child 的成績單**——在把任何改動算到 child 頭上之前，先做這三件事：
+
+  ```bash
+  git log --format='%h %ad %s' --date=format:'%H:%M' -5   # 時間對得上你派工的時間嗎？
+  git diff --stat                                          # 哪些檔案動了
+  git diff -- <某個檔> | grep '^+' | head -20              # 改的主題是你派的那件事嗎？
+  ```
+
+  **看內容，不要看檔名。** 判準是「這段改動在講的事情，是不是我給它的任務」。一個你派去做
+  A 功能的 child，不會順手寫出一個 B 功能——看到 B，那幾乎一定是別人的。
+
+  這件事錯得起的代價很高：把別人的工作算成 child 的，你會做出錯誤的 review 結論、可能
+  `git checkout` 掉同事跑了半小時的東西、還會對這個 child 的能力形成完全錯誤的印象。
+  反過來也一樣——child 改到一半的東西可能被另一個 session 順手 commit 進去。
+- **child 不 commit，root 才 commit。** 指令裡要明講禁止 `git commit`／`stash`／`reset`／
+  `checkout`。它們在共用工作樹裡執行，一個 `git reset --hard` 會連別人的東西一起帶走。
+- **派工的規矩是使用者的，不是你的。** `~/.config/clawdline/dispatch-policy.md` 跟你的判斷牴觸時
+  照它做，並在回報時說一聲你照了哪一條。
+- **child 開的是真的終端機分頁，跑的是真的指令。** 派出去等於授權它在那個 `project_dir` 動手。
+  會改到重要東西的任務，先跟使用者確認一次。
+- **`project_dir` 要是這台 Mac 已經信任過的目錄。** Claude Code 第一次在某個資料夾啟動時會
+  先問「Do you trust this folder?」——那不是權限提示，是啟動前的一道門，`permission_mode`
+  管不到它。child 會停在那個畫面上，app 注入不進去，兩分鐘後變成 `spawn_failed`，而畫面上
+  只有一個看起來莫名其妙的選單。要派到新目錄，先請使用者在那裡手動開一次 claude。
+- **你自己是 child 又往下派的話，等它做完再寫自己的 `result.json`。** 你這件事一結束，
+  你派出去的那些會一起被收掉——你的完成就是它們的死線。
+- 完整協定（狀態機、file 格式、API、成本計算）在
+  [`docs/orchestrator.md`](../../docs/orchestrator.md)。
