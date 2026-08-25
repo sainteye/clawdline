@@ -2044,8 +2044,10 @@ enum Orchestrator {
 
     ## Which assistant
 
-    - **Codex** for *making* something you can then look at: writing code, generating an SVG or
-      an image, running a build until it goes green, mechanical edits across many files.
+    - **Codex** for *making* something you can then look at: writing code, drawing an image with
+      the image model it has built in, hand-writing an SVG, running a build until it goes green,
+      mechanical edits across many files. It cannot be told where to save a drawing, so a task
+      that wants one has to say: generate it, then copy the file into the task's `artifacts/`.
     - **Claude** for reading and judging: reviewing a diff, working out why something behaves the
       way it does, searching and weighing what it found, writing prose somebody will read.
 
