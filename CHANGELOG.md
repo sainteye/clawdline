@@ -9,6 +9,19 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: every reading could stop, minutes after the app started
+
+The change that stopped a subprocess wait from running the app underneath itself did it by waiting
+on a thread borrowed from the global pool — which is where the caller usually already is. That is a
+deadlock as soon as the pool is full: the waiter holds a thread the block it is waiting for needs.
+The one place that reads every terminal runs on that pool and shells out from inside it, so once
+it happened nothing was read again. Sessions kept whatever state they were last seen in, a phone or
+a browser was sent a snapshot on connect and then nothing at all, and a tab opened or closed after
+that never appeared or disappeared.
+
+The wait now happens on a thread of its own, which the pool cannot starve, and the test fills the
+pool before asking for one so that it fails if this is ever written that way again.
+
 ### Added: a session with a command still running no longer reads as finished
 
 `Bash` with `run_in_background` starts something that outlives the turn that started it — a build,

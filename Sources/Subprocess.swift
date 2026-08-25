@@ -24,12 +24,22 @@ extension Process {
     func waitQuietly() {
         guard isRunning else { return }
         let exited = DispatchSemaphore(value: 0)
-        // `waitUntilExit` is fine here: this thread's run loop has nothing of ours on it, so
-        // polling it turns nobody's timer and delivers nobody's block.
-        DispatchQueue.global(qos: .userInitiated).async {
+        // A thread of its own rather than `DispatchQueue.global`, and that is not a preference.
+        // The caller is usually already on a global queue, and blocking one of that pool's threads
+        // to wait for another of the same pool is a deadlock as soon as the pool is full: the
+        // waiter holds a thread the waited-for block needs. It is not hypothetical — this shipped
+        // that way for an afternoon and stopped every reading in the app, because the one place
+        // that reads every terminal runs on that pool and shells out from inside it.
+        //
+        // `waitUntilExit` is still what does the waiting, and it is fine here: a thread made for
+        // this has nothing of ours on its run loop, so polling it turns nobody's timer and
+        // delivers nobody's block.
+        let waiter = Thread {
             self.waitUntilExit()
             exited.signal()
         }
+        waiter.stackSize = 64 * 1024
+        waiter.start()
         exited.wait()
     }
 }

@@ -6493,6 +6493,27 @@ group("waiting for a subprocess does not run anything else on this thread") {
     // which is the way this test would go quietly useless.
     check("and it really waited", waited >= 0.35, "returned after \(waited)s")
     check("and the process was reaped", !p.isRunning)
+
+    // The first version of this waited on a thread borrowed from the global pool, which is where
+    // its own caller usually already is. That is a deadlock the moment the pool is full — the
+    // waiter is holding a thread the block it waits for needs — and it stopped every reading in
+    // the app for an afternoon. So the pool is filled here on purpose before the wait is asked
+    // for: it has to finish while there is nothing of that pool left to lend.
+    let held = DispatchSemaphore(value: 0)
+    let crowd = 70
+    for _ in 0..<crowd { DispatchQueue.global(qos: .userInitiated).async { held.wait() } }
+    Thread.sleep(forTimeInterval: 0.4)
+
+    let starved = Process()
+    starved.executableURL = URL(fileURLWithPath: "/bin/sleep")
+    starved.arguments = ["0.2"]
+    let returned = DispatchSemaphore(value: 0)
+    Thread { try? starved.run(); starved.waitQuietly(); returned.signal() }.start()
+    let outcome = returned.wait(timeout: .now() + 8)
+    for _ in 0..<crowd { held.signal() }
+
+    check("and it still returns when the global queue has no threads left to lend",
+          outcome == .success, "the wait did not come back within eight seconds")
 }
 
 
