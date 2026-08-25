@@ -70,6 +70,28 @@ function run(argv) {
     const ESC = String.fromCharCode(27);
     const CR = String.fromCharCode(13);
 
+    // The tail of what we pasted, whitespace removed so a wrapped line still matches. A
+    // briefing ends in a 64-character secret, so this is unique on any screen; a message
+    // shorter than the window is matched whole.
+    const needle = text.replace(/\s+/g, "").slice(-24);
+
+    // Is that tail still sitting in the composer? Only the composer is examined, not the
+    // whole screen: an assistant that *did* accept the paste often echoes it back as a user
+    // turn, and a match there would mean the opposite of a match below the prompt mark. When
+    // the prompt mark cannot be found — a paste taller than the window pushed it off — this
+    // answers no, because sending a Return nobody asked for is worse than sending none.
+    function stillInComposer(s) {
+      if (!needle) return false;
+      const lines = safe(function () { return s.text(); }, "").replace(/\s+$/, "").split("\n");
+      let mark = -1;
+      for (let i = lines.length - 1; i >= 0 && i >= lines.length - 12; i--) {
+        const head = lines[i].replace(/^[\s\u2502\u2503|]+/, "").charAt(0);
+        if (head === ">" || head === "\u203a") { mark = i; break; }
+      }
+      if (mark < 0) return false;
+      return lines.slice(mark).join("").replace(/\s+/g, "").indexOf(needle) >= 0;
+    }
+
     const hit = eachSession(function (s) {
       if (safe(function () { return s.id(); }, "").toUpperCase() !== want) return undefined;
       // Bracketed paste, so multi-line text arrives as one paste instead of several Returns.
@@ -78,6 +100,24 @@ function run(argv) {
       if (submit) {
         pause(0.06);
         s.write({ text: CR, newline: false });
+        // **Then look, rather than trust the timing.** Every reproducible case on this Mac
+        // submits on that Return — measured across 40B, 1KB and 5KB payloads, against both
+        // assistants, warm and cold-started, and at gaps from 60ms to 600ms. And yet three
+        // dispatched Codex children in a row were found with an entire briefing sitting in
+        // the composer, waiting for a person to press it. Whatever swallows that Return could
+        // not be reproduced on demand, so this does not try to out-wait it: it checks, and
+        // sends another only when the paste is demonstrably still there.
+        //
+        // Three looks, a beat apart. One nudge was enough every time it was needed, but a
+        // failure nobody can summon is not one to trust a single reading about. Each round
+        // checks before it writes, so a composer that has already submitted is never handed
+        // a Return it did not ask for — which is the half worth being careful about, since
+        // a stray Return lands on whatever the assistant is showing by then.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          pause(attempt === 0 ? 0.25 : 0.4);
+          if (!stillInComposer(s)) break;
+          s.write({ text: CR, newline: false });
+        }
       }
       return true;
     });
