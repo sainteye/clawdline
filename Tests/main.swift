@@ -4512,6 +4512,35 @@ group("a numbered list somebody typed is not a menu") {
     expect("and its question comes from inside the frame",
            gated.question, "Should the web input bar send straight away?")
 
+    // **The composer sits below the picker, and somebody has typed into it.** Claude Code does not
+    // take the input line away while a question is up, so the moment a character is entered the
+    // last caret on screen belongs to the composer — and keying on "the last caret" found that,
+    // saw it was not a numbered row, and declared the whole screen not a menu. Captured from a
+    // real session that was waiting on an answer while its reader was mid-sentence.
+    let underComposer = """
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+    \u{2190}  \u{2610} scope  \u{2610} parity  \u{2714} Submit  \u{2192}
+
+    \u{2502} Stop once more after the planner has chosen?
+
+    \u{276F} 1. Only when it is unsure
+      2. Every single time
+      3. Never stop
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+      Chat about this
+
+    Enter to select \u{00b7} \u{2191}/\u{2193} to navigate
+
+      \u{276F} a sentence somebody is halfway through typing
+    """
+    guard let stillAMenu = SessionState.menu(underComposer, hookWaiting: true) else {
+        check("a picker with a typed-in composer under it is still a menu", false); return
+    }
+    expect("the composer's caret does not hide the picker's", stillAMenu.options.count, 3)
+    expect("and the numbered row keeps the selection", stillAMenu.selected, 1)
+    expect("the question is still the dialog's",
+           stillAMenu.question, "Stop once more after the planner has chosen?")
+
     // Real AskUserQuestion rows are separated by descriptions. Walking adjacent lines, like the
     // Codex parser does, stops at the first description; scanning every option row must not.
     let described = """
