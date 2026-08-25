@@ -155,13 +155,46 @@ enum Targets {
     }
 
     static func answer(_ bytes: [UInt8], to session: TargetSession) -> String? {
-        let menuKey = bytes.count == 1
-            && ((0x31...0x39).contains(bytes[0]) || bytes[0] == 0x09)
+        let digit = bytes.count == 1 && (0x31...0x39).contains(bytes[0])
+        let menuKey = digit || (bytes.count == 1 && bytes[0] == 0x09)
         let backTab: [UInt8] = [0x1b, 0x5b, 0x5a]       // ESC [ Z
         guard menuKey || bytes == backTab else {
             return "That is not a key this can send."
         }
-        return keystroke(bytes, to: session)
+        if let failure = keystroke(bytes, to: session) { return failure }
+        guard digit else { return nil }
+        return confirmSelection(Int(bytes[0] - 0x30), on: session)
+    }
+
+    /// Press Return, but only once the screen shows the digit landed where it was meant to.
+    ///
+    /// **A digit no longer confirms.** The comment above described what the picker used to do and
+    /// measurement caught up with it: sending `3` moves the highlight to the third row and leaves
+    /// the dialog open, sending `1` moves it back, and nothing is ever submitted. Someone
+    /// answering from a phone saw the tap do nothing at all, pressed again, and the transcript
+    /// recorded no answer — the question had to be finished at the keyboard.
+    ///
+    /// **Confirming blind would be worse than the bug.** If a picker ever stops taking digits,
+    /// the highlight does not move and a bare Return submits whatever row it happens to be
+    /// sitting on — a wrong answer sent silently, where today there is merely no answer. So the
+    /// screen is read back first, and Return goes only when the highlight is on the row that was
+    /// asked for. Anything else — a capture that fails, a shape that no longer parses, a
+    /// highlight somewhere else — leaves the dialog exactly as it was.
+    ///
+    /// Two reads, because a terminal repaints on its own schedule and the first can arrive before
+    /// the redraw. Both are cheap next to the round trip that has already happened.
+    private static func confirmSelection(_ want: Int, on session: TargetSession) -> String? {
+        for attempt in 0..<2 {
+            Thread.sleep(forTimeInterval: attempt == 0 ? 0.12 : 0.25)
+            guard let screen = capture(session) else { continue }
+            // `hookWaiting` is true here because this path only exists behind a menu the app
+            // already drew buttons for: the reader pressed one of them a moment ago. The gate
+            // guards against calling a screen a menu unprompted, which is not this.
+            guard let menu = SessionState.menu(screen, assistant: session.assistant ?? .claude,
+                                               hookWaiting: true) else { continue }
+            if menu.selected == want { return keystroke(13, to: session) }
+        }
+        return nil
     }
 
     /// Whether this session is showing a menu right now, which changes what typing into it means.
