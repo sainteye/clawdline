@@ -240,9 +240,17 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `root.parent_task` | the dispatcher's **own** task id, when the dispatcher is a child. `null` from a root. A value that is not a task id is read as `null` |
 
 `root.session_id` being nullable is deliberate. A root that cannot work out its own id — Claude
-Code has no route to ask — still gets to dispatch; it just does not get told when the task finishes
-and has to poll instead. **A best-effort field must not be a required one**, or the honest answer
-"I don't know" becomes a reason to invent something.
+Code has no route to ask — still gets to dispatch. **A best-effort field must not be a required
+one**, or the honest answer "I don't know" becomes a reason to invent something.
+
+Two things follow from leaving it out, and the second one surprises people. The task is not told
+when it finishes, so the dispatcher has to poll. And **its row has nothing to sit under**: the
+list indents a child beneath the session that asked for it, that session is found through this
+id, and a task that named nobody is filed under nobody. The row still says `Child`, because being
+somebody's child is a fact about that session whether or not the parent is on screen — but it
+floats at whatever position the sort gave it, which reads at a glance like a bug in the grouping
+rather than a task that declined to say who asked. If a row belonging under yours matters, send
+the id.
 
 `model` is the **only** string a dispatch puts on a command line, and it is shaped so that
 saying so is not alarming: not a fragment of a command but a name out of a closed alphabet. No
