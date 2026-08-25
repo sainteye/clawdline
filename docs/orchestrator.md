@@ -477,10 +477,16 @@ where a child is out there doing work.
 
 **The tab goes away afterwards.** A child that reported — `success` or `failure` — has nothing left
 to say, so `orchestrator_child_linger` decides how long its terminal tab hangs around: three minutes
-by default, `0` to close it the moment the task finalizes, `-1` to leave it to you. Only a reported
-child is closed. A `timeout`, a `spawn_failed`, a child that never came up at all: those tabs stay
-exactly where they are, because whatever went wrong is written on that screen and closing it would
-throw away the only copy.
+by default, `0` to close it the moment the task finalizes, `-1` to leave it to you. A `timeout`
+keeps its tab regardless, because whatever went wrong is written on that screen and closing it
+would throw away the only copy.
+
+**A `spawn_failed` that never reached briefing is the exception, and it closes at once.** Nothing
+of the task is on that screen: the session was opened and never spoken to, so what is there is a
+fresh prompt that explains less than the summary does. And keeping it is not free — each one is a
+live assistant holding a slot, while the usual reason for failing to reach a prompt in the first
+place is *too many sessions starting at once*. Left alone they compound: four dead tabs still
+running, and the next two spawns failing for the reason the first four did.
 
 ### Being told
 

@@ -1241,11 +1241,25 @@ enum Orchestrator {
         if let summary { task.summary = summary }
         if !artifacts.isEmpty { task.artifacts = artifacts }
         secrets.removeValue(forKey: taskID)
-        // Only a child that reported gets its tab closed for it. One that timed out, or never
-        // came up, has something on its screen worth reading, and stays.
+        // Only a child that reported gets its tab held open and then closed for it. One that
+        // timed out has something on its screen worth reading, and stays.
         let linger = Config.shared.orchestratorChildLinger
         if outcome == .success || outcome == .failure, linger >= 0, task.childTerminalId != nil {
             task.closeAt = Date().addingTimeInterval(TimeInterval(linger))
+        }
+        // A spawn that never reached briefing is the exception, and it goes now rather than
+        // staying. There is nothing of this task on that screen — the session was opened and
+        // never spoken to, so what is on it is a fresh prompt, which explains nothing that the
+        // summary does not say better.
+        //
+        // **And leaving it is not free.** Each one is a live assistant holding a slot, and the
+        // usual cause of failing to reach a prompt is that too many sessions were starting at
+        // once. Keep them and the next spawn is slower for exactly the reason the last one
+        // failed, which is a failure that feeds itself: four dead tabs were still running when
+        // this was written, and the two spawns after them timed out too.
+        if outcome == .spawnFailed, task.briefedAt == nil, linger >= 0,
+           task.childTerminalId != nil {
+            task.closeAt = Date()
         }
         tasks[taskID] = task
         lock.unlock()
