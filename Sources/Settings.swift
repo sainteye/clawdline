@@ -453,8 +453,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     /// rule this app had before that level existed, which is why it is a stop on the list and not
     /// a separate switch above it.
     private func grandchildrenPopUp() -> NSView {
-        let stops = [("0", L.t.settingsOrchestratorSubMaxNone)]
-            + (1...10).map { (String($0), String($0)) }
+        let stops: [(label: String, value: String)] =
+            [(label: L.t.settingsOrchestratorSubMaxNone, value: "0")]
+            + (1...10).map { (label: String($0), value: String($0)) }
         return popUp(stops, current: String(Config.shared.orchestratorMaxGrandchildren)) {
             Config.shared.orchestratorMaxGrandchildren =
                 Int($0) ?? Config.shared.orchestratorMaxGrandchildren
@@ -466,9 +467,14 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     /// "in a bit" anybody would type. A hand-edited `orchestrator_child_linger` between the stops
     /// shows as the nearest one and is left alone until this control is touched.
     private func lingerPopUp() -> NSView {
-        let stops: [(String, String)] = [("0", L.t.settingsOrchestratorCloseNow),
-                                         ("180", L.t.settingsOrchestratorCloseLinger),
-                                         ("-1", L.t.settingsOrchestratorCloseKeep)]
+        // Label first, value second — the order `popUp` takes and every other caller passes.
+        // Reversed, this drew the three seconds counts as its own labels and picked none of them:
+        // `current` was matched against the sentences, and a pick handed `Int(_:)` one of them.
+        let stops: [(label: String, value: String)] = [
+            (label: L.t.settingsOrchestratorCloseNow, value: "0"),
+            (label: L.t.settingsOrchestratorCloseLinger, value: "180"),
+            (label: L.t.settingsOrchestratorCloseKeep, value: "-1"),
+        ]
         let current = Config.shared.orchestratorChildLinger
         let shown = current < 0 ? "-1" : (current == 0 ? "0" : "180")
         return popUp(stops, current: shown) {
