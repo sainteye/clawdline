@@ -497,8 +497,24 @@ enum Orchestrator {
         let place = StartPoints.Place(id: StartPoints.id(for: task.projectDir),
                                       path: task.projectDir,
                                       label: task.title, at: Date())
+        // A place this session may reach, because everything it was sent to do is outside the
+        // project its tab was opened in. The briefing, the task file, the artifacts: all of it
+        // lives under /tmp/.clawdline, and reaching outside the working directory is a boundary
+        // an assistant asks about before crossing. Nobody is watching a child's tab to answer,
+        // so without this the first question is where the task stops — and the first question is
+        // *"may I read my own instructions?"*, before a single line of the work.
+        //
+        // **How much of it depends on whether this one may dispatch.** A leaf only ever touches
+        // its own directory, so that is all it is given. A child that may hand work on has to
+        // make, brief and read back directories that do not exist yet and whose names it invents,
+        // which no per-task grant can name in advance — so it gets the parent. That is the whole
+        // of the difference, and it is why the second level felt so much worse than the first:
+        // every grandchild was another question nobody was there to answer.
+        let mayDispatch = task.depth < depthFloor
+            && Config.shared.orchestratorMaxGrandchildren > 0
         switch StartPoints.start(place, assistant: task.assistant, model: task.model,
-                                 permission: task.permission) {
+                                 permission: task.permission,
+                                 addDir: mayDispatch ? root.path : task.dir.path) {
         case .refused(_, let code, let message, _):
             task.state = .spawnFailed
             task.summary = "\(code): \(message)"

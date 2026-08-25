@@ -78,15 +78,26 @@ enum Assistant: String, CaseIterable {
     /// see ``StartPoints`` for why the one route that runs it has no field a string can enter by.
     var command: String { rawValue }
 
-    /// The same command with a model named on it, when one was.
+    /// The same command with a model named on it, a permission mode, and a directory the session
+    /// may reach outside the one it was started in.
     ///
-    /// Both CLIs spell the flag `--model`, which is the only reason this is one function rather
-    /// than a switch. The name is the single variable part of the whole line, and what keeps it
-    /// from being a fragment of a command is ``StartPoints/modelName(_:)`` — pass anything that
-    /// has not been through it and the guarantee in `StartPoints`' header stops being true.
-    func command(model: String?, permission: Permission = .ask) -> String {
+    /// All three flags are spelled the same way by both CLIs — `--model`, and `--add-dir` — which
+    /// is the only reason this is one function rather than a switch. The values are the variable
+    /// part of the whole line, and what keeps them from being fragments of a command is
+    /// ``StartPoints/modelName(_:)`` and ``StartPoints/extraDir(_:)``: pass anything that has not
+    /// been through those and the guarantee in `StartPoints`' header stops being true.
+    ///
+    /// **`--add-dir` is what makes a dispatched session workable at all.** A child's whole task
+    /// lives in `/tmp/.clawdline/<id>/`, which is outside the project it was started in, and a
+    /// session asks before it reaches outside — for reading its own briefing, for making its own
+    /// artifacts directory, for every file it was sent to write. Nobody is watching that tab to
+    /// answer, so without this the first question is where the task stops. It is also the reason
+    /// the second level felt so much worse than the first: a child that dispatches touches that
+    /// directory a dozen more times, once per grandchild it makes, briefs and reads back.
+    func command(model: String?, permission: Permission = .ask, addDir: String? = nil) -> String {
         var line = command
         if let model, !model.isEmpty { line += " --model " + model }
+        if let addDir, !addDir.isEmpty { line += " --add-dir " + addDir }
         let flags = permission.flags(for: self)
         if !flags.isEmpty { line += " " + flags }
         return line

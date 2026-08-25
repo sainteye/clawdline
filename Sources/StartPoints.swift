@@ -84,9 +84,32 @@ enum StartPoints {
     /// ``modelName(_:)`` if there is one. `cwd` is quoted with the same `shellQuoted`
     /// the git plumbing uses.
     static func itermLine(cwd: String, assistant: Assistant = .claude,
-                          model: String? = nil, permission: Permission = .ask) -> String {
+                          model: String? = nil, permission: Permission = .ask,
+                          addDir: String? = nil) -> String {
         "cd " + Project.shellQuoted(cwd) + " && "
-            + assistant.command(model: modelName(model), permission: permission)
+            + assistant.command(model: modelName(model), permission: permission,
+                                addDir: extraDir(addDir))
+    }
+
+    /// A directory a session may be given reach over, or nil for anything that is not one.
+    ///
+    /// The only caller is the orchestrator and the only value it passes is `/tmp/.clawdline/<id>`,
+    /// where `<id>` has already been through `Orchestrator.isTaskID`. So this is not where that
+    /// path is decided — it is where the promise in this file's header is kept anyway, because a
+    /// second caller with a laxer idea of a path is exactly the change nobody would notice.
+    ///
+    /// Absolute, no `..` in it, and the same closed alphabet as a model name plus `/`. That is a
+    /// stronger rule than "escape it properly": there is nothing in a string this admits for a
+    /// shell to read, so `--add-dir <path>` stays one argument whatever arrives. Fail-closed and
+    /// silent for the same reason `modelName` is — a session that has to ask about its own task
+    /// directory beats no session at all.
+    static func extraDir(_ raw: String?) -> String? {
+        guard let raw, raw.hasPrefix("/"), raw.count <= 256, !raw.contains("..") else { return nil }
+        let ok = raw.allSatisfy {
+            ("a"..."z").contains($0) || ("A"..."Z").contains($0) || ("0"..."9").contains($0)
+                || $0 == "." || $0 == "_" || $0 == "-" || $0 == "/"
+        }
+        return ok ? raw : nil
     }
 
     /// A model name, or nil for anything that is not one.
@@ -184,7 +207,8 @@ enum StartPoints {
     /// created when there is not one already, and that is the one case where something may come
     /// forward — there is no way to make a window and not have it be a window.
     static func start(_ place: Place, assistant: Assistant = .claude,
-                      model: String? = nil, permission: Permission = .ask) -> Outcome {
+                      model: String? = nil, permission: Permission = .ask,
+                      addDir: String? = nil) -> Outcome {
         guard usable(place.path), isDirectory(place.path) else {
             return .refused(status: 404, code: "not_found",
                             message: "No place named that", app: nil)
@@ -194,7 +218,8 @@ enum StartPoints {
             guard let made = ITerm.newTab(line: itermLine(cwd: place.path,
                                                           assistant: assistant,
                                                           model: model,
-                                                          permission: permission)) else {
+                                                          permission: permission,
+                                                          addDir: addDir)) else {
                 return .refused(status: 502, code: "internal",
                                 message: "iTerm2 would not open a tab.", app: nil)
             }
@@ -208,7 +233,8 @@ enum StartPoints {
             // in a name it admits for that shell to read.
             guard let pane = Tmux.newWindow(cwd: place.path,
                                             command: assistant.command(model: modelName(model),
-                                                                       permission: permission)) else {
+                                                                       permission: permission,
+                                                                       addDir: extraDir(addDir))) else {
                 return .refused(status: 502, code: "internal",
                                 message: "tmux would not open a window.", app: nil)
             }
