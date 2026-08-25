@@ -107,9 +107,26 @@ for x in t:
     if x.get("state") in ("queued", "spawning"):
         print("  %s  %s" % (x.get("id","")[:8], x.get("title","")[:48]))' 2>/dev/null)
     if [ -n "$MIDFLIGHT" ]; then
-      echo "!! a dispatched task is mid-spawn — restarting now will kill it:"
+      # Wait rather than warn. The window is seconds wide and closes on its own, while the thing
+      # on the other side of it is somebody's dispatched task dying with a message that blames
+      # the app. A printed warning is the right shape for a person and the wrong one here: on a
+      # machine where several sessions share a checkout, the one running this is usually another
+      # agent, and it will not stop to read a line it did not ask for.
+      echo "→ a dispatched task is mid-spawn; waiting for it to be briefed (up to 90s)"
       echo "$MIDFLIGHT"
-      echo "   (a briefed task survives a restart; one still opening its tab does not)"
+      for _ in $(seq 1 90); do
+        sleep 1
+        STILL=$(curl -s --max-time 2 "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+            -H "X-Clawdline-Orchestrator: $(cat "$TOKEN_FILE")" 2>/dev/null \
+          | /usr/bin/python3 -c 'import json,sys
+try: t = json.load(sys.stdin).get("tasks", [])
+except Exception: raise SystemExit
+print("".join("x" for x in t if x.get("state") in ("queued", "spawning")))' 2>/dev/null)
+        [ -z "$STILL" ] && { echo "   clear — carrying on"; break; }
+      done
+      # Ninety seconds is the whole of the patience. Past that the task is not mid-spawn any
+      # more, it is stuck, and holding a build hostage to it helps nobody.
+      [ -n "$STILL" ] && echo "   still spawning after 90s; restarting anyway"
     fi
   fi
 fi
