@@ -400,8 +400,12 @@ a.dep:hover .host { color: var(--accent); }
 .command-sheet .draft textarea { min-height: 88px; margin-top: 8px; margin-bottom: 0; }
 .command-sheet .draft .places { margin-top: 8px; }
 .command-sheet .voice { margin-bottom: 10px; }
-.command-sheet .said { margin-top: 10px; display: flex; align-items: center; gap: 7px; }
-.command-sheet .said canvas { flex: 0 0 auto; display: block; }
+/* The child combinator is load-bearing. `.said` is also the class on the running clock inside the
+   dictation row, which is a descendant of this sheet — written as `.command-sheet .said` these
+   two rules reached it and gave the timer a 10px top margin and a flex box, which pushed it five
+   pixels below the Cancel beside it. Measured: the same markup in the composer sat dead centre. */
+.command-sheet > .said { margin-top: 10px; display: flex; align-items: center; gap: 7px; }
+.command-sheet > .said canvas { flex: 0 0 auto; display: block; }
 .command-sheet .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .command-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
 .command-sheet .confirm-go { border-color: var(--accent-ed); color: var(--accent); }
