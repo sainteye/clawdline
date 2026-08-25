@@ -274,10 +274,10 @@ CR                                     ← 再單獨送一個 Return 才送出
 那正是這整個工具的重點。
 
 **選配的 hook。** 人不在輸入條前面的時候，判讀每二十秒才做一次，所以一個權限對話框可能會在那裡
-坐上一陣子沒人發現。**設定 → Claude Code hooks → 安裝** 會在 `~/.claude/settings.json` 放五筆
-設定；之後只要一輪對話開始、結束或需要回答，通知當下就到，判讀在**一秒內**發生。一則通知只說
-「什麼時候該去看」，從來不說螢幕上寫了什麼，所以說了算的仍然是螢幕。把 hook 移除不會留下任何
-東西。[完整的約定 →](docs/hooks.md)
+坐上一陣子沒人發現。**設定 → Claude Code hooks → 安裝** 會在 `~/.claude/settings.json` 放九組
+matcher 設定，分屬八個事件；之後只要一輪對話開始、結束或需要回答，通知當下就到，判讀在**一秒內**
+發生。一則通知只說「什麼時候該去看」，從來不說螢幕上寫了什麼，所以說了算的仍然是螢幕。把 hook
+移除不會留下任何東西。[完整的約定 →](docs/hooks.md)
 
 ## Codex 也在同一條輸入條裡
 
@@ -440,7 +440,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 | [開發環境](docs/devstack.md) · [怎麼導入](docs/devstack-adopting.md) | `.devstack.json`，以及導入的三種深度 |
 | [專案狀態檔](docs/project-status.md) | 圖示、顏色、部署、backlog |
 | [從別的地方連進來](docs/remote.md) · [API](docs/api.md) | 完整的威脅模型，以及那層 HTTP 介面 |
-| [Hook](docs/hooks.md) | 那五個事件，以及為什麼說了算的仍然是螢幕 |
+| [Hook](docs/hooks.md) | 那八個事件，以及為什麼說了算的仍然是螢幕 |
 | [Whisper](docs/whisper.md) | 一句話裡不只一種語言的時候 |
 | [吉祥物格式](docs/mascots.md) · [圖庫](docs/gallery.md) | 格式，以及大家把 pack 貼在哪 |
 | [版本](docs/compatibility.md) | 這東西跑過哪些 Claude Code 與 Codex 版本 |

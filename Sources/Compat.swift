@@ -73,10 +73,78 @@ enum Compat {
             // Claude Code added Alt-V for Windows in 1.0.93, which puts the macOS Ctrl-V it was
             // added alongside at or before that. The only real floor in this list.
             since: "1.0.93"),
+        Dependency(
+            program: "Claude Code",
+            what: "Its dialogs: numbered rows marked with an indented caret, drawn inside a box "
+                + "frame, with the question in the lines above them",
+            where_: "SessionState.swift",
+            symptom: "A session waiting on a permission dialog or a `/model` menu looks idle, "
+                   + "and cannot be answered from a phone",
+            since: "not known to have a floor"),
+        Dependency(
+            program: "Claude Code",
+            what: "The AskUserQuestion picker, whose caret sits flush left — the same column as "
+                + "the caret in front of the composer, which is why a hook note has to open the "
+                + "gate before that shape is trusted",
+            where_: "SessionState.swift, HookBridge.swift",
+            symptom: "A question waiting for an answer reads as ordinary output and is never "
+                   + "surfaced; or an echoed numbered list is offered as a picker, and the "
+                   + "answer lands in the composer as a stray digit",
+            since: "not known to have a floor"),
+        Dependency(
+            program: "Claude Code",
+            what: "`/exit` ending a session, and a bare digit answering a picker",
+            where_: "Assistant.swift, Targets.swift",
+            symptom: "\"End\" closes the tab on a session that is still running; a menu answer "
+                   + "does nothing",
+            since: "not known to have a floor"),
+        Dependency(
+            program: "Claude Code",
+            what: "The hook contract: nine matcher groups under eight event names, the "
+                + "notification types those groups match on, and the `tool_input.questions` "
+                + "shape a PreToolUse note carries",
+            where_: "HookBridge.swift, Resources/clawdline-hook.sh",
+            symptom: "Hooks report themselves installed and no note ever arrives, so every "
+                   + "reading waits for the next poll again; or a question comes through with "
+                   + "no options on it",
+            since: "not known to have a floor"),
+        Dependency(
+            program: "Claude Code",
+            what: "The empty composer: a bare `❯`, or the grey `Try \"…\"` suggestion a new "
+                + "session draws instead",
+            where_: "Orchestrator.swift",
+            symptom: "A session opened to be handed work is never seen as ready for it, and the "
+                   + "instructions are never typed in",
+            since: "not known to have a floor"),
+        Dependency(
+            program: "Claude Code",
+            what: "The name of a project's transcript folder: the working directory with every "
+                + "character that is not a letter or a digit turned into a dash",
+            where_: "Transcript.swift, StartPoints.swift",
+            symptom: "One project has no transcripts at all while every other project is fine "
+                   + "— the ones whose path holds a space, a dot or an underscore",
+            since: "not known to have a floor"),
+        Dependency(
+            program: "Claude Code",
+            what: "What a transcript record holds inside: `type`, `isSidechain`, `quotaLimits` "
+                + "and `rate_limits`, `<command-name>`, and the `Set model to …` line a "
+                + "`/model` prints",
+            where_: "Transcript.swift, SessionInfo.swift",
+            symptom: "A subagent's conversation leaks into the pane, or a card stops saying "
+                   + "which model it is on and how much of the window is left",
+            since: "not known to have a floor"),
+        Dependency(
+            program: "Claude Code",
+            what: "The subagent sidecars it writes — `<session>/subagents/agent-<id>.meta.json` "
+                + "— and a running one being the one with no finish recorded in it",
+            where_: "Subagents.swift",
+            symptom: "The panel says no agents are running, or keeps showing one that finished "
+                   + "long ago",
+            since: "not known to have a floor"),
 
-        // Codex. Five shapes, read the same way and just as undocumented — and every one of them
-        // observed on a running TUI rather than taken from a promise, which is why the symptoms
-        // below are the ones somebody would actually see.
+        // Codex. The same kind of shapes, read the same way and just as undocumented — and every
+        // one of them observed on a running TUI rather than taken from a promise, which is why the
+        // symptoms below are the ones somebody would actually see.
         Dependency(
             program: "Codex",
             what: "The rollout: one JSONL file per session, under ~/.codex/sessions/YYYY/MM/DD/",
@@ -119,6 +187,44 @@ enum Compat {
             symptom: "\"End\" closes the tab on a session that is still running; a menu answer "
                    + "does nothing",
             since: "not known to have a floor"),
+        Dependency(
+            program: "Codex",
+            what: "The model list its own picker shows, cached in ~/.codex/models_cache.json as "
+                + "`slug`, `visibility` and `display_name`",
+            where_: "SessionInfo.swift",
+            symptom: "The model button on a phone is empty, or offers a model this Codex no "
+                   + "longer has",
+            since: "not known to have a floor"),
+        Dependency(
+            program: "Codex",
+            what: "`codex app-server`'s JSON-RPC — `initialize`, `model/list`, `thread/read` "
+                + "and `thread/name/set`. The one dependency here with a real contract: it has "
+                + "a generator, `codex app-server generate-json-schema`",
+            where_: "CodexNaming.swift",
+            symptom: "A Codex session opened to be handed work never gets the name it was "
+                   + "opened under, and the panel lists it as an untitled thread",
+            since: "not known to have a floor"),
+        Dependency(
+            program: "Codex",
+            what: "Which subcommands are not an interactive session — `exec`, `mcp-server`, "
+                + "`app-server` and the rest of that list",
+            where_: "Assistant.swift",
+            symptom: "A batch `codex exec` turns up in the list as a session somebody can type "
+                   + "into, and the prompt goes nowhere",
+            since: "not known to have a floor"),
+
+        // Neither assistant's. `docs/project-status.md` is the contract for the files under the
+        // status line's cache directory — and this one is not in it, because it is not part of
+        // the bar's format: it is where claude-bestiary parks the `rate_limits` block Claude Code
+        // hands to a status line on stdin and writes down nowhere else.
+        Dependency(
+            program: "claude-bestiary",
+            what: "`rate-limits.json` in the status line's cache directory: `at`, `session_id` "
+                + "and a `rate_limits` block of windows",
+            where_: "SessionInfo.swift",
+            symptom: "The plan's five-hour and weekly windows go blank until a session actually "
+                   + "hits a limit and its transcript says so",
+            since: "not known to have a floor"),
     ]
 
     /// A Clawdline release and what it was actually run against.
@@ -140,7 +246,8 @@ enum Compat {
     static let releases: [Release] = [
         Release(clawdline: "0.6.0", claudeCode: "2.1.235", codex: "0.149.0",
                 notes: "Answering a session from a phone, which adds two dependencies of a "
-                     + "different kind. The hook contract — five events written into "
+                     + "different kind. The hook contract — nine matcher groups under eight "
+                     + "event names, written into "
                      + "~/.claude/settings.json — replaces reading the screen when it is "
                      + "installed. And answering a multiple-choice question sends the single "
                      + "byte its picker reads, so if that picker stops taking a bare digit the "

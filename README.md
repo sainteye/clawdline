@@ -305,11 +305,11 @@ Without that wrapper, a two-line prompt submits itself after the first line. The
 that the terminal never has to come to the front, which is the entire point.
 
 **Optional hooks.** Away from the bar, a reading happens every twenty seconds, so a permission
-dialog can sit unnoticed for a while. **Settings → Claude Code hooks → Install** puts five entries
-in `~/.claude/settings.json`; after that, a note lands the moment a turn starts, ends, or needs an
-answer, and the reading happens in under a second instead. A note only says *when* to look — never
-what the screen says — so the screen remains the authority. Removing the hooks leaves nothing
-behind. [The full contract →](docs/hooks.md)
+dialog can sit unnoticed for a while. **Settings → Claude Code hooks → Install** puts nine matcher
+groups, under eight event names, in `~/.claude/settings.json`; after that, a note lands the moment
+a turn starts, ends, or needs an answer, and the reading happens in under a second instead. A note
+only says *when* to look — never what the screen says — so the screen remains the authority.
+Removing the hooks leaves nothing behind. [The full contract →](docs/hooks.md)
 
 ## Codex in the same bar
 
@@ -486,7 +486,7 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 | [The dev stack](docs/devstack.md) · [adopting it](docs/devstack-adopting.md) | `.devstack.json`, and the three heights of adopting it |
 | [Project status files](docs/project-status.md) | the mark, the colour, the deploy, the backlog |
 | [From somewhere else](docs/remote.md) · [the API](docs/api.md) | the threat model in full, and the HTTP surface |
-| [Hooks](docs/hooks.md) | the five events, and why the screen still decides |
+| [Hooks](docs/hooks.md) | the eight events, and why the screen still decides |
 | [Whisper](docs/whisper.md) | dictating in more than one language |
 | [Mascot packs](docs/mascots.md) · [gallery](docs/gallery.md) | the format, and where packs get posted |
 | [Versions](docs/compatibility.md) | which Claude Code and Codex releases this was run against |
