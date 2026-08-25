@@ -52,12 +52,29 @@ export var Voice = (function () {
     /// numbers are picked so the first fills most of the mark and the second none of it.
     var QUIET_DB = -50;
     var LOUD_DB = -20;
-    /// How big the dot goes, as a multiple of the 8px the stylesheet gives it. It never reaches
-    /// zero: a quiet room has to draw a small dot rather than no dot, or "heard nothing" and
-    /// "not running" become the same picture — which is the one thing this mark exists to tell
-    /// apart. The ceiling is what fits in the row's own padding without touching the words.
-    var SMALL = 0.8;
-    var BIG = 2.1;
+    /**
+     * How far the halo spreads and how solid it is, at the two ends of what a room can be.
+     *
+     * **The dot in the middle is a fixed size and stays one.** It is there to say "this is
+     * listening", which is a yes or a no rather than a quantity, and it used to be scaled from
+     * 0.8 to 2.1 straight off the meter — a solid disc redrawing its own edge on every frame,
+     * pulling at the corner of the eye of somebody who is halfway through composing a sentence.
+     * The loudness is the quantity, so the loudness gets the halo and the dot gets to hold still.
+     *
+     * Both numbers are multiples of what the stylesheet draws: a scale on its 36px square of
+     * gradient, and an opacity over the whole of it. Size and strength move together because a
+     * glow that only grew would read as a ring travelling outwards, and one that only brightened
+     * would read as a lamp on a dimmer; light does both at once.
+     *
+     * Neither end reaches zero. A quiet room has to draw a faint halo rather than none, or
+     * "heard nothing" and "not running" become the same picture — which is the one thing this
+     * mark exists to tell apart. The ceiling is what the row's own height allows before the soft
+     * edge would have anything to say past the border.
+     */
+    var FAINT = 0.55;
+    var WIDE = 1;
+    var DIM = 0.5;
+    var LIT = 1;
     /**
      * How fast the dot follows what it hears, as time constants in milliseconds — and there are
      * two of them, which is the whole difference between a pulse and a twitch.
@@ -103,12 +120,12 @@ export var Voice = (function () {
 
     /* The meter. `heard` is an audio context of its own, held open only while the microphone is
        — it is not the one `decode` builds afterwards, and the note on `listen` says why they
-       cannot be the same one. `level` is where the dot currently is between `SMALL` and `BIG`,
-       which is not what the microphone just said: see `paint` for the distance between them. */
+       cannot be the same one. `level` is where the halo currently is between its two ends, which
+       is not what the microphone just said: see `paint` for the distance between them. */
     var heard = null;
     var ears = null;            // the AnalyserNode reading the stream that is being recorded
     var samples = null;         // its scratch buffer, allocated once rather than sixty times a second
-    var pip = null;             // the dot in the row, or null when nothing is driving one
+    var pip = null;             // the halo around the dot, or null when nothing is driving one
     var frame = null;           // the outstanding `requestAnimationFrame`
     var level = 0;
     var last = 0;               // when the previous frame landed, so the smoothing can be in time
@@ -380,7 +397,7 @@ export var Voice = (function () {
      * microphone is hearing anything, and those are two different facts to somebody holding a
      * phone at arm's length in a room with other people talking — the first question of a
      * dictation that came back empty is always "was it even picking me up". So the size is read
-     * off the stream itself, and a dot that sits still means a quiet room rather than broken.
+     * off the stream itself, and a halo that sits still means a quiet room rather than broken.
      *
      * **The context is opened here, in the same turn the recording starts, rather than at the
      * first frame that wants it.** iOS gives a page that asks inside a gesture a context that is
@@ -424,7 +441,7 @@ export var Voice = (function () {
      * **Read and drawn every frame, at whatever rate this screen runs.** The analyser only ever
      * holds the last twenty milliseconds or so, so anything slower than the display would be
      * throwing away most of what was said and sampling the rest at random; and the thing being
-     * driven is a size rather than a picture that scrolls, so there is nothing here that needs
+     * driven is a glow rather than a picture that scrolls, so there is nothing here that needs
      * a slower clock of its own to stay legible.
      *
      * `requestAnimationFrame` rather than a timer because a page in the background stops being
@@ -450,21 +467,28 @@ export var Voice = (function () {
         if (step > 100) step = 100;
         var tau = want > level ? ATTACK_MS : RELEASE_MS;
         level += (want - level) * (1 - Math.exp(-step / tau));
-        size();
+        glow();
     }
 
-    /// The dot, at whatever size `level` currently says. **A transform and not a width**: the row
-    /// is a flex line with buttons in it, and a mark that changed its own box would push the
-    /// count and the two ways out sideways sixty times a second.
-    function size() {
+    /// The halo, as wide and as bright as `level` currently says.
+    ///
+    /// **A transform and an opacity, and deliberately nothing else.** Those two are the pair a
+    /// browser can hand to the compositor: changing them moves an already-painted layer, without
+    /// laying the row out again and without repainting a pixel of it. The row is a flex line with
+    /// buttons in it, so a mark that changed its own box — a width, a `box-shadow` spread — would
+    /// push the count and the two ways out sideways on every frame *and* pay for a fresh blur
+    /// each time, sixty times a second, or a hundred and twenty on a phone that draws that fast.
+    function glow() {
         if (!pip) return;
-        pip.style.transform = "scale(" + (SMALL + level * (BIG - SMALL)).toFixed(3) + ")";
+        pip.style.transform = "scale(" + (FAINT + level * (WIDE - FAINT)).toFixed(3) + ")";
+        pip.style.opacity = (DIM + level * (LIT - DIM)).toFixed(3);
     }
 
     /// A root-mean-square in [0, 1] as a place between the floor and the ceiling. **In
     /// decibels**, because the linear number spends its entire life in the bottom tenth —
-    /// ordinary speech a phone's length away sits around 0.03 — and a dot sized straight from it
-    /// barely moves except for an occasional twitch, which is the picture this exists to avoid.
+    /// ordinary speech a phone's length away sits around 0.03 — and a halo driven straight from
+    /// it barely moves except for an occasional twitch, which is the picture this exists to
+    /// avoid.
     function loud(rms) {
         var db = 20 * Math.log10(rms || 1e-6);
         var t = (db - QUIET_DB) / (LOUD_DB - QUIET_DB);
@@ -480,7 +504,7 @@ export var Voice = (function () {
         return (window.performance && performance.now) ? performance.now() : Date.now();
     }
 
-    /// Stop driving the dot, because the row it lives in is being rebuilt underneath it. The
+    /// Stop driving the halo, because the row it lives in is being rebuilt underneath it. The
     /// microphone may still be open — this says nothing about that.
     function still() {
         if (frame !== null) cancelAnimationFrame(frame);
@@ -625,7 +649,8 @@ export var Voice = (function () {
      * Rebuilding it on every tick would take the buttons out from under a thumb four times a
      * second, which is the same lesson `renderWaiting` learned about its own. So only the count
      * is written after this, into a text node that is already on screen — and the meter is a dot
-     * that is also already on screen, whose *size* changes while the box it occupies does not.
+     * that is also already on screen, around which a halo brightens and spreads while the box
+     * either of them occupies does not change at all.
      */
     function show() {
         var live = state === "recording";
@@ -666,13 +691,20 @@ export var Voice = (function () {
                 setVoiceSpin(spin);
                 drawSpinner(spin, spinPhase);
             } else if (ears) {
-                // The dot this row has always drawn, breathing to the room instead of to a
-                // clock. That is the whole of the difference: a mark on a timer says the page is
-                // doing something, and this one says the microphone can hear you — which is the
-                // first question anybody asks of a dictation that came back empty.
+                // The dot this row has always drawn, now with a halo around it that answers to
+                // the room instead of to a clock. That is the whole of the difference: a mark on
+                // a timer says the page is doing something, and this one says the microphone can
+                // hear you — which is the first question anybody asks of a dictation that came
+                // back empty.
                 //
-                // `data-live` is what takes the CSS animation off it. Two things writing a size
-                // onto one element fight, and the one that knows what is being heard should win.
+                // `data-live` is what takes the CSS animation off the dot. Two things writing to
+                // one element fight, and the one that knows what is being heard should win.
+                //
+                // The halo is an element of its own rather than a pseudo of the dot's, because
+                // the two properties it lives on are written from here — and a pseudo-element has
+                // no `style` to write them to, only a custom property inherited down from the
+                // parent, which is a style recalculation on every frame to say a thing the
+                // compositor could have been told directly.
                 //
                 // Decoration, and only decoration: the seconds beside it are the substance of
                 // this row and are what a screen reader is given.
@@ -680,13 +712,16 @@ export var Voice = (function () {
                 var meter = document.createElement("span");
                 meter.className = "dot";
                 meter.setAttribute("data-live", "1");
+                var halo = document.createElement("span");
+                halo.className = "glow";
+                meter.appendChild(halo);
                 box.appendChild(meter);
-                pip = meter;
+                pip = halo;
                 level = 0;
                 last = 0;
-                // Sized once before the first frame, so the row opens on a dot at rest rather
+                // Drawn once before the first frame, so the row opens on a halo at rest rather
                 // than at whatever the last recording left behind a sixtieth of a second ago.
-                size();
+                glow();
                 frame = requestAnimationFrame(paint);
             } else {
                 // No analyser: reduced motion, or a browser that would not build the graph. The

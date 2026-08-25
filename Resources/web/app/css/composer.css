@@ -193,20 +193,58 @@
     flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
     background: var(--accent);
     animation: breathe 1.5s var(--ease) infinite;
+    /* Only so the halo below has something to hang off. A `relative` that moves nothing. */
+    position: relative;
 }
 /* Under reduced motion the global rule stops this on its last frame, which is the dot at full
    strength — still the loudest thing in the row, with nothing moving. */
 @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-/* The same dot, sized from what the microphone is actually hearing — see `paint` in `voice.js`.
-   The breathing has to come off it here or two things would be writing a size onto one element
-   at once, and the timed one knows nothing about the room.
+/* The same dot, with what the microphone is hearing drawn *around* it rather than in it — see
+   `paint` in `voice.js`.
 
-   `transform` is the property `voice.js` writes, which is why the mark can grow to two and a bit
-   times this size without the count or the buttons beside it moving a pixel: it is drawn outside
-   its box rather than given a bigger one. The 8px above is what a scale of 1 means. */
-.composer .voice .dot[data-live="1"] {
-    animation: none;
-    will-change: transform;
+   **The dot itself no longer changes size.** It used to be scaled from 0.8 to 2.1 straight off
+   the meter, and a solid disc that redraws its own edge sixty times a second keeps taking the
+   corner of the eye of somebody who is halfway through composing a sentence. What the dot has to
+   say is "this is listening", and that is a yes or a no — it is not a quantity, so it should not
+   look like one. The room's loudness is a quantity, so it gets the halo instead.
+
+   The breathing comes off here for the same reason it always did: two things writing to one
+   element fight, and the one that can hear the room should win. */
+.composer .voice .dot[data-live="1"] { animation: none; }
+.composer .voice .dot[data-live="1"] .glow {
+    /* Centred on the dot and taken out of the flow entirely, which is the whole reason the count
+       and the two ways out do not move a pixel while this swells: it is drawn over the row rather
+       than given room in it. Thirty-six is what the row's height allows — a 30px button between
+       6px of padding — before the soft edge would have anything to say beyond the border. */
+    position: absolute;
+    left: 50%; top: 50%; width: 36px; height: 36px; margin: -18px 0 0 -18px;
+    border-radius: 50%;
+    /* The accent, written in its channels because a gradient wants an alpha at every stop and a
+       hex carries none. Five stops rather than two: two of them fade in a straight line and the
+       result reads as a second disc with a blurred rim, and what is wanted here is something with
+       no rim at all. The centre is the accent at just over half, which over the solid accent dot
+       underneath it is exactly the accent — so the dot keeps its own edge however bright the
+       halo gets, and the stops are steep near it and long out at the edge so that what the eye
+       reads is light falling off rather than a shape ending. */
+    background: radial-gradient(circle closest-side,
+        rgba(217, 119, 87, 0.62) 0%,
+        rgba(217, 119, 87, 0.42) 22%,
+        rgba(217, 119, 87, 0.20) 45%,
+        rgba(217, 119, 87, 0.07) 70%,
+        rgba(217, 119, 87, 0.018) 88%,
+        rgba(217, 119, 87, 0) 100%);
+    /* **Not a `box-shadow`.** A blurred shadow whose spread changes is a blur recomputed and
+       repainted on every frame that changes it, and this one changes on every frame there is —
+       on a phone that may be drawing 120 of them a second. A gradient sitting on a layer of its
+       own is painted once and thereafter only moved and faded, which is work the compositor does
+       without waking the main thread at all. `transform` and `opacity` are the only two
+       properties `voice.js` writes here, and that is why.
+
+       It spills a few low-alpha pixels over the first letter of the count, which is what light
+       does; `pointer-events` so that it cannot come between a thumb and anything underneath. */
+    transform-origin: 50% 50%;
+    will-change: transform, opacity;
+    pointer-events: none;
 }
 /* The ways out, together and at the far end of the row. They are one decision with two answers —
    keep what was said, or throw it away — and a decision whose halves are at opposite ends of the
