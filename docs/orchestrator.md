@@ -422,6 +422,10 @@ at is a task that fails at the two-minute deadline for no reason anyone could se
 
 Once briefed, the plaintext secret is gone from memory and the task is the child's problem.
 
+The walk that does all of this runs on the main thread and shells out to a terminal on the way,
+which is a combination that has already put two walks on the stack at once.
+[docs/waiting.md](waiting.md) is why, and the rule that came out of it.
+
 **success · failure** — from `result.json`, or from the complete route, whichever arrives. Both go
 through the same finalize.
 

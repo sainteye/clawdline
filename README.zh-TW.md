@@ -445,6 +445,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 | [專案狀態檔](docs/project-status.md) | 圖示、顏色、部署、backlog |
 | [從別的地方連進來](docs/remote.md) · [API](docs/api.md) | 完整的威脅模型，以及那層 HTTP 介面 |
 | [Hook](docs/hooks.md) | 那八個事件，以及為什麼說了算的仍然是螢幕 |
+| [等待](docs/waiting.md) | 工作跑在哪條執行緒上，以及等一個子行程曾經怎麼弄壞這個 app |
 | [Whisper](docs/whisper.md) | 一句話裡不只一種語言的時候 |
 | [吉祥物格式](docs/mascots.md) · [圖庫](docs/gallery.md) | 格式，以及大家把 pack 貼在哪 |
 | [版本](docs/compatibility.md) | 這東西跑過哪些 Claude Code 與 Codex 版本 |
