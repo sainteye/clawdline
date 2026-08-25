@@ -2451,8 +2451,26 @@ final class RemoteServer {
             // Only the page. Everything else on this origin is either an API answer, which is
             // `no-store` already, a drawn icon, which is worth its day of cache, or a stylesheet
             // or module under a URL naming the build it came from, which is worth a year.
+            //
+            // **`reload` stays, and this handler stays, and both were measured before that was
+            // decided.** Answering a navigation from here means the worker has to be running
+            // before the request can go out: cold, that is 35ms in front of a 630ms trip through
+            // the tunnel, and warm it is nothing. Navigation preload would win those 35ms back
+            // and cost the only thing this is for — a preloaded request goes through the HTTP
+            // cache, which is exactly what a device stuck on a pre-`no-store` copy needs bypassed.
+            //
+            // The half-second is the document's own round trip, and no arrangement of this file
+            // removes a trip that has to be made. Serving the document from Cache Storage first
+            // would, and that is the one thing this must never do: it now carries the versioned
+            // URLs of every stylesheet and module *and* the interface's words, so a stale document
+            // is a stale build rather than stale markup, and the only way out of one is the reload
+            // the notice in `build.js` exists to avoid taking without asking.
             if (event.request.mode !== "navigate") { return; }
             event.respondWith(
+                // The URL rather than the request, and it costs nothing: the header the page now
+                // picks its language from is added by the browser to a worker's `fetch` too —
+                // checked against a local origin, all four ways of building this request arrive
+                // carrying the same `Accept-Language`.
                 fetch(event.request.url, { cache: "reload", credentials: "include" })
                     // Offline: hand back whatever the browser would have done on its own, which
                     // is the stale copy. Stale and readable beats an error page.
