@@ -94,9 +94,9 @@ enum Transcript {
             .appendingPathComponent(".claude/projects/\(slug)", isDirectory: true)
     }
 
-    /// The last `aiTitle` a transcript recorded. Claude Code puts the same string in the
-    /// terminal's tab title, which is the only link between a session on screen and its file
-    /// — no record carries a tty or a window id.
+    /// The last explicit `customTitle`, or otherwise the last `aiTitle`, a transcript recorded.
+    /// Claude Code puts the effective title in the terminal's tab title, which is the only link
+    /// between a session on screen and its file — no record carries a tty or a window id.
     /// Remembered against the file's size and mtime, so an unchanged transcript is read once.
     ///
     /// `locate` asks this of up to twelve files, and each answer costs half a megabyte off the
@@ -106,30 +106,59 @@ enum Transcript {
     /// the signature rather than on a clock, so this is a saved read and never a stale answer.
     private static let titleLock = NSLock()
     private static var titleCache: [String: (signature: String, title: String?)] = [:]
+    private static var customTitleCache: [String: (size: Int, title: String?)] = [:]
 
     static func title(ofTranscript url: URL, tailBytes: Int = 512_000) -> String? {
+        let cacheKey = "\(url.path)\u{0}\(tailBytes)"
         let sig = signature(of: url)
+        let size = fileSize(url)
         titleLock.lock()
-        if let hit = titleCache[url.path], hit.signature == sig {
+        if let hit = titleCache[cacheKey], hit.signature == sig {
             defer { titleLock.unlock() }
             return hit.title
         }
+        let previousCustom = customTitleCache[url.path]
         titleLock.unlock()
 
-        let found = readTitle(ofTranscript: url, tailBytes: tailBytes)
+        // A newly appended title is necessarily in the tail while growth stays within the tail
+        // window. Reuse the result of the one full scan in that common case; a replacement,
+        // truncation, or larger jump is scanned again so an older explicit rename is never lost.
+        let canReuseCustom = previousCustom.map {
+            size > $0.size && size - $0.size <= tailBytes
+        } ?? false
+        let found = readTitle(ofTranscript: url, tailBytes: tailBytes,
+                              knownCustom: canReuseCustom ? previousCustom?.title : nil,
+                              scanEarlier: !canReuseCustom)
         titleLock.lock()
-        titleCache[url.path] = (sig, found)
+        titleCache[cacheKey] = (sig, found.title)
+        customTitleCache[url.path] = (size, found.customTitle)
         titleLock.unlock()
-        return found
+        return found.title
     }
 
-    private static func readTitle(ofTranscript url: URL, tailBytes: Int) -> String? {
-        guard let text = tail(of: url, bytes: tailBytes) else { return nil }
+    private static func readTitle(ofTranscript url: URL, tailBytes: Int,
+                                  knownCustom: String?, scanEarlier: Bool)
+        -> (title: String?, customTitle: String?) {
+        guard let text = tail(of: url, bytes: tailBytes) else { return (nil, nil) }
+        let recentCustom = lastTitle(named: "customTitle", in: text)
+        let aiTitle = lastTitle(named: "aiTitle", in: text)
+        if let recentCustom { return (recentCustom, recentCustom) }
+        if !scanEarlier { return (knownCustom ?? aiTitle, knownCustom) }
+
+        // A rename can be arbitrarily far before the conversation's tail. The full scan is paid
+        // once per file, then `customTitleCache` makes ordinary appends tail-only again.
+        guard let data = try? Data(contentsOf: url) else { return (aiTitle, nil) }
+        let whole = String(decoding: data, as: UTF8.self)
+        let customTitle = lastTitle(named: "customTitle", in: whole)
+        return (customTitle ?? aiTitle, customTitle)
+    }
+
+    private static func lastTitle(named key: String, in text: String) -> String? {
         var found: String?
-        for line in text.split(separator: "\n") where line.contains("\"aiTitle\"") {
+        for line in text.split(separator: "\n") where line.contains("\"\(key)\"") {
             guard let data = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let t = obj["aiTitle"] as? String, !t.isEmpty else { continue }
+                  let t = obj[key] as? String, !t.isEmpty else { continue }
             found = t
         }
         return found
@@ -221,6 +250,10 @@ enum Transcript {
     private static func modified(_ url: URL) -> Date {
         (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
             ?? .distantPast
+    }
+
+    private static func fileSize(_ url: URL) -> Int {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
     }
 
     /// Transcripts run to tens of megabytes. Only the tail is ever wanted, and reading the
@@ -361,7 +394,8 @@ enum Transcript {
         else { return [] }
 
         let type = row["type"] as? String
-        guard type == "user" || type == "assistant" || type == "queue-operation" else {
+        guard type == "user" || type == "assistant" || type == "queue-operation"
+                || type == "system" else {
             return []
         }
         // Sidechains are subagents talking among themselves, and meta records are
@@ -371,6 +405,19 @@ enum Transcript {
         if row["isMeta"] as? Bool == true { return [] }
 
         let time = (row["timestamp"] as? String).flatMap { iso.date(from: $0) }
+
+        // Slash commands submitted by the remote page are recorded as top-level system rows,
+        // not user messages. Admit only that precisely tagged shape: the other system rows are
+        // internal bookkeeping and must not become conversation noise.
+        if type == "system" {
+            guard let raw = row["content"] as? String,
+                  raw.contains("<command-name>"),
+                  raw.contains("</command-name>"),
+                  !raw.contains("<command-args>") || raw.contains("</command-args>"),
+                  let typed = slashCommand(in: raw)
+            else { return [] }
+            return [Entry(kind: .user, text: typed, tool: nil, time: time)]
+        }
 
         // Input submitted during a turn is queued instead of being written as a `user` message.
         // It is still something the person said, and Claude Code does not repeat it as a user

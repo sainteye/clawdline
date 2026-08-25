@@ -732,6 +732,7 @@ group("transcript parsing") {
         #"{"type":"system"}"#,
         #"{"type":"system","content":{"text":"not a string"}}"#,
         #"{"type":"system","content":"<command-name>never closes"}"#,
+        #"{"type":"system","content":"<command-name>/rename</command-name><command-args>never closes"}"#,
         #"{"type":"system","content":"<local-command-stdout>Session renamed to: 修正瀏覽器問答</local-command-stdout>"}"#,
         #"{"type":"assistant","message":{"role":"assistant","content":"still parses too"}}"#,
     ].joined(separator: "\n")
