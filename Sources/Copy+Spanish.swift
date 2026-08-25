@@ -71,6 +71,8 @@ struct Spanish: Copy {
     func sessionTip(index: Int, total: Int) -> String { "Sesión \(index) de \(total) — ⌘K para cambiar" }
     let sessionWaiting = "te está esperando"
     let sessionAgents = "{n} en segundo plano"
+    let sessionShellOne = "1 shell en marcha"
+    let sessionShellMany = "{n} shells en marcha"
     let islandDone = "listo"
     let islandAllSessions = "Todas las sesiones…"
     func statusWaiting(_ labels: [String]) -> String {
@@ -465,6 +467,7 @@ struct Spanish: Copy {
     let webAgentsCount = "{n} en marcha"
     let webAgentDone = "hecho"
     let webAgentFailed = "falló"
+    let webShells = "Shells en segundo plano"
     let agentRunning = "en marcha"
     let agentTools = "{n} herramientas"
     let agentEmpty = "Este agente aún no ha escrito nada."

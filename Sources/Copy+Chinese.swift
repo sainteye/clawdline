@@ -73,6 +73,8 @@ struct TraditionalChinese: Copy {
     func sessionTip(index: Int, total: Int) -> String { "第 \(index) 個 session，共 \(total) 個——⌘K 切換" }
     let sessionWaiting = "在等你回答"
     let sessionAgents = "{n} 個在背景"
+    let sessionShellOne = "1 個 shell 在跑"
+    let sessionShellMany = "{n} 個 shell 在跑"
     let islandDone = "跑完了"
     let islandAllSessions = "所有 session⋯"
     func statusWaiting(_ labels: [String]) -> String {
@@ -466,6 +468,7 @@ struct TraditionalChinese: Copy {
     let webAgentsCount = "{n} 個在跑"
     let webAgentDone = "完成"
     let webAgentFailed = "失敗"
+    let webShells = "背景 shell"
     let agentRunning = "在跑"
     let agentTools = "{n} 個工具"
     let agentEmpty = "這個 agent 還沒留下任何紀錄。"
@@ -571,6 +574,8 @@ struct SimplifiedChinese: Copy {
     func sessionTip(index: Int, total: Int) -> String { "第 \(index) 个 session，共 \(total) 个——⌘K 切换" }
     let sessionWaiting = "在等你回答"
     let sessionAgents = "{n} 个在后台"
+    let sessionShellOne = "1 个 shell 在跑"
+    let sessionShellMany = "{n} 个 shell 在跑"
     let islandDone = "跑完了"
     let islandAllSessions = "所有 session……"
     func statusWaiting(_ labels: [String]) -> String {
@@ -964,6 +969,7 @@ struct SimplifiedChinese: Copy {
     let webAgentsCount = "{n} 个在跑"
     let webAgentDone = "完成"
     let webAgentFailed = "失败"
+    let webShells = "后台 shell"
     let agentRunning = "在跑"
     let agentTools = "{n} 个工具"
     let agentEmpty = "这个 agent 还没留下任何记录。"

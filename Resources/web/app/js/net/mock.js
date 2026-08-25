@@ -65,9 +65,15 @@ export var Mock = (function () {
                 selected: true, can: true },
               { n: 3, label: "No, tell Claude what to do instead", selected: false, can: true }
           ] } },
+        // Idle, **and not finished** — the turn ended an hour ago and the build it started is
+        // still going. This is the row that said nothing at all before `Shells`: the terminal
+        // mentions it once, where the turn ended, and every list after that drew it as done.
         { id: "9B04-2D", backend: "iterm", tty: "ttys002", label: "rewrite the CSV importer",
           cwd: "/Users/x/code/notebook", state: "idle", line: null,
-          isClaude: true, assistant: "claude", sessionId: null, icon: creature },
+          isClaude: true, assistant: "claude", sessionId: null, icon: creature,
+          shells: [
+              { id: "bvlp3xmku", at: now - 6, doing: "[214/318] Compiling importer/rows.rs" }
+          ] },
         { id: "A15E-77", backend: "tmux", tty: "tmux:%12", label: "docs pass before the release",
           cwd: "/Users/x/code/clawdline/docs", state: "idle", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: clawdline },

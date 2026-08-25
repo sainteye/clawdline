@@ -69,6 +69,8 @@ struct Korean: Copy {
     func sessionTip(index: Int, total: Int) -> String { "\(total)개 중 \(index)번째 세션 — ⌘K로 전환" }
     let sessionWaiting = "답변 대기 중"
     let sessionAgents = "백그라운드에 {n}개"
+    let sessionShellOne = "셸 1개 실행 중"
+    let sessionShellMany = "셸 {n}개 실행 중"
     let islandDone = "완료"
     let islandAllSessions = "모든 세션…"
     func statusWaiting(_ labels: [String]) -> String {
@@ -463,6 +465,7 @@ struct Korean: Copy {
     let webAgentsCount = "{n}개 실행 중"
     let webAgentDone = "완료"
     let webAgentFailed = "실패"
+    let webShells = "백그라운드 셸"
     let agentRunning = "실행 중"
     let agentTools = "도구 {n}회"
     let agentEmpty = "이 에이전트는 아직 아무것도 남기지 않았습니다."

@@ -71,6 +71,8 @@ struct Turkish: Copy {
     func sessionTip(index: Int, total: Int) -> String { "\(total) oturumdan \(index). — değiştirmek için ⌘K" }
     let sessionWaiting = "yanıtını bekliyor"
     let sessionAgents = "arka planda {n}"
+    let sessionShellOne = "1 shell çalışıyor"
+    let sessionShellMany = "{n} shell çalışıyor"
     let islandDone = "bitti"
     let islandAllSessions = "Tüm oturumlar…"
     func statusWaiting(_ labels: [String]) -> String {
@@ -465,6 +467,7 @@ struct Turkish: Copy {
     let webAgentsCount = "{n} çalışıyor"
     let webAgentDone = "bitti"
     let webAgentFailed = "başarısız"
+    let webShells = "Arka plandaki shell'ler"
     let agentRunning = "çalışıyor"
     let agentTools = "{n} araç"
     let agentEmpty = "Bu ajan henüz hiçbir şey yazmadı."

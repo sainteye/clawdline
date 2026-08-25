@@ -71,6 +71,8 @@ struct Indonesian: Copy {
     func sessionTip(index: Int, total: Int) -> String { "Sesi \(index) dari \(total) — ⌘K untuk berpindah" }
     let sessionWaiting = "menunggu jawabanmu"
     let sessionAgents = "{n} di latar belakang"
+    let sessionShellOne = "1 shell berjalan"
+    let sessionShellMany = "{n} shell berjalan"
     let islandDone = "selesai"
     let islandAllSessions = "Semua sesi…"
     func statusWaiting(_ labels: [String]) -> String {
@@ -465,6 +467,7 @@ struct Indonesian: Copy {
     let webAgentsCount = "{n} berjalan"
     let webAgentDone = "selesai"
     let webAgentFailed = "gagal"
+    let webShells = "Shell di latar belakang"
     let agentRunning = "berjalan"
     let agentTools = "{n} alat"
     let agentEmpty = "Agen ini belum menuliskan apa pun."

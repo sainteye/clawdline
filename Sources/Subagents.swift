@@ -220,7 +220,10 @@ enum Subagents {
     private static let lock = NSLock()
     private static var files: [String: (at: CFAbsoluteTime, url: URL?)] = [:]
 
-    private static func transcript(of session: TargetSession) -> URL? {
+    /// Not private, because ``Shells`` wants the same answer for the same session on the same
+    /// beat, and a second cache of it would be a second set of directory listings arriving at a
+    /// different conclusion half the time.
+    static func transcript(of session: TargetSession) -> URL? {
         lock.lock()
         if let hit = files[session.id], CFAbsoluteTimeGetCurrent() - hit.at < 30 {
             defer { lock.unlock() }

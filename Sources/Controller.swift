@@ -129,6 +129,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     private var sessionStates: [String: SessionState] = [:]
     /// What the rows were last drawn against — see the guard in `applyWatchedStates`.
     private var sessionAgents: [String: [Subagents.Agent]] = [:]
+    private var sessionShells: [String: [Shells.Shell]] = [:]
     private var sessionLabels: [String: String] = [:]
     private var mascotNames: [String] = []
     private var mascotIndex = 0
@@ -723,6 +724,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             // only ever asked for on behalf of something on screen, and both are keyed on files
             // that a shut panel has no opinion about.
             Subagents.forget()
+            Shells.forget()
             // And which agent was being read. A panel that comes back up should come back to the
             // conversation, not to the middle of somebody else's errand from an hour ago.
             self.agentID = nil
@@ -1291,6 +1293,11 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         SessionWatch.shared.agents(of: id).filter(\.isRunning).count
     }
 
+    /// How many commands it left running right now — see ``Shells``.
+    private func runningShells(of id: String) -> Int {
+        SessionWatch.shared.shells(of: id).count
+    }
+
     /// What the strip above the transcript says: the live line, and what is happening away from
     /// the screen it was read off.
     ///
@@ -1299,10 +1306,15 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// state where the strip saying nothing was a lie by omission.
     private func activityLine(for id: String) -> String? {
         let live = activityCache[id]
-        let out = runningAgents(of: id)
-        guard out > 0 else { return live }
-        guard let live, !live.isEmpty else { return agentsSaid(out) }
-        return live + "  ·  " + agentsSaid(out)
+        // Both kinds of off-screen work, in the order they cost somebody something: an agent runs
+        // while its session is busy anyway, and a shell is the one that outlives the turn.
+        let away = [runningAgents(of: id), runningShells(of: id)]
+        let said = [away[0] > 0 ? agentsSaid(away[0]) : nil,
+                    away[1] > 0 ? shellsSaid(away[1]) : nil].compactMap { $0 }
+        guard !said.isEmpty else { return live }
+        let tail = said.joined(separator: "  ·  ")
+        guard let live, !live.isEmpty else { return tail }
+        return live + "  ·  " + tail
     }
 
     /// Show or clear the "what is it doing right now" strip.
@@ -1628,6 +1640,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             else { activityCache.removeValue(forKey: id) }
         }
         let agents = SessionWatch.shared.agents
+        let shells = SessionWatch.shared.shells
         let labels = Dictionary(uniqueKeysWithValues: targets.map { ($0.id, $0.displayLabel) })
         guard panel.isVisible else { return }
         // The strip follows the selected session even when the list is shut, because the pane is
@@ -1647,11 +1660,13 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
         // `working` could start and finish three of them without the list redrawing once: the
         // states map would be identical each time, and this returned before the rows were built.
         guard listMode == .sessions,
-              states != sessionStates || agents != sessionAgents || labels != sessionLabels else {
+              states != sessionStates || agents != sessionAgents || shells != sessionShells
+                || labels != sessionLabels else {
             return
         }
         sessionStates = states
         sessionAgents = agents
+        sessionShells = shells
         sessionLabels = labels
         rebuildRows()
         syncSpinner()
@@ -1766,17 +1781,24 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// What the row says after its label. Split from the label so the row can put the spinner
     /// between the two and lay the three of them out itself.
     private func sessionRowDetail(_ state: SessionState, selected: Bool,
-                                  agents: Int = 0) -> NSAttributedString? {
+                                  agents: Int = 0, shells: Int = 0) -> NSAttributedString? {
         let s = NSMutableAttributedString()
         let small = NSFont.systemFont(ofSize: Style.listSize - 1.5)
         func add(_ text: String, _ colour: NSColor, _ font: NSFont) {
             s.append(NSAttributedString(string: text,
                                         attributes: [.font: font, .foregroundColor: colour]))
         }
-        func addAgents(_ count: Int, _ colour: NSColor, _ font: NSFont, leading: Bool = true) {
-            guard count > 0 else { return }
-            add((leading ? "  ·  " : "") + agentsSaid(count), colour, font)
+        /// Both kinds of work happening off the screen, in one run of text. `leading` is about
+        /// what came before them on the row, so only the first of the two ever asks for it.
+        func addAway(_ colour: NSColor, _ font: NSFont, leading: Bool = true) {
+            var first = leading
+            for said in [agents > 0 ? agentsSaid(agents) : nil,
+                         shells > 0 ? shellsSaid(shells) : nil].compactMap({ $0 }) {
+                add((first ? "  ·  " : "") + said, colour, font)
+                first = true
+            }
         }
+        let away = agents + shells
         switch state {
         case .working(let line):
             // Quiet, deliberately. A session that is working wants nothing from you, and four
@@ -1790,9 +1812,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             // Shorter when something has to go after it. The row clips at its own edge either
             // way; what changes is which half survives, and "three agents are out" is worth more
             // than the last eleven characters of a sentence that is already ellipsised.
-            let room = agents > 0 ? 28 : 44
+            let room = away > 0 ? 28 : 44
             add(line.count > room ? line.prefix(room - 1) + "…" : line, quiet, small)
-            addAgents(agents, quiet, small)
+            addAway(quiet, small)
         case .waiting:
             // The one loud thing in the list, because it is the only state that costs you
             // something for every second it goes unnoticed.
@@ -1800,14 +1822,18 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             // Underneath it in the reading order and in the colour. A session can be waiting on
             // a permission dialog while three agents keep working, and the question is still the
             // only part of that anybody has to act on.
-            addAgents(agents, .tertiaryLabelColor, small)
+            addAway(.tertiaryLabelColor, small)
         case .idle, .unknown:
-            // **Not nil any more, if agents are out.** An idle-looking session with three agents
+            // **Not nil any more, if anything is out.** An idle-looking session with three agents
             // still running is the exact case the screen gets wrong — the main agent is between
             // turns, nothing is on the terminal, and the work is elsewhere. That row said
             // nothing at all before.
-            guard agents > 0 else { return nil }
-            addAgents(agents, .tertiaryLabelColor, small, leading: false)
+            //
+            // A command left running is the same mistake made worse. An agent at least belongs to
+            // a turn that is still going; a background shell is what a *finished* turn leaves
+            // behind, so this row is the one place anything says the build is still on.
+            guard away > 0 else { return nil }
+            addAway(.tertiaryLabelColor, small, leading: false)
         }
         return s
     }
@@ -1816,6 +1842,15 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// work explains a session, it never asks anything of you.
     private func agentsSaid(_ count: Int) -> String {
         L.t.sessionAgents.replacingOccurrences(of: "{n}", with: "\(count)")
+    }
+
+    /// "· 1 shell running", or nothing. The same register as ``agentsSaid(_:)`` and for the same
+    /// reason — this explains a session, it never asks anything of you — but it is the one that
+    /// appears on a row with no spinner on it, which is the whole point: an idle row that has
+    /// this on it is not a row that has finished.
+    private func shellsSaid(_ count: Int) -> String {
+        count == 1 ? L.t.sessionShellOne
+                   : L.t.sessionShellMany.replacingOccurrences(of: "{n}", with: "\(count)")
     }
 
     /// Fill the list with invented sessions and pin it there, for the README picture.
@@ -2037,7 +2072,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             let row = TargetRow(title: target.displayLabel, index: i,
                                 rich: sessionRowText(target, selected: selected))
             row.detail = sessionRowDetail(state, selected: selected,
-                                          agents: runningAgents(of: target.id))
+                                          agents: runningAgents(of: target.id),
+                                          shells: runningShells(of: target.id))
             if case .working = state { row.isBusy = true }
             row.icon = rowIcons[target.id]
             row.isSelected = selected

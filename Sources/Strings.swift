@@ -121,6 +121,20 @@ protocol Copy {
     /// How many agents a session has working in the background, `{n}` for the number. The bar's
     /// version of ``webAgentsCount``, said in the one place the bar has room for it.
     var sessionAgents: String { get }
+
+    /// What a row says when the session is between turns and a command it started is still
+    /// running — see ``Shells``. Said in the same words by the bar and by the page, because it
+    /// is the same sentence about the same fact.
+    ///
+    /// **Two of them, because English counts.** Everywhere else in this file a number goes into
+    /// `{n}` and the sentence around it holds still; "1 shell" and "2 shells" do not, and a row
+    /// that reads "1 shells running" is a row somebody stops trusting. Languages that do not
+    /// inflect here can write the same sentence twice.
+    ///
+    /// Quiet words, like the agent ones above: a command running is the answer to "is this
+    /// finished", never a thing that wants somebody.
+    var sessionShellOne: String { get }
+    var sessionShellMany: String { get }
     /// What the island says when a session that had been running stops.
     ///
     /// **One word.** It is drawn in small capitals above a task name in a strip about as wide as
@@ -795,6 +809,10 @@ protocol Copy {
     var webAgentsCount: String { get }
     var webAgentDone: String { get }
     var webAgentFailed: String { get }
+
+    /// Heads the same strip's second half — the commands the session left running. It counts with
+    /// ``webAgentsCount``, which says "{n} running" and is as true of a shell as of an agent.
+    var webShells: String { get }
 
     // Reading one agent's own conversation, which both the pane and the page can now do. No
     // `web` prefix on the first four: they are said in the same words on the Mac and on a phone,

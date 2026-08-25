@@ -142,15 +142,21 @@ export function renderConn() {
 }
 
 function renderCounts() {
-    var working = 0, waiting = 0, unknown = 0;
+    var working = 0, waiting = 0, unknown = 0, shells = 0;
     S.sessions.forEach(function (s) {
         if (s.state === "working") working++;
         else if (s.state === "waiting") waiting++;
         else if (s.state === "unknown") unknown++;
+        shells += ((s && s.shells) || []).length;
     });
     var bits = [];
     if (working) bits.push('<span class="part">' + esc(fill(T.webCountWorking, { n: working })) + "</span>");
     if (waiting) bits.push('<span class="part waiting">' + esc(fill(T.webCountWaiting, { n: waiting })) + "</span>");
+    // **Counted here so that "all quiet" cannot be said over a build.** It is the quietest part of
+    // the line, and it is still the difference between a fleet that has finished and one that has
+    // not — which is the whole question this line is asked.
+    if (shells) bits.push('<span class="part quiet">' +
+        esc(shells === 1 ? T.sessionShellOne : fill(T.sessionShellMany, { n: shells })) + "</span>");
     if (unknown) bits.push('<span class="part quiet">' + esc(fill(T.webCountUnreadable, { n: unknown })) + "</span>");
     if (!bits.length) {
         var quiet = S.sessions.length
@@ -454,6 +460,13 @@ function fillRow(node, s) {
     // Mac reported. Keep `data-state` untouched and give the transient trip its own shape; a
     // waiting row keeps its louder request for attention alongside the quieter delivery note.
     var shape = closingVisible ? "closing" : (pending ? "pending-" + s.state : s.state);
+    // What this session left running where nobody can see it — see `Shells` on the Mac. It is
+    // part of the shape because it is part of the markup: a row whose build finished while the
+    // page was open has to lose the line, and a row that starts one has to grow it.
+    var shells = ((s && s.shells) || []).length;
+    var shellsSaid = !shells ? "" : '<span class="shells">' +
+        esc(shells === 1 ? T.sessionShellOne : fill(T.sessionShellMany, { n: shells })) + "</span>";
+    shape += shells ? "+sh" + shells : "";
     if (state.dataset.shape !== shape) {
         state.dataset.shape = shape;
         if (shape === "closing") {
@@ -465,15 +478,18 @@ function fillRow(node, s) {
                 : "") + '<canvas class="spin"></canvas><span class="line">' +
                 esc(T.webPending) + "</span>";
         } else if (s.state === "waiting") {
-            state.innerHTML = '<span class="wants">' + esc(T.sessionWaiting) + "</span>";
+            state.innerHTML = '<span class="wants">' + esc(T.sessionWaiting) + "</span>" + shellsSaid;
         } else if (s.state === "working") {
             state.innerHTML = '<canvas class="spin"></canvas><span class="line"></span>';
         } else if (s.state === "unknown") {
             // Not silence — a screen that could not be read is a different fact from "idle",
             // and drawing it as idle would be a confident wrong answer about someone's work.
-            state.innerHTML = '<span class="unread">' + esc(T.webStateUnreadable) + "</span>";
+            state.innerHTML = '<span class="unread">' + esc(T.webStateUnreadable) + "</span>" + shellsSaid;
         } else {
-            state.innerHTML = "";
+            // **Idle is the case this line exists for.** The turn ended, the terminal is showing
+            // a prompt, and a command it started is still going — which is exactly the row that
+            // used to say nothing at all and therefore read as finished.
+            state.innerHTML = shellsSaid;
         }
     }
     if (pending || shape === "working" || shape === "closing") {

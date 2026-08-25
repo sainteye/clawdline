@@ -75,6 +75,8 @@ struct Hindi: Copy {
     func sessionTip(index: Int, total: Int) -> String { "\(total) में से \(index) वाँ सेशन — बदलने के लिए ⌘K" }
     let sessionWaiting = "आपके जवाब का इंतज़ार"
     let sessionAgents = "बैकग्राउंड में {n}"
+    let sessionShellOne = "1 shell चल रहा है"
+    let sessionShellMany = "{n} shell चल रहे हैं"
     let islandDone = "हो गया"
     let islandAllSessions = "सभी सेशन…"
     func statusWaiting(_ labels: [String]) -> String {
@@ -469,6 +471,7 @@ struct Hindi: Copy {
     let webAgentsCount = "{n} चल रहे हैं"
     let webAgentDone = "हो गया"
     let webAgentFailed = "विफल"
+    let webShells = "बैकग्राउंड shell"
     let agentRunning = "चल रहा है"
     let agentTools = "{n} टूल"
     let agentEmpty = "इस एजेंट ने अभी तक कुछ नहीं लिखा है।"

@@ -71,6 +71,8 @@ struct Russian: Copy {
     func sessionTip(index: Int, total: Int) -> String { "Сессия \(index) из \(total) — ⌘K для переключения" }
     let sessionWaiting = "ждёт вашего ответа"
     let sessionAgents = "{n} в фоне"
+    let sessionShellOne = "1 shell работает"
+    let sessionShellMany = "{n} shell работают"
     let islandDone = "готово"
     let islandAllSessions = "Все сессии…"
     func statusWaiting(_ labels: [String]) -> String {
@@ -465,6 +467,7 @@ struct Russian: Copy {
     let webAgentsCount = "{n} работают"
     let webAgentDone = "готово"
     let webAgentFailed = "не удалось"
+    let webShells = "Фоновые shell"
     let agentRunning = "работает"
     let agentTools = "инструментов: {n}"
     let agentEmpty = "Этот агент пока ничего не записал."

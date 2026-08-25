@@ -106,6 +106,10 @@ export var T = {
     agentEmpty: "This agent has not written anything down yet.",
     agentBack: "Session",
     webAgentOpen: "See what this agent did",
+    // And what it left running — see `Shells` on the Mac. A command started with
+    // `run_in_background` outlives the turn that started it, and the terminal says so once,
+    // where that turn ended, and then never again.
+    webShells: "Background shells",
     // Work one session handed to another. A background agent lives inside its session; a task
     // has a whole session of its own, which is why it gets a row rather than a chip in a strip.
     webTaskRoot: "Root",
@@ -316,6 +320,9 @@ export var T = {
     noSession: "No Claude Code session found",
     noOutput: "Nothing to read from this session yet.",
     sessionWaiting: "waiting for you",
+    // Two of them, because English counts. See `sessionShellOne` in `Sources/Strings.swift`.
+    sessionShellOne: "1 shell running",
+    sessionShellMany: "{n} shells running",
     sendFailed: "Could not send",
     hintList: "list",
     hintKeys: "keys",

@@ -1649,6 +1649,11 @@ final class RemoteServer {
         if let menu { out["menu"] = json(of: menu) }
         let agents = watch.agents(of: session.id)
         if !agents.isEmpty { out["agents"] = agents.map { json(of: $0) } }
+        // The commands it left running, which are the reason an idle row is not a finished one.
+        // Absent rather than empty, like the agents above: a page built before this existed
+        // draws exactly what it drew before.
+        let shells = watch.shells(of: session.id)
+        if !shells.isEmpty { out["shells"] = shells.map { json(of: $0) } }
         if let cwd = Targets.workingDirectory(of: session) { out["cwd"] = cwd }
         if let sessionID = HookBridge.note(for: session)?.session { out["sessionId"] = sessionID }
         if let grid = watch.grid(of: session.id) { out["icon"] = json(of: grid) }
@@ -1713,6 +1718,20 @@ final class RemoteServer {
         if let tools = agent.tools { out["tools"] = tools }
         if let seconds = agent.seconds { out["seconds"] = seconds }
         if let model = agent.model { out["model"] = model }
+        return out
+    }
+
+    /// One command still running where nobody can see it.
+    ///
+    /// `at` is an instant rather than an age, for the same reason an agent's is: the page already
+    /// knows how to draw a clock from one, and an age worked out here would be wrong by however
+    /// long the beat took to arrive over a tunnel.
+    private func json(of shell: Shells.Shell) -> [String: Any] {
+        var out: [String: Any] = [
+            "id": shell.id,
+            "at": Int(shell.at.timeIntervalSince1970),
+        ]
+        if let doing = shell.doing { out["doing"] = doing }
         return out
     }
 
@@ -2091,6 +2110,11 @@ final class RemoteServer {
             "noSession": t.noSession,
             "noOutput": t.noOutput,
             "sessionWaiting": t.sessionWaiting,
+            // A function on the Mac too, for the same reason as the order pair below: English
+            // counts, so "1 shell" and "2 shells" are two sentences rather than one with a hole
+            // in it. The page picks between them the way the bar does.
+            "sessionShellOne": t.sessionShellOne,
+            "sessionShellMany": t.sessionShellMany,
             "sendFailed": t.sendFailed,
             "hintList": t.hintList,
             "hintKeys": t.hintKeys,
@@ -2133,6 +2157,7 @@ final class RemoteServer {
             "agentEmpty": t.agentEmpty,
             "agentBack": t.agentBack,
             "webAgentOpen": t.webAgentOpen,
+            "webShells": t.webShells,
         ])
 
         // The chips on a root session and on the child it sent off — see `Orchestrator`.

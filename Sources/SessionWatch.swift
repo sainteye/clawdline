@@ -61,6 +61,14 @@ final class SessionWatch {
     /// that the capture could never have given.
     private(set) var agents: [String: [Subagents.Agent]] = [:]
 
+    /// The background commands each session left running, by session id.
+    ///
+    /// The other half of the sentence ``agents`` starts, and the half that costs somebody more:
+    /// an agent runs while its session is busy anyway, and a shell outlives the turn that started
+    /// it. The terminal says so once, where the turn ended, and then says nothing — see
+    /// ``Shells``.
+    private(set) var shells: [String: [Shells.Shell]] = [:]
+
     /// Called on the main thread after every reading. Keyed so a consumer that registers twice
     /// replaces itself rather than being called twice.
     var observers: [String: () -> Void] = [:]
@@ -218,6 +226,11 @@ final class SessionWatch {
             // it adds no round trip to the reading it rides along with.
             let agents = Subagents.reading(of: sessions)
 
+            // And every command they left running behind them, which the screen answers once and
+            // then forgets — the state above is what decides which sessions may be asked, so it
+            // is read here rather than beside the agents.
+            let shells = Shells.reading(of: sessions, states: states)
+
             // Only the ones nothing is known about yet.
             var grids: [String: ProjectIcon.Grid] = [:]
             for session in sessions where self.grids[session.id] == nil {
@@ -231,6 +244,7 @@ final class SessionWatch {
                 self.grids.merge(grids) { _, new in new }
                 self.menus = menus
                 self.agents = agents
+                self.shells = shells
                 self.registry = registry
                 self.apply(targets: sessions, states: states)
             }
@@ -242,6 +256,7 @@ final class SessionWatch {
     /// already `working` could start and finish three agents without the pane noticing.
     private var lastMenus: [String: SessionState.Menu] = [:]
     private var lastAgents: [String: [Subagents.Agent]] = [:]
+    private var lastShells: [String: [Shells.Shell]] = [:]
 
     private func apply(targets: [TargetSession], states: [String: SessionState]) {
         // Working → not working, and still there. A session that has gone away has not finished
@@ -255,9 +270,10 @@ final class SessionWatch {
         }
 
         let changed = targets.map(\.id) != self.targets.map(\.id) || states != self.states
-            || menus != lastMenus || agents != lastAgents
+            || menus != lastMenus || agents != lastAgents || shells != lastShells
         lastMenus = menus
         lastAgents = agents
+        lastShells = shells
         self.targets = targets
         self.states = states
         self.justFinished = finished
@@ -293,6 +309,9 @@ final class SessionWatch {
 
     /// The background agents a session has running right now.
     func agents(of id: String) -> [Subagents.Agent] { agents[id] ?? [] }
+
+    /// The background commands a session left running right now.
+    func shells(of id: String) -> [Shells.Shell] { shells[id] ?? [] }
 
     /// The live line a session last showed, if it is showing one.
     func liveLine(of id: String) -> String? {

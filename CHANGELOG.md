@@ -9,6 +9,25 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: a session with a command still running no longer reads as finished
+
+`Bash` with `run_in_background` starts something that outlives the turn that started it — a build,
+a dev server, a test suite. Claude Code says so once, on the line where the turn ends: *Cooked for
+1h 25m 13s · 1 shell still running*. Then it draws an ordinary prompt and says nothing more about
+it, for however long the command takes.
+
+Everything in this app reads that prompt as what it looks like. The session list drew the row with
+nothing after its title, the phone drew it the same way, and the fleet count called it quiet — so
+the one session that still had work in flight was indistinguishable from the four that were done.
+That is the wrong answer in the direction that costs something: you close the laptop on a build.
+
+The row now says `1 shell running`, on the Mac and on the phone, and the strip above the transcript
+lists them next to the background agents with the last line each one printed. It is worked out from
+the output files Claude Code already keeps — a background command gets `[exited with code 0]`
+written under it when it ends, a foreground one has its file deleted when it returns — so nothing
+has to be installed and nothing has to be restarted. `GET /v1/sessions` carries it as `shells`; see
+[`docs/api.md`](docs/api.md#the-session-object).
+
 ### Changed: reloading the web interface no longer means a second and a half of black
 
 The page is a document, fourteen stylesheets and forty modules, and until now every one of them

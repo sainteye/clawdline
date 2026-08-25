@@ -345,11 +345,19 @@ export function renderAgents() {
     var running = 0;
     for (var i = 0; i < list.length; i++) if (list[i].state === "running") running++;
     var here = S.agent ? S.agent.id : "";
+    // The commands this session left running — see `Shells` on the Mac. The other half of the
+    // same sentence, and the half that outlives the turn: an agent stops when the turn it was
+    // spawned in stops, and a background shell is what a *finished* turn leaves behind.
+    var shells = (open && open.shells) || [];
+
+    function headHTML(label, n) {
+        return '<div class="head"><span>' + esc(label) + "</span>" +
+            (n ? '<span class="n">' + esc(fill(T.webAgentsCount, { n: n })) + "</span>" : "") +
+            "</div>";
+    }
 
     var want = !list.length ? "" :
-        '<div class="head"><span>' + esc(T.webAgents) + "</span>" +
-        (running ? '<span class="n">' + esc(fill(T.webAgentsCount, { n: running })) + "</span>" : "") +
-        "</div>" +
+        headHTML(T.webAgents, running) +
         // The root, and a row like the others because it is also the way back out of one of
         // them. `main` is the terminal's own word for the conversation they all hang under, and
         // it is not translated for the same reason `general-purpose` is not: it is the name of a
@@ -357,6 +365,11 @@ export function renderAgents() {
         agentRowHTML({ id: "", type: "main", what: open ? (open.label || open.tty || "") : "",
                        root: true }, here) +
         list.map(function (a) { return agentRowHTML(a, here); }).join("");
+
+    if (shells.length) {
+        want += headHTML(T.webShells, shells.length) +
+            shells.map(shellRowHTML).join("");
+    }
 
     if (want === agentsDrawn) return;
     agentsDrawn = want;
@@ -371,6 +384,29 @@ export function renderAgents() {
  * root back out to the session's. The id rides on the element rather than in a closure, so a
  * repaint — which happens every time any agent reaches for a tool — rebinds nothing.
  */
+/**
+ * One command still running where nobody can see it.
+ *
+ * **A div rather than a button, because there is nowhere to go.** An agent's row opens its
+ * conversation; a shell has no conversation, only the tail of what it has printed — and that is
+ * already the line on the right of this row. A button that led nowhere would be worse than a
+ * line of text, which is the same rule the menu rows follow one panel up.
+ *
+ * `shell` is not translated, for the reason `main` and `general-purpose` are not: it is the word
+ * Claude Code itself uses for these, in `/bashes` and in the line it prints when a turn ends
+ * with one still going.
+ */
+function shellRowHTML(sh) {
+    return '<div class="one shell" data-state="running" title="' + esc(sh.id) + '">' +
+        '<span class="mark"></span>' +
+        '<span class="kind">shell</span>' +
+        // Its last line of output, which is the only thing here written by the command itself —
+        // and a command that has printed nothing yet is named by the id, which is what `/bashes`
+        // and `KillShell` call it on the Mac.
+        '<span class="what">' + esc(sh.doing || sh.id) + "</span>" +
+        "</div>";
+}
+
 function agentRowHTML(a, here) {
     var root = !!a.root;
     var said = a.state === "done" ? T.webAgentDone

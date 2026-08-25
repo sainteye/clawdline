@@ -952,6 +952,7 @@ app, and an open-ended size is an open-ended cache.
   "line": "Crafting… (2m 45s · ↓ 6.0k tokens)",  // only when state is "working"
   "menu": { "selected": 2, "options": [ … ] },   // only when state is "waiting", and readable
   "agents": [ … ],                               // only when this session has agents out
+  "shells": [ … ],                               // only when it left a command running
   "cwd": "/Users/you/code/atrium",          // absent if the terminal would not say
   "sessionId": "841cbb8d-58b1-…",                // Claude Code's own id — only with hooks installed
   "icon": { "accent": "#5CBBA1", "cells": [ … ] } // absent when the project has no icon
@@ -1013,6 +1014,32 @@ says an agent *started* and none that says it is still going, so `running` means
 written yet. A finished one stays in the list for about three minutes with what it returned, then
 goes; the record is the transcript, this is the notice. `doing` and `result` are the same slot asked
 at two different times, and both can be absent.
+
+`shells` is what that session left running in the background — `Bash` with `run_in_background`,
+which is a command that outlives the turn that started it. Newest first, at most six, running ones
+only: a command that has finished is already in the transcript as a tool result.
+
+```jsonc
+{
+  "id": "bvlp3xmku",                              // Claude Code's id for it, the one /bashes shows
+  "at": 1787049596,                               // when it last printed something
+  "doing": "[214/318] Compiling importer/rows.rs" // its last line of output, when it has printed one
+}
+```
+
+**This is the field that stops an idle session reading as a finished one.** The terminal says a
+command is still going exactly once, on the line where the turn ended — "Cooked for 1h 25m 13s · 1
+shell still running" — and then draws an ordinary prompt for as long as the command takes. Every
+reading after that says what a session with nothing left to do says.
+
+It is worked out from the output files Claude Code keeps under `/tmp/claude-<uid>/…/tasks`, because
+that is where the two facts are: a background command gets `[exited with code 0]` written under its
+last line when it ends, and a *foreground* one has its file deleted the moment it returns. So a file
+with no marker under it belongs to something that has not finished. **Present only on a session that
+is not `working`**, and that is the one ambiguity these files have rather than a saving: while a
+session is working, the file a foreground command is writing to looks exactly like the file a
+background one is writing to, and a session that is working already looks like a session that is
+working.
 
 ## The transcript Entry
 

@@ -21,6 +21,9 @@
     margin-bottom: 4px;
 }
 .agents .head .n { color: var(--dim); }
+/* The strip can hold two of these — the agents, then the shells. The second one needs air above
+   it or the two lists read as one list with a label in the middle of it. */
+.agents .head:not(:first-child) { margin-top: 8px; }
 .agents .one {
     display: flex; align-items: baseline; gap: 8px;
     width: 100%; min-width: 0; text-align: left;
@@ -62,3 +65,11 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .agents .one .said { color: var(--faint); font-size: 11px; flex: 0 0 auto; }
+
+/* A background command. Same row, one thing missing: it does not lead anywhere, so it does not
+   pretend to — no pointer, and none of the hover that says "this opens". Its ring is the running
+   one above, because a shell in this strip is only ever there while it is still going. */
+.agents .one.shell { cursor: default; }
+.agents .one.shell:hover { background: none; }
+.agents .one.shell:hover .what { color: var(--dim); }
+.agents .one.shell .what { font: 11px/1.6 var(--mono); color: var(--faint); }

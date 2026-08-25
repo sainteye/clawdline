@@ -6496,6 +6496,73 @@ group("waiting for a subprocess does not run anything else on this thread") {
 }
 
 
+// MARK: - Commands a session left running
+
+group("a background command is over when its own output says so") {
+    let fm = FileManager.default
+    let dir = fm.temporaryDirectory
+        .appendingPathComponent("clawdline-shells-\(UUID().uuidString)", isDirectory: true)
+    try! fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: dir) }
+
+    /// One output file, read once. The signature is the caller's business in the app — file size
+    /// and mtime — and a fresh name per case here so no test can be answered from another's cache.
+    func reading(_ name: String, _ text: String, signature: String = "1") -> Shells.Ending {
+        let file = dir.appendingPathComponent(name)
+        try! text.write(to: file, atomically: true, encoding: .utf8)
+        return Shells.read(file, signature: signature)
+    }
+
+    // The shape Claude Code actually writes, taken off a real run: the command's output, a blank
+    // line, and the marker on its own at the end.
+    let done = reading("done.output", "start\ndone\n\n[exited with code 0]\n")
+    check("a command that exited has ended", done.ended)
+    check("and nothing of it is reported as a live line", done.last == nil)
+
+    // A build half way through. This is the state the whole feature is for.
+    let going = reading("going.output", "[6/22] Compiling Clawdline Strings.swift\n"
+                        + "[7/22] Compiling Clawdline Panel.swift\n")
+    check("a command with no marker under it is still running", !going.ended)
+    expect("and its last line is what it last printed", going.last ?? "",
+           "[7/22] Compiling Clawdline Panel.swift")
+
+    // `sleep 600 &`. The file exists from the moment the command starts and stays empty, which is
+    // the honest answer rather than a missing one: something is running and it has said nothing.
+    let quiet = reading("quiet.output", "")
+    check("a command that has printed nothing is still running", !quiet.ended)
+    check("and it has no line to show for itself", quiet.last == nil)
+
+    // **Only the last line decides.** A test suite printing its own bracketed lines, a log that
+    // quotes a previous run — the marker is a thing written under a finished command, and a
+    // command that is still printing has not finished however its output reads.
+    let quoting = reading("quoting.output", "[exited with code 0]\nand then it carried on\n")
+    check("a line that looks like the marker earlier in the file decides nothing", !quoting.ended)
+    expect("the real last line is still the live one", quoting.last ?? "",
+           "and then it carried on")
+
+    // Trailing blank lines are whitespace, not output.
+    let padded = reading("padded.output", "ok\n[exited with code 1]\n\n\n")
+    check("blank lines under the marker do not hide it", padded.ended)
+
+    // The tail is all that is read, so a command that has printed a megabyte still ends properly.
+    let long = String(repeating: "line of build output\n", count: 60_000)
+    check("the marker at the end of a large file is still found",
+          reading("long.output", long + "[exited with code 0]\n").ended)
+    check("and a large file with no marker is still running",
+          !reading("longer.output", long).ended)
+
+    // Read once per version of the file. Same signature, different bytes: the answer that was
+    // already worked out is the one that comes back, which is what stops six output files being
+    // re-read once a second for a session that has not printed anything.
+    let path = "cached.output"
+    _ = reading(path, "still going\n", signature: "same")
+    let again = reading(path, "finished\n[exited with code 0]\n", signature: "same")
+    check("a file whose signature has not moved is not read again", !again.ended)
+    let moved = reading(path, "finished\n[exited with code 0]\n", signature: "moved")
+    check("and one whose signature has is", moved.ended)
+}
+
+
 // MARK: - Result
 
 print("")

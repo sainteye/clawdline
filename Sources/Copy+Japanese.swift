@@ -69,6 +69,8 @@ struct Japanese: Copy {
     func sessionTip(index: Int, total: Int) -> String { "\(total) 件中 \(index) 番目のセッション — ⌘K で切り替え" }
     let sessionWaiting = "返事待ち"
     let sessionAgents = "バックグラウンドに {n} 件"
+    let sessionShellOne = "シェル 1 件実行中"
+    let sessionShellMany = "シェル {n} 件実行中"
     let islandDone = "完了"
     let islandAllSessions = "すべてのセッション…"
     func statusWaiting(_ labels: [String]) -> String {
@@ -463,6 +465,7 @@ struct Japanese: Copy {
     let webAgentsCount = "{n} 件実行中"
     let webAgentDone = "完了"
     let webAgentFailed = "失敗"
+    let webShells = "バックグラウンドのシェル"
     let agentRunning = "実行中"
     let agentTools = "ツール {n} 回"
     let agentEmpty = "このエージェントはまだ何も書き残していません。"
