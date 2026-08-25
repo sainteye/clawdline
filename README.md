@@ -121,12 +121,20 @@ the child's answer, adds up what it spent, and tells the session that asked.
 
 <img src="docs/assets/dispatch.webp" width="760" alt="One session hands three cards of work to three others, each of which goes off to a machine of its own, and the last thread ends at a phone lighting up.">
 
-**The child can be either assistant.** One Claude Code session can send the drawing to a Codex
-child and the diff to a Claude Code one in the same breath; what the app has to know is which
+**The child can be either assistant, on any model.** One Claude Code session can send the drawing
+to a Codex child and the diff to a Claude Code one in the same breath, and name `haiku` for a
+mechanical pass or `opus` for a judgement somebody will act on; what the app has to know is which
 binary to start and which screen to read afterwards, and it knows both already — which is why one
 Mac runs a mixed fleet without a framework in the middle of it. Dispatching is a plain local HTTP
 route, so anything running as you can ask for a child; the skill that writes the task down ships
 for Claude Code.
+
+**How work gets handed out is a file you edit.** `~/.config/clawdline/dispatch-policy.md` — read
+on every dispatch, copied into the briefing of every child that may dispatch in turn. Which
+assistant for which kind of work, which model deserves which job, what shape the graph should be.
+It arrives with opinions in it; delete the contents and there are no house rules. Every task also
+carries a `plan`, the whole graph it is one node of, so a leaf knows what its answer feeds instead
+of writing a report nobody asked for.
 
 **A dispatched agent you cannot see is a background job; one you can watch, answer and stop is a
 session.** So a child here is not a job id in a queue. It is a row in the same list as everything

@@ -107,8 +107,9 @@ Clawdline 會開一個終端機分頁，把任務指定的那種助理啟動起�
 
 <img src="docs/assets/dispatch.webp" width="760" alt="一個 session 把三張工作卡片交給另外三個，每一個各自跑去自己的機器上，最後一條線停在一支亮起來的手機">
 
-**子 session 可以是任一種助理。** 同一個 Claude Code session 可以在同一口氣裡，把畫圖交給一個
-Codex 子 session、把 diff 交給一個 Claude Code 子 session；app 需要知道的只有該起哪一支執行檔、
+**子 session 可以是任一種助理、任一個模型。** 同一個 Claude Code session 可以在同一口氣裡，把畫圖
+交給一個 Codex 子 session、把 diff 交給一個 Claude Code 子 session，還可以指名機械性的活用
+`haiku`、有人會照著做的判斷用 `opus`；app 需要知道的只有該起哪一支執行檔、
 之後該讀哪一種螢幕，而這兩件它本來就知道——這正是一台 Mac 跑得起一支混編艦隊、中間卻不必架一層
 框架的原因。派工本身是一條純本機的 HTTP 路由，任何以你的身分在跑的程式都能要一個子 session；
 而把任務寫下來的那個 skill，出的是 Claude Code 版。
@@ -124,6 +125,12 @@ Codex 子 session、把 diff 交給一個 Claude Code 子 session；app 需要�
 權限。而且**這棵樹有底**：一個 session 同時可以派五個，那五個各自還能再派三個，但**它們派出來
 的那些，底下就沒有了**。五乘三，全開也就二十個終端機，這數字已經是一個人盯得完的上限；沒有這個
 底，它就是一顆裝了語言模型的 fork bomb。
+
+**派工的規矩是一份你自己改的檔案。** `~/.config/clawdline/dispatch-policy.md`——每次派工都會重讀，
+而且會抄進每一個「還能再往下派」的子 session 的指示裡：哪種工作給哪個助理、哪種工作值得用哪個
+模型、整張圖希望長什麼形狀。它出廠就有意見在裡面；內容刪光就等於沒有規矩。每一件任務還會帶著
+一份 `plan`，也就是它所屬的整張圖——葉節點知道自己的答案要餵給誰，才寫得出接得起來的東西，
+而不是一篇沒人要的心得。
 
 **[docs/orchestrator.md](docs/orchestrator.md)** 是那份協定：檔案格式、憑證、整個生命週期，
 以及帶著 `curl` 紀錄的路由說明。
