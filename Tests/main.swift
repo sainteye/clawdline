@@ -6582,20 +6582,41 @@ group("an orchestrated Claude child keeps its process identity") {
     check("the recorded process pair survives a store round trip",
           loaded?.childPID == 100 && loaded?.childProcStart == started)
 
-    // These checks start at the observation boundary. Removing the pid/start guard in
-    // `identityStep` must make this compound assertion fail; a hand-written policy input would
-    // test the caller's arithmetic rather than what the polling caller actually observed.
+    // These checks exercise the policy value after the polling caller assembles it; the separate
+    // complete-pair check below covers the caller-side recording seam. Removing the pid/start
+    // guard in `identityStep` must make this compound assertion fail.
     let same = Orchestrator.ChildObservation(pid: 100,
                                              procStart: started.addingTimeInterval(5))
     let foreignPID = Orchestrator.ChildObservation(pid: 200, procStart: started)
     let recycledPID = Orchestrator.ChildObservation(pid: 100,
                                                     procStart: started.addingTimeInterval(6))
+    let missingStart = Orchestrator.ChildObservation(pid: 100, procStart: nil)
+    var missingRecordedStart = task
+    missingRecordedStart.childProcStart = nil
     check("a live process match is unchanged while a foreign or recycled process is refused",
           Orchestrator.identityStep(for: task, seeing: same) == .none
             && Orchestrator.identityStep(for: task, seeing: foreignPID)
                 == .refuseForeignProcess(seen: 200)
             && Orchestrator.identityStep(for: task, seeing: recycledPID)
+                == .refuseForeignProcess(seen: 100)
+            && Orchestrator.identityStep(for: task, seeing: missingStart)
+                == .refuseForeignProcess(seen: 100)
+            && Orchestrator.identityStep(for: missingRecordedStart, seeing: same)
                 == .refuseForeignProcess(seen: 100))
+
+    var unrecorded = Orchestrator.Task(id: taskID, state: .spawning, kind: "custom",
+                                       title: "a task", assistant: .claude,
+                                       projectDir: "/tmp", timeoutMinutes: 30,
+                                       created: Date(),
+                                       secretHash: String(repeating: "0", count: 64))
+    let incomplete = Orchestrator.ChildObservation(pid: 101, procStart: nil)
+    let complete = Orchestrator.ChildObservation(pid: 101, procStart: started)
+    // Removing either half of recordProcessIdentity's pair guard must fail this caller check.
+    check("the polling caller records only a same-source complete process pair",
+          !Orchestrator.recordProcessIdentity(from: incomplete, in: &unrecorded)
+            && unrecorded.childPID == nil && unrecorded.childProcStart == nil
+            && Orchestrator.recordProcessIdentity(from: complete, in: &unrecorded)
+            && unrecorded.childPID == 101 && unrecorded.childProcStart == started)
 }
 
 group("an orchestrated Claude child prefers registry identity") {
@@ -6606,16 +6627,19 @@ group("an orchestrated Claude child prefers registry identity") {
                                  title: "a task", assistant: .claude,
                                  projectDir: projectDir, timeoutMinutes: 30,
                                  created: Date(), secretHash: String(repeating: "0", count: 64))
-    let registryTranscript = Transcript.projectDirectory(forCwd: projectDir)
-        .appendingPathComponent("\(registryID).jsonl")
+    let registryTranscript = URL(fileURLWithPath: "/tmp/registry.jsonl")
     let withRegistry = Orchestrator.ChildObservation(pid: 100, procStart: Date(),
-                                                     registrySessionID: registryID)
+                                                     registrySessionID: registryID,
+                                                     registryTranscript: registryTranscript)
+    let beforeTranscript = Orchestrator.ChildObservation(pid: 100, procStart: Date(),
+                                                         registrySessionID: registryID)
     let withoutRegistry = Orchestrator.ChildObservation(pid: 100, procStart: Date())
 
-    // Removing the registry branch in `identityStep` must fail this compound source-order check.
-    check("registry is primary before a transcript exists and absence falls through",
+    // Removing the validated-transcript requirement must make the middle assertion fail.
+    check("registry is primary only after its named transcript is validated",
           Orchestrator.identityStep(for: task, seeing: withRegistry)
             == .useRegistry(sessionID: registryID, transcript: registryTranscript)
+            && Orchestrator.identityStep(for: task, seeing: beforeTranscript) == .none
             && Orchestrator.identityStep(for: task, seeing: withoutRegistry) == .none)
 
     task.childSessionId = legacyID
@@ -6637,6 +6661,26 @@ group("an orchestrated Claude child prefers registry identity") {
           ) && Orchestrator.identityComparison(registrySessionID: registryID,
                                                registryTranscript: registryTranscript,
                                                legacyTask: agreeing) == nil)
+
+    var pinned = task
+    pinned.state = .briefed
+    pinned.childSessionId = legacyID
+    pinned.transcriptPath = "/tmp/briefed.jsonl"
+    pinned.transcriptProven = true
+    // Removing adoptRegistryIdentity's briefed-and-proven guard must replace this caller's pair.
+    check("a delivered identity is pinned at the registry adoption caller",
+          !Orchestrator.adoptRegistryIdentity(sessionID: registryID,
+                                              transcript: registryTranscript, in: &pinned)
+            && pinned.childSessionId == legacyID
+            && pinned.transcriptPath == "/tmp/briefed.jsonl"
+            && pinned.transcriptProven)
+
+    var control = task
+    // Removing beginRegistryControl's equality guard must make the second sample run again.
+    check("the transition control samples once per distinct registry answer",
+          Orchestrator.beginRegistryControl(for: registryID, in: &control)
+            && !Orchestrator.beginRegistryControl(for: registryID, in: &control)
+            && Orchestrator.beginRegistryControl(for: legacyID, in: &control))
 }
 
 group("an orchestrated child only inherits identity from this spawn") {

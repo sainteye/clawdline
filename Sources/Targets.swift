@@ -489,21 +489,25 @@ enum Targets {
 
     static func processStart(of session: TargetSession) -> Date? {
         cwdLock.lock()
-        if let hit = startCache[session.id], CFAbsoluteTimeGetCurrent() - hit.at < 20 {
+        if let hit = startCache[session.id], let started = hit.started,
+           CFAbsoluteTimeGetCurrent() - hit.at < 20 {
             defer { cwdLock.unlock() }
-            return hit.started
+            return started
         }
         cwdLock.unlock()
 
         let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
         let started = ITerm.assistantPIDs()[bare].flatMap { ITerm.processStart(ofPID: $0.pid) }
         cwdLock.lock()
-        startCache[session.id] = (CFAbsoluteTimeGetCurrent(), started)
+        // Absence is a startup observation, not a process fact. Caching it for twenty seconds
+        // can cover the entire briefing window and silence every registry lookup in it.
+        if started != nil { startCache[session.id] = (CFAbsoluteTimeGetCurrent(), started) }
         cwdLock.unlock()
         return started
     }
 
-    /// The same cache for processes that belong to no tab.
+    /// The pid-keyed start cache, used for background sessions and callers that already fixed
+    /// the foreground pid so the terminal cannot contribute a mismatched start time.
     ///
     /// Keyed by pid because that is all there is to key it by: the background session behind a
     /// parked tab is running under the daemon, on no terminal, and the only thing naming it is
@@ -514,9 +518,10 @@ enum Targets {
 
     static func processStart(ofPID pid: Int32) -> Date? {
         cwdLock.lock()
-        if let hit = bgStartCache[pid], CFAbsoluteTimeGetCurrent() - hit.at < 20 {
+        if let hit = bgStartCache[pid], let started = hit.started,
+           CFAbsoluteTimeGetCurrent() - hit.at < 20 {
             defer { cwdLock.unlock() }
-            return hit.started
+            return started
         }
         cwdLock.unlock()
 
@@ -528,7 +533,7 @@ enum Targets {
         // background session the machine has ever run rather than with the tabs that are open.
         let now = CFAbsoluteTimeGetCurrent()
         bgStartCache = bgStartCache.filter { now - $0.value.at < 20 }
-        bgStartCache[pid] = (now, started)
+        if started != nil { bgStartCache[pid] = (now, started) }
         cwdLock.unlock()
         return started
     }

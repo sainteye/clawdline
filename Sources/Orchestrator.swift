@@ -108,6 +108,9 @@ enum Orchestrator {
         /// The most recent time the first message was handed to the terminal. In memory only:
         /// a process restart loses the plaintext secret and fails every spawning task anyway.
         var lastInjectAt: Date?
+        /// The registry answer already sampled by the temporary legacy comparison. In memory
+        /// only, so a restart may compare once more without imposing per-beat transcript I/O.
+        var registryControlSessionID: String?
         var answeredMenu = false
         /// When the child's terminal was last seen in a reading — the difference between a child
         /// that finished and one whose tab was closed under it.
@@ -124,12 +127,13 @@ enum Orchestrator {
         case send, wait, accepted, exhausted
     }
 
-    /// The process facts observed from one polling beat. Keeping these as values makes the
-    /// identity boundary testable without asking a unit test to own a terminal or run `ps`.
+    /// Process and registry facts assembled for one identity decision. The process start is read
+    /// from `pid` itself, so the pair cannot combine two generations of the same terminal.
     struct ChildObservation: Equatable {
         var pid: Int32?
         var procStart: Date?
         var registrySessionID: String? = nil
+        var registryTranscript: URL? = nil
     }
 
     enum IdentityStep: Equatable {
@@ -145,25 +149,36 @@ enum Orchestrator {
         var legacyTranscriptPath: String?
     }
 
-    /// A terminal belongs to a tab, while this identity belongs to the Claude process that was
-    /// first observed inside it. A later process on the same tab cannot contribute any identity.
+    /// Once a Claude process pair has been recorded, a later process on the same tab cannot
+    /// contribute identity. An incomplete pair is unverifiable and therefore fails closed.
     static func identityStep(for task: Task, seeing observation: ChildObservation) -> IdentityStep {
         guard task.assistant == .claude else { return .none }
         if let recordedPID = task.childPID {
             guard observation.pid == recordedPID else {
                 return .refuseForeignProcess(seen: observation.pid)
             }
-            if let recordedStart = task.childProcStart, let seenStart = observation.procStart,
-               abs(seenStart.timeIntervalSince(recordedStart)) > SessionRegistry.startTolerance {
+            guard let recordedStart = task.childProcStart, let seenStart = observation.procStart,
+                  abs(seenStart.timeIntervalSince(recordedStart))
+                    <= SessionRegistry.startTolerance else {
                 return .refuseForeignProcess(seen: observation.pid)
             }
         }
-        if let sessionID = observation.registrySessionID {
-            let transcript = Transcript.projectDirectory(forCwd: task.projectDir)
-                .appendingPathComponent("\(sessionID).jsonl")
+        if let sessionID = observation.registrySessionID,
+           let transcript = observation.registryTranscript {
             return .useRegistry(sessionID: sessionID, transcript: transcript)
         }
         return .none
+    }
+
+    /// Record only a start time read directly from the pid beside it. A partial pair would make
+    /// every later strict comparison either too permissive or permanently reject the real child.
+    static func recordProcessIdentity(from observation: ChildObservation, in task: inout Task)
+        -> Bool {
+        guard task.childPID == nil, task.childProcStart == nil,
+              let pid = observation.pid, let started = observation.procStart else { return false }
+        task.childPID = pid
+        task.childProcStart = started
+        return true
     }
 
     /// A transcript can legitimately be absent while both sources already name the same session.
@@ -175,6 +190,27 @@ enum Orchestrator {
                                   registryTranscriptPath: registryTranscript.path,
                                   legacySessionID: legacyTask.childSessionId,
                                   legacyTranscriptPath: legacyTask.transcriptPath)
+    }
+
+    /// Once the briefing receipt has proved this pair, a later registry answer describes a
+    /// `/clear` or parked conversation in the same process, not a correction to this task.
+    static func adoptRegistryIdentity(sessionID: String, transcript: URL,
+                                      in task: inout Task) -> Bool {
+        guard !(task.state == .briefed && task.transcriptProven) else { return false }
+        guard task.childSessionId != sessionID || task.transcriptPath != transcript.path
+        else { return false }
+        task.childSessionId = sessionID
+        task.transcriptPath = transcript.path
+        task.transcriptProven = false
+        return true
+    }
+
+    /// The transition control samples each distinct registry answer once. The flag is transient,
+    /// so a restart earns one fresh comparison without restoring per-beat I/O.
+    static func beginRegistryControl(for sessionID: String, in task: inout Task) -> Bool {
+        guard task.registryControlSessionID != sessionID else { return false }
+        task.registryControlSessionID = sessionID
+        return true
     }
 
     static let briefingAttemptLimit = 5
@@ -1353,6 +1389,9 @@ enum Orchestrator {
                                         taskID: task.id, attempts: task.injectAttempts,
                                         secondsSinceAttempt: elapsed)
         if decision == .accepted {
+            // Acceptance means this exact transcript contained the delivered task marker. Record
+            // the receipt before crossing the state boundary so this pair becomes pinned.
+            task.transcriptProven = task.transcriptPath != nil
             task.state = .briefed
             task.briefedAt = task.lastInjectAt ?? Date()
             task.lastSeenChild = Date()
@@ -1454,9 +1493,20 @@ enum Orchestrator {
         var changed = false
         switch task.assistant {
         case .claude:
-            let observation = ChildObservation(pid: Targets.pid(of: child),
-                                               procStart: Targets.processStart(of: child),
-                                               registrySessionID: SessionRegistry.sessionID(of: child))
+            let observedPID = Targets.pid(of: child)
+            let observedStart = observedPID.flatMap { Targets.processStart(ofPID: $0) }
+            let registrySessionID = SessionRegistry.sessionID(of: child)
+            let registryTranscript = registrySessionID.flatMap { sessionID in
+                // Match Transcript.record(of:): the id names a candidate, while locate proves
+                // its file exists in the child's cwd and postdates this process.
+                Transcript.locate(cwd: Targets.workingDirectory(of: child) ?? task.projectDir,
+                                  tabTitle: child.name, startedAt: task.spawnedAt,
+                                  sessionID: sessionID)
+            }
+            let observation = ChildObservation(pid: observedPID, procStart: observedStart,
+                                               registrySessionID: registrySessionID,
+                                               registryTranscript: registryTranscript)
+            changed = recordProcessIdentity(from: observation, in: &task) || changed
             let step = identityStep(for: task, seeing: observation)
             if case let .refuseForeignProcess(seen) = step {
                 RemoteAuth.audit("orchestrator.identity.foreign", [
@@ -1470,49 +1520,36 @@ enum Orchestrator {
                 ])
                 return false
             }
-            if task.childPID == nil, let pid = observation.pid {
-                task.childPID = pid
-                task.childProcStart = observation.procStart
-                changed = true
-            } else if task.childPID == observation.pid, task.childProcStart == nil,
-                      let started = observation.procStart {
-                task.childProcStart = started
-                changed = true
-            }
-            // Run the former ladder even when the registry answers. Its result is both the exact
-            // fallback for a missing registry entry and a temporary control for the new source.
-            var legacyTask = task
-            if case .useRegistry = step {
-                // Keep the control independent of identity previously supplied by the registry.
-                // This asks what note + locate can establish on this beat, from their own facts.
-                legacyTask.childSessionId = nil
-                legacyTask.transcriptPath = nil
-                legacyTask.transcriptProven = false
-            }
-            let legacyChanged = noteClaudeIdentityFromLegacySources(child, in: &legacyTask)
             switch step {
             case let .useRegistry(sessionID, transcript):
-                if let comparison = identityComparison(registrySessionID: sessionID,
-                                                       registryTranscript: transcript,
-                                                       legacyTask: legacyTask) {
-                    RemoteAuth.audit("orchestrator.identity.mismatch", [
-                        "task": task.id,
-                        "registry_session": comparison.registrySessionID,
-                        "registry_transcript": comparison.registryTranscriptPath,
-                        "legacy_session": comparison.legacySessionID ?? "?",
-                        "legacy_transcript": comparison.legacyTranscriptPath ?? "?",
-                    ])
-                }
-                if task.childSessionId != sessionID || task.transcriptPath != transcript.path {
-                    task.childSessionId = sessionID
-                    task.transcriptPath = transcript.path
-                    task.transcriptProven = false
+                // Keep the old ladder as a transition control, but run it only once per distinct
+                // answer. A growing transcript otherwise defeats its signature cache every beat.
+                if beginRegistryControl(for: sessionID, in: &task) {
+                    var legacyTask = task
+                    legacyTask.childSessionId = nil
+                    legacyTask.transcriptPath = nil
+                    legacyTask.transcriptProven = false
+                    _ = noteClaudeIdentityFromLegacySources(child, in: &legacyTask)
                     changed = true
+                    if let comparison = identityComparison(registrySessionID: sessionID,
+                                                           registryTranscript: transcript,
+                                                           legacyTask: legacyTask) {
+                        RemoteAuth.audit("orchestrator.identity.mismatch", [
+                            "task": task.id,
+                            "registry_session": comparison.registrySessionID,
+                            "registry_transcript": comparison.registryTranscriptPath,
+                            "legacy_session": comparison.legacySessionID ?? "?",
+                            "legacy_transcript": comparison.legacyTranscriptPath ?? "?",
+                        ])
+                    }
                 }
+                changed = adoptRegistryIdentity(sessionID: sessionID, transcript: transcript,
+                                                in: &task) || changed
                 changed = noteTranscriptProof(in: &task) || changed
             case .none:
-                task = legacyTask
-                changed = legacyChanged || changed
+                // A missing or not-yet-verifiable registry answer is only a source miss. The
+                // complete note + locate ladder remains the fallback and decides normally.
+                changed = noteClaudeIdentityFromLegacySources(child, in: &task) || changed
             case .refuseForeignProcess:
                 break
             }
@@ -1539,8 +1576,8 @@ enum Orchestrator {
         return changed
     }
 
-    /// The pre-registry Claude identity ladder. It remains intact below the registry path and is
-    /// also evaluated beside it during the transition so disagreements leave an audit receipt.
+    /// The complete pre-registry Claude identity ladder. A registry miss runs it normally; a new
+    /// registry answer runs an independent copy once so disagreements leave an audit receipt.
     private static func noteClaudeIdentityFromLegacySources(_ child: TargetSession,
                                                             in task: inout Task) -> Bool {
         var changed = noteTranscriptProof(in: &task)
