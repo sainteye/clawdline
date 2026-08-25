@@ -269,3 +269,36 @@
 .info-sheet .dep-note { margin: -2px 0 7px 15px; font-size: 11px; line-height: 1.45; color: var(--faint); overflow-wrap: anywhere; }
 a.dep:hover .host { color: var(--accent); }
 
+/* Saying what to start. Wider than the others because two things have to be legible at once and
+   comparable to each other: what was heard, and the message that was written from it. The rule
+   between them is the seam — above it are the speaker's own words, below it is a machine's
+   rewrite of them, and reading the second is the entire point of the sheet. */
+.command-sheet { width: min(520px, 100%); }
+.command-sheet .block { display: flex; align-items: flex-start; gap: 8px; }
+.command-sheet textarea {
+    min-height: 68px; resize: vertical;
+    font-family: inherit; font-size: 13px; line-height: 1.55;
+}
+.command-sheet .redo {
+    flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    width: 34px; padding: 0; min-height: 34px;
+}
+.command-sheet .redo svg { display: block; width: 15px; height: 15px; }
+.command-sheet .redo .ico-stop { display: none; }
+.command-sheet .redo[aria-pressed="true"] { border-color: var(--accent-ed); color: var(--accent); }
+.command-sheet .redo[aria-pressed="true"] .ico-mic { display: none; }
+.command-sheet .redo[aria-pressed="true"] .ico-stop { display: block; }
+.command-sheet .draft {
+    display: block;
+    margin-top: 14px; padding-top: 14px;
+    border-top: 1px solid var(--line);
+}
+.command-sheet .draft textarea { min-height: 88px; margin-top: 8px; margin-bottom: 0; }
+.command-sheet .draft .places { margin-top: 8px; }
+.command-sheet .voice { margin-bottom: 10px; }
+.command-sheet .said { margin-top: 10px; }
+.command-sheet .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.command-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
+.command-sheet .confirm-go { border-color: var(--accent-ed); color: var(--accent); }
+.command-sheet .confirm-go[disabled] { opacity: 0.5; }

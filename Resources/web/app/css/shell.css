@@ -51,6 +51,13 @@
 }
 .filter-row .start:hover { background: var(--card-hi); color: var(--ink); }
 .filter-row .start svg { display: block; width: 15px; height: 15px; }
+/* The microphone beside it carries two icons and shows one. `aria-pressed` is the whole state:
+   the attribute a screen reader reads and the selector the picture changes on are the same fact,
+   so there is no second place for them to disagree. */
+.filter-row .start .ico-stop { display: none; }
+.filter-row .start[aria-pressed="true"] { color: var(--accent); background: var(--accent-in); }
+.filter-row .start[aria-pressed="true"] .ico-mic { display: none; }
+.filter-row .start[aria-pressed="true"] .ico-stop { display: block; }
 
 /* The notifications footer. It owns the bottom edge of this column.
 

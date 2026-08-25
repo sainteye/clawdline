@@ -21,6 +21,9 @@ export var els = {};
  "start-go", "start", "start-sheet", "start-title", "start-say", "start-with", "start-filter",
  "start-list",
  "start-said", "start-close", "starting", "starting-spin", "starting-say", "starting-close",
+ "voice-go", "command", "command-sheet", "command-title", "command-say",
+ "command-voice", "command-text", "command-mic", "command-draft", "command-with",
+ "command-list", "command-instructions", "command-said", "command-cancel", "command-go",
  "notify", "notify-go", "notify-go-label", "notify-say", "shots", "attach", "pick", "mic", "voice",
  "door", "door-mark", "door-name", "door-ask", "door-to-password", "door-digits", "door-confirm",
  "door-restart", "door-left", "door-password", "door-pw-name", "door-pw-go", "door-to-pair", "door-say"

@@ -182,6 +182,22 @@ document.documentElement.className = "booting";
                    data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
                    aria-label="Filter sessions">
             <span class="slash">/</span>
+            <!-- Beside the plus because it is the other half of the same question. The plus asks
+                 *where* and offers a list; this asks *what* and takes a sentence. Two icons and
+                 never a label, like the microphone in the composer, and `aria-pressed` carries
+                 the state so a screen reader is told what a second press would do. Nothing it
+                 hears reaches a terminal — what comes back is a draft in a sheet. -->
+            <button class="start" id="voice-go" type="button" title="Say what to start"
+                    aria-label="Start a session by saying what to do" aria-pressed="false">
+                <svg class="ico ico-mic" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"></rect>
+                    <path d="M5.75 11.75v0.5a6.25 6.25 0 0 0 12.5 0v-0.5M12 18.5V21" fill="none"
+                          stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+                </svg>
+                <svg class="ico ico-stop" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor"></rect>
+                </svg>
+            </button>
             <!-- Drawn rather than typed, like the bell downstairs: a plus sign out of a font is
                  whichever plus that font has, and this one has to line up with a box beside it
                  at every size. -->
@@ -513,6 +529,56 @@ document.documentElement.className = "booting";
         <div class="buttons">
             <button class="chip" id="action-confirm-cancel" type="button">Cancel</button>
             <button class="chip confirm-go" id="action-confirm-go" type="button">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<!-- Saying what to start rather than picking where. Whisper hears it, the Mac's planner turns
+     it into a draft, and both halves stay on screen together: the words as heard, and the first
+     message they became. They are not the same thing — the planner rewrites — and the one that
+     will reach a terminal is the second, which is why it is editable right up until the button
+     at the bottom is pressed. Until then nothing here has started anything. -->
+<div class="overlay" id="command" hidden>
+    <div class="sheet command-sheet" id="command-sheet" role="dialog" aria-modal="true"
+         aria-labelledby="command-title">
+        <h2 id="command-title">Say what to start</h2>
+        <p class="say" id="command-say"></p>
+
+        <div class="voice" id="command-voice" role="status" hidden></div>
+
+        <div class="block">
+            <textarea class="find heard" id="command-text" rows="3"
+                      placeholder="What should it do?" aria-label="What was heard"
+                      autocomplete="off" autocapitalize="sentences" spellcheck="false"
+                      data-1p-ignore data-lpignore="true" data-bwignore></textarea>
+            <button class="chip redo" id="command-mic" type="button"
+                    aria-label="Say it again" title="Say it again" aria-pressed="false">
+                <svg class="ico ico-mic" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"></rect>
+                    <path d="M5.75 11.75v0.5a6.25 6.25 0 0 0 12.5 0v-0.5M12 18.5V21" fill="none"
+                          stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+                </svg>
+                <svg class="ico ico-stop" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor"></rect>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Hidden until the planner has answered. An empty frame that might fill in later reads
+             as something already broken, and this one is empty for about five seconds. -->
+        <div class="block draft" id="command-draft" hidden>
+            <div class="row" id="command-with"></div>
+            <ul class="places" id="command-list"></ul>
+            <textarea class="find" id="command-instructions" rows="4"
+                      aria-label="The first message it will be sent" spellcheck="false"
+                      data-1p-ignore data-lpignore="true" data-bwignore></textarea>
+        </div>
+
+        <p class="said" id="command-said" role="status" aria-live="polite"></p>
+
+        <div class="buttons">
+            <button class="chip" id="command-cancel" type="button">Cancel</button>
+            <button class="chip confirm-go" id="command-go" type="button">Start</button>
         </div>
     </div>
 </div>
