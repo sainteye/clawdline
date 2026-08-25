@@ -219,9 +219,17 @@ every child's briefing, leaves included: a child that knows what its answer feed
 something joinable, one that does not writes a report.
 
 `~/.config/clawdline/dispatch-policy.md` is the house rules — which assistant, which model, what
-shape the graph should be. Read fresh on every dispatch and copied into the briefing of every
-child that may dispatch in turn. It arrives with opinions in it and Settings → Remote has a
-button that opens it; delete the contents and the whole paragraph disappears from every briefing.
+shape the graph should be, and how to dispatch it. Read fresh on every dispatch and copied into
+the briefing of every child that may dispatch in turn, which is the audience that needs it: a
+root has a person nearby, a dispatching child has nobody. It arrives with opinions in it and
+Settings → Remote has a button that opens it; delete the contents and the whole paragraph
+disappears from every briefing.
+
+The mechanics in there were each paid for. Stagger dispatches by 30–45 seconds, because every
+child is a real assistant cold-starting on this Mac and four of them started together compete
+until one misses its window. A `spawn_failed` retry needs a fresh id, since the old one is
+terminal. And a child that fell back to doing the work itself has to say so, because the reader
+is weighing evidence rather than just reading an answer.
 
 The one string a dispatch now puts on a command line is the model name, and it is a name out of a
 closed alphabet rather than a fragment of a command: `[a-z0-9._-]`, at most 64, never opening with
