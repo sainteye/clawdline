@@ -1392,7 +1392,9 @@ enum Orchestrator {
         - Work inside \(task.projectDir). Put every file you produce in \(dir)/artifacts/
           (create the directory if it is missing).
         - \(handOnRule)
-        - Do not read any directory under /tmp/.clawdline/ other than the ones named here.
+        - Do not read any directory under /tmp/.clawdline/ except your own, any you dispatched,
+          and any your instructions name explicitly. That last one is how a reviewing node works:
+          it is sent to read what other nodes produced, so its instructions list those paths.
         - Do not do work the task did not ask for.
         - You have \(task.timeoutMinutes) minutes before the task is marked timed out.
         \(handOnSection(for: task, allowance: allowance))\(policySection(allowance: allowance))
@@ -1530,6 +1532,27 @@ enum Orchestrator {
     - **A `spawn_failed` retry needs a fresh id and a fresh secret.** That task id is terminal.
     - **Say when you did it yourself.** If a dispatch failed twice and you did the work instead,
       that is usually right — but the summary has to say so.
+
+    ## Somebody has to check the work
+
+    Every graph that produces code, or a decision anybody will act on, ends with a node whose only
+    job is to find what is wrong with it. Not a fifth worker — a reader.
+
+    - **It produces nothing.** It reads the other nodes' artifacts and writes findings. Fixing is
+      the next round's job, or a person's. A node that both writes and judges its own work does
+      neither well.
+    - **It did not help build the thing.** Give it the outputs, not the conversation that made
+      them, and never the node that made them.
+    - **Different assistant where you can.** Codex wrote it, Claude reads it. Two models sharing
+      a blind spot is the failure this node exists to catch, and the surest way to share one is
+      to be the same model.
+    - **Never a smaller model than the one being judged.** A review by something weaker than the
+      thing reviewed is a rubber stamp with a token cost.
+    - **Name the paths.** Its instructions must list the exact `/tmp/.clawdline/<id>/artifacts/`
+      directories to read — that is what makes reading them allowed, and what stops it reviewing
+      the wrong thing.
+    - **Ask it for a verdict, not an essay.** "What is wrong with this, most serious first, and
+      is it safe to ship" — a review that ends without a position is one nobody can act on.
     """
 
     /// The graph this task is one node of, when the dispatcher wrote one down.
