@@ -9,6 +9,25 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: a task could be reported as failed while its child was working
+
+A dispatched task was marked `spawn_failed` with "the task's secret was lost before briefing",
+while the child it had opened sat there doing the work and finished it. Both things were true.
+The record was walked twice: one walk copied the task while it was still starting up, the other
+briefed it and spent the secret, and then the first walk carried on from its copy and found the
+secret gone. Nothing had gone wrong with the child; the broker had lost track of it.
+
+A task's state can now only move forward. A copy that was taken before somebody else advanced the
+record is refused rather than written, so a briefed task cannot become a starting one again and a
+finished task cannot come back to life. Each walk also re-reads a task at the moment it advances
+it, rather than trusting the list it started from.
+
+The overlap that made this possible should not be reachable — every caller runs on the same
+thread — so this release counts it rather than preventing it: a walk that begins while another is
+still running writes a line to the audit log naming both, and a refused write does the same. The
+next occurrence should say who the second walker is, which is the one thing the first occurrence
+could not.
+
 ### Fixed: a slow-starting child could miss its briefing forever
 
 Opening a child and seeing the assistant process was not the same thing as seeing somewhere to

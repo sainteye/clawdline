@@ -34,6 +34,20 @@ enum Orchestrator {
         }
     }
 
+    /// A stale value copy may add fields, but it may never move a task backwards or resurrect it.
+    /// Internal rather than private so the invariant has a pure unit test.
+    static func mayReplaceState(_ current: State, with candidate: State) -> Bool {
+        if current == candidate { return true }
+        if current.isTerminal { return false }
+        if candidate.isTerminal { return true }
+        switch (current, candidate) {
+        case (.queued, .spawning), (.queued, .briefed), (.spawning, .briefed):
+            return true
+        default:
+            return false
+        }
+    }
+
     struct Usage {
         var input = 0
         var output = 0
@@ -173,6 +187,10 @@ enum Orchestrator {
     private static let lock = NSLock()
     private static var loaded = false
     private static var tasks: [String: Task] = [:]
+    /// How many `beat` walks are inside the loop, and which walk this is. Both exist to catch the
+    /// overlap that should not be possible; neither changes what a walk does.
+    private static var beatsInFlight = 0
+    private static var beatSequence = 0
     /// Plaintext secrets, held only between dispatch and briefing. Never on disk.
     private static var secrets: [String: String] = [:]
     private static var dispatchTimes: [Date] = []
@@ -193,6 +211,28 @@ enum Orchestrator {
             if let terminal = task.childTerminalId { found[terminal] = task.title }
         }
         titlesByTerminal = found
+    }
+
+    /// Commit a value copy only while the record is still the state the caller worked from.
+    /// The monotonic check is the second belt: callers without a narrow expectation still cannot
+    /// turn `.briefed` back into `.spawning`, or a terminal result back into a live task.
+    @discardableResult
+    private static func replaceTask(_ candidate: Task, expecting expected: State? = nil,
+                                    discardSecret: Bool = false) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard let current = tasks[candidate.id] else { return false }
+        if let expected, current.state != expected { return false }
+        guard mayReplaceState(current.state, with: candidate.state) else {
+            RemoteAuth.audit("orchestrator.stale_write", [
+                "task": candidate.id,
+                "current": current.state.rawValue,
+                "candidate": candidate.state.rawValue,
+            ])
+            return false
+        }
+        tasks[candidate.id] = candidate
+        if discardSecret { secrets.removeValue(forKey: candidate.id) }
+        return true
     }
 
     // MARK: - The dispatch token
@@ -355,10 +395,7 @@ enum Orchestrator {
         // Straight away rather than on the next beat: the root is holding its breath on this
         // request, and the answer should already say whether a terminal actually opened.
         task = spawn(task)
-        lock.lock()
-        tasks[taskID] = task
-        if task.state.isTerminal { secrets.removeValue(forKey: taskID) }
-        lock.unlock()
+        _ = replaceTask(task, expecting: .queued, discardSecret: task.state.isTerminal)
         save()
         DispatchQueue.main.async { SessionWatch.shared.nudge() }
         RemoteServer.shared.broadcastOrchestrator()
@@ -571,7 +608,7 @@ enum Orchestrator {
               task.childTTY == nil || child.tty == task.childTTY else { return false }
         let justTheTab = childIsBusy(child) || child.assistant == nil
         task.closeAt = nil
-        lock.lock(); tasks[id] = task; lock.unlock()
+        guard replaceTask(task, expecting: task.state) else { return false }
         RemoteAuth.audit("orchestrator.close", ["task": id, "child": childID,
                                                 "how": justTheTab ? "tab" : "exit",
                                                 "why": "root_ended", "root": root])
@@ -650,20 +687,52 @@ enum Orchestrator {
     /// without the screen moving. Only the timer path asks for fresh readings, so an observer
     /// firing cannot ask for the reading that fires it.
     static func beat(fromTimer: Bool) {
+        // Two walkers at once is the shape a task once failed in: one of them had copied a record
+        // before the other advanced it, and acted on that copy afterwards. Every caller reachable
+        // from here is on the main thread, so that overlap should be impossible — and it happened
+        // anyway, which means the list of callers or the assumption is wrong.
+        //
+        // So this counts rather than blocks. Blocking would make the next occurrence invisible,
+        // and invisible is what made the first one take a day to reason about; the record can no
+        // longer be damaged by a stale copy either way, because `replaceTask` refuses to move a
+        // task backwards. What is missing is evidence of who the second walker is, and a walker
+        // that is quietly dropped never leaves any.
         lock.lock()
-        let live = tasks.values.filter { !$0.state.isTerminal || $0.closeAt != nil }
+        beatSequence += 1
+        let sequence = beatSequence
+        let overlapping = beatsInFlight > 0
+        beatsInFlight += 1
+        let liveIDs = tasks.values
+            .filter { !$0.state.isTerminal || $0.closeAt != nil }
+            .map(\.id)
         lock.unlock()
-        guard !live.isEmpty else { return }
+        defer {
+            lock.lock(); beatsInFlight -= 1; lock.unlock()
+        }
+        if overlapping {
+            RemoteAuth.audit("orchestrator.beat_overlap",
+                             ["beat": String(sequence),
+                              "from": fromTimer ? "timer" : "reading",
+                              "main": String(Thread.isMainThread),
+                              "thread": Thread.current.description])
+        }
+        guard !liveIDs.isEmpty else { return }
 
         var changed = false
-        for task in live {
+        var sawSpawning = false
+        for id in liveIDs {
+            // The list is only scheduling. State is read at the instant this task is advanced, so
+            // an earlier item in a long beat cannot leave a stale state decision behind it.
+            guard let task = held(id), !task.state.isTerminal || task.closeAt != nil else { continue }
             switch task.state {
-            case .spawning: changed = brief(task) || changed
+            case .spawning:
+                sawSpawning = true
+                changed = brief(task) || changed
             case .briefed:  changed = watch(task) || changed
             default: changed = closeChild(task) || changed
             }
         }
-        if fromTimer, live.contains(where: { $0.state == .spawning }) {
+        if fromTimer, sawSpawning {
             // Away from the panel the watch reads every twenty seconds, which is a long time to
             // leave a freshly opened terminal unbriefed.
             SessionWatch.shared.nudge()
@@ -676,11 +745,13 @@ enum Orchestrator {
 
     /// Try to put the first message in front of a child that has just opened. True when the task
     /// record changed.
-    private static func brief(_ task: Task) -> Bool {
-        var task = task
+    private static func brief(_ snapshot: Task) -> Bool {
+        // A snapshot only nominates an id. Never act on its state or fields after another writer
+        // may have advanced the record.
+        guard var task = held(snapshot.id), task.state == .spawning else { return false }
         guard let spawnedAt = task.spawnedAt else { return false }
         if Date().timeIntervalSince(spawnedAt) > 120 {
-            lock.lock(); tasks[task.id] = task; lock.unlock()
+            guard replaceTask(task, expecting: .spawning) else { return false }
             finalize(task.id, as: .spawnFailed,
                      summary: "The child session did not become ready within two minutes.")
             return false // finalize saved and broadcast already
@@ -690,7 +761,7 @@ enum Orchestrator {
               child.assistant == task.assistant else { return false }
         if task.childTTY == nil {
             task.childTTY = child.tty
-            lock.lock(); tasks[task.id] = task; lock.unlock()
+            guard replaceTask(task, expecting: .spawning) else { return false }
         }
         let changed = noteChildIdentity(child, in: &task)
         let screen = Targets.capture(child)
@@ -701,7 +772,7 @@ enum Orchestrator {
         if let screen, SessionState.isChoosing(screen, assistant: task.assistant) {
             if !task.answeredMenu {
                 task.answeredMenu = true
-                lock.lock(); tasks[task.id] = task; lock.unlock()
+                guard replaceTask(task, expecting: .spawning) else { return false }
                 _ = Targets.answer(0x31, to: child)
                 RemoteAuth.audit("orchestrator.menu", ["task": task.id, "answer": "1"])
             }
@@ -724,26 +795,26 @@ enum Orchestrator {
             task.state = .briefed
             task.briefedAt = task.lastInjectAt ?? Date()
             task.lastSeenChild = Date()
-            lock.lock()
-            tasks[task.id] = task
-            secrets.removeValue(forKey: task.id)
-            lock.unlock()
+            guard replaceTask(task, expecting: .spawning, discardSecret: true) else { return false }
             RemoteAuth.audit("orchestrator.brief", ["task": task.id,
                                                       "child": task.childTerminalId ?? "?",
                                                       "attempts": String(task.injectAttempts)])
             return true
         }
         if decision == .exhausted {
-            lock.lock(); tasks[task.id] = task; lock.unlock()
+            guard replaceTask(task, expecting: .spawning) else { return false }
             finalize(task.id, as: .spawnFailed,
                      summary: "The child did not record the briefing after \(briefingAttemptLimit) attempts.")
             return false // finalize saved and broadcast already
         }
         guard decision == .send else {
-            if changed { lock.lock(); tasks[task.id] = task; lock.unlock() }
+            if changed, !replaceTask(task, expecting: .spawning) { return false }
             return changed
         }
         guard let secret = heldSecret(task.id) else {
+            // Secret absence is an error only while the current record is still awaiting briefing;
+            // a stale walker arriving after acceptance has nothing left to do.
+            guard held(task.id)?.state == .spawning else { return false }
             finalize(task.id, as: .spawnFailed, summary: "The task's secret was lost before briefing.")
             return false
         }
@@ -756,16 +827,16 @@ enum Orchestrator {
             // try again immediately, still under the same total-attempt ceiling.
             task.lastInjectAt = nil
             if task.injectAttempts >= briefingAttemptLimit {
-                lock.lock(); tasks[task.id] = task; lock.unlock()
+                guard replaceTask(task, expecting: .spawning) else { return false }
                 finalize(task.id, as: .spawnFailed, summary: "Could not type into the child: \(failure)")
                 return false
             }
-            lock.lock(); tasks[task.id] = task; lock.unlock()
+            guard replaceTask(task, expecting: .spawning) else { return false }
             return true
         }
         // `Targets.send` proves only that bytes reached the tty. Keep the secret and remain in
         // `spawning` until the assistant's own transcript proves those bytes became a user turn.
-        lock.lock(); tasks[task.id] = task; lock.unlock()
+        guard replaceTask(task, expecting: .spawning) else { return false }
         RemoteAuth.audit("orchestrator.brief.inject", ["task": task.id,
                                                         "child": task.childTerminalId ?? "?",
                                                         "attempt": String(task.injectAttempts)])
@@ -780,7 +851,7 @@ enum Orchestrator {
         // The result file is the completion signal a sandboxed child can always give — writing
         // to /tmp needs no network approval, where a curl to loopback does.
         if let result = readResult(of: task) {
-            lock.lock(); tasks[task.id] = task; lock.unlock()
+            guard replaceTask(task, expecting: .briefed) else { return false }
             finalize(task.id, as: result.status == "success" ? .success : .failure,
                      summary: result.summary, artifacts: result.artifacts)
             return false
@@ -788,7 +859,7 @@ enum Orchestrator {
 
         if let briefedAt = task.briefedAt,
            Date().timeIntervalSince(briefedAt) > Double(task.timeoutMinutes) * 60 {
-            lock.lock(); tasks[task.id] = task; lock.unlock()
+            guard replaceTask(task, expecting: .briefed) else { return false }
             finalize(task.id, as: .timeout,
                      summary: "No result within \(task.timeoutMinutes) minutes.")
             return false
@@ -801,17 +872,17 @@ enum Orchestrator {
             // The child's own identity, once its assistant has written it down. Free for Claude
             // (a dictionary the hooks fill), one cached lsof for Codex.
             changed = noteChildIdentity(child, in: &task) || changed
-            lock.lock(); tasks[task.id] = task; lock.unlock()
+            if !replaceTask(task, expecting: .briefed) { return false }
         } else if let seen = task.lastSeenChild {
             if Date().timeIntervalSince(seen) > 60 {
-                lock.lock(); tasks[task.id] = task; lock.unlock()
+                guard replaceTask(task, expecting: .briefed) else { return false }
                 finalize(task.id, as: .failure,
                          summary: "The child session ended without reporting a result.")
                 return false
             }
         } else {
             task.lastSeenChild = Date()
-            lock.lock(); tasks[task.id] = task; lock.unlock()
+            if !replaceTask(task, expecting: .briefed) { return false }
         }
         return changed
     }
@@ -874,7 +945,7 @@ enum Orchestrator {
               task.childTTY == nil || child.tty == task.childTTY else {
             // Gone already, or the terminal is somebody else's now: nothing here is ours to close.
             task.closeAt = nil
-            lock.lock(); tasks[task.id] = task; lock.unlock()
+            guard replaceTask(task, expecting: task.state) else { return false }
             return true
         }
         // A child still mid-turn is left alone — result.json was meant to be the last thing it
@@ -887,7 +958,7 @@ enum Orchestrator {
         if busy, !overdue { return false }
         let justTheTab = busy || child.assistant == nil
         task.closeAt = nil
-        lock.lock(); tasks[task.id] = task; lock.unlock()
+        guard replaceTask(task, expecting: task.state) else { return false }
         RemoteAuth.audit("orchestrator.close", ["task": task.id, "child": childID,
                                                  "how": justTheTab ? "tab" : "exit"])
         // Off the main thread: `end` types the quit word, waits for it to land, then closes the

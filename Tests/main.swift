@@ -726,6 +726,27 @@ group("transcript parsing") {
     expect("the valid row after malformed queue rows survives", afterMalformedQueue.first?.text,
            "still parses")
 
+    let systemRows = [
+        #"{"type":"system","timestamp":"2026-08-24T10:28:54.573Z","content":"<command-name>/rename</command-name>\n<command-message>rename</command-message>\n<command-args>修正瀏覽器問答</command-args>"}"#,
+        #"{"type":"system","content":"ordinary system bookkeeping"}"#,
+        #"{"type":"system"}"#,
+        #"{"type":"system","content":{"text":"not a string"}}"#,
+        #"{"type":"system","content":"<command-name>never closes"}"#,
+        #"{"type":"system","content":"<local-command-stdout>Session renamed to: 修正瀏覽器問答</local-command-stdout>"}"#,
+        #"{"type":"assistant","message":{"role":"assistant","content":"still parses too"}}"#,
+    ].joined(separator: "\n")
+    let afterSystemRows = Transcript.parse(systemRows)
+    expect("a tagged system slash command and the ordinary message survive",
+           afterSystemRows.count, 2)
+    expect("a system slash command belongs to the user", afterSystemRows.first?.kind,
+           Transcript.Entry.Kind.user)
+    expect("a system slash command is reconstructed as one line", afterSystemRows.first?.text,
+           "/rename 修正瀏覽器問答")
+    expect("a system slash command keeps its timestamp",
+           afterSystemRows.first?.time?.timeIntervalSince1970, 1787567334.573)
+    expect("unrelated and malformed system rows do not break later parsing",
+           afterSystemRows.last?.text, "still parses too")
+
     // The scan walks the UTF-8 view a byte at a time and then slices the String with the indices
     // it stopped on. Those stops are always just after an ASCII newline, so they are always on a
     // character boundary — but if that ever stopped being true the slice would not be wrong, it
@@ -761,6 +782,41 @@ group("transcript titles") {
     expect("a plain title is untouched", Transcript.cleanTitle("fix the thing"), "fix the thing")
     expect("works on CJK", Transcript.cleanTitle("◑ 將輸入框移到中上方 (node)"), "將輸入框移到中上方")
     expect("empty stays empty", Transcript.cleanTitle("   "), "")
+
+    let fm = FileManager.default
+    let dir = fm.temporaryDirectory
+        .appendingPathComponent("clawdline-transcript-titles-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: dir) }
+
+    func write(_ name: String, _ rows: [String]) -> URL {
+        let url = dir.appendingPathComponent("\(name).jsonl")
+        try! Data(rows.joined(separator: "\n").utf8).write(to: url)
+        return url
+    }
+
+    let aiOnly = write("ai-only", [
+        #"{"type":"system","aiTitle":"first automatic title"}"#,
+        #"{"type":"system","aiTitle":"last automatic title"}"#,
+    ])
+    expect("the last ai title is used when there is no custom title",
+           Transcript.title(ofTranscript: aiOnly), "last automatic title")
+
+    let customOnly = write("custom-only", [
+        #"{"type":"custom-title","customTitle":"first chosen title"}"#,
+        #"{"type":"custom-title","customTitle":"last chosen title"}"#,
+    ])
+    expect("the last custom title is used", Transcript.title(ofTranscript: customOnly),
+           "last chosen title")
+
+    let both = write("both", [
+        #"{"type":"custom-title","customTitle":"修正瀏覽器問答"}"#,
+        String(repeating: "x", count: 1_024),
+        #"{"type":"system","aiTitle":"later automatic title"}"#,
+    ])
+    expect("an explicit title before the tail wins over a later ai title",
+           Transcript.title(ofTranscript: both, tailBytes: 128), "修正瀏覽器問答")
 }
 
 group("transcript project directory") {
@@ -5150,6 +5206,19 @@ group("what a child's turn cost, at the prices this app knows") {
     unpriced.input = 1_000_000
     check("tokens nobody has a price for cost nothing that can be said",
           Orchestrator.cost(of: unpriced) == nil)
+}
+
+group("orchestrator task states only move forward") {
+    check("a briefed task cannot become spawning again",
+          !Orchestrator.mayReplaceState(.briefed, with: .spawning))
+    check("a terminal task cannot be resurrected",
+          !Orchestrator.mayReplaceState(.success, with: .briefed))
+    check("a spawning task may advance to briefed",
+          Orchestrator.mayReplaceState(.spawning, with: .briefed))
+    check("a spawning task may fail terminally",
+          Orchestrator.mayReplaceState(.spawning, with: .spawnFailed))
+    check("same-state field enrichment remains possible",
+          Orchestrator.mayReplaceState(.briefed, with: .briefed))
 }
 
 group("an orchestrated child is briefed only at a real composer") {
