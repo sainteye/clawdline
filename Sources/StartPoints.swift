@@ -15,10 +15,16 @@ import Foundation
 ///   field anywhere on this route that a directory can be written into, which is a stronger
 ///   statement than "the directory is validated": validation is a thing the next person to touch
 ///   this file can weaken by accident, and an absent parameter is not.
-/// - **The command is fixed.** `claude` or `codex`, no arguments, and both of them literals in
-///   ``Assistant``. Which of the two is a named choice out of a closed list — an unknown name is
-///   a `400` — and not a string that reaches a shell. If `claude --resume` is wanted one day it
-///   is a second named action with its own literal, not a field.
+/// - **The command is fixed.** `claude` or `codex`, both of them literals in ``Assistant``.
+///   Which of the two is a named choice out of a closed list — an unknown name is a `400` — and
+///   not a string that reaches a shell. If `claude --resume` is wanted one day it is a second
+///   named action with its own literal, not a field.
+/// - **The one exception is a model name**, and it is an exception in the shape of the rule
+///   rather than a hole in it: it is not a fragment of a command line, it is a name out of a
+///   closed alphabet. ``modelName(_:)`` is the whole of that claim — `[a-z0-9._-]`, at most 64,
+///   never opening with `-` — and no string it admits contains a character a shell reads. It is
+///   checked there as well as wherever it came from, because the guarantee belongs to this file.
+///   The route a phone can reach still passes nothing: only a dispatched task names a model.
 /// - **The list cannot name somewhere you have never been.** It is built from each assistant's
 ///   own record of where it has run and from the sessions clawdline can already see — all of
 ///   which are places this Mac has already run one of them in.
@@ -74,10 +80,34 @@ enum StartPoints {
     /// `osascript` call — means the quoting is only ever exercised by running it, which is the
     /// one thing a test must not do.
     ///
-    /// The command is a literal on ``Assistant``. `cwd` is quoted with the same `shellQuoted`
+    /// The command is a literal on ``Assistant``, plus a model name that has been through
+    /// ``modelName(_:)`` if there is one. `cwd` is quoted with the same `shellQuoted`
     /// the git plumbing uses.
-    static func itermLine(cwd: String, assistant: Assistant = .claude) -> String {
-        "cd " + Project.shellQuoted(cwd) + " && " + assistant.command
+    static func itermLine(cwd: String, assistant: Assistant = .claude,
+                          model: String? = nil) -> String {
+        "cd " + Project.shellQuoted(cwd) + " && " + assistant.command(model: modelName(model))
+    }
+
+    /// A model name, or nil for anything that is not one.
+    ///
+    /// The alphabet is `[a-z0-9._-]`, the length is 1…64, and it may not open with `-`. That
+    /// holds every slug either CLI answers to — `haiku`, `claude-opus-5-20260201`,
+    /// `gpt-5.1-codex` — and holds no character a shell reads: no space, no quote, no `$`, no
+    /// `;`, no newline. So a line built with one is still one command with one argument,
+    /// whatever was passed.
+    ///
+    /// **Fail-closed, and deliberately silent here.** A name this refuses becomes *no flag*
+    /// rather than a refusal, because by the time a tab is being opened the honest answer is a
+    /// session on the default model rather than no session at all. The loud refusal belongs
+    /// upstream, where somebody is still holding the request: `Orchestrator.draft` runs the same
+    /// check and answers `bad_task`.
+    static func modelName(_ raw: String?) -> String? {
+        guard let raw, !raw.isEmpty, raw.count <= 64, !raw.hasPrefix("-") else { return nil }
+        let ok = raw.allSatisfy {
+            ("a"..."z").contains($0) || ("0"..."9").contains($0)
+                || $0 == "." || $0 == "_" || $0 == "-"
+        }
+        return ok ? raw : nil
     }
 
     // MARK: - Which terminal
@@ -152,7 +182,8 @@ enum StartPoints {
     /// calling `activate`, so iTerm2 stays wherever it was in the window order. A window is only
     /// created when there is not one already, and that is the one case where something may come
     /// forward — there is no way to make a window and not have it be a window.
-    static func start(_ place: Place, assistant: Assistant = .claude) -> Outcome {
+    static func start(_ place: Place, assistant: Assistant = .claude,
+                      model: String? = nil) -> Outcome {
         guard usable(place.path), isDirectory(place.path) else {
             return .refused(status: 404, code: "not_found",
                             message: "No place named that", app: nil)
@@ -160,7 +191,8 @@ enum StartPoints {
         switch plan(scope: Config.shared.scopeApp, running: runningApps(), hasTmux: tmuxIsUp()) {
         case .iterm:
             guard let made = ITerm.newTab(line: itermLine(cwd: place.path,
-                                                          assistant: assistant)) else {
+                                                          assistant: assistant,
+                                                          model: model)) else {
                 return .refused(status: 502, code: "internal",
                                 message: "iTerm2 would not open a tab.", app: nil)
             }
@@ -169,9 +201,11 @@ enum StartPoints {
         case .tmux:
             // Nothing is quoted here and nothing needs to be: tmux is given a working directory
             // and a command as separate arguments of a subprocess, so there is no line for a
-            // directory name to break out of.
+            // directory name to break out of. The command reaching a shell one level down is why
+            // `modelName` is a closed alphabet rather than an escaping rule — there is nothing
+            // in a name it admits for that shell to read.
             guard let pane = Tmux.newWindow(cwd: place.path,
-                                            command: assistant.command) else {
+                                            command: assistant.command(model: modelName(model))) else {
                 return .refused(status: 502, code: "internal",
                                 message: "tmux would not open a window.", app: nil)
             }

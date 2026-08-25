@@ -35,6 +35,17 @@ enum Assistant: String, CaseIterable {
     /// see ``StartPoints`` for why the one route that runs it has no field a string can enter by.
     var command: String { rawValue }
 
+    /// The same command with a model named on it, when one was.
+    ///
+    /// Both CLIs spell the flag `--model`, which is the only reason this is one function rather
+    /// than a switch. The name is the single variable part of the whole line, and what keeps it
+    /// from being a fragment of a command is ``StartPoints/modelName(_:)`` — pass anything that
+    /// has not been through it and the guarantee in `StartPoints`' header stops being true.
+    func command(model: String?) -> String {
+        guard let model, !model.isEmpty else { return command }
+        return command + " --model " + model
+    }
+
     /// The line that ends a session, typed at its prompt.
     ///
     /// Claude Code takes `/exit`, Codex takes `/quit` — and each rejects the other's, which is

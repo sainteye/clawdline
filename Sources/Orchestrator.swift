@@ -64,6 +64,9 @@ enum Orchestrator {
         var kind: String
         var title: String
         var assistant: Assistant
+        /// The model the child was started on, when the task named one. Nil means whatever that
+        /// assistant defaults to, which is the answer for most tasks and all older records.
+        var model: String?
         var projectDir: String
         var timeoutMinutes: Int
         var created: Date
@@ -285,6 +288,7 @@ enum Orchestrator {
         var id = ""
         var kind = "custom"
         var assistant = Assistant.claude
+        var model: String?
         var projectDir = ""
         var title = ""
         var instructions = ""
@@ -318,9 +322,21 @@ enum Orchestrator {
               instructions.utf8.count <= 16_384 else {
             return .bad("instructions must be non-empty and at most 16 KiB")
         }
+        // Loud here, quiet at the tab. `StartPoints.modelName` runs again on the way to the
+        // command line and answers "no flag" — but somebody is still holding this request, and a
+        // typo they can be told about is worth more than a session quietly on the wrong model.
+        var model: String?
+        if let named = obj["model"] as? String, !named.isEmpty {
+            guard let ok = StartPoints.modelName(named) else {
+                return .bad("model must be a model name: lower-case letters, digits, . _ -, "
+                          + "at most 64 characters")
+            }
+            model = ok
+        }
         var made = Draft()
         made.id = id
         made.assistant = assistant
+        made.model = model
         made.projectDir = dir
         made.instructions = instructions
         made.kind = (obj["kind"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(40)) } ?? "custom"
@@ -413,7 +429,7 @@ enum Orchestrator {
         }
 
         var task = Task(id: taskID, state: .queued, kind: made.kind, title: made.title,
-                        assistant: made.assistant, projectDir: made.projectDir,
+                        assistant: made.assistant, model: made.model, projectDir: made.projectDir,
                         timeoutMinutes: made.timeoutMinutes, created: Date(),
                         rootSessionId: made.rootSessionId, rootLabel: made.rootLabel,
                         depth: depth, parentTaskId: made.parentTaskId,
@@ -424,7 +440,8 @@ enum Orchestrator {
         lock.unlock()
         RemoteAuth.audit("orchestrator.dispatch", ["task": taskID, "assistant": made.assistant.rawValue,
                                                    "cwd": made.projectDir, "kind": made.kind,
-                                                   "depth": String(depth)])
+                                                   "depth": String(depth),
+                                                   "model": made.model ?? "default"])
 
         // Straight away rather than on the next beat: the root is holding its breath on this
         // request, and the answer should already say whether a terminal actually opened.
@@ -444,7 +461,7 @@ enum Orchestrator {
         let place = StartPoints.Place(id: StartPoints.id(for: task.projectDir),
                                       path: task.projectDir,
                                       label: task.title, at: Date())
-        switch StartPoints.start(place, assistant: task.assistant) {
+        switch StartPoints.start(place, assistant: task.assistant, model: task.model) {
         case .refused(_, let code, let message, _):
             task.state = .spawnFailed
             task.summary = "\(code): \(message)"
@@ -1510,6 +1527,7 @@ enum Orchestrator {
             "depth": task.depth,
             "dir": "/tmp/.clawdline/\(task.id)",
         ]
+        if let model = task.model { out["model"] = model }
         if let at = task.spawnedAt { out["spawnedAt"] = Int(at.timeIntervalSince1970) }
         if let at = task.briefedAt { out["briefedAt"] = Int(at.timeIntervalSince1970) }
         if let at = task.finishedAt { out["finishedAt"] = Int(at.timeIntervalSince1970) }
@@ -1599,6 +1617,7 @@ enum Orchestrator {
         if let v = task.rootSessionId { out["root_session"] = v }
         if let v = task.rootLabel { out["root_label"] = v }
         if let v = task.parentTaskId { out["parent_task"] = v }
+        if let v = task.model { out["model"] = v }
         if let v = task.childTerminalId { out["child_terminal"] = v }
         if let v = task.childBackend { out["child_backend"] = v.rawValue }
         if let v = task.childTTY { out["child_tty"] = v }
@@ -1636,6 +1655,7 @@ enum Orchestrator {
         task.rootSessionId = obj["root_session"] as? String
         task.rootLabel = obj["root_label"] as? String
         task.parentTaskId = obj["parent_task"] as? String
+        task.model = StartPoints.modelName(obj["model"] as? String)
         // A registry written before tasks had a depth holds only tasks a root dispatched, which
         // is exactly what 1 means.
         task.depth = (obj["depth"] as? Int).map { min(max($0, 1), 9) } ?? 1

@@ -5185,6 +5185,11 @@ group("a task.json is read before a terminal is opened for it") {
     }
 
     expect("a whole task is taken as written", made(file())?.assistant, .codex)
+    check("a task with no model named runs on whatever that assistant defaults to",
+          made(file())?.model == nil)
+    expect("one that names a model carries it", made(file(["model": "haiku"]))?.model, "haiku")
+    check("and one that names something that is not a model is refused, not quietly ignored",
+          refused(file(["model": "haiku; rm -rf /"])))
     expect("with its own timeout", made(file())?.timeoutMinutes, 45)
     expect("its kind", made(file())?.kind, "image")
     expect("its title", made(file())?.title, "draw the project")
@@ -5227,6 +5232,44 @@ group("a task.json is read before a terminal is opened for it") {
     check("a project_dir that is not a path at all", refused(file(["project_dir": "thing"])))
     check("a timeout past four hours", refused(file(["timeout_minutes": 999])))
     check("and one of zero minutes", refused(file(["timeout_minutes": 0])))
+}
+
+group("a model name is a name, not a fragment of a command line") {
+    // The one string a dispatched task puts on a command line. `StartPoints`' header promises the
+    // command is a literal; this is the exception, and it holds only because the alphabet is
+    // closed. Every refusal below is a character a shell would read.
+    func ok(_ raw: String) -> Bool { StartPoints.modelName(raw) == raw }
+    check("a bare alias is a name", ok("haiku"))
+    check("so is a dated id", ok("claude-opus-5-20260201"))
+    check("and one with a dot in it", ok("gpt-5.1-codex"))
+    check("and one with an underscore", ok("some_model.v2-3"))
+
+    check("a space is not", StartPoints.modelName("haiku extra") == nil)
+    check("nor a semicolon", StartPoints.modelName("haiku;id") == nil)
+    check("nor a substitution", StartPoints.modelName("$(id)") == nil)
+    check("nor a backtick", StartPoints.modelName("`id`") == nil)
+    check("nor a quote", StartPoints.modelName("\"haiku\"") == nil)
+    check("nor a newline", StartPoints.modelName("haiku\nid") == nil)
+    check("nor an ampersand", StartPoints.modelName("haiku&&id") == nil)
+    check("nor a second flag, which is the one that would not look wrong",
+          StartPoints.modelName("--dangerously-skip-permissions") == nil)
+    check("nor upper case, which no slug either CLI takes uses",
+          StartPoints.modelName("Haiku") == nil)
+    check("nor nothing at all",
+          StartPoints.modelName("") == nil && StartPoints.modelName(nil) == nil)
+    check("64 characters is a name", StartPoints.modelName(String(repeating: "a", count: 64)) != nil)
+    check("65 is not", StartPoints.modelName(String(repeating: "a", count: 65)) == nil)
+
+    expect("the flag is written once", Assistant.claude.command(model: "haiku"),
+           "claude --model haiku")
+    expect("and not written at all when nothing was named", Assistant.claude.command(model: nil),
+           "claude")
+    check("the line a tab is opened with is still one command",
+          StartPoints.itermLine(cwd: "/tmp/x", assistant: .codex, model: "gpt-5.1-codex")
+              .hasSuffix("&& codex --model gpt-5.1-codex"))
+    check("and a refused name reaches that line as no flag rather than as an argument",
+          StartPoints.itermLine(cwd: "/tmp/x", assistant: .claude, model: "haiku; id")
+              .hasSuffix("&& claude"))
 }
 
 group("a task id is the name of a directory, so it may not be a path") {
