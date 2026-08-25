@@ -125,7 +125,8 @@ session's bucket rather than out of everybody's. The ceiling below is what close
 - **Four hours, absolute.** `timeout_minutes` is 1…240 and 30 by default. A child that has not
   reported by then is `timeout`, whatever it is still doing.
 - **Two minutes to be briefed.** A tab that opens but never reaches a state where the first message
-  can be typed is `spawn_failed` rather than a tab sitting there forever with a task attached to it.
+  can be typed — or that never records having received it, after five attempts — is `spawn_failed`
+  rather than a tab sitting there forever with a task attached to it.
   The likeliest cause of hitting it is a `project_dir` this Mac has never run that assistant in:
   Claude Code asks *"Do you trust this folder?"* before it will take a first message, which is a
   door in front of the session rather than inside it — `permission_mode` does not reach it. Dispatch
@@ -381,13 +382,29 @@ enough to observe.
 a Mac where that works is a Mac where this works. A refusal here (no terminal running, a terminal
 that cannot be driven) is `spawn_failed` with the reason kept.
 
-**briefed** — the first message has been typed and accepted. Getting here is the fiddly part and it
-is worth knowing what the app is waiting for, because it explains the delay: the tab has to appear
-in the session list, the assistant has to actually be up (a shell that has not finished starting
-`codex` is not a session yet), and the session has to be idle rather than showing a menu. A fresh
-directory raises Claude Code's trust prompt, and the app answers that one — option `1`, once per
-task, written to the audit log — because a task that stalls on a dialog nobody is looking at is a
-task that fails at the two-minute deadline for no reason anyone could see.
+**briefed** — the child's own record shows the first message as a turn it received. Getting here is
+the fiddly part, and it is worth knowing what the app is waiting for, because it explains the delay.
+
+It waits for **somewhere to type**. A tab in the session list is not that, and neither is a process
+with the right name: an assistant still starting its MCP servers has a readable banner and no
+composer, and a briefing typed into that is swallowed without anything reporting a failure. So the
+app waits until it can see the assistant's own empty composer, which is the first moment there is
+anywhere for a sentence to go.
+
+Then it waits for **evidence the sentence arrived**. Typing into a terminal proves that bytes
+reached a tty and nothing more, so the task stays in `spawning` and keeps its secret until the
+assistant's own record — Claude Code's transcript, Codex's rollout — carries that task's first user
+turn. Only that moves it to `briefed`.
+
+If the record still has no such turn once the receipt window has passed and the empty composer is
+back, the app types it again, up to five attempts in total, then gives up as `spawn_failed`. It
+will not send a second copy on the strength of a missing file alone: both assistants write the user
+turn before they begin it, so a first message that was accepted closes the gate before it can be
+run twice.
+
+A fresh directory raises Claude Code's trust prompt, and the app answers that one — option `1`,
+once per task, written to the audit log — because a task that stalls on a dialog nobody is looking
+at is a task that fails at the two-minute deadline for no reason anyone could see.
 
 Once briefed, the plaintext secret is gone from memory and the task is the child's problem.
 
@@ -433,8 +450,9 @@ otherwise leave a grandchild belonging to nobody. Cancelling a single task does 
 smaller scale — what that task handed on goes with it, since it is work nobody is waiting for any
 more.
 
-**spawn_failed** — the tab never happened, or never got briefed inside two minutes, or the app was
-restarted while the task was still in `queued`/`spawning`. That last one is not a bug: the plaintext
+**spawn_failed** — the tab never happened, or never got briefed inside two minutes, or was typed
+into five times without the child ever recording the message, or the app was restarted while the
+task was still in `queued`/`spawning`. That last one is not a bug: the plaintext
 secret lived only in memory, so a task that had not been briefed before a restart can never be
 briefed, and saying so beats leaving a row that will sit at `spawning` forever.
 
