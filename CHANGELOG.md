@@ -9,6 +9,37 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: picking a conversation back up from the phone
+
+*Start a session* could only ever begin a new one. The conversation you were in an hour ago — the
+one with the context, the plan and the half-finished thing in it — was reachable from the Mac and
+nowhere else, and the honest workaround from a phone was to start something fresh and re-explain.
+
+The sheet now has a tick box. With it on, pressing a project shows what Claude Code has already
+recorded there instead of starting anything: its conversations, newest first, **under the names it
+gave them**, with a box to find one by typing part of the name. Press a row and a tab opens in that
+project running `claude --resume` on that conversation.
+
+The names are read, never invented — a rename you typed beats the title Claude Code wrote, and a
+transcript with neither is listed by the first thing a person typed into it. A conversation with
+nothing in it at all is left out rather than shown as an untitled row somebody has to guess at.
+
+A conversation something is writing to **right now** says so and is not resumed: two processes on
+one transcript is a corrupted record, so that row goes to the session instead, which is what
+pressing it meant anyway.
+
+Claude Code only. Codex keeps the same conversations somewhere else and its thread names live in a
+process this list will not start once per listing, so the tick box says so and shuts rather than
+offering something it cannot fill.
+
+Behind it, two routes with the same shape as the one that starts a session:
+`GET /v1/places/:id/sessions` to read the list, and `POST /v1/places/:id/resume/:session` to open
+one. Neither reads a request body. The conversation is a path segment checked twice before it
+becomes part of a command line — once for being a lowercase UUID, once for being one this Mac just
+listed for that directory — so an id nobody was handed is a `404` rather than a string on a command
+line. `docs/api.md` said for a year that if `claude --resume` were ever wanted it would be a second
+named action with its own literal and not a field on the first one. It is.
+
 ### Fixed: every reading could stop, minutes after the app started
 
 The change that stopped a subprocess wait from running the app underneath itself did it by waiting

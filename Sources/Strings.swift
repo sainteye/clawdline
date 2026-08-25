@@ -702,6 +702,33 @@ protocol Copy {
     var webStartTerminalUnsupported: String { get }
     var webStartOff: String { get }
 
+    // Picking a conversation back up instead of starting a new one — see
+    // `GET /v1/places/:id/sessions` and `POST /v1/places/:id/resume/:session`.
+    //
+    // Same rule as above, one step further in: the page never names a conversation either. It
+    // shows the titles the Mac read off its own transcripts and sends back an id out of that
+    // list. So these words are about *choosing among what is offered*, and a translation that
+    // invites somebody to type an id is describing a thing that does not exist.
+    /// The switch on the sheet. It is a question about the **next** press — pick up an earlier
+    /// conversation rather than begin a new one — and not a mode the sheet is already in.
+    var webResumeWith: String { get }
+    var webResumePick: String { get }
+    var webResumeFilter: String { get }
+    /// A project Claude Code has been run in but has written nothing down about. Ordinary, and
+    /// not a failure: it is what a directory only Codex has ever been opened in looks like.
+    var webResumeEmpty: String { get }
+    /// On the one row that is a conversation something is writing to **right now**. Resuming it
+    /// would put a second process on the same transcript, so this word is the whole warning and
+    /// it has to read as a state rather than as a label.
+    var webResumeLive: String { get }
+    var webResumeBack: String { get }
+    var webResumeGone: String { get }
+    /// Why the switch is shut while Codex is the chosen assistant. Codex keeps its own record
+    /// elsewhere and names its threads through a process this list will not start, so there is
+    /// nothing to offer rather than nothing to resume.
+    var webResumeClaudeOnly: String { get }
+    var webResuming: String { get }
+
     // Starting a session by saying it, rather than picking it — the microphone beside the plus,
     // the sheet it opens, and `POST /v1/intents` behind it. Whisper hears the sentence; a planner
     // on the Mac turns it into a draft; a person reads the draft and edits it; only the button at

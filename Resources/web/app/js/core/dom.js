@@ -19,7 +19,7 @@ export var els = {};
  "settings-assistant-icons-say", "settings-assistant-icons-marks", "settings-assistant-icons-label",
  "info", "info-sheet", "info-title", "info-say", "info-body", "info-said", "info-refresh", "info-close",
  "start-go", "start", "start-sheet", "start-title", "start-say", "start-with", "start-filter",
- "start-list",
+ "start-resume", "start-list",
  "start-said", "start-close", "starting", "starting-spin", "starting-say", "starting-close",
  "voice-go", "command", "command-sheet", "command-title", "command-say",
  "command-voice", "command-text", "command-mic", "command-draft", "command-with",

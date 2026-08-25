@@ -17,8 +17,13 @@ import Foundation
 ///   this file can weaken by accident, and an absent parameter is not.
 /// - **The command is fixed.** `claude` or `codex`, both of them literals in ``Assistant``.
 ///   Which of the two is a named choice out of a closed list — an unknown name is a `400` — and
-///   not a string that reaches a shell. If `claude --resume` is wanted one day it is a second
-///   named action with its own literal, not a field.
+///   not a string that reaches a shell. Picking a recorded conversation back up is the second
+///   named action this file said it would be if it were ever wanted: ``resume(_:sessionID:)``,
+///   with its own literal on ``Assistant/resumeFlag``, and never a field on the first one.
+/// - **A conversation is named the same way a place is.** ``sessionName(_:)`` admits a UUID and
+///   nothing else, and on top of that the id has to be one this Mac just listed for that
+///   directory — the same two-step as ``place(withID:)``, so an id nobody was handed is a `404`
+///   rather than a string on a command line.
 /// - **The one exception is a model name**, and it is an exception in the shape of the rule
 ///   rather than a hole in it: it is not a fragment of a command line, it is a name out of a
 ///   closed alphabet. ``modelName(_:)`` is the whole of that claim — `[a-z0-9._-]`, at most 64,
@@ -85,10 +90,10 @@ enum StartPoints {
     /// the git plumbing uses.
     static func itermLine(cwd: String, assistant: Assistant = .claude,
                           model: String? = nil, permission: Permission = .ask,
-                          addDir: String? = nil) -> String {
+                          addDir: String? = nil, resume: String? = nil) -> String {
         "cd " + Project.shellQuoted(cwd) + " && "
             + assistant.command(model: modelName(model), permission: permission,
-                                addDir: extraDir(addDir))
+                                addDir: extraDir(addDir), resume: sessionName(resume))
     }
 
     /// A directory a session may be given reach over, or nil for anything that is not one.
@@ -131,6 +136,32 @@ enum StartPoints {
             ("a"..."z").contains($0) || ("0"..."9").contains($0)
                 || $0 == "." || $0 == "_" || $0 == "-"
         }
+        return ok ? raw : nil
+    }
+
+    /// A conversation id, or nil for anything that is not one.
+    ///
+    /// A UUID as both CLIs write it: eight-four-four-four-twelve lowercase hex with dashes, and
+    /// nothing else — not a search term, not a prefix, not the empty string. Narrower than
+    /// ``modelName(_:)`` on purpose. A model name is a slug somebody may reasonably type; this is
+    /// only ever a value that came back out of a listing this Mac produced seconds earlier, so
+    /// there is no shape to be generous about.
+    ///
+    /// It matters that this is exact rather than merely shell-safe. `--resume` takes an
+    /// **optional** value, and a value the CLI cannot read as an id it becomes a search term for
+    /// — which opens an interactive picker in a tab nobody is sitting in front of. So the
+    /// failure this refuses is not an injection; it is a session that never starts and never
+    /// says why.
+    ///
+    /// Fail-closed and silent, like `modelName`: what it refuses becomes *no flag*. The loud
+    /// refusal is upstream in ``past(withID:in:)``, where an unknown id is a `404` while
+    /// somebody is still holding the request.
+    static func sessionName(_ raw: String?) -> String? {
+        guard let raw, raw.count == 36 else { return nil }
+        let groups = raw.split(separator: "-", omittingEmptySubsequences: false)
+        guard groups.map(\.count) == [8, 4, 4, 4, 12] else { return nil }
+        let hex = groups.joined()
+        let ok = hex.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
         return ok ? raw : nil
     }
 
@@ -208,7 +239,7 @@ enum StartPoints {
     /// forward — there is no way to make a window and not have it be a window.
     static func start(_ place: Place, assistant: Assistant = .claude,
                       model: String? = nil, permission: Permission = .ask,
-                      addDir: String? = nil) -> Outcome {
+                      addDir: String? = nil, resume: String? = nil) -> Outcome {
         guard usable(place.path), isDirectory(place.path) else {
             return .refused(status: 404, code: "not_found",
                             message: "No place named that", app: nil)
@@ -219,7 +250,8 @@ enum StartPoints {
                                                           assistant: assistant,
                                                           model: model,
                                                           permission: permission,
-                                                          addDir: addDir)) else {
+                                                          addDir: addDir,
+                                                          resume: resume)) else {
                 return .refused(status: 502, code: "internal",
                                 message: "iTerm2 would not open a tab.", app: nil)
             }
@@ -234,7 +266,8 @@ enum StartPoints {
             guard let pane = Tmux.newWindow(cwd: place.path,
                                             command: assistant.command(model: modelName(model),
                                                                        permission: permission,
-                                                                       addDir: extraDir(addDir))) else {
+                                                                       addDir: extraDir(addDir),
+                                                                       resume: sessionName(resume))) else {
                 return .refused(status: 502, code: "internal",
                                 message: "tmux would not open a window.", app: nil)
             }
@@ -253,6 +286,173 @@ enum StartPoints {
                                    + "be started in it directly. Run tmux there and this works "
                                    + "— see docs/remote.md.", app: name)
         }
+    }
+
+    /// Open a tab where that place is and pick a recorded conversation back up in it.
+    ///
+    /// The second named action, and deliberately a thin one: everything that decides *where* and
+    /// *whether* is ``start(_:assistant:model:permission:addDir:resume:)``, unchanged, and this
+    /// adds one literal flag and one id that has already been proved to name a file on this Mac.
+    /// A separate entry point rather than an argument on the route, because "start something
+    /// here" and "carry on with that" are two different permissions to think about even though
+    /// today they share a gate.
+    static func resume(_ place: Place, sessionID: String,
+                       assistant: Assistant = .claude) -> Outcome {
+        guard let id = sessionName(sessionID), past(withID: id, in: place) != nil else {
+            return .refused(status: 404, code: "not_found",
+                            message: "No conversation named that", app: nil)
+        }
+        return start(place, assistant: assistant, resume: id)
+    }
+
+    // MARK: - Conversations already recorded here
+
+    /// One conversation Claude Code has already written down in a place.
+    struct Past: Equatable {
+        /// The session's own id, which is also what its transcript is named. The only part a
+        /// client ever sends back.
+        let id: String
+        /// What to show. The title Claude Code gave it, the title somebody renamed it to, or —
+        /// for the few transcripts that carry neither — the opening of the first thing that was
+        /// typed into it.
+        let title: String
+        /// When it was last written to, which is what the list is sorted by.
+        let at: Date
+        /// Whether this conversation is open in a terminal on this Mac right now.
+        ///
+        /// Resuming one of these would put a second process on the same transcript, so a client
+        /// is told which they are rather than left to find out. It is a fact about this instant,
+        /// which is why it is computed per listing and never cached.
+        let live: Bool
+    }
+
+    /// What has already been said in a place, newest first.
+    ///
+    /// Only Claude Code. Codex records the same conversations somewhere else and names its
+    /// threads through its app-server rather than in the file, so listing those means starting a
+    /// process per listing — a different day's work, and not one this list should wait on.
+    ///
+    /// Only the top level of the project folder. Subagents' transcripts live in a directory
+    /// beside them named for their parent, and a sidechain is not a conversation anybody had.
+    /// `dir` and `open` are parameters so a test can describe a project folder and a set of
+    /// live transcripts instead of having to produce either. Neither is passed in the app.
+    static func past(in place: Place, limit: Int = 40,
+                     dir: URL? = nil, open: Set<String>? = nil) -> [Past] {
+        let dir = dir ?? Transcript.projectDirectory(forCwd: place.path)
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: dir.path) else { return [] }
+
+        let files = names.compactMap { name -> (id: String, url: URL, at: Date)? in
+            guard name.hasSuffix(".jsonl"),
+                  let id = sessionName(String(name.dropLast(".jsonl".count))) else { return nil }
+            let url = dir.appendingPathComponent(name)
+            var isDirectory: ObjCBool = false
+            guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                  !isDirectory.boolValue else { return nil }
+            return (id, url, modified(url))
+        }.sorted { $0.at > $1.at }.prefix(limit)
+
+        let open = open ?? openTranscripts()
+        return files.compactMap { file in
+            guard let title = name(ofTranscript: file.url) else { return nil }
+            return Past(id: file.id, title: title, at: file.at,
+                        live: open.contains(file.url.resolvingSymlinksInPath().path))
+        }
+    }
+
+    /// The conversation with that id in that place, or nothing.
+    ///
+    /// Resolved against a listing built now, for the same reason ``place(withID:)`` is: a
+    /// transcript can be deleted between two looks, and the answer for one that is gone is the
+    /// same `404` as an id that was never real.
+    static func past(withID id: String, in place: Place,
+                     dir: URL? = nil, open: Set<String>? = nil) -> Past? {
+        guard sessionName(id) != nil else { return nil }
+        return past(in: place, limit: 200, dir: dir, open: open).first { $0.id == id }
+    }
+
+    /// What to call a transcript, or nothing when it has nothing worth calling it by.
+    ///
+    /// The title first — ``Transcript/title(ofTranscript:tailBytes:)`` already reads a rename in
+    /// preference to Claude Code's own, and already remembers its answer against the file's size
+    /// and mtime, so this pays for it once per file per change. Most transcripts have one: of the
+    /// ninety-six in this repository's own project folder, eighty-four do.
+    ///
+    /// The rest fall back to the opening of the first thing typed into them, which is what a
+    /// person would recognise it by anyway. **Nothing is invented** — a transcript with no title
+    /// and nothing typed into it is a tab that opened and closed, and it is left out of the list
+    /// rather than shown as an untitled row somebody has to guess at.
+    static func name(ofTranscript url: URL) -> String? {
+        if let title = Transcript.title(ofTranscript: url), !title.isEmpty { return title }
+        return cachedOpening(of: url)
+    }
+
+    /// The first thing a person typed into a transcript, trimmed to a line.
+    ///
+    /// Read off the front rather than parsed, and only far enough in to pass the couple of
+    /// bookkeeping records Claude Code writes before the first turn. Records with `isSidechain`
+    /// or a `toolUseResult` are not somebody typing — they are an agent's turn and a tool's
+    /// answer quoted back — so they are stepped over rather than shown as the session's name.
+    static func opening(inText text: String, limit: Int = 80) -> String? {
+        for line in text.split(separator: "\n") {
+            guard line.contains("\"type\":\"user\"") else { continue }
+            guard let data = line.data(using: .utf8),
+                  let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  row["isSidechain"] as? Bool != true, row["toolUseResult"] == nil,
+                  let message = row["message"] as? [String: Any] else { continue }
+            var said = ""
+            if let text = message["content"] as? String {
+                said = text
+            } else if let parts = message["content"] as? [[String: Any]] {
+                for part in parts where part["type"] as? String == "text" {
+                    said = part["text"] as? String ?? ""
+                    break
+                }
+            }
+            let one = said.split(whereSeparator: \.isNewline).first.map(String.init) ?? said
+            let tidy = one.trimmingCharacters(in: .whitespaces)
+            guard !tidy.isEmpty else { continue }
+            return tidy.count > limit ? String(tidy.prefix(limit)) + "…" : tidy
+        }
+        return nil
+    }
+
+    // MARK: - Plumbing for the conversation list
+
+    private static var openings: [String: (signature: String, opening: String?)] = [:]
+
+    /// Remembered against the file's signature, like the title is. A transcript's opening cannot
+    /// change while its first bytes stay where they are, and the files this reads from are the
+    /// dozen without a title — the ones a fresh read would otherwise cost most on, because there
+    /// is nothing in them to stop looking at.
+    private static func cachedOpening(of url: URL) -> String? {
+        let sig = Transcript.signature(of: url)
+        lock.lock()
+        if let hit = openings[url.path], hit.signature == sig {
+            lock.unlock()
+            return hit.opening
+        }
+        lock.unlock()
+
+        let found = head(of: url, bytes: 128 << 10).flatMap { opening(inText: $0) }
+        lock.lock()
+        openings[url.path] = (sig, found)
+        lock.unlock()
+        return found
+    }
+
+    /// The transcripts something is writing to right now, by resolved path.
+    ///
+    /// Off the same reading of the session list everything else uses, and through
+    /// ``Transcript/record(of:)``, which is the one place that knows how to find a session's
+    /// file. Codex's rollouts come back in here too and simply never match a Claude Code
+    /// transcript path, which costs nothing and keeps the rule in one place.
+    private static func openTranscripts() -> Set<String> {
+        let sessions = Thread.isMainThread
+            ? SessionWatch.shared.targets
+            : DispatchQueue.main.sync { SessionWatch.shared.targets }
+        return Set(sessions.compactMap { Transcript.record(of: $0)?.url }
+            .map { $0.resolvingSymlinksInPath().path })
     }
 
     // MARK: - The list

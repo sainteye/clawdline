@@ -201,6 +201,21 @@ export function byId(id) {
     return null;
 }
 
+/** The open session writing to a given transcript, or nothing.
+ *
+ *  A different id from the one above: `id` is the terminal's — the tab, the pane — and
+ *  `sessionId` is Claude Code's own, the name of the file it is writing. Only the second one
+ *  can be matched against a conversation somebody picked off a list of recorded ones, and it
+ *  is absent on a session the Mac has not managed to tie to a transcript yet. So `null` here
+ *  means "cannot say", never "not open", and every caller has to be able to live with that. */
+export function bySessionId(id) {
+    if (!id) return null;
+    for (var i = 0; i < S.sessions.length; i++) {
+        if (S.sessions[i].sessionId === id) return S.sessions[i];
+    }
+    return null;
+}
+
 /** What has to be the same for a transcript to still be current. The line is in it because a
  *  session that is still working is still writing. */
 export function revisionOf(s) { return s ? s.state + "|" + (s.line || "") + "|" + (s.label || "") : ""; }

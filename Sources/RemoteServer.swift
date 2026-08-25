@@ -606,6 +606,63 @@ final class RemoteServer {
                 }
             }
 
+        // What has already been said in a place. Read-level, and for the same reason the place
+        // list is: it discloses conversation titles for a directory whose name this token could
+        // already see. **Claude Code only** — see ``StartPoints/past(in:limit:)``.
+        case ("GET", let path) where path.hasPrefix("/v1/places/") && path.hasSuffix("/sessions"):
+            let id = String(path.dropFirst("/v1/places/".count).dropLast("/sessions".count))
+            guard !id.isEmpty, !id.contains("/") else {
+                return .error(404, "not_found", "No such route")
+            }
+            guard let place = StartPoints.place(withID: id.removingPercentEncoding ?? id) else {
+                return .error(404, "not_found", "No place named that")
+            }
+            return .json(pastPayload(place))
+
+        case ("GET", let path) where path.hasPrefix("/v1/places/"):
+            return .error(404, "not_found", "No such route")
+
+        // Picking one of those back up. **The conversation is a path segment, like the assistant
+        // above and the place before it**, and it is resolved twice before it becomes a flag:
+        // once for shape by `StartPoints.sessionName`, and once against the listing this Mac
+        // builds for that directory. The body is still not read. There is still nowhere on this
+        // route a directory or a command could be written.
+        case ("POST", let path) where path.hasPrefix("/v1/places/") && path.contains("/resume/"):
+            let rest = String(path.dropFirst("/v1/places/".count))
+            let parts = rest.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+            guard parts.count == 3, parts[1] == "resume" else {
+                return .error(404, "not_found", "No such route")
+            }
+            let id = parts[0]
+            let conversation = parts[2].removingPercentEncoding ?? parts[2]
+            return writing(request) { _ in
+                guard let place = StartPoints.place(withID: id.removingPercentEncoding ?? id) else {
+                    RemoteAuth.audit("place.resume", ["place": String(id.prefix(64)), "ok": "0",
+                                                      "why": "not_found"])
+                    return .error(404, "not_found", "No place named that")
+                }
+                // Written down whichever way it goes. An id that was never handed out is what
+                // somebody guessing looks like, and this is the route where guessing right would
+                // matter most.
+                switch StartPoints.resume(place, sessionID: conversation) {
+                case .refused(let status, let code, let message, let app):
+                    RemoteAuth.audit("place.resume", ["place": place.id, "cwd": place.path,
+                                                      "session": String(conversation.prefix(64)),
+                                                      "ok": "0", "why": code])
+                    return .error(status, code, message, extra: app.map { ["app": $0] } ?? [:])
+                case .started(let made, let backend):
+                    RemoteAuth.audit("place.resume", ["place": place.id, "cwd": place.path,
+                                                      "session": conversation,
+                                                      "ok": "1", "id": made])
+                    DispatchQueue.main.async { SessionWatch.shared.nudge() }
+                    return .json(["ok": true, "id": made, "backend": backend.rawValue,
+                                  "assistant": Assistant.claude.rawValue,
+                                  "place": place.id, "cwd": place.path,
+                                  "session": conversation,
+                                  "at": Int(Date().timeIntervalSince1970)])
+                }
+            }
+
         case ("POST", let path) where path.hasPrefix("/v1/places/"):
             return .error(404, "not_found", "No such route")
 
@@ -1524,6 +1581,29 @@ final class RemoteServer {
         ]
     }
 
+    /// The conversations already recorded in one place — see ``StartPoints/past(in:limit:)``.
+    ///
+    /// `id` is the transcript's own name, and it is the only part a client sends back: the
+    /// resume route takes an id and no path, and resolves it against a listing of its own.
+    /// `live` says something is writing to that transcript right now, which is the one thing
+    /// a person needs to know before tapping a row — resuming it would put a second process on
+    /// the same file.
+    private func pastPayload(_ place: StartPoints.Place) -> [String: Any] {
+        [
+            "at": Int(Date().timeIntervalSince1970),
+            "place": place.id,
+            "assistant": Assistant.claude.rawValue,
+            "sessions": StartPoints.past(in: place).map { past -> [String: Any] in
+                [
+                    "id": past.id,
+                    "title": past.title,
+                    "at": Int(past.at.timeIntervalSince1970),
+                    "live": past.live,
+                ]
+            },
+        ]
+    }
+
     /// The addresses a project has, in the order somebody would want them.
     ///
     /// Nothing here is invented: every one of these is a URL some other tool already put in a
@@ -2086,6 +2166,15 @@ final class RemoteServer {
             "webStartTerminalClosed": t.webStartTerminalClosed,
             "webStartTerminalUnsupported": t.webStartTerminalUnsupported,
             "webStartOff": t.webStartOff,
+            "webResumeWith": t.webResumeWith,
+            "webResumePick": t.webResumePick,
+            "webResumeFilter": t.webResumeFilter,
+            "webResumeEmpty": t.webResumeEmpty,
+            "webResumeLive": t.webResumeLive,
+            "webResumeBack": t.webResumeBack,
+            "webResumeGone": t.webResumeGone,
+            "webResumeClaudeOnly": t.webResumeClaudeOnly,
+            "webResuming": t.webResuming,
         ])
 
         // The key row along the bottom, on a desk.

@@ -1,10 +1,10 @@
 import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
-import { shortPath, tint } from "../core/util.js";
+import { clockOf, shortPath, tint } from "../core/util.js";
 import { bandSpin, drawIcon, drawSpinner, setBandSpin, setStartSpin, spinPhase, spinners, startSpin } from "../core/pixels.js";
 import { api } from "../net/api.js";
-import { byId } from "../view/derive.js";
+import { byId, bySessionId } from "../view/derive.js";
 import { renderList } from "../view/list.js";
 import { renderComposer } from "../view/composer.js";
 import { Waits } from "../view/waits.js";
@@ -25,6 +25,18 @@ import { openSession } from "../session/open.js";
  * that answers two different questions. It is one tap from the list and it costs the list
  * nothing — a square on a row that already exists, rather than a control the session list has to
  * make room for on every screen for ever.
+ *
+ * **Picking one back up is the same sheet, one step further in.** The switch above the list
+ * decides what the next press on a project means: begin a conversation there, or show the ones
+ * Claude Code has already recorded there and carry one of them on. That second screen is the
+ * same list, the same filter box and the same press — which is why it is a mode of this sheet
+ * rather than a sheet of its own — and it obeys the same rule as everything else here: the page
+ * never names a conversation, it sends back an id off a list the Mac just built.
+ *
+ * **A conversation something is writing to right now is not resumable.** Two processes on one
+ * transcript is a corrupted record, so those rows say so and go to the session instead — which
+ * is what somebody who tapped one wanted anyway. It is the Mac that decides which those are:
+ * `live` arrives on the row.
  *
  * **The gap is the hard part.** `POST …/start` answers *before the session exists*: the id it
  * gives back is in the same space as every id in `/v1/sessions`, but that session is not in the
@@ -47,6 +59,10 @@ export var Start = (function () {
     var loading = false;
     var pressing = null; // the place being started, while that one request is in flight
     var find = "";       // what has been typed into the sheet's filter
+    var resume = false;  // whether the next press picks a conversation up rather than starting one
+    var at = null;       // the place whose conversations are on screen; null while showing places
+    var pasts = null;    // as the Mac sent them, for `at`; null until an answer has arrived
+    var reading = false;
     var wait = null;     // { id, from, late, place } — started, and not in the list yet
     var timer = null;
     var placeholderNode = null;
@@ -87,6 +103,46 @@ export var Start = (function () {
         });
     }
 
+    /** The conversations on screen, narrowed by what has been typed. By title alone: the id is
+     *  a UUID nobody reads, and a list that answers to one would be a list you could search for
+     *  a conversation you were never shown. */
+    function matchingPast() {
+        var q = find.trim().toLowerCase();
+        return (pasts || []).filter(function (r) {
+            if (!q) return true;
+            return (r.title || "").toLowerCase().indexOf(q) >= 0;
+        });
+    }
+
+    /** Whether picking a conversation up is on the table at all.
+     *
+     *  Codex records its conversations elsewhere and keeps their names in a process this list
+     *  will not start, so there is nothing to show rather than nothing to resume — see
+     *  `StartPoints.past(in:limit:)`. The switch stays on screen and says why, because a control
+     *  that vanishes when you choose the other chip teaches nobody anything. */
+    function resumable() {
+        return with_ === "claude" && typeof api.pastSessions === "function";
+    }
+
+    /** When a conversation was last written to.
+     *
+     *  Inside the hour it is the page's own words; today it is a clock; before that it is a
+     *  date, in the browser's own language rather than in a string this app would have to
+     *  translate fourteen times. A list that can span a month cannot say "14:32" for all of it. */
+    function when(unix) {
+        if (!unix) return "";
+        var then = new Date(unix * 1000);
+        var now = new Date();
+        var sameDay = then.getFullYear() === now.getFullYear()
+            && then.getMonth() === now.getMonth() && then.getDate() === now.getDate();
+        if (sameDay) return clockOf(unix);
+        try {
+            return then.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+        } catch (e) {
+            return clockOf(unix);
+        }
+    }
+
     /**
      * The two chips that say what a press opens.
      *
@@ -114,9 +170,53 @@ export var Start = (function () {
             // only mislead about what opened.
             chip.disabled = !!pressing || !!wait;
             chip.setAttribute("aria-pressed", a.id === with_ ? "true" : "false");
-            chip.onclick = function () { with_ = a.id; draw(); };
+            chip.onclick = function () {
+                with_ = a.id;
+                // Changing assistant is changing what the list is *of*, so anything opened
+                // under the old one is stood down rather than left on screen answering to the
+                // wrong chip.
+                if (!resumable()) leave();
+                draw();
+            };
             row.appendChild(chip);
         });
+    }
+
+    /**
+     * The switch, and the way back out.
+     *
+     * One row with one control in it at a time: while projects are on screen it is the question
+     * *what does the next press mean*, and while a project's conversations are on screen it is
+     * the answer to *how do I get back*. Two controls would have been one of them always wrong —
+     * a switch that turns resuming off under a list of conversations has nothing sensible to do
+     * with the list it is standing on.
+     */
+    function drawResume() {
+        var row = els["start-resume"];
+        row.innerHTML = "";
+        row.hidden = !S.write || typeof api.pastSessions !== "function";
+        if (row.hidden) return;
+
+        if (at) {
+            var back = document.createElement("button");
+            back.type = "button";
+            back.className = "chip back";
+            back.textContent = "\u2190 " + T.webResumeBack;
+            back.disabled = !!pressing || !!wait;
+            back.onclick = function () { leave(); draw(); };
+            row.appendChild(back);
+            return;
+        }
+
+        var chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "chip check" + (resume && resumable() ? " on" : "");
+        chip.textContent = T.webResumeWith;
+        // Off and unpressable while Codex is chosen, and the sentence under the list says why.
+        chip.disabled = !!pressing || !!wait || !resumable();
+        chip.setAttribute("aria-pressed", resume && resumable() ? "true" : "false");
+        chip.onclick = function () { resume = !resume; draw(); };
+        row.appendChild(chip);
     }
 
     function draw() {
@@ -132,16 +232,26 @@ export var Start = (function () {
             say(T.webStartOff);
             box.hidden = true;
             els["start-with"].hidden = true;
+            els["start-resume"].hidden = true;
             list.innerHTML = "";
             return;
         }
 
         drawWith();
+        drawResume();
+
+        if (at) { drawPast(list, box); return; }
+
+        box.placeholder = T.webStartFilter;
+        box.setAttribute("aria-label", T.webStartFilter);
 
         say(wait ? T.webStartWaiting
             : (loading && !places) ? T.webLoading
             : (places && !places.length) ? T.webStartEmpty
             : T.webStartPick);
+        // The one thing the switch changes about *this* screen, and only when it is shut for a
+        // reason somebody can act on.
+        said(resume && !resumable() ? T.webResumeClaudeOnly : "");
 
         // Forty is the most the Mac will ever offer and three fit on a phone without scrolling.
         // Under nine, a box to narrow them down is furniture in front of the answer.
@@ -185,6 +295,63 @@ export var Start = (function () {
         });
     }
 
+    /**
+     * One project's recorded conversations.
+     *
+     * The filter is on the moment there is more than one row, which is a lower bar than the
+     * projects have and deliberately so: a project's own name is a word somebody already knows
+     * and can find by eye, and a conversation's title is a sentence out of a month of work.
+     * Finding one by typing part of it is the whole reason this screen has a box.
+     */
+    function drawPast(list, box) {
+        box.placeholder = T.webResumeFilter;
+        box.setAttribute("aria-label", T.webResumeFilter);
+
+        say(wait ? T.webStartWaiting
+            : (reading && !pasts) ? T.webLoading
+            : (pasts && !pasts.length) ? T.webResumeEmpty
+            : T.webResumePick);
+
+        box.hidden = !(pasts && pasts.length > 1);
+        if (box.hidden && box.value) { box.value = ""; find = ""; }
+
+        list.innerHTML = "";
+        matchingPast().forEach(function (r) {
+            var li = document.createElement("li");
+            var row = document.createElement("button");
+            row.type = "button";
+            row.className = "place past";
+            row.dataset.session = r.id;
+            // A conversation something is writing to right now is still pressable — it goes to
+            // that session — but only if this page can see which row it is. Without hooks or a
+            // registry entry the Mac knows the transcript is busy and not which tab has it, and
+            // a button that cannot do either of its two jobs is better shut.
+            var open = r.live ? bySessionId(r.id) : null;
+            row.disabled = !!pressing || !!wait || (r.live && !open);
+            if (pressing === r.id) row.dataset.busy = "1";
+            row.innerHTML = '<span class="name"></span><span class="where"></span>';
+
+            row.querySelector(".name").textContent = r.title;
+            var where = row.querySelector(".where");
+            if (pressing === r.id && Waits.startPress.visible) {
+                where.innerHTML = '<canvas class="start-spin"></canvas><span></span>';
+                where.querySelector("span").textContent = T.webResuming;
+                setStartSpin(where.querySelector(".start-spin"));
+                drawSpinner(startSpin, spinPhase);
+            } else if (pressing === r.id) {
+                where.textContent = T.webResuming;
+            } else if (r.live) {
+                row.dataset.live = "1";
+                where.textContent = T.webResumeLive;
+            } else {
+                where.textContent = when(r.at);
+            }
+
+            li.appendChild(row);
+            list.appendChild(li);
+        });
+    }
+
     /** Asked afresh every time the sheet opens: a directory can go away between two looks, and
      *  the list is sorted by when each was last worked in. The old one stays on screen while
      *  the new one is on its way — a list that blanks itself to refetch is a flicker. */
@@ -210,6 +377,48 @@ export var Start = (function () {
         });
     }
 
+    /** Show what has already been said in a place. Asked every time rather than remembered: a
+     *  conversation can be started, renamed or deleted between two looks at the same project,
+     *  and `live` is a fact about this instant that a cache would be wrong about immediately. */
+    function enter(place) {
+        at = place;
+        pasts = null;
+        find = "";
+        els["start-filter"].value = "";
+        said("");
+        reading = true;
+        draw();
+        api.pastSessions(place.id).then(function (d) {
+            if (!at || at.id !== place.id) return;   // gone back while this was in flight
+            pasts = (d && d.sessions) || [];
+        }).catch(function (e) {
+            if (!at || at.id !== place.id) return;
+            pasts = pasts || [];
+            if (e && e.code === "not_found") {
+                // That directory has gone since the list was built. It is the project list that
+                // is wrong rather than the press, so back out to it and ask again.
+                leave();
+                places = null;
+                load();
+            }
+            said(why(e));
+        }).then(function () {
+            reading = false;
+            draw();
+        });
+    }
+
+    /** Back to the projects. The switch is left where it was: it is a preference about what a
+     *  press means, and coming back out of one project has not changed anybody's mind. */
+    function leave() {
+        at = null;
+        pasts = null;
+        reading = false;
+        find = "";
+        els["start-filter"].value = "";
+        said("");
+    }
+
     function press(id) {
         if (pressing || wait || !S.write || typeof api.startPlace !== "function") return;
         var place = null;
@@ -218,6 +427,10 @@ export var Start = (function () {
             place = p;
             return true;
         });
+        // The switch decides what this press means. Nothing is started here — the list of what
+        // has already been said is a read, and the press that starts anything is the one on a
+        // row of it.
+        if (resume && resumable() && place) { enter(place); return; }
         pressing = id;
         said("");
         draw();
@@ -242,6 +455,64 @@ export var Start = (function () {
                     // wrong rather than the press, so the list is what gets asked again.
                     places = null;
                     load();
+                }
+                said(why(e));
+                draw();
+            });
+        });
+    }
+
+    /**
+     * Carry one conversation on.
+     *
+     * The same machinery as a fresh start from here down: the Mac answers with an id before the
+     * session exists, and `began` watches the list for it. What is different is only which
+     * request was made and what the placeholder is called — a resumed session comes back under
+     * the name it already had, which is the reason somebody picked it off this list rather than
+     * pressing the project.
+     */
+    function pick(sessionID) {
+        if (pressing || wait || !S.write || !at || typeof api.resumePlace !== "function") return;
+        var row = null;
+        (pasts || []).some(function (r) {
+            if (r.id !== sessionID) return false;
+            row = r;
+            return true;
+        });
+        if (!row) return;
+
+        // Already open. Go to it rather than start a second process on the same transcript —
+        // which is what the person who pressed it wanted, and the only safe reading of it.
+        if (row.live) {
+            var open = bySessionId(sessionID);
+            if (!open) return;
+            close();
+            openSession(open.id);
+            return;
+        }
+
+        var place = at;
+        pressing = sessionID;
+        said("");
+        draw();
+        Waits.startPress.start();
+        api.resumePlace(place.id, sessionID).then(function (d) {
+            Waits.startPress.settle(function () {
+                pressing = null;
+                began(d && d.id, { label: row.title, path: place.path, icon: place.icon });
+            });
+        }).catch(function (e) {
+            Waits.startPress.settle(function () {
+                pressing = null;
+                if (e && e.code === "write_disabled") {
+                    S.write = false;
+                    renderComposer();
+                } else if (e && e.code === "not_found") {
+                    // The transcript has gone, or something else has it. Either way this list is
+                    // the thing that is out of date, so it is what gets asked again.
+                    said(T.webResumeGone);
+                    enter(place);
+                    return;
                 }
                 said(why(e));
                 draw();
@@ -290,6 +561,10 @@ export var Start = (function () {
     function open() {
         els.start.hidden = false;
         said("");
+        // Always at the projects. The switch survives — it is a preference — but a sheet that
+        // reopened inside whichever project was last looked at would be a sheet whose first
+        // screen depends on something nobody remembers doing.
+        leave();
         if (S.write && !wait) load();
         draw();
         els["start-close"].focus({ preventScroll: true });
@@ -351,6 +626,7 @@ export var Start = (function () {
         open: open,
         close: close,
         press: press,
+        pick: pick,
         typed: function (value) { find = value; draw(); },
         placeholder: placeholder,
         arrange: arrange,
@@ -411,6 +687,10 @@ els["start-filter"].addEventListener("input", function () { Start.typed(this.val
 els["start-list"].addEventListener("click", function (ev) {
     var row = ev.target.closest ? ev.target.closest(".place") : null;
     if (!row || row.disabled) return;
-    Start.press(row.dataset.id);
+    // Which list this is, off the row rather than off a flag somewhere else. The two screens
+    // share a container, and a mode read from a variable is a mode that can disagree with what
+    // is actually under the finger.
+    if (row.dataset.session) Start.pick(row.dataset.session);
+    else Start.press(row.dataset.id);
 });
 els["starting-close"].addEventListener("click", function () { Start.dismiss(); });

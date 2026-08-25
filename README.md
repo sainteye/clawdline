@@ -237,6 +237,13 @@ transcript, its state, the question it is stuck on and a box to answer it from. 
 type can also start a session and end one; what it cannot do is dispatch, which is
 [a separate credential this Mac never serves](#handing-work-to-another-session).
 
+**Or pick up where you left off.** *Start a session* has a tick box that turns the project list
+into the conversations Claude Code has already recorded in that project — under the names it gave
+them, filtered by typing part of one — and the row you press is `claude --resume` in a new tab
+rather than a new conversation. The names are read off the transcripts, never invented, and one
+that something is writing to right now says so and takes you to that session instead: two
+processes on one transcript is a corrupted record, not a second opinion.
+
 <img src="docs/assets/web.gif" width="300" alt="The page on a phone: six sessions, each with its project's mark, and the one that is asking pulled out in the accent colour. Then another session's transcript, where a run of two tool calls sits folded to one line until it is opened; then a reply typed into the box at the bottom and sent.">
 
 It is off in a fresh install, and stays off until you go and switch it on — a listening socket is

@@ -99,6 +99,41 @@
 .sheet .place:disabled { opacity: 0.45; cursor: default; }
 .sheet #start-with { align-items: center; gap: 6px; margin: 2px 0 10px 0; flex-wrap: wrap; }
 .sheet #start-with .with-label { font-size: 11.5px; color: var(--dim); margin-right: 2px; }
+.sheet #start-resume { align-items: center; gap: 6px; margin: 0 0 10px 0; flex-wrap: wrap; }
+/* A tick box drawn as a chip, because a chip is what every other switch in this sheet is and a
+   native checkbox on a phone is a nine-pixel target next to a forty-four-pixel one. The box is
+   a pseudo-element so the label stays one run of text that can wrap and be read out. */
+.sheet .chip.check {
+    position: relative;
+    padding-left: 9px; display: inline-flex; align-items: center; gap: 7px;
+}
+.sheet .chip.check::before {
+    content: ""; flex: 0 0 auto;
+    width: 13px; height: 13px; border-radius: 3px;
+    border: 1px solid var(--line); background: transparent;
+}
+.sheet .chip.check.on::before { border-color: var(--accent-ed); background: var(--accent); }
+/* The tick: two borders of an empty box, turned. Not a glyph — a checkmark character sits on a
+   different baseline in every font this page can end up in, and half of them draw it as a cross. */
+.sheet .chip.check.on::after {
+    content: ""; position: absolute;
+    left: 15.5px; top: 50%;
+    width: 3px; height: 7px;
+    border: solid var(--bg); border-width: 0 1.5px 1.5px 0;
+    transform: translate(-50%, -62%) rotate(45deg);
+}
+.sheet .chip.check:disabled { opacity: 0.45; cursor: default; }
+.sheet .chip.back { font-size: 12px; }
+
+/* A recorded conversation. No mark: every row in this list is the same project, so a column of
+   identical creatures would be a column of nothing. The title takes the whole width instead,
+   which is what somebody is reading down the list for. */
+.sheet .place.past { grid-template-columns: minmax(0, 1fr); }
+.sheet .place.past .name { grid-column: 1; font-weight: 400; white-space: normal; }
+.sheet .place.past .where { grid-column: 1; }
+/* Open right now, and therefore not something to resume. It reads as a state rather than as a
+   label — the same accent the list uses for a row that wants you. */
+.sheet .place.past[data-live="1"] .where { color: var(--accent); font-family: var(--ui); }
 .sheet .place canvas { grid-row: 1 / span 2; align-self: center; justify-self: start; display: block; image-rendering: pixelated; opacity: 0.9; }
 .sheet .place canvas.none { width: 16px; height: 12px; border-radius: 2px; background: #202028; }
 .sheet .place .name {

@@ -248,6 +248,33 @@ export var Mock = (function () {
         { id: "7a2c9e46b1d05f38", label: "website", path: "/Users/you/code/website", icon: null },
         { id: "e51b7d02c4a86f19", label: "notes", path: "/Users/you/tmp/notes", icon: null }
     ];
+    // What Claude Code has already recorded in a place. Enough of them on the first that the
+    // filter is on screen and there is something to type into it, one on the second so the
+    // sheet's short case is reachable, and nothing at all on the rest — a directory somebody
+    // has only ever opened Codex in has no Claude Code conversations to offer, and that empty
+    // answer is a state the sheet has to say out loud rather than spin on.
+    //
+    // The first row is `live`: something is writing to that transcript right now. It is the one
+    // row on this screen that must not read as ordinary, because resuming it would put a second
+    // process on the same file.
+    var past = {
+        "3b9e26c1587facfd": [
+            { id: "105344fb-c769-4b37-b766-403b410897eb", title: "Planner.swift and POST /v1/intents", live: true },
+            { id: "bbf8dae0-2e51-4a7c-9d63-1c0f8b4a7e92", title: "Make dictation reusable outside the composer", live: false },
+            { id: "7c12c5a4-60b6-4257-bf4e-bebaf6cc152b", title: "Resuming a recorded conversation", live: false },
+            { id: "aeee9c51-33d7-4b18-8a20-6e5c9f01b7d4", title: "Session recovery after a reboot", live: false },
+            { id: "91db707d-4c62-4e93-b5a1-2f7d80c6e315", title: "Park and unpark, and picking a background session back up", live: false },
+            { id: "9a68386e-1b40-4fd2-88c7-3ea5d7f2b061", title: "Where the registry's consumers get it wrong", live: false },
+            { id: "5bdc0c33-7a95-4c11-9e48-0db362f7a5c9", title: "One place to see every session at once", live: false },
+            { id: "8e29b3df-0f74-4a86-93b2-c15e7d049a83", title: "Several requests arriving at once", live: false },
+            { id: "1f47c762-60e9-4dc1-8967-fadb4038448c", title: "The list's arrival animation", live: false },
+            { id: "0ded3be9-4b90-401c-b8dc-0c7631ad65a7", title: "Why the shell panel draws nothing", live: false }
+        ],
+        "24f9bac626da56ea": [
+            { id: "045286cb-22ea-4d0e-91d6-74c8fd0f53dc", title: "First pass at the importer", live: false }
+        ]
+    };
+
     // What a project has an address for, per session. Two of the six have anything at all,
     // which is the honest proportion: a project with no CI and no dev stack has an empty list,
     // and that is the case the sheet mostly has to be good at.
@@ -765,6 +792,62 @@ export var Mock = (function () {
                                         // Absent for a moment on the real thing too — a shell has
                                         // to start before the assistant is a process anything
                                         // can see, whichever one was asked for.
+                                        isClaude: false, assistant: null,
+                                        sessionId: null, icon: place.icon });
+                        emit();
+                    }, 2600);
+                }, 320);
+            });
+        },
+
+        /** Slow in the same way `places` is: the real route reads a title off the end of every
+         *  transcript in a project folder, and the sheet has a line for the wait. */
+        pastSessions: function (id) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (MOCK_START === "gone") {
+                        fail(Object.assign(new Error("No place named that"), { code: "not_found" }));
+                        return;
+                    }
+                    var now = Math.floor(Date.now() / 1000);
+                    var rows = (MOCK_START === "nopast" ? [] : (past[id] || []));
+                    done({
+                        at: now, place: id, assistant: "claude",
+                        sessions: rows.map(function (r, i) {
+                            return { id: r.id, title: r.title, live: r.live, at: now - i * 5400 };
+                        })
+                    });
+                }, 300);
+            });
+        },
+
+        resumePlace: function (id, session) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
+                    var place = null;
+                    for (var i = 0; i < places.length; i++) if (places[i].id === id) place = places[i];
+                    var known = (past[id] || []).filter(function (r) { return r.id === session; })[0];
+                    if (!place || !known || MOCK_START === "gone") {
+                        fail(Object.assign(new Error("No conversation named that"), { code: "not_found" }));
+                        return;
+                    }
+                    if (MOCK_START === "closed") {
+                        fail(Object.assign(new Error("Ghostty is not running, and this will not launch it for you."),
+                                           { code: "terminal_closed", app: "Ghostty" }));
+                        return;
+                    }
+                    var made = "N" + Math.floor(Math.random() * 9000 + 1000) + "-" + Math.floor(Math.random() * 90 + 10);
+                    done({ ok: true, id: made, backend: "iterm", assistant: "claude",
+                           place: place.id, cwd: place.path, session: session,
+                           at: Math.floor(Date.now() / 1000) });
+                    if (MOCK_START === "slow") return;
+                    setTimeout(function () {
+                        sessions.push({ id: made, backend: "iterm", tty: "ttys0" + Math.floor(Math.random() * 90 + 10),
+                                        // A resumed session comes back under the name it already
+                                        // had, which is the whole reason somebody picked it off
+                                        // the list rather than starting a new one.
+                                        label: known.title, cwd: place.path, state: "idle", line: null,
                                         isClaude: false, assistant: null,
                                         sessionId: null, icon: place.icon });
                         emit();

@@ -259,6 +259,24 @@ export var Live = {
         return jsonFetch(path, post({}, { "Idempotency-Key": uuid() }));
     },
 
+    /// The conversations Claude Code has already recorded in one place. Reading, not starting —
+    /// it discloses the titles of conversations held in a directory this token could already see
+    /// the name of, which is the same kind of thing `/v1/places` itself is.
+    pastSessions: function (id) {
+        return jsonFetch("/v1/places/" + encodeURIComponent(id) + "/sessions");
+    },
+
+    /// Pick one of them back up. **Both ids are in the path** — the same shape as `startPlace`
+    /// and for the same reason: there is no body on this route either, so there is nothing this
+    /// page could send that would widen what gets run. The conversation is checked at the Mac
+    /// for being a UUID *and* for being one it just listed for that directory; anything else is
+    /// a 404 there rather than a string on a command line.
+    resumePlace: function (id, session) {
+        var path = "/v1/places/" + encodeURIComponent(id) + "/resume/"
+            + encodeURIComponent(session);
+        return jsonFetch(path, post({}, { "Idempotency-Key": uuid() }));
+    },
+
     // The three doors. None of them carries the code: it is shown on the Mac, and this page is
     // only ever the thing typing it back.
     pair: function (name) { return jsonFetch("/v1/auth/pair", post({ name: name })); },

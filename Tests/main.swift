@@ -5195,6 +5195,148 @@ group("the line a new tab is given names the assistant") {
            "cd '/Users/me/it'\\''s' && codex")
 }
 
+// MARK: - Picking a recorded conversation back up
+
+/// What the resume route is allowed to put on a command line, and nothing else.
+///
+/// `--resume` takes an **optional** value, which is the whole reason this is exact rather than
+/// merely shell-safe: a value the CLI cannot read as an id becomes a search term for, and the
+/// session opens its own picker in a tab nobody is sitting at. So the failure being tested for
+/// here is a session that never starts, not an injection — although it refuses those too.
+group("a conversation id is a UUID or it is nothing") {
+    check("the shape both CLIs write",
+          StartPoints.sessionName("105344fb-c769-4b37-b766-403b410897eb") != nil)
+    expect("upper case is not that shape — Claude Code writes lower",
+           StartPoints.sessionName("105344FB-c769-4b37-b766-403b410897eb"), nil)
+    expect("nor is a prefix of one", StartPoints.sessionName("105344fb"), nil)
+    expect("nor is the empty string, which `--resume` would read as no value at all",
+           StartPoints.sessionName(""), nil)
+    expect("nor is nothing", StartPoints.sessionName(nil), nil)
+    expect("the groups have to be the right lengths",
+           StartPoints.sessionName("105344fb-c769-4b37-b766-403b410897ebcd"), nil)
+    expect("and be the right number of them",
+           StartPoints.sessionName("105344fb-c769-4b37-b766-403b-10897eb"), nil)
+    expect("g is not hex", StartPoints.sessionName("g05344fb-c769-4b37-b766-403b410897eb"), nil)
+    // The three that would matter if any of the above were a length check rather than an
+    // alphabet one. None of them is 36 characters, and each says a different thing if it got out.
+    expect("a semicolon is not a conversation",
+           StartPoints.sessionName("105344fb; rm -rf ~"), nil)
+    expect("nor is a substitution", StartPoints.sessionName("$(id)"), nil)
+    expect("nor is a flag", StartPoints.sessionName("--dangerously-skip-permissions"), nil)
+}
+
+group("the line that picks a conversation back up") {
+    expect("Claude Code takes a flag, and it comes before everything else",
+           StartPoints.itermLine(cwd: "/Users/me/code/thing",
+                                 resume: "105344fb-c769-4b37-b766-403b410897eb"),
+           "cd '/Users/me/code/thing' && claude --resume 105344fb-c769-4b37-b766-403b410897eb")
+    // Not reachable from the route, which is claude-only — but the flag is per-assistant, so
+    // the spelling is worth pinning before somebody widens the route and finds out later.
+    expect("Codex spells it as a subcommand",
+           StartPoints.itermLine(cwd: "/a/b", assistant: .codex,
+                                 resume: "105344fb-c769-4b37-b766-403b410897eb"),
+           "cd '/a/b' && codex resume 105344fb-c769-4b37-b766-403b410897eb")
+    expect("an id that is not one leaves no flag behind rather than a bare `--resume`",
+           StartPoints.itermLine(cwd: "/a/b", resume: "not-an-id"),
+           "cd '/a/b' && claude")
+    expect("and the ordinary line is exactly what it was",
+           StartPoints.itermLine(cwd: "/a/b"), "cd '/a/b' && claude")
+    check("nothing a client sent is anywhere in it",
+          !StartPoints.itermLine(cwd: "/a/b", resume: "$(id)").contains("$"))
+}
+
+/// The list itself, against a project folder written for the occasion.
+///
+/// `dir` and `open` are parameters for exactly this: the real one is `~/.claude/projects/<slug>`
+/// and the real answer to "what is being written to" is the session list, neither of which a test
+/// can describe. Everything else here is the code the app runs.
+group("what has already been said in a place") {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-past-\(getpid())", isDirectory: true)
+    try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    func write(_ name: String, _ lines: [String], at: Date? = nil) {
+        let url = root.appendingPathComponent(name)
+        try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        if let at {
+            try? FileManager.default.setAttributes([.modificationDate: at], ofItemAtPath: url.path)
+        }
+    }
+
+    let titled = "11111111-1111-4111-8111-111111111111.jsonl"
+    let renamed = "22222222-2222-4222-8222-222222222222.jsonl"
+    let untitled = "33333333-3333-4333-8333-333333333333.jsonl"
+    let silent = "44444444-4444-4444-8444-444444444444.jsonl"
+
+    write(titled, [#"{"type":"user","message":{"role":"user","content":"first thing said"}}"#,
+                   #"{"type":"ai-title","aiTitle":"What Claude Code called it"}"#],
+          at: Date(timeIntervalSince1970: 3000))
+    write(renamed, [#"{"type":"ai-title","aiTitle":"What Claude Code called it"}"#,
+                    #"{"customTitle":"What a person called it"}"#],
+          at: Date(timeIntervalSince1970: 2000))
+    write(untitled, [#"{"type":"user","isSidechain":true,"message":{"role":"user","content":"an agent's turn"}}"#,
+                     #"{"type":"user","toolUseResult":{},"message":{"role":"user","content":"a tool's answer"}}"#,
+                     #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"the opening line\nand more of it"}]}}"#],
+          at: Date(timeIntervalSince1970: 1000))
+    write(silent, [#"{"type":"summary","summary":"nobody typed anything"}"#],
+          at: Date(timeIntervalSince1970: 500))
+    // Not a conversation: a subagent's folder, and a file whose name is not an id.
+    try? FileManager.default.createDirectory(
+        at: root.appendingPathComponent("55555555-5555-4555-8555-555555555555.jsonl"),
+        withIntermediateDirectories: true)
+    write("notes.jsonl", [#"{"type":"ai-title","aiTitle":"not a session"}"#])
+
+    let place = StartPoints.Place(id: "p", path: "/Users/me/code/thing", label: "thing", at: Date())
+    let rows = StartPoints.past(in: place, dir: root, open: [])
+
+    expect("the ones that can be named, newest first", rows.map(\.id), [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+        "33333333-3333-4333-8333-333333333333",
+    ])
+    expect("Claude Code's own title", rows.first?.title, "What Claude Code called it")
+    expect("a rename beats it", rows.dropFirst().first?.title, "What a person called it")
+    expect("and with neither, the first thing a person typed — one line of it",
+           rows.last?.title, "the opening line")
+    check("a transcript nobody typed into is left out rather than shown untitled",
+          !rows.contains { $0.id.hasPrefix("4444") })
+    check("a subagent's folder is not a conversation",
+          !rows.contains { $0.id.hasPrefix("5555") })
+    check("and neither is a file that is not named after one",
+          !rows.contains { $0.title == "not a session" })
+
+    check("nothing is open, so nothing says it is", rows.allSatisfy { !$0.live })
+    let busy = StartPoints.past(in: place, dir: root,
+                                open: [root.appendingPathComponent(titled)
+                                        .resolvingSymlinksInPath().path])
+    expect("and the one being written to is the one that says so",
+           busy.filter(\.live).map(\.id), ["11111111-1111-4111-8111-111111111111"])
+
+    expect("an id off the list resolves",
+           StartPoints.past(withID: "22222222-2222-4222-8222-222222222222", in: place,
+                            dir: root, open: [])?.title,
+           "What a person called it")
+    expect("one that was never handed out does not",
+           StartPoints.past(withID: "99999999-9999-4999-8999-999999999999", in: place,
+                            dir: root, open: []), nil)
+}
+
+group("an agent's turn is not the opening of a conversation") {
+    expect("a sidechain is stepped over",
+           StartPoints.opening(inText: #"{"type":"user","isSidechain":true,"message":{"role":"user","content":"an agent"}}"#),
+           nil)
+    expect("so is a tool's answer quoted back",
+           StartPoints.opening(inText: #"{"type":"user","toolUseResult":{},"message":{"role":"user","content":"a result"}}"#),
+           nil)
+    expect("a long opening is cut where it can be read",
+           StartPoints.opening(inText: #"{"type":"user","message":{"role":"user","content":"aaaaaaaaaa"}}"#, limit: 4),
+           "aaaa…")
+    expect("and an empty one is not an opening at all",
+           StartPoints.opening(inText: #"{"type":"user","message":{"role":"user","content":"   "}}"#),
+           nil)
+}
+
 // MARK: - Handing work to another session
 
 /// A lowercase UUID, which is the only shape a task id is ever allowed to have.

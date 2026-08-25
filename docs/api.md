@@ -87,9 +87,11 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/sessions/:id/git` | token | `read` |
 | `GET` | `/v1/projects` | token | `read` |
 | `GET` | `/v1/places` | token | `read` |
+| `GET` | `/v1/places/:id/sessions` | token | `read` |
 | `GET` | `/v1/events` | token | `read` |
 | `POST` | `/v1/places/:id/start` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/places/:id/start/:assistant` | token + key | `send` **and** the write switch |
+| `POST` | `/v1/places/:id/resume/:session` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/send` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/key` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/focus` | token + key | `send` **and** the write switch |
@@ -521,6 +523,85 @@ shape as a session's.
 It is not a filesystem browser and will not become one. There is no way to ask it about a directory
 it did not already offer.
 
+### `GET /v1/places/:id/sessions`
+
+**What Claude Code has already recorded in one place**, so a client can offer to carry one of them
+on instead of starting something new. Reading, not starting — it discloses the titles of
+conversations held in a directory whose name this token could already see in `/v1/places`.
+
+```console
+$ curl -s http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/sessions \
+    -H "Authorization: Bearer $TOKEN" | jq '{at, place, assistant, sessions: .sessions[:2]}'
+{
+  "at": 1787067658,
+  "place": "3b9e26c1587facfd",
+  "assistant": "claude",
+  "sessions": [
+    {
+      "id": "105344fb-c769-4b37-b766-403b410897eb",
+      "title": "Planner.swift and POST /v1/intents",
+      "at": 1787067059,
+      "live": true
+    },
+    {
+      "id": "bbf8dae0-2e51-4a7c-9d63-1c0f8b4a7e92",
+      "title": "Make dictation reusable outside the composer",
+      "at": 1787061204,
+      "live": false
+    }
+  ]
+}
+```
+
+Forty at most, newest first, and `id` is the conversation's own — which is also what its transcript
+is named, and the only part of a row that goes back to the server.
+
+**`title` is read, never invented.** It is the name somebody renamed the conversation to, or the
+one Claude Code gave it, or — for the few transcripts that carry neither — the opening of the first
+thing a person typed into it. A transcript with none of the three is a tab that opened and closed,
+and it is left out rather than listed as an untitled row somebody has to guess at.
+
+**`live` means something is writing to that transcript right now.** Resuming one of those would put
+a second process on the same file, so a client is told which they are rather than left to find out.
+It is a fact about the instant it was read.
+
+**Claude Code only**, which is what `assistant` in the reply says out loud. Codex records the same
+conversations somewhere else and keeps their names in a process this list will not start, so there
+is nothing to show rather than nothing to resume. A place with no Claude Code transcripts answers
+`{"sessions": []}`, which is ordinary — it is what a directory only Codex has ever been opened in
+looks like. An id that is not on `/v1/places` is `404 not_found`.
+
+### `POST /v1/places/:id/resume/:session`
+
+Opens a terminal tab in that place and picks that conversation back up in it — `claude --resume
+<id>`. Everything about *where* and *whether* is
+[`…/start`](#post-v1placesidstart-post-v1placesidstartassistant) unchanged; this adds one literal
+flag and one id.
+
+```console
+$ curl -s -X POST \
+    http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/resume/105344fb-c769-4b37-b766-403b410897eb \
+    -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 6f1c9d3a-41b4' -d '{}'
+{"ok":true,"id":"…","backend":"iterm","assistant":"claude","place":"…","cwd":"…","session":"105344fb-c769-4b37-b766-403b410897eb","at":…}
+```
+
+**There is no request body here either**, and the conversation is a path segment for exactly the
+reason the assistant is one above. It is checked twice before it becomes part of a command line:
+once for shape — a lowercase UUID as Claude Code writes them, and nothing else — and once against
+the listing the server builds for that directory at that moment. An id nobody was handed is
+`404 not_found`, never a string on a command line.
+
+The shape check is exact rather than merely shell-safe, and that is worth knowing if you are
+building on this: `--resume` takes an **optional** value, so a value the CLI cannot read as an id
+it treats as a search term for, and opens its own picker in a tab nobody is sitting at. The failure
+being refused is a session that never starts, not only an injection.
+
+The refusals are `…/start`'s, plus `not_found` for a conversation that is not on the listing — a
+transcript deleted since you last looked, an id from another project, or one that was never real.
+**Resuming a `live` conversation is not refused**, because the Mac cannot always tell which tab has
+a transcript open; a client that has been told `live` should go to that session instead of asking
+for this.
+
 ### `POST /v1/places/:id/start`, `POST /v1/places/:id/start/:assistant`
 
 Opens a terminal tab in that place and runs an assistant in it. Without the last segment that is
@@ -552,8 +633,9 @@ what gets used, so an id nobody was handed is `404 not_found` and never a direct
 `/v1/places`' `assistants` and nothing else — `…/start/emacs` is `404 not_found` with
 `"No assistant named that"`, decided before the place is even looked up — and what runs is a
 literal picked out of a closed list, never a string that reaches a shell. Each of them runs with
-no arguments. If `claude --resume` is wanted one day it will be a second named action with its own
-literal, not a field on this one.
+no arguments. Picking a recorded conversation back up is the second named action this said it
+would be if it were ever wanted — [`POST /v1/places/:id/resume/:session`](#post-v1placesidresumesession),
+with its own literal — and not a field on this one.
 
 Three refusals are specific to this route and worth branching on:
 

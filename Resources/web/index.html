@@ -486,6 +486,10 @@ document.documentElement.className = "booting";
             <!-- Which assistant the press opens. Hidden on a Mac that has only one of them,
                  where it would be a control with nothing to choose between. -->
             <div class="row" id="start-with" hidden></div>
+            <!-- Whether the next press begins a conversation or picks one back up, and — once
+                 one is on screen — the way back to the projects. Drawn from the script like the
+                 row above it, because both are lists the Mac decides the contents of. -->
+            <div class="row" id="start-resume" hidden></div>
             <input class="find" id="start-filter" type="search" name="p2k" placeholder="Filter projects" hidden
                    autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
                    data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"

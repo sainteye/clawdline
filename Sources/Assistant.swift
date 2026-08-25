@@ -101,14 +101,34 @@ enum Assistant: String, CaseIterable {
     /// see ``StartPoints`` for why the one route that runs it has no field a string can enter by.
     var command: String { rawValue }
 
-    /// The same command with a model named on it, a permission mode, and a directory the session
-    /// may reach outside the one it was started in.
+    /// How this assistant is asked to pick a recorded conversation back up.
+    ///
+    /// A literal per case rather than one string, because the two spell it differently and only
+    /// one of the two spellings is a flag at all: Claude Code takes `--resume <uuid>`, Codex
+    /// takes a `resume` **subcommand**. Both resolve a UUID against their own record and refuse
+    /// an id they have never written, which is the second half of the promise in
+    /// ``StartPoints``' header — the first half being that nothing but a UUID ever gets here.
+    var resumeFlag: String {
+        switch self {
+        case .claude: return "--resume"
+        case .codex:  return "resume"
+        }
+    }
+
+    /// The same command with a model named on it, a permission mode, a directory the session
+    /// may reach outside the one it was started in, and a conversation to pick back up.
     ///
     /// All three flags are spelled the same way by both CLIs — `--model`, and `--add-dir` — which
     /// is the only reason this is one function rather than a switch. The values are the variable
     /// part of the whole line, and what keeps them from being fragments of a command is
-    /// ``StartPoints/modelName(_:)`` and ``StartPoints/extraDir(_:)``: pass anything that has not
-    /// been through those and the guarantee in `StartPoints`' header stops being true.
+    /// ``StartPoints/modelName(_:)``, ``StartPoints/extraDir(_:)`` and
+    /// ``StartPoints/sessionName(_:)``: pass anything that has not been through those and the
+    /// guarantee in `StartPoints`' header stops being true.
+    ///
+    /// **`resume` goes first**, before every other flag. `--resume` takes an optional value, so
+    /// it is the one flag here whose meaning depends on what follows it: with the id immediately
+    /// after it there is nothing to work out, and with a flag after it instead the CLI would open
+    /// its own picker in a tab nobody is sitting at.
     ///
     /// **`--add-dir` is what makes a dispatched session workable at all.** A child's whole task
     /// lives in `/tmp/.clawdline/<id>/`, which is outside the project it was started in, and a
@@ -117,8 +137,10 @@ enum Assistant: String, CaseIterable {
     /// answer, so without this the first question is where the task stops. It is also the reason
     /// the second level felt so much worse than the first: a child that dispatches touches that
     /// directory a dozen more times, once per grandchild it makes, briefs and reads back.
-    func command(model: String?, permission: Permission = .ask, addDir: String? = nil) -> String {
+    func command(model: String?, permission: Permission = .ask, addDir: String? = nil,
+                 resume: String? = nil) -> String {
         var line = command
+        if let resume, !resume.isEmpty { line += " " + resumeFlag + " " + resume }
         if let model, !model.isEmpty { line += " --model " + model }
         if let addDir, !addDir.isEmpty { line += " --add-dir " + addDir }
         let flags = permission.flags(for: self)
