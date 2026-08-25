@@ -215,3 +215,17 @@
 .skel-row .bar.line { height: 12px; }
 .skel-row .bar.sub { height: 9px; }
 
+/* The list's own count. A number and nothing else: the row already has a state to say, and this
+   is the second-quietest thing on it after the tty. */
+.row .agents-chip {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+    color: var(--faint); font: 10.5px/1 var(--mono);
+    padding: 2px 5px; border: 1px solid var(--line); border-radius: 5px;
+}
+.row .agents-chip .dot {
+    width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: 0.7;
+}
+/* **A rule that sets `display` outranks the `hidden` attribute**, which is how a chip meant to
+   appear on two rows out of nine ends up on all nine reading "0". Same guard the live line
+   already carries, for the same reason. */
+.row .agents-chip[hidden] { display: none; }

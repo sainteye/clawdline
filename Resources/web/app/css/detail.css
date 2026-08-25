@@ -33,6 +33,13 @@
    so without this the session's header stays on screen behind an agent's. Same trap the chip in
    the list fell into, noted there too. */
 .detail-head[hidden] { display: none; }
+.detail-head .who { min-width: 0; flex: 1 1 auto; }
+.detail-head .name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detail-head .sub {
+    font-family: var(--mono); font-size: 11px; color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.detail-head .tools { display: flex; gap: 6px; flex: 0 0 auto; }
 
 /* The same pane, one of the session's agents in it.
    ---------------------------------------------------------------------------
@@ -171,13 +178,6 @@
 .git-file .stats .del { color: #d88f7b; }
 .git-note { padding: 24px 4px; color: var(--faint); font-size: 13px; }
 .git-note.err { color: var(--bad); }
-.detail-head .who { min-width: 0; flex: 1 1 auto; }
-.detail-head .name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.detail-head .sub {
-    font-family: var(--mono); font-size: 11px; color: var(--faint);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.detail-head .tools { display: flex; gap: 6px; flex: 0 0 auto; }
 .chip {
     border: 1px solid var(--line); border-radius: 7px;
     padding: 4px 9px; font-size: 11.5px; color: var(--dim);

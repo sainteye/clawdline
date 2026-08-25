@@ -76,6 +76,12 @@
     font-size: 11.5px; padding: 3px 11px;
 }
 .stale .go:hover { background: rgba(224, 139, 110, 0.12); }
+.stale .shut {
+    margin-left: 2px; padding: 0 6px;
+    border: 0; background: none; color: inherit;
+    opacity: 0.55; font-size: 15px; line-height: 1; cursor: pointer;
+}
+.stale .shut:hover { opacity: 1; }
 
 /* The gap between a tab being opened on the Mac and the session turning up in the list.
    This line survives even though the list now also carries the project-shaped placeholder:

@@ -1,0 +1,39 @@
+/* The line Claude Code draws for itself, above the box you type in.
+   On a phone the session list is a different screen, so once you are inside a conversation
+   there is nothing at all saying whether it is still running — the Mac has the notch and the
+   footer for that and the phone has neither. Quiet on purpose: it is on screen for minutes at
+   a time, so it is dim and monospace rather than another coloured panel competing with the
+   warning above it, which is the one that actually needs somebody to stop. */
+.live {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 7px;
+    padding: 7px 14px 0;
+    color: var(--dim);
+    font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden;
+}
+.live[hidden] { display: none; }
+/* The two of them are one block: "is it running" and then "on what". When the live line is
+   there it carries the hairline and the strip drops its own, so the pair does not read as two
+   separate things stacked up. */
+.live + .agents { border-top: 0; padding-top: 4px; }
+.live:not([hidden]) { border-top: 1px solid var(--line); }
+/* **And the box under them is in the same block.** The composer draws its own hairline, which is
+   right when it is the first thing under the transcript and wrong the moment anything is between
+   them: the live line ended up fenced by a rule above and a rule below, which turns a note about
+   what the session is doing into a row of furniture of its own. Whatever is highest carries the
+   one line, exactly as the pair above already agreed. */
+.live:not([hidden]) ~ .composer,
+.agents:not([hidden]) ~ .composer { border-top: 0; }
+
+/* **A turning mark, not a fading one.**
+   This was a 6px dot breathing between full and a quarter opacity, and on a phone it read as a
+   dot: the thing it was supposed to say — *this is still going* — needed somebody to watch it
+   for a second and a half to see. What the rest of the app uses for exactly this is the pixel
+   spinner in the session list, on one shared clock, and there was no reason for the composer to
+   have invented a second vocabulary for the same sentence. It is the same canvas, the same eight
+   phases, the same tick. */
+.live canvas.spin { flex: 0 0 auto; display: block; }
+.live .said {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}

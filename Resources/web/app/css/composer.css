@@ -186,52 +186,6 @@
     margin-bottom: 9px;
 }
 .composer .waiting[hidden] { display: none; }
-
-/* The line Claude Code draws for itself, above the box you type in.
-   On a phone the session list is a different screen, so once you are inside a conversation
-   there is nothing at all saying whether it is still running — the Mac has the notch and the
-   footer for that and the phone has neither. Quiet on purpose: it is on screen for minutes at
-   a time, so it is dim and monospace rather than another coloured panel competing with the
-   warning above it, which is the one that actually needs somebody to stop. */
-.live {
-    flex: 0 0 auto;
-    display: flex; align-items: center; gap: 7px;
-    padding: 7px 14px 0;
-    color: var(--dim);
-    font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-    overflow: hidden;
-}
-.live[hidden] { display: none; }
-/* The two of them are one block: "is it running" and then "on what". When the live line is
-   there it carries the hairline and the strip drops its own, so the pair does not read as two
-   separate things stacked up. */
-.live + .agents { border-top: 0; padding-top: 4px; }
-.live:not([hidden]) { border-top: 1px solid var(--line); }
-/* **And the box under them is in the same block.** The composer draws its own hairline, which is
-   right when it is the first thing under the transcript and wrong the moment anything is between
-   them: the live line ended up fenced by a rule above and a rule below, which turns a note about
-   what the session is doing into a row of furniture of its own. Whatever is highest carries the
-   one line, exactly as the pair above already agreed. */
-.live:not([hidden]) ~ .composer,
-.agents:not([hidden]) ~ .composer { border-top: 0; }
-
-.stale .shut {
-    margin-left: 2px; padding: 0 6px;
-    border: 0; background: none; color: inherit;
-    opacity: 0.55; font-size: 15px; line-height: 1; cursor: pointer;
-}
-.stale .shut:hover { opacity: 1; }
-/* **A turning mark, not a fading one.**
-   This was a 6px dot breathing between full and a quarter opacity, and on a phone it read as a
-   dot: the thing it was supposed to say — *this is still going* — needed somebody to watch it
-   for a second and a half to see. What the rest of the app uses for exactly this is the pixel
-   spinner in the session list, on one shared clock, and there was no reason for the composer to
-   have invented a second vocabulary for the same sentence. It is the same canvas, the same eight
-   phases, the same tick. */
-.live canvas.spin { flex: 0 0 auto; display: block; }
-.live .said {
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
 /* Nothing to switch off under reduced motion: `drawSpinner` is driven by the one interval at
    the top, and that interval already returns without advancing when `reduced` is set — so the
    mark is drawn once, in its first phase, and simply stays there. */
@@ -311,86 +265,6 @@
 }
 .composer .menu .opt[disabled] .here { color: var(--faint); }
 
-/* The session and the agents it sent away, as one short tree.
-   ---------------------------------------------------------------------------
-   Drawn the way the terminal draws it: `main` at the root with a filled dot, a ring per agent
-   under it, the kind of agent in a column of its own, then what that agent is doing. The shape
-   is the point. A list of descriptions says a session has three things happening; a tree says
-   they are happening *under* this conversation, which is the fact the pane could never show.
-
-   Still the quietest thing on screen. The one state allowed to be loud on this page is a
-   session waiting for an answer, and a rank of bright rows under it would take that away — so:
-   small, dim, monospace for the machine's half, and no accent anywhere except the ring of
-   something still going and the tint under the row being read. */
-.agents {
-    flex: 0 0 auto;
-    padding: 7px 14px 8px;
-    border-top: 1px solid var(--line);
-}
-.agents[hidden] { display: none; }
-.agents .head {
-    display: flex; align-items: baseline; gap: 7px;
-    color: var(--faint); font-size: 11px; letter-spacing: 0.02em;
-    margin-bottom: 4px;
-}
-.agents .head .n { color: var(--dim); }
-.agents .one {
-    display: flex; align-items: baseline; gap: 8px;
-    width: 100%; min-width: 0; text-align: left;
-    padding: 2px 5px; margin: 0 -5px; border-radius: 5px;
-}
-.agents .one:hover { background: var(--card); }
-.agents .one:hover .what { color: var(--ink); }
-/* Where the reader is. `main` carries it while the pane is showing the session's own
-   conversation, which is the state the strip is in nearly all of the time. */
-.agents .one[aria-current="true"] { background: var(--card-hi); }
-.agents .one[aria-current="true"] .kind { color: var(--ink); }
-/* A ring for an agent, filled for the conversation all of them hang under. */
-.agents .one .mark {
-    flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%;
-    border: 1.5px solid var(--faint); align-self: center;
-}
-.agents .one.root .mark { background: var(--dim); border-color: var(--dim); }
-.agents .one[data-state="running"] .mark { border-color: var(--accent); }
-.agents .one[data-state="done"] .mark { border-color: var(--ok); }
-.agents .one[data-state="failed"] .mark { border-color: var(--bad); }
-/* What kind of agent it is, in a column of its own so the descriptions line up under each
-   other. Monospace and a fixed width for the reason the terminal uses one: these are names from
-   a small fixed set, and a ragged left edge on the column after them is what makes four rows
-   unreadable at a glance. */
-.agents .one .kind {
-    flex: 0 0 auto; width: 106px;
-    color: var(--dim); font: 11px/1.6 var(--mono);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.agents .one .what {
-    flex: 0 1 auto; min-width: 0; color: var(--dim); font-size: 11.5px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-/* The tool it last reached for, or what it handed back once it has. Same slot, because they are
-   the same question asked at two different times — and set the way the live line is set. */
-.agents .one .doing {
-    flex: 1 1 auto; min-width: 0; color: var(--faint);
-    font: 11px/1.6 var(--mono);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.agents .one .said { color: var(--faint); font-size: 11px; flex: 0 0 auto; }
-
-/* The list's own count. A number and nothing else: the row already has a state to say, and this
-   is the second-quietest thing on it after the tty. */
-.row .agents-chip {
-    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
-    color: var(--faint); font: 10.5px/1 var(--mono);
-    padding: 2px 5px; border: 1px solid var(--line); border-radius: 5px;
-}
-.row .agents-chip .dot {
-    width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: 0.7;
-}
-/* **A rule that sets `display` outranks the `hidden` attribute**, which is how a chip meant to
-   appear on two rows out of nine ends up on all nine reading "0". Same guard the live line
-   already carries, for the same reason. */
-.row .agents-chip[hidden] { display: none; }
-
 .composer .why { color: var(--faint); font-size: 11.5px; margin-top: 7px; }
 /* Nothing to explain, no row. The line under the box now only ever says why the box will not
    take what you type; when everything is working it says nothing, and a line that says nothing
@@ -398,4 +272,3 @@
 .composer .why:empty { display: none; }
 .composer .why b { color: var(--dim); font-weight: 500; }
 .composer .why code { font-family: var(--mono); font-size: 11px; color: #8cbaf9; }
-

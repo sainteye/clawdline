@@ -1,0 +1,64 @@
+/* The session and the agents it sent away, as one short tree.
+   ---------------------------------------------------------------------------
+   Drawn the way the terminal draws it: `main` at the root with a filled dot, a ring per agent
+   under it, the kind of agent in a column of its own, then what that agent is doing. The shape
+   is the point. A list of descriptions says a session has three things happening; a tree says
+   they are happening *under* this conversation, which is the fact the pane could never show.
+
+   Still the quietest thing on screen. The one state allowed to be loud on this page is a
+   session waiting for an answer, and a rank of bright rows under it would take that away — so:
+   small, dim, monospace for the machine's half, and no accent anywhere except the ring of
+   something still going and the tint under the row being read. */
+.agents {
+    flex: 0 0 auto;
+    padding: 7px 14px 8px;
+    border-top: 1px solid var(--line);
+}
+.agents[hidden] { display: none; }
+.agents .head {
+    display: flex; align-items: baseline; gap: 7px;
+    color: var(--faint); font-size: 11px; letter-spacing: 0.02em;
+    margin-bottom: 4px;
+}
+.agents .head .n { color: var(--dim); }
+.agents .one {
+    display: flex; align-items: baseline; gap: 8px;
+    width: 100%; min-width: 0; text-align: left;
+    padding: 2px 5px; margin: 0 -5px; border-radius: 5px;
+}
+.agents .one:hover { background: var(--card); }
+.agents .one:hover .what { color: var(--ink); }
+/* Where the reader is. `main` carries it while the pane is showing the session's own
+   conversation, which is the state the strip is in nearly all of the time. */
+.agents .one[aria-current="true"] { background: var(--card-hi); }
+.agents .one[aria-current="true"] .kind { color: var(--ink); }
+/* A ring for an agent, filled for the conversation all of them hang under. */
+.agents .one .mark {
+    flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%;
+    border: 1.5px solid var(--faint); align-self: center;
+}
+.agents .one.root .mark { background: var(--dim); border-color: var(--dim); }
+.agents .one[data-state="running"] .mark { border-color: var(--accent); }
+.agents .one[data-state="done"] .mark { border-color: var(--ok); }
+.agents .one[data-state="failed"] .mark { border-color: var(--bad); }
+/* What kind of agent it is, in a column of its own so the descriptions line up under each
+   other. Monospace and a fixed width for the reason the terminal uses one: these are names from
+   a small fixed set, and a ragged left edge on the column after them is what makes four rows
+   unreadable at a glance. */
+.agents .one .kind {
+    flex: 0 0 auto; width: 106px;
+    color: var(--dim); font: 11px/1.6 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.agents .one .what {
+    flex: 0 1 auto; min-width: 0; color: var(--dim); font-size: 11.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The tool it last reached for, or what it handed back once it has. Same slot, because they are
+   the same question asked at two different times — and set the way the live line is set. */
+.agents .one .doing {
+    flex: 1 1 auto; min-width: 0; color: var(--faint);
+    font: 11px/1.6 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.agents .one .said { color: var(--faint); font-size: 11px; flex: 0 0 auto; }
