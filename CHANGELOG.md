@@ -9,6 +9,39 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: the list of conversations to pick back up was mostly not conversations
+
+The first version of it listed what was in the project folder, newest first, capped at forty. In
+this repository's own folder that is a hundred and one transcripts — of which **fifty-two were
+sessions Clawdline itself dispatched** to do one task, and **eleven were `claude -p` one-shots**
+sitting there under names like `Test`, `Hello` and `What is 2+2?`. Thirty-five were the work.
+
+So the cap fell in the middle of the plumbing. Everything real older than the fortieth row was
+invisible — and stayed invisible when you typed, because a filter box can only narrow what was
+loaded. The two complaints, *there is test rubbish in here* and *the ones I want are missing*, were
+one bug.
+
+Both kinds are now left out, and neither judgement is a guess about what is in the file: a
+dispatched session's first turn begins with the briefing line this app wrote into it, and a `-p`
+run is marked by Claude Code as `entrypoint: sdk-cli` / `promptSource: sdk`. Across every project
+on the machine this was measured on — three hundred and thirteen transcripts — that second pair
+occurred thirty-one times and every one of them was a probe. The cap went to two hundred, which
+with the rubbish gone is no longer where the list ends.
+
+The briefing test is a **prefix on the first turn** rather than a search of the file. A
+conversation held *about* this feature quotes that line repeatedly; under the looser test it
+filtered itself out of the list it was being read in.
+
+### Fixed: naming forty conversations took nine seconds
+
+Reading a transcript's title reads the whole file when it has to look for a rename made before the
+tail. It did that by turning the file into a string and splitting it into lines — two hundred and
+forty megabytes and a hundred thousand throwaway substrings, to find a key that two transcripts of
+a hundred and one even have. It is now a byte search over a mapped file, backwards, decoding only
+the line that matched: the same answer, **nine seconds down to one and a half**, and nothing after
+the first read of a file until that file changes. A transcript smaller than the tail window is not
+scanned twice at all.
+
 ### Added: say what to start, and the Mac works out where
 
 There is a microphone beside the plus in the session list now. Press it and say what you want

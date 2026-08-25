@@ -553,8 +553,24 @@ $ curl -s http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/sessions \
 }
 ```
 
-Forty at most, newest first, and `id` is the conversation's own — which is also what its transcript
-is named, and the only part of a row that goes back to the server.
+Two hundred at most, newest first, and `id` is the conversation's own — which is also what its
+transcript is named, and the only part of a row that goes back to the server.
+
+**Only conversations somebody had.** Half of what is in a project folder is not one, and both
+exclusions are read off a field rather than guessed at from the contents:
+
+| left out | how it is known | why |
+|---|---|---|
+| sessions this Mac dispatched | the first turn *begins* with Clawdline's own briefing line | the app opened it, typed one instruction into it and closed it when the work came back. It is plumbing, not a conversation |
+| `-p` and SDK runs | Claude Code's own `entrypoint: "sdk-cli"` or `promptSource: "sdk"` on that turn | `claude -p "what is 2+2"` writes a transcript like everything else; it was never an interactive session |
+
+This is not a nicety. In this repository's own project folder, of a hundred and one transcripts,
+fifty-two were dispatched children and eleven were `-p` probes — so a list capped at forty was one
+whose cap fell in the middle of the plumbing, with most of the real conversations not on screen at
+all. A client's filter box can only narrow what it was sent.
+
+The briefing test is on the **first turn, and as a prefix**. A conversation that merely mentions
+those words — one held *about* this feature does, at length — is still a conversation.
 
 **`title` is read, never invented.** It is the name somebody renamed the conversation to, or the
 one Claude Code gave it, or — for the few transcripts that carry neither — the opening of the first
@@ -564,6 +580,10 @@ and it is left out rather than listed as an untitled row somebody has to guess a
 **`live` means something is writing to that transcript right now.** Resuming one of those would put
 a second process on the same file, so a client is told which they are rather than left to find out.
 It is a fact about the instant it was read.
+
+**It is not instant on a large project.** Naming a conversation means reading its transcript, and
+these run to tens of megabytes; the first call for a project takes on the order of a second and
+every one after it is served from memory until the files change. Show a waiting line.
 
 **Claude Code only**, which is what `assistant` in the reply says out loud. Codex records the same
 conversations somewhere else and keeps their names in a process this list will not start, so there

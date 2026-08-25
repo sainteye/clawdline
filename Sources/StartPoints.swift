@@ -334,9 +334,21 @@ enum StartPoints {
     ///
     /// Only the top level of the project folder. Subagents' transcripts live in a directory
     /// beside them named for their parent, and a sidechain is not a conversation anybody had.
+    ///
+    /// **And only conversations somebody had.** Half of what is in a project folder is not one —
+    /// see ``Front``. This mattered more than it sounds: in this repository's own folder, of a
+    /// hundred and one transcripts, fifty-two were dispatched children and eleven were `-p`
+    /// probes. Thirty-five were the work. A list capped at forty was therefore one where the cap
+    /// fell in the middle of the plumbing and most of the real conversations were not on screen
+    /// at all — including for the filter box, which can only narrow what was loaded.
+    ///
+    /// `scan` bounds the reading and `limit` bounds the answer, and they are different numbers
+    /// for that reason: the front of every candidate has to be read to know whether it counts,
+    /// and most of them do not.
+    ///
     /// `dir` and `open` are parameters so a test can describe a project folder and a set of
     /// live transcripts instead of having to produce either. Neither is passed in the app.
-    static func past(in place: Place, limit: Int = 40,
+    static func past(in place: Place, limit: Int = 200, scan: Int = 400,
                      dir: URL? = nil, open: Set<String>? = nil) -> [Past] {
         let dir = dir ?? Transcript.projectDirectory(forCwd: place.path)
         let fm = FileManager.default
@@ -350,14 +362,23 @@ enum StartPoints {
             guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory),
                   !isDirectory.boolValue else { return nil }
             return (id, url, modified(url))
-        }.sorted { $0.at > $1.at }.prefix(limit)
+        }.sorted { $0.at > $1.at }.prefix(scan)
 
         let open = open ?? openTranscripts()
-        return files.compactMap { file in
-            guard let title = name(ofTranscript: file.url) else { return nil }
-            return Past(id: file.id, title: title, at: file.at,
-                        live: open.contains(file.url.resolvingSymlinksInPath().path))
+        var out: [Past] = []
+        for file in files {
+            guard out.count < limit else { break }
+            // The front first, because it is the cheap half and it is the half that decides. A
+            // title is half a megabyte off the disk; whether this is a conversation at all is
+            // answered by one record at the very top of the file.
+            let front = cachedFront(of: file.url)
+            guard front.isConversation else { continue }
+            guard let title = Transcript.title(ofTranscript: file.url) ?? front.opening,
+                  !title.isEmpty else { continue }
+            out.append(Past(id: file.id, title: title, at: file.at,
+                            live: open.contains(file.url.resolvingSymlinksInPath().path)))
         }
+        return out
     }
 
     /// The conversation with that id in that place, or nothing.
@@ -368,75 +389,167 @@ enum StartPoints {
     static func past(withID id: String, in place: Place,
                      dir: URL? = nil, open: Set<String>? = nil) -> Past? {
         guard sessionName(id) != nil else { return nil }
-        return past(in: place, limit: 200, dir: dir, open: open).first { $0.id == id }
+        return past(in: place, dir: dir, open: open).first { $0.id == id }
     }
 
-    /// What to call a transcript, or nothing when it has nothing worth calling it by.
+    /// What the front of a transcript says about the session that wrote it.
     ///
-    /// The title first — ``Transcript/title(ofTranscript:tailBytes:)`` already reads a rename in
-    /// preference to Claude Code's own, and already remembers its answer against the file's size
-    /// and mtime, so this pays for it once per file per change. Most transcripts have one: of the
-    /// ninety-six in this repository's own project folder, eighty-four do.
-    ///
-    /// The rest fall back to the opening of the first thing typed into them, which is what a
-    /// person would recognise it by anyway. **Nothing is invented** — a transcript with no title
-    /// and nothing typed into it is a tab that opened and closed, and it is left out of the list
-    /// rather than shown as an untitled row somebody has to guess at.
-    static func name(ofTranscript url: URL) -> String? {
-        if let title = Transcript.title(ofTranscript: url), !title.isEmpty { return title }
-        return cachedOpening(of: url)
+    /// All of it off **one** record — the first turn that is somebody addressing the session —
+    /// because that record carries both the sentence a person would recognise the conversation
+    /// by and Claude Code's own account of where the sentence came from.
+    struct Front: Equatable {
+        /// The opening of that turn, one line of it. Nothing when there is no such turn.
+        let opening: String?
+        /// Claude Code's word for how the session was started. `cli` is a terminal somebody sat
+        /// at; `sdk-cli` is a `-p` run. Absent on transcripts old enough not to record it, which
+        /// is why nothing here treats absence as a refusal.
+        let entrypoint: String?
+        /// Its word for where the prompt came from. `typed` and `queued` are a person; `sdk` is
+        /// a program.
+        let promptSource: String?
+        /// Whether the first thing said to it *began* with this app's own briefing — see
+        /// ``Orchestrator/briefingOpening``, and the note there on why it is not the looser test
+        /// the delivery receipt uses.
+        let dispatched: Bool
+
+        /// Whether this is a conversation somebody had, which is the only kind this list is of.
+        ///
+        /// Two things it is not, and neither judgement is a guess about the contents:
+        ///
+        /// **A session this app dispatched.** Clawdline opened it, typed one briefing into it
+        /// and closed it when the work came back. It is this app's own plumbing showing through,
+        /// and in this repository's folder it was fifty-two transcripts of a hundred and one.
+        ///
+        /// **A `-p` run.** `claude -p "what is 2+2"` writes a transcript like everything else,
+        /// and eleven of them were sitting in that list under names like `Test` and `Hello`.
+        /// Claude Code records what they are: the prompt came from the SDK and the process was
+        /// never an interactive one. Across every project on the Mac this was written on — three
+        /// hundred and thirteen transcripts — that pair occurred thirty-one times and every one
+        /// was a probe.
+        ///
+        /// Either field alone is enough. They agree in every case seen, and requiring both would
+        /// mean a pair that came apart in some later version fails open, quietly, back into a
+        /// list nobody would think to look at.
+        var isConversation: Bool {
+            !dispatched && entrypoint != "sdk-cli" && promptSource != "sdk"
+        }
     }
 
-    /// The first thing a person typed into a transcript, trimmed to a line.
-    ///
-    /// Read off the front rather than parsed, and only far enough in to pass the couple of
-    /// bookkeeping records Claude Code writes before the first turn. Records with `isSidechain`
-    /// or a `toolUseResult` are not somebody typing — they are an agent's turn and a tool's
-    /// answer quoted back — so they are stepped over rather than shown as the session's name.
-    static func opening(inText text: String, limit: Int = 80) -> String? {
+    /// Nothing found, which is what a transcript with no turn in it yet reads as.
+    static let noFront = Front(opening: nil, entrypoint: nil, promptSource: nil, dispatched: false)
+
+    /// Read that off a stretch of transcript. One record: the first that is somebody addressing
+    /// the session. Records with `isSidechain` or a `toolUseResult` are stepped over — they are
+    /// an agent's turn and a tool's answer quoted back, not a person.
+    static func front(inText text: String, limit: Int = 80) -> Front {
         for line in text.split(separator: "\n") {
-            guard line.contains("\"type\":\"user\"") else { continue }
             guard let data = line.data(using: .utf8),
                   let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  row["isSidechain"] as? Bool != true, row["toolUseResult"] == nil,
-                  let message = row["message"] as? [String: Any] else { continue }
-            var said = ""
-            if let text = message["content"] as? String {
-                said = text
-            } else if let parts = message["content"] as? [[String: Any]] {
-                for part in parts where part["type"] as? String == "text" {
-                    said = part["text"] as? String ?? ""
-                    break
-                }
-            }
-            let one = said.split(whereSeparator: \.isNewline).first.map(String.init) ?? said
-            let tidy = one.trimmingCharacters(in: .whitespaces)
-            guard !tidy.isEmpty else { continue }
-            return tidy.count > limit ? String(tidy.prefix(limit)) + "…" : tidy
+                  let found = front(inRecord: row, limit: limit) else { continue }
+            return found
         }
-        return nil
+        return noFront
+    }
+
+    /// One record, if it is the kind being looked for.
+    ///
+    /// **Not narrowed by looking for `"type":"user"` in the raw line first.** That is the obvious
+    /// saving and it is a trap: a `file-history-snapshot` carries the contents of edited files,
+    /// so a transcript of *this* app contains that exact text inside a record that is not a turn
+    /// at all. The type is read after parsing, off the field, where it means what it says.
+    static func front(inRecord row: [String: Any], limit: Int = 80) -> Front? {
+        guard row["type"] as? String == "user",
+              row["isSidechain"] as? Bool != true, row["toolUseResult"] == nil,
+              let message = row["message"] as? [String: Any] else { return nil }
+        var said = ""
+        if let text = message["content"] as? String {
+            said = text
+        } else if let parts = message["content"] as? [[String: Any]] {
+            for part in parts where part["type"] as? String == "text" {
+                said = part["text"] as? String ?? ""
+                break
+            }
+        }
+        let one = said.split(whereSeparator: \.isNewline).first.map(String.init) ?? said
+        let tidy = one.trimmingCharacters(in: .whitespaces)
+        guard !tidy.isEmpty else { return nil }
+        return Front(opening: tidy.count > limit ? String(tidy.prefix(limit)) + "\u{2026}" : tidy,
+                     entrypoint: row["entrypoint"] as? String,
+                     promptSource: row["promptSource"] as? String,
+                     dispatched: said.hasPrefix(Orchestrator.briefingOpening))
+    }
+
+    /// The same, off a file, read a record at a time until the turn turns up.
+    ///
+    /// **Not a fixed window, and that is the whole point of it.** A `file-history-snapshot` is
+    /// one record holding the contents of every file a session has edited, and it can be a
+    /// hundred and thirty kilobytes on its own — four of the transcripts in this repository's
+    /// folder open with one, this conversation's among them. A head of any fixed size is a head
+    /// that record can push the first turn out of, and the transcripts it happens to are the
+    /// long-running ones: exactly the conversations somebody wants back.
+    ///
+    /// What bounds this instead is **records**, because the turn being looked for is the *first*
+    /// one — in every transcript measured it is within the first ten. The byte ceiling is a
+    /// second bound for a file that is not what it claims to be, not the working limit.
+    static func front(ofFile url: URL, records: Int = 60, bytes: Int = 8 << 20) -> Front {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return noFront }
+        defer { try? handle.close() }
+
+        var buffer = Data()
+        var read = 0
+        var seen = 0
+        while seen < records, read < bytes {
+            guard let chunk = try? handle.read(upToCount: 64 << 10), !chunk.isEmpty else { break }
+            read += chunk.count
+            buffer.append(chunk)
+            while let nl = buffer.firstIndex(of: 0x0A) {
+                let line = buffer[buffer.startIndex..<nl]
+                buffer = buffer[buffer.index(after: nl)...]
+                seen += 1
+                guard let row = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                      let found = front(inRecord: row) else { continue }
+                return found
+            }
+        }
+        // What is left when the reading stops has no newline after it. That is not a broken
+        // record — a transcript being written to right now ends exactly like this, and so does
+        // one whose last line was never terminated. Skipping it would mean a session opened
+        // seconds ago is unreadable for as long as it is the only turn in the file.
+        if !buffer.isEmpty, seen < records,
+           let row = try? JSONSerialization.jsonObject(with: buffer) as? [String: Any],
+           let found = front(inRecord: row) {
+            return found
+        }
+        return noFront
     }
 
     // MARK: - Plumbing for the conversation list
 
-    private static var openings: [String: (signature: String, opening: String?)] = [:]
+    private static var fronts: [String: Front] = [:]
 
-    /// Remembered against the file's signature, like the title is. A transcript's opening cannot
-    /// change while its first bytes stay where they are, and the files this reads from are the
-    /// dozen without a title — the ones a fresh read would otherwise cost most on, because there
-    /// is nothing in them to stop looking at.
-    private static func cachedOpening(of url: URL) -> String? {
-        let sig = Transcript.signature(of: url)
+    /// Remembered against the **path alone**, unlike the title, which is kept against a stamp.
+    ///
+    /// The difference is not an oversight. A title is appended to and rewritten for as long as a
+    /// conversation runs, so an answer about it is only good until the file changes. The first
+    /// turn is written once, when the session starts, and is never rewritten — there is nothing
+    /// for a stamp to catch, and paying for one would mean re-reading the front of every
+    /// transcript in a project every time the newest of them grew. ``Codex/head(of:)`` keeps its
+    /// own answer for the same reason.
+    ///
+    /// **An empty answer is not kept.** A transcript seconds old can be on disk before its first
+    /// turn is in it, and a cache with no stamp would hold that "no" for the life of the process.
+    private static func cachedFront(of url: URL) -> Front {
         lock.lock()
-        if let hit = openings[url.path], hit.signature == sig {
+        if let hit = fronts[url.path] {
             lock.unlock()
-            return hit.opening
+            return hit
         }
         lock.unlock()
 
-        let found = head(of: url, bytes: 128 << 10).flatMap { opening(inText: $0) }
+        let found = front(ofFile: url)
+        guard found.opening != nil else { return found }
         lock.lock()
-        openings[url.path] = (sig, found)
+        fronts[url.path] = found
         lock.unlock()
         return found
     }

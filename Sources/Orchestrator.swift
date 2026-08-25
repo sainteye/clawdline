@@ -155,13 +155,39 @@ enum Orchestrator {
         }
     }
 
+    /// The words in ``firstLine(id:secret:announce:)`` that say what the session is, with the
+    /// task id left off.
+    ///
+    /// Two things read it and they read it for different reasons. The delivery receipt below
+    /// wants it *with* a particular task's id after it, which is what proves a transcript
+    /// belongs to that task. ``StartPoints/front(inText:limit:)`` wants it without one, because
+    /// the question there is only whether this app opened the session at all — a list of
+    /// conversations to pick back up is a list of the ones you had, and a child is this app's
+    /// own plumbing.
+    ///
+    /// Not shared with `firstLine` itself, which still spells the sentence out where it is
+    /// written. The test *"the mark the list filters on is the line a child is actually given"*
+    /// is what keeps the two from drifting apart.
+    static let briefingMark = "Clawdline CHILD agent for task"
+
+    /// The same words with the clause `firstLine` opens on, which is what a child's very first
+    /// turn *begins* with.
+    ///
+    /// The narrower one above can appear anywhere in a user turn, and a receipt wants that: it is
+    /// looking for delivery, and a briefing that arrived after something else was typed still
+    /// arrived. A list of conversations wants the opposite. This conversation's own transcript
+    /// opens with a sentence asking why the matching lives in `Orchestrator` — a question about
+    /// the mark, containing the mark — and under the loose test it would have filtered itself out
+    /// of the list somebody was reading it in.
+    static let briefingOpening = "You are a " + briefingMark
+
     /// The task marker in a user turn is the delivery receipt. Looking for this specific turn,
     /// rather than any user-shaped bookkeeping row, also proves that the transcript belongs to
     /// this task before it is allowed to close the retry gate.
     static func transcriptContainsBriefing(_ transcript: String?, assistant: Assistant,
                                            taskID: String) -> Bool {
         guard let transcript else { return false }
-        let marker = "Clawdline CHILD agent for task \(taskID)"
+        let marker = "\(briefingMark) \(taskID)"
         return Transcript.parse(transcript, assistant: assistant, limit: 100).contains { entry in
             entry.kind == .user && entry.text.contains(marker)
         }

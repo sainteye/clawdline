@@ -238,9 +238,11 @@ type can also start a session and end one; what it cannot do is dispatch, which 
 [a separate credential this Mac never serves](#handing-work-to-another-session).
 
 **Or pick up where you left off.** *Start a session* has a tick box that turns the project list
-into the conversations Claude Code has already recorded in that project — under the names it gave
+into the conversations you have already had in that project — under the names Claude Code gave
 them, filtered by typing part of one — and the row you press is `claude --resume` in a new tab
-rather than a new conversation. The names are read off the transcripts, never invented, and one
+rather than a new conversation. **The ones you had**, which is a narrower list than the ones on
+disk: a session this app dispatched to do a task, and a `claude -p` one-shot, are both left out,
+and each is known by a field rather than guessed at from what is in it. The names are read off the transcripts, never invented, and one
 that something is writing to right now says so and takes you to that session instead: two
 processes on one transcript is a corrupted record, not a second opinion.
 

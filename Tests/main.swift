@@ -5533,17 +5533,129 @@ group("what has already been said in a place") {
 
 group("an agent's turn is not the opening of a conversation") {
     expect("a sidechain is stepped over",
-           StartPoints.opening(inText: #"{"type":"user","isSidechain":true,"message":{"role":"user","content":"an agent"}}"#),
+           StartPoints.front(inText: #"{"type":"user","isSidechain":true,"message":{"role":"user","content":"an agent"}}"#).opening,
            nil)
     expect("so is a tool's answer quoted back",
-           StartPoints.opening(inText: #"{"type":"user","toolUseResult":{},"message":{"role":"user","content":"a result"}}"#),
+           StartPoints.front(inText: #"{"type":"user","toolUseResult":{},"message":{"role":"user","content":"a result"}}"#).opening,
            nil)
     expect("a long opening is cut where it can be read",
-           StartPoints.opening(inText: #"{"type":"user","message":{"role":"user","content":"aaaaaaaaaa"}}"#, limit: 4),
-           "aaaa…")
+           StartPoints.front(inText: #"{"type":"user","message":{"role":"user","content":"aaaaaaaaaa"}}"#, limit: 4).opening,
+           "aaaa\u{2026}")
     expect("and an empty one is not an opening at all",
-           StartPoints.opening(inText: #"{"type":"user","message":{"role":"user","content":"   "}}"#),
+           StartPoints.front(inText: #"{"type":"user","message":{"role":"user","content":"   "}}"#).opening,
            nil)
+}
+
+/// Half of what is in a project folder is not a conversation somebody had, and every judgement
+/// about which half is read off a field rather than guessed from the contents.
+group("what is not a conversation somebody had") {
+    func front(_ json: String) -> StartPoints.Front { StartPoints.front(inText: json) }
+
+    let typed = #"{"type":"user","entrypoint":"cli","promptSource":"typed","message":{"role":"user","content":"where did the census go"}}"#
+    check("somebody at a terminal is one", front(typed).isConversation)
+    expect("and it is named by what they said", front(typed).opening, "where did the census go")
+
+    // `claude -p "what is 2+2"` writes a transcript like everything else. Eleven of them were in
+    // this repository's list under names like `Test` and `Hello`.
+    let printed = #"{"type":"user","entrypoint":"sdk-cli","promptSource":"sdk","message":{"role":"user","content":"What is 2+2?"}}"#
+    check("a -p run is not", !front(printed).isConversation)
+    check("the entrypoint alone is enough",
+          !front(#"{"type":"user","entrypoint":"sdk-cli","promptSource":"typed","message":{"role":"user","content":"x"}}"#).isConversation)
+    check("and so is the prompt source alone",
+          !front(#"{"type":"user","entrypoint":"cli","promptSource":"sdk","message":{"role":"user","content":"x"}}"#).isConversation)
+
+    // Transcripts old enough not to record either field are still conversations. Absence is not
+    // a refusal — the alternative is a list that empties itself on somebody's older machine.
+    check("a transcript that records neither is still one",
+          front(#"{"type":"user","message":{"role":"user","content":"x"}}"#).isConversation)
+
+    // Its own id rather than the file's `taskID`: that one is declared further down, and a
+    // global read before its initializer has run is not a test failure, it is a crash.
+    let child = Orchestrator.firstLine(id: "0f8fad5b-d9cb-469f-a165-70867728950e", secret: "s")
+    let briefed = "{\"type\":\"user\",\"entrypoint\":\"cli\",\"promptSource\":\"typed\",\"message\":"
+        + "{\"role\":\"user\",\"content\":\""
+        + child.replacingOccurrences(of: "\"", with: "\\\"")
+        + "\"}}"
+    check("a session this app dispatched is not one", !front(briefed).isConversation)
+    check("and the words it is recognised by are the line a child is actually given",
+          child.hasPrefix(Orchestrator.briefingOpening))
+
+    // The turn has to *begin* with the briefing. This conversation's own transcript opens with a
+    // question about that matching, containing those words — under a `contains` test it would
+    // have filtered itself out of the list it was being read in.
+    check("but a conversation that opens by asking about the briefing is still one",
+          front(#"{"type":"user","entrypoint":"cli","message":{"role":"user","content":"why does the Clawdline CHILD agent for task matching live in Orchestrator?"}}"#)
+            .isConversation)
+}
+
+/// The trap that made a fixed-size head the wrong shape for this.
+group("the first turn is found however far in it sits") {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-front-\(getpid())", isDirectory: true)
+    try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    // A `file-history-snapshot` carries the contents of every file a session has edited, so in a
+    // transcript of *this* app it contains the literal text `"type":"user"` — and it can be a
+    // hundred and thirty kilobytes on its own. Four of the transcripts in this repository's own
+    // folder open with one, including the conversation this test was written in. A reader that
+    // narrowed by that substring before parsing, or that only ever looked at a fixed window off
+    // the front, found no turn in any of them.
+    let padding = String(repeating: #"{"type":"user","fake":1} "#, count: 9000)
+    let url = root.appendingPathComponent("big.jsonl")
+    try? ([
+        #"{"type":"mode","mode":"default"}"#,
+        #"{"type":"file-history-snapshot","files":{"a.swift":"\#(padding)"}}"#,
+        #"{"type":"user","entrypoint":"cli","promptSource":"typed","message":{"role":"user","content":"the turn behind the snapshot"}}"#,
+    ].joined(separator: "\n")).write(to: url, atomically: true, encoding: .utf8)
+
+    let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
+    check("the fixture's opening record really is bigger than a 128KB window", size > 128 << 10)
+    let found = StartPoints.front(ofFile: url)
+    expect("and the turn behind it is still found", found.opening, "the turn behind the snapshot")
+    expect("with what it says about itself", found.entrypoint, "cli")
+    check("so it counts as a conversation", found.isConversation)
+
+    // The other half of the same trap: that snapshot must not be mistaken for a turn.
+    expect("a record that merely contains the words is not a turn",
+           StartPoints.front(inRecord: ["type": "file-history-snapshot",
+                                        "message": ["role": "user", "content": "hello"]])?.opening,
+           nil)
+}
+
+/// The title read, and the whole-file half of it that cost nine seconds.
+group("a rename is found wherever it was made") {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("clawdline-title-\(getpid())", isDirectory: true)
+    try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    // Renamed early, then talked at for another megabyte. This is the case the whole-file scan
+    // exists for, and the case a tail-only reader gets wrong — so it is the one that proves the
+    // rewrite of that scan kept its answer.
+    let filler = String(repeating: #"{"type":"assistant","message":{"role":"assistant","content":"..."}}"#
+                        + "\n", count: 12_000)
+    let url = root.appendingPathComponent("renamed.jsonl")
+    try? ([#"{"type":"ai-title","aiTitle":"what Claude Code called it"}"#,
+           #"{"customTitle":"what a person called it"}"#,
+           filler].joined(separator: "\n")).write(to: url, atomically: true, encoding: .utf8)
+
+    let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
+    check("the rename really is further back than the tail window", size > 512_000)
+    expect("and it still wins over the title Claude Code wrote",
+           Transcript.title(ofTranscript: url), "what a person called it")
+
+    // A file with no rename in it at all is the ninety-nine per cent case, and the one the scan
+    // spends the most on: proving a key is absent means reading every byte.
+    // The title record last, which is where it is in a real transcript: Claude Code appends one
+    // per turn, so the freshest is always near the end. Only a rename is ever looked for further
+    // back than the tail — that asymmetry is what the case above proves, and this is its other
+    // half.
+    let plain = root.appendingPathComponent("plain.jsonl")
+    try? ([filler, #"{"type":"ai-title","aiTitle":"never renamed"}"#]
+            .joined(separator: "\n")).write(to: plain, atomically: true, encoding: .utf8)
+    expect("with none, Claude Code's own title stands",
+           Transcript.title(ofTranscript: plain), "never renamed")
 }
 
 // MARK: - Handing work to another session
