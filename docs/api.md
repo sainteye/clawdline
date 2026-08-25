@@ -93,6 +93,7 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/sessions/:id/key` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/focus` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/end` | token + key | `send` **and** the write switch |
+| `POST` | `/v1/voice` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/auth/pair` | — | — |
 | `POST` | `/v1/auth/pair/confirm` | — | — |
 | `POST` | `/v1/auth/password` | — | — |
@@ -642,6 +643,55 @@ first kind and `orchestrator.close` for the second, both with `why=root_ended`.
 
 `502 internal` carries what actually failed; the session is left as it was found.
 
+### `POST /v1/voice`
+
+Reads a recording back as text. It types nothing and sends nothing: the transcript goes to whoever
+asked for it, and putting it into a session is [`/send`](#post-v1sessionsidsend)'s job — which is
+what lets the page drop the words into the box and leave somebody a chance to fix them first.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/voice \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: 3f9a1c04-77e2' \
+    -d '{"audio":"'"$(base64 < clip.raw | tr -d '\n')"'","rate":16000}'
+{"text":"change the retry to exponential backoff","ms":1640}
+```
+
+`audio` is base64 of little-endian 16-bit mono PCM. **`rate` is required, and `16000` is the only
+value it may have** — checked, never resampled, and with no default. A default would be this route
+assuming what kind of bytes it had been handed, and nothing in the bytes can check the assumption
+afterwards: 48 kHz read as 16 kHz answers `200` with a transcript of somebody talking three times
+too fast. That is worse than an error, because an error says which request went wrong and a bad
+transcript does not.
+
+**An empty `text` with a `200` is an answer, not a failure.** It means nothing was heard, and a
+client that draws it as an error apologises for a microphone that worked.
+
+| | when |
+|---|---|
+| `400 bad_request` | no `Idempotency-Key`; no `audio`, or not base64; `rate` missing or not `16000`; under 0.25 s; over 300 s |
+| `401 unauthorized` | no token, or one this Mac does not know |
+| `403 write_disabled`, `403 forbidden` | the write switch is off; or this device may read and not send |
+| `429 busy` | one recording is being read and one is waiting. The third is refused on the spot rather than made to queue |
+| `503 no_whisper` | nothing here to transcribe with — `error.reason` is `no_binary` or `no_model` |
+
+**The same gate as `/send`** — [all three of them](#writing-three-gates-in-this-order), the write
+switch and `send` on the device and the key — even though nothing here writes to a session.
+Transcribing spends twelve seconds of this Mac on demand, and `read` is the capability you are
+meant to be able to hand out without thinking about it.
+
+**The language is not the client's to name.** `voice_language` on this Mac decides, and what comes
+back has been through `voice_vocabulary` on the way out, exactly as it is for the bar.
+
+**`429` and `503` are the two answers not filed under the `Idempotency-Key`.** Everything else is,
+refusals included, so the same key inside the ten minutes hands back the same transcript rather
+than reading the same audio twice. Those two are facts about this machine at this moment — the
+queue drains, whisper gets installed — and a cached one would answer *busy* long after the queue
+had emptied.
+
+The audit line is `voice.transcribe`. What the queue is protecting, and why a read-only device is
+not offered a microphone at all, is [in the other page](remote.md#post-v1voice).
+
 ### `POST /v1/auth/*`
 
 The pairing flow is [in the other page](remote.md#how-a-device-is-paired) — it is a thing a person
@@ -996,8 +1046,10 @@ it draws them, and that is a drawing decision which does not travel over the wir
 | `already_done` | 409 | that task has already reported; the first report wins |
 | `bad_task` | 422 | a `task.json` that is missing, unparseable, or out of range. `message` names the field |
 | `rate_limited` | 429 | too many pairing attempts |
+| `busy` | 429 | `/v1/voice` only: one recording is being read and one is waiting. It drains in seconds |
 | `over_capacity` | 429 | as many child sessions are running as `orchestrator_max_children` allows. `retry_after` is seconds. (`rate_limited` covers the other orchestrator limit: ten dispatches in ten minutes) |
 | `internal` | 500, 502 | a tab that would not open; a terminal that would not take the text |
+| `no_whisper` | 503 | `/v1/voice` only: this Mac has nothing to transcribe with. `reason` is `no_binary` or `no_model` |
 
 A client that has handled one of these has handled all of them. Branch on `code` — the status is
 there for the layers between you and this, and `message` is a sentence for a person that may be
