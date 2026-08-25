@@ -6,6 +6,7 @@ import { drawSpinner, drawWave, setVoiceSpin, spinPhase, WAVE } from "../core/pi
 import { api } from "../net/api.js";
 import { renderComposer } from "../view/composer.js";
 import { appendMsg } from "./composer.js";
+import { tap, done } from "../core/buzz.js";
 
 /* ---- dictation ----------------------------------------------------------- */
 
@@ -220,6 +221,12 @@ export var Voice = (function () {
         since = Date.now();
         state = "recording";
         show();
+        // **The one moment somebody is not looking at the screen.** A press that opens a
+        // microphone is followed by a person raising the phone and starting to talk, and until
+        // something confirms it the honest reading of a screen they cannot see is that the press
+        // missed. Best-effort by construction: see `buzz.js` for what each platform will and will
+        // not play, and note that nothing here waits on it or reads its answer.
+        tap();
         // Four times a second. The count is in whole seconds, and a one-second timer drawing a
         // one-second number lands visibly late about half the time.
         ticker = setInterval(function () { beat(mine); }, 250);
@@ -282,6 +289,10 @@ export var Voice = (function () {
         }).then(function (answer) {
             if (mine !== token || !answer) return;
             quit();
+            // Before the branch, because what this says is "the Mac has answered" and not "there
+            // were words in it". A pocket cannot tell those apart anyway, and the thing worth
+            // signalling is that the waiting is over and the screen is worth looking at again.
+            done();
             // **An empty `text` is an answer, not a failure.** The Mac heard the recording and
             // there were no words in it, which happens to a pocket and to a room that went quiet
             // — and a red banner for that would be the page reporting a fault that did not occur.
