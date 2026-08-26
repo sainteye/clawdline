@@ -6675,6 +6675,43 @@ group("the Submit a multi-select puts under its rows is a row of its own") {
            plain.options[0].detail, "跟先前那批一樣，先整理工作區。")
 }
 
+group("a checkbox inside a description is text, not the header above the question") {
+    // The tab bar `\u{2190}  \u{2610} scope  \u{2714} Submit  \u{2192}` is drawn above the
+    // question, so a line carrying a checkbox glyph is a boundary when the prose above a menu is
+    // read *upwards*. Read downwards it is nothing of the sort — a description that happens to
+    // mention one was being dropped, which a real capture showed on 2026-08-26: the second row of
+    // a multi-select lost its explanation because the explanation was about checkboxes.
+    let numbered = """
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+     \u{2610} scope
+
+    │ 哪一種修法？
+
+    \u{276F} 1. 勾選狀態要看得出來
+      把每列的 \u{2610}／\u{2611} 解析成一個真正的欄位。
+      2. 不用管勾選
+    """
+    guard let menu = SessionState.menu(numbered, hookWaiting: true) else {
+        check("that dialog is a menu", false); return
+    }
+    expect("a description that mentions a checkbox survives",
+           menu.options[0].detail, "把每列的 \u{2610}／\u{2611} 解析成一個真正的欄位。")
+    expect("and the header above is still not the question", menu.question, "哪一種修法？")
+
+    // The same walk, on a picker that prints no numbers.
+    let plain = """
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+      哪一種修法？
+
+      \u{276F} 勾選狀態要看得出來
+          把每列的 \u{2610}／\u{2611} 解析成一個真正的欄位。
+        不用管勾選
+    """
+    expect("an unnumbered row keeps it too",
+           SessionState.menu(plain, hookWaiting: true)?.options[0].detail,
+           "把每列的 \u{2610}／\u{2611} 解析成一個真正的欄位。")
+}
+
 group("the question above a visual menu") {
     // AskUserQuestion's descriptions belong to their options, not to the prose above the first
     // one. The short checkbox line is only a header, so the phone gets the two wrapped question

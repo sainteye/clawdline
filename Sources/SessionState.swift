@@ -358,7 +358,7 @@ enum SessionState: Equatable {
         var index = optionIndex + 1
         while index < lines.count {
             guard let row = plainRow(lines[index]), row.column > column, !row.caret,
-                  !isBoxRule(lines[index]), !isQuestionHeader(row.label) else { break }
+                  !isBoxRule(lines[index]) else { break }
             parts.append(row.label)
             index += 1
         }
@@ -550,6 +550,11 @@ enum SessionState: Equatable {
     /// `stoppingAt` is the one line that looks like prose and is not: a multi-select's Submit.
     /// It is found before any of this runs, because there is nothing about the line itself that
     /// this walk could use to tell it from a description — see ``submitRow(in:from:)``.
+    ///
+    /// **A checkbox is a boundary going up and nothing at all going down.** ``question(in:...)``
+    /// stops at one because the tab bar sits above the question; the tab bar cannot also sit under
+    /// a row, so the same test here only ever fired on a description that mentioned a checkbox —
+    /// and one did, in a real capture, and its row lost its explanation.
     private static func detail(under optionIndex: Int, in lines: [String],
                                stoppingAt submitLine: Int? = nil) -> String? {
         var parts: [String] = []
@@ -559,7 +564,7 @@ enum SessionState: Equatable {
             let raw = lines[index]
             if option(raw) != nil || isBoxRule(raw) || hasCaret(raw) { break }
             let text = dialogText(raw)
-            if text.isEmpty || isQuestionHeader(text) { break }
+            if text.isEmpty { break }
             parts.append(text)
             index += 1
         }
