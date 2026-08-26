@@ -206,6 +206,16 @@ export var Schedule = (function () {
     function drawPlaces() {
         var list = els["schedule-places"];
         list.innerHTML = "";
+        // Nothing to offer is an answer and has to look like one — and so is not having managed
+        // to ask. An empty bordered box is the shape of something broken, and it is exactly what
+        // both of these used to draw.
+        var why = placesFailed ? T.webOffline : ((places && !places.length) ? T.webStartEmpty : "");
+        if (why) {
+            var none = document.createElement("li");
+            none.className = "note";
+            none.textContent = why;
+            list.appendChild(none);
+        }
         (places || []).forEach(function (p) {
             var li = document.createElement("li");
             var row = document.createElement("button");
@@ -276,13 +286,21 @@ export var Schedule = (function () {
 
     /** Fetched once per sheet visit and kept — a directory can go away between two looks, same
      *  reasoning as `input/command.js`'s own copy of this. */
+    /** **An empty array is truthy.** The first version remembered `[]` as "already loaded", so a
+     *  single failed read — the Mac still waking up, or `/v1/places` answering `busy` because
+     *  eight slow reads were already in hand — left this sheet with no projects and no assistants
+     *  for the life of the page, and nothing on screen saying why. A failure leaves `places` null
+     *  so the next open asks again; only a real answer is remembered. */
+    var placesFailed = false;
+
     function ensurePlaces() {
-        if (places) return Promise.resolve();
+        if (places && places.length) return Promise.resolve();
+        placesFailed = false;
         if (typeof api.places !== "function") { places = []; assistants = []; return Promise.resolve(); }
         return api.places().then(function (d) {
             places = (d && d.places) || [];
             assistants = (d && d.assistants) || [];
-        }).catch(function () { places = places || []; });
+        }).catch(function () { places = null; assistants = []; placesFailed = true; });
     }
 
     function defaultAssistant(preferred) {
@@ -306,6 +324,10 @@ export var Schedule = (function () {
         // Folded every time: a first schedule should not have to read six settings with working
         // defaults before it can be made — see the comment on `#schedule-more` in index.html.
         els["schedule-more"].open = false;
+        // And so is the project, for the same reason and one more: left open from last time, the
+        // list would be back to filling the sheet before anybody had asked it to.
+        els["schedule-picked"].setAttribute("aria-expanded", "false");
+        els["schedule-places"].hidden = true;
         said("");
         drawWith(); drawDays(); drawClose(); drawFlags(); drawPlaces();
     }
