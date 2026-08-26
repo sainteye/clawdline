@@ -716,9 +716,12 @@ in a sliding hour — and every attempt leaves an `orchestrator.notify` audit ro
 survives restarts; the process-memory hourly window restarts empty. With no subscription the route
 returns `409 not_subscribed` without consuming either allowance. Push-service failures return
 `502 push_failed` with sent/failed subscription counts instead of reporting a silent success.
-Task and root content use stable WebPush topics. They deliberately bypass the automatic finish,
-deploy and schedule-failure push preferences because the user explicitly requested this content;
-a separate preference for agent-authored content remains backlog work.
+Task and root content use stable WebPush topics. Settings → Remote has a separate agent-notification
+preference, on by default and stored as `orchestrator_agent_notify`; turning it off leaves finish,
+deploy and other notifications alone. While it is off both content routes return
+`409 agent_notify_disabled` without attempting delivery or spending an allowance. An agent that
+receives that refusal does not retry: it leaves the content in `result.json`, reports `failure`
+honestly, and explains that the user disabled agent notifications.
 
 ### `result.json` — written by the child, and it *is* the signal
 

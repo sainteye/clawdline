@@ -126,6 +126,7 @@ The complete task schema, claim and serialization semantics, lifecycle, credenti
 protocol are in [`docs/orchestrator.md`](docs/orchestrator.md).
 Children may use their task secret to push rare, time-sensitive content with `POST /v1/orchestrator/tasks/:id/notify`.
 Routine output stays in `result.json`; notification-shaped work such as a daily forecast should say explicitly to notify.
+The user can turn agent notifications off; on `409 agent_notify_disabled`, do not retry, leave the content in `result.json`, and report the refusal honestly.
 HTTP request and response shapes are in [`docs/api.md`](docs/api.md#post-v1orchestratortasks).
 
 ## When Clawdline dispatched you

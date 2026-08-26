@@ -3559,6 +3559,14 @@ enum Orchestrator {
         return nil
     }
 
+    private static func agentNotifyPreferenceRefusal(taskID: String?, title: String) -> Reply? {
+        guard !Config.shared.orchestratorAgentNotify else { return nil }
+        auditAgentNotify(taskID: taskID, title: title, result: "agent_notify_disabled")
+        return .refused(409, "agent_notify_disabled",
+                        "Agent notifications were turned off by the user. Turn them on in "
+                            + "Settings → Remote.")
+    }
+
     private static func sendAgentPush(source: String, title: String, body: String,
                                       projectDir: String?, tag: String) -> WebPush.Delivery {
         let displayedTitle = "\(source): \(title)"
@@ -3566,8 +3574,8 @@ enum Orchestrator {
         if let observer = agentPushForTesting {
             return observer(displayedTitle, body, "/", tag, icon)
         }
-        // This deliberately bypasses pushOnFinish: it is content the user explicitly asked an
-        // agent or schedule to deliver, not Clawdline's automatic finished-state notification.
+        // This bypasses pushOnFinish because the dedicated orchestratorAgentNotify preference
+        // already gates agent-authored content; it is not an automatic finished-state notice.
         return WebPush.sendAndWait(title: displayedTitle, body: body, url: "/", tag: tag,
                                    icon: icon)
     }
@@ -3627,6 +3635,9 @@ enum Orchestrator {
                                 "That task's notification window has expired.")
             }
         }
+        if let refusal = agentNotifyPreferenceRefusal(taskID: taskID, title: title) {
+            return refusal
+        }
         if let refusal = notificationFields(title: title, body: body) {
             auditAgentNotify(taskID: taskID, title: title, result: "invalid")
             return refusal
@@ -3683,6 +3694,9 @@ enum Orchestrator {
     /// Local roots and scripts already proved they are this Mac's user at RemoteServer's token
     /// gate. They share the hourly brake but do not consume any task's five-message allowance.
     static func agentNotify(title: String, body: String, now: Date = Date()) -> Reply {
+        if let refusal = agentNotifyPreferenceRefusal(taskID: nil, title: title) {
+            return refusal
+        }
         if let refusal = notificationFields(title: title, body: body) {
             auditAgentNotify(taskID: nil, title: title, result: "invalid")
             return refusal
@@ -5502,6 +5516,8 @@ enum Orchestrator {
         the user is waiting for the answer, including a scheduled task such as today's weather
         whose useful output is the notification itself. Empty title/body values are refused.
         Each task may send at most 5 notifications, and this Mac accepts at most 30 per hour.
+        The user may turn agent notifications off. A `409 agent_notify_disabled` response is not
+        your fault: leave the content in `result.json`, report failure honestly, and do not retry.
         \(handOnSection(for: task, allowance: allowance))\(policySection(allowance: allowance))
         ## Reporting — this is the completion signal, do it exactly
 

@@ -698,6 +698,9 @@ app 沒開就不會觸發，重開後也只在 `catch_up_hours` 內補課。
 /v1/orchestrator/notify`，body 是 `{"title":"…","body":"…"}`。title 最多 80 字元、body
 最多 500；每個 task 5 則，整台 Mac 每小時 30 則。task secret 可在任務存活期間，以及完成後僅
 60 秒內推播；通知型任務在可行時要先送出內容，再寫最後的 `result.json`。
+使用者可以在「設定 → 遠端」關掉 agent 通知。收到 `409 agent_notify_disabled` 代表內容沒有
+送達、額度也沒有消耗：不要重試，把內容留在 `result.json`，如實回報這次拒絕；若是排程任務，
+任務本身仍照常完成。
 
 ---
 

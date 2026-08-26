@@ -272,6 +272,13 @@ final class Config {
     /// Type one line into the root session when a task it dispatched finishes, so the
     /// conversation that asked for the work is the one that hears it is done.
     var orchestratorNotifyRoot = true
+    /// Let an agent send content to the user's subscribed devices through either orchestrator
+    /// notification route. Separate from the automatic finish and deploy preferences: those
+    /// describe app state, while this is prose an agent chose to send proactively.
+    ///
+    /// On by default to preserve the behavior from before this preference existed. A missing key
+    /// in an older config therefore means on as well.
+    var orchestratorAgentNotify = true
     /// What becomes of a child's terminal once it has reported: seconds to leave it open before
     /// the app closes it, `0` to close as soon as it is quiet, `-1` to leave it to the user.
     /// Only a child that reported — success or failure — is closed; one that timed out or never
@@ -304,11 +311,20 @@ final class Config {
     /// what is behind it is a list of your repositories, branches and task titles.
     var remoteAuthConfigured: Bool { RemoteAuth.isConfigured }
 
-    private let dir = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".config/clawdline", isDirectory: true)
+    private let dir: URL
     private var file: URL { dir.appendingPathComponent("config.json") }
 
-    private init() { load() }
+    private init() {
+        dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/clawdline", isDirectory: true)
+        load()
+    }
+
+    /// A private config directory keeps persistence tests away from the person's real settings.
+    init(directoryForTesting directory: URL) {
+        dir = directory
+        load()
+    }
 
     func load() {
         guard let data = try? Data(contentsOf: file),
@@ -350,6 +366,7 @@ final class Config {
             orchestratorPermission = v
         }
         if let v = obj["orchestrator_notify_root"] as? Bool { orchestratorNotifyRoot = v }
+        if let v = obj["orchestrator_agent_notify"] as? Bool { orchestratorAgentNotify = v }
         if let v = obj["orchestrator_child_linger"] as? Int, v >= -1, v <= 3600 {
             orchestratorChildLinger = v
         }
@@ -413,6 +430,7 @@ final class Config {
             "orchestrator_max_grandchildren": orchestratorMaxGrandchildren,
             "orchestrator_permission": orchestratorPermission,
             "orchestrator_notify_root": orchestratorNotifyRoot,
+            "orchestrator_agent_notify": orchestratorAgentNotify,
             "orchestrator_child_linger": orchestratorChildLinger,
             "assistant_quota_low_threshold": assistantQuotaLowThreshold,
             "status_dir": statusDir,

@@ -778,6 +778,10 @@ orchestrator token and `{"title":"…","body":"…"}`. Titles are at most 80 cha
 500; one task gets 5 messages and the whole Mac gets 30 per hour. A task secret may notify while
 the task is live and for only 60 seconds after it finishes, so notification-shaped work sends the
 content before writing its final `result.json` whenever practical.
+The user may turn agent notifications off in Settings → Remote. A
+`409 agent_notify_disabled` response means the content was not delivered and no allowance was
+spent: do not retry, keep the content in `result.json`, report the refusal honestly, and let the
+scheduled task otherwise finish normally.
 
 ---
 

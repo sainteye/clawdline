@@ -109,8 +109,9 @@ that fallback in the audit log.
 A scheduled task may also use the task-secret `/notify` route to push that day's **successful
 content** to the user — a daily forecast is the canonical shape. Say so in `task.instructions`;
 `notify_on_failure` is only Clawdline's separate state/failure notification policy. This explicit
-content delivery deliberately bypasses the automatic push preference switches; a separate
-agent-content preference remains backlog work.
+content delivery can be turned off by the user in Settings → Remote. While it is off, `/notify`
+returns the named `409 agent_notify_disabled` refusal; the content stays in `result.json` and the
+scheduled task itself still runs normally.
 
 ## Making one without a text editor
 

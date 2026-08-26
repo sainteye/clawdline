@@ -415,9 +415,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         pane.left.row(L.t.settingsRemoteWrite,
                       switchFor({ Config.shared.remoteWrite }, { Config.shared.remoteWrite = $0 }),
                       hint: L.t.settingsRemoteWriteHint)
-        // Both off by default, and both here rather than in General because what they control is
-        // a phone — there is no notification without a paired device, so the switch belongs
-        // beside the devices rather than in a list of things about the bar.
+        // These live here rather than in General because what they control is a phone — there is
+        // no notification without a paired device, so each switch belongs beside the devices
+        // rather than in a list of things about the bar.
         pane.left.row(L.t.settingsPushFinish,
                       switchFor({ Config.shared.pushOnFinish },
                                 { Config.shared.pushOnFinish = $0 }),
@@ -426,6 +426,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                       switchFor({ Config.shared.pushOnDeploy },
                                 { Config.shared.pushOnDeploy = $0 }),
                       hint: L.t.settingsPushDeployHint)
+        pane.left.row(L.t.settingsAgentNotify,
+                      switchFor({ Config.shared.orchestratorAgentNotify },
+                                { Config.shared.orchestratorAgentNotify = $0 }),
+                      hint: L.t.settingsAgentNotifyNote)
 
         pane.right.row(L.t.settingsTunnel, tunnelPopUp(), hint: L.t.settingsTunnelHint)
         pane.right.row(L.t.settingsTunnelHostname, hostnameField())
