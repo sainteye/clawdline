@@ -136,6 +136,12 @@ enum Orchestrator {
         var dir: URL { Orchestrator.root.appendingPathComponent(id, isDirectory: true) }
     }
 
+    /// The directory whose assistant-owned records belong to this child. Kept separate from the
+    /// dispatch project so task isolation can choose a different working tree at this seam.
+    static func cwd(of task: Task) -> String {
+        task.projectDir
+    }
+
     enum BriefingDecision: Equatable {
         case send, wait, accepted, exhausted
     }
@@ -1981,7 +1987,7 @@ enum Orchestrator {
             let registryTranscript = registrySessionID.flatMap { sessionID in
                 // Match Transcript.record(of:): the id names a candidate, while locate proves
                 // its file exists in the child's cwd and postdates this process.
-                Transcript.locate(cwd: Targets.workingDirectory(of: child) ?? task.projectDir,
+                Transcript.locate(cwd: Targets.workingDirectory(of: child) ?? cwd(of: task),
                                   tabTitle: child.name, startedAt: task.spawnedAt,
                                   sessionID: sessionID)
             }
@@ -2037,7 +2043,7 @@ enum Orchestrator {
             }
         case .codex:
             if task.transcriptPath == nil,
-               let rollout = Codex.locate(cwd: task.projectDir, startedAt: task.spawnedAt,
+               let rollout = Codex.locate(cwd: cwd(of: task), startedAt: task.spawnedAt,
                                            pid: Targets.pid(of: child)) {
                 task.transcriptPath = rollout.path
                 task.transcriptProven = false
@@ -2080,7 +2086,7 @@ enum Orchestrator {
             accepting = nil
         }
         if task.transcriptPath == nil,
-           let found = Transcript.locate(cwd: task.projectDir, tabTitle: child.name,
+           let found = Transcript.locate(cwd: cwd(of: task), tabTitle: child.name,
                                          startedAt: task.spawnedAt,
                                          sessionID: task.childSessionId,
                                          accepting: accepting) {

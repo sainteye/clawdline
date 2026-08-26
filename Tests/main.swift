@@ -7228,6 +7228,16 @@ group("an orchestrated Claude child keeps its process identity") {
             && unrecorded.childPID == 101 && unrecorded.childProcStart == started)
 }
 
+group("an orchestrated child's cwd") {
+    let projectDir = "/tmp/a project"
+    let task = Orchestrator.Task(id: taskID, state: .spawning, kind: "custom",
+                                 title: "a task", assistant: .claude,
+                                 projectDir: projectDir, timeoutMinutes: 30,
+                                 created: Date(), secretHash: String(repeating: "0", count: 64))
+    expect("it is the dispatch project until isolation supplies another directory",
+           Orchestrator.cwd(of: task), projectDir)
+}
+
 group("an orchestrated Claude child prefers registry identity") {
     let registryID = "8e29b3df-1af7-40af-996f-3f969782c064"
     let legacyID = "6a2b2ad0-3574-40eb-ba41-50c93c83c201"
