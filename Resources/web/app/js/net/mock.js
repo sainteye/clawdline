@@ -898,13 +898,23 @@ export var Mock = (function () {
             return new Promise(function (done) {
                 setTimeout(function () {
                     var now = Math.floor(Date.now() / 1000);
+                    // `?start=empty` empties the list, which is the other thing this screen
+                    // has to be able to say: a Mac that has never run Claude Code anywhere.
+                    // Both, so the chooser is on screen in a demo. A real Mac answers with
+                    // whichever of them it actually has a home directory for.
+                    var ALL_ASSISTANTS = [{ id: "claude", label: "Claude Code" }, { id: "codex", label: "Codex" }];
+                    // `?assistants=claude` narrows this Mac to one — the shape the schedules
+                    // review's finding 2 needed and neither this list nor the schedule fixture
+                    // below could make on its own: a schedule naming an assistant this Mac does
+                    // not have. Open `813fa8a7…` ("Check deployment readiness", `assistant:
+                    // "codex"`) with this set and Codex is still what the sheet shows chosen.
+                    var only = params.get("assistants");
+                    var assistants = only
+                        ? ALL_ASSISTANTS.filter(function (a) { return only.split(",").indexOf(a.id) >= 0; })
+                        : ALL_ASSISTANTS;
                     done({
                         at: now,
-                        // `?start=empty` empties the list, which is the other thing this screen
-                        // has to be able to say: a Mac that has never run Claude Code anywhere.
-                        // Both, so the chooser is on screen in a demo. A real Mac answers with
-                        // whichever of them it actually has a home directory for.
-                        assistants: [{ id: "claude", label: "Claude Code" }, { id: "codex", label: "Codex" }],
+                        assistants: assistants,
                         places: MOCK_START === "empty" ? [] : places.map(function (p, i) {
                             return { id: p.id, label: p.label, path: p.path, icon: p.icon, at: now - i * 900 };
                         })
@@ -1023,13 +1033,20 @@ export var Mock = (function () {
    `Mock.schedules` reads it for the list, `Mock.schedule` for one record in full, and
    `Mock.createSchedule`/`updateSchedule`/`deleteSchedule` mutate it, so a save or a delete made
    from a file:// copy is visible the moment `Schedules.refresh()` asks again, the same as it
-   would be against a real Mac. Eight rows exercise every `Orchestrator.State` value, plus one
-   invalid source with no id — never reachable through a row press, since `view/schedules.js`
-   only puts `data-id` on a valid one.
+   would be against a real Mac. Eight rows exercise every `Orchestrator.State` value, a ninth has
+   no entry in `SCHEDULE_PLACES` at all, and there is one invalid source with no id — never
+   reachable through a row press, since `view/schedules.js` only puts `data-id` on a valid one.
 
    `?schedules=empty` verifies that an empty inventory leaves no section behind; it is read only
    by the list below, not by `schedule`/`updateSchedule`/`deleteSchedule`, which stay about one
    row at a time regardless of what the list is showing.
+
+   `model`, `permission_mode` and `claims` are on most of these rows on purpose. Before this,
+   `scheduleDetail` only ever assembled `assistant`, `project_dir`, `title`, `instructions` and
+   `timeout_minutes` — so the entire class of bug the round these fixtures back is about, a save
+   quietly dropping a field the form never showed, was invisible in mock mode no matter how
+   thoroughly someone clicked through it. See `scheduleDetail` for what is shown and
+   `Mock.updateSchedule` for what a save does to each.
    -------------------------------------------------------------------------- */
 
 // The two places this file's own `places` fixture (inside the closure above) names most often.
@@ -1053,44 +1070,53 @@ var SCHEDULE_BASE = [
       enabled: true, at: "07:30", days: "daily", placeId: "3b9e26c1587facfd", assistant: "claude",
       instructions: "Read yesterday's merged PRs and post a two-paragraph summary.",
       close_tab: "always", catch_up_hours: 6, notify_on_failure: true, timeout_minutes: 30,
+      model: "sonnet", permission_mode: "full", claims: ["docs/"],
       nextFireOffset: 18 * 60, missedAgo: 6 * 86400,
       lastRun: { task_id: "mock-schedule-success", state: "success", ago: 3 * 3600 } },
     { id: "60dd72ae-777e-4e1e-a595-79cc2740cfb1", title: "Rebuild the search index",
       enabled: true, at: "02:00", days: "daily", placeId: "3b9e26c1587facfd", assistant: "claude",
       instructions: "Rebuild the index from the latest content export.",
       close_tab: "on_success", catch_up_hours: 2, notify_on_failure: true, timeout_minutes: 45,
+      permission_mode: "full",
       nextFireOffset: 2 * 3600,
       lastRun: { task_id: "mock-schedule-failure", state: "failure", ago: 22 * 3600 } },
     { id: "26c6e7a3-7fd4-470f-8cf2-70cc9362a63b", title: "Archive weekly reports",
       enabled: false, at: "23:00", days: ["sun"], placeId: "1f6b0d38e9a742c5", assistant: "claude",
       instructions: "Move last week's reports into the archive directory.",
       close_tab: "never", catch_up_hours: 0, notify_on_failure: false, timeout_minutes: 20,
+      model: "haiku", permission_mode: "auto",
       nextFireOffset: 26 * 3600,
       lastRun: { task_id: "mock-schedule-timeout", state: "timeout", ago: 6 * 86400 } },
     { id: "65d9d034-4158-484e-a95b-26ed80ed6d05", title: "Prepare the release notes",
       enabled: true, at: "09:00", days: ["mon", "wed", "fri"], placeId: "3b9e26c1587facfd",
       assistant: "claude", instructions: "Draft release notes from the commits since the last tag.",
       close_tab: "on_success", catch_up_hours: 12, notify_on_failure: true, timeout_minutes: 60,
+      model: "opus", permission_mode: "full", claims: ["CHANGES.md", "docs/"],
       nextFireOffset: 3 * 3600,
       lastRun: { task_id: "mock-schedule-queued", state: "queued", ago: 30 } },
     // The one non-Claude row, so `drawWith`'s chip row has something to show when this is opened
-    // to edit — it stays hidden with fewer than two assistants on offer.
+    // to edit — it stays hidden with fewer than two assistants on offer. Pair it with
+    // `?assistants=claude` (see `Mock.places` above) to open it as the review's finding 2 found
+    // it: an assistant this Mac does not have, named by a file that predates it not having it.
     { id: "813fa8a7-ffca-4970-a395-e5302b1e5e79", title: "Check deployment readiness",
       enabled: true, at: "08:00", days: "daily", placeId: "3b9e26c1587facfd", assistant: "codex",
       instructions: "Confirm the last deploy is healthy before the day starts.",
       close_tab: "always", catch_up_hours: 4, notify_on_failure: true, timeout_minutes: 15,
+      permission_mode: "full",
       nextFireOffset: 4 * 3600,
       lastRun: { task_id: "mock-schedule-spawning", state: "spawning", ago: 45 } },
     { id: "3928f442-ed0a-48e8-b081-36942751fbad", title: "Publish the weekly digest",
       enabled: true, at: "10:30", days: ["fri"], placeId: "3b9e26c1587facfd", assistant: "claude",
       instructions: "Summarise the week's schedule runs into one digest message.",
       close_tab: "on_success", catch_up_hours: 6, notify_on_failure: true, timeout_minutes: 30,
+      model: "sonnet", permission_mode: "full",
       nextFireOffset: 5 * 3600,
       lastRun: { task_id: "mock-schedule-briefed", state: "briefed", ago: 60 } },
     { id: "b3c87bec-0544-476f-b2c4-55f20988856b", title: "Prune preview builds",
       enabled: true, at: "04:00", days: "daily", placeId: "3b9e26c1587facfd", assistant: "claude",
       instructions: "Delete preview deploys older than 14 days.",
       close_tab: "always", catch_up_hours: 1, notify_on_failure: false, timeout_minutes: 10,
+      permission_mode: "full", claims: ["Resources/web/"],
       nextFireOffset: 6 * 3600,
       lastRun: { task_id: "mock-schedule-cancelled", state: "cancelled", ago: 3600 } },
     // No `nextFireOffset` at all — kept from the original fixture, the one case where `enabled`
@@ -1099,7 +1125,19 @@ var SCHEDULE_BASE = [
       enabled: true, at: "06:00", days: "daily", placeId: "1f6b0d38e9a742c5", assistant: "claude",
       instructions: "Prime the docs site's build cache before traffic picks up.",
       close_tab: "on_success", catch_up_hours: 6, notify_on_failure: true, timeout_minutes: 30,
-      lastRun: { task_id: "mock-schedule-spawn-failed", state: "spawn_failed", ago: 7200 } }
+      model: "sonnet", permission_mode: "full",
+      lastRun: { task_id: "mock-schedule-spawn-failed", state: "spawn_failed", ago: 7200 } },
+    // No `placeId` this file knows — `SCHEDULE_PLACES` falls back to "/Users/you/tmp/unknown",
+    // and that path is not in `places` either (see the top of this file). This is what a schedule
+    // older than `/v1/places`'s recent-directories cap looks like: `task.project_dir` is real, it
+    // just cannot be resolved back to a place id on this list. See the review's "the project that
+    // fell off the list".
+    { id: "f4d6a9b2-3c17-4e58-9a02-7bb4c6ef9d31", title: "Sync the changelog",
+      enabled: true, at: "05:00", days: "daily", placeId: "no-longer-recent", assistant: "claude",
+      instructions: "Pull merged PRs since the last sync and append them to CHANGES.md.",
+      close_tab: "on_success", catch_up_hours: 6, notify_on_failure: true, timeout_minutes: 20,
+      permission_mode: "full",
+      nextFireOffset: 7 * 3600 }
 ];
 var SCHEDULE_INVALID = { file: "nightly-maintenance.json", state: "invalid",
                          error: "when must contain exactly at and days", error_kind: "schema" };
@@ -1129,11 +1167,19 @@ function scheduleSummary(row, at) {
 // Everything `Orchestrator.scheduleRecord(id:)` answers, off the same row the list above reads.
 function scheduleDetail(row) {
     var place = SCHEDULE_PLACES[row.placeId] || { path: "/Users/you/tmp/unknown", label: "unknown" };
+    var task = { assistant: row.assistant, project_dir: place.path, title: row.title,
+                instructions: row.instructions, timeout_minutes: row.timeout_minutes };
+    // `scheduleRecord` sends `schedule.taskTemplate` whole, so a field a schedule was never given
+    // is simply absent from it — not `null`, not `[]`. Matched here rather than always including
+    // the three: `openEdit`'s form has no control for any of them, so how it treats "missing" is
+    // exactly the behaviour this fixture exists to be able to show.
+    if (row.model) task.model = row.model;
+    if (row.permission_mode) task.permission_mode = row.permission_mode;
+    if (row.claims && row.claims.length) task.claims = row.claims;
     return {
         id: row.id, title: row.title, enabled: row.enabled, file: row.id + ".json",
         when: { at: row.at, days: row.days },
-        task: { assistant: row.assistant, project_dir: place.path, title: row.title,
-                instructions: row.instructions, timeout_minutes: row.timeout_minutes },
+        task: task,
         close_tab: row.close_tab, catch_up_hours: row.catch_up_hours,
         notify_on_failure: row.notify_on_failure
     };
@@ -1236,12 +1282,24 @@ Mock.updateSchedule = function (id, body) {
             // Row-shaped, not request-shaped — `place_id` becomes `placeId` here for the same
             // reason `Orchestrator.updateSchedule` turns it into `task.project_dir`: the wire name
             // and the field this fixture reads back are not the same word.
+            //
+            // `claims` and `permission_mode` are deliberately not keys on this object at all: the
+            // real PATCH 400s if a body names either, and the value that survives always comes
+            // from the file being replaced — never from the request — so leaving them off here
+            // and letting `scheduleRow`'s `Object.assign` fall through to the row already on file
+            // is what "carried, not settable" looks like in this fixture. `model` **is** a key,
+            // set from the body every time including when the body left it out: that reproduces
+            // finding 3 of the review these fixtures are for — `model` is body-settable but, as of
+            // this fixture, still missing from `Orchestrator.updateSchedule`'s own carry list, so
+            // a save through this page's payload (which never sends it) resets it. Once that carry
+            // list gains `model`, this line is the one to change to match.
             scheduleEdits[id] = {
                 title: body.title, at: body.at, days: body.days, placeId: body.place_id,
                 assistant: body.assistant, instructions: body.instructions,
                 enabled: !!body.enabled, close_tab: body.close_tab,
                 catch_up_hours: body.catch_up_hours, notify_on_failure: !!body.notify_on_failure,
-                timeout_minutes: body.timeout_minutes
+                timeout_minutes: body.timeout_minutes,
+                model: body.model || null
             };
             var row = scheduleRow(id);
             done({ ok: true, schedule: { id: row.id, title: row.title, enabled: row.enabled } });

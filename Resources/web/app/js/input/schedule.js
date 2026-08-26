@@ -48,6 +48,9 @@ export var Schedule = (function () {
     var places = null;          // GET /v1/places, fetched once and reused for this sheet's life
     var assistants = [];
     var chosenPlace = null;     // a place id, once the planner or a person has picked one
+    // What the schedule's own file says its project is, kept only for when `chosenPlace` above
+    // could not be resolved to one — see `fillFromRecord` and `drawPicked`.
+    var chosenPlacePath = null;
     var chosenAssistant = null;
     // "daily" or a non-empty array of DAY_CODES — never an empty array. See `toggleDay`.
     var days = "daily";
@@ -101,15 +104,28 @@ export var Schedule = (function () {
     }
 
     /* ---- the assistant chips, copied from input/start.js's own drawWith --------- */
+    /** The Mac's own answer to the same question — Settings.swift's schedule form, on the same
+     *  choice — repeated here: the list is what this Mac has installed, plus, when the schedule
+     *  already names one it does not have, the one it names. A row written for Codex on a Mac
+     *  that has since lost it is still that row's answer, and a chip row that quietly reads
+     *  Claude Code over a file that says `codex` is a form lying about what it holds — see
+     *  `defaultAssistant` below, and finding 2 of the plan's review. */
     function drawWith() {
         var row = els["schedule-with"];
         row.innerHTML = "";
-        row.hidden = assistants.length < 2;
+        var choices = assistants.slice();
+        if (chosenAssistant && !choices.some(function (a) { return a.id === chosenAssistant; })) {
+            choices.push({ id: chosenAssistant, label: chosenAssistant });
+        }
+        // One choice is not a choice — but note this counts the assistant already picked, not
+        // just what is installed, so a schedule naming one this Mac does not have still shows the
+        // row rather than hiding the one place that names it.
+        row.hidden = choices.length < 2;
         // The heading goes with it: a label for a control that is not there is a field somebody
         // will look for.
         els["schedule-with-label"].hidden = row.hidden;
         if (row.hidden) return;
-        assistants.forEach(function (a) {
+        choices.forEach(function (a) {
             var chip = document.createElement("button");
             chip.type = "button";
             chip.className = "chip" + (a.id === chosenAssistant ? " on" : "");
@@ -253,7 +269,15 @@ export var Schedule = (function () {
 
     /** The project as one line. Shut, it is the value of this field; open, it is a chevron with
      *  the list under it. Nothing is preselected — with no project chosen it says so in words
-     *  rather than drawing the first row as though somebody had picked it. */
+     *  rather than drawing the first row as though somebody had picked it.
+     *
+     *  A third state sits between "chosen" and "nothing chosen": `chosenPlacePath` is set when
+     *  `fillFromRecord` could not resolve the schedule's own `project_dir` to anything on
+     *  `/v1/places`'s capped recent list — too old for the cap, or a directory this device has
+     *  never opened. That is not "nothing chosen": the file has an answer, this sheet just
+     *  cannot show it as a pickable row, and showing the placeholder prompt in its place would
+     *  read as though the schedule had lost its project rather than as this device's own list
+     *  being incomplete. See "the project that fell off the list" in the plan. */
     function drawPicked() {
         var box = els["schedule-picked"];
         var open = box.getAttribute("aria-expanded") === "true";
@@ -266,11 +290,20 @@ export var Schedule = (function () {
         // default of 300x150, which is exactly wide enough to burst this row and the sheet with
         // it. Call it either way and let the `.none` rule below supply the placeholder.
         if (!drawIcon(mark, p && p.icon, 4)) mark.classList.add("none");
-        box.classList.toggle("none", !p);
+        // Only the true "nothing chosen" state reads as a placeholder — a stale path is real
+        // information, not a prompt, and dimming it the same way would say the opposite of what
+        // is true.
+        box.classList.toggle("none", !p && !chosenPlacePath);
         var name = box.querySelector(".name");
-        // Borrowed rather than invented: the start sheet already asks this question, in fourteen
-        // languages, and it is the same question.
-        name.textContent = p ? (p.label || p.path) : T.webStartPick;
+        if (p) {
+            name.textContent = p.label || p.path;
+        } else if (chosenPlacePath) {
+            name.textContent = shortPath(chosenPlacePath);
+        } else {
+            // Borrowed rather than invented: the start sheet already asks this question, in
+            // fourteen languages, and it is the same question.
+            name.textContent = T.webStartPick;
+        }
         name.style.color = p && p.icon ? tint(p.icon.accent) : "";
         box.querySelector(".where").textContent = p ? shortPath(p.path) : "";
         box.querySelector(".chev").textContent = open ? "\u2304" : "\u203A";
@@ -288,6 +321,8 @@ export var Schedule = (function () {
     function pickPlace(id) {
         if (busy()) return;
         chosenPlace = id;
+        // A real pick settles the question `chosenPlacePath` was standing in for.
+        chosenPlacePath = null;
         var rows = els["schedule-places"].querySelectorAll(".place");
         for (var i = 0; i < rows.length; i++) markPicked(rows[i], rows[i].dataset.id === id);
         // Chosen is chosen. Folding it back up is what puts the rest of the form on screen again,
@@ -317,10 +352,17 @@ export var Schedule = (function () {
         }).catch(function () { places = null; assistants = []; placesFailed = true; });
     }
 
+    /** `preferred` is trusted outright now rather than only when this Mac has it installed — a
+     *  schedule that already names an assistant keeps naming it, exactly like a fresh sheet with
+     *  nothing chosen yet (`preferred` null, from `open()`) still falls back to the first
+     *  installed one. The previous version's `assistants.some(...)` check silently substituted
+     *  the first installed assistant whenever it did not, which is finding 2 of the plan's
+     *  review: open a schedule naming an assistant this Mac has since lost, press Save having
+     *  touched nothing else, and it is no longer that assistant. `drawWith` is what keeps the
+     *  substitution from being invisible now — it shows `preferred` as its own chip even when
+     *  this Mac does not have it. */
     function defaultAssistant(preferred) {
-        chosenAssistant = preferred && assistants.some(function (a) { return a.id === preferred; })
-            ? preferred
-            : (assistants.length ? assistants[0].id : null);
+        chosenAssistant = preferred || (assistants.length ? assistants[0].id : null);
     }
 
     /* ---- open, filled or blank --------------------------------------------- */
@@ -330,7 +372,7 @@ export var Schedule = (function () {
         editingId = null;
         loadingEdit = false;
         places = null; assistants = [];
-        chosenPlace = null; chosenAssistant = null;
+        chosenPlace = null; chosenPlacePath = null; chosenAssistant = null;
         days = "daily"; daysGuessed = false; closeTab = "on_success"; enabled = true; notify = true;
         els["schedule-title"].value = "";
         els["schedule-at"].value = "";
@@ -344,11 +386,15 @@ export var Schedule = (function () {
         // list would be back to filling the sheet before anybody had asked it to.
         els["schedule-picked"].setAttribute("aria-expanded", "false");
         els["schedule-places"].hidden = true;
-        // Create mode by default. `openEdit` overwrites these three the moment it knows better;
+        // Create mode by default. `openEdit` overwrites these four the moment it knows better;
         // `open` and `openFrom` are both fresh schedules and leave them exactly as this sets them.
         els["schedule-form-title"].textContent = T.webScheduleNew;
         els["schedule-go"].textContent = T.webScheduleCreate;
         els["schedule-delete"].hidden = true;
+        // `#schedule-form-say`, unlike `#schedule-said` that `said()` clears below, is set once at
+        // boot (`view/static.js`) and never again — so an edit sheet reopened after a create left
+        // it saying this, true here and nowhere else. See `openEdit`.
+        els["schedule-form-say"].textContent = T.webScheduleNewSay;
         said("");
         drawWith(); drawDays(); drawClose(); drawFlags(); drawPlaces();
     }
@@ -420,12 +466,17 @@ export var Schedule = (function () {
         loadingEdit = true;
         els["schedule-form-title"].textContent = T.webScheduleEdit;
         els["schedule-go"].textContent = T.webScheduleSave;
+        // "Nothing is scheduled until you press Create below." — true of `reset()`'s default,
+        // false of a row that already exists and a button that already says Save. There is no
+        // dedicated sentence for this sheet in edit mode (see the plan's note on inventing keys),
+        // so this is left blank rather than saying something wrong.
+        els["schedule-form-say"].textContent = "";
         els["schedule-delete"].hidden = false;
         els["schedule-form"].hidden = false;
         paint();
         if (typeof api.schedule !== "function") {
             loadingEdit = false;
-            said(T.webScheduleFailed);
+            said(T.webRequestFailed);
             paint();
             return;
         }
@@ -433,7 +484,9 @@ export var Schedule = (function () {
             fillFromRecord((d && d.schedule) || {});
         }).catch(function (e) {
             loadingEdit = false;
-            said(why(e));
+            // Not `T.webScheduleFailed` — that sentence names "create", and this failed to read,
+            // not to make one. See `why` and finding 6 in the plan.
+            said(why(e, T.webRequestFailed));
             paint();
         });
     }
@@ -464,6 +517,10 @@ export var Schedule = (function () {
         said("");
         ensurePlaces().then(function () {
             chosenPlace = placeIdForPath(task.project_dir);
+            // What the file itself says, kept for `drawPicked` when the line above came back
+            // null — a project too old for `/v1/places`'s cap, or never opened on this device,
+            // is not the same as a schedule with no project. See `drawPicked`.
+            chosenPlacePath = chosenPlace ? null : (task.project_dir || null);
             defaultAssistant(task.assistant);
             loadingEdit = false;
             drawWith(); drawPlaces();
@@ -520,7 +577,8 @@ export var Schedule = (function () {
         if (deleteBusy || !editingId) return;
         if (typeof api.deleteSchedule !== "function") {
             closeDeleteConfirm(true);
-            said(T.webScheduleFailed);
+            // Not `T.webScheduleFailed` — that names "create", and this is a delete. See `why`.
+            said(T.webRequestFailed);
             return;
         }
         var id = editingId;
@@ -537,7 +595,7 @@ export var Schedule = (function () {
         }).catch(function (e) {
             deleteBusy = false;
             closeDeleteConfirm(true);
-            said(why(e));
+            said(why(e, T.webRequestFailed));
         });
     }
 
@@ -547,7 +605,14 @@ export var Schedule = (function () {
        way, behind `writeGate` exactly like `/v1/voice` and `/v1/intents`. `DELETE` is the third,
        reached only through `#schedule-delete-confirm` above rather than through this button. */
 
-    function why(e) {
+    /** `fallback` is what to say when the server gave no sentence of its own to show — and it is
+     *  the caller's to name, not this function's to guess. `T.webScheduleFailed` ("Could not
+     *  create the schedule.") used to be hard-coded here and answer for a failed save, a failed
+     *  delete and a failed read alike — a delete that failed would say it could not be created.
+     *  There is no dedicated "could not save" or "could not delete" sentence yet (see the plan's
+     *  note on inventing keys), so every caller but a genuine create passes the generic
+     *  `T.webRequestFailed` instead. See finding 6 in the plan. */
+    function why(e, fallback) {
         var code = e && e.code;
         if (code === "offline") return e.message;          // already this page's own sentence
         if (code === "write_disabled") return T.webStartOff;
@@ -563,7 +628,7 @@ export var Schedule = (function () {
         // with the same plain sentence when the file is gone — a second tab's delete, most often.
         // Shown as it arrived, same reasoning as `bad_request` above.
         if (code === "not_found") return e.message;
-        return T.webScheduleFailed;
+        return fallback;
     }
 
     /** Create and Save both land here — one button, and `editingId` says which of the two this
@@ -583,7 +648,9 @@ export var Schedule = (function () {
         // The one place this sheet is examinable without a Mac that has these routes yet — same
         // `typeof` guard as the six other places in this codebase; see `net/api.js:1-15`.
         if (typeof (editing ? api.updateSchedule : api.createSchedule) !== "function") {
-            said(T.webScheduleFailed);
+            // "Could not create the schedule." is only true of the create half of this button —
+            // see `why` and finding 6 in the plan.
+            said(editing ? T.webRequestFailed : T.webScheduleFailed);
             return;
         }
 
@@ -627,7 +694,7 @@ export var Schedule = (function () {
             toast(editing ? T.webScheduleSaved : T.webScheduleCreated);
         }).catch(function (e) {
             creating = false;
-            said(why(e));
+            said(why(e, editing ? T.webRequestFailed : T.webScheduleFailed));
             paint();
         });
     }
