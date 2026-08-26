@@ -5759,6 +5759,105 @@ group("a menu read as options a finger can hit") {
     check("and the old question is the same question", SessionState.isChoosing(screen))
 }
 
+group("a picker drawn without numbers") {
+    // Claude Code has more than one shape of picker. Most are numbered — `1. Yes` — and the
+    // number is both the evidence that a row is an option and the keystroke that answers it.
+    // Some are not: the select component takes a `hideIndexes` flag, and when it is set the rows
+    // are drawn as a pointer column, one gap, and the label. The held cross-session message below
+    // is one of those, and so is the plan-approval dialog.
+    //
+    // Read from a real screen, 2026-08-26. Two rows, no numbers, the caret on the second.
+    let held = """
+     \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+      Held message from another session
+
+      Another Claude session sent a message: from uds:/tmp/cc-socks/18772.sock
+
+      The sending session's mode class does not match this one's, so it was not delivered.
+
+        Deny \u{2014} drop it and tell the sender it was declined
+      \u{276F} Deliver this message to Claude
+    """
+    guard let menu = SessionState.menu(held, hookWaiting: true) else {
+        check("an unnumbered dialog is read as a menu", false); return
+    }
+    expect("both rows are options", menu.options.count, 2)
+    expect("the labels are the rows themselves",
+           menu.options.map(\.label),
+           ["Deny \u{2014} drop it and tell the sender it was declined",
+            "Deliver this message to Claude"])
+    expect("the caret still says which row a bare Return would take", menu.selected, 2)
+    check("and the rows are numbered by position so a finger can name one",
+          menu.options.map(\.number) == [1, 2])
+    check("but the menu says the numbers are not on screen", menu.numbered == false)
+    check("a numbered dialog still says they are",
+          SessionState.menu("\u{2502} \u{276F} 1. Yes \u{2502}\n\u{2502}   2. No \u{2502}")?.numbered == true)
+
+    // **The evidence a number carries has to come from somewhere else.** A row with `1.` in front
+    // of it is a thing prose does not write; a row that is only indented text is a thing prose
+    // writes all day. So an unnumbered picker is admitted only when a hook says this session is
+    // waiting *and* the rows sit under a frame — the same two facts the flush-left case needs.
+    check("without the waiting gate it is just indented text",
+          SessionState.menu(held, hookWaiting: false) == nil)
+
+    let unframed = """
+    Some output the assistant printed, and then a quoted prompt:
+
+        second line of the quote
+      \u{276F} first line of the quote
+    """
+    check("and without a frame above it, it is not a dialog",
+          SessionState.menu(unframed, hookWaiting: true) == nil)
+
+    // One row is not a choice. The same rule the numbered path has, for the same reason.
+    let lonely = """
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+      \u{276F} the only line here
+    """
+    check("a single row is not a menu", SessionState.menu(lonely, hookWaiting: true) == nil)
+
+    // A description belongs to the row above it, not beside it: the dialog indents it two
+    // further columns, which is exactly what keeps it from being read as a third option.
+    let described = """
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+      Ship the tested build now?
+
+      \u{276F} Ship it
+          the build that finished at noon
+        Keep testing
+    """
+    guard let build = SessionState.menu(described, hookWaiting: true) else {
+        check("a described unnumbered dialog is a menu", false); return
+    }
+    expect("its description is not a third row", build.options.count, 2)
+    expect("the description is kept with its row",
+           build.options[0].detail, "the build that finished at noon")
+    expect("and the prose above is the question", build.question, "Ship the tested build now?")
+}
+
+group("an unnumbered picker is answered by walking the highlight, not by typing a digit") {
+    // The same component that hides the numbers also turns numeric selection off — its key
+    // handler tests `disableSelection !== "numeric"` before it looks at a digit at all. So a `3`
+    // sent at one of these does not choose the third row; it falls through the dialog and lands
+    // in the composer. What does move the highlight is `j` and `k`, which the Select context
+    // binds beside the arrow keys, and `Return` still accepts.
+    expect("moving down is j, once per row", Targets.walk(from: 1, to: 3).key, UInt8(0x6a))
+    expect("as many times as there are rows between", Targets.walk(from: 1, to: 3).times, 2)
+    expect("moving up is k", Targets.walk(from: 3, to: 1).key, UInt8(0x6b))
+    expect("the same distance the other way", Targets.walk(from: 3, to: 1).times, 2)
+    expect("and a row already under the caret needs no walking at all",
+           Targets.walk(from: 2, to: 2).times, 0)
+
+    // The door itself does not widen. `j` and `k` are produced in here the way the confirming
+    // Return already is; nothing new reaches a tty from outside, and the allowlist above is
+    // still the whole of what a phone may send.
+    let session = TargetSession(backend: .tmux, id: "%nope%", name: "x", tty: "/dev/ttys99",
+                                windowIndex: 0, tabIndex: 0, assistant: .claude)
+    check("a phone still cannot send j",
+          Targets.answer(0x6a, to: session) == "That is not a key this can send.")
+    check("nor k", Targets.answer(0x6b, to: session) == "That is not a key this can send.")
+}
+
 group("the question above a visual menu") {
     // AskUserQuestion's descriptions belong to their options, not to the prose above the first
     // one. The short checkbox line is only a header, so the phone gets the two wrapped question

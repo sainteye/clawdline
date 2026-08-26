@@ -161,9 +161,53 @@ enum Targets {
         guard menuKey || bytes == backTab else {
             return "That is not a key this can send."
         }
+        guard digit else { return keystroke(bytes, to: session) }
+        let want = Int(bytes[0] - 0x30)
+
+        // **Which kind of picker is this, before anything is typed at it.** A dialog drawn without
+        // numbers has numeric selection switched off in the same breath, so the digit is not
+        // ignored politely — it falls through the dialog and is typed into the composer
+        // underneath. Reading first costs one capture on a path somebody is waiting on anyway.
+        //
+        // A capture that fails, or a screen that no longer parses, takes the numbered path: that
+        // is what this did before this branch existed, and a dialog the reader is looking at right
+        // now is far more likely to be the common shape than a shape nothing could read.
+        if let screen = capture(session),
+           let menu = SessionState.menu(screen, assistant: session.assistant ?? .claude,
+                                        hookWaiting: true), !menu.numbered {
+            return highlight(row: want, of: menu, on: session)
+        }
         if let failure = keystroke(bytes, to: session) { return failure }
-        guard digit else { return nil }
-        return confirmSelection(Int(bytes[0] - 0x30), on: session)
+        return confirmSelection(want, on: session)
+    }
+
+    /// Answer a picker that does not take digits, by moving its highlight onto the row and
+    /// confirming there.
+    ///
+    /// Claude Code binds `j` and `k` to a select's next and previous row alongside the arrow keys,
+    /// and `Return` still accepts — the `hideIndexes` flag turns off numeric selection and nothing
+    /// else. Two plain letters are deliberately preferred over `ESC [ B`: this app has one place
+    /// where bytes reach a tty and the argument for it is that none of them are escape sequences.
+    /// A stray `j` in a composer is a letter somebody can see and delete.
+    ///
+    /// **Nothing is confirmed on faith.** The walk ends in ``confirmSelection(_:on:)`` like every
+    /// other answer, so if the reading was wrong and this is not a picker at all, the highlight
+    /// never lands, no Return is sent, and the failure is a button that did nothing rather than an
+    /// answer nobody chose.
+    private static func highlight(row want: Int, of menu: SessionState.Menu,
+                                  on session: TargetSession) -> String? {
+        guard let here = menu.selected else { return nil }
+        let move = walk(from: here, to: want)
+        for _ in 0..<move.times {
+            if let failure = keystroke([move.key], to: session) { return failure }
+        }
+        return confirmSelection(want, on: session)
+    }
+
+    /// The keystroke that walks a highlight from one row to another, and how many of them.
+    /// Split out from the sending so the arithmetic can be checked without a terminal.
+    static func walk(from here: Int, to want: Int) -> (key: UInt8, times: Int) {
+        (key: want >= here ? 0x6a : 0x6b, times: abs(want - here))   // j / k
     }
 
     /// Press Return, but only once the screen shows the digit landed where it was meant to.

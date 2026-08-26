@@ -177,7 +177,9 @@ enum SessionState: Equatable {
                                        detail: detail(under: captured.offset, in: lines),
                                        selected: selected))
         }
-        guard carets >= 1, options.count >= 2 else { return nil }
+        guard carets >= 1, options.count >= 2 else {
+            return plainMenu(tail, in: lines, hookWaiting: hookWaiting)
+        }
 
         let menuQuestion: String? = firstOptionLine.flatMap {
             Self.question(in: lines, before: $0, noEarlierThan: tail.first?.offset ?? 0)
@@ -192,6 +194,158 @@ enum SessionState: Equatable {
         return Menu(question: menuQuestion, options: options,
                     selected: options.first(where: \.selected)?.number)
     }
+
+    /// The same dialog with its numbers taken off.
+    ///
+    /// **One component, two shapes.** Claude Code draws every picker with one select, and that
+    /// select takes a `hideIndexes` flag. Set, it stops printing `1. ` in front of each row — and
+    /// in the same breath it stops accepting digits, so these are not merely harder to read, they
+    /// are answered differently. The held cross-session message is one; so is the dialog that
+    /// approves a plan. On screen a row is a pointer column, one gap, then the label: `❯ Deliver`
+    /// for the row the caret is on and two spaces for every other. **The labels therefore all
+    /// begin in the same column**, and that column is the whole of what identifies them.
+    ///
+    /// **This is the weakest evidence in the file, so it is the most gated.** A number in front of
+    /// a row is something prose does not write; indented text under a caret is something prose
+    /// writes constantly. Two independent facts are required before a run of aligned lines becomes
+    /// a question somebody's phone will offer buttons for:
+    ///
+    /// - a hook or the session registry saying this session is waiting, and
+    /// - a frame — a rule or a checkbox header — above the rows, which every captured dialog has.
+    ///
+    /// An indented caret alone is enough for a *numbered* menu and deliberately is not here.
+    ///
+    /// What keeps the remaining risk small is on the other side: answering walks the highlight and
+    /// then reads the screen back before it confirms — see ``Targets/answer(_:to:)``. A run of
+    /// prose misread as a dialog cannot move a highlight, so no Return is ever sent and the worst
+    /// case is a button that does nothing, not an answer nobody chose.
+    private static func plainMenu(_ tail: [(offset: Int, element: String)], in lines: [String],
+                                  hookWaiting: Bool) -> Menu? {
+        guard hookWaiting else { return nil }
+        let text = tail.map { $0.element }
+
+        // The caret nearest the bottom that is not at the left margin. Flush left is the composer,
+        // and without a number to argue otherwise that rule is stricter here, not looser: the
+        // numbered path has a gate that lets a flush-left caret through for `AskUserQuestion`, and
+        // there is no equivalent here on purpose. `❯ what somebody typed` with a wrapped second
+        // line under it is character for character the shape this would be looking for.
+        guard let anchor = text.lastIndex(where: { line in
+            guard let row = plainRow(line) else { return false }
+            return row.caret && row.indent > 0
+        }), let head = plainRow(text[anchor]) else { return nil }
+
+        // The frame. Scanning up from the caret rather than from the top of the tail, so a rule
+        // drawn *below* the dialog — the composer's own — cannot pass for the dialog's lid.
+        var dialogStart = 0
+        var scan = anchor - 1
+        while scan >= 0 {
+            if isBoxRule(text[scan]) || isQuestionHeader(dialogText(text[scan])) {
+                dialogStart = scan + 1
+                break
+            }
+            scan -= 1
+        }
+        guard dialogStart > 0 else { return nil }
+
+        // Outward from the caret, keeping the lines that start in the caret's own column.
+        //
+        // **The rows are not necessarily adjacent.** A dialog that describes its options puts the
+        // description between them, indented two columns further in, so a walk that stopped at the
+        // first line which was not a row found one option and gave up — which is what a fixture
+        // with descriptions in it caught. Deeper lines are stepped over; a shallower one is the
+        // prose above the dialog or the hint below it, and that is the edge.
+        var rows = [anchor]
+        var scanUp = anchor - 1
+        while scanUp >= dialogStart, let row = plainRow(text[scanUp]), row.column >= head.column {
+            if row.caret { break }
+            if row.column == head.column { rows.insert(scanUp, at: 0) }
+            scanUp -= 1
+        }
+        var scanDown = anchor + 1
+        while scanDown < text.count, let row = plainRow(text[scanDown]),
+              row.column >= head.column {
+            if row.caret { break }
+            if row.column == head.column { rows.append(scanDown) }
+            scanDown += 1
+        }
+        guard rows.count >= 2 else { return nil }
+
+        var options: [Menu.Option] = []
+        for index in rows {
+            guard let row = plainRow(text[index]) else { continue }
+            options.append(Menu.Option(number: options.count + 1, label: row.label,
+                                       detail: plainDetail(under: tail[index].offset,
+                                                           deeperThan: head.column, in: lines),
+                                       selected: index == anchor))
+        }
+
+        let menuQuestion = Self.question(in: lines, before: tail[rows[0]].offset,
+                                         noEarlierThan: tail.first?.offset ?? 0)
+        Log.write("choosing (unnumbered): options=\(options.count) — "
+                  + options.map { $0.label.prefix(60) }.joined(separator: " ⏐ "))
+        return Menu(question: menuQuestion, options: options,
+                    selected: options.first(where: \.selected)?.number, numbered: false)
+    }
+
+    /// The rows drawn under one row of an unnumbered picker.
+    ///
+    /// ``detail(under:in:)`` cannot be reused: it stops at the next *numbered* row, and there are
+    /// none here, so it would read the following option's label as this one's description. What
+    /// separates them is the indent — a description is drawn two columns further in than the
+    /// labels — so that is what this stops on.
+    private static func plainDetail(under optionIndex: Int, deeperThan column: Int,
+                                    in lines: [String]) -> String? {
+        var parts: [String] = []
+        var index = optionIndex + 1
+        while index < lines.count {
+            guard let row = plainRow(lines[index]), row.column > column, !row.caret,
+                  !isBoxRule(lines[index]), !isQuestionHeader(row.label) else { break }
+            parts.append(row.label)
+            index += 1
+        }
+        let joined = parts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return joined.isEmpty ? nil : joined
+    }
+
+    /// This line as a row of a picker that prints no numbers: how far in the row itself is drawn,
+    /// where its label starts, what the label says, and whether the pointer is on it.
+    ///
+    /// The two columns are measured **after** the padding and the wall of the box, so a dialog
+    /// drawn inside `│ … │` reports the same numbers as one drawn with plain indentation. The
+    /// pointer occupies one cell and the gap after it another, which is why a marked row and an
+    /// unmarked one put their labels in the same column — take that away and there is nothing left
+    /// to group them by. `indent` is the other half: it is where the *caret* sat, which is what
+    /// says whether this is a dialog's row or the line somebody is typing on.
+    ///
+    /// A scroll arrow sits in the pointer's cell when a list is longer than the window. It is not
+    /// the caret and is not reported as one, but the row is still a row.
+    private static func plainRow(_ raw: String)
+        -> (indent: Int, column: Int, label: String, caret: Bool)? {
+        let chars = Array(raw)
+        var i = 0
+        while i < chars.count, chars[i] == " " || chars[i] == "\t" || boxes.contains(chars[i]) {
+            i += 1
+        }
+        guard i < chars.count else { return nil }
+        let indent = i
+        var caret = false
+        if carets.contains(chars[i]) || scrollArrows.contains(chars[i]) {
+            caret = carets.contains(chars[i])
+            i += 1
+            guard i < chars.count, chars[i] == " " else { return nil }
+            while i < chars.count, chars[i] == " " { i += 1 }
+            guard i < chars.count else { return nil }
+        }
+        var label = String(chars[i...])
+        while let last = label.last, last == " " || last == "\t" || boxes.contains(last) {
+            label.removeLast()
+        }
+        guard !label.isEmpty else { return nil }
+        return (indent, i, label, caret)
+    }
+
+    /// Drawn in the pointer's cell when a list runs past the window. Not a selection.
+    private static let scrollArrows: Set<Character> = ["↓", "↑"]
 
     /// Whether a menu is on screen at all. The shape every existing caller wanted.
     static func isChoosing(_ screen: String, assistant: Assistant = .claude,
@@ -255,6 +409,11 @@ enum SessionState: Equatable {
     /// and acts on it, so a row's own number is the thing that answers it — and a row whose
     /// number is not one a keystroke can carry is shown and not offered, rather than quietly
     /// renumbered into something that would answer a different question.
+    ///
+    /// Except on a dialog that prints no numbers, where there is nothing to renumber and the
+    /// position is all there is. ``Menu/numbered`` is which of the two this is, and it is read
+    /// rather than assumed: the same flag that takes the numbers off also stops the dialog
+    /// accepting digits, so getting it wrong types into a composer instead of answering.
     struct Menu: Equatable {
         struct Option: Equatable {
             /// The number as printed. This is the keystroke.
@@ -276,6 +435,18 @@ enum SessionState: Equatable {
         var question: String? = nil
         var options: [Option]
         var selected: Int?
+        /// Whether the numbers above were printed on screen or counted here.
+        ///
+        /// Claude Code draws two kinds of picker out of one component, and the difference is a
+        /// `hideIndexes` flag. Numbered is the common one. Unnumbered is the held cross-session
+        /// message, the plan-approval dialog, and a handful of settings screens — and the same
+        /// flag that hides the numbers **turns numeric selection off**, so the digit that answers
+        /// every other dialog falls straight through this one into the composer.
+        ///
+        /// So this is not decoration: it is the fact ``Targets/answer(_:to:)`` needs in order to
+        /// answer by moving the highlight instead of by typing. The numbers are still filled in
+        /// by position, because a row still has to be nameable from a phone.
+        var numbered: Bool = true
     }
 
     /// The carets a terminal menu marks its current row with. Deliberately not `>`: a markdown

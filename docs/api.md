@@ -1408,7 +1408,16 @@ keystroke, not a position**. It is what `POST /key` takes, so a client must draw
 given rather than renumbering the rows to run 1…n: renumbering produces a button whose label and
 effect disagree. `selected` marks the row the caret is parked on over on the Mac, which is what a
 bare Return there would confirm. `can` is false for a row no keystroke reaches — draw it, do not
-offer it. The whole field is **absent when the menu could not be read**, which is a real state and
+offer it.
+
+Claude Code draws some dialogs with the numbers hidden — a held cross-session message, a plan
+waiting for approval, a permission prompt that defaults to No. Those rows carry an `n` too, counted
+here rather than printed there, and `POST /key` still takes it: what changes is only on the Mac,
+where the app walks the highlight onto that row instead of typing the digit, because the same flag
+that hides the numbers also stops the dialog accepting them. Nothing about the request differs, so
+a client needs no branch for it.
+
+The whole field is **absent when the menu could not be read**, which is a real state and
 not an error: the dialog is undocumented terminal drawing, and a shape this end does not recognise
 has to be admitted to rather than guessed at. A client that sees `waiting` with no `menu` should
 say so and offer nothing to press.
