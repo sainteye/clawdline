@@ -196,6 +196,16 @@ enum Compat {
             since: "not known to have a floor"),
         Dependency(
             program: "Codex",
+            what: "A rollout's `token_count.rate_limits`: `limit_id`, `credits.has_credits` "
+                + "and `plan_type` — which quota bucket answered, whether credits remain, and "
+                + "the account's own plan name",
+            where_: "SessionInfo.swift, AssistantQuota.swift",
+            symptom: "Once the primary bucket is full, the account moves to an unnamed credits "
+                   + "bucket; without those fields, genuine exhaustion looks unknown and the "
+                   + "broker allows more work",
+            since: "not known to have a floor"),
+        Dependency(
+            program: "Codex",
             what: "A session holding its own rollout open, and saying `thread_source` in its "
                 + "first line",
             where_: "Codex.swift",
