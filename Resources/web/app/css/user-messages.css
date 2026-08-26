@@ -1,0 +1,47 @@
+/* A transcript with one voice. It reuses the ordinary transcript entry renderer, so Markdown,
+   timestamps and user-message cards stay identical; only the containing sheet is new. */
+.user-messages-sheet {
+    padding: 0;
+    width: min(680px, 100%);
+    max-height: calc(var(--vvh, 100dvh) - 48px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.user-messages-sheet h2 {
+    margin: 0;
+    padding: 16px 20px 13px;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+}
+.user-message-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 10px 20px;
+}
+.user-message-list .entry[data-role="user"] .body { max-width: 100%; }
+.user-messages-empty {
+    margin: 28px 0;
+    color: var(--faint);
+    font-size: 12.5px;
+    line-height: 1.5;
+    text-align: center;
+}
+.user-messages-sheet .buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 20px 16px;
+    border-top: 1px solid var(--line);
+}
+.user-messages-sheet .buttons .chip {
+    min-width: 88px;
+    padding: 8px 14px;
+    text-align: center;
+}
+
+@media (max-width: 899px) {
+    .user-message-list { padding: 8px 18px; }
+}

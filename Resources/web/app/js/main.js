@@ -34,6 +34,7 @@ import "./session/agent.js";
 import "./input/keys.js";
 import "./input/swipe.js";
 import "./input/detail-actions.js";
+import "./input/user-messages.js";
 import "./input/git-panel.js";
 import "./input/shell-panel.js";
 import "./input/action-confirm.js";

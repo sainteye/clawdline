@@ -470,7 +470,7 @@ function whoHTML(role, at) {
         (at ? '<time data-at="' + at + '">' + esc(clockOf(at)) + "</time>" : "") + "</div>";
 }
 
-function entryHTML(e) {
+export function entryHTML(e) {
     if (e.role === "notice") return noticeHTML(e);
     var role = WHO[e.role] ? e.role : "assistant";
     if (role === "peer") {
