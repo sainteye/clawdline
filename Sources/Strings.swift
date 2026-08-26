@@ -796,6 +796,55 @@ protocol Copy {
     /// Whisper returned nothing to plan from.
     var webCommandEmpty: String { get }
 
+    // Making a schedule — the "+" beside the Schedules list, and the sheet a spoken schedule
+    // lands in when the planner could not fill in every field. See `Orchestrator.schedule(from:)`
+    // and `POST /v1/orchestrator/schedules`, the only route allowed to write one.
+    //
+    // **The same rule as `webCommand*` above: nothing here may say or imply that a schedule
+    // exists before the Create button at the bottom is pressed.**
+    var webScheduleNew: String { get }
+    /// The line under the title, said before anyone has touched a field.
+    var webScheduleNewSay: String { get }
+    var webScheduleTitle: String { get }
+    var webScheduleAt: String { get }
+    var webScheduleOn: String { get }
+    var webScheduleWhere: String { get }
+    var webScheduleWith: String { get }
+    var webScheduleFirst: String { get }
+    /// The disclosure that folds away everything below — a schedule with all the defaults
+    /// should not make somebody read six more fields to create it.
+    var webScheduleMore: String { get }
+    var webScheduleWhenDone: String { get }
+    var webScheduleCloseSuccess: String { get }
+    var webScheduleCloseAlways: String { get }
+    var webScheduleCloseNever: String { get }
+    var webScheduleEnabled: String { get }
+    var webScheduleNotify: String { get }
+    /// Labels a number of hours — the box itself holds a bare number, so the unit lives here.
+    var webScheduleCatchUp: String { get }
+    /// Labels a number of minutes, the same way.
+    var webScheduleTimeout: String { get }
+    var webScheduleCreate: String { get }
+    /// Shown once `POST /v1/orchestrator/schedules` answers 200 — the only place this feature is
+    /// allowed to say a schedule now exists.
+    var webScheduleCreated: String { get }
+    var webScheduleFailed: String { get }
+    /// What the sentence that opened this form did not say. A prompt to fill something in, not
+    /// an error — the planner left it blank on purpose rather than guess.
+    var webScheduleNeedsTime: String { get }
+    var webScheduleNeedsPlace: String { get }
+    /// The chip that means every day, alongside the seven below rather than instead of them.
+    var webScheduleDaily: String { get }
+    /// The seven weekday chips, side by side on a phone. The shortest form this language really
+    /// writes a weekday in a picker — not a whole word if nobody writes it that way there.
+    var webScheduleSun: String { get }
+    var webScheduleMon: String { get }
+    var webScheduleTue: String { get }
+    var webScheduleWed: String { get }
+    var webScheduleThu: String { get }
+    var webScheduleFri: String { get }
+    var webScheduleSat: String { get }
+
     // The addresses a project has — see `GET /v1/sessions/:id/links` and the sheet the Links
     // chip opens. `webLinksLocal` and `webLinksFile` are the two that matter: one address only
     // resolves on the Mac's network and the other is not a web address at all, and a link that

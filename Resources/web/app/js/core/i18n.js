@@ -294,6 +294,41 @@ export var T = {
     webCommandBusy: "Already turning one sentence into a draft — try again in a moment.",
     webCommandEmpty: "Heard nothing",
 
+    // Making a schedule — the "+" beside the Schedules list, and the sheet a spoken schedule
+    // lands in when the planner could not fill in every field. See the same section of
+    // `Sources/Strings.swift` for what each key is for. Same rule as `webCommand*` above: nothing
+    // here may say or imply that a schedule exists before the Create button is pressed.
+    webScheduleNew: "New schedule",
+    webScheduleNewSay: "Nothing is scheduled until you press Create below.",
+    webScheduleTitle: "Title",
+    webScheduleAt: "At",
+    webScheduleOn: "On",
+    webScheduleWhere: "Where",
+    webScheduleWith: "With",
+    webScheduleFirst: "First message",
+    webScheduleMore: "More",
+    webScheduleWhenDone: "When it finishes",
+    webScheduleCloseSuccess: "On success",
+    webScheduleCloseAlways: "Always",
+    webScheduleCloseNever: "Never",
+    webScheduleEnabled: "Enabled",
+    webScheduleNotify: "Notify if it fails",
+    webScheduleCatchUp: "Catch up within (hours)",
+    webScheduleTimeout: "Give up after (minutes)",
+    webScheduleCreate: "Create",
+    webScheduleCreated: "Schedule created.",
+    webScheduleFailed: "Could not create the schedule.",
+    webScheduleNeedsTime: "Didn't catch a time — set one.",
+    webScheduleNeedsPlace: "Didn't catch which project — pick one.",
+    webScheduleDaily: "Daily",
+    webScheduleSun: "Sun",
+    webScheduleMon: "Mon",
+    webScheduleTue: "Tue",
+    webScheduleWed: "Wed",
+    webScheduleThu: "Thu",
+    webScheduleFri: "Fri",
+    webScheduleSat: "Sat",
+
     // Where this project can be opened. Three of these exist to be honest about a row that
     // cannot be opened from wherever this page is being read — which is the only reason the
     // list is worth having rather than a page of links that time out.
