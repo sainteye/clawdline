@@ -65,6 +65,24 @@ export var Mock = (function () {
                 selected: true, can: true },
               { n: 3, label: "No, tell Claude what to do instead", selected: false, can: true }
           ] } },
+        // Waiting on a question whose options each carry a paragraph. This is the shape that
+        // showed the card had no ceiling: it grew past the top of the screen and past the
+        // composer, so the conversation you were deciding about and the box you would answer in
+        // were both pushed out of reach. The card is capped and scrolls inside itself now, and it
+        // folds; this fixture is what proves both, because a short menu never could.
+        { id: "9C1D-42", backend: "iterm", tty: "ttys044", label: "which source to drop",
+          cwd: "/Users/x/code/atrium", state: "waiting", line: null,
+          isClaude: true, assistant: "claude", sessionId: null, icon: atrium,
+          menu: { selected: 1, question: "The rate limit bites on every backfill. Which way out?", options: [
+              { n: 1, label: "Swap to the official feed", selected: true, can: true,
+                detail: "Three of the eleven bindings are primary and the rest are a fallback chain, so this is not one move but three — and the official feed spells two of the columns differently, which is the part that has bitten us before. Slowest to land, cheapest to keep." },
+              { n: 2, label: "Pay for the higher tier", selected: false, can: true,
+                detail: "Nothing in the code changes and the backfill finishes tonight. It is a standing cost against a source we have already said we want to leave, and it does not answer the licensing question underneath any of this." },
+              { n: 3, label: "Keep the fallback for now", selected: false, can: true,
+                detail: "Daily syncing is unaffected either way; only the history backfill is slow. Doing nothing this week costs nothing this week, and the decision comes back the next time somebody asks for a five-year chart." },
+              { n: 4, label: "Type something.", selected: false, can: true },
+              { n: 5, label: "Chat about this", selected: false, can: true }
+          ] } },
         // Waiting on a **multi-select**, which is a different question from the one above: its
         // rows toggle rather than answer, and nothing is sent until the button under them is
         // pressed. Kept as a fixture because that button was once read as the last row's

@@ -343,6 +343,23 @@
     margin-bottom: 9px;
 }
 .composer .waiting[hidden] { display: none; }
+/* **The card is capped and scrolls inside itself.** A question with a paragraph under every
+   option is taller than a phone, and a card that simply grew pushed the conversation off the top
+   and the composer off the bottom — so the two things somebody needs while deciding were the two
+   things it took away. Half the viewport, scrolled internally; `contain` keeps a flick inside the
+   card from carrying on into the page behind it once it reaches the end. */
+.composer .waiting .body {
+    max-height: 50vh; overflow-y: auto; overscroll-behavior: contain;
+    /* Room for the last option's focus ring, which a flush `overflow` would clip. */
+    padding: 1px;
+    margin: 0 -1px;
+}
+.composer .waiting .title .fold {
+    float: left; margin: -1px 7px 0 -2px; padding: 1px 6px;
+    color: var(--accent); font-size: 13px; line-height: 1.2;
+    border-radius: 6px;
+}
+.composer .waiting .title .fold:hover { background: var(--card-hi); }
 /* Nothing to switch off under reduced motion: `drawSpinner` is driven by the one interval at
    the top, and that interval already returns without advancing when `reduced` is set — so the
    mark is drawn once, in its first phase, and simply stays there. */

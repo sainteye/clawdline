@@ -156,6 +156,16 @@ var answeredMenu = null;
  * its own. Cleared when the session stops waiting. */
 var dismissedMenu = null;
 
+/* A card the reader has folded down out of the way.
+ *
+ * Different from waving it away: the question is real and they mean to answer it, they just need
+ * to read the conversation underneath first. A long question with a paragraph under every option
+ * is taller than the screen, and there was no way to see past it except to answer or to dismiss —
+ * which is a choice between the two things somebody in that position does not want to do.
+ *
+ * Keyed like `dismissedMenu`, so the next question comes back open on its own. */
+var foldedMenu = null;
+
 function menuKey(menu) {
     // A waiting card with no menu still needs a key of its own, and it must not collide with any
     // real one: that state — "waiting, but the menu could not be read" — is the shape a wrong
@@ -192,27 +202,41 @@ export function renderWaiting() {
     if (dismissedMenu && (!open || dismissedMenu.id !== open.id || open.state !== "waiting")) {
         dismissedMenu = null;
     }
+    if (foldedMenu && (!open || foldedMenu.id !== open.id || open.state !== "waiting")) {
+        foldedMenu = null;
+    }
     // Waved away: the whole card goes, rather than falling back to the two sentences about
     // answering on the Mac. Somebody who has just said "this is not a question" is the last
     // person who needs telling where to answer it.
     var hushed = !!(dismissedMenu && dismissedMenu.key === menuKey(menu));
+    var folded = !!(foldedMenu && foldedMenu.key === menuKey(menu));
     var sent = !rows && !!answeredMenu;
     if (sent) {
         rows = answeredMenu.rows;
         submit = answeredMenu.submit || null;
         question = answeredMenu.question || "";
     }
+    // **Folded, the card is one line and the conversation is readable underneath.** Everything
+    // below the title is dropped rather than hidden with CSS, so a folded card costs no height at
+    // all; the chevron carries `aria-expanded` and the title's own words as its name, which is
+    // what a screen reader needs and what saves this from being fourteen new translations.
+    var fold = '<button type="button" class="fold" data-fold="1" aria-expanded="'
+        + (folded ? "false" : "true") + '" aria-label="' + esc(T.webWaitingTitle) + '">'
+        + (folded ? "\u203a" : "\u2304") + "</button>";
     var want = !open || open.state !== "waiting" || hushed ? "" :
-        '<div class="title">' + esc(T.webWaitingTitle) +
+        '<div class="title">' + fold + esc(T.webWaitingTitle) +
         '<button type="button" class="dismiss" data-dismiss="1" aria-label="'
         + esc(T.webClose) + '">\u00d7</button>' + "</div>" +
+        (folded ? "" :
+        '<div class="body">' +
         (question ? '<div class="question">' + esc(question) + "</div>" : "") +
         (rows
             ? '<div class="say">' + words(sent ? T.webMenuSent : T.webMenuSay) + "</div>"
               + menuHTML(rows, sent, submit)
             : '<div class="say">' + words(T.webWaitingSay) + "</div>" +
               '<div class="say">' + words(T.webWaitingSend) + "</div>") +
-        '<button type="button" class="go" data-focus="1">' + esc(T.webShowOnMac) + "</button>";
+        '<button type="button" class="go" data-focus="1">' + esc(T.webShowOnMac) + "</button>" +
+        "</div>");
     // The live line, from the same reading, and **above the early return below** — that return
     // exists because the *notice* rarely changes, and while a session is working the notice is
     // empty every single time, so anything after it ran once and then never again. This line
@@ -297,6 +321,16 @@ function menuHTML(rows, spent, submit) {
 
 els.waiting.addEventListener("click", function (ev) {
     if (!ev.target.closest) return;
+
+    if (ev.target.closest("[data-fold]")) {
+        var open2 = S.openId ? byId(S.openId) : null;
+        var key = menuKey(open2 ? open2.menu : null);
+        foldedMenu = foldedMenu && foldedMenu.key === key
+            ? null : { id: open2 ? open2.id : S.openId, key: key };
+        waitingDrawn = null;
+        renderWaiting();
+        return;
+    }
 
     if (ev.target.closest("[data-dismiss]")) {
         var here = S.openId ? byId(S.openId) : null;
