@@ -54,7 +54,7 @@ Clawdline 把這個形狀畫出來，也讓你在上面動手。按 <kbd>⌘</kb
 | **哪一個 session 在等你** `⌘K`<br><br>正在跑的那個帶著 Claude Code 自己畫的那行字；螢幕上有問題沒人回答的那個會大聲說出來，因為那是唯一一種每過一秒都在賠錢的狀態。每一行還帶著它自己專案的像素圖示。<br><br>[每個狀態是怎麼判的 →](docs/interface.md#which-session-wants-you) | <img src="docs/assets/sessions-live.gif" width="380" alt="Session 清單，動起來：選取往下走，一個被回答了於是安靜下來、一個跑完、另一個開始發問"> |
 | **把 session 讀回來** `⌘J`<br><br>不是終端機的截圖。Clawdline 讀的是那個 session 的逐字稿檔案，所以你拿到的是真正的訊息邊界、完整歷史、標題、有框線的表格與程式碼——跑完的工具呼叫各收成一行。`⌘F` 撐滿整個螢幕。<br><br>[那塊面板在做什麼 →](docs/interface.md#reading-a-session-back) | <img src="docs/assets/transcript.png" width="380" alt="逐字稿面板：標題、有框線的表格、程式碼區塊，是排版過的而不是刮畫面"> |
 | **同一批 session，在手機上**<br><br>你的 Mac 開一個網頁，手機打開它，就讀得到每個 session 在做什麼、逐字稿也在裡面——第二個開關打開之後還可以打字進去。全新安裝是關著的、只綁 loopback、每一台裝置都要用只出現在 Mac 上的數字配對。要從外面連進來靠 `cloudflared`，那是你自己裝的程式。<br><br>[用瀏覽器，或用手機 →](#用瀏覽器或用手機) | <img src="docs/assets/web-wide.png" width="380" alt="同一個網頁在筆電上：左邊是 session 清單、在等你的那個用重點色標出來，右邊是它的逐字稿，下面是打字的框"> |
-| **聽得懂中英夾雜的語音輸入**<br><br>講的時候字就出現，而且辨識器餵的是你自己的歷史紀錄，所以 `webhook`、`rebase` 被夾在中文句子裡講出來也活得下來。Claude Code 內建的 `/voice` 把聲音串到 Anthropic 的伺服器、需要 Claude.ai 帳號，而且[一種中文都不支援](docs/compatibility.md#claude-code-has-its-own-dictation-now)。再裝上 [Whisper](docs/whisper.md)——一行 `brew install`——停下來之後它會讀同一段錄音把整段換掉，一句話裡就裝得下兩種語言。<br><br>[你講話的時候它在做什麼 →](docs/interface.md#talk-instead-of-type) | <img src="docs/assets/voice.zh.gif" width="380" alt="對著輸入條說話：字邊講邊出現，停下來之後 Whisper 讀同一段錄音把它換掉"> |
+| **聽得懂中英夾雜的語音輸入**<br><br>講的時候字就出現，而且辨識器餵的是你自己的歷史紀錄，所以 `webhook`、`rebase` 被夾在中文句子裡講出來也活得下來。Claude Code 內建的 `/voice` 把聲音串到 Anthropic 的伺服器、需要 Claude.ai 帳號，而且[一種中文都不支援](docs/compatibility.md#claude-code-has-its-own-dictation-now)。再裝上 [Whisper](docs/whisper.md)——一行 `brew install` 加一個模型檔——停下來之後它會讀同一段錄音把整段換掉，一句話裡就裝得下兩種語言。<br><br>[你講話的時候它在做什麼 →](docs/interface.md#talk-instead-of-type) | <img src="docs/assets/voice.zh.gif" width="380" alt="對著輸入條說話：字邊講邊出現，停下來之後 Whisper 讀同一段錄音把它換掉"> |
 
 **瀏海裡也會講。** 你的吉祥物住在鏡頭那塊：什麼都沒在跑的時候牠在那裡睡覺，有東西在跑就探出來，
 有人在等你就講出是哪一個，長工作跑完就跳舞。螢幕沒有瀏海的話，它變成選單列下面的一顆藥丸。
@@ -139,6 +139,57 @@ Clawdline 會開一個終端機分頁，把任務指定的那種助理啟動起�
 session 會在哪四個地方停下來問、其中哪兩道任何設定都到不了，以及那個讀起來像「放手去做」的
 flag，為什麼在最便宜的模型上意思正好相反。
 
+## 多個 session 共用一份工作區
+
+派工會把一個清單畫不出來的問題放大。同一個 repo 裡的兩個 session，就是同一份工作區上的兩個寫入
+者，而它們看不到彼此。一個把另一個還在打的半成品 stage 了進去；同一套測試同時跑兩輪，兩份執行檔
+寫到同一個固定路徑上互相蓋掉。當下不會有任何東西報錯，你拿到的是一小時前還在、現在不見了的東西。
+
+這兩個 session 誰都沒有足夠的資訊去阻止它。app 有——每一次派工都經過它，而它本來就知道別的任務
+在哪個目錄工作、每一個宣告過自己會動到什麼。
+
+**那個資料夾裡有別人的時候，它會講。** 派進一個「已經有另一個 root 的任務在做事」的目錄，任務照
+樣會開，因為同一個 repo 裡同時開著兩個 session 是再平常不過的事，不是錯誤——但回覆裡會多一則點名
+那個任務的警告，而對面那個 root 也會收到一行講你這個；兩邊都宣告了彼此錯開的 claims 時，誰也不會
+被吵——精確的答案取代粗略的那個。先讓你看得到，才談要不要擋。
+
+**任務可以先講出自己要寫哪些路徑，撞到的那一個在門口就被擋掉。** `claims` 是一串相對於專案的路徑
+——`["Sources/Orchestrator.swift", "docs"]`——寫一個目錄，底下整棵都算。如果某個 app **認得出來的別的 root** 的
+任務還活著，而它宣告過的路徑跟你的相等、包住你的、或落在你的底下，這次派工在分頁被開出來以前就
+被拒絕；而值錢的是那個拒絕本身：是哪一個任務佔著、那是誰的、什麼時候開始的、每一條撞到的絕對
+路徑，還有建議你等多久再來。同一個 root 底下的兩個任務允許重疊，只會收到警告——那張圖是那個 root
+自己畫的，先後順序也可能是它自己排的。
+
+**不是檔案的東西，也可以排隊。** 有些衝突根本沒有路徑可以宣告：這個 repo 的 `./test.sh` 會把測試
+執行檔寫到一個固定位置，所以兩次跑起來就算共同的原始檔一個都沒碰到，照樣會蓋掉對方。`serialize`
+就是拿來點名這種操作的——`["build"]`——要同一個名字的任務按建立時間排隊，而且要幾個名字就一次拿
+齊，所以兩個任務不會因為順序交叉而互相卡死。
+
+**它到哪裡為止，這裡直接講。** claims 是派工當下的一道門，不是檔案系統上的鎖：一個不照指示走的
+子 session，照樣寫得到它沒宣告過的地方。這道門收掉的是那段空窗——兩個 session 都已經被交代完、
+都已經在改，然後兩邊的人要為一件做到一半的事情喬出個結果。而且它仲裁的是**任務**：
+你自己在分頁裡開的那個 session 從來沒有被派工過，上面這些完全看不到它——那就是下一節在講的事。
+
+[claims 怎麼算、什麼時候放掉、佇列怎麼排 →](docs/orchestrator.md#reserving-declared-write-paths-at-dispatch)
+
+## agent 一進門就讀到的規矩
+
+派工的那道門有 app 站著。你自己開的那個終端機分頁，門口沒有人站——而一份工作區裡大部分的 session
+都是這一種。能傳到它們手上的，只有它們開始讀的時候樹裡本來就有的東西。所以規矩就寫在樹裡。
+
+這個 repo 自己的那份在 [`AGENTS.md`](AGENTS.md)，而且是一份共用的工作區真正需要的那幾條，不是
+coding style：你進來的時候就已經沒 commit 的東西，全都是別人還沒做完的活；stage 要逐檔指名，永遠
+不要 `git add -A`；commit 之前要讀 staged diff 本身，不能看 `--stat` 很乾淨就算了；被派去做事的
+session 不自己 commit，改完交回去；不要跑 build，因為它會把使用者正在用的那個 app 換掉；還有，
+任務會動到的每一條路徑都要寫進 `claims`。[`CLAUDE.md`](CLAUDE.md) 只有一行，指向那份檔案——兩種
+助理找的是不同的檔名，而同一套規矩不該維護兩次。
+
+**Clawdline 這兩個檔案一個都不讀。** 讀它們的是助理自己，在它們被打開的任何一個 repo 裡——這正是
+這個做法值得抄過去、而不是「安裝」起來的原因：你自己專案根目錄下的兩個檔案，沒有相依，也沒有東西
+要復原。該寫進去的，是一個新的 session 沒辦法從程式碼推出來的那些事：哪些改動不是它可以碰的、
+要怎麼 stage、什麼東西絕對不能跑，以及如果它還能再往下派工，規矩在哪裡。兩個檔案都沒有的 repo
+一樣照常運作，只是對下一個打開它的人沒有話要說。
+
 ## 安裝
 
 **Homebrew**
@@ -173,6 +224,32 @@ open ~/Applications/Clawdline.app
 
 第一次送出時，macOS 會問要不要讓 Clawdline 控制 iTerm2，按**好**——沒有這個權限它什麼都送不
 出去。選單列的 ✳ → **開機時啟動** 可以讓它常駐。
+
+### 開箱就會動的，跟你自己打開的
+
+第一次跑起來，輸入條就是整個產品：session 已經在那裡了、熱鍵已經送得出去、
+<kbd>⌘</kbd><kbd>J</kbd> 已經讀得回來。除此之外的每一樣都是關著的，等你自己去打開，順序隨你。
+
+| | 在哪裡打開 | 對應的說明 |
+| --- | --- | --- |
+| **輸入條**——看得到、送得出、讀得回來 | 不用打開；macOS 只在第一次問一次 iTerm2 | — |
+| **你自己專案的那一行**——伺服器、分支、圖示、部署 | repo 內外的幾個小 JSON 檔；把這個 repo 的網址貼給 agent，它會幫你寫 | [connect.md](docs/connect.md) |
+| **那個網頁，在這台 Mac 或手機上** | 設定 → 遠端 →「讓瀏覽器或你的手機看得到你的 session」，再按「用瀏覽器打開」或「配對手機……」 | [remote.md](docs/remote.md) |
+| **讓配對過的裝置打字** | 設定 → 遠端 →「讓配對過的裝置寫進 session」 | [remote.md](docs/remote.md) |
+| **從外面連進來** | 設定 → 遠端 →「從任何地方連到這台 Mac」；它跑的 `cloudflared` 是你自己裝的那支 | [remote.md](docs/remote.md#the-tunnel) |
+| **把工作派給另一個 session** | 同一個「讓瀏覽器⋯⋯」開關，然後把 [skill](skills/clawdline/) 那兩個檔案挑一個放進 `~/.claude/skills/clawdline/` | [orchestrator.md](docs/orchestrator.md#the-skill) · [dispatch-permissions.md](docs/dispatch-permissions.md) |
+| **一秒內就知道有人在等你回答，而不是二十秒** | 設定 → Claude Code Hook →「安裝」 | [hooks.md](docs/hooks.md) |
+| **一句話裡裝得下兩種語言** | 一行 `brew install`，加上它要讀的模型檔 | [whisper.md](docs/whisper.md) |
+
+**派工跟那個網頁共用同一個本機開關，但用的不是同一把鑰匙。** 那個開關負責的是在 `127.0.0.1` 上
+開一道門；替派工把這道門打開的，是你家目錄下一個 `0600` 的檔案，它會自己寫出來，配對過的裝置從來
+沒拿到過，網頁也讀不到。只為了派工把開關打開，不會在你的網路上放任何東西：listener 只綁 loopback，
+tunnel 是另一個開關，而且在配對過任何裝置之前它拒絕啟動。
+
+**「共用一份工作區」這件事本身沒有開關。** 資料夾警告每一次派工都會做；`claims` 與 `serialize`
+是任務自己填的欄位；`AGENTS.md` 是你 repo 裡的一個檔案，這個 app 從來不讀它。剩下真的要調的，是
+一次能派幾個、每個又能再派幾個，以及子 session 走多遠才停下來問——在設定 → 遠端的 Agent tasks
+那幾列，或[設定裡的 `orchestrator_*`](#設定)。
 
 ## 用法
 
@@ -286,7 +363,7 @@ CR                                     ← 再單獨送一個 Return 才送出
 那正是這整個工具的重點。
 
 **選配的 hook。** 人不在輸入條前面的時候，判讀每二十秒才做一次，所以一個權限對話框可能會在那裡
-坐上一陣子沒人發現。**設定 → Claude Code hooks → 安裝** 會在 `~/.claude/settings.json` 放九組
+坐上一陣子沒人發現。**設定 → Claude Code Hook → 安裝** 會在 `~/.claude/settings.json` 放九組
 matcher 設定，分屬八個事件；之後只要一輪對話開始、結束或需要回答，通知當下就到，判讀在**一秒內**
 發生。一則通知只說「什麼時候該去看」，從來不說螢幕上寫了什麼，所以說了算的仍然是螢幕。把 hook
 移除不會留下任何東西。[完整的約定 →](docs/hooks.md)
@@ -382,6 +459,7 @@ claude
 | `send_images_as_paste` | `true` | 圖片以 `[Image #3]` 進去，而不是路徑 |
 | `hooks` | `true` | 裝了 Claude Code hook 之後要不要相信它 |
 | `session_registry` | `true` | 要不要相信每個 Claude Code session 自己寫下的狀態 |
+| `on_state_change` | `[]` | session 換狀態時去跑你自己的程式——是 argv 陣列，不是一行 shell。[它會被告知什麼 →](docs/notifications.md) |
 | `status_dir` · `icons_file` | `""` | 專案狀態檔與圖示登錄檔 |
 
 **遠端**
@@ -432,6 +510,9 @@ macOS 對你下載過的聽寫語言在本機辨識，沒下載的則把聲音�
   [跑過哪些版本 →](docs/compatibility.md)
 - **背景 agent 的數字只算 Claude Code。** 一個派了 subagent 出去的 Codex session，看起來就像在
   想一句話想很久。
+- **共用工作區的仲裁擋在門口，不是擋在硬碟上。** 它認得的是被派出去的任務、以及它們宣告過的東西；
+  你自己開的那個分頁，或是一個不照指示走的子 session，照樣寫得到任何地方。
+  [為什麼還是值得有 →](#多個-session-共用一份工作區)
 
 ## 出事的時候
 
@@ -449,6 +530,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 | --- | --- |
 | [輸入條的細節](docs/interface.md) | session 清單、<kbd>⌘</kbd><kbd>J</kbd> 那塊、語音、檔案、瀏海 |
 | [把工作派出去](docs/orchestrator.md) | 一個 session 派工給另一個：協定、憑證、生命週期 |
+| [被派出去的 session 會在哪停](docs/dispatch-permissions.md) | 四道門依序是什麼，以及那個在最便宜的模型上意思相反的 flag |
 | [把專案接上來](docs/connect.md) | 寫給 agent 看的：要建哪些檔、怎麼驗自己有沒有做對 |
 | [開發環境](docs/devstack.md) · [怎麼導入](docs/devstack-adopting.md) | `.devstack.json`，以及導入的三種深度 |
 | [專案狀態檔](docs/project-status.md) | 圖示、顏色、部署、backlog |

@@ -61,7 +61,7 @@ Nothing to migrate, nothing to undo. Quit it and your setup is exactly as it was
 | **Which session wants you** `⌘K`<br><br>A working session carries the live line Claude Code draws for itself; a session with a question on screen is the loud one, because that is the only state costing you something for every second it goes unnoticed. Each row wears its project's own mark.<br><br>[How each state is decided →](docs/interface.md#which-session-wants-you) | <img src="docs/assets/sessions-live.gif" width="380" alt="The session list, live: the selection walks down it, one session is answered and goes quiet, another finishes, and a third starts asking."> |
 | **Read a session back** `⌘J`<br><br>Not a screenshot of a terminal. Clawdline reads the session's transcript file, so you get real message boundaries, full history, headings, bordered tables and code — with finished runs of tool calls folded to one line each. `⌘F` fills the screen.<br><br>[What the pane does →](docs/interface.md#reading-a-session-back) | <img src="docs/assets/transcript.png" width="380" alt="The transcript pane: a heading, a bordered table and a code block, laid out rather than scraped."> |
 | **The same sessions on your phone**<br><br>Your Mac serves a page; your phone opens it and reads every session, transcript and all — and types into them if you arm the second switch. Off by default, bound to loopback, every device paired by a code shown only on the Mac. Reaching it from outside is `cloudflared`, which is your own install.<br><br>[From a browser, or your phone →](#from-a-browser-or-your-phone) | <img src="docs/assets/web-wide.png" width="380" alt="The same page on a laptop: the session list down the left with the one that is waiting picked out in the accent colour, its transcript beside it, and a box to type in underneath."> |
-| **Dictation that keeps up with two languages**<br><br>Words appear as you speak, and the recogniser is fed your own prompt history, so `webhook` and `rebase` survive being said inside a Chinese sentence. Claude Code's own `/voice` streams audio to Anthropic's servers, needs a Claude.ai account, and [does not support Chinese](docs/compatibility.md#claude-code-has-its-own-dictation-now). Add [Whisper](docs/whisper.md) — one `brew install` — and a second pass reads the same audio back, so one sentence can hold two languages.<br><br>[What it does while you talk →](docs/interface.md#talk-instead-of-type) | <img src="docs/assets/voice.gif" width="380" alt="Speaking into the bar: the words appear live, then Whisper reads the recording back and replaces them."> |
+| **Dictation that keeps up with two languages**<br><br>Words appear as you speak, and the recogniser is fed your own prompt history, so `webhook` and `rebase` survive being said inside a Chinese sentence. Claude Code's own `/voice` streams audio to Anthropic's servers, needs a Claude.ai account, and [does not support Chinese](docs/compatibility.md#claude-code-has-its-own-dictation-now). Add [Whisper](docs/whisper.md) — one `brew install` and one model file — and a second pass reads the same audio back, so one sentence can hold two languages.<br><br>[What it does while you talk →](docs/interface.md#talk-instead-of-type) | <img src="docs/assets/voice.gif" width="380" alt="Speaking into the bar: the words appear live, then Whisper reads the recording back and replaces them."> |
 
 **Says it in the notch, too.** Your mascot lives in the camera housing. It sleeps while nothing
 runs, leans out while something does, names the session that wants you, and dances when a long job
@@ -157,6 +157,69 @@ credentials, the lifecycle and the routes with `curl` transcripts.
 places a dispatched session stops to ask, which two of them no setting reaches, and why the flag
 that reads as "get on with it" quietly means the opposite on the cheapest model.
 
+## Several sessions, one working tree
+
+Dispatching multiplies a problem no list can draw. Two sessions in one repository are two writers
+on one working tree, and they cannot see each other. One stages the half-finished edit another was
+still typing. Two runs of the same suite write their test binary to the same fixed path and race
+for it. Nothing reports an error at the time; what you get is work that was there an hour ago and
+is not there now.
+
+Neither session knows enough to stop that. The app does — every dispatch goes through it, and it
+already knows where every other task is working and what each one said it would touch.
+
+**It says when somebody else is in that folder.** A dispatch into a directory another root's task
+is working in still opens, because two sessions in one repository is a normal afternoon rather than
+an error — but the answer carries a warning naming that task, and the other root gets a line about
+yours. When both tasks have declared claims that rule the collision out, nobody is interrupted —
+the precise answer replaces the coarse one. Visibility first, before anything is refused.
+
+**A task can name what it will write, and a clash is refused at the door.** `claims` is a list of
+paths relative to the project — `["Sources/Orchestrator.swift", "docs"]` — where a directory covers
+everything under it. If a live task belonging to a *different* root the app could actually identify
+has claimed a path that equals,
+contains or sits under one of yours, the dispatch is refused before a tab is opened, and the
+refusal is the part worth having: which task is holding it, whose it is, when it started, every
+conflicting path, and how long to wait. Two tasks under the same root may overlap and are only
+warned — that root drew the graph and may have ordered the work itself.
+
+**Work that is not a file can take turns.** Some collisions have no path to declare: `./test.sh`
+here writes its test binary to one fixed location, so two runs that share no source file still
+overwrite each other. `serialize` names those operations — `["build"]` — and tasks that want the
+same name queue in the order they were created, each taking every name it asked for at once, so two
+of them cannot deadlock over a crossed pair.
+
+**Where this stops is worth saying plainly.** A claim is a gate at dispatch, not a lock on the
+filesystem: a child that ignores its briefing can still write outside what it declared. What the
+gate removes is the window where two sessions have both already been briefed, are both already
+editing, and the two people behind them have to negotiate about work that is half done. And it
+arbitrates *tasks*. The session you opened in a tab yourself was never dispatched, so nothing above
+sees it at all — which is what the next section is for.
+
+[Claims, leases, and the queue in full →](docs/orchestrator.md#reserving-declared-write-paths-at-dispatch)
+
+## Rules an agent reads on the way in
+
+The app stands in the door of a dispatch. Nothing stands in the door of the terminal you opened
+yourself, and most of the sessions in a working tree are those. What reaches them is whatever is in
+the tree when they start reading — so that is where the rules go.
+
+This repository keeps its own in [`AGENTS.md`](AGENTS.md), and they are the ones a shared tree
+needs rather than a style guide: everything already uncommitted when you arrive is somebody else's
+unfinished work; stage by naming each path and never `git add -A`; read the staged diff before
+committing rather than trusting a clean `--stat`; a worker session hands its changes back instead
+of committing them; do not run the build, because it replaces the app the person is using; and
+declare `claims` for every path a task may write. [`CLAUDE.md`](CLAUDE.md) is a single line pointing
+at that file — the two assistants look for different names, and one set of rules should not have to
+be maintained twice.
+
+**Nothing in Clawdline reads either file.** The assistants do, on their own, in whatever repository
+they are opened in, which is what makes the pattern worth copying rather than installing: two files
+at the root of your own project, no dependency, nothing to undo. What belongs in them is what a new
+session cannot work out from the code — which changes are not its to touch, how to stage, what it
+must never run, and where the house rules live if it may hand work on. A repository with neither
+still works exactly as it did; it simply has nothing to say to whoever opens it next.
+
 ## Install
 
 **Homebrew**
@@ -193,6 +256,35 @@ open ~/Applications/Clawdline.app
 
 The first time you send something, macOS asks whether Clawdline may control iTerm2. Say yes — it
 cannot send anything without that. Menu bar ✳ → **Launch at login** makes it stick around.
+
+### What works immediately, and what you switch on
+
+The bar is the whole product on the first run: the sessions are already there, the hotkey already
+sends, <kbd>⌘</kbd><kbd>J</kbd> already reads one back. Everything else is off until you go and turn
+it on, in whatever order you want it.
+
+| | Where you turn it on | The page for it |
+| --- | --- | --- |
+| **The bar** — see, send, read back | nothing; macOS asks once for iTerm2 | — |
+| **Your project's own row** — servers, branch, mark, deploy | small JSON files in and beside your repo; paste this repository at an agent and it writes them | [connect.md](docs/connect.md) |
+| **The page, here or on a phone** | Settings → Remote → *Let a browser or your phone see your sessions*, then *Open in a browser* or *Pair a phone…* | [remote.md](docs/remote.md) |
+| **Typing from a paired device** | Settings → Remote → *Let a paired device write into a session* | [remote.md](docs/remote.md) |
+| **Reaching it from outside** | Settings → Remote → *Reach this Mac from anywhere*; the `cloudflared` it runs is your own install | [remote.md](docs/remote.md#the-tunnel) |
+| **Handing work to another session** | the same *Let a browser…* switch, then one of [the skill's](skills/clawdline/) two files into `~/.claude/skills/clawdline/` | [orchestrator.md](docs/orchestrator.md#the-skill) · [dispatch-permissions.md](docs/dispatch-permissions.md) |
+| **A question noticed in a second rather than twenty** | Settings → Claude Code hooks → *Install* | [hooks.md](docs/hooks.md) |
+| **Two languages in one sentence** | one `brew install`, plus the model file it reads | [whisper.md](docs/whisper.md) |
+
+**Dispatching rides on the same local switch as the page, and on a different credential.** That
+first switch is what puts a door on `127.0.0.1`; what opens it for a dispatch is a `0600` file in
+your home directory, written for you, which no paired device was ever given and no page can read.
+Turning it on for dispatching alone puts nothing on your network: the listener is loopback, the
+tunnel is a separate switch, and that one refuses to start until a device has been paired.
+
+**Sharing a working tree has no switch of its own.** The folder warning applies to every dispatch;
+`claims` and `serialize` are fields a task fills in; `AGENTS.md` is a file in your repository that
+this app never reads. What is left to configure is how many children a session may have out, and
+how far each may go before it stops to ask — the *Agent tasks* rows of Settings → Remote, or
+[`orchestrator_*` in the config](#configuration).
 
 ## Use it
 
@@ -421,6 +513,7 @@ itself.
 | `send_images_as_paste` | `true` | images arrive as `[Image #3]`, not as a path |
 | `hooks` | `true` | believe Claude Code's hooks when installed |
 | `session_registry` | `true` | believe what each Claude Code session writes about itself |
+| `on_state_change` | `[]` | your own program, run whenever a session changes state — argv, not a shell line. [What it is told →](docs/notifications.md) |
 | `status_dir` · `icons_file` | `""` | project status files and the icon registry |
 
 **Remote**
@@ -478,6 +571,9 @@ network at all. Your prompt history lives in `~/.config/clawdline/config.json` a
   [Which versions this was run against →](docs/compatibility.md)
 - **Background agents are counted for Claude Code only.** A Codex session with subagents out looks
   like one thinking hard about a sentence.
+- **Sharing a working tree is arbitrated at the door, not on the disk.** What it knows about is
+  dispatched tasks and what they declared; a tab you opened yourself, or a child that ignores its
+  briefing, can still write anywhere. [Why it is still worth having →](#several-sessions-one-working-tree)
 
 ## Troubleshooting
 
@@ -496,6 +592,7 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 | --- | --- |
 | [The bar, up close](docs/interface.md) | the session list, the <kbd>⌘</kbd><kbd>J</kbd> pane, dictation, files, the notch |
 | [Handing work off](docs/orchestrator.md) | one session dispatching another: the protocol, the credentials, the lifecycle |
+| [Where a dispatched session stops](docs/dispatch-permissions.md) | the four gates in order, and the flag that means the opposite on the cheapest model |
 | [Connecting a project](docs/connect.md) | written for an agent: the files to create and how to check them |
 | [The dev stack](docs/devstack.md) · [adopting it](docs/devstack-adopting.md) | `.devstack.json`, and the three heights of adopting it |
 | [Project status files](docs/project-status.md) | the mark, the colour, the deploy, the backlog |
