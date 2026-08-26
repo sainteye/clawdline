@@ -71,6 +71,8 @@ def starts_regex(text, last, last_index):
     """Is a `/` following text[last_index] the start of a literal rather than a division?"""
     if not last:
         return True
+    if last in "+-" and last_index and text[last_index - 1] == last:
+        return False  # `i++ / 2` divides; every other `+` or `-` in front of a `/` cannot.
     if last in REGEX_AFTER:
         return True
     if last.isalnum() or last in "_$":
