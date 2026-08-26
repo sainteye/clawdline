@@ -237,7 +237,11 @@ export var Schedule = (function () {
         box.innerHTML = '<canvas></canvas><span class="name"></span>'
             + '<span class="where"></span><span class="chev"></span>';
         var mark = box.querySelector("canvas");
-        if (!p || !drawIcon(mark, p.icon, 4)) mark.classList.add("none");
+        // `drawIcon` is what sizes the canvas, including zeroing it when there is nothing to
+        // draw — short-circuiting past it on a missing project leaves a canvas at its HTML
+        // default of 300x150, which is exactly wide enough to burst this row and the sheet with
+        // it. Call it either way and let the `.none` rule below supply the placeholder.
+        if (!drawIcon(mark, p && p.icon, 4)) mark.classList.add("none");
         box.classList.toggle("none", !p);
         var name = box.querySelector(".name");
         // Borrowed rather than invented: the start sheet already asks this question, in fourteen

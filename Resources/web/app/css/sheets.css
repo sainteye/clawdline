@@ -450,8 +450,14 @@ a.dep:hover .host { color: var(--accent); }
     padding: 8px 10px; font-size: 13px; color: var(--ink); text-align: left;
 }
 .schedule-sheet .picked:hover { background: var(--card-hi); }
-.schedule-sheet .picked canvas { flex: 0 0 auto; display: block; }
-.schedule-sheet .picked .name { flex: 0 0 auto; }
+.schedule-sheet .picked canvas { flex: 0 0 auto; display: block; image-rendering: pixelated; }
+/* The same placeholder `.sheet .place` uses. Without a size here a canvas with nothing drawn in
+   it is 300x150 — the HTML default, not zero. */
+.schedule-sheet .picked canvas.none { width: 16px; height: 12px; border-radius: 2px; background: #202028; }
+.schedule-sheet .picked .name {
+    flex: 0 1 auto; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .schedule-sheet .picked .where {
     flex: 1 1 auto; min-width: 0; color: var(--faint); font-size: 11.5px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
