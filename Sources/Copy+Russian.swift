@@ -201,7 +201,7 @@ struct Russian: Copy {
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "Действуют — строк: \(lines)" }
     let settingsOrchestratorPolicyOff = "Правил нет — каждый раз решает тот, кто отправляет"
     let settingsSchedules = "Расписания"
-    let settingsSchedulesEmpty = "Расписаний пока нет. Откройте папку schedules кнопкой ниже и добавьте JSON-файл."
+    let settingsSchedulesEmpty = "Расписаний пока нет. Кнопка «Новое расписание» ниже создаёт первое."
     let settingsScheduleNew = "Новое расписание"
     let settingsScheduleEdit = "Изменить"
     let settingsScheduleSave = "Сохранить"

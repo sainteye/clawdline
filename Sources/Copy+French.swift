@@ -201,7 +201,7 @@ struct French: Copy {
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "En vigueur — \(lines) lignes" }
     let settingsOrchestratorPolicyOff = "Aucune règle — chaque envoi reste au jugement de qui l'envoie"
     let settingsSchedules = "Tâches planifiées"
-    let settingsSchedulesEmpty = "Aucune tâche planifiée. Utilisez le bouton ci-dessous pour ouvrir le dossier schedules et ajoutez un fichier JSON."
+    let settingsSchedulesEmpty = "Aucune tâche planifiée. Le bouton Nouvelle tâche ci-dessous en crée une."
     let settingsScheduleNew = "Nouvelle tâche planifiée"
     let settingsScheduleEdit = "Modifier"
     let settingsScheduleSave = "Enregistrer"

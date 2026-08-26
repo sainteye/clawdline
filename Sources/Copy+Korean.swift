@@ -199,7 +199,7 @@ struct Korean: Copy {
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "적용 중 — \(lines)줄" }
     let settingsOrchestratorPolicyOff = "규칙 없음 — 맡길 때마다 맡기는 쪽이 정합니다"
     let settingsSchedules = "예약 작업"
-    let settingsSchedulesEmpty = "예약 작업이 없습니다. 아래 버튼으로 schedules 폴더를 열고 JSON 파일을 추가하세요."
+    let settingsSchedulesEmpty = "아직 일정이 없습니다. 아래 새 일정으로 첫 일정을 만드세요."
     let settingsScheduleNew = "새 예약"
     let settingsScheduleEdit = "편집"
     let settingsScheduleSave = "저장"

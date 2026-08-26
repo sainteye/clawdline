@@ -201,7 +201,7 @@ struct Indonesian: Copy {
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "Berlaku — \(lines) baris" }
     let settingsOrchestratorPolicyOff = "Tidak ada aturan — setiap penugasan diputuskan sendiri oleh yang menugaskan"
     let settingsSchedules = "Jadwal"
-    let settingsSchedulesEmpty = "Belum ada jadwal. Gunakan tombol di bawah untuk membuka folder schedules lalu tambahkan file JSON."
+    let settingsSchedulesEmpty = "Belum ada jadwal. Tombol Jadwal baru di bawah membuat yang pertama."
     let settingsScheduleNew = "Jadwal baru"
     let settingsScheduleEdit = "Ubah"
     let settingsScheduleSave = "Simpan"

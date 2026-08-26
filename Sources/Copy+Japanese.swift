@@ -199,7 +199,7 @@ struct Japanese: Copy {
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "有効 — \(lines) 行" }
     let settingsOrchestratorPolicyOff = "決まりごとなし — 出すたびに出す側が決めます"
     let settingsSchedules = "スケジュール"
-    let settingsSchedulesEmpty = "スケジュールはまだありません。下のボタンで schedules フォルダを開き、JSON ファイルを追加してください。"
+    let settingsSchedulesEmpty = "スケジュールはまだありません。下の「新しいスケジュール」で最初の一つを作れます。"
     let settingsScheduleNew = "新しいスケジュール"
     let settingsScheduleEdit = "編集"
     let settingsScheduleSave = "保存"

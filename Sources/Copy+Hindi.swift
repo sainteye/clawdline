@@ -205,7 +205,7 @@ struct Hindi: Copy {
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "लागू — \(lines) पंक्तियाँ" }
     let settingsOrchestratorPolicyOff = "कोई नियम नहीं — हर बार भेजने वाला खुद तय करता है"
     let settingsSchedules = "शेड्यूल"
-    let settingsSchedulesEmpty = "अभी कोई शेड्यूल नहीं है। नीचे दिए बटन से schedules फ़ोल्डर खोलें और एक JSON फ़ाइल जोड़ें।"
+    let settingsSchedulesEmpty = "अभी कोई शेड्यूल नहीं है। नीचे नया शेड्यूल से पहला बनाएँ।"
     let settingsScheduleNew = "नया शेड्यूल"
     let settingsScheduleEdit = "संपादित करें"
     let settingsScheduleSave = "सहेजें"

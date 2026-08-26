@@ -202,7 +202,7 @@ struct TraditionalChinese: Copy {
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "生效中——\(lines) 行" }
     let settingsOrchestratorPolicyOff = "沒有規矩——每次派工由派的人自己決定"
     let settingsSchedules = "排程"
-    let settingsSchedulesEmpty = "還沒有任何排程。用下面的按鈕打開 schedules 資料夾，放一個 JSON 檔進去。"
+    let settingsSchedulesEmpty = "還沒有任何排程。用下面的「新增排程」做一個。"
     let settingsScheduleNew = "新增排程"
     let settingsScheduleEdit = "編輯"
     let settingsScheduleSave = "儲存"
@@ -802,7 +802,7 @@ struct SimplifiedChinese: Copy {
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "生效中——\(lines) 行" }
     let settingsOrchestratorPolicyOff = "没有规矩——每次派工由派的人自己决定"
     let settingsSchedules = "计划任务"
-    let settingsSchedulesEmpty = "目前没有计划任务。用下面的按钮打开 schedules 文件夹，再放入一个 JSON 文件。"
+    let settingsSchedulesEmpty = "还没有任何计划任务。用下面的「新建计划任务」做一个。"
     let settingsScheduleNew = "新建计划任务"
     let settingsScheduleEdit = "编辑"
     let settingsScheduleSave = "保存"

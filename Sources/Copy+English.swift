@@ -200,7 +200,7 @@ struct English: Copy {
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "In force — \(lines) lines" }
     let settingsOrchestratorPolicyOff = "No house rules — every dispatch is the dispatcher's own call"
     let settingsSchedules = "Schedules"
-    let settingsSchedulesEmpty = "No schedules yet. Use the button below to open the schedules folder and add a JSON file."
+    let settingsSchedulesEmpty = "No schedules yet. New schedule below makes the first one."
     let settingsScheduleNew = "New schedule"
     let settingsScheduleEdit = "Edit"
     let settingsScheduleSave = "Save"

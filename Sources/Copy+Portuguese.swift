@@ -204,7 +204,7 @@ struct Portuguese: Copy {
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "Em vigor — \(lines) linhas" }
     let settingsOrchestratorPolicyOff = "Sem regras — cada envio fica ao critério de quem envia"
     let settingsSchedules = "Tarefas agendadas"
-    let settingsSchedulesEmpty = "Ainda não há tarefas agendadas. Use o botão abaixo para abrir a pasta schedules e adicione um ficheiro JSON."
+    let settingsSchedulesEmpty = "Ainda não há agendamentos. O botão Novo agendamento abaixo cria o primeiro."
     let settingsScheduleNew = "Nova tarefa agendada"
     let settingsScheduleEdit = "Editar"
     let settingsScheduleSave = "Salvar"

@@ -201,7 +201,7 @@ struct Turkish: Copy {
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "Yürürlükte — \(lines) satır" }
     let settingsOrchestratorPolicyOff = "Kural yok — her seferinde veren kendisi karar verir"
     let settingsSchedules = "Zamanlamalar"
-    let settingsSchedulesEmpty = "Henüz zamanlama yok. Aşağıdaki düğmeyle schedules klasörünü açıp bir JSON dosyası ekleyin."
+    let settingsSchedulesEmpty = "Henüz zamanlama yok. Aşağıdaki Yeni zamanlama ilkini oluşturur."
     let settingsScheduleNew = "Yeni zamanlama"
     let settingsScheduleEdit = "Düzenle"
     let settingsScheduleSave = "Kaydet"

@@ -201,7 +201,7 @@ struct Spanish: Copy {
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "En vigor — \(lines) líneas" }
     let settingsOrchestratorPolicyOff = "Sin reglas — cada envío lo decide quien lo hace"
     let settingsSchedules = "Tareas programadas"
-    let settingsSchedulesEmpty = "Aún no hay tareas programadas. Usa el botón de abajo para abrir la carpeta schedules y añade un archivo JSON."
+    let settingsSchedulesEmpty = "Aún no hay programaciones. El botón Nueva programación de abajo crea la primera."
     let settingsScheduleNew = "Nueva tarea programada"
     let settingsScheduleEdit = "Editar"
     let settingsScheduleSave = "Guardar"
