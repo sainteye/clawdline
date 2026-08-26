@@ -948,10 +948,60 @@ rounds use another isolated worktree based on the previous delivery branch or co
 code branch into an artifact bundle for later editing drops the broker's base/head/dirty receipt and
 is not a substitute for worktree delivery.
 
+That obligation is now part of the task registry rather than prose alone. After claimed work comes
+back, root uses the task secret with `POST /v1/orchestrator/tasks/:id/landing` to record
+`{"state":"pending","target":"main"}` (plus an optional delivery, review conclusion, or note).
+A named root that later accepts a handoff can use the machine-level orchestrator token instead;
+this is the same credential family as cancel and claims release. Children do not call this route by
+protocol convention, not because the mechanism can distinguish them: each child holds its own
+secret throughout the task. The broker derives `owner_root_key` from its existing root identity,
+preserves the original `since`, and exposes the object on the task record. Repeating `pending` may
+fill in `target`, `delivery`, or `note` without restarting `since`. After the target contains the
+verified delivery, root posts `{"state":"landed","commit":"<sha>"}`; `landed_at` records when that
+commit was verified. Both `landed` and `abandoned` require a terminal task and are final: neither
+can return to another state, and genuinely reopened work gets a new task. `abandoned` is an
+explicit decision not to land the delivery, not a temporary pause.
+
+`GET /v1/orchestrator/landings` lists every current pending obligation with its title, owner root,
+original claims, target, note, and non-negative age. Pending obligations are exempt from the
+registry's ordinary newest-200 cleanup cap, so age alone cannot erase an unresolved row. When a
+claimed task reaches terminal state without any landing record, its one completion line reminds
+root to record one; the reminder is suppressed when every claim was judged untouched.
+
+**This is a signpost, not a gate.** Landing state does not retain claims, extend their lifetime,
+refuse a dispatch, freeze a file, or stop a commit. It makes the unfinished obligation queryable so
+another root can decide whether to wait; claims arbitration and pre-commit discipline remain
+separate mechanisms for actually preventing the other two classes of collision.
+
 After review, root closes the obligation by checking that receipt and verdict, reading the target
 repository's current head and status, integrating without absorbing another session's uncommitted
 files, testing the exact integrated tree under the repository's rules, and recording the target
 commit that contains the delivery. Only then may it report the user's code change complete.
+
+**“Testing the exact integrated tree” is a different act for root than for a child, because the two
+are asking different questions.** A child asks whether what it wrote works; the working tree is the
+right subject, other sessions' half-finished edits included, because a child does not commit and
+their mess cannot reach HEAD through it. It snapshots that tree with `git archive "$(git stash
+create)"`, which writes a commit object for the working tree and leaves the shared index exactly as
+it found it. A child must not use `git write-tree` for this: that reads the *index*, so it has to
+stage first, and one shared index means a child staging its own files sweeps up whatever another
+session left in there — after which a root commits it. Root's question is the opposite one, *will
+HEAD still build after this commit?*, which the working tree cannot answer at all. Root is staging
+anyway, so the index is exactly the right subject and `git archive "$(git write-tree)"` is the
+snapshot to test.
+
+That question has a corollary the protocol now states outright: **HEAD must compile standing alone,
+and committing is the only act that can break it.** Twice on 2026-08-26, from two different
+sessions, a partial commit took a slice that did not stand up — three lines whose type stayed
+uncommitted in another file, and a protocol requirement whose fourteen values stayed in the
+worktree. Both trees were green when those commits were made, because a green tree is the union of
+everybody's work while HEAD is only the committing session's slice. So a suite passing in the tree
+is not evidence about HEAD while anything is uncommitted, and before taking a partial commit root
+asks what else defines what it is taking: a declaration without its values, a call without its
+function, a case without its enum. Recovering another session's half-landed commit is legitimate
+root work — restore the missing half, or lift the orphaned lines back into the worktree where their
+owner can still see them, and say in the message that it is not your line's work and why HEAD could
+not wait.
 
 When integration used hunk staging, the commit must be created from that reviewed index with plain
 `git commit -m <message>` and no pathspec. `git commit -- <path>...` does not mean “commit the staged

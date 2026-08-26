@@ -546,6 +546,13 @@ delivered -> reviewed -> pending landing -> landed
 除非另一個具名 root 接受了一份 Clawdline handoff，派工的 root 就是 landing owner。「未來某個人」
 不是 owner。責任還在 `delivered`、`reviewed` 或 `pending landing` 時，不得對使用者回報完成。
 
+有 claims 的 child 成果回來時，root 要用該 task secret 在原 task 上登記尚未關閉的義務：呼叫
+`POST /v1/orchestrator/tasks/:id/landing`，body 是
+`{"state":"pending","target":"<目標 ref>"}`。具名 root 接受 handoff 後，也可比照 cancel 與
+claims release 使用機器層級的 orchestrator token。Child 不呼叫這條路由是協定慣例，不是機制隔離：
+child 必然持有自己的 task secret；
+`GET /v1/orchestrator/landings` 是大家都能查的告示牌，不會延長 claims 或擋住另一個 dispatch。
+
 ### 關閉一份 code delivery
 
 終局 reviewer 給出 verdict 後，root 要完成下面每一步：
@@ -553,13 +560,23 @@ delivered -> reviewed -> pending landing -> landed
 1. 讀 broker 的 worktree receipt 與 review evidence，確認 delivery branch、base、head、commit 數與
    clean/dirty 事實，正是 reviewer 審過的那一份。
 2. 讀 target repository 當下的 branch、head 與 status；用 merge、cherry-pick 或 rebase 整合，
-   但不得 stage、改寫或吸收另一個 session 原本就在工作樹裡的修改。
+   但不得 stage、改寫或吸收另一個 session 原本就在工作樹裡的修改。共用樹裡，child 的 `symbols`
+   清單就是你分辨「哪幾段是它的、哪幾段本來就在」的依據。
 3. 重疊的 uncommitted work 讓整合不安全時，停止 merge 嘗試，但**責任維持 pending**。用 Clawdline
    的 session/task view 找到 owner、協調，等工作樹安全後再試。共享樹安全是等待的理由，不是把工作
    宣告完成的理由。
-4. 依 repository 規則、用私有暫存路徑測整合後的精確 tree；接著確認 target ref 包含預期 delivery，
-   並記下 target commit。
-5. 到這裡才能向使用者說 `landed` 或完成，並講出落到哪個 target 與 commit。
+4. 依 repository 規則、用私有暫存路徑測整合後的精確 tree。你本來就在 stage，所以 index 才是該測的
+   對象：測 `git write-tree` 出來的封存快照，不要測活的工作樹——那棵樹是所有人工作的聯集。
+   接著確認 target ref 包含預期 delivery，並記下 target commit。
+5. 用 task secret（或接受 handoff 後的機器 token），把 task 的 landing record 標成 `landed` 並
+   附上已驗證的 commit。到這裡才能向使用者說 `landed` 或完成，並講出落到哪個 target 與 commit。
+
+**HEAD 必須自己站得住，而唯一能把它弄壞的動作就是 commit。** 2026-08-26 這個 repository 裡發生了
+兩次，來自兩個不同的 session：一次是整檔 `git add` 帶進三行，而定義它們型別的那個檔案還沒 commit；
+一次是一條協定要求落地了，它的十四個值卻還留在工作樹裡。兩次 commit 的當下，樹都是綠的——陷阱就在
+這裡：**只要還有東西沒 commit，樹是綠的就什麼都沒說**，因為那棵樹是所有人工作的聯集，而 HEAD 只有
+你那一份。所以部分 commit 沒有在「它自己那一份能單獨編譯過」之前算完成；下手之前先問：我拿走的
+東西，還有誰在定義它？宣告少了值、呼叫少了函式、case 少了 enum——這些在樹裡都會過，在 HEAD 裡都會炸。
 
 ### 透過 Clawdline 等檔案
 

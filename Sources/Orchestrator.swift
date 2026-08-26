@@ -1072,6 +1072,20 @@ enum Orchestrator {
         let since: Date
         let commit: String?
         let note: String?
+        /// When the target commit was verified. `since` remains when the obligation first opened.
+        let landedAt: Date?
+
+        init(state: LandingState, target: String?, delivery: String?, ownerRootKey: String,
+             since: Date, commit: String?, note: String?, landedAt: Date? = nil) {
+            self.state = state
+            self.target = target
+            self.delivery = delivery
+            self.ownerRootKey = ownerRootKey
+            self.since = since
+            self.commit = commit
+            self.note = note
+            self.landedAt = landedAt
+        }
     }
 
     /// The checkout is disposable; the branch is the delivery. Repository and cwd are internal
@@ -2772,7 +2786,7 @@ enum Orchestrator {
     /// (two different trees both calling themselves "clawdline schedules" is a real case), while
     /// `root_key` is the same tree's identity every time, hashed rather than handed over raw.
     static func workspaceBusyExtra(_ overlap: ClaimsOverlap, now: Date = Date()) -> [String: Any] {
-        var extra: [String: Any] = [
+        let extra: [String: Any] = [
             "blocking_task": overlap.task.id,
             "title": overlap.task.title,
             "root_label": overlap.rootLabel as Any? ?? NSNull(),
@@ -2782,16 +2796,6 @@ enum Orchestrator {
             "age_seconds": ageSeconds(since: overlap.task.created, now: now),
             "root_key": overlap.rootKey.map(rootKeyDigest) as Any? ?? NSNull(),
         ]
-        // Landing never makes a task a blocker. This context covers a blocker already supplied
-        // by claims arbitration (including any separately held terminal task): it tells the
-        // caller that the task is over and its delivered tree is what remains outstanding.
-        if overlap.task.state.isTerminal, let landing = overlap.task.landing,
-           landing.state == .pending {
-            extra["landing"] = [
-                "target": landing.target as Any? ?? NSNull(),
-                "age_seconds": ageSeconds(since: landing.since, now: now),
-            ]
-        }
         return extra
     }
 
@@ -3865,18 +3869,21 @@ enum Orchestrator {
     // MARK: - Root-owned landing record
 
     /// Record the obligation that begins after a child delivers and ends only when root lands or
-    /// abandons it. The task secret remains verifiable after finalize, so this route needs no new
-    /// credential and cannot accidentally grant one root authority over another root's record.
-    static func updateLanding(taskID: String, secret: String, raw: [String: Any],
+    /// abandons it. The task secret remains verifiable after finalize; the machine credential is
+    /// the recovery path when a named root accepts ownership through a handoff without that secret.
+    static func updateLanding(taskID: String, secret: String, orchestratorToken: String? = nil,
+                              raw: [String: Any],
                               now: Date = Date()) -> Reply {
         guard let snapshot = held(taskID) else {
             return .refused(404, "not_found", "No task named that")
         }
-        guard !secret.isEmpty,
-              RemoteAuth.constantTimeEquals(snapshot.secretHash, hash(ofSecret: secret)) else {
+        let taskSecretMatches = !secret.isEmpty
+            && RemoteAuth.constantTimeEquals(snapshot.secretHash, hash(ofSecret: secret))
+        guard taskSecretMatches || verifyDispatch(token: orchestratorToken) else {
             RemoteAuth.audit("orchestrator.landing", ["task": taskID, "ok": "0",
-                                                       "why": "bad_secret"])
-            return .refused(403, "forbidden", "That is not this task's secret.")
+                                                       "why": "bad_credential"])
+            return .refused(403, "forbidden",
+                            "Use this task's secret or the orchestrator token.")
         }
 
         let allowed: Set<String> = ["state", "target", "delivery", "commit", "note"]
@@ -3913,26 +3920,27 @@ enum Orchestrator {
             lock.unlock()
             return .refused(404, "not_found", "No task named that")
         }
-        if let existing = current.landing, existing.state == requestedState {
+        let existing = current.landing
+        if existing?.state == .landed, requestedState == .landed {
             lock.unlock()
             return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
         }
-        if current.landing?.state == .landed {
+        if let existing, (existing.state == .landed || existing.state == .abandoned),
+           existing.state != requestedState {
             lock.unlock()
             return .refused(409, "invalid_transition",
-                            "A landed obligation cannot move back to another state; open a new task.")
+                            "A settled obligation cannot move to another state; open a new task.")
         }
-        if requestedState == .landed, !current.state.isTerminal {
+        if requestedState != .pending, !current.state.isTerminal {
             lock.unlock()
             return .refused(409, "not_terminal",
-                            "Only a terminal task can be marked landed.")
+                            "Only a terminal task can be marked landed or abandoned.")
         }
         if requestedState == .landed, fields["commit"] == nil {
             lock.unlock()
             return .refused(400, "bad_request", "commit is required when state is landed.")
         }
 
-        let existing = current.landing
         current.landing = Landing(
             state: requestedState,
             target: fields["target"] ?? existing?.target,
@@ -3940,7 +3948,8 @@ enum Orchestrator {
             ownerRootKey: existing?.ownerRootKey ?? rootKeyDigest(rootKeyLocked(of: current)),
             since: existing?.since ?? now,
             commit: requestedState == .landed ? fields["commit"] : nil,
-            note: fields["note"] ?? existing?.note)
+            note: fields["note"] ?? existing?.note,
+            landedAt: requestedState == .landed ? (existing?.landedAt ?? now) : nil)
         tasks[taskID] = current
         lock.unlock()
 
@@ -4019,7 +4028,8 @@ enum Orchestrator {
     /// A terminal task with no worktree is `settled` here, and that is a boundary rather than an
     /// oversight: its edits are in the shared tree where `git status` already shows them. The way
     /// such a delivery stays visible is the root declaring `landing: pending` — see
-    /// ``updateLanding(taskID:secret:raw:now:)``, which is the declared half of this and is not
+    /// ``updateLanding(taskID:secret:orchestratorToken:raw:now:)``, which is the declared half of
+    /// this and is not
     /// duplicated by the derived half.
     static func workVisibility(state: State, landing: Landing?, isolated: Bool,
                                branchExists: Bool?, branchMerged: Bool?) -> WorkVisibility {
@@ -5934,8 +5944,8 @@ enum Orchestrator {
         - Do not read any directory under /tmp/.clawdline/ except your own, any you dispatched,
           and any your instructions name explicitly. That last one is how a reviewing node works:
           it is sent to read what other nodes produced, so its instructions list those paths.
-        - Landing records belong to the root after delivery; a child does not call its task's
-          `/landing` route itself.
+        - Landing records belong to the root after delivery; by protocol convention, a child does
+          not call its task's `/landing` route itself even though it holds that task's secret.
         - Do not do work the task did not ask for.
         - You have \(task.timeoutMinutes) minutes before the task is marked timed out.\(isolationSection)
 
@@ -7010,12 +7020,18 @@ enum Orchestrator {
         if let delivery = landing.delivery { out["delivery"] = delivery }
         if let commit = landing.commit { out["commit"] = commit }
         if let note = landing.note { out["note"] = note }
+        if let landedAt = landing.landedAt {
+            out["landed_at"] = Int(landedAt.timeIntervalSince1970)
+        }
         return out
     }
 
     private static func stored(_ landing: Landing) -> [String: Any] {
         var out = landingRecord(landing)
         out["since"] = landing.since.timeIntervalSince1970
+        if let landedAt = landing.landedAt {
+            out["landed_at"] = landedAt.timeIntervalSince1970
+        }
         return out
     }
 
@@ -7198,14 +7214,17 @@ enum Orchestrator {
         let delivery = text("delivery", limit: 500)
         let commit = text("commit", limit: 200)
         let note = text("note", limit: 500)
+        let landedAt = (obj["landed_at"] as? Double).map(Date.init(timeIntervalSince1970:))
         guard (obj["target"] == nil || target != nil),
               (obj["delivery"] == nil || delivery != nil),
               (obj["commit"] == nil || commit != nil),
               (obj["note"] == nil || note != nil),
+              (obj["landed_at"] == nil || landedAt != nil),
+              (landedAt == nil || state == .landed),
               (state == .landed) == (commit != nil) else { return nil }
         return Landing(state: state, target: target, delivery: delivery,
                        ownerRootKey: owner, since: Date(timeIntervalSince1970: since),
-                       commit: commit, note: note)
+                       commit: commit, note: note, landedAt: landedAt)
     }
 
     static func handoff(from obj: [String: Any]) -> HandoffEnvelope? {
@@ -7279,6 +7298,9 @@ enum Orchestrator {
         }
         if let rawLanding = obj["landing"] as? [String: Any] {
             task.landing = landing(from: rawLanding)
+            if task.landing == nil {
+                Log.write("orchestrator: ignored invalid landing record for task \(task.id)")
+            }
         }
         task.progress = progress(from: obj["progress"])
         task.isolation = (obj["isolation"] as? String).flatMap(Isolation.init(rawValue:)) ?? .none
@@ -7400,8 +7422,8 @@ enum Orchestrator {
     }
 
     /// Task directories are working files, not the archive — the record survives here, the
-    /// directory goes once it is a day old and its task is over. The registry itself is capped so
-    /// a year of use cannot grow the file without bound.
+    /// directory goes once it is a day old and its task is over. The registry keeps the newest 200
+    /// ordinary records, plus every pending landing obligation until root settles it.
     static func cleanup() {
         load()
         let cutoff = Date().addingTimeInterval(-24 * 3600)
@@ -7429,12 +7451,14 @@ enum Orchestrator {
             handoffDeliveries.removeValue(forKey: envelope.id)
         }
         let all = tasks.values.sorted { $0.created > $1.created }
-        if all.count > 200 {
-            for task in all.dropFirst(200) { tasks.removeValue(forKey: task.id) }
+        let removable = all.dropFirst(200).filter { $0.landing?.state != .pending }
+        let removedIDs = Set(removable.map(\.id))
+        if !removable.isEmpty {
+            for task in removable { tasks.removeValue(forKey: task.id) }
         }
         lock.unlock()
-        if all.count > 200 || !expiredHandoffs.isEmpty { save() }
-        let retained = Set(all.prefix(200).map(\.id))
+        if !removable.isEmpty || !expiredHandoffs.isEmpty { save() }
+        let retained = Set(all.filter { !removedIDs.contains($0.id) }.map(\.id))
         cleanupOrphanWorktrees(knownTaskIDs: retained, olderThan: cutoff)
     }
 

@@ -9805,6 +9805,9 @@ group("worktree task records, briefings and shared-tree coordination stay distin
           claiming.claims.isEmpty && claiming.claimKeys.isEmpty
               && claimWarnings.count == 1
               && claimWarnings.first?["code"] as? String == "claims_ignored_for_worktree")
+    claiming.state = .success
+    check("a worktree task cannot emit the shared-tree landing reminder after claims are cleared",
+          Orchestrator.landingNotice(for: claiming).isEmpty)
 
     let other = task("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", isolated: false)
     expect("an isolated task never receives a shared-project L1 overlap warning",
@@ -10508,12 +10511,21 @@ group("landing records enforce the root-owned state machine and keep idempotent 
 
     let repeated = Orchestrator.updateLanding(
         taskID: id, secret: secret,
-        raw: ["state": "pending", "target": "different", "note": "different"],
+        raw: ["state": "pending", "target": "release/main", "delivery": "review/final"],
         now: Date(timeIntervalSince1970: 99))
-    check("repeating one state is a no-op with the original receipt",
+    check("repeating pending preserves since while filling mutable receipt fields",
           landing(repeated)?["since"] as? Int == 10
-              && landing(repeated)?["target"] as? String == "main"
+              && landing(repeated)?["target"] as? String == "release/main"
+              && landing(repeated)?["delivery"] as? String == "review/final"
               && landing(repeated)?["note"] as? String == "awaiting a safe shared tree")
+
+    let supplemented = Orchestrator.updateLanding(
+        taskID: id, secret: secret,
+        raw: ["state": "pending", "note": "review says safe to land"],
+        now: Date(timeIntervalSince1970: 100))
+    check("repeating pending may add a later note without restarting its age",
+          landing(supplemented)?["since"] as? Int == 10
+              && landing(supplemented)?["note"] as? String == "review says safe to land")
 
     if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
         taskID: id, secret: secret,
@@ -10533,7 +10545,8 @@ group("landing records enforce the root-owned state machine and keep idempotent 
     check("pending advances to landed only after the task is terminal and records its commit",
           landed?["state"] as? String == "landed"
               && landed?["commit"] as? String == "abc123"
-              && landed?["since"] as? Int == 10)
+              && landed?["since"] as? Int == 10
+              && landed?["landed_at"] as? Int == 30)
 
     let landedAgain = Orchestrator.updateLanding(
         taskID: id, secret: secret,
@@ -10547,9 +10560,48 @@ group("landing records enforce the root-owned state machine and keep idempotent 
     } else {
         check("landed cannot move back to pending", false, "it answered ok")
     }
+
+    let abandonedID = "20202020-3030-4040-5050-606060606060"
+    let abandonedSecret = String(repeating: "f6", count: 32)
+    var abandonedTask = Orchestrator.Task(
+        id: abandonedID, state: .briefed, kind: "custom", title: "abandoned delivery",
+        assistant: .codex, projectDir: "/repo", timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 1), rootSessionId: root,
+        claims: ["Sources/Abandoned.swift"], claimsDeclared: true,
+        secretHash: Orchestrator.hash(ofSecret: abandonedSecret))
+    abandonedTask.claimKeys = Orchestrator.freezeClaims(
+        abandonedTask.claims, projectDir: abandonedTask.projectDir)
+    Orchestrator.holdScheduleTaskForTesting(abandonedTask)
+    _ = Orchestrator.updateLanding(
+        taskID: abandonedID, secret: abandonedSecret, raw: ["state": "pending"],
+        now: Date(timeIntervalSince1970: 50))
+    if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
+        taskID: abandonedID, secret: abandonedSecret, raw: ["state": "abandoned"]) {
+        check("a live child cannot be declared abandoned", status == 409 && code == "not_terminal")
+    } else {
+        check("a live child cannot be declared abandoned", false, "it answered ok")
+    }
+    Orchestrator.finalize(abandonedID, as: .success, summary: "delivered but declined")
+    let abandonedReply = Orchestrator.updateLanding(
+        taskID: abandonedID, secret: abandonedSecret,
+        raw: ["state": "abandoned", "note": "superseded elsewhere"],
+        now: Date(timeIntervalSince1970: 60))
+    check("pending advances to abandoned after the task is terminal",
+          landing(abandonedReply)?["state"] as? String == "abandoned")
+    for state in ["pending", "landed"] {
+        var raw: [String: Any] = ["state": state]
+        if state == "landed" { raw["commit"] = "def456" }
+        if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
+            taskID: abandonedID, secret: abandonedSecret, raw: raw) {
+            check("abandoned cannot move to \(state)",
+                  status == 409 && code == "invalid_transition")
+        } else {
+            check("abandoned cannot move to \(state)", false, "it answered ok")
+        }
+    }
 }
 
-group("landing routes use only the matching task secret and list only pending obligations") {
+group("landing routes accept a matching task or machine credential and list pending obligations") {
     let store = Orchestrator.storeURL
     let before = try? Data(contentsOf: store)
     defer {
@@ -10590,12 +10642,48 @@ group("landing routes use only the matching task secret and list only pending ob
         "POST", path, headers: ["X-Clawdline-Task-Secret": secondSecret],
         body: "{\"state\":\"pending\"}"))
     expect("another task's real secret is still forbidden", another.status, 403)
+    let wrongMachineToken = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: ["X-Clawdline-Orchestrator": "not-the-machine-token"],
+        body: "{\"state\":\"pending\"}"))
+    expect("a wrong orchestrator token is forbidden", wrongMachineToken.status, 403)
+
+    let machine = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()],
+        body: "{\"state\":\"pending\",\"note\":\"accepted after handoff\"}"))
+    expect("the orchestrator token may update a landing after handoff", machine.status, 200)
 
     let unknown = RemoteServer.shared.route(remoteRequest(
         "POST", path, headers: ["X-Clawdline-Task-Secret": firstSecret],
         body: "{\"state\":\"pending\",\"surprise\":true}"))
     expect("unknown landing fields are a bad request", unknown.status, 400)
     expect("with the ordinary typed code", remoteErrorCode(unknown), "bad_request")
+
+    if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
+        taskID: firstID, secret: firstSecret, raw: ["state": "mystery"]) {
+        check("an unknown landing state is a bad request",
+              status == 400 && code == "bad_request")
+    } else { check("an unknown landing state is a bad request", false) }
+    if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
+        taskID: firstID, secret: firstSecret,
+        raw: ["state": "pending", "commit": "abc123"]) {
+        check("commit is rejected for a non-landed state",
+              status == 400 && code == "bad_request")
+    } else { check("commit is rejected for a non-landed state", false) }
+    for (field, limit) in [("target", 200), ("delivery", 500),
+                           ("commit", 200), ("note", 500)] {
+        let state = field == "commit" ? "landed" : "pending"
+        if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
+            taskID: firstID, secret: firstSecret,
+            raw: ["state": state, field: String(repeating: "x", count: limit + 1)]) {
+            check("\(field) enforces its documented length limit",
+                  status == 400 && code == "bad_request")
+        } else { check("\(field) enforces its documented length limit", false) }
+    }
+    if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
+        taskID: "00000000-0000-0000-0000-000000000000", secret: firstSecret,
+        raw: ["state": "pending"]) {
+        check("an unknown landing task is not found", status == 404 && code == "not_found")
+    } else { check("an unknown landing task is not found", false) }
 
     let accepted = RemoteServer.shared.route(remoteRequest(
         "POST", path, headers: ["X-Clawdline-Task-Secret": firstSecret],
@@ -10643,6 +10731,9 @@ group("landing routes use only the matching task secret and list only pending ob
     check("landing survives a registry save/load round trip",
           reloaded?["state"] as? String == "pending"
               && reloaded?["owner_root_key"] as? String == Orchestrator.rootKeyDigest("root-\(firstID)"))
+    let reloadedLanded = Orchestrator.record(id: secondID)?["landing"] as? [String: Any]
+    check("landed_at survives a registry save/load round trip",
+          reloadedLanded?["landed_at"] as? Int == 20)
 
     let anonymous = RemoteServer.shared.route(remoteRequest("GET", "/v1/orchestrator/landings"))
     expect("an anonymous landing-registry read stops at the door", anonymous.status, 401)
@@ -10655,6 +10746,42 @@ group("landing routes use only the matching task secret and list only pending ob
     let listedJSON = (try? JSONSerialization.jsonObject(with: listed.body)) as? [String: Any]
     expect("the GET route returns the same one pending row",
            (listedJSON?["landings"] as? [[String: Any]])?.count, 1)
+}
+
+group("cleanup retains pending landing obligations beyond the ordinary registry cap") {
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    let pendingID = "30303030-4040-5050-6060-707070707070"
+    let ordinaryOldID = "40404040-5050-6060-7070-808080808080"
+    let now = Date()
+    for index in 0..<202 {
+        let id = index == 0 ? pendingID
+            : (index == 1 ? ordinaryOldID
+               : String(format: "50505050-6060-7070-8080-%012d", index))
+        var task = Orchestrator.Task(
+            id: id, state: .success, kind: "custom", title: "retention \(index)",
+            assistant: .codex, projectDir: "/repo", timeoutMinutes: 30,
+            created: now.addingTimeInterval(TimeInterval(index)),
+            finishedAt: now, rootSessionId: "cleanup-root",
+            secretHash: String(repeating: "0", count: 64))
+        if index == 0 {
+            task.landing = Orchestrator.Landing(
+                state: .pending, target: "main", delivery: nil,
+                ownerRootKey: "12345678", since: now, commit: nil, note: nil)
+        }
+        Orchestrator.holdScheduleTaskForTesting(task)
+    }
+    Orchestrator.cleanup()
+    check("a pending landing survives even when older than the newest 200 tasks",
+          Orchestrator.record(id: pendingID) != nil)
+    check("the ordinary cap still removes an old settled record",
+          Orchestrator.record(id: ordinaryOldID) == nil)
 }
 
 group("work visibility decides from git, not from anybody's memory") {
@@ -10935,34 +11062,6 @@ group("a session can say what it is doing without stopping to write a report") {
         "POST", path, body: "{\"note\":\"hello\"}"))
     expect("the route reaches the handler without a paired device and is forbidden there",
            unauthenticated.status, 403)
-}
-
-group("workspace_busy explains when a terminal blocker is pending landing") {
-    var holder = Orchestrator.Task(
-        id: "abababab-cdcd-efef-0101-232323232323", state: .success, kind: "custom",
-        title: "terminal blocker", assistant: .claude, projectDir: "/repo",
-        timeoutMinutes: 30, created: Date(timeIntervalSince1970: 1),
-        secretHash: String(repeating: "0", count: 64))
-    holder.landing = Orchestrator.Landing(
-        state: .pending, target: "main", delivery: nil, ownerRootKey: "12345678",
-        since: Date(timeIntervalSince1970: 11), commit: nil, note: nil)
-    let overlap = Orchestrator.ClaimsOverlap(
-        task: holder, paths: ["/repo/Sources"], sameRoot: false, rootsKnown: true,
-        rootLabel: "blocking root", rootKey: "blocking-root")
-    let busy = Orchestrator.workspaceBusyExtra(overlap, now: Date(timeIntervalSince1970: 61))
-    let landing = busy["landing"] as? [String: Any]
-    check("the 409 distinguishes pending landing from still running",
-          landing?["target"] as? String == "main" && landing?["age_seconds"] as? Int == 50)
-
-    var landed = holder
-    landed.landing = Orchestrator.Landing(
-        state: .landed, target: "main", delivery: nil, ownerRootKey: "12345678",
-        since: Date(timeIntervalSince1970: 11), commit: "abc123", note: nil)
-    let doneOverlap = Orchestrator.ClaimsOverlap(
-        task: landed, paths: ["/repo/Sources"], sameRoot: false, rootsKnown: true,
-        rootLabel: "blocking root", rootKey: "blocking-root")
-    check("a landed blocker does not carry pending-landing context",
-          Orchestrator.workspaceBusyExtra(doneOverlap)["landing"] == nil)
 }
 
 group("terminal notices remind a root about unrecorded claimed work exactly where needed") {

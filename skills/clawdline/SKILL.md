@@ -613,6 +613,13 @@ The dispatching root is the landing owner unless a named root accepts a Clawdlin
 "someone later" is not an owner. Do not give the user a completion answer while the obligation is
 `delivered`, `reviewed`, or `pending landing`.
 
+When claimed child work comes back, root records the open obligation on that task with its task
+secret: `POST /v1/orchestrator/tasks/:id/landing` and `{"state":"pending","target":"<ref>"}`.
+A named root that accepted a handoff may use the machine-level orchestrator token instead, like
+cancel and claims release. By convention children do not call this route, although they necessarily
+hold their own task secret. `GET /v1/orchestrator/landings` is the shared signpost; it does not
+retain claims or block another dispatch.
+
 ### Close a code delivery
 
 After the terminal review verdict, root does all of this:
@@ -620,14 +627,29 @@ After the terminal review verdict, root does all of this:
 1. Read the broker's worktree receipt and the review evidence. Confirm the delivery branch, base,
    head, commit count and clean/dirty fact are the ones reviewed.
 2. Read the target repository's current branch, head and status. Integrate by merge, cherry-pick or
-   rebase without staging, rewriting or absorbing another session's pre-existing changes.
+   rebase without staging, rewriting or absorbing another session's pre-existing changes. In a
+   shared tree, the child's `symbols` list is what tells its hunks from the ones already there.
 3. If overlapping uncommitted work makes that unsafe, stop the merge attempt but **keep the
    obligation pending**. Use Clawdline's session/task view to identify and coordinate with the
    owner, then retry when the tree is safe. Shared-tree safety is a reason to wait, not a reason to
    declare the work complete.
 4. Test the exact integrated tree according to the repository's rules, using private temporary
-   paths. Then verify the target ref contains the intended delivery and record the target commit.
-5. Only now report `landed` or `complete` to the user. Say which target and commit received it.
+   paths. You are staging anyway, so the index is the right subject: test an archive of
+   `git write-tree`, never the live working tree, which is the union of everybody's work. Then
+   verify the target ref contains the intended delivery and record the target commit.
+5. Mark the task's landing record `landed` with the verified commit, using the task secret or the
+   machine token after an accepted handoff. Only now report `landed` or `complete` to the user. Say
+   which target and commit received it.
+
+**HEAD has to compile standing alone, and committing is the only act that can break that.** It
+happened twice on 2026-08-26 in this repository, from two different sessions: a whole-file `git add`
+carried three lines whose type was defined in a file that stayed uncommitted, and a protocol
+requirement landed while its fourteen values stayed in the worktree. Both trees were green at the
+moment of committing, and that is the trap — **a green tree says nothing about HEAD while anything
+is uncommitted**, because the tree is the union of everybody's work and HEAD is only your slice. So
+a partial commit is not finished until its own slice has compiled on its own, and before taking one
+ask what else defines what you are taking: a declaration without its values, a call without its
+function, a case without its enum. Each of them passes in the tree and fails in HEAD.
 
 ### Wait for files through Clawdline
 

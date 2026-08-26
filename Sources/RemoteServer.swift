@@ -334,9 +334,9 @@ final class RemoteServer {
         // process running as the user can read — because through a tunnel every request arrives
         // from 127.0.0.1, and a paired phone must never be able to start sessions. Reads without
         // that token fall through to ordinary device auth, so the page can show the tasks; the
-        // complete, notify and landing routes are gated inside their handlers by the per-task
-        // secret instead. Landing is a root action, but reuses that durable credential rather
-        // than widening authority to every paired device.
+        // complete, notify and landing routes are gated inside their handlers. Complete and
+        // notify accept only the per-task secret; landing also accepts the machine token so a
+        // named root that received a handoff can close the obligation without the child's secret.
         let orchestrated = request.path.hasPrefix("/v1/orchestrator/")
         let orchestratorAuthed = orchestrated
             && Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"])
@@ -964,7 +964,10 @@ final class RemoteServer {
                 ?? [:]
             let secret = request.headers["x-clawdline-task-secret"] ?? ""
             return answer(Orchestrator.updateLanding(taskID: id.removingPercentEncoding ?? id,
-                                                      secret: secret, raw: body))
+                                                      secret: secret,
+                                                      orchestratorToken: request.headers[
+                                                        "x-clawdline-orchestrator"],
+                                                      raw: body))
 
         // One sentence about what this task is actually doing, from the task itself. The
         // per-task secret is the credential, like `complete` and `notify`: a child has it, it

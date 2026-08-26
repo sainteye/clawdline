@@ -29,9 +29,13 @@ Do not infer ownership from a filename, a recent timestamp, or a new commit; ins
 - Plan code-producing graphs through the root-owned landing step: name the delivery branch, target
   branch, landing owner, independent review, and post-integration verification. The last child may
   be a reviewer; the last step of the work is still the root's landing closure.
+- When claimed child work comes back, use its task secret with
+  `POST /v1/orchestrator/tasks/:id/landing` to mark the obligation `pending`; a named root that later
+  accepts a handoff may use the machine-level orchestrator token instead. This makes the obligation
+  visible in `GET /v1/orchestrator/landings` but does not block anyone.
 - Before reporting completion, the root must integrate without absorbing another session's dirty
   files, test the exact integrated tree with a private `TMPDIR`, and record the resulting target
-  commit. `SAFE TO LAND` is a pending
+  commit. Then mark that same landing record `landed` with the commit. `SAFE TO LAND` is a pending
   state, not a completion phrase.
 - **HEAD must compile standing alone, and a commit is the only thing that can break that.** It
   happened twice on 2026-08-26, from two different sessions: a whole-file `git add` carried three
