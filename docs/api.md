@@ -748,10 +748,16 @@ whatever the terminal said as the message.
 
 ### `POST /v1/sessions/:id/key`
 
-Answers a menu with a single keystroke. `{"key":"1"}`…`{"key":"9"}`, `{"key":"tab"}`, or
-`{"key":"shift+tab"}`. The last sends back-tab (`ESC [ Z`) as one terminal sequence and is used
-to cycle Claude Code's permission mode. Anything else is `400 bad_request`, and the allowlist is
-checked before anything goes looking for a terminal.
+Answers a menu with a single keystroke. `{"key":"1"}`…`{"key":"9"}`, `{"key":"tab"}`,
+`{"key":"shift+tab"}`, or `{"key":"submit"}`. Back-tab (`ESC [ Z`) goes as one terminal sequence
+and is used to cycle Claude Code's permission mode. Anything else is `400 bad_request`, and the
+allowlist is checked before anything goes looking for a terminal.
+
+`submit` is the one that is a name rather than a key, and it is valid only on a menu whose `submit`
+field is present. The button a multi-select draws under its rows has no keystroke of its own, so
+the Mac walks the highlight onto it and presses Return there — reading the screen back at each
+step, and stopping with the dialog untouched if the highlight will not land. It answers `502` with
+code `internal` when the menu on screen turns out not to have one.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/key \
@@ -1572,6 +1578,13 @@ here rather than printed there, and `POST /key` still takes it: what changes is 
 where the app walks the highlight onto that row instead of typing the digit, because the same flag
 that hides the numbers also stops the dialog accepting them. Nothing about the request differs, so
 a client needs no branch for it.
+
+`submit` is present only on a **multi-select** — `{"label":"Submit","selected":false}` — and it
+changes what pressing a row means. A multi-select's digits *toggle* their rows; nothing is sent
+until the button below them is pressed. It has no `n`, because it has no number on screen: press it
+with `POST /key` and the body `{"key":"submit"}`, and the Mac walks the highlight onto it and
+confirms there. `selected` says the caret is already on it, which is the one case where a bare
+Return on the Mac would send. Draw it apart from the rows — it is not another answer.
 
 The whole field is **absent when the menu could not be read**, which is a real state and
 not an error: the dialog is undocumented terminal drawing, and a shape this end does not recognise

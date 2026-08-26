@@ -180,6 +180,7 @@ export function renderWaiting() {
     // said, and they are still the honest answer for that case.
     var menu = open && open.state === "waiting" && open.menu ? open.menu : null;
     var rows = menu && menu.options && menu.options.length ? menu.options : null;
+    var submit = menu && menu.submit && menu.submit.label ? menu.submit : null;
     var question = menu && typeof menu.question === "string" ? menu.question : "";
     if (!question.trim()) question = "";
     // Given up after ten seconds: if the session is still waiting by then this was not the
@@ -198,6 +199,7 @@ export function renderWaiting() {
     var sent = !rows && !!answeredMenu;
     if (sent) {
         rows = answeredMenu.rows;
+        submit = answeredMenu.submit || null;
         question = answeredMenu.question || "";
     }
     var want = !open || open.state !== "waiting" || hushed ? "" :
@@ -207,7 +209,7 @@ export function renderWaiting() {
         (question ? '<div class="question">' + esc(question) + "</div>" : "") +
         (rows
             ? '<div class="say">' + words(sent ? T.webMenuSent : T.webMenuSay) + "</div>"
-              + menuHTML(rows, sent)
+              + menuHTML(rows, sent, submit)
             : '<div class="say">' + words(T.webWaitingSay) + "</div>" +
               '<div class="say">' + words(T.webWaitingSend) + "</div>") +
         '<button type="button" class="go" data-focus="1">' + esc(T.webShowOnMac) + "</button>";
@@ -266,8 +268,8 @@ export function renderWaiting() {
  * drawn and disabled: the question is still worth reading when you cannot answer it, and a button
  * that looks live and does nothing is worse than a line of text.
  */
-function menuHTML(rows, spent) {
-    return '<div class="menu">' + rows.map(function (o) {
+function menuHTML(rows, spent, submit) {
+    var out = rows.map(function (o) {
         var can = !spent && o.can !== false && S.write;
         return '<button type="button" class="opt" data-key="' + esc(String(o.n)) + '"' +
             ' data-can="' + (o.can === false ? "0" : "1") + '"' +
@@ -277,7 +279,20 @@ function menuHTML(rows, spent) {
             (o.selected ? '<span class="here">' + esc(T.webMenuHighlighted) + "</span>" : "") +
             (o.detail ? '<span class="note">' + esc(o.detail) + "</span>" : "") +
             "</span></button>";
-    }).join("") + "</div>";
+    }).join("");
+    // The button a multi-select draws under its rows. It is a different act from picking a row —
+    // those toggle, and nothing is sent until this is pressed — so it is drawn apart from them
+    // and carries the word `submit` rather than a number, because it has no number over there.
+    if (submit && submit.label) {
+        out += '<button type="button" class="opt go-submit" data-key="submit" data-can="1"' +
+            (submit.selected ? ' data-here="1"' : "") +
+            (!spent && S.write ? "" : " disabled") + ">" +
+            '<span class="n">\u21b5</span>' +
+            '<span class="what">' + esc(submit.label) +
+            (submit.selected ? '<span class="here">' + esc(T.webMenuHighlighted) + "</span>" : "") +
+            "</span></button>";
+    }
+    return '<div class="menu">' + out + "</div>";
 }
 
 els.waiting.addEventListener("click", function (ev) {
@@ -304,6 +319,7 @@ els.waiting.addEventListener("click", function (ev) {
         var asked = byId(S.openId);
         if (asked && asked.menu && asked.menu.options && asked.menu.options.length) {
             answeredMenu = { id: S.openId, rows: asked.menu.options,
+                             submit: asked.menu.submit || null,
                              question: asked.menu.question || "", at: Date.now() };
         }
         api.key(S.openId, opt.dataset.key)

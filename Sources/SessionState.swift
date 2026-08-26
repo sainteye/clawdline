@@ -130,10 +130,15 @@ enum SessionState: Equatable {
         // below the caret is the dialog; anything above its frame or its header belongs to the
         // conversation. With no frame found the whole tail is fair game, which is the behaviour
         // this had before.
+        //
+        // **The caret is not always on a row.** A multi-select's button takes it as soon as
+        // somebody arrows past the last option, and then no numbered line on screen carries one —
+        // so a reading that looked only at the rows called the whole dialog nothing, and a phone
+        // watching a question somebody was halfway through answering simply lost it.
         let selectedCaret = flushLeftSelection ?? tailText.lastIndex { line in
             guard let row = option(line) else { return false }
             return row.caret && row.indented
-        }
+        } ?? submitRow(in: tail, from: 0).flatMap { $0.selected ? $0.row : nil }
         var dialogStart = 0
         if let anchor = selectedCaret {
             var scan = anchor - 1
@@ -158,6 +163,12 @@ enum SessionState: Equatable {
         // ambiguous, and it is what permission dialogs and `/model` have always drawn.
         if flushLeftSelection != nil, dialogStart == 0 { flushLeftSelection = nil }
 
+        // **Found before the options, because it changes how one of them reads.** The button a
+        // multi-select draws under its rows is an unnumbered line, and an unnumbered line is prose
+        // to ``detail(under:in:)`` — so until this is known, the button is the last row's
+        // description and the phone has nothing to press.
+        let submit = submitRow(in: tail, from: dialogStart)
+
         var options: [Menu.Option] = []
         var carets = 0
         var firstOptionLine: Int? = nil
@@ -174,10 +185,12 @@ enum SessionState: Equatable {
             if selected { carets += 1 }
             if firstOptionLine == nil { firstOptionLine = captured.offset }
             options.append(Menu.Option(number: row.number, label: row.label,
-                                       detail: detail(under: captured.offset, in: lines),
+                                       detail: detail(under: captured.offset, in: lines,
+                                                      stoppingAt: submit?.line),
                                        selected: selected))
         }
-        guard carets >= 1, options.count >= 2 else {
+        // The caret has to be *somewhere* in the dialog, and the button counts: see above.
+        guard carets >= 1 || submit?.selected == true, options.count >= 2 else {
             return plainMenu(tail, in: lines, hookWaiting: hookWaiting)
         }
 
@@ -190,9 +203,11 @@ enum SessionState: Equatable {
         // failure of handing them none. Rare by nature: a real menu happens a few times an hour
         // and the log line is two of them.
         Log.write("choosing: carets=\(carets) options=\(options.count) — "
-                  + options.map { "\($0.number). \($0.label.prefix(60))" }.joined(separator: " ⏐ "))
+                  + options.map { "\($0.number). \($0.label.prefix(60))" }.joined(separator: " ⏐ ")
+                  + (submit.map { " ⏐ [\($0.label)]" } ?? ""))
         return Menu(question: menuQuestion, options: options,
-                    selected: options.first(where: \.selected)?.number)
+                    selected: options.first(where: \.selected)?.number,
+                    submit: submit.map { Menu.Submit(label: $0.label, selected: $0.selected) })
     }
 
     /// The same dialog with its numbers taken off.
@@ -285,6 +300,50 @@ enum SessionState: Equatable {
                   + options.map { $0.label.prefix(60) }.joined(separator: " ⏐ "))
         return Menu(question: menuQuestion, options: options,
                     selected: options.first(where: \.selected)?.number, numbered: false)
+    }
+
+    /// The button a multi-select draws under its rows, if this dialog is one.
+    ///
+    /// **A multi-select is told apart by its checkboxes, not by its button.** The two dialogs draw
+    /// their descriptions at different indents — a multi-select puts them two columns in, an
+    /// ordinary `AskUserQuestion` puts them level with the labels — so a rule that looked only at
+    /// the column would turn the first description of every single-select into a Submit nobody
+    /// could press. What only a multi-select has is a `[ ]` in front of every row, and two of them
+    /// are required for the same reason two options are: one of anything is not a pattern.
+    ///
+    /// Given that, the button is the line that is **not** a numbered row, **not** a checkbox row,
+    /// and starts in the same column as the labels. It is drawn as a pointer cell, a gap and three
+    /// spaces, which lands on exactly the column an option's label lands on — while a description
+    /// lands short of it. That alignment holds up to nine options, which is also as far as a
+    /// keystroke reaches, so nothing is lost where it stops holding.
+    private static func submitRow(in tail: [(offset: Int, element: String)], from dialogStart: Int)
+        -> (row: Int, line: Int, label: String, selected: Bool)? {
+        var column: Int? = nil
+        var checkboxes = 0
+        for (index, captured) in tail.enumerated() where index >= dialogStart {
+            guard let row = option(captured.element) else { continue }
+            if column == nil { column = row.column }
+            if isCheckbox(row.label) { checkboxes += 1 }
+        }
+        guard checkboxes >= 2, let labelColumn = column else { return nil }
+
+        for (index, captured) in tail.enumerated() where index >= dialogStart {
+            let line = captured.element
+            guard option(line) == nil, !isBoxRule(line), let row = plainRow(line),
+                  row.column == labelColumn, !isCheckbox(row.label),
+                  !isQuestionHeader(row.label) else { continue }
+            return (index, captured.offset, row.label, row.caret)
+        }
+        return nil
+    }
+
+    /// Whether this label begins with the box a multi-select puts in front of every row. Claude
+    /// Code draws it in ASCII — `[ ]` and `[✔]` — while the tab bar above uses `☐`; both are
+    /// admitted because both have been seen in a capture and neither costs anything to allow.
+    private static func isCheckbox(_ label: String) -> Bool {
+        if let first = label.first, "☐☑☒".contains(first) { return true }
+        let chars = Array(label.prefix(3))
+        return chars.count == 3 && chars[0] == "[" && chars[2] == "]"
     }
 
     /// The rows drawn under one row of an unnumbered picker.
@@ -447,6 +506,20 @@ enum SessionState: Equatable {
         /// answer by moving the highlight instead of by typing. The numbers are still filled in
         /// by position, because a row still has to be nameable from a phone.
         var numbered: Bool = true
+
+        /// The button a multi-select draws under its rows, when there is one.
+        ///
+        /// A multi-select is a different question from the rest: its digits **toggle** rather than
+        /// answer, and nothing is sent until the button below the rows is pressed. That button has
+        /// no number on screen — it is not one of the options — so it cannot be named the way the
+        /// rows are, and until it was given a place of its own it was read as the last row's
+        /// description and there was nothing on the phone to press.
+        struct Submit: Equatable {
+            let label: String
+            /// The caret is parked on the button rather than on a row, so Return would send.
+            let selected: Bool
+        }
+        var submit: Submit? = nil
     }
 
     /// The carets a terminal menu marks its current row with. Deliberately not `>`: a markdown
@@ -473,10 +546,16 @@ enum SessionState: Equatable {
     /// **On the physical lines, blanks included.** The dialog puts one before the navigation hint
     /// at the bottom, so reading a version with the blanks stripped out attached
     /// "Enter to select · Esc to cancel" to the last option as though it were its description.
-    private static func detail(under optionIndex: Int, in lines: [String]) -> String? {
+    ///
+    /// `stoppingAt` is the one line that looks like prose and is not: a multi-select's Submit.
+    /// It is found before any of this runs, because there is nothing about the line itself that
+    /// this walk could use to tell it from a description — see ``submitRow(in:from:)``.
+    private static func detail(under optionIndex: Int, in lines: [String],
+                               stoppingAt submitLine: Int? = nil) -> String? {
         var parts: [String] = []
         var index = optionIndex + 1
         while index < lines.count {
+            if index == submitLine { break }
             let raw = lines[index]
             if option(raw) != nil || isBoxRule(raw) || hasCaret(raw) { break }
             let text = dialogText(raw)
@@ -585,7 +664,7 @@ enum SessionState: Equatable {
     /// Codex was: one assistant's dialog is indented and the other's is flush left, so the two
     /// callers need the same two facts and different rules about them.
     private static func option(_ raw: String)
-        -> (number: Int, label: String, caret: Bool, indented: Bool)? {
+        -> (number: Int, label: String, caret: Bool, indented: Bool, column: Int)? {
         let chars = Array(raw)
         var i = 0
 
@@ -633,6 +712,7 @@ enum SessionState: Equatable {
             label.removeLast()
         }
         guard !label.isEmpty else { return nil }
-        return (number, label, caret, indented)
+        // `column` is where the words start, which is what a multi-select's button lines up with.
+        return (number, label, caret, indented, i)
     }
 }

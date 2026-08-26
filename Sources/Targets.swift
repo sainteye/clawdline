@@ -210,6 +210,40 @@ enum Targets {
         (key: want >= here ? 0x6a : 0x6b, times: abs(want - here))   // j / k
     }
 
+    /// Press the button a multi-select draws under its rows.
+    ///
+    /// **A multi-select does not answer on a digit.** Its numbers toggle rows, Return on a row
+    /// toggles that row too, and the only thing that sends is Return while the caret is on the
+    /// button below the list. So this is not a keystroke the phone can name — it is a short walk
+    /// this end has to make, one row at a time, reading the screen after each step.
+    ///
+    /// Stepping is `j`, the same key ``highlight(row:of:on:)`` uses; from the last row it moves on
+    /// to the button rather than wrapping. **The check comes before each step, not after**, because
+    /// one `j` too many walks off the button again and out of the dialog entirely.
+    ///
+    /// The loop is bounded by the rows it can see plus two, so a dialog that stops responding
+    /// costs a few captures and then gives up with the screen as it was.
+    static func submitMenu(on session: TargetSession) -> String? {
+        var steps = 0
+        while true {
+            guard let screen = capture(session),
+                  let menu = SessionState.menu(screen, assistant: session.assistant ?? .claude,
+                                               hookWaiting: true) else {
+                return "Could not read that session's screen."
+            }
+            guard let submit = menu.submit else {
+                return "That question has no Submit to press."
+            }
+            if submit.selected { return keystroke(13, to: session) }
+            guard steps <= menu.options.count + 1 else {
+                return "The highlight would not move onto Submit."
+            }
+            if let failure = keystroke([0x6a], to: session) { return failure }   // j
+            steps += 1
+            Thread.sleep(forTimeInterval: 0.12)
+        }
+    }
+
     /// Press Return, but only once the screen shows the digit landed where it was meant to.
     ///
     /// **A digit no longer confirms.** The comment above described what the picker used to do and

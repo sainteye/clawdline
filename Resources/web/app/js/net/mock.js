@@ -65,6 +65,21 @@ export var Mock = (function () {
                 selected: true, can: true },
               { n: 3, label: "No, tell Claude what to do instead", selected: false, can: true }
           ] } },
+        // Waiting on a **multi-select**, which is a different question from the one above: its
+        // rows toggle rather than answer, and nothing is sent until the button under them is
+        // pressed. Kept as a fixture because that button was once read as the last row's
+        // description, and there was nothing on this page to press.
+        { id: "5B0E-11", backend: "iterm", tty: "ttys012", label: "which sources to drop",
+          cwd: "/Users/x/code/atrium", state: "waiting", line: null,
+          isClaude: true, assistant: "claude", sessionId: null, icon: atrium,
+          menu: { selected: 1, question: "Which of these should the report drop?",
+                  submit: { label: "Submit", selected: false }, options: [
+              { n: 1, label: "[ ] the rate limit", selected: true, can: true,
+                detail: "Measured at about 200 requests an hour per token." },
+              { n: 2, label: "[\u2714] the licence", selected: false, can: true },
+              { n: 3, label: "[ ] the cost", selected: false, can: true },
+              { n: 4, label: "[ ] Type something", selected: false, can: true }
+          ] } },
         // Idle, **and not finished** — the turn ended an hour ago and the build it started is
         // still going. This is the row that said nothing at all before `Shells`: the terminal
         // mentions it once, where the turn ended, and every list after that drew it as done.

@@ -6125,6 +6125,10 @@ group("the key route is gated like every other write") {
     expect("and tab is a good key", key(writer.token, "{\"key\":\"tab\"}").status, 404)
     expect("and shift+tab is a good key",
            key(writer.token, "{\"key\":\"shift+tab\"}").status, 404)
+    // A multi-select's button is pressed by name rather than by number, because it has no number
+    // on screen. It goes through the same parse and the same gates as every other key.
+    expect("and submit is a good key",
+           key(writer.token, "{\"key\":\"submit\"}").status, 404)
 }
 
 group("a recording arrives as base64 and is refused before it costs a second of CPU") {
@@ -6605,6 +6609,70 @@ group("an unnumbered picker is answered by walking the highlight, not by typing 
     check("a phone still cannot send j",
           Targets.answer(0x6a, to: session) == "That is not a key this can send.")
     check("nor k", Targets.answer(0x6b, to: session) == "That is not a key this can send.")
+}
+
+group("the Submit a multi-select puts under its rows is a row of its own") {
+    // Captured from a real AskUserQuestion multi-select, 2026-08-26. Three things about the shape
+    // are load-bearing and none of them were guessed: the options carry an ASCII `[ ]` rather than
+    // a checkbox glyph, their labels start in column 5 while their descriptions start in column 2,
+    // and **the submit button is drawn as an unnumbered line in the label's column**. That last
+    // one is the bug — `detail(under:in:)` walks down from the last option until it meets
+    // something that is not prose, and an unnumbered line is prose to it, so the button arrived on
+    // the phone as the fifth option's description and there was nothing left to press.
+    let multi = """
+    \u{2190}  \u{2610} 多選修法  \u{2714} Submit  \u{2192}
+
+    │ 多選這種形狀，你要的修法是哪一種？
+
+    \u{276F} 1. [ ] Submit 變成可點的一列
+      最小修法：把 Submit 當成獨立一列。
+      2. [ ] 勾選狀態要看得出來
+      把每列的方框解析成一個真正的欄位。
+      3. [ ] 點一下就等於送出
+      4. [ ] Type something
+         Submit
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+      5. Chat about this
+
+    Enter to select · ↑/↓ to navigate · Esc to cancel
+    """
+    guard let menu = SessionState.menu(multi, hookWaiting: true) else {
+        check("a multi-select is a menu", false); return
+    }
+    expect("the numbered rows are the options", menu.options.count, 5)
+    check("the button is not the last option's description",
+          menu.options[3].detail == nil, "got \(String(describing: menu.options[3].detail))")
+    expect("it is a row of its own", menu.submit?.label, "Submit")
+    check("and it is not where the caret is", menu.submit?.selected == false)
+    expect("the question is still the dialog's own",
+           menu.question, "多選這種形狀，你要的修法是哪一種？")
+
+    // Walked down onto it, the caret sits in the pointer's cell exactly as it does on an option.
+    let onSubmit = multi.replacingOccurrences(of: "\u{276F} 1. [ ]", with: "  1. [ ]")
+        .replacingOccurrences(of: "     Submit", with: "\u{276F}    Submit")
+    check("the caret on the button is read as the caret on the button",
+          SessionState.menu(onSubmit, hookWaiting: true)?.submit?.selected == true)
+
+    // **A single-select has no button, and its descriptions sit in the label's column.** So a rule
+    // that keyed on the column alone would turn the first description of every ordinary
+    // AskUserQuestion into a Submit nobody can press. The checkbox is what says which dialog this
+    // is, and it is required.
+    let single = """
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+     \u{2610} build
+
+    │ 別的 session 把 index.html 寫完了，還沒 commit。
+
+    \u{276F} 1. 幫它整理並 commit，再 build
+         跟先前那批一樣，先整理工作區。
+      2. 直接 build，不碰它的 commit
+    """
+    guard let plain = SessionState.menu(single, hookWaiting: true) else {
+        check("a single-select is still a menu", false); return
+    }
+    check("a single-select grows no button", plain.submit == nil)
+    expect("and its description is still a description",
+           plain.options[0].detail, "跟先前那批一樣，先整理工作區。")
 }
 
 group("the question above a visual menu") {

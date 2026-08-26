@@ -422,6 +422,11 @@
 }
 .composer .menu .opt[disabled] .here { color: var(--faint); }
 
+/* The button under a multi-select's rows. Set apart with a little air and a heavier label,
+   because it is not a fifth answer — the rows above it toggle, and this is the one that sends. */
+.composer .menu .opt.go-submit { margin-top: 4px; font-weight: 600; }
+.composer .menu .opt.go-submit .n { color: var(--dim); }
+
 .composer .why { color: var(--faint); font-size: 11.5px; margin-top: 7px; }
 /* Nothing to explain, no row. The line under the box now only ever says why the box will not
    take what you type; when everything is working it says nothing, and a line that says nothing

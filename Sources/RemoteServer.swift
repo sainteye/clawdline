@@ -909,7 +909,14 @@ final class RemoteServer {
                 // somebody will later move.
                 let key = (body["key"] as? String) ?? ""
                 let bytes: [UInt8]
-                if key == "tab" {
+                // **`submit` is a name, not a key**, because the button it presses has no key: a
+                // multi-select's rows are toggled by their digits and nothing is sent until the
+                // button under them takes the caret. Naming the act rather than the keystroke
+                // keeps the walk that gets there on this side, where it can read the screen back
+                // before it commits — see `Targets.submitMenu(on:)`.
+                if key == "submit" {
+                    bytes = []
+                } else if key == "tab" {
                     bytes = [0x09]
                 } else if key == "shift+tab" {
                     bytes = [0x1b, 0x5b, 0x5a]
@@ -918,12 +925,14 @@ final class RemoteServer {
                     bytes = [UInt8(c.value)]
                 } else {
                     return .error(400, "bad_request",
-                                  "key must be \"1\"…\"9\", \"tab\", or \"shift+tab\".")
+                                  "key must be \"1\"…\"9\", \"tab\", \"shift+tab\" or \"submit\".")
                 }
                 guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
                     return .error(404, "not_found", "No session named that")
                 }
-                if let failure = Targets.answer(bytes, to: session) {
+                let failed = key == "submit" ? Targets.submitMenu(on: session)
+                                             : Targets.answer(bytes, to: session)
+                if let failure = failed {
                     return .error(502, "internal", failure)
                 }
                 RemoteAuth.audit("session.key", ["id": session.id, "key": key])
@@ -2287,13 +2296,20 @@ final class RemoteServer {
         ]
         if let selected = menu.selected { out["selected"] = selected }
         if let question = menu.question { out["question"] = question }
+        // The button under a multi-select's rows, which is a different act from picking one of
+        // them: the rows toggle, and only this sends. It carries no `n` because it has none on
+        // screen — `POST /key` takes the word `submit` for it.
+        if let submit = menu.submit {
+            out["submit"] = ["label": submit.label, "selected": submit.selected]
+        }
         return out
     }
 
     /// Stable content for the legacy session revision field. Separators prevent different
     /// question/option boundaries from collapsing to the same string.
     private func menuRevision(_ menu: SessionState.Menu) -> String {
-        ([menu.question ?? ""] + menu.options.map {
+        ([menu.question ?? "", menu.submit.map { "\($0.label)\u{1f}\($0.selected ? 1 : 0)" } ?? ""]
+         + menu.options.map {
             "\($0.number)\u{1f}\($0.label)\u{1f}\($0.selected ? 1 : 0)"
         }).joined(separator: "\u{1e}")
     }
