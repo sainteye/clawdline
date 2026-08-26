@@ -23,3 +23,6 @@ __pycache__/
 
 # Personal Claude Code skills for this checkout, not part of the app.
 .claude/skills/
+
+# The nested private repo for clawdline.com — its own git history, never part of this one.
+/cloud/
