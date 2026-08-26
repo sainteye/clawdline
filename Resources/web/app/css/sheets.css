@@ -460,8 +460,21 @@ a.dep:hover .host { color: var(--accent); }
 .schedule-sheet .picked .chev { flex: 0 0 auto; color: var(--faint); font-size: 11px; }
 .schedule-sheet .picked[aria-expanded="true"] .chev { color: var(--accent); }
 /* Shorter than the sheet-wide default: once it is a thing that opens, it only has to show that
-   there is more than one, not carry the whole list at once. */
-.schedule-sheet .places { margin-top: 8px; max-height: min(34vh, 260px); }
+   there is more than one, not carry the whole list at once.
+
+   And it is drawn as a container rather than as more sheet — the same recessed ground as a text
+   field, with a border around it. That is what tells a finger why the page stopped moving: the
+   scrolling is happening *inside this box*, and there is more sheet below it. Without the ground
+   the list reads as the rest of the form, and a nested scroller that looks like the page is the
+   whole reason somebody thinks they have reached the bottom. */
+.schedule-sheet .places {
+    margin-top: 8px;
+    max-height: min(34vh, 260px);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 4px;
+}
 .schedule-sheet .more { margin-bottom: 4px; }
 .schedule-sheet .more > summary {
     cursor: pointer; list-style: none;
