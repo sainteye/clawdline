@@ -1655,16 +1655,22 @@ counts only when it was announced **and** has no ending under it.
 
 ```jsonc
 {
-  "role": "user",        // "user" | "assistant" | "tool"
+  "role": "user",                  // "user" | "assistant" | "peer" | "tool"
   "text": "請幫我在網頁加入 favicon",
-  "tool": "Bash",        // present only on a tool call, absent on its result
-  "at": 1787049580       // absent if the record carried no timestamp
+  "tool": "Bash",                  // present only on a tool call, absent on its result
+  "at": 1787049580,                // absent if the record carried no timestamp
+  "source": "release-room",        // human-readable session name; peer only
+  "sourceMode": "prompting"        // peer sender mode; peer only
 }
 ```
 
 Oldest first, `limit` counting back from the newest. **A tool call and the result it returned are
 both `role: "tool"`**, and the way to tell them apart is `tool`: the call names the tool, the result
 does not.
+
+For a `peer` entry, `source` is the other session's human-readable name, never its socket or
+transport path. `sourceMode` is the mode that session used to send the message. Either field is
+absent when the transcript did not carry a non-empty value.
 
 `tool` is whatever the assistant calls it, so the vocabularies differ: Claude Code's are `Bash`,
 `Edit`, `Read` and the rest; Codex's are `shell` for a command, `edit` for a file change,

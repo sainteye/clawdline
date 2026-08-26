@@ -2464,11 +2464,14 @@ final class RemoteServer {
 
     /// Entries as the page reads them. One shape for both transcripts, because a reader following
     /// an agent should meet the same pane they left.
-    private func rows(of entries: [Transcript.Entry]) -> [[String: Any]] {
+    // Internal for direct serialization tests.
+    func rows(of entries: [Transcript.Entry]) -> [[String: Any]] {
         entries.map { entry -> [String: Any] in
             var row: [String: Any] = ["role": name(of: entry.kind), "text": entry.text]
             if let tool = entry.tool { row["tool"] = tool }
             if let time = entry.time { row["at"] = Int(time.timeIntervalSince1970) }
+            if let source = entry.source, !source.isEmpty { row["source"] = source }
+            if let mode = entry.sourceMode, !mode.isEmpty { row["sourceMode"] = mode }
             return row
         }
     }
@@ -2477,6 +2480,7 @@ final class RemoteServer {
         switch kind {
         case .user:       return "user"
         case .assistant:  return "assistant"
+        case .peer:       return "peer"
         case .tool:       return "tool"
         case .toolResult: return "tool"
         }

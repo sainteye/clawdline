@@ -83,6 +83,29 @@
 .entry.pending .pending-state { margin-top: 6px; }
 .entry.pending .pending-state canvas { flex: 0 0 auto; display: block; }
 .entry[data-role="assistant"] .body { color: var(--ink); }
+.entry[data-role="peer"] .who { color: var(--peer); }
+.entry[data-role="peer"] .body { color: var(--ink); }
+.peer-card {
+    border: 1px solid var(--peer-ed);
+    border-left: 2px solid var(--peer);
+    border-radius: 10px;
+    background: var(--peer-in);
+    padding: 9px 11px 10px;
+}
+.peer-source {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 6px;
+    color: var(--peer);
+    font-family: var(--mono); font-size: 10.5px; line-height: 1.3;
+    letter-spacing: 0.35px;
+}
+.peer-source::before {
+    content: "↗";
+    display: inline-grid; place-items: center;
+    width: 16px; height: 16px;
+    border: 1px solid var(--peer-ed); border-radius: 50%;
+    font-size: 10px; line-height: 1;
+}
 .entry[data-role="tool"] .body { color: var(--dim); font-size: 13px; }
 .entry .toolname {
     display: inline-block;
@@ -325,4 +348,3 @@
 
 .tx-note { color: var(--faint); font-size: 12.5px; padding: 26px 2px; }
 .tx-note.err { color: #c58472; }
-

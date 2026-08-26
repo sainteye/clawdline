@@ -127,7 +127,9 @@ enum Transcript {
         switch assistant {
         case .claude:
             for line in jsonl.split(separator: "\n") {
-                if entries(inRow: line).contains(where: { $0.kind == .user }) { return true }
+                if entries(inRow: line).contains(where: { $0.kind == .user || $0.kind == .peer }) {
+                    return true
+                }
             }
             return false
         case .codex:
@@ -139,6 +141,7 @@ enum Transcript {
         enum Kind {
             case user
             case assistant
+            case peer          // another Claude Code session addressing this one
             case tool          // a tool being called
             case toolResult    // what it returned
         }
@@ -146,6 +149,14 @@ enum Transcript {
         var text: String
         var tool: String?
         var time: Date?
+        /// The human-facing session name on a cross-session message. Socket paths stay out of
+        /// the UI: they identify a transport endpoint, not somebody a reader can recognise.
+        var source: String? = nil
+        var sourceMode: String? = nil
+        /// Internal receipt identity. It never crosses the API boundary; it only distinguishes
+        /// two real deliveries of identical prose from Claude's enqueue/delivery double-write.
+        var peerMessageID: String? = nil
+        var isPeerDelivery = false
     }
 
     // MARK: - Finding the file
@@ -474,11 +485,51 @@ enum Transcript {
     /// hundred lines.
     static func parse(_ jsonl: String, limit: Int = 400, sidechains: Bool = false) -> [Entry] {
         var newestFirst: [Entry] = []
+        // While a turn is running, Claude first records an enqueued cross-session message and
+        // later records its delivered peer turn. Delivery can lag by an entire busy turn, so a
+        // clock window cannot identify the pair. Within this parse window, the structured
+        // delivery is authoritative for a (source, text) key; enqueue-only receipts still show.
+        // Distinct delivered msg_ids remain distinct when somebody really sends the same prose
+        // twice — that id exists only on deliveries, so it cannot be the general pairing key.
+        var deliveredPeerIDs = Set<String>()
+        var deliveredPeerKeys = Set<String>()
+        var queuedPeerKeys = Set<String>()
 
         forEachLineFromEnd(jsonl) { line in
             // Each row is appended newest-block-first so the whole buffer stays in one order,
             // and is turned back the right way round once.
             for entry in entries(inRow: line, sidechains: sidechains).reversed() {
+                if entry.kind == .peer {
+                    let key = (entry.source ?? "") + "\u{0}" + entry.text
+                    if entry.isPeerDelivery {
+                        if let id = entry.peerMessageID {
+                            let receipt = (entry.source ?? "") + "\u{0}" + id
+                            if deliveredPeerIDs.contains(receipt) { continue }
+                            deliveredPeerIDs.insert(receipt)
+                        } else if deliveredPeerKeys.contains(key) {
+                            continue
+                        }
+                        deliveredPeerKeys.insert(key)
+                        // Usually the delivery is newer and therefore already came first while
+                        // scanning backwards. Also handle malformed/reordered logs without
+                        // letting their earlier enqueue receipt survive beside it.
+                        let at = entry.time
+                        newestFirst.removeAll { queued in
+                            guard queued.kind == .peer, !queued.isPeerDelivery,
+                                  (queued.source ?? "") + "\u{0}" + queued.text == key else {
+                                return false
+                            }
+                            guard let queuedAt = queued.time, let at else { return true }
+                            return queuedAt <= at
+                        }
+                        queuedPeerKeys.remove(key)
+                    } else {
+                        if deliveredPeerKeys.contains(key) || queuedPeerKeys.contains(key) {
+                            continue
+                        }
+                        queuedPeerKeys.insert(key)
+                    }
+                }
                 newestFirst.append(entry)
             }
             return newestFirst.count < limit
@@ -530,9 +581,26 @@ enum Transcript {
         // bookkeeping. Neither is the conversation you opened the pane to read — unless the
         // conversation you opened *is* an agent's, in which case sidechain is all there is.
         if !sidechains, row["isSidechain"] as? Bool == true { return [] }
-        if row["isMeta"] as? Bool == true { return [] }
 
         let time = (row["timestamp"] as? String).flatMap { iso.date(from: $0) }
+
+        // The delivered form is deliberately meta: Claude needs it as a prompt but it was not
+        // typed by the user. Its structured origin is a stronger boundary than the prose wrapper
+        // around the message and survives changes to that explanatory prose. It intentionally
+        // precedes the isMeta filter, but not the sidechain filter above.
+        if let origin = row["origin"] as? [String: Any],
+           origin["kind"] as? String == "peer",
+           let body = origin["body"] as? String {
+            let text = body.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return [] }
+            let messageID = clean(origin["msg_id"])
+            return [Entry(kind: .peer, text: text, tool: nil, time: time,
+                          source: clean(origin["name"]),
+                          sourceMode: clean(origin["fromMode"]),
+                          peerMessageID: messageID.isEmpty ? nil : messageID,
+                          isPeerDelivery: true)]
+        }
+        if row["isMeta"] as? Bool == true { return [] }
 
         // Slash commands submitted by the remote page are recorded as top-level system rows,
         // not user messages. Admit only that precisely tagged shape: the other system rows are
@@ -556,6 +624,7 @@ enum Transcript {
             guard row["operation"] as? String == "enqueue",
                   let raw = row["content"] as? String
             else { return [] }
+            if let peer = crossSessionMessage(in: raw, at: time) { return [peer] }
             let text = withoutMachineBlocks(raw)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return [] }
@@ -609,6 +678,51 @@ enum Transcript {
             }
         }
         return out
+    }
+
+    /// Claude Code's queued form of a message sent by another session.
+    ///
+    /// The body is Markdown, not XML: it can contain code and angle brackets of its own. Only
+    /// the one observed envelope is parsed, by its first `>` and final closing tag, rather than
+    /// handing arbitrary conversation text to an XML parser. Requiring the envelope to occupy
+    /// the whole string also leaves somebody quoting this format as ordinary user prose.
+    private static func crossSessionMessage(in raw: String, at time: Date?) -> Entry? {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tag = "cross-session-message"
+        guard text.hasPrefix("<\(tag)"),
+              let openEnd = text.firstIndex(of: ">") else { return nil }
+        let afterName = text.index(text.startIndex, offsetBy: tag.count + 1)
+        guard afterName <= openEnd,
+              text[afterName] == " " || text[afterName] == "\t" || text[afterName] == ">" else {
+            return nil
+        }
+        let close = "</\(tag)>"
+        guard text.hasSuffix(close),
+              let closeStart = text.range(of: close, options: .backwards)?.lowerBound,
+              openEnd < closeStart else { return nil }
+
+        let header = String(text[text.startIndex...openEnd])
+        let bodyStart = text.index(after: openEnd)
+        let body = text[bodyStart..<closeStart]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return nil }
+        return Entry(kind: .peer, text: body, tool: nil, time: time,
+                     source: attribute("from-name", in: header),
+                     sourceMode: attribute("from-mode", in: header))
+    }
+
+    /// One double-quoted attribute from the small, fixed opening tag above.
+    private static func attribute(_ name: String, in tag: String) -> String? {
+        let prefix = " \(name)=\""
+        guard let start = tag.range(of: prefix)?.upperBound,
+              let end = tag[start...].firstIndex(of: "\"") else { return nil }
+        let value = String(tag[start..<end])
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&apos;", with: "'")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
+        return value.isEmpty ? nil : value
     }
 
     /// One line describing what a tool was asked to do. The fields are tried in the order a
@@ -972,6 +1086,20 @@ extension Transcript {
                 ])
                 // No trailing newline here: every Markdown block ends with one already, and
                 // the next entry's paragraphSpacingBefore is what sets the distance.
+                block.append(prose(entry.text, body: body, mono: mono))
+                i += 1
+
+            case .peer:
+                endBlock()
+                var label = "CLAUDE  ⇄"
+                if let source = entry.source, !source.isEmpty { label += "  " + source }
+                if let t = entry.time { label += "   \(clock.string(from: t))" }
+                add(label + "\n", [
+                    .font: header,
+                    .foregroundColor: NSColor.systemIndigo,
+                    .kern: 0.8,
+                    .paragraphStyle: headerStyle,
+                ])
                 block.append(prose(entry.text, body: body, mono: mono))
                 i += 1
 

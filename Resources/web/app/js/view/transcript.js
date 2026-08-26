@@ -453,9 +453,9 @@ els.tx.addEventListener("keydown", function (ev) {
     ev.stopPropagation();
 });
 
-// Two of these three are copy and come from the server before the first render; the middle one
-// is a name, and a name is the same word in fourteen languages. See `paintStatic`.
-export var WHO = { user: "you", assistant: "claude", tool: "tool" };
+// User and tool are copy supplied by the server before the first render. Claude and Claude ↔
+// are names, and a name is the same word in fourteen languages. See `paintStatic`.
+export var WHO = { user: "you", assistant: "claude", peer: "Claude ↔", tool: "tool" };
 
 /** A transcript speaker, with the current assistant's mark when this browser opted into it. */
 function whoHTML(role, at) {
@@ -470,6 +470,16 @@ function whoHTML(role, at) {
 
 function entryHTML(e) {
     var role = WHO[e.role] ? e.role : "assistant";
+    if (role === "peer") {
+        var source = String(e.source || "session");
+        var mode = e.sourceMode ? ' title="' + esc(String(e.sourceMode)) + '"' : "";
+        return '<div class="entry" data-role="peer">' +
+            whoHTML("peer", e.at) +
+            '<div class="body"><div class="peer-card">' +
+            '<div class="peer-source"' + mode + '>' + esc(source) + '</div>' +
+            '<div>' + richText(e.text) + '</div>' +
+            '</div></div></div>';
+    }
     var body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "") + richText(e.text);
     if (e.pending) {
         var attached = e.imageCount

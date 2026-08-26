@@ -15,6 +15,11 @@
     --accent:    #d97757;
     --accent-in: rgba(217, 119, 87, 0.13);
     --accent-ed: rgba(217, 119, 87, 0.34);
+    /* Session-to-session traffic is neither the user's accent nor tool chrome. A cool violet
+       makes the fourth speaker visible without competing with the orange waiting state. */
+    --peer:      #9da4ed;
+    --peer-in:   rgba(157, 164, 237, 0.08);
+    --peer-ed:   rgba(157, 164, 237, 0.34);
 
     /* The connection dot only. Deliberately small and unsaturated — see the note on
        weights below: green is a colour that wants to be read, and nothing here

@@ -6915,6 +6915,162 @@ group("following an agent to its own transcript") {
            asAgent.first?.text, "had a look, nothing in the logs")
 }
 
+// MARK: - Claude peer transcript messages
+
+func peerTestLine(_ value: [String: Any]) -> String {
+    let data = try! JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+    return String(decoding: data, as: UTF8.self)
+}
+
+func peerEnvelope(source: String = "payments-ops-12", mode: String = "prompting",
+                  body: String) -> String {
+    "<cross-session-message from=\"uds:/tmp/private.sock\" from-name=\"\(source)\" "
+        + "from-mode=\"\(mode)\">\n\(body)\n</cross-session-message>"
+}
+
+func queuedPeer(_ body: String, at: String, source: String = "payments-ops-12",
+                mode: String = "prompting") -> String {
+    peerTestLine([
+        "type": "queue-operation", "operation": "enqueue", "timestamp": at,
+        "content": peerEnvelope(source: source, mode: mode, body: body),
+    ])
+}
+
+func deliveredPeer(_ body: String, at: String, id: String,
+                   source: String = "payments-ops-12", mode: String = "prompting",
+                   sidechain: Bool = false) -> String {
+    peerTestLine([
+        "type": "user", "isMeta": true, "isSidechain": sidechain, "timestamp": at,
+        "origin": [
+            "kind": "peer", "name": source, "fromMode": mode, "body": body, "msg_id": id,
+        ],
+    ])
+}
+
+group("T1 queued peer envelopes become attributed peer entries") {
+    let entries = Transcript.parse(
+        queuedPeer("  please inspect the deploy  ", at: "2026-08-26T10:00:00.000Z"),
+        assistant: .claude)
+    let entry = entries.first
+    check("T1 enqueue envelope fields",
+          entries.count == 1 && entry?.kind == .peer
+            && entry?.source == "payments-ops-12" && entry?.sourceMode == "prompting"
+            && entry?.text == "please inspect the deploy")
+}
+
+group("T2 delivered meta peer rows use their structured origin") {
+    let entries = Transcript.parse(
+        deliveredPeer("  delivered body  ", at: "2026-08-26T10:00:01.000Z", id: "m-2",
+                      source: "release-room", mode: "bypass"),
+        assistant: .claude)
+    let sidechainEntries = Transcript.parse(
+        deliveredPeer("agent-only", at: "2026-08-26T10:00:02.000Z", id: "m-2-side",
+                      sidechain: true),
+        assistant: .claude)
+    let entry = entries.first
+    check("T2 delivered origin fields",
+          entries.count == 1 && entry?.kind == .peer && entry?.source == "release-room"
+            && entry?.sourceMode == "bypass" && entry?.text == "delivered body"
+            && sidechainEntries.isEmpty)
+}
+
+group("T3 one enqueue and delivery receipt keeps the delivery") {
+    let jsonl = [
+        queuedPeer("same message", at: "2026-08-26T10:00:00.000Z", mode: "prompting"),
+        deliveredPeer("same message", at: "2026-08-26T10:00:00.020Z", id: "m-3",
+                      mode: "bypass"),
+    ].joined(separator: "\n")
+    let entries = Transcript.parse(jsonl, assistant: .claude)
+    check("T3 nearby duplicate receipts",
+          entries.count == 1 && entries.first?.kind == .peer
+            && entries.first?.sourceMode == "bypass")
+}
+
+group("T4 delayed delivery still replaces its enqueue receipt") {
+    let jsonl = [
+        queuedPeer("busy turn message", at: "2026-08-26T10:00:00.000Z"),
+        deliveredPeer("busy turn message", at: "2026-08-26T10:00:30.000Z", id: "m-4"),
+    ].joined(separator: "\n")
+    let entries = Transcript.parse(jsonl, assistant: .claude)
+    check("T4 thirty-second duplicate receipts", entries.count == 1)
+}
+
+group("T5 distinct deliveries of the same text remain distinct") {
+    let jsonl = [
+        queuedPeer("please retry", at: "2026-08-26T10:00:00.000Z"),
+        deliveredPeer("please retry", at: "2026-08-26T10:00:01.000Z", id: "m-5-a"),
+        queuedPeer("please retry", at: "2026-08-26T10:05:00.000Z"),
+        deliveredPeer("please retry", at: "2026-08-26T10:05:01.000Z", id: "m-5-b"),
+    ].joined(separator: "\n")
+    let entries = Transcript.parse(jsonl, assistant: .claude)
+    check("T5 separate message ids", entries.count == 2 && entries.allSatisfy { $0.kind == .peer })
+}
+
+group("T6 an enqueue receipt survives without a delivery row") {
+    let entries = Transcript.parse(
+        queuedPeer("session ended before drain", at: "2026-08-26T10:00:00.000Z"),
+        assistant: .claude)
+    check("T6 enqueue-only receipt",
+          entries.count == 1 && entries.first?.kind == .peer
+            && entries.first?.text == "session ended before drain")
+}
+
+group("T7 peer envelope boundaries reject lookalikes and preserve Markdown") {
+    func entry(_ raw: String) -> Transcript.Entry? {
+        Transcript.parse(peerTestLine([
+            "type": "queue-operation", "operation": "enqueue", "content": raw,
+        ]), assistant: .claude).first
+    }
+    let lookalike = entry("<cross-session-messageX>no</cross-session-messageX>")
+    let unclosed = entry("<cross-session-message from-name=\"x\">no")
+    let empty = entry("<cross-session-message from-name=\"x\">  </cross-session-message>")
+    let markdown = entry(peerEnvelope(body: "use `a < b && b > c`"))
+    check("T7 envelope edge cases",
+          lookalike?.kind != .peer && unclosed?.kind != .peer && empty?.kind != .peer
+            && markdown?.kind == .peer && markdown?.text == "use `a < b && b > c`")
+}
+
+group("T8 peer envelope attributes decode entities in the safe order") {
+    let raw = peerEnvelope(source: "a &amp;quot; b", body: "hello")
+    let entry = Transcript.parse(peerTestLine([
+        "type": "queue-operation", "operation": "enqueue", "content": raw,
+    ]), assistant: .claude).first
+    check("T8 attribute entities", entry?.source == "a &quot; b")
+}
+
+group("T9 a peer turn disproves ownership just like a user turn") {
+    let delivered = deliveredPeer("external complete turn", at: "2026-08-26T10:00:00.000Z",
+                                  id: "m-9")
+    let queued = queuedPeer("external queued turn", at: "2026-08-26T10:00:01.000Z")
+    check("T9 delivered peer counts as an external turn",
+          Transcript.containsUserTurn(delivered, assistant: .claude))
+    check("T9 queued peer counts as an external turn",
+          Transcript.containsUserTurn(queued, assistant: .claude))
+}
+
+group("T10 peer entries serialize their role and omit an empty source") {
+    let rows = RemoteServer.shared.rows(of: [
+        Transcript.Entry(kind: .peer, text: "hello", tool: nil, time: nil,
+                         source: "", sourceMode: "bypass"),
+    ])
+    let row = rows.first
+    check("T10 peer wire row",
+          rows.count == 1 && row?["role"] as? String == "peer" && row?["source"] == nil
+            && row?["sourceMode"] as? String == "bypass")
+}
+
+group("T11 a newer repeated enqueue survives an older delivery") {
+    let jsonl = [
+        queuedPeer("status?", at: "2026-08-26T10:00:00.000Z"),
+        deliveredPeer("status?", at: "2026-08-26T10:00:01.000Z", id: "m-11-a"),
+        queuedPeer("status?", at: "2026-08-26T10:00:02.000Z"),
+    ].joined(separator: "\n")
+    let entries = Transcript.parse(jsonl, assistant: .claude)
+    check("T11 delivered first send and queued second send both remain",
+          entries.count == 2 && entries.first?.isPeerDelivery == true
+            && entries.last?.isPeerDelivery == false)
+}
+
 // MARK: - Codex
 
 // Every screen in this section is a real capture off a real Codex TUI, not a sketch of one.
