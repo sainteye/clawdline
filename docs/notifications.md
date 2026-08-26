@@ -96,6 +96,21 @@ field the same way. That matches what everybody else reports; the Apple develope
 about it has no reply and no workaround. So on an iPhone a notification is told apart by its words
 alone, and there is nothing this end can do about it.
 
+**Declarative Web Push does not rescue it, and that was tried rather than assumed.** Safari 18.4
+added a second rendering path: a payload carrying `"web_push": 8030` and a `notification` object,
+sent with `Content-Type: application/notification+json`, is validated and drawn by the browser
+with no service worker involved — and WebKit's explainer says "most of the optional members of
+`NotificationOptions` can also be specified" without saying which. It was worth an experiment
+because it is a different code path, not a different spelling of the same one. Measured on the
+same hardware on 2026-08-26 with an absolute `icon` URL, verified reachable through the tunnel
+without credentials beforehand so that a failed fetch could not be mistaken for a refusal: the
+notification arrives, and it carries the manifest icon. The probe was removed; only this
+paragraph is left, so that the next person to have the idea gets the answer instead of the build.
+
+What is left for iOS, if a per-project mark ever matters enough: the manifest icon is the only
+picture that platform will draw, and it is baked in when the web app is added to the home screen.
+There is no per-notification and no per-project version of it.
+
 One note on how that was established, because the first attempt proved nothing. The probe used a
 real project's mark, which is an orange creature on a dark ground — and so is the app's own icon.
 At the size a phone draws a notification the two were the same picture, so *the icon did not
