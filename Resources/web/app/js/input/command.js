@@ -6,6 +6,7 @@ import { shortPath, tint } from "../core/util.js";
 import { drawIcon } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { byId } from "../view/derive.js";
+import { openSession } from "../session/open.js";
 import { Voice } from "./voice.js";
 
 /* ---- saying what to start -------------------------------------------------
@@ -256,7 +257,12 @@ export var Command = (function () {
         api.intents(text).then(function (d) {
             if (phase !== "thinking") return;   // superseded — the sheet was closed or redone
             var draft = (d && d.draft) || {};
-            return ensurePlaces().then(function () { reveal(draft, draft.instructions || text, false); });
+            // `||` was wrong here: an empty first message is a deliberate answer — "open
+            // clawdline" and nothing else — and falling back to what was said would type the
+            // request to open a session into the session it just opened. Only a field that is
+            // not there at all falls back.
+            var first = typeof draft.instructions === "string" ? draft.instructions : text;
+            return ensurePlaces().then(function () { reveal(draft, first, false); });
         }).catch(function (e) {
             if (phase !== "thinking") return;
             phase = "idle";
@@ -313,7 +319,13 @@ export var Command = (function () {
         (function poll() {
             if (mine !== run) return;          // abandoned, or superseded by a later press
             if (phase !== "opening") return;
-            if (byId(id)) { sendInstructions(id, instructions, SEND_TRIES, mine); return; }
+            if (byId(id)) {
+                // Nothing to type is a whole request: somebody asked for a session in a project
+                // and said no more than that. Opening it and sending nothing is the answer.
+                if (!String(instructions || "").trim()) { arrive(id, mine); return; }
+                sendInstructions(id, instructions, SEND_TRIES, mine);
+                return;
+            }
             if (Date.now() - began >= HOLD) {
                 // Never retried, same as Start: the tab exists, and asking again would be a
                 // second one. Only the Mac knows what happened next.
@@ -333,8 +345,7 @@ export var Command = (function () {
             // both lean on that to stay put during a request. This is the one call site that
             // *is* the request finishing, so the phase steps aside first rather than being read
             // as one more thing still in flight.
-            phase = "idle";
-            close();
+            arrive(id, mine);
         }).catch(function (e) {
             if (mine !== run) return;
             if (e && e.code === "showing_a_menu" && triesLeft > 0) {
@@ -346,6 +357,16 @@ export var Command = (function () {
             // reaching for `startPlace` a second time.
             finish(e && e.code === "showing_a_menu" ? T.webWaitingSay : T.sendFailed);
         });
+    }
+
+    /** Open, and read to. Somebody who asked for a session wants to be looking at it, not back at
+     *  the list wondering which of the rows is theirs — so the sheet closes and this goes there.
+     *  `close` first, because it is what lets go of anything still in flight. */
+    function arrive(id, mine) {
+        if (mine !== run) return;
+        phase = "idle";
+        close();
+        openSession(id);
     }
 
     function finish(words) {

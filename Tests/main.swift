@@ -4676,13 +4676,16 @@ group("what a model printed becomes a draft, or does not") {
     expect("an assistant nobody has heard of is not passed on", invented?.assistant,
            Assistant.claude)
 
-    // The one field with nothing to fall back to. A draft with no first message in it is not a
-    // draft — there is nothing for a person to read, edit or send.
+    // An empty first message is a request, not a missing field: "open clawdline" and nothing
+    // else asks for a session with nothing typed into it. The whitespace goes, the draft stays,
+    // and the page opens a tab and sends no message.
     let silent = Planner.draft(from: object("""
     {"project":1,"assistant":"claude","instructions":"   ","title":"t","confidence":0.9,\
     "question":""}
     """), places: plannerPlaces)
-    check("a draft with no instructions in it is not a draft", silent == nil)
+    expect("a draft with nothing to say still names a place", silent?.placeID,
+           plannerPlaces.first?.id)
+    expect("and its first message is empty rather than blank", silent?.instructions, "")
 }
 
 group("how sure the planner was decides whether the page asks") {

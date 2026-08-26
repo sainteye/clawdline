@@ -154,7 +154,9 @@ enum Planner {
         Leave out the part that chose the project. That session will already be open there, so a \
         first message beginning "open the astro project" asks for something that has already \
         happened, and the assistant will go and do it a second time. When choosing the project \
-        was the whole request, say they are ready for what comes next instead of repeating it.
+        was the whole request — they asked to open it and nothing else — leave this EMPTY. An \
+        empty first message opens the session and types nothing, which is exactly what was \
+        asked for. Do not invent a greeting to put here.
         - title: what to call the session, 6-20 characters.
         - confidence: 0 to 1. Below \(sure) when you are guessing which project, or when the \
         sentence does not say enough to act on.
@@ -210,9 +212,13 @@ enum Planner {
     /// draft a person is about to read, and throwing the whole draft away over it would be a
     /// worse answer than a slightly wrong bar.
     static func draft(from object: [String: Any], places: [StartPoints.Place]) -> Draft? {
+        // **Empty is an answer.** "Open clawdline" and nothing else asks for a session and for
+        // nothing to be typed into it, and the page obliges by opening the tab and sending no
+        // message. A greeting invented to fill this field is a turn the assistant spends on a
+        // conversation nobody started — measured, four tool calls and six hundred tokens before
+        // anybody had asked it for anything.
         let instructions = (object["instructions"] as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !instructions.isEmpty else { return nil }
         let number = (object["project"] as? NSNumber)?.intValue ?? 0
         let named = (object["assistant"] as? String ?? "").lowercased()
         let confidence = min(1, max(0, (object["confidence"] as? NSNumber)?.doubleValue ?? 0))

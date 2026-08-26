@@ -695,7 +695,8 @@ export var Mock = (function () {
          * to see from a file:// copy same as everywhere else it applies.
          *
          * `?intents=` picks which of the measured shapes comes back: `noplanner` and `busy` are
-         * the two refusals, `unsure` is a low-confidence guess with a question attached, and `etc`
+         * the two refusals, `unsure` is a low-confidence guess with a question attached, `silent`
+         * is a draft with nothing to type — a request to open a session and no more — and `etc`
          * reproduces the exact case in `Planner.swift`'s own header — a model that would not pick
          * a directory outside the list but still wrote a sentence about one into `instructions`.
          * Anything else is the ordinary confident answer, aimed at whichever project is first.
@@ -722,6 +723,16 @@ export var Mock = (function () {
                         done({ draft: { place_id: null, assistant: "claude", instructions: text,
                                         title: text.slice(0, 20), confidence: 0.3,
                                         question: "Which project is this for?" }, ms: ms });
+                        return;
+                    }
+                    if (mode === "silent") {
+                        // "Open clawdline" and nothing else. The draft names a project and has
+                        // nothing to type, which is the whole request — the sheet opens the tab,
+                        // sends no message, and goes there.
+                        var quiet = places[0];
+                        done({ draft: { place_id: quiet ? quiet.id : null, assistant: "claude",
+                                        instructions: "", title: "a session", confidence: 0.9,
+                                        question: "" }, ms: ms });
                         return;
                     }
                     if (mode === "etc") {

@@ -249,6 +249,16 @@ export function inlineMd(text) {
         return "<" + (spans.length - 1) + ">";
     });
 
+    // A link's opening tag goes the same way, and for the same reason one line further on: the
+    // emphasis rules run after this one, and a `**` still looking for its partner takes the
+    // first one it meets — which, once a link has been written, is the punctuation inside the
+    // `href`. That is how `**對照頁更新了 → https://…9d**` came out as
+    // `<a href="https://…9d</strong>">`: a bold line, and an address with a closing tag inside
+    // it that no tap could follow. Only the tag is held back, not the label, so the emphasis
+    // inside a written link's text still renders.
+    var tags = [];
+    function opening(html) { tags.push(html); return "<t" + (tags.length - 1) + ">"; }
+
     s = s
         // Written links and bare ones in **one pass, alternating**, and the order inside the
         // pattern is the whole trick: at each position the `[label](href)` form is tried first,
@@ -260,33 +270,58 @@ export function inlineMd(text) {
         // Safe because `esc` has already run: what is matched here is escaped text, and what is
         // put in the attribute is the same escaped text, so a `"` in the source is `&quot;` and
         // cannot close the attribute.
-        .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)|(\bhttps?:\/\/[^\s<]+)/g,
+        //
+        // A bare address runs to whitespace, **except** for the full-width punctuation a Chinese
+        // sentence is built from. A space is what ends a URL in English, and there is no space
+        // after `，` — so `https://example.com/x，然後` was one address as far as this pattern
+        // could tell, and the rest of the sentence went inside the link and turned blue. Trimming
+        // the tail afterwards cannot undo that: by then the last character is `後`, not `，`.
+        // Full-width brackets stay allowed, because a URL can genuinely contain them
+        // (`…/wiki/中文（消歧義）`) and the balanced-closer rule below already handles the ones
+        // that are really the sentence's.
+        .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)|(\bhttps?:\/\/[^\s<，。、；：！？]+)/g,
                  function (all, label, href, bare) {
             if (!bare) {
                 return safeHref(href)
-                    ? '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + "</a>"
+                    ? opening('<a href="' + href + '" target="_blank" rel="noopener noreferrer">')
+                        + label + "</a>"
                     : localFileHref(href)
-                        ? '<span class="local-ref" title="' + href + '">' + label + "</span>"
+                        ? opening('<span class="local-ref" title="' + href + '">')
+                            + label + "</span>"
                     : all;
             }
             // Punctuation that ends a sentence is not part of the address. A closing bracket is,
             // but only if the URL opened one — which is what people writing about Wikipedia keep
             // discovering. Anything trimmed goes back outside the link, where it was meant to be.
+            //
+            // `*`, `_` and `~` are in that list because a whole line is often bold — the address
+            // included — and `…9d**` is then what the pattern sees. Trimming them puts the marker
+            // back where it was written, outside the link, where the emphasis rule below can find
+            // its partner and bold the sentence *and* the link. The cost is an address genuinely
+            // ending in one of the three, which is not a thing people link to.
+            //
+            // The full-width brackets are in the closer list for the same reason the ASCII ones
+            // are: `（見 https://example.com/a）` is a sentence in parentheses, not an address
+            // ending in one.
+            var closers = ")]}）」』》】〕", openers = "([{（「『《【〔";
+            var enders = ".,;:!?'\u201d\u2019&*_~\u2026";
             var url = bare, tail = "";
             while (url.length) {
                 var last = url.charAt(url.length - 1);
-                if (")]}".indexOf(last) >= 0) {
-                    var open = "([{".charAt(")]}".indexOf(last));
+                if (closers.indexOf(last) >= 0) {
+                    var open = openers.charAt(closers.indexOf(last));
                     // `>=`, not `>`: one opened and one closed is balanced, and the closer
                     // belongs to the address. `>` chopped the tail off `…/Foo_(bar)` — the
                     // exact case this check was written for.
                     if (url.split(open).length >= url.split(last).length) break;
-                } else if (".,;:!?'\u201d\u2019&".indexOf(last) < 0) {
+                } else if (enders.indexOf(last) < 0) {
                     break;
                 }
                 // A quote at the end is punctuation around the address, not part of it — and by
-                // this point `esc` has turned it into an entity, so it is six characters.
+                // this point `esc` has turned it into an entity, so it is six characters. The
+                // apostrophe is the same story in five.
                 if (/&quot;$/.test(url)) { tail = "&quot;" + tail; url = url.slice(0, -6); continue; }
+                if (/&#39;$/.test(url)) { tail = "&#39;" + tail; url = url.slice(0, -5); continue; }
                 // `&amp;` and friends end in `;`, and chopping the `;` off leaves `&amp` on the
                 // screen — so an entity at the end is left whole.
                 if (last === ";" && /&[a-z]+;$/i.test(url)) break;
@@ -294,7 +329,8 @@ export function inlineMd(text) {
                 url = url.slice(0, -1);
             }
             if (!safeHref(url)) return all;
-            return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + "</a>" + tail;
+            return opening('<a href="' + url + '" target="_blank" rel="noopener noreferrer">')
+                + url + "</a>" + tail;
         })
         // Lazy, and not "no marker inside": the bar recurses into what it finds between two
         // markers, so `**a *b* c**` is bold with an italic in it there. Refusing the whole thing
@@ -308,6 +344,7 @@ export function inlineMd(text) {
         .replace(/(^|[\s(])\*([^*\n]*[^\s*\n])\*/g, "$1<em>$2</em>")
         .replace(/(^|[\s(])_([^_\n]*[^\s_\n])_/g, "$1<em>$2</em>");
 
+    s = s.replace(/<t(\d+)>/g, function (all, n) { return tags[n]; });
     return s.replace(/<(\d+)>/g, function (all, n) { return "<code>" + spans[n] + "</code>"; });
 }
 
