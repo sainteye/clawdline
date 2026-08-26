@@ -1,6 +1,6 @@
 ---
 name: clawdline
-version: 2.1.1
+version: 2.2.0
 description: |
   把工作派給另一個 session 做：透過 Clawdline app 開一個 child session（Claude 或 Codex），
   注入第一句話、等它寫回 result.json，完成時回報給你。適合「這件事我不想在這條對話裡做」
@@ -540,20 +540,21 @@ delivered -> reviewed -> pending landing -> landed
 
 1. 用 `GET /v1/sessions` 與相關 `/git` reading 找 owning root。地址用 Clawdline assistant-neutral
    的 terminal session `id`，不用 provider-specific `sessionId`。
-2. 用 `POST /v1/sessions/:id/send` 傳 wait request 給 owner，寫出 repository、精確 paths、這個 waiter
-   的 Clawdline session id、等待理由與 release condition。本機 remote credential 只能拿來呼叫，不能
-   印出或複製進 task。
-3. owner 要記下**每一個** waiter。commit 或以其他方式釋放那些 paths 後，逐一用 Clawdline 傳
-   release notice，列出 paths 與有的話 commit。同一個 owner 可以 fan-out 給 Claude 與 Codex，
-   不需要知道每個 session 跑哪個 assistant。
+2. 用本機 orchestrator credential 呼叫 `POST /v1/orchestrator/waits` 登記 relationship，寫出
+   `repository`、精確 `paths`、`owner_session_id`、`waiter_session_id`、`reason` 與
+   `release_condition`。Clawdline 會 canonicalize paths、deduplicate waiter、持久保存 group，並把
+   request 送進 owner 的 terminal。credential 只能拿來呼叫，不能印出或複製進 task。
+3. commit 或明確釋放 paths 後，owner 用 `POST /v1/orchestrator/waits/:id/release`，附自己的
+   session id 與有的話 commit。Clawdline 會 fan-out 給**每一個** waiter，逐筆記 delivery receipt；
+   部分失敗時重試只送尚未收到的人。放棄工作的 waiter 只能 cancel 自己。
 4. release notice 只是喚醒，不是證明。每個 waiter 在 stage 或 integrate 前都要重讀 target HEAD、
-   status 與 diff。
+   status 與 diff。broker 永遠不能從某一次乾淨 status 推測 release。
 
-Clawdline 還沒有 durable waiter registry 之前，成對的 Clawdline message 是這份協定的 transport，
-waiter list 暫由 owner session 持有。未來 broker 的正式實作應持久保存 repository identity、canonical
-paths、owner Clawdline id、全部 waiter ids、建立時間與 release condition；重複等待要 deduplicate；
-只有 owner 明確 release 才 fan-out structured release notice；owner 消失時未解等待仍要看得到。
-不能只因某一次 `git status` 短暫乾淨就自行判定已釋放。
+未解 wait 會跨 app restart 保存，owner 消失時也仍看得到。`GET /v1/sessions` 把它公布成獨立的
+`coordination` overlay：被擋住的 session 是 `waiting_on_session`／`waitingOn`，owner 是
+`waitedOnBy`。這**不會**把 terminal `state` 設成 `waiting`；後者仍只代表需要人回答，也只有它會
+觸發醒目的 row 與 push。原生與 web session row 會安靜顯示 `⏳ owner · release condition`；只有 UI
+不可用時，才用最後一行 `[Clawdline waiting]` marker 當 fallback。
 
 ### 維持 communication-protocol Artifact 等於現在
 
@@ -762,6 +763,10 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
 - **reviewer 跑完不等於程式碼完成。** `SAFE TO LAND` 會建立一個 root-owned pending landing
   obligation。要嘛在具名 target 上關掉它並驗證整合後 tree，要嘛交給一個具名 root；不能單靠 verdict
   把它翻成「做完了」。
+- **hunk-review 過的 index 要用無 pathspec 的 commit。** `git add -p` 與 staged-tree 驗證後，使用
+  純 `git commit -m <message>`。`git commit -- <path>...` 會從 worktree 取出具名檔案，可能把 reviewed
+  index 已排除的外來 unstaged hunks 一起吸進 commit。只有每個具名檔案的全部 worktree hunks 都屬於
+  同一批 delivery 時，pathspec commit 才安全。
 - **file waiter 是 Clawdline relationship。** request 與 release 都用 Clawdline session id，paths
   釋放時通知每一個 waiter，收到後再重驗。這份安全協定不能依賴 Claude Code 或 Codex message。
 - **protocol Artifact 是協定的一部分。** 任何 communication semantics 修改，都要透過 Claude Code

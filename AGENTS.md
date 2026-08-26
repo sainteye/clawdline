@@ -14,6 +14,10 @@ Do not infer ownership from a filename, a recent timestamp, or a new commit; ins
 - Before any root-owned commit, run `git diff --cached --stat` and remove anything outside that
   commit's scope.
 - Read the staged diff itself; a clean stat does not prove that a file contains only your work.
+- After hunk-staging, commit the reviewed index with plain `git commit -m <message>` and no
+  pathspec. `git commit -- <path>...` takes the named files from the worktree instead of the staged
+  hunk selection and can absorb another session's unstaged hunks. A commit pathspec is safe only
+  when the entire worktree diff of every named path belongs to that commit.
 - A child or worker session does not commit. It hands its changes back to the root session for
   review and commit.
 
@@ -35,12 +39,22 @@ Do not infer ownership from a filename, a recent timestamp, or a new commit; ins
   integration to an unnamed future session. The original root remains owner until Clawdline's
   handoff receipt confirms that the first line reached the named receiving root.
 - File-release coordination goes through Clawdline, never an assistant provider's native message
-  mechanism. Address the terminal-neutral session `id` returned by `GET /v1/sessions`, and send the
-  request or release through `POST /v1/sessions/:id/send` so Claude and Codex participate equally.
-- A wait request names the repository, exact paths, waiter session id, and release condition. The
-  owner keeps every waiter and, after committing or otherwise releasing those paths, sends each one
-  a Clawdline release notice with the paths and commit when there is one. A notice wakes the waiter;
-  it never replaces the waiter's own status and diff verification.
+  mechanism. Address the terminal-neutral session `id` returned by `GET /v1/sessions`; the durable
+  wait routes deliver request and release messages so Claude and Codex participate equally.
+- Register a wait with Clawdline's durable coordination-wait route, naming the repository, exact
+  paths, owner and waiter Clawdline session ids, reason, and release condition. Clawdline persists
+  and deduplicates the relationship, delivers the request, and exposes it on both Session records.
+  The owner explicitly releases it through Clawdline after committing or otherwise releasing the
+  paths; Clawdline fans the release notice out to every waiter and records partial delivery so a
+  retry does not notify successful recipients twice. A notice wakes the waiter; it never replaces
+  the waiter's own HEAD/status/diff verification. Never infer release from a clean worktree sample.
+- A peer wait is the Session's `coordination.state = waiting_on_session` overlay, not its terminal
+  `state`. The latter remains `idle`, `working`, or `waiting`; `waiting` still means the assistant
+  needs an answer from the person and is the only form that earns the loud UI and push alert. Native
+  and web session rows quietly show the owner and release condition, so a person knows the
+  idle-looking session is parked and should stay open. When that UI is unavailable, the fallback
+  user-visible message ends with `⏳ [Clawdline waiting] <owner> — <condition>; please keep this
+  session open.`
 - The living Claude Code Artifact for this protocol is
   `artifacts/2026-08-26-clawdline-communication-protocol.html`. Any change to Clawdline task,
   handoff, landing, claims, file-wait or cross-session communication semantics must update that

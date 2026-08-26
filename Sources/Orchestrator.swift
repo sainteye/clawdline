@@ -1337,10 +1337,14 @@ enum Orchestrator {
     /// A background pump and a new remote dispatch may both persist. Serializing the whole
     /// snapshot-and-write prevents an older snapshot from winning the atomic rename last.
     private static let storeSaveLock = NSLock()
+    /// Terminal delivery leaves the registry lock before it types. Serializing coordination
+    /// mutations closes the otherwise possible gap where two retries both see a missing receipt.
+    private static let coordinationDeliveryLock = NSLock()
     private static var loaded = false
     private static var tasks: [String: Task] = [:]
     private static var handoffs: [String: HandoffEnvelope] = [:]
     private static var handoffDeliveries: [String: HandoffDelivery] = [:]
+    private static var coordinationWaits: [String: CoordinationWait] = [:]
     /// How many `beat` walks are inside the loop, and which walk this is. Both exist to catch the
     /// overlap that should not be possible; neither changes what a walk does.
     private static var beatsInFlight = 0
@@ -1400,6 +1404,35 @@ enum Orchestrator {
         /// minutes after its task ends (see `orchestratorChildLinger`), and for those three
         /// minutes it is a child's tab with nobody behind it.
         let live: Bool
+    }
+
+    /// One session blocked on a coordination group. Request delivery and release delivery are
+    /// separate receipts: a retry must never type either message twice after it succeeded.
+    struct CoordinationWaiter {
+        let sessionID: String
+        let reason: String
+        let created: Date
+        var requestDeliveredAt: Date?
+        var releaseDeliveredAt: Date?
+    }
+
+    /// A release condition shared by every session waiting on the same owner, repository and
+    /// canonical path set. It is intentionally independent of ``SessionState``: this means an
+    /// agent is waiting on a peer, while `SessionState.waiting` means a person must answer.
+    struct CoordinationWait {
+        let id: String
+        let repository: String
+        let paths: [String]
+        let ownerSessionID: String
+        let releaseCondition: String
+        let created: Date
+        var waiters: [CoordinationWaiter]
+    }
+
+    /// The two quiet overlays a session row may draw without changing its terminal state.
+    struct Coordination {
+        let waitingOn: [[String: Any]]
+        let waitedOnBy: [[String: Any]]
     }
 
     /// What a terminal this app opened for a task is called. Nil for every other session.
@@ -5379,6 +5412,303 @@ enum Orchestrator {
         return out
     }
 
+    // MARK: - Cross-session coordination waits
+
+    /// Register a durable wait and deliver its request through Clawdline's own session transport.
+    /// A failed delivery leaves the row pending, so retrying the same relationship can deliver it
+    /// without losing the fact that the waiter is blocked.
+    static func registerCoordinationWait(
+        _ raw: [String: Any], now: Date = Date(),
+        deliver: (String, String) -> String?
+    ) -> Reply {
+        guard let repositoryRaw = boundedCoordinationText(raw["repository"], limit: 4_096),
+              let repository = canonicalCoordinationRepository(repositoryRaw),
+              let rawPaths = raw["paths"] as? [String],
+              let paths = canonicalCoordinationPaths(rawPaths, repository: repository),
+              let owner = boundedCoordinationText(raw["owner_session_id"], limit: 512),
+              let waiter = boundedCoordinationText(raw["waiter_session_id"], limit: 512),
+              owner != waiter,
+              let reason = boundedCoordinationText(raw["reason"], limit: 1_000),
+              let condition = boundedCoordinationText(raw["release_condition"], limit: 1_000)
+        else {
+            return .refused(400, "bad_wait",
+                            "repository, canonical paths, distinct owner/waiter session ids, "
+                            + "reason and release_condition are required.")
+        }
+
+        load()
+        coordinationDeliveryLock.lock(); defer { coordinationDeliveryLock.unlock() }
+        var deduplicated = false
+        var needsDelivery = true
+        var waitID: String
+        lock.lock()
+        if var existing = coordinationWaits.values.first(where: {
+            $0.repository == repository && $0.paths == paths
+                && $0.ownerSessionID == owner && $0.releaseCondition == condition
+        }) {
+            waitID = existing.id
+            if let index = existing.waiters.firstIndex(where: { $0.sessionID == waiter }) {
+                deduplicated = true
+                needsDelivery = existing.waiters[index].requestDeliveredAt == nil
+            } else {
+                existing.waiters.append(CoordinationWaiter(sessionID: waiter, reason: reason,
+                                                            created: now,
+                                                            requestDeliveredAt: nil,
+                                                            releaseDeliveredAt: nil))
+                coordinationWaits[existing.id] = existing
+            }
+        } else {
+            waitID = UUID().uuidString.lowercased()
+            coordinationWaits[waitID] = CoordinationWait(
+                id: waitID, repository: repository, paths: paths,
+                ownerSessionID: owner, releaseCondition: condition, created: now,
+                waiters: [CoordinationWaiter(sessionID: waiter, reason: reason, created: now,
+                                             requestDeliveredAt: nil,
+                                             releaseDeliveredAt: nil)])
+        }
+        lock.unlock()
+        save()
+
+        if needsDelivery {
+            let pathList = paths.joined(separator: ", ")
+            let message = "[Clawdline file-wait] Repo: \(repository). Exact paths: \(pathList). "
+                + "Waiter Clawdline session id: \(waiter). Reason: \(reason). "
+                + "Release condition: \(condition). After the condition is met, release this "
+                + "wait through Clawdline so every registered waiter is notified."
+            if let problem = deliver(owner, message) {
+                RemoteAuth.audit("orchestrator.wait.register", [
+                    "wait": waitID, "owner": owner, "waiter": waiter,
+                    "result": "delivery_failed",
+                ])
+                return .refused(status: 502, code: "request_delivery_failed",
+                                message: problem,
+                                extra: ["wait": coordinationWaitRecord(id: waitID) ?? [:]])
+            }
+            lock.lock()
+            if var current = coordinationWaits[waitID],
+               let index = current.waiters.firstIndex(where: { $0.sessionID == waiter }) {
+                current.waiters[index].requestDeliveredAt = now
+                coordinationWaits[waitID] = current
+            }
+            lock.unlock()
+            save()
+        }
+        RemoteAuth.audit("orchestrator.wait.register", [
+            "wait": waitID, "owner": owner, "waiter": waiter,
+            "result": deduplicated && !needsDelivery ? "deduplicated" : "delivered",
+        ])
+        return .ok(["ok": true, "deduplicated": deduplicated,
+                    "wait": coordinationWaitRecord(id: waitID) ?? [:]])
+    }
+
+    /// Explicit owner release. Successful deliveries are receipted before returning; a retry
+    /// only addresses the waiters that did not receive the first fan-out.
+    static func releaseCoordinationWait(
+        id: String, ownerSessionID: String, commit: String?, note: String?,
+        now: Date = Date(), deliver: (String, String) -> String?
+    ) -> Reply {
+        guard let owner = boundedCoordinationText(ownerSessionID, limit: 512),
+              commit.map({ boundedCoordinationText($0, limit: 200) != nil }) ?? true,
+              note.map({ boundedCoordinationText($0, limit: 1_000) != nil }) ?? true
+        else { return .refused(400, "bad_wait", "The release fields are not valid.") }
+        load()
+        coordinationDeliveryLock.lock(); defer { coordinationDeliveryLock.unlock() }
+        lock.lock()
+        guard let snapshot = coordinationWaits[id] else {
+            lock.unlock()
+            return .refused(404, "not_found", "No coordination wait named that.")
+        }
+        guard snapshot.ownerSessionID == owner else {
+            lock.unlock()
+            return .refused(403, "wrong_owner",
+                            "Only the owner recorded on this wait may release it.")
+        }
+        let pending = snapshot.waiters.filter { $0.releaseDeliveredAt == nil }
+        lock.unlock()
+
+        let commitText = commit.flatMap { boundedCoordinationText($0, limit: 200) }
+        let noteText = note.flatMap { boundedCoordinationText($0, limit: 1_000) }
+        var deliveredIDs: [String] = []
+        for waiter in pending {
+            var message = "[Clawdline file-wait release] Repo: \(snapshot.repository). "
+                + "Exact paths: \(snapshot.paths.joined(separator: ", ")). "
+            if let commitText { message += "Landed/released in commit \(commitText). " }
+            else { message += "The owner explicitly released these paths without a commit. " }
+            if let noteText { message += "Note: \(noteText). " }
+            message += "Re-check HEAD, status and diff before editing or integrating."
+            if deliver(waiter.sessionID, message) == nil { deliveredIDs.append(waiter.sessionID) }
+        }
+
+        lock.lock()
+        guard var current = coordinationWaits[id], current.ownerSessionID == owner else {
+            lock.unlock()
+            return .refused(409, "wait_changed", "The coordination wait changed during release.")
+        }
+        for index in current.waiters.indices
+            where deliveredIDs.contains(current.waiters[index].sessionID) {
+            current.waiters[index].releaseDeliveredAt = now
+        }
+        let total = current.waiters.count
+        let stillPending = current.waiters.filter { $0.releaseDeliveredAt == nil }.count
+        if stillPending == 0 { coordinationWaits.removeValue(forKey: id) }
+        else { coordinationWaits[id] = current }
+        lock.unlock()
+        save()
+
+        if stillPending > 0 {
+            RemoteAuth.audit("orchestrator.wait.release", [
+                "wait": id, "owner": owner, "result": "partial",
+                "sent": "\(deliveredIDs.count)", "pending": "\(stillPending)",
+            ])
+            return .refused(status: 502, code: "release_incomplete",
+                            message: "Some waiters could not be notified; retry this release.",
+                            extra: ["id": id, "sent": deliveredIDs.count,
+                                    "pending": stillPending])
+        }
+        RemoteAuth.audit("orchestrator.wait.release", [
+            "wait": id, "owner": owner, "result": "delivered", "sent": "\(total)",
+        ])
+        return .ok(["ok": true, "id": id, "released": total])
+    }
+
+    /// A waiter that abandons its work can remove only itself. This never guesses that a clean
+    /// worktree means release and never removes another session's obligation.
+    static func cancelCoordinationWait(id: String, waiterSessionID: String) -> Reply {
+        guard let waiter = boundedCoordinationText(waiterSessionID, limit: 512) else {
+            return .refused(400, "bad_wait", "waiter_session_id is required.")
+        }
+        load()
+        coordinationDeliveryLock.lock(); defer { coordinationDeliveryLock.unlock() }
+        lock.lock()
+        guard var current = coordinationWaits[id] else {
+            lock.unlock()
+            return .refused(404, "not_found", "No coordination wait named that.")
+        }
+        let before = current.waiters.count
+        current.waiters.removeAll { $0.sessionID == waiter }
+        guard current.waiters.count != before else {
+            lock.unlock()
+            return .refused(403, "not_waiter", "That session is not a waiter on this group.")
+        }
+        if current.waiters.isEmpty { coordinationWaits.removeValue(forKey: id) }
+        else { coordinationWaits[id] = current }
+        lock.unlock()
+        save()
+        RemoteAuth.audit("orchestrator.wait.cancel", ["wait": id, "waiter": waiter])
+        return .ok(["ok": true, "id": id])
+    }
+
+    static func coordinationWaitRecords() -> [[String: Any]] {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        return coordinationWaits.values.sorted {
+            $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created
+        }
+            .map(coordinationWaitRecord)
+    }
+
+    static func coordination(forTerminal id: String) -> Coordination {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        var waitingOn: [[String: Any]] = []
+        var waitedOnBy: [[String: Any]] = []
+        for wait in coordinationWaits.values {
+            for waiter in wait.waiters where waiter.releaseDeliveredAt == nil {
+                if waiter.sessionID == id {
+                    var row = coordinationWaitRecord(wait)
+                    row.removeValue(forKey: "waiters")
+                    row["reason"] = waiter.reason
+                    row["waiterCreatedAt"] = Int(waiter.created.timeIntervalSince1970)
+                    waitingOn.append(row)
+                }
+                if wait.ownerSessionID == id {
+                    var row = coordinationWaitRecord(wait)
+                    row.removeValue(forKey: "waiters")
+                    row["waiterSessionId"] = waiter.sessionID
+                    row["reason"] = waiter.reason
+                    waitedOnBy.append(row)
+                }
+            }
+        }
+        waitingOn.sort {
+            let left = ($0["createdAt"] as? Int ?? 0, $0["id"] as? String ?? "")
+            let right = ($1["createdAt"] as? Int ?? 0, $1["id"] as? String ?? "")
+            return left < right
+        }
+        waitedOnBy.sort {
+            let left = ($0["createdAt"] as? Int ?? 0,
+                        $0["waiterSessionId"] as? String ?? "")
+            let right = ($1["createdAt"] as? Int ?? 0,
+                         $1["waiterSessionId"] as? String ?? "")
+            return left < right
+        }
+        return Coordination(waitingOn: waitingOn, waitedOnBy: waitedOnBy)
+    }
+
+    private static func coordinationWaitRecord(id: String) -> [String: Any]? {
+        lock.lock(); defer { lock.unlock() }
+        return coordinationWaits[id].map(coordinationWaitRecord)
+    }
+
+    private static func coordinationWaitRecord(_ wait: CoordinationWait) -> [String: Any] {
+        [
+            "id": wait.id,
+            "repository": wait.repository,
+            "paths": wait.paths,
+            "ownerSessionId": wait.ownerSessionID,
+            "releaseCondition": wait.releaseCondition,
+            "createdAt": Int(wait.created.timeIntervalSince1970),
+            "waiters": wait.waiters.map { waiter -> [String: Any] in
+                var row: [String: Any] = [
+                    "sessionId": waiter.sessionID, "reason": waiter.reason,
+                    "createdAt": Int(waiter.created.timeIntervalSince1970),
+                ]
+                if let at = waiter.requestDeliveredAt {
+                    row["requestDeliveredAt"] = Int(at.timeIntervalSince1970)
+                }
+                if let at = waiter.releaseDeliveredAt {
+                    row["releaseDeliveredAt"] = Int(at.timeIntervalSince1970)
+                }
+                return row
+            },
+        ]
+    }
+
+    private static func boundedCoordinationText(_ value: Any?, limit: Int) -> String? {
+        guard let raw = value as? String else { return nil }
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.count <= limit,
+              !text.unicodeScalars.contains(where: { $0.value == 0 }) else { return nil }
+        return text
+    }
+
+    private static func canonicalCoordinationRepository(_ raw: String) -> String? {
+        guard raw.hasPrefix("/"), raw != "/" else { return nil }
+        let path = URL(fileURLWithPath: raw).standardizedFileURL.path
+        guard path.hasPrefix("/"), path != "/" else { return nil }
+        return path
+    }
+
+    private static func canonicalCoordinationPaths(_ raw: [String], repository: String)
+        -> [String]? {
+        guard !raw.isEmpty, raw.count <= 200 else { return nil }
+        let root = URL(fileURLWithPath: repository, isDirectory: true)
+        let prefix = repository + "/"
+        var found = Set<String>()
+        for path in raw {
+            guard !path.isEmpty, path.count <= 1_024,
+                  !path.unicodeScalars.contains(where: { $0.value == 0 }) else { return nil }
+            let absolute = path.hasPrefix("/")
+                ? URL(fileURLWithPath: path).standardizedFileURL.path
+                : URL(fileURLWithPath: path, relativeTo: root).standardizedFileURL.path
+            guard absolute.hasPrefix(prefix) else { return nil }
+            let relative = String(absolute.dropFirst(prefix.count))
+            guard !relative.isEmpty else { return nil }
+            found.insert(relative)
+        }
+        return found.sorted()
+    }
+
     // MARK: - The store
 
     static func load(force: Bool = false) {
@@ -5398,9 +5728,15 @@ enum Orchestrator {
             guard let envelope = handoff(from: row) else { continue }
             foundHandoffs[envelope.id] = envelope
         }
+        var foundWaits: [String: CoordinationWait] = [:]
+        for row in obj["coordination_waits"] as? [[String: Any]] ?? [] {
+            guard let wait = coordinationWait(from: row) else { continue }
+            foundWaits[wait.id] = wait
+        }
         lock.lock()
         tasks = found
         handoffs = foundHandoffs
+        coordinationWaits = foundWaits
         reindex()
         lock.unlock()
     }
@@ -5412,8 +5748,11 @@ enum Orchestrator {
         let rows = tasks.values.sorted { $0.created < $1.created }.map { stored($0) }
         let handoffRows = handoffs.values.sorted { $0.created < $1.created }
             .map { stored($0) }
+        let waitRows = coordinationWaits.values.sorted { $0.created < $1.created }
+            .map { stored($0) }
         lock.unlock()
-        let obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows]
+        let obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows,
+                                  "coordination_waits": waitRows]
         guard let data = try? JSONSerialization.data(withJSONObject: obj,
                                                      options: [.prettyPrinted, .sortedKeys,
                                                                .withoutEscapingSlashes]) else {
@@ -5505,6 +5844,57 @@ enum Orchestrator {
         if let title = envelope.title { out["title"] = title }
         if let from = envelope.fromSession { out["from_session"] = from }
         return out
+    }
+
+    static func stored(_ wait: CoordinationWait) -> [String: Any] {
+        [
+            "id": wait.id, "repository": wait.repository, "paths": wait.paths,
+            "owner_session_id": wait.ownerSessionID,
+            "release_condition": wait.releaseCondition,
+            "created": wait.created.timeIntervalSince1970,
+            "waiters": wait.waiters.map { waiter -> [String: Any] in
+                var row: [String: Any] = [
+                    "session_id": waiter.sessionID, "reason": waiter.reason,
+                    "created": waiter.created.timeIntervalSince1970,
+                ]
+                if let at = waiter.requestDeliveredAt {
+                    row["request_delivered_at"] = at.timeIntervalSince1970
+                }
+                if let at = waiter.releaseDeliveredAt {
+                    row["release_delivered_at"] = at.timeIntervalSince1970
+                }
+                return row
+            },
+        ]
+    }
+
+    static func coordinationWait(from obj: [String: Any]) -> CoordinationWait? {
+        guard let id = obj["id"] as? String, isTaskID(id),
+              let repositoryRaw = obj["repository"] as? String,
+              let repository = canonicalCoordinationRepository(repositoryRaw),
+              let pathsRaw = obj["paths"] as? [String],
+              let paths = canonicalCoordinationPaths(pathsRaw, repository: repository),
+              let owner = boundedCoordinationText(obj["owner_session_id"], limit: 512),
+              let condition = boundedCoordinationText(obj["release_condition"], limit: 1_000),
+              let created = obj["created"] as? Double else { return nil }
+        var seenWaiters = Set<String>()
+        let waiters: [CoordinationWaiter] = (obj["waiters"] as? [[String: Any]] ?? []).compactMap {
+            row in
+            guard let session = boundedCoordinationText(row["session_id"], limit: 512),
+                  seenWaiters.insert(session).inserted,
+                  let reason = boundedCoordinationText(row["reason"], limit: 1_000),
+                  let made = row["created"] as? Double else { return nil }
+            return CoordinationWaiter(
+                sessionID: session, reason: reason, created: Date(timeIntervalSince1970: made),
+                requestDeliveredAt: (row["request_delivered_at"] as? Double)
+                    .map(Date.init(timeIntervalSince1970:)),
+                releaseDeliveredAt: (row["release_delivered_at"] as? Double)
+                    .map(Date.init(timeIntervalSince1970:)))
+        }
+        guard !waiters.isEmpty else { return nil }
+        return CoordinationWait(id: id, repository: repository, paths: paths,
+                                ownerSessionID: owner, releaseCondition: condition,
+                                created: Date(timeIntervalSince1970: created), waiters: waiters)
     }
 
     static func handoff(from obj: [String: Any]) -> HandoffEnvelope? {
@@ -5776,6 +6166,7 @@ enum Orchestrator {
         tasks = [:]
         handoffs = [:]
         handoffDeliveries = [:]
+        coordinationWaits = [:]
         handoffTitlesByTerminal = [:]
         secrets = [:]
         dispatchTimes = []

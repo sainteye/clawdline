@@ -184,9 +184,10 @@ enum SessionState: Equatable {
             let selected = row.caret && (row.indented || index == flushLeftSelection)
             if selected { carets += 1 }
             if firstOptionLine == nil { firstOptionLine = captured.offset }
-            options.append(Menu.Option(number: row.number, label: row.label,
+            options.append(Menu.Option(number: row.number, label: withoutSidePanel(row.label),
                                        detail: detail(under: captured.offset, in: lines,
-                                                      stoppingAt: submit?.line),
+                                                      stoppingAt: submit?.line)
+                                           .map(withoutSidePanel),
                                        selected: selected))
         }
         // The caret has to be *somewhere* in the dialog, and the button counts: see above.
@@ -536,6 +537,28 @@ enum SessionState: Equatable {
     /// than the thing somebody has to answer, so it is a boundary and is intentionally omitted.
     /// Empty rows and box rules are stronger boundaries: crossing either would pull commands,
     /// permission details, or the preceding conversation into the question shown on a phone.
+    /// A label with whatever was drawn beside it taken off.
+    ///
+    /// A terminal has one grid, so a diagram the assistant printed sits in the same rows as the
+    /// dialog rather than behind it: `1. Stop only when unsure    ┌──────────────▶ Whisper ─┐`
+    /// is one line, and the half after the gap belongs to a picture. Two or more spaces followed
+    /// by a box-drawing character is that seam — prose does not put a frame corner a column after
+    /// a run of spaces, and a label that genuinely contains one has it without the gap.
+    private static func withoutSidePanel(_ label: String) -> String {
+        let chars = Array(label)
+        var gap = 0
+        for (index, char) in chars.enumerated() {
+            if char == " " { gap += 1; continue }
+            if gap >= 2, boxes.contains(char) || horizontalRules.contains(char)
+                || boxJoints.contains(char) {
+                return String(chars[0..<(index - gap)])
+                    .trimmingCharacters(in: .whitespaces)
+            }
+            gap = 0
+        }
+        return label
+    }
+
     /// The rows drawn under one option, joined into a sentence.
     ///
     /// Walks down until the next option, a frame or a blank — the same edges the question uses,
@@ -642,10 +665,13 @@ enum SessionState: Equatable {
 
     /// A horizontal rule, including its corners. Requiring at least one horizontal stroke keeps
     /// an ordinary sentence containing a box character from becoming a boundary by accident.
+    private static let horizontalRules: Set<Character> = ["─", "━", "═", "╌", "╍", "┄", "┅", "┈", "┉"]
+    private static let boxJoints: Set<Character> = ["╭", "╮", "╰", "╯", "┌", "┐", "└", "┘", "├", "┤",
+                                                    "┬", "┴", "┼", "╞", "╡", "╪", "┏", "┓", "┗", "┛"]
+
     private static func isBoxRule(_ raw: String) -> Bool {
-        let horizontal: Set<Character> = ["─", "━", "═", "╌", "╍", "┄", "┅", "┈", "┉"]
-        let joints: Set<Character> = ["╭", "╮", "╰", "╯", "┌", "┐", "└", "┘", "├", "┤",
-                                      "┬", "┴", "┼", "╞", "╡", "╪", "┏", "┓", "┗", "┛"]
+        let horizontal = horizontalRules
+        let joints = boxJoints
         var sawHorizontal = false
         for char in raw {
             if char == " " || char == "\t" || boxes.contains(char) || joints.contains(char) {

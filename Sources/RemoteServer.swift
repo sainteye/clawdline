@@ -740,6 +740,69 @@ final class RemoteServer {
             return answer(Orchestrator.agentNotify(title: body["title"] as? String ?? "",
                                                    body: body["body"] as? String ?? ""))
 
+        case ("GET", "/v1/orchestrator/waits"):
+            return .json(["waits": Orchestrator.coordinationWaitRecords(),
+                          "at": Int(Date().timeIntervalSince1970)])
+
+        case ("POST", "/v1/orchestrator/waits"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Registering a coordination wait needs the orchestrator token.")
+            }
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            if let waiterID = body["waiter_session_id"] as? String,
+               self.session(withID: waiterID) == nil {
+                return .error(404, "waiter_not_found", "No waiter session named \(waiterID).")
+            }
+            let reply = Orchestrator.registerCoordinationWait(body) { targetID, text in
+                guard let target = self.session(withID: targetID) else {
+                    return "No session named \(targetID)."
+                }
+                return Targets.send(text, to: target)
+            }
+            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+            return answer(reply)
+
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/waits/")
+            && path.hasSuffix("/release"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Releasing a coordination wait needs the orchestrator token.")
+            }
+            let id = String(path.dropFirst("/v1/orchestrator/waits/".count)
+                .dropLast("/release".count))
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            let reply = Orchestrator.releaseCoordinationWait(
+                id: id.removingPercentEncoding ?? id,
+                ownerSessionID: body["owner_session_id"] as? String ?? "",
+                commit: body["commit"] as? String, note: body["note"] as? String,
+                deliver: { targetID, text in
+                    guard let target = self.session(withID: targetID) else {
+                        return "No session named \(targetID)."
+                    }
+                    return Targets.send(text, to: target)
+                })
+            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+            return answer(reply)
+
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/waits/")
+            && path.hasSuffix("/cancel"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Cancelling a coordination wait needs the orchestrator token.")
+            }
+            let id = String(path.dropFirst("/v1/orchestrator/waits/".count)
+                .dropLast("/cancel".count))
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            let reply = Orchestrator.cancelCoordinationWait(
+                id: id.removingPercentEncoding ?? id,
+                waiterSessionID: body["waiter_session_id"] as? String ?? "")
+            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+            return answer(reply)
+
         case ("GET", "/v1/orchestrator/schedules"):
             return .json(["schedules": Orchestrator.scheduleRecords(),
                           "at": Int(Date().timeIntervalSince1970)])
@@ -2243,6 +2306,29 @@ final class RemoteServer {
             "state": name(of: state),
         ]
         if let assistant = session.assistant { out["assistant"] = assistant.rawValue }
+        let coordination = Orchestrator.coordination(forTerminal: session.id)
+        if !coordination.waitingOn.isEmpty || !coordination.waitedOnBy.isEmpty {
+            let waitingOn = coordination.waitingOn.map { raw -> [String: Any] in
+                var row = raw
+                if let id = row["ownerSessionId"] as? String,
+                   let owner = watch.targets.first(where: { $0.id == id }) {
+                    row["ownerLabel"] = owner.displayLabel
+                }
+                return row
+            }
+            let waitedOnBy = coordination.waitedOnBy.map { raw -> [String: Any] in
+                var row = raw
+                if let id = row["waiterSessionId"] as? String,
+                   let waiter = watch.targets.first(where: { $0.id == id }) {
+                    row["waiterLabel"] = waiter.displayLabel
+                }
+                return row
+            }
+            out["coordination"] = [
+                "state": waitingOn.isEmpty ? "has_waiters" : "waiting_on_session",
+                "waitingOn": waitingOn, "waitedOnBy": waitedOnBy,
+            ]
+        }
         if case .working(let line) = state { out["line"] = line }
         if state == .waiting, let menu {
             // The page's transcript revision predates structured menus and watches `line`, not

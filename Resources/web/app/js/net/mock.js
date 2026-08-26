@@ -94,6 +94,20 @@ export var Mock = (function () {
         { id: "A15E-77", backend: "tmux", tty: "tmux:%12", label: "docs pass before the release",
           cwd: "/Users/x/code/clawdline/docs", state: "idle", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: clawdline },
+        // Idle because its own turn ended, but not safe to close: Clawdline still owns a durable
+        // relationship saying which peer must release which path. This is deliberately separate
+        // from `state: "waiting"`, whose orange row means a person has to answer.
+        { id: "7A19-42", backend: "iterm", tty: "ttys015",
+          label: "update the communication Artifact",
+          cwd: "/Users/x/code/clawdline", state: "idle", line: null,
+          isClaude: false, assistant: "codex", sessionId: null, icon: clawdline,
+          coordination: { state: "waiting_on_session", waitedOnBy: [], waitingOn: [{
+              id: "0ae8b6e7-83b5-4bcd-a61c-776f56924e15",
+              repository: "/Users/x/code/clawdline",
+              paths: ["artifacts/2026-08-26-clawdline-communication-protocol.html"],
+              ownerSessionId: "A15E-77", ownerLabel: "docs pass before the release",
+              releaseCondition: "the protocol docs are committed and released"
+          }] } },
         { id: "44D2-05", backend: "iterm", tty: "ttys017", label: "scratch",
           cwd: "/Users/x/tmp/notes", state: "idle", line: null,
           isClaude: false, assistant: "codex", sessionId: null, icon: null },

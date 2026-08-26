@@ -111,6 +111,10 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/orchestrator/tasks/:id/notify` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/complete` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/cancel` | orchestrator token, **or** token + key | `send` **and** the write switch |
+| `GET` | `/v1/orchestrator/waits` | orchestrator token, **or** token | `read` |
+| `POST` | `/v1/orchestrator/waits` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/waits/:id/release` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/waits/:id/cancel` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/schedules` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/schedules/:id` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/schedules` | token + key | `send` **and** the write switch |
@@ -1162,6 +1166,56 @@ When a serialized task is promoted to `spawning`, the pump runs the scan against
 at that moment. Its dispatch response is already gone, so a newly found overlap is sent only as the
 same best-effort typed line to identifiable roots; it is not added retroactively to the response.
 
+### Coordination waits
+
+`POST /v1/orchestrator/waits` registers one durable cross-session file wait and delivers its
+request to the owner through Clawdline. It requires `X-Clawdline-Orchestrator`:
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/waits \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d '{"repository":"/Users/you/code/clawdline","paths":["Sources/Foo.swift"],
+         "owner_session_id":"OWNER-TERMINAL-ID","waiter_session_id":"WAITER-TERMINAL-ID",
+         "reason":"the owner has an unfinished diff","release_condition":"commit or explicit release"}'
+{"ok":true,"deduplicated":false,"wait":{"id":"0d9579fb-…","repository":"/Users/you/code/clawdline",
+ "paths":["Sources/Foo.swift"],"ownerSessionId":"OWNER-TERMINAL-ID",
+ "releaseCondition":"commit or explicit release","createdAt":1787740810,"waiters":[…]}}
+```
+
+Both session ids are the terminal-neutral `id` values from `GET /v1/sessions`. `repository` must be
+an absolute path other than `/`; every path must resolve below it. Clawdline stores canonical
+repository-relative paths, sorts them and removes duplicates. The same owner, repository, path set,
+release condition and waiter is idempotent even without an HTTP idempotency key: it returns the
+existing group with `deduplicated: true` and does not type the request again after its delivery
+receipt. Another waiter joins that release group and receives its own request delivery.
+
+The registry row is written before terminal delivery. If the owner cannot be reached, the route
+returns `502 request_delivery_failed` with the durable `wait` in the error; retrying the same body
+attempts only the missing request delivery. `GET /v1/orchestrator/waits` lists every unresolved group
+under `waits`. Like task reads, it accepts either the orchestrator credential or an ordinary paired
+device with read permission, because the same relationships are already present on Session rows.
+
+After the release condition is true, the recorded owner calls the release route:
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/waits/$WAIT/release \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d '{"owner_session_id":"OWNER-TERMINAL-ID","commit":"abc123","note":"tree rechecked"}'
+{"ok":true,"id":"0d9579fb-…","released":2}
+```
+
+`commit` and `note` are optional; the owner id is not. Clawdline sends every active waiter a release
+notice naming repository, paths, commit/note when present, and the requirement to re-check HEAD,
+status and diff. Each successful delivery is persisted. If any delivery fails, the route returns
+`502 release_incomplete` with `sent` and `pending`; the group stays registered and retry sends only
+to the pending recipients. It is removed only after all receive the notice. `403 wrong_owner`
+means the supplied owner differs from the persisted one.
+
+A waiter abandoning its work calls `POST /v1/orchestrator/waits/:id/cancel` with
+`{"waiter_session_id":"WAITER-TERMINAL-ID"}` and the orchestrator credential. It removes only that
+waiter's membership; `403 not_waiter` protects every other obligation. No route infers release from
+Git state, and an owner session disappearing does not remove a wait.
+
 ### `GET /v1/orchestrator/schedules`
 
 Lists every JSON source under `~/.config/clawdline/schedules/`. A paired device, including a
@@ -1536,6 +1590,10 @@ app, and an open-ended size is an open-ended cache.
   "state": "working",                            // "working" | "waiting" | "idle" | "unknown"
   "line": "Crafting… (2m 45s · ↓ 6.0k tokens)",  // only when state is "working"
   "menu": { "selected": 2, "options": [ … ] },   // only when state is "waiting", and readable
+  "coordination": {                                // absent without active peer waits
+    "state": "waiting_on_session",                 // or "has_waiters"
+    "waitingOn": [ … ], "waitedOnBy": [ … ]
+  },
   "agents": [ … ],                               // only when this session has agents out
   "shells": [ … ],                               // only when it left a command running
   "cwd": "/Users/you/code/atrium",          // absent if the terminal would not say
@@ -1547,6 +1605,16 @@ app, and an open-ended size is an open-ended cache.
 `state` is decided by looking at the screen, and `waiting` is the one worth acting on: it means a
 question is on screen. `unknown` means the terminal did not answer, which is not the same as idle
 and is deliberately not flattened into it.
+
+`coordination` is an independent broker overlay, not another terminal state. `waitingOn` lists
+durable file-wait groups that block this session; `waitedOnBy` lists each active waiter for groups
+this session owns. A blocked session carries `state: "waiting_on_session"` inside this object while
+its top-level `state` remains whatever the terminal is doing — normally `idle`. Therefore it does
+not count as waiting for a person and does not trigger the waiting push. Each wait names `id`,
+`repository`, canonical relative `paths`, `ownerSessionId`, `releaseCondition`, `createdAt`, and its
+current waiter's `reason`; `waitedOnBy` also names `waiterSessionId`. Live session labels are added
+as `ownerLabel`/`waiterLabel` when available; ids stay authoritative and unresolved relationships
+remain visible when a session disappears. The full waiter arrays live on the wait-registry route.
 
 `label` is the tab title with two things taken off: iTerm's ` (job name)` suffix, which helps nobody
 pick a tab, and the status glyph Claude Code puts on the front — which is now a frame of an

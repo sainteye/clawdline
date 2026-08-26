@@ -9788,6 +9788,165 @@ group("handoff registration opens once and shares the dispatch brake") {
     check("terminal refusals still spend the shared ticket", Orchestrator.takeDispatchRate() == nil)
 }
 
+group("coordination waits are durable broker relationships") {
+    Orchestrator.forget()
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before {
+            try? before.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Orchestrator.forget()
+    }
+
+    let firstWaiter = "WAIT-A"
+    let secondWaiter = "WAIT-B"
+    let owner = "OWNER"
+    let created = Date(timeIntervalSince1970: 1_800_000_000)
+    func request(waiter: String) -> [String: Any] {
+        [
+            "repository": "/Users/me/code/clawdline/",
+            "paths": ["Sources/Foo.swift", "./Sources/Foo.swift"],
+            "owner_session_id": owner,
+            "waiter_session_id": waiter,
+            "reason": "the owner is editing the same file",
+            "release_condition": "the path is committed or explicitly released",
+        ]
+    }
+
+    var requests: [(String, String)] = []
+    func deliverRequest(_ target: String, _ text: String) -> String? {
+        requests.append((target, text))
+        return nil
+    }
+    let first = Orchestrator.registerCoordinationWait(
+        request(waiter: firstWaiter), now: created, deliver: deliverRequest)
+    guard case .ok(let firstPayload) = first,
+          let wait = firstPayload["wait"] as? [String: Any],
+          let waitID = wait["id"] as? String else {
+        check("a valid coordination wait registers", false); return
+    }
+    expect("the broker delivers the request to the owner", requests.first?.0, owner)
+    check("the delivered request identifies the waiter and release condition",
+          requests.first?.1.contains(firstWaiter) == true
+              && requests.first?.1.contains("committed or explicitly released") == true)
+    expect("canonical duplicate paths are stored once",
+           wait["paths"] as? [String], ["Sources/Foo.swift"])
+
+    let duplicate = Orchestrator.registerCoordinationWait(
+        request(waiter: firstWaiter), now: created.addingTimeInterval(5),
+        deliver: deliverRequest)
+    guard case .ok(let duplicatePayload) = duplicate else {
+        check("a duplicate wait is accepted idempotently", false); return
+    }
+    expect("a duplicate reports that it reused the relationship",
+           duplicatePayload["deduplicated"] as? Bool, true)
+    expect("and does not type the same request twice", requests.count, 1)
+
+    _ = Orchestrator.registerCoordinationWait(
+        request(waiter: secondWaiter), now: created.addingTimeInterval(10),
+        deliver: deliverRequest)
+    expect("a second waiter is delivered independently", requests.count, 2)
+    expect("both waiters share one release group",
+           Orchestrator.coordinationWaitRecords().count, 1)
+    expect("the first waiter's session overlay names one wait",
+           Orchestrator.coordination(forTerminal: firstWaiter).waitingOn.count, 1)
+    expect("the owner's overlay counts both blocked sessions",
+           Orchestrator.coordination(forTerminal: owner).waitedOnBy.count, 2)
+
+    Orchestrator.forget()
+    expect("the unresolved wait survives an app-memory reset",
+           Orchestrator.coordination(forTerminal: firstWaiter).waitingOn.count, 1)
+
+    var releases: [String] = []
+    let partial = Orchestrator.releaseCoordinationWait(
+        id: waitID, ownerSessionID: owner, commit: "abc123", note: nil,
+        deliver: { target, text in
+            releases.append(target)
+            check("a release notice names the commit", text.contains("abc123"))
+            return target == secondWaiter ? "terminal closed" : nil
+        })
+    guard case .refused(let status, let code, _, let extra) = partial else {
+        check("a partial fan-out is reported", false); return
+    }
+    expect("a partial fan-out is an upstream failure", status, 502)
+    expect("with a stable coordination delivery code", code, "release_incomplete")
+    expect("the response counts the waiter still pending", extra["pending"] as? Int, 1)
+    expect("a notified waiter is no longer shown as blocked",
+           Orchestrator.coordination(forTerminal: firstWaiter).waitingOn.count, 0)
+    expect("the failed waiter remains visibly blocked",
+           Orchestrator.coordination(forTerminal: secondWaiter).waitingOn.count, 1)
+
+    let retry = Orchestrator.releaseCoordinationWait(
+        id: waitID, ownerSessionID: owner, commit: "abc123", note: "tree rechecked",
+        deliver: { target, _ in releases.append(target); return nil })
+    guard case .ok(let releasedPayload) = retry else {
+        check("the pending release can be retried", false); return
+    }
+    expect("retry sends only to the waiter that missed the first notice",
+           releases, [firstWaiter, secondWaiter, secondWaiter])
+    expect("the completed release reports both waiters", releasedPayload["released"] as? Int, 2)
+    check("a fully released relationship leaves no active registry row",
+          Orchestrator.coordinationWaitRecords().isEmpty)
+}
+
+group("coordination wait routes keep their credential and ownership boundaries") {
+    Orchestrator.forget()
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before {
+            try? before.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Orchestrator.forget()
+    }
+    let owner = "ROUTE-OWNER", waiter = "ROUTE-WAITER"
+    let made = Orchestrator.registerCoordinationWait([
+        "repository": "/Users/me/code/clawdline", "paths": ["Sources/Foo.swift"],
+        "owner_session_id": owner, "waiter_session_id": waiter, "reason": "overlap",
+        "release_condition": "explicit release",
+    ], deliver: { _, _ in nil })
+    guard case .ok(let payload) = made,
+          let row = payload["wait"] as? [String: Any],
+          let id = row["id"] as? String else {
+        check("a route fixture registers", false); return
+    }
+
+    let phone = RemoteAuth.addDevice(name: "wait route reader", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: phone.id) }
+    let anonymous = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/waits"))
+    expect("an anonymous wait-registry read stops at the door", anonymous.status, 401)
+    let listed = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/waits",
+        headers: ["Authorization": "Bearer \(phone.token)"]))
+    expect("a paired reader may see the relationships Session rows expose", listed.status, 200)
+    let listedJSON = (try? JSONSerialization.jsonObject(with: listed.body)) as? [String: Any]
+    expect("the registry GET includes the active group",
+           (listedJSON?["waits"] as? [[String: Any]])?.count, 1)
+
+    let pairedWrite = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/waits",
+        headers: ["Authorization": "Bearer \(phone.token)"], body: "{}"))
+    expect("a paired device cannot register an agent coordination wait", pairedWrite.status, 403)
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let wrongOwner = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/waits/\(id)/release", headers: auth,
+        body: "{\"owner_session_id\":\"SOMEBODY-ELSE\"}"))
+    expect("a release must name the persisted owner", wrongOwner.status, 403)
+    expect("with the ownership-specific code", remoteErrorCode(wrongOwner), "wrong_owner")
+    let cancelled = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/waits/\(id)/cancel", headers: auth,
+        body: "{\"waiter_session_id\":\"\(waiter)\"}"))
+    expect("the registered waiter may cancel only its membership", cancelled.status, 200)
+    check("cancelling the sole waiter removes the group",
+          Orchestrator.coordinationWaitRecords().isEmpty)
+}
+
 group("handing off is the other thing a paired device may not do") {
     Orchestrator.forget()
     defer { Orchestrator.forget() }

@@ -1780,8 +1780,20 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
 
     /// What the row says after its label. Split from the label so the row can put the spinner
     /// between the two and lay the three of them out itself.
+    private func coordinationWaitSaid(for terminalID: String) -> String? {
+        let waits = Orchestrator.coordination(forTerminal: terminalID).waitingOn
+        guard let first = waits.first else { return nil }
+        let ownerID = first["ownerSessionId"] as? String ?? ""
+        let owner = targets.first(where: { $0.id == ownerID })?.displayLabel
+            ?? (ownerID.isEmpty ? "Clawdline" : ownerID)
+        let condition = first["releaseCondition"] as? String ?? "release"
+        let more = waits.count > 1 ? "  +\(waits.count - 1)" : ""
+        return "⏳ \(owner) · \(condition)\(more)"
+    }
+
     private func sessionRowDetail(_ state: SessionState, selected: Bool,
-                                  agents: Int = 0, shells: Int = 0) -> NSAttributedString? {
+                                  agents: Int = 0, shells: Int = 0,
+                                  coordinationWait: String? = nil) -> NSAttributedString? {
         let s = NSMutableAttributedString()
         let small = NSFont.systemFont(ofSize: Style.listSize - 1.5)
         func add(_ text: String, _ colour: NSColor, _ font: NSFont) {
@@ -1797,6 +1809,10 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 add((first ? "  ·  " : "") + said, colour, font)
                 first = true
             }
+        }
+        func addCoordination(_ colour: NSColor, leading: Bool = true) {
+            guard let coordinationWait else { return }
+            add((leading ? "  ·  " : "") + coordinationWait, colour, small)
         }
         let away = agents + shells
         switch state {
@@ -1814,6 +1830,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             // than the last eleven characters of a sentence that is already ellipsised.
             let room = away > 0 ? 28 : 44
             add(line.count > room ? line.prefix(room - 1) + "…" : line, quiet, small)
+            addCoordination(quiet)
             addAway(quiet, small)
         case .waiting:
             // The one loud thing in the list, because it is the only state that costs you
@@ -1822,6 +1839,7 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             // Underneath it in the reading order and in the colour. A session can be waiting on
             // a permission dialog while three agents keep working, and the question is still the
             // only part of that anybody has to act on.
+            addCoordination(.tertiaryLabelColor)
             addAway(.tertiaryLabelColor, small)
         case .idle, .unknown:
             // **Not nil any more, if anything is out.** An idle-looking session with three agents
@@ -1832,8 +1850,9 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
             // A command left running is the same mistake made worse. An agent at least belongs to
             // a turn that is still going; a background shell is what a *finished* turn leaves
             // behind, so this row is the one place anything says the build is still on.
-            guard away > 0 else { return nil }
-            addAway(.tertiaryLabelColor, small, leading: false)
+            guard away > 0 || coordinationWait != nil else { return nil }
+            addCoordination(.tertiaryLabelColor, leading: false)
+            addAway(.tertiaryLabelColor, small, leading: coordinationWait != nil)
         }
         return s
     }
@@ -2073,7 +2092,8 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
                                 rich: sessionRowText(target, selected: selected))
             row.detail = sessionRowDetail(state, selected: selected,
                                           agents: runningAgents(of: target.id),
-                                          shells: runningShells(of: target.id))
+                                          shells: runningShells(of: target.id),
+                                          coordinationWait: coordinationWaitSaid(for: target.id))
             if case .working = state { row.isBusy = true }
             row.icon = rowIcons[target.id]
             row.isSelected = selected

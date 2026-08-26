@@ -371,6 +371,10 @@ function fillRow(node, s) {
     node.dataset.state = s.state;
     if (closingVisible) node.dataset.closing = "1"; else delete node.dataset.closing;
     if (pending) node.dataset.pending = "1"; else delete node.dataset.pending;
+    var coordination = s.coordination || {};
+    var waitingOn = coordination.waitingOn || [];
+    if (waitingOn.length) node.dataset.coordination = "waiting";
+    else delete node.dataset.coordination;
     node.classList.toggle("selected", s.id === S.selectedId);
     node.classList.toggle("open", s.id === S.openId);
     node.setAttribute("aria-selected", s.id === S.selectedId ? "true" : "false");
@@ -472,7 +476,28 @@ function fillRow(node, s) {
     var shells = ((s && s.shells) || []).length;
     var shellsSaid = !shells ? "" : '<span class="shells">' +
         esc(shells === 1 ? T.sessionShellOne : fill(T.sessionShellMany, { n: shells })) + "</span>";
-    var shape = kind + "-" + s.state + (shells ? "+sh" + shells : "");
+    // A peer wait is an overlay, never the terminal state. It must not enter the loud waiting
+    // branch above: that branch means a person has to answer and is what drives push alerts.
+    var peerWait = waitingOn[0] || null;
+    var peerText = "";
+    var peerTitle = "";
+    if (peerWait) {
+        var owner = peerWait.ownerLabel || peerWait.ownerSessionId || "Clawdline";
+        peerText = "⏳ " + owner + " · " + (peerWait.releaseCondition || "release");
+        if (waitingOn.length > 1) peerText += "  +" + String(waitingOn.length - 1);
+        peerTitle = waitingOn.map(function (wait) {
+            return [wait.repository, (wait.paths || []).join(", "), wait.releaseCondition]
+                .filter(Boolean).join(" · ");
+        }).join("\n");
+    }
+    var peerSaid = peerWait ? '<span class="coordination-wait" title="' +
+        esc(peerTitle) + '">' + esc(peerText) + "</span>" : "";
+    var waitShape = waitingOn.map(function (wait) {
+        return [wait.id || "wait", wait.ownerLabel || wait.ownerSessionId || "",
+            wait.releaseCondition || ""].join(":");
+    }).join("+");
+    var shape = kind + "-" + s.state + (shells ? "+sh" + shells : "") +
+        (waitShape ? "+cw" + waitShape : "");
     if (state.dataset.shape !== shape) {
         state.dataset.shape = shape;
         if (kind === "closing") {
@@ -484,20 +509,23 @@ function fillRow(node, s) {
                 : "") + '<canvas class="spin"></canvas><span class="line">' +
                 esc(T.webPending) + "</span>";
         } else if (s.state === "waiting") {
-            state.innerHTML = '<span class="wants">' + esc(T.sessionWaiting) + "</span>" + shellsSaid;
+            state.innerHTML = '<span class="wants">' + esc(T.sessionWaiting) + "</span>" +
+                peerSaid + shellsSaid;
         } else if (s.state === "working") {
             // The shells go after the live line rather than instead of it. A session can be
             // working on one thing and still have a build it started three turns ago going.
-            state.innerHTML = '<canvas class="spin"></canvas><span class="line"></span>' + shellsSaid;
+            state.innerHTML = '<canvas class="spin"></canvas><span class="line"></span>' +
+                peerSaid + shellsSaid;
         } else if (s.state === "unknown") {
             // Not silence — a screen that could not be read is a different fact from "idle",
             // and drawing it as idle would be a confident wrong answer about someone's work.
-            state.innerHTML = '<span class="unread">' + esc(T.webStateUnreadable) + "</span>" + shellsSaid;
+            state.innerHTML = '<span class="unread">' + esc(T.webStateUnreadable) + "</span>" +
+                peerSaid + shellsSaid;
         } else {
             // **Idle is the case this line exists for.** The turn ended, the terminal is showing
             // a prompt, and a command it started is still going — which is exactly the row that
             // used to say nothing at all and therefore read as finished.
-            state.innerHTML = shellsSaid;
+            state.innerHTML = peerSaid + shellsSaid;
         }
     }
     if (kind === "pending" || kind === "working" || kind === "closing") {

@@ -1,6 +1,6 @@
 ---
 name: clawdline
-version: 2.1.1
+version: 2.2.0
 description: |
   Hand a piece of work to another session: open a child session (Claude Code or Codex) through the
   Clawdline app, type the first message into it, wait for it to write result.json, and report back
@@ -604,21 +604,23 @@ or an assistant conversation id. The broker boundary is Clawdline:
 
 1. Use `GET /v1/sessions` and the relevant `/git` readings to find the owning root. Address sessions
    by Clawdline's terminal-neutral `id`, not provider-specific `sessionId`.
-2. Send the owner a wait request with `POST /v1/sessions/:id/send`. Name the repository, exact paths,
-   this waiter's Clawdline session id, why it is waiting, and the release condition. Use the local
-   remote credential without printing or copying it into a task.
-3. The owner records **every** waiter. After it commits or otherwise releases those paths, it sends
-   each waiter a Clawdline release notice naming the paths and commit when there is one. One owner
-   may fan out to Claude and Codex sessions without knowing which assistant each runs.
+2. Register the relationship with `POST /v1/orchestrator/waits`, using the local orchestrator
+   credential. Name `repository`, exact `paths`, `owner_session_id`, `waiter_session_id`, `reason`
+   and `release_condition`. Clawdline canonicalizes paths, deduplicates the waiter, persists the
+   group and delivers the request to the owner. Never print or copy either credential into a task.
+3. After committing or explicitly releasing the paths, the owner calls
+   `POST /v1/orchestrator/waits/:id/release` with its session id and the commit when one exists.
+   Clawdline fans out to every waiter and receipts each successful delivery; retrying a partial
+   release sends only to the recipients still pending. An abandoning waiter may cancel only itself.
 4. A release notice is a wake-up signal, not proof. Every waiter re-reads target HEAD, status and
-   diff before staging or integrating.
+   diff before staging or integrating. The broker never infers release from a clean status sample.
 
-Until Clawdline has a durable waiter registry, those paired Clawdline messages are the protocol's
-transport and the owner session holds the waiter list. A first-class broker implementation should
-persist repository identity, canonical paths, owner Clawdline id, all waiter ids, creation time and
-release condition; deduplicate repeated waits; fan out a structured release notice only after an
-explicit owner release; and keep an unresolved wait visible if its owner disappears. It must not
-infer release merely because one momentary `git status` was clean.
+An unresolved wait survives app restart and remains visible when its owner disappears.
+`GET /v1/sessions` publishes it as a `coordination` overlay: `waiting_on_session`/`waitingOn` for the
+blocked session and `waitedOnBy` for its owner. This does **not** set the terminal state to `waiting`;
+that word still means a person must answer and alone triggers the loud row and push notification.
+Native and web rows quietly show `⏳ owner · release condition`. Use a final-line
+`[Clawdline waiting]` marker only as fallback when that UI is unavailable.
 
 ### Keep the communication-protocol Artifact current
 
@@ -848,6 +850,10 @@ hand-written SVG instead — see §2.5.
 - **The reviewer finishing is not the code finishing.** `SAFE TO LAND` creates a root-owned pending
   landing obligation. Close it on the named target and verify the integrated tree, or hand that
   obligation to a named root; never translate it into "done" by itself.
+- **A hunk-reviewed index must be committed without pathspecs.** After `git add -p` and staged-tree
+  verification, use plain `git commit -m <message>`. `git commit -- <path>...` takes the named files
+  from the worktree and can absorb foreign unstaged hunks that the reviewed index excluded. Use a
+  pathspec only when every worktree hunk in every named file belongs to the delivery.
 - **File waiters are Clawdline relationships.** Request and release through Clawdline session ids,
   notify every waiter when paths are released, and revalidate after notification. Never make this
   safety protocol depend on Claude Code or Codex messaging.

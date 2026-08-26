@@ -131,6 +131,14 @@
     width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: 0.7;
 }
 
+/* Waiting on another session explains why an otherwise idle row should stay open. It is quiet
+   context, like a background shell — never the orange human-answer state and never a heartbeat. */
+.row .state .coordination-wait {
+    flex: 0 1 auto; min-width: 0;
+    font-family: var(--mono); font-size: 11.5px; color: var(--dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 /* waiting — the loud one. It is the only state that costs you something for every second it
    goes unnoticed, so it is the only one allowed a colour, a bar and a heartbeat. */
 /* The accent wash is flattened rather than translucent: rows slide over each other while the

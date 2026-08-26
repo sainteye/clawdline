@@ -789,6 +789,13 @@ repository's current head and status, integrating without absorbing another sess
 files, testing the exact integrated tree under the repository's rules, and recording the target
 commit that contains the delivery. Only then may it report the user's code change complete.
 
+When integration used hunk staging, the commit must be created from that reviewed index with plain
+`git commit -m <message>` and no pathspec. `git commit -- <path>...` does not mean “commit the staged
+hunks of these paths”: it takes those named files from the worktree and can absorb foreign unstaged
+hunks that the staged-tree review deliberately excluded. A pathspec commit is safe only when every
+worktree hunk in every named path belongs to the same delivery. After committing, compare the commit
+tree to the tested `git write-tree`; a matching file list is not enough.
+
 An overlapping dirty shared tree is a landing delay, not a completed outcome. Root leaves the
 obligation pending, identifies and coordinates with the owning session through Clawdline's session
 and task views, and retries when integration is safe. If root must stop first, its handoff package
@@ -801,23 +808,33 @@ not say that the delivery landed.
 ### File release waits belong to Clawdline
 
 A root waiting for paths in a shared tree must not create a relationship that exists only inside
-Claude Code or Codex. It resolves the owner through Clawdline's session and Git readings, addresses
-the terminal-neutral Clawdline session `id`, and sends the wait request through
-`POST /v1/sessions/:id/send`. The request names the repository, exact paths, waiter session id,
-reason and release condition. The owner retains all waiters and sends every one a Clawdline release
-notice after committing or otherwise releasing the paths, including the commit when there is one.
+Claude Code or Codex. It resolves both parties through Clawdline's session and Git readings, then
+registers the relationship with `POST /v1/orchestrator/waits`. The request names repository,
+exact paths, owner and waiter terminal-neutral Clawdline session ids, reason and release condition.
+Clawdline canonicalizes the paths, deduplicates the same waiter, persists the group in its
+orchestrator store, and delivers the file-wait message to the owner through Clawdline's terminal
+transport.
 
-This composes the assistant-neutral session surface that exists today: a Claude root may wait on a
-Codex owner or the other way round. A release notice only wakes a waiter; the waiter still reads
-HEAD, status and diff before acting.
+The owner uses `POST /v1/orchestrator/waits/:id/release` only after committing or explicitly
+releasing the paths, naming its own Clawdline session id and the commit when one exists. Clawdline
+fans the release notice out to every waiter. Each successful delivery is receipted before the route
+answers; if another waiter cannot be reached, the group stays registered and a retry addresses only
+the recipients still pending. A waiter abandoning the work may remove only itself with
+`POST /v1/orchestrator/waits/:id/cancel`. Release is always explicit: the broker never guesses from
+one transient clean `git status`.
 
-The durable broker form of the same protocol keeps repository identity, canonical paths, owner
-Clawdline id, all waiter ids, creation time and release condition in Clawdline; deduplicates repeated
-registrations; fans out a structured notice on explicit owner release; and keeps unresolved waits
-visible when an owner disappears. It does not guess from a transient clean status. Until that
-registry exists, the paired Clawdline messages carry the relationship and the owner session keeps
-the list. Provider-native messages are never a fallback because they would divide one safety rule
-into incompatible Claude and Codex halves.
+This composes the assistant-neutral session surface: a Claude root may wait on a Codex owner or the
+other way round. The unresolved relationship survives an app restart and remains visible if the
+owner disappears. A release notice only wakes a waiter; the waiter still reads HEAD, status and diff
+before acting. Provider-native messages are never a fallback because they would divide one safety
+rule into incompatible Claude and Codex halves.
+
+`GET /v1/sessions` exposes the relationship as a `coordination` overlay. A blocked session carries
+`coordination.state = waiting_on_session` and `waitingOn`; an owner carries `waitedOnBy`. This does
+not change the session's terminal `state`: `waiting` still means a person must answer and alone
+drives the loud row and push notification. Native and web rows draw peer waits quietly as
+`⏳ owner · release condition`, making an idle-looking but parked session safe for a person to leave
+open. A final-line `[Clawdline waiting]` sentence is only a fallback when that UI is unavailable.
 
 ### The protocol has a living Claude Code Artifact
 
