@@ -910,6 +910,23 @@ final class RemoteServer {
             if orchestratorAuthed { return answer(Orchestrator.cancel(taskID: cleaned)) }
             return writing(request) { _ in answer(Orchestrator.cancel(taskID: cleaned)) }
 
+        // Handing back claims before a task ends, so a `409 workspace_busy` blocked on them can
+        // retry immediately — see docs/orchestrator.md#releasing-claims-early. Local-credential
+        // only, like dispatch itself: this changes what another root may claim, not the phone's
+        // own reach.
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
+            && path.hasSuffix("/claims/release"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden", "Releasing claims needs the orchestrator token.")
+            }
+            let id = String(path.dropFirst("/v1/orchestrator/tasks/".count)
+                .dropLast("/claims/release".count))
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            let paths = body["paths"] as? [String] ?? []
+            return answer(Orchestrator.releaseClaims(taskID: id.removingPercentEncoding ?? id,
+                                                      paths: paths))
+
         case ("GET", let path) where path.hasPrefix("/v1/orchestrator/tasks/"):
             let id = String(path.dropFirst("/v1/orchestrator/tasks/".count))
             guard let record = Orchestrator.record(id: id.removingPercentEncoding ?? id) else {

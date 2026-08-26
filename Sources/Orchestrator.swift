@@ -1010,6 +1010,14 @@ enum Orchestrator {
         var costUsd: Double?
     }
 
+    /// One claim path given back early through `claims/release`, and when — see
+    /// `Orchestrator.releaseClaims`. `Task.claimKeys` stays the full original reservation;
+    /// `Task.activeClaimKeys` is what this subtracts from it.
+    struct ReleasedClaim: Equatable {
+        let path: String
+        let releasedAt: Date
+    }
+
     struct Task {
         let id: String
         var state: State
@@ -1063,6 +1071,21 @@ enum Orchestrator {
         /// Absolute, canonical-root comparison keys frozen when the lease is registered. These
         /// are persisted because a claim must not change identity as its target comes into being.
         var claimKeys: [String] = []
+        /// Claim keys given back early through `claims/release`, each with when it happened.
+        var releasedClaims: [ReleasedClaim] = []
+        /// Claim keys still actually held: `claimKeys` minus anything already given back. This
+        /// is what dispatch-time arbitration and L1's disjoint-claims silence compare against;
+        /// `claimKeys` itself remains the full original reservation for the record and the audit.
+        var activeClaimKeys: [String] {
+            guard !releasedClaims.isEmpty else { return claimKeys }
+            let released = Set(releasedClaims.map(\.path))
+            return claimKeys.filter { !released.contains($0) }
+        }
+        /// Claimed paths the terminal-state audit found untouched — see
+        /// `Orchestrator.untouchedClaims`. Purely observational, computed once at finalize and
+        /// persisted so a later read shows the same verdict rather than re-checking a
+        /// filesystem that has since moved on.
+        var untouchedClaims: [String] = []
         var isolation = Isolation.none
         var worktree: Worktree?
         var childTerminalId: String?
@@ -1822,16 +1845,22 @@ enum Orchestrator {
         let sameRoot: Bool
         let rootsKnown: Bool
         let rootLabel: String?
+        /// The blocking task's own canonical root key, before hashing — nil exactly when that
+        /// task's root could not itself be resolved, independent of whether the *pair* counts
+        /// as `rootsKnown`. See `Orchestrator.rootKeyDigest`.
+        let rootKey: String?
 
         var blocks: Bool { rootsKnown && !sameRoot }
 
-        func warning(for newTaskID: String) -> [String: Any] {
+        func warning(for newTaskID: String, now: Date = Date()) -> [String: Any] {
             [
                 "code": rootsKnown ? "claims_overlap" : "claims_overlap_unknown_root",
                 "task": task.id,
                 "paths": paths,
                 "message": "Task \(newTaskID) shares claimed paths with task \(task.id): "
                     + paths.joined(separator: ", ") + ".",
+                "age_seconds": max(0, Int(now.timeIntervalSince(task.created))),
+                "root_key": rootKey.map(Orchestrator.rootKeyDigest) as Any? ?? NSNull(),
             ]
         }
     }
@@ -2423,25 +2452,28 @@ enum Orchestrator {
     /// The empty declaration is the useful edge: it positively says the task is read-only.
     private static func declaredClaimsAreDisjoint(_ first: Task, _ second: Task) -> Bool {
         guard first.claimsDeclared, second.claimsDeclared else { return false }
-        return !first.claimKeys.contains { claimed in
-            second.claimKeys.contains { sharedClaimPath(claimed, $0) != nil }
+        return !first.activeClaimKeys.contains { claimed in
+            second.activeClaimKeys.contains { sharedClaimPath(claimed, $0) != nil }
         }
     }
 
     /// Pure dispatch-time claims scan. Unlike L1, queued tasks participate: a claim is a
     /// reservation made at dispatch, not evidence that a tab has started touching files.
+    /// Compares `activeClaimKeys` rather than `claimKeys` so a path either side already gave
+    /// back through `claims/release` no longer conflicts.
     static func claimsOverlaps(for newTask: Task, among existing: [Task]) -> [ClaimsOverlap] {
-        guard !newTask.claimKeys.isEmpty, !newTask.state.isTerminal else { return [] }
+        guard !newTask.activeClaimKeys.isEmpty, !newTask.state.isTerminal else { return [] }
         let indexed = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
         let newRoot = resolvedRootKey(of: newTask, among: indexed)
         return existing.compactMap { task -> ClaimsOverlap? in
-            guard task.id != newTask.id, !task.state.isTerminal, !task.claimKeys.isEmpty else {
+            guard task.id != newTask.id, !task.state.isTerminal, !task.activeClaimKeys.isEmpty
+            else {
                 return nil
             }
             var paths: [String] = []
             var seen: Set<String> = []
-            for claimed in newTask.claimKeys {
-                for other in task.claimKeys {
+            for claimed in newTask.activeClaimKeys {
+                for other in task.activeClaimKeys {
                     if let shared = sharedClaimPath(claimed, other),
                        seen.insert(shared).inserted {
                         paths.append(shared)
@@ -2455,7 +2487,8 @@ enum Orchestrator {
             return ClaimsOverlap(task: task, paths: paths,
                                  sameRoot: rootsKnown && otherRoot == newRoot,
                                  rootsKnown: rootsKnown,
-                                 rootLabel: root.rootLabel ?? task.rootLabel)
+                                 rootLabel: root.rootLabel ?? task.rootLabel,
+                                 rootKey: otherRoot)
         }.sorted { left, right in
             if left.task.created == right.task.created { return left.task.id < right.task.id }
             return left.task.created < right.task.created
@@ -2517,6 +2550,16 @@ enum Orchestrator {
         return at.rootSessionId ?? "task:\(at.id)"
     }
 
+    /// The stable short identifier for a root tree, independent of its self-reported label:
+    /// SHA-256 of the canonical root key — a live root's session id, or `task:<id>` for a task
+    /// resolved back to itself — truncated to its first 8 hex characters. Two roots that both
+    /// call themselves the same thing still hash differently, because the input is the session
+    /// identity underneath the label rather than the label itself; the same tree always hashes
+    /// the same way.
+    static func rootKeyDigest(_ canonicalRootKey: String) -> String {
+        String(RemoteAuth.hex(SHA256.hash(data: Data(canonicalRootKey.utf8))).prefix(8))
+    }
+
     /// Pure half of the dispatch-time scan, kept visible to the unit suite so path boundaries,
     /// root identity and terminal-state filtering do not need a live terminal to exercise them.
     static func workspaceOverlaps(for newTask: Task,
@@ -2559,10 +2602,11 @@ enum Orchestrator {
     static func dispatchPayload(record: [String: Any], taskID: String,
                                 overlaps: [WorkspaceOverlap],
                                 claimsOverlaps: [ClaimsOverlap] = [],
-                                additionalWarnings: [[String: Any]] = []) -> [String: Any] {
+                                additionalWarnings: [[String: Any]] = [],
+                                now: Date = Date()) -> [String: Any] {
         var reply: [String: Any] = ["ok": true, "task": record]
         let warnings = overlaps.map { $0.warning(for: taskID) }
-            + claimsOverlaps.filter { !$0.blocks }.map { $0.warning(for: taskID) }
+            + claimsOverlaps.filter { !$0.blocks }.map { $0.warning(for: taskID, now: now) }
             + additionalWarnings
         if !warnings.isEmpty {
             reply["warnings"] = warnings
@@ -2571,7 +2615,11 @@ enum Orchestrator {
     }
 
     /// The actionable context returned when another root already reserved a write path.
-    static func workspaceBusyExtra(_ overlap: ClaimsOverlap) -> [String: Any] {
+    /// `age_seconds` and `root_key` make the error self-sufficient without a follow-up GET:
+    /// `root_label` is self-reported prose that can be stale or shared by two unrelated roots
+    /// (two different trees both calling themselves "clawdline schedules" is a real case), while
+    /// `root_key` is the same tree's identity every time, hashed rather than handed over raw.
+    static func workspaceBusyExtra(_ overlap: ClaimsOverlap, now: Date = Date()) -> [String: Any] {
         [
             "blocking_task": overlap.task.id,
             "title": overlap.task.title,
@@ -2579,6 +2627,8 @@ enum Orchestrator {
             "created": Int(overlap.task.created.timeIntervalSince1970),
             "conflict_paths": overlap.paths,
             "retry_after": 60,
+            "age_seconds": max(0, Int(now.timeIntervalSince(overlap.task.created))),
+            "root_key": overlap.rootKey.map(rootKeyDigest) as Any? ?? NSNull(),
         ]
     }
 
@@ -3437,6 +3487,63 @@ enum Orchestrator {
         var record = existingRecord(taskID) ?? [:]
         record["state"] = State.cancelled.rawValue
         return .ok(["ok": true, "task": record])
+    }
+
+    // MARK: - Releasing claims early
+
+    /// A root that finished editing some of what it claimed can hand those paths back before its
+    /// task reaches a terminal state, so a `409 workspace_busy` blocked on them can retry
+    /// immediately instead of waiting for the whole task to end — the fix for a circular wait
+    /// that can only break if one side lands early. `paths` names the original relative
+    /// declarations to give back; empty or omitted releases everything still held. Idempotent: a
+    /// path already released, or one this task never declared, is silently a no-op rather than
+    /// an error, so a retried release cannot fail on its own success. Comparison is ancestor and
+    /// descendant, exactly the way dispatch-time arbitration compares claims (`sharedClaimPath`):
+    /// releasing `Sources` frees every declared claim key under it, and naming a path inside a
+    /// directory-shaped claim frees that whole claim key, because a directory claim is one atomic
+    /// reservation rather than a set of the files under it. `queued` refuses: that task has not
+    /// started writing yet, so giving up its lease while it is still going to run `instructions`
+    /// unmodified would open the exact hole claims exist to close — cancel it instead.
+    static func releaseClaims(taskID: String, paths: [String], now: Date = Date()) -> Reply {
+        guard let task = held(taskID) else {
+            return .refused(404, "not_found", "No task named that")
+        }
+        guard !task.state.isTerminal else {
+            return .refused(409, "already_done", "That task already finished.")
+        }
+        guard task.state != .queued else {
+            return .refused(409, "not_started", "That task has not started writing yet; to "
+                            + "stop it, use cancel instead of release.")
+        }
+        if let invalid = paths.first(where: {
+            $0.split(separator: "/", omittingEmptySubsequences: false).contains(where: { $0 == ".." })
+        }) {
+            return .refused(400, "bad_request", "paths[] must not contain a .. component: \(invalid)")
+        }
+        let alreadyReleased = Set(task.releasedClaims.map(\.path))
+        let requested: Set<String>
+        if paths.isEmpty {
+            requested = Set(task.claimKeys)
+        } else {
+            let frozen = freezeClaims(paths, projectDir: task.projectDir)
+            requested = Set(task.claimKeys.filter { key in
+                frozen.contains { sharedClaimPath($0, key) != nil }
+            })
+        }
+        let newlyReleased = requested.subtracting(alreadyReleased).sorted()
+        if !newlyReleased.isEmpty {
+            var updated = task
+            updated.releasedClaims += newlyReleased.map { ReleasedClaim(path: $0, releasedAt: now) }
+            guard replaceTask(updated, expecting: task.state) else {
+                return .refused(409, "already_done", "That task already finished.")
+            }
+            save()
+            RemoteServer.shared.broadcastOrchestrator()
+            RemoteAuth.audit("orchestrator.claims.released", [
+                "task": taskID, "paths": newlyReleased.joined(separator: ","),
+            ])
+        }
+        return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
     }
 
     /// Cancelling with no HTTP answer wrapped around it: the child's tab ended the polite way,
@@ -4527,6 +4634,20 @@ enum Orchestrator {
         tasks[taskID] = task
         lock.unlock()
 
+        // Purely observational, and deliberately outside the lock like the result and usage
+        // reads below: one `stat` per claimed path is not the kind of latency that should
+        // serialize every other request in flight.
+        let untouched = untouchedClaims(task)
+        if !untouched.isEmpty {
+            lock.lock()
+            if var current = tasks[taskID], current.state == outcome {
+                current.untouchedClaims = untouched
+                tasks[taskID] = current
+            }
+            lock.unlock()
+            task.untouchedClaims = untouched
+        }
+
         // The result file can carry words the finalizer was not handed — the HTTP route sends
         // only a sentence, the file has the artifact list too.
         if task.summary == nil || task.artifacts.isEmpty,
@@ -4666,6 +4787,92 @@ enum Orchestrator {
         return " — claims released; child tab may still be writing"
     }
 
+    /// Claimed paths this task's child never actually touched, judged once at the terminal
+    /// transition: the path's own mtime is before `spawnedAt`, or nothing is there any more.
+    /// Purely observational — nothing here blocks anything, and it exists so a root sees when
+    /// it declared wider than it needed and can claim narrower next time. `mtime` is injected
+    /// so the judgment is pure in tests; production reads the real filesystem. A task that
+    /// never spawned has no baseline to judge against, so nothing is reported — and neither is
+    /// one that never actually ran to a real ending: `timeout`, `spawn_failed`, and `cancelled`
+    /// leave a child's tab in an unknown state (still writing, never opened, or stopped mid-way),
+    /// so "never touched" would either be wrong or, worse, an instruction the finish line hands
+    /// an agent that is still following it. Only `success` and `failure` are judged.
+    static func untouchedClaims(_ task: Task,
+                                mtime: (String) -> Date? = fileModificationDate) -> [String] {
+        guard task.state == .success || task.state == .failure,
+              let spawnedAt = task.spawnedAt, task.claimsDeclared,
+              task.claims.count == task.claimKeys.count else { return [] }
+        return zip(task.claims, task.claimKeys).compactMap { relative, absolute -> String? in
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: absolute, isDirectory: &isDirectory),
+               isDirectory.boolValue {
+                // A directory's own mtime only moves when something is added, removed, or
+                // renamed directly inside it — a file edited in place further down never touches
+                // it, which is exactly the false "untouched" a directory-shaped claim (the
+                // common spelling: "Sources", "docs") produced before this recursive, bounded
+                // walk replaced the single `stat`.
+                switch subtreeTouchedSince(absolute, spawnedAt: spawnedAt) {
+                case .some(true), .none: return nil
+                case .some(false): return relative
+                }
+            }
+            guard let modified = mtime(absolute), modified >= spawnedAt else { return relative }
+            return nil
+        }
+    }
+
+    private static func fileModificationDate(_ path: String) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+    }
+
+    /// Bounded recursive scan behind the directory branch of `untouchedClaims`. Walks depth-first,
+    /// skipping `.git` and `node_modules`, and answers `true` as soon as anything at or after
+    /// `spawnedAt` is found — the directory itself, a leaf file, or an intermediate directory (so
+    /// an add/remove/rename anywhere in the subtree is still caught, not only a content edit).
+    /// `nil` means the scan reached `scanCap` entries before finding anything, so a claim this
+    /// large is left unknown rather than judged from a partial walk — see docs/orchestrator.md's
+    /// terminal claims audit section for the bound this enforces.
+    static func subtreeTouchedSince(_ path: String, spawnedAt: Date, scanCap: Int = 2_000) -> Bool? {
+        let fm = FileManager.default
+        func modifiedAtOrAfter(_ candidate: String) -> Bool {
+            ((try? fm.attributesOfItem(atPath: candidate))?[.modificationDate] as? Date)
+                .map { $0 >= spawnedAt } ?? false
+        }
+        if modifiedAtOrAfter(path) { return true }
+        var pending = [path]
+        var scanned = 0
+        while let current = pending.popLast() {
+            guard let entries = try? fm.contentsOfDirectory(atPath: current) else { continue }
+            for name in entries where name != ".git" && name != "node_modules" {
+                scanned += 1
+                if scanned > scanCap { return nil }
+                let full = current + "/" + name
+                if modifiedAtOrAfter(full) { return true }
+                var isDirectory: ObjCBool = false
+                if fm.fileExists(atPath: full, isDirectory: &isDirectory), isDirectory.boolValue {
+                    pending.append(full)
+                }
+            }
+        }
+        return false
+    }
+
+    /// One reminder appended to the finish line when the audit above found declared claims this
+    /// task's child never touched — pure so the wording is tested without a filesystem. Capped at
+    /// three named paths so a task with the full 32 claims all untouched cannot type tens of KB,
+    /// one character at a time, into a live tab; the complete list still lives in the task record's
+    /// `untouched_claims`.
+    static func untouchedClaimsNotice(for task: Task) -> String {
+        guard !task.untouchedClaims.isEmpty else { return "" }
+        let shown = task.untouchedClaims.prefix(3)
+        let remainder = task.untouchedClaims.count - shown.count
+        let listed = remainder > 0
+            ? shown.joined(separator: ", ") + ", and \(remainder) more"
+            : shown.joined(separator: ", ")
+        return " — \(task.untouchedClaims.count) claimed path(s) never touched: "
+            + listed + " (claim narrower next time)"
+    }
+
     private static func notifyRoot(_ task: Task) {
         guard Config.shared.orchestratorNotifyRoot else { return }
         let short = String(task.id.prefix(8))
@@ -4682,7 +4889,7 @@ enum Orchestrator {
                 : "\(outstanding) more of yours still running"
             let line = "[clawdline] your task \(short) (\(task.title)) finished:"
                 + " \(task.state.rawValue) — \(file) — \(rest)"
-                + timeoutClaimNotice(for: task)
+                + timeoutClaimNotice(for: task) + untouchedClaimsNotice(for: task)
             if let failure = Targets.send(line, to: terminal) {
                 Log.write("orchestrator: could not notify the parent task — \(failure)")
             }
@@ -4700,6 +4907,7 @@ enum Orchestrator {
         guard !Targets.isChoosing(root) else { return }
         let line = "[clawdline] task \(short) (\(task.title)) finished:"
             + " \(task.state.rawValue) — \(file)" + timeoutClaimNotice(for: task)
+            + untouchedClaimsNotice(for: task)
         if let failure = Targets.send(line, to: root) {
             Log.write("orchestrator: could not notify the root — \(failure)")
         }
@@ -5570,6 +5778,13 @@ enum Orchestrator {
         if let summary = task.summary { out["summary"] = summary }
         if !task.artifacts.isEmpty { out["artifacts"] = task.artifacts }
         if task.claimsDeclared { out["claims"] = task.claims }
+        if !task.releasedClaims.isEmpty {
+            out["released_claims"] = task.releasedClaims.map {
+                ["path": $0.path, "released_at": Int($0.releasedAt.timeIntervalSince1970)]
+                    as [String: Any]
+            }
+        }
+        if !task.untouchedClaims.isEmpty { out["untouched_claims"] = task.untouchedClaims }
         if let worktree = task.worktree {
             out["isolation"] = Isolation.worktree.rawValue
             // Before a tab exists the preparation has only a candidate base. `spawn` resolves it
@@ -5986,6 +6201,13 @@ enum Orchestrator {
         if !task.serialize.isEmpty { out["serialize"] = task.serialize }
         if task.claimsDeclared { out["claims"] = task.claims }
         if !task.claimKeys.isEmpty { out["claim_keys"] = task.claimKeys }
+        if !task.releasedClaims.isEmpty {
+            out["released_claims"] = task.releasedClaims.map {
+                ["path": $0.path, "released_at": $0.releasedAt.timeIntervalSince1970]
+                    as [String: Any]
+            }
+        }
+        if !task.untouchedClaims.isEmpty { out["untouched_claims"] = task.untouchedClaims }
         if let worktree = task.worktree {
             out["isolation"] = Isolation.worktree.rawValue
             var storedWorktree: [String: Any] = [
@@ -6141,6 +6363,14 @@ enum Orchestrator {
         task.claimKeys = storedClaimKeys.count == task.claims.count
             ? storedClaimKeys
             : freezeClaims(task.claims, projectDir: task.projectDir)
+        task.releasedClaims = (obj["released_claims"] as? [[String: Any]] ?? []).compactMap { row in
+            guard let path = row["path"] as? String, path.hasPrefix("/"),
+                  let releasedAt = row["released_at"] as? Double else { return nil }
+            return ReleasedClaim(path: path, releasedAt: Date(timeIntervalSince1970: releasedAt))
+        }
+        task.untouchedClaims = (obj["untouched_claims"] as? [String] ?? []).filter {
+            task.claims.contains($0)
+        }
         task.isolation = (obj["isolation"] as? String).flatMap(Isolation.init(rawValue:)) ?? .none
         if task.isolation == .worktree {
             guard let raw = obj["worktree"] as? [String: Any],

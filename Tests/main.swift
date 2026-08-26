@@ -8964,7 +8964,9 @@ group("declared write claims are reserved across dispatch trees") {
 
     check("a cross-root overlap is a blocker",
           equal.count == 1 && equal.first?.sameRoot == false)
-    let busy = equal.first.map(Orchestrator.workspaceBusyExtra) ?? [:]
+    let busy = equal.first.map {
+        Orchestrator.workspaceBusyExtra($0, now: Date(timeIntervalSince1970: 61))
+    } ?? [:]
     check("workspace_busy context names the blocker, title, root, creation and paths",
           busy["blocking_task"] as? String == holderID
               && busy["title"] as? String == "claimed work"
@@ -8972,6 +8974,25 @@ group("declared write claims are reserved across dispatch trees") {
               && busy["created"] as? Int == 1
               && busy["conflict_paths"] as? [String] == ["/repo/Sources"]
               && busy["retry_after"] as? Int == 60)
+    // Both fixtures default to the same `root label` — the two-roots-same-label case a real
+    // dispatch hit tonight — so this also proves root_key distinguishes what the label cannot.
+    check("the 409 is context-sufficient: real age, and root_key rather than the collidable label",
+          busy["age_seconds"] as? Int == 60
+              && busy["root_key"] as? String == Orchestrator.rootKeyDigest(secondRoot)
+              && Orchestrator.rootKeyDigest(secondRoot) != Orchestrator.rootKeyDigest("root label")
+              && (busy["root_key"] as? String)?.count == 8)
+    // Pinned against the function's own output would pass no matter what the function
+    // computes — this is the actual SHA-256 of the literal string below, truncated to 8 hex
+    // characters (`printf '%s' clawdline-root-key-fixture | shasum -a 256 | cut -c1-8`), so a
+    // change to the algorithm or its inputs breaks this test rather than sailing through it.
+    expect("rootKeyDigest is a stable SHA-256 prefix, pinned to a literal expectation",
+           Orchestrator.rootKeyDigest("clawdline-root-key-fixture"), "237b1f8e")
+    let clockRolledBack = equal.first.map {
+        Orchestrator.workspaceBusyExtra($0, now: Date(timeIntervalSince1970: 0))
+    } ?? [:]
+    check("age_seconds never goes negative, even against a clock that rolled back before the "
+          + "blocking task's own created time",
+          clockRolledBack["age_seconds"] as? Int == 0)
 
     let sibling = task(holderID, root: firstRoot, claims: ["Sources"])
     let sameRoot = Orchestrator.claimsOverlaps(for: exact, among: [sibling])
@@ -8984,6 +9005,13 @@ group("declared write claims are reserved across dispatch trees") {
           warning?["code"] as? String == "claims_overlap"
               && warning?["task"] as? String == holderID
               && warning?["paths"] as? [String] == ["/repo/Sources"])
+    let warnedAt = Orchestrator.dispatchPayload(record: ["id": taskID], taskID: taskID,
+                                                overlaps: [], claimsOverlaps: sameRoot,
+                                                now: Date(timeIntervalSince1970: 31))
+    let timedWarning = (warnedAt["warnings"] as? [[String: Any]])?.first
+    check("the claims_overlap warning is context-sufficient too",
+          timedWarning?["age_seconds"] as? Int == 30
+              && timedWarning?["root_key"] as? String == Orchestrator.rootKeyDigest(firstRoot))
 
     var parent = task("12121212-3434-5656-7878-909090909090",
                       root: firstRoot, state: .briefed, claims: ["elsewhere"])
@@ -9009,11 +9037,16 @@ group("declared write claims are reserved across dispatch trees") {
     check("an unresolved root degrades to a typed warning instead of a hard blocker",
           unknownRoot.first?.blocks == false
               && unknownWarning?["code"] as? String == "claims_overlap_unknown_root")
+    check("even inside an unknown-root pair, a resolvable blocker still reports its own root_key",
+          unknownWarning?["root_key"] as? String == Orchestrator.rootKeyDigest(secondRoot))
     let unknownHolder = Orchestrator.claimsOverlaps(for: exact, among: [unknown])
     check("an unresolved blocking side also lacks hard-block authority",
           unknownHolder.first?.blocks == false
               && unknownHolder.first?.warning(for: taskID)["code"] as? String
                   == "claims_overlap_unknown_root")
+    check("and when the blocker's own root cannot resolve, root_key is honestly absent",
+          unknownHolder.first?.rootKey == nil
+              && (unknownHolder.first?.warning(for: taskID)["root_key"] as? String) == nil)
 
     let terminals: [Orchestrator.State] = [.success, .failure, .timeout, .cancelled, .spawnFailed]
     for terminal in terminals {
@@ -9093,6 +9126,366 @@ group("declared write claims are reserved across dispatch trees") {
                             claims: ["future/output.txt"])
     check("/tmp and /private/tmp project roots reserve one canonical namespace",
           Orchestrator.claimsOverlaps(for: tmpCandidate, among: [tmpHolder]).first?.blocks == true)
+}
+
+group("a released claim key no longer counts as held") {
+    let dir = "/repo"
+    let releasedAt = Date(timeIntervalSince1970: 5)
+    var full = Orchestrator.Task(id: "d0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0", state: .briefed,
+                                 kind: "custom", title: "releaser", assistant: .claude,
+                                 projectDir: dir, timeoutMinutes: 30,
+                                 created: Date(timeIntervalSince1970: 1),
+                                 rootSessionId: "root-full",
+                                 claims: ["Sources/A.swift", "Sources/B.swift"],
+                                 claimsDeclared: true, secretHash: String(repeating: "0", count: 64))
+    full.claimKeys = Orchestrator.freezeClaims(full.claims, projectDir: dir)
+    check("before any release, both claims are active",
+          full.activeClaimKeys == ["\(dir)/Sources/A.swift", "\(dir)/Sources/B.swift"])
+    var partiallyReleased = full
+    partiallyReleased.releasedClaims = [Orchestrator.ReleasedClaim(path: "\(dir)/Sources/A.swift",
+                                                                    releasedAt: releasedAt)]
+    check("a partial release narrows active keys to what remains held",
+          partiallyReleased.activeClaimKeys == ["\(dir)/Sources/B.swift"])
+    var fullyReleased = full
+    fullyReleased.releasedClaims = full.claimKeys.map {
+        Orchestrator.ReleasedClaim(path: $0, releasedAt: releasedAt)
+    }
+    check("a full release leaves nothing active", fullyReleased.activeClaimKeys.isEmpty)
+
+    var withUntouched = partiallyReleased
+    withUntouched.state = .success
+    withUntouched.untouchedClaims = ["Sources/B.swift"]
+    let roundTrip = Orchestrator.task(from: Orchestrator.stored(withUntouched))
+    expect("released claims — path and when — survive a store/load round trip",
+           roundTrip?.releasedClaims, withUntouched.releasedClaims)
+    expect("untouched claims survive a store/load round trip",
+           roundTrip?.untouchedClaims, withUntouched.untouchedClaims)
+    check("the round-tripped task still reports the same active claim keys",
+          roundTrip?.activeClaimKeys == ["\(dir)/Sources/B.swift"])
+
+    var candidate = Orchestrator.Task(id: "e0e0e0e0-e0e0-e0e0-e0e0-e0e0e0e0e0e0", state: .queued,
+                                      kind: "custom", title: "candidate", assistant: .claude,
+                                      projectDir: dir, timeoutMinutes: 30,
+                                      created: Date(timeIntervalSince1970: 2),
+                                      rootSessionId: "root-candidate",
+                                      claims: ["Sources/A.swift"], claimsDeclared: true,
+                                      secretHash: String(repeating: "0", count: 64))
+    candidate.claimKeys = Orchestrator.freezeClaims(candidate.claims, projectDir: dir)
+    check("a still-held claim keeps blocking a cross-root candidate",
+          Orchestrator.claimsOverlaps(for: candidate, among: [full]).first?.blocks == true)
+    check("the same candidate is free once its path was released",
+          Orchestrator.claimsOverlaps(for: candidate, among: [partiallyReleased]).isEmpty)
+}
+
+group("the claims/release route frees paths early, guards terminal tasks, and is idempotent") {
+    defer { Orchestrator.forget() }
+    Orchestrator.forget()
+    let dir = "/repo"
+    func fresh(state: Orchestrator.State) -> Orchestrator.Task {
+        var made = Orchestrator.Task(id: taskID, state: state, kind: "custom", title: "releaser",
+                                     assistant: .claude, projectDir: dir, timeoutMinutes: 30,
+                                     created: Date(timeIntervalSince1970: 1),
+                                     claims: ["Sources/A.swift", "Sources/B.swift"],
+                                     claimsDeclared: true,
+                                     secretHash: String(repeating: "0", count: 64))
+        made.claimKeys = Orchestrator.freezeClaims(made.claims, projectDir: dir)
+        return made
+    }
+
+    if case .refused(let status, let code, _, _) = Orchestrator.releaseClaims(
+        taskID: "00000000-0000-0000-0000-000000000000", paths: []) {
+        check("releasing an unknown task is a 404", status == 404 && code == "not_found")
+    } else {
+        check("releasing an unknown task is a 404", false, "it answered ok")
+    }
+
+    Orchestrator.holdScheduleTaskForTesting(fresh(state: .success))
+    if case .refused(let status, let code, _, _) = Orchestrator.releaseClaims(
+        taskID: taskID, paths: []) {
+        check("a terminal task refuses release; its claims are already gone",
+              status == 409 && code == "already_done")
+    } else {
+        check("a terminal task refuses release; its claims are already gone", false, "it answered ok")
+    }
+
+    func releasedPaths(_ reply: Orchestrator.Reply) -> [String] {
+        guard case .ok(let body) = reply,
+              let record = body["task"] as? [String: Any],
+              let rows = record["released_claims"] as? [[String: Any]] else { return [] }
+        return rows.compactMap { $0["path"] as? String }.sorted()
+    }
+
+    Orchestrator.holdScheduleTaskForTesting(fresh(state: .briefed))
+    let partial = Orchestrator.releaseClaims(taskID: taskID, paths: ["Sources/A.swift"],
+                                             now: Date(timeIntervalSince1970: 21))
+    check("a partial release frees exactly the named path",
+          releasedPaths(partial) == ["\(dir)/Sources/A.swift"])
+    guard case .ok(let partialBody) = partial,
+          let partialRecord = partialBody["task"] as? [String: Any],
+          let partialRow = (partialRecord["released_claims"] as? [[String: Any]])?.first else {
+        check("the release row carries when it happened", false)
+        Orchestrator.forget()
+        // Nothing further can be asked of a release that did not come back as expected.
+        return
+    }
+    expect("and records exactly when", partialRow["released_at"] as? Int, 21)
+
+    let reReleased = Orchestrator.releaseClaims(taskID: taskID, paths: ["Sources/A.swift"],
+                                                now: Date(timeIntervalSince1970: 99))
+    check("releasing the same path again is a no-op, not a second timestamp",
+          releasedPaths(reReleased) == ["\(dir)/Sources/A.swift"]
+              && (Orchestrator.record(id: taskID)?["released_claims"] as? [[String: Any]])?.count == 1)
+
+    let full = Orchestrator.releaseClaims(taskID: taskID, paths: [])
+    check("an empty paths array releases everything still held",
+          releasedPaths(full) == ["\(dir)/Sources/A.swift", "\(dir)/Sources/B.swift"])
+}
+
+group("release compares ancestor and descendant paths like arbitration does, validates paths, "
+      + "and refuses a queued task") {
+    defer { Orchestrator.forget() }
+    let dir = "/repo"
+    func fresh(claims: [String], state: Orchestrator.State = .briefed) -> Orchestrator.Task {
+        var made = Orchestrator.Task(id: taskID, state: state, kind: "custom",
+                                     title: "ancestor releaser", assistant: .claude,
+                                     projectDir: dir, timeoutMinutes: 30,
+                                     created: Date(timeIntervalSince1970: 1),
+                                     claims: claims, claimsDeclared: true,
+                                     secretHash: String(repeating: "0", count: 64))
+        made.claimKeys = Orchestrator.freezeClaims(made.claims, projectDir: dir)
+        return made
+    }
+    func releasedPaths(_ reply: Orchestrator.Reply) -> [String] {
+        guard case .ok(let body) = reply,
+              let record = body["task"] as? [String: Any],
+              let rows = record["released_claims"] as? [[String: Any]] else { return [] }
+        return rows.compactMap { $0["path"] as? String }.sorted()
+    }
+
+    Orchestrator.forget()
+    Orchestrator.holdScheduleTaskForTesting(fresh(claims: ["Sources/A.swift", "Sources/B.swift"]))
+    let ancestor = Orchestrator.releaseClaims(taskID: taskID, paths: ["Sources"])
+    check("releasing an ancestor spelling frees every declared claim key under it",
+          releasedPaths(ancestor) == ["\(dir)/Sources/A.swift", "\(dir)/Sources/B.swift"])
+
+    Orchestrator.forget()
+    Orchestrator.holdScheduleTaskForTesting(fresh(claims: ["Sources"]))
+    let descendant = Orchestrator.releaseClaims(taskID: taskID,
+                                                paths: ["Sources/Orchestrator.swift"])
+    check("releasing a descendant spelling frees the whole directory-shaped claim it lives under, "
+          + "because that claim is one atomic reservation",
+          releasedPaths(descendant) == ["\(dir)/Sources"])
+
+    Orchestrator.forget()
+    Orchestrator.holdScheduleTaskForTesting(fresh(claims: ["Sources/A.swift"]))
+    let unrelated = Orchestrator.releaseClaims(taskID: taskID, paths: ["Tests/main.swift"])
+    if case .ok = unrelated {
+        check("a completely unrelated path is silently a no-op, not an error",
+              releasedPaths(unrelated).isEmpty)
+    } else {
+        check("a completely unrelated path is silently a no-op, not an error", false, "it refused")
+    }
+
+    Orchestrator.forget()
+    Orchestrator.holdScheduleTaskForTesting(fresh(claims: ["Sources/A.swift"]))
+    if case .refused(let status, let code, let message, _) = Orchestrator.releaseClaims(
+        taskID: taskID, paths: ["Sources/../../etc/passwd"]) {
+        check("a .. component in a release path is refused, not silently frozen into a claim key",
+              status == 400 && code == "bad_request" && message.contains(".."))
+    } else {
+        check("a .. component in a release path is refused, not silently frozen into a claim key",
+              false, "it answered ok")
+    }
+
+    Orchestrator.forget()
+    Orchestrator.holdScheduleTaskForTesting(fresh(claims: ["Sources/A.swift"], state: .queued))
+    if case .refused(let status, let code, let message, _) = Orchestrator.releaseClaims(
+        taskID: taskID, paths: []) {
+        check("a queued task cannot release its claims early — it has not started writing yet",
+              status == 409 && code == "not_started" && message.lowercased().contains("cancel"))
+    } else {
+        check("a queued task cannot release its claims early — it has not started writing yet",
+              false, "it answered ok")
+    }
+}
+
+group("the claims/release HTTP route is orchestrator-token gated") {
+    defer { Orchestrator.forget() }
+    Orchestrator.forget()
+    let dir = "/repo"
+    let releaseTaskID = "01234567-89ab-cdef-0123-456789abcdef"
+    var made = Orchestrator.Task(id: releaseTaskID, state: .briefed, kind: "custom",
+                                 title: "http releaser", assistant: .claude, projectDir: dir,
+                                 timeoutMinutes: 30, created: Date(timeIntervalSince1970: 1),
+                                 claims: ["Sources/A.swift"], claimsDeclared: true,
+                                 secretHash: String(repeating: "0", count: 64))
+    made.claimKeys = Orchestrator.freezeClaims(made.claims, projectDir: dir)
+    Orchestrator.holdScheduleTaskForTesting(made)
+
+    let anonymous = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/tasks/\(releaseTaskID)/claims/release",
+        body: "{\"paths\":[\"Sources/A.swift\"]}"))
+    expect("no credential at all stops at the door", anonymous.status, 401)
+
+    let phone = RemoteAuth.addDevice(name: "a phone", caps: [.read, .send])
+    let paired = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/tasks/\(releaseTaskID)/claims/release",
+        headers: ["Authorization": "Bearer \(phone.token)"],
+        body: "{\"paths\":[\"Sources/A.swift\"]}"))
+    expect("a paired device cannot substitute for the orchestrator token", paired.status, 403)
+
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let authed = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/tasks/\(releaseTaskID)/claims/release", headers: auth,
+        body: "{\"paths\":[\"Sources/A.swift\"]}"))
+    expect("the orchestrator token reaches the route", authed.status, 200)
+    let body = (try? JSONSerialization.jsonObject(with: authed.body)) as? [String: Any]
+    let record = body?["task"] as? [String: Any]
+    let released = record?["released_claims"] as? [[String: Any]]
+    check("the HTTP body reflects the release",
+          released?.first?["path"] as? String == "\(dir)/Sources/A.swift")
+}
+
+group("the terminal claims audit tells touched from untouched from gone") {
+    let dir = "/repo"
+    var made = Orchestrator.Task(id: taskID, state: .success, kind: "custom", title: "audited",
+                                 assistant: .claude, projectDir: dir, timeoutMinutes: 30,
+                                 created: Date(timeIntervalSince1970: 1),
+                                 claims: ["Sources/touched.swift", "Sources/untouched.swift",
+                                          "Sources/gone.swift"],
+                                 claimsDeclared: true, secretHash: String(repeating: "0", count: 64))
+    made.claimKeys = Orchestrator.freezeClaims(made.claims, projectDir: dir)
+    made.spawnedAt = Date(timeIntervalSince1970: 10)
+    func mtime(_ path: String) -> Date? {
+        switch path {
+        case "\(dir)/Sources/touched.swift": return Date(timeIntervalSince1970: 20)
+        case "\(dir)/Sources/untouched.swift": return Date(timeIntervalSince1970: 5)
+        default: return nil
+        }
+    }
+    let untouched = Orchestrator.untouchedClaims(made, mtime: mtime)
+    expect("a file modified after spawn is touched; one before it, or missing, is not",
+           untouched.sorted(), ["Sources/gone.swift", "Sources/untouched.swift"])
+    var exactlyAtSpawn = made
+    exactlyAtSpawn.claims = ["Sources/touched.swift"]
+    exactlyAtSpawn.claimKeys = Orchestrator.freezeClaims(exactlyAtSpawn.claims, projectDir: dir)
+    check("an mtime exactly at spawnedAt counts as touched",
+          Orchestrator.untouchedClaims(exactlyAtSpawn,
+                                       mtime: { _ in Date(timeIntervalSince1970: 10) }).isEmpty)
+    var neverSpawned = made
+    neverSpawned.spawnedAt = nil
+    check("a task that never spawned has no baseline, so nothing is judged",
+          Orchestrator.untouchedClaims(neverSpawned, mtime: mtime).isEmpty)
+    var readOnly = made
+    readOnly.claims = []
+    readOnly.claimKeys = []
+    check("a read-only task has nothing to audit",
+          Orchestrator.untouchedClaims(readOnly, mtime: mtime).isEmpty)
+
+    var silent = made
+    silent.untouchedClaims = []
+    check("the finish-line reminder is silent when nothing is untouched",
+          Orchestrator.untouchedClaimsNotice(for: silent).isEmpty)
+    var flagged = made
+    flagged.untouchedClaims = ["Sources/untouched.swift", "Sources/gone.swift"]
+    let notice = Orchestrator.untouchedClaimsNotice(for: flagged)
+    check("and names the paths plus a hint to declare narrower when it is not",
+          notice.contains("2") && notice.contains("Sources/untouched.swift")
+              && notice.contains("Sources/gone.swift") && notice.contains("narrower"))
+
+    var manyUntouched = made
+    manyUntouched.untouchedClaims = ["Sources/a.swift", "Sources/b.swift", "Sources/c.swift",
+                                     "Sources/d.swift", "Sources/e.swift"]
+    let truncated = Orchestrator.untouchedClaimsNotice(for: manyUntouched)
+    check("the finish-line reminder lists at most three paths and folds the rest into a count, "
+          + "so a wide claims declaration cannot type tens of KB into a live tab",
+          truncated.contains("5 claimed path(s)")
+              && truncated.contains("Sources/a.swift") && truncated.contains("Sources/b.swift")
+              && truncated.contains("Sources/c.swift")
+              && !truncated.contains("Sources/d.swift") && !truncated.contains("Sources/e.swift")
+              && truncated.contains("and 2 more"))
+
+    let ambiguousEndings: [Orchestrator.State] = [.timeout, .spawnFailed, .cancelled]
+    for outcome in ambiguousEndings {
+        var ended = made
+        ended.state = outcome
+        expect("\(outcome.rawValue) never produces untouched_claims — its child's actual ending "
+               + "is ambiguous, so it gets no \"claim narrower\" advice either",
+               Orchestrator.untouchedClaims(ended, mtime: mtime), [])
+    }
+    var failed = made
+    failed.state = .failure
+    expect("failure is judged exactly like success",
+           Orchestrator.untouchedClaims(failed, mtime: mtime).sorted(),
+           ["Sources/gone.swift", "Sources/untouched.swift"])
+}
+
+group("finalize runs the claims audit and writes it into the record") {
+    defer { Orchestrator.forget() }
+    Orchestrator.forget()
+    let fm = FileManager.default
+    let dir = "/private/tmp/clawdline-audit-\(UUID().uuidString)"
+    try! fm.createDirectory(at: URL(fileURLWithPath: dir).appendingPathComponent("Sources"),
+                            withIntermediateDirectories: true)
+    defer { try? fm.removeItem(atPath: dir) }
+    let touchedPath = "\(dir)/Sources/touched.swift"
+    let untouchedPath = "\(dir)/Sources/untouched.swift"
+    fm.createFile(atPath: touchedPath, contents: Data("old".utf8))
+    fm.createFile(atPath: untouchedPath, contents: Data("old".utf8))
+    let spawnedAt = Date()
+    try! fm.setAttributes([.modificationDate: spawnedAt.addingTimeInterval(-60)],
+                          ofItemAtPath: untouchedPath)
+    let auditTaskID = "22222222-3333-4444-5555-666666666666"
+    var made = Orchestrator.Task(id: auditTaskID, state: .briefed, kind: "custom",
+                                 title: "real audit", assistant: .claude, projectDir: dir,
+                                 timeoutMinutes: 30, created: spawnedAt,
+                                 claims: ["Sources/touched.swift", "Sources/untouched.swift",
+                                          "Sources/missing.swift"],
+                                 claimsDeclared: true, secretHash: String(repeating: "0", count: 64))
+    made.claimKeys = Orchestrator.freezeClaims(made.claims, projectDir: dir)
+    made.spawnedAt = spawnedAt
+    Orchestrator.holdScheduleTaskForTesting(made)
+    try! Data("new".utf8).write(to: URL(fileURLWithPath: touchedPath))
+
+    Orchestrator.finalize(auditTaskID, as: .success, summary: "done")
+    let record = Orchestrator.record(id: auditTaskID)
+    let untouched = (record?["untouched_claims"] as? [String] ?? []).sorted()
+    expect("the record lists exactly what the child never touched",
+           untouched, ["Sources/missing.swift", "Sources/untouched.swift"])
+}
+
+group("a directory-shaped claim is judged by recursively walking its subtree, not its own mtime") {
+    let fm = FileManager.default
+    let dir = "/private/tmp/clawdline-dir-audit-\(UUID().uuidString)"
+    let sourcesDir = URL(fileURLWithPath: dir).appendingPathComponent("Sources")
+    try! fm.createDirectory(at: sourcesDir, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(atPath: dir) }
+    let filePath = sourcesDir.appendingPathComponent("api.md").path
+    fm.createFile(atPath: filePath, contents: Data("old".utf8))
+    let spawnedAt = Date()
+    // The directory's own mtime is left *before* spawnedAt, matching exactly what a plain
+    // `stat` on the declared directory sees when nothing is added, removed, or renamed inside
+    // it — the case the review's own experiment found a single-stat audit gets wrong.
+    try! fm.setAttributes([.modificationDate: spawnedAt.addingTimeInterval(-60)],
+                          ofItemAtPath: sourcesDir.path)
+    // In-place append, the same shape as `printf 'b' >> docs/api.md`: rewrites the file's
+    // content without renaming or replacing it, so the file's own mtime moves but the
+    // directory's never does.
+    let handle = try! FileHandle(forWritingTo: URL(fileURLWithPath: filePath))
+    handle.seekToEndOfFile()
+    handle.write(Data("new".utf8))
+    handle.closeFile()
+
+    var made = Orchestrator.Task(id: "33333333-4444-5555-6666-777777777777", state: .success,
+                                 kind: "custom", title: "directory audit", assistant: .claude,
+                                 projectDir: dir, timeoutMinutes: 30, created: spawnedAt,
+                                 claims: ["Sources"], claimsDeclared: true,
+                                 secretHash: String(repeating: "0", count: 64))
+    made.claimKeys = Orchestrator.freezeClaims(made.claims, projectDir: dir)
+    made.spawnedAt = spawnedAt
+    expect("a file modified in place inside a claimed directory counts the whole claim as "
+          + "touched, even though the directory's own mtime never moved",
+           Orchestrator.untouchedClaims(made), [])
 }
 
 group("claims refusals do not spend the dispatch rate budget") {

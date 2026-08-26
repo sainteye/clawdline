@@ -112,7 +112,10 @@ Branch on the orchestrator's typed error `code`:
 
 - `over_capacity`: wait for `retry_after`, reduce the batch, or send it in stages.
 - `depth_exceeded`: stop dispatching; this session is at the tree's depth limit.
-- `workspace_busy`: do not start; wait, coordinate with the named root, or narrow the claims honestly.
+- `workspace_busy`: do not start; wait, coordinate with the named root, narrow the claims honestly,
+  or ask the side that's blocking you to give up the conflicting paths early with
+  `POST .../claims/release` (see `docs/orchestrator.md#releasing-claims-early`) — the only way to
+  break a circular wait where two roots each hold what the other one needs.
 - `bad_task`: correct the invalid `task.json` field and resend the same task id.
 
 The complete task schema, claim and serialization semantics, lifecycle, credentials, and result

@@ -421,6 +421,18 @@ log records `orchestrator.claims.blocked`. It also does not consume an entry in 
 dispatch rate limiter, so following the retry advice cannot turn repeated `workspace_busy`
 answers into `rate_limited` by itself.
 
+The error, and every `claims_overlap`/`claims_overlap_unknown_root` warning below, is also
+context-sufficient without a follow-up GET: both carry `age_seconds` (`now` minus the blocking
+task's `created`, an integer, computed against the answering request's own clock) and `root_key`.
+**`root_label` is self-reported prose and can be stale, or shared by two unrelated roots — two
+different dispatch trees both calling themselves "clawdline schedules" is a real case this app has
+hit — while `root_key` is the same tree's stable identity every time.** It is
+`Orchestrator.rootKeyDigest` of the canonical root key already used for identity below (a live
+root's session id, or `task:<id>` for a task resolved back to itself): SHA-256, truncated to its
+first 8 hex characters. `root_key` is present whenever the blocking task's own root resolves —
+including inside an otherwise-`_unknown_root` pair, where only the *new* task's side failed to
+resolve — and absent only when that specific task's own root could not be determined.
+
 Tasks in the same root tree may overlap because that root owns the graph and may have ordered the
 work itself. Their dispatch succeeds and adds a `claims_overlap` item to `warnings`, naming the
 other task and the conflicting absolute paths. Root identity is the same `parent_task` walk L1
@@ -456,6 +468,77 @@ A serialized task holds claims from dispatch throughout its entire `queued` wait
 independent timeout: it is bounded by its serialize blockers finishing, timing out, or being
 cancelled, and by cancellation of the queued task itself. `timeout_minutes` still starts only at
 `briefedAt`.
+
+### Releasing claims early
+
+Terminal state is not the only way a lease ends. A task that has finished editing some (or all) of
+what it declared can hand those paths back through
+[`POST .../claims/release`](api.md#post-v1orchestratortasksidclaimsrelease) while it is still
+`briefed` or `spawning`, and a `409 workspace_busy` blocked on exactly those paths can retry
+immediately rather than waiting for the whole task to end. This is the only way to break a
+circular wait where two roots each hold a path the other one needs — the retry advice on `409`
+says "wait", but nothing releases on its own until a side chooses to.
+
+`paths` in the request body names the same relative declarations `claims` used, and may not
+contain a `..` component; empty or omitted releases everything the task still holds. Release is
+compared exactly the way arbitration compares claims (`sharedClaimPath`) — ancestor and
+descendant, not exact string equality: `Sources` released frees every declared claim key under it,
+and naming a path *inside* a directory-shaped claim frees that whole claim key, because a
+directory claim is one atomic reservation rather than a set of the files under it. Release is
+idempotent: a path already released, or one this task never declared, is silently a no-op, so a
+retried release call can never fail on its own earlier success. It is refused for a task that
+cannot be found (`404 not_found`), one already in a terminal state (`409 already_done`, since a
+terminal task's claims are already released in full), one still `queued` (`409 not_started` — it
+has not started writing yet, so giving up its lease would leave `instructions` free to write those
+paths with no reservation behind them once it is promoted; cancel it instead), or a malformed
+`paths` entry (`400 bad_request`).
+
+Release is a machine-level permission, like cancel: the request carries only the orchestrator
+token, and that token does not identify which root is calling. Any root holding it may release any
+task's claims, including one that is currently blocking it — there is no ownership check, and the
+audit log's `orchestrator.claims.released` entry names the task and the paths freed, not a caller,
+because there is no caller identity to record.
+
+Internally, a task's frozen `claimKeys` — the historical declaration — never change from release;
+what changes is `releasedClaims`, a list of freed keys with when each was freed. Every place that
+decides whether a claim is *live* — dispatch-time arbitration and L1's disjoint-claims silence
+rule — compares `activeClaimKeys` (`claimKeys` minus `releasedClaims`) rather than `claimKeys`
+itself, so a released path stops blocking or warning against every other task immediately, under
+the same lock dispatch uses. `claims` and the GET record's frozen reservation are otherwise
+unchanged; `released_claims` is a separate, additive record of what was given back and when. A
+task that has released everything it declared has an empty `activeClaimKeys`, which reads to
+`declaredClaimsAreDisjoint` exactly like a positive `claims: []` declaration — so once every claim
+is given back, that task's directory-overlap warnings against other tasks fall silent too, the
+same silence an explicitly read-only task gets.
+
+### The terminal claims audit
+
+Purely observational, and never a gate: when a task reaches a terminal state, the broker checks
+each of its declared claims against the filesystem — mtime of the path at `project_dir` plus that
+relative claim, compared against `spawnedAt`. A path whose mtime is at or after `spawnedAt` was
+touched; one whose mtime is earlier, or that does not exist at all, was not. A directory-shaped
+claim (the common spelling: `Sources`, `docs`) is judged recursively rather than by its own mtime
+alone: a directory's mtime only moves when an entry is added, removed, or renamed directly inside
+it, so a file edited in place further down would otherwise read as untouched. The walk skips
+`.git` and `node_modules` and stops after 2,000 scanned entries; a claim whose subtree is larger
+than that is left out of the audit entirely — not reported as untouched, and no advice given for
+it — rather than judged from a partial walk.
+
+Untouched paths are written into the task record's `untouched_claims`, and one typed line is
+appended to the same completion notification a root already gets, naming the count and up to three
+of the paths (`…, and N more` past that — the complete list is always in `untouched_claims`), with
+a reminder to claim narrower next time. Only `success` and `failure` are judged: a task that never
+spawned has no baseline to judge against, and `timeout`, `spawn_failed`, and `cancelled` leave the
+child's actual ending ambiguous — a `timeout`'s tab may still be writing, a `spawn_failed` or
+`cancelled` task may never have opened at all — so none of the three produce `untouched_claims` or
+the "claim narrower" advice; saying both "it may still be writing" and "it never touched this,
+claim narrower" about the same task on the same line was the bug this excludes.
+
+This exists because an over-wide declaration costs exactly as much as a real conflict: it still
+returns `409 workspace_busy` to somebody else, or still earns a `claims_overlap` warning, whether
+or not the task ever touches most of what it claimed. The audit does not narrow anything and does
+not retroactively unblock a task that already hit `409` — it only shows up after the fact, so the
+next dispatch in that line of work can declare what it actually needed.
 
 ### Serializing a machine-global operation
 

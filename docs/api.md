@@ -1033,7 +1033,7 @@ Eight refusals, and a client should branch on all of them:
 | `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
 | `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `permission_mode`, `plan`, `claims`, or `serialize`. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
 | `worktree_unavailable` | 409 | worktree isolation was requested but the repository has no commit to use as a base or the destination volume has less than 2 GB available. This is an environment refusal rather than malformed JSON |
-| `workspace_busy` | 409 | a live task from another definitely identified root reserved an equal, ancestor, or descendant claim. The error object carries `blocking_task`, `title`, nullable `root_label`, Unix-second `created`, absolute `conflict_paths`, and advisory `retry_after`. The rejected task is not registered and does not spend dispatch rate-limit budget |
+| `workspace_busy` | 409 | a live task from another definitely identified root reserved an equal, ancestor, or descendant claim. The error object carries `blocking_task`, `title`, nullable `root_label`, Unix-second `created`, absolute `conflict_paths`, advisory `retry_after`, `age_seconds` (`now` minus the blocking task's `created`, an integer), and `root_key` (the blocking task's root tree, hashed — see below). The rejected task is not registered and does not spend dispatch rate-limit budget |
 | `depth_exceeded` | 409 | **the caller is already as deep as this Mac goes.** A root's child may dispatch; that child's may not. `orchestrator_max_grandchildren` of `0` puts the floor back at one level. Not a retry — stop |
 | `over_capacity` | 429 | this dispatcher's slots are full (`orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child), or the whole Mac's are. Registered `queued` tasks count toward these limits even before a tab opens, preventing an unbounded queue. The error object carries `retry_after` in seconds, and `message` says which |
 | `rate_limited` | 429 | more than ten dispatches in ten minutes, or more than one full tree's worth if that is larger |
@@ -1052,14 +1052,22 @@ A claims conflict is answered before serialization, spawning, or L1 workspace wa
           "message":"Another dispatch tree has reserved a path this task claims.",
           "blocking_task":"a70c5e11-3b28-4d6f-8e10-2c94b7f0d3aa",
           "title":"Edit the orchestrator","root_label":"clawdline main",
-          "created":1787696800,
+          "created":1787696800,"age_seconds":42,
+          "root_key":"9f1c2e7a",
           "conflict_paths":["/Users/you/code/clawdline/Sources/Orchestrator.swift"],
           "retry_after":60,"request_id":"c1e0b7a4-2f5d-4a19-8b0e-71c93d5ea882"}}
 ```
 
 The failed attempt writes `orchestrator.claims.blocked` to the audit log but does not count toward
 the ten-minute dispatch rate limit. The blocking context is enough for the caller to choose
-whether to wait, coordinate with that root, or escalate.
+whether to wait, coordinate with that root, or escalate — without a follow-up GET: `age_seconds`
+is computed against the answering request's own clock, and `root_key` is stable identity rather
+than prose. **`root_label` is self-reported and can be stale or shared by two unrelated roots** —
+two different dispatch trees both calling themselves "clawdline schedules" is a real case, not a
+hypothetical — **while `root_key` is `Orchestrator.rootKeyDigest`: SHA-256 of the same canonical
+root key the broker already uses for identity (a live root's session id, or `task:<id>` for a
+task resolved back to itself), truncated to its first 8 hex characters.** The same tree always
+hashes to the same `root_key`; two roots that share a label do not share a `root_key`.
 
 A `200` means *registered and being opened*, not *running*. `state` is `queued` or `spawning` when
 this answers and the child has typed nothing yet; watch the record, or wait to be told.
@@ -1100,8 +1108,14 @@ above. A same-root conflict is admitted and adds a warning beside the task:
                     "claims":["Sources/Orchestrator.swift"]},
  "warnings":[{"code":"claims_overlap","task":"a70c5e11-…",
               "paths":["/Users/you/code/clawdline/Sources/Orchestrator.swift"],
-              "message":"Task 3f9a21bc-… shares claimed paths with task a70c5e11-…: /Users/you/code/clawdline/Sources/Orchestrator.swift."}]}
+              "message":"Task 3f9a21bc-… shares claimed paths with task a70c5e11-…: /Users/you/code/clawdline/Sources/Orchestrator.swift.",
+              "age_seconds":42,"root_key":"9f1c2e7a"}]}
 ```
+
+Every `claims_overlap` and `claims_overlap_unknown_root` warning carries the same `age_seconds`
+and `root_key` the `409` above does, computed against the other task named in `task`. `root_key`
+is present whenever that task's own root resolves, even inside an otherwise-unknown pair — only a
+blocker whose own root cannot be resolved leaves `root_key` absent.
 
 The wire field has three distinct states, preserved through the registry and all GET responses:
 
@@ -1489,6 +1503,11 @@ The record:
   "child": {"terminalId": "9A1F…", "backend": "iterm", "sessionId": "0f2b91ac-…"},
   "summary": "…",               // finished tasks; the child's own sentence
   "artifacts": ["artifacts/project-portrait.svg"],
+  "claims": ["Sources/Orchestrator.swift"],   // present (maybe []) only when task.json declared it
+  "released_claims": [                        // absent unless something was given back early
+    {"path": "/Users/you/code/clawdline/Sources/Orchestrator.swift", "released_at": 1787100090}
+  ],
+  "untouched_claims": ["Sources/Orchestrator.swift"],  // absent unless the terminal audit found any
   "usage": {"input": 48210, "output": 9330, "cacheRead": 412880, "cacheWrite": 31200,
             "total": 501620, "model": "claude-sonnet-4-5", "costUsd": 0.4243}
 }
@@ -1527,6 +1546,65 @@ SHA is presented as the receipt for what the child actually started from.
 
 The same payload goes out on [the event stream](#the-event-stream) as an `orchestrator` frame
 whenever any record changes, and once when a stream opens, right after `hello` and `sessions`.
+
+`released_claims` and `untouched_claims` are two independent, purely observational trails —
+neither ever blocks anything. `released_claims` is written by
+[`POST .../claims/release`](#post-v1orchestratortasksidclaimsrelease) below: each entry names an
+absolute path this task gave back early and the Unix second it happened, and the field is absent
+until the first release. `untouched_claims` is written once, at the task's terminal transition: it
+lists the *relative* declared `claims` whose path was never modified after `spawnedAt` — including
+one that no longer exists at all — so a root can see it over-declared and claim narrower next
+time. Both survive a restart like every other task field.
+
+### `POST /v1/orchestrator/tasks/:id/claims/release`
+
+Gives back some or all of a task's declared write paths while it is `briefed` or `spawning`, so a
+`409 workspace_busy` blocked on them can retry immediately instead of waiting for the whole task to
+end — the only way to break a circular wait where two roots each hold what the other needs. A
+`queued` task cannot release: it has not started writing anything yet, so its `instructions` will
+still write those paths once it is promoted, with no reservation left to stop a conflicting
+dispatch from landing on top of it — see `not_started` below; cancel a queued task instead of
+releasing its claims. Orchestrator-token only, like dispatch itself; a paired device's own token
+answers `403`.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/claims/release \
+    -H "X-Clawdline-Orchestrator: $ORCH" -d '{"paths":["Sources/Orchestrator.swift"]}'
+{"ok":true,"task":{"id":"3f9a21bc-…","state":"briefed",
+                    "claims":["Sources/Orchestrator.swift","Sources/RemoteServer.swift"],
+                    "released_claims":[
+                      {"path":"/Users/you/code/clawdline/Sources/Orchestrator.swift",
+                       "released_at":1787100090}
+                    ]}}
+```
+
+`paths` names the original *relative* declarations to give back, in the same spelling `claims` in
+`task.json` used; an omitted or empty `paths` releases everything this task still holds. A path
+that was never declared, or was already released, is silently a no-op rather than an error, so a
+retried release can never fail on its own earlier success. Freed paths are compared the same way
+arbitration compares claims — ancestor and descendant, not exact string equality: `Sources`
+released frees every declared claim key under it, `sources` (different case) frees nothing, and
+naming a path *inside* a directory-shaped claim (say the task declared `Sources` and the request
+names `Sources/Orchestrator.swift`) frees that whole claim key, because a directory claim is one
+atomic reservation rather than a set of the files under it. `paths` entries may not contain a `..`
+component, same as `claims` in `task.json`.
+
+| `code` | status | |
+|---|---|---|
+| `not_found` | 404 | no task with that id |
+| `already_done` | 409 | the task already reached a terminal state — its claims are already released, and there is nothing left to give back early |
+| `not_started` | 409 | the task is still `queued` — it has not started writing anything yet, so releasing its lease early would leave `instructions` still able to write those paths with no reservation behind them; cancel it instead |
+| `bad_request` | 400 | a `paths` entry contains a `..` component |
+
+Release only ever narrows what dispatch-time arbitration compares against: `claims` and the
+GET record's frozen historical reservation are unchanged, but a released path stops counting
+toward `409 workspace_busy` and toward the same-root `claims_overlap` warning against every other
+task, immediately, under the same lock dispatch itself uses. `orchestrator.claims.released` is
+written to the audit log with the task id and the paths actually freed — but not who called it.
+Release is a machine-level permission exactly like cancel: the request carries the orchestrator
+token, a Mac-wide credential, and nothing that identifies which root made the call, so any root
+holding that token may release any task's claims, including one blocking it. There is no narrower
+guarantee to record; the audit line names the task and paths, not a caller.
 
 ### `POST /v1/orchestrator/tasks/:id/notify`, `POST /v1/orchestrator/notify`
 
