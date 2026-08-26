@@ -15,14 +15,12 @@ Package.resolved
 # Frames and working files from tools/shoot-assets.sh — large, and regenerated on demand.
 .shoot/
 
-# Local working artifacts — plans, landscapes, audits. Deliberately not published.
-artifacts/
+# Local working artifacts — now a symlink into the private sibling repo (clawdline-cloud),
+# where they are tracked. Ignored here either way; no trailing slash so the symlink matches.
+artifacts
 
 # Python bytecode from tools/, which are scripts and not a package.
 __pycache__/
 
 # Personal Claude Code skills for this checkout, not part of the app.
 .claude/skills/
-
-# The nested private repo for clawdline.com — its own git history, never part of this one.
-/cloud/
