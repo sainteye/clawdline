@@ -35,6 +35,39 @@ enum Orchestrator {
         }
     }
 
+    enum Isolation: String {
+        case none, worktree
+    }
+
+    /// The checkout is disposable; the branch is the delivery. Repository and cwd are internal
+    /// facts needed to operate a monorepo worktree and are stored beside the six public facts.
+    struct Worktree {
+        var path: String
+        var branch: String
+        var base: String
+        var repository: String
+        var cwd: String
+        var head: String? = nil
+        var commits: Int? = nil
+        var dirty: Bool? = nil
+        var baseDirty = 0
+        var requestedBase = "HEAD"
+    }
+
+    enum WorktreeDisposal: Equatable {
+        case removeAll, removeTreeKeepBranch, keepEverything
+    }
+
+    /// The deletion policy is pure and fail-safe. Missing git facts are not permission to erase.
+    static func worktreeDisposal(commits: Int?, dirty: Bool?, headOnBranch: Bool?,
+                                 branchExists: Bool) -> WorktreeDisposal {
+        guard branchExists, let commits, let dirty, !dirty else { return .keepEverything }
+        if commits == 0 {
+            return headOnBranch == true ? .removeAll : .keepEverything
+        }
+        return .removeTreeKeepBranch
+    }
+
     /// A stale value copy may add fields, but it may never move a task backwards or resurrect it.
     /// Internal rather than private so the invariant has a pure unit test.
     static func mayReplaceState(_ current: State, with candidate: State) -> Bool {
@@ -103,6 +136,8 @@ enum Orchestrator {
         /// Absolute, canonical-root comparison keys frozen when the lease is registered. These
         /// are persisted because a claim must not change identity as its target comes into being.
         var claimKeys: [String] = []
+        var isolation = Isolation.none
+        var worktree: Worktree?
         var childTerminalId: String?
         var childBackend: Backend?
         var childTTY: String?
@@ -153,7 +188,7 @@ enum Orchestrator {
     /// The directory whose assistant-owned records belong to this child. Kept separate from the
     /// dispatch project so task isolation can choose a different working tree at this seam.
     static func cwd(of task: Task) -> String {
-        task.projectDir
+        task.worktree?.cwd ?? task.projectDir
     }
 
     enum BriefingDecision: Equatable {
@@ -466,6 +501,11 @@ enum Orchestrator {
     /// they get the same off-main serial shape as ordinary dispatch without competing pumps.
     private static let serializePumpQueue = DispatchQueue(
         label: "dev.sainteye.clawdline.orchestrator.serialize")
+    /// Worktree inspection and disposal can each wait on several bounded git subprocesses.
+    /// Keeping them on one utility queue both keeps the panel responsive and prevents two close
+    /// paths from racing to dispose the same checkout.
+    private static let worktreeQueue = DispatchQueue(
+        label: "dev.sainteye.clawdline.orchestrator.worktree", qos: .utility)
     /// A background pump and a new remote dispatch may both persist. Serializing the whole
     /// snapshot-and-write prevents an older snapshot from winning the atomic rename last.
     private static let storeSaveLock = NSLock()
@@ -666,6 +706,8 @@ enum Orchestrator {
         var serialize: [String] = []
         var claims: [String] = []
         var claimsDeclared = false
+        var isolation = Isolation.none
+        var isolationBase: String?
     }
 
     /// A live task whose working directory intersects the one being dispatched. The task is a
@@ -754,6 +796,24 @@ enum Orchestrator {
         if let plan = obj["plan"] as? String, plan.utf8.count > planLimit {
             return .bad("plan must be at most \(planLimit / 1024) KiB")
         }
+        var isolation = Isolation.none
+        if let raw = obj["isolation"] {
+            guard let name = raw as? String, let value = Isolation(rawValue: name) else {
+                return .bad("isolation must be one of: none, worktree")
+            }
+            isolation = value
+        }
+        var isolationBase: String?
+        if let raw = obj["isolation_base"] {
+            guard isolation == .worktree else {
+                return .bad("isolation_base is only valid when isolation is worktree")
+            }
+            guard let name = raw as? String, validIsolationBase(name) else {
+                return .bad("isolation_base must be a 1–200 character Git revision using "
+                          + "letters, digits, . _ / - or ~; it cannot begin with - or contain ..")
+            }
+            isolationBase = name
+        }
         var serialize: [String] = []
         if let raw = obj["serialize"] {
             guard let values = raw as? [Any] else {
@@ -833,6 +893,8 @@ enum Orchestrator {
         made.serialize = serialize
         made.claims = claims
         made.claimsDeclared = claimsDeclared
+        made.isolation = isolation
+        made.isolationBase = isolationBase
         made.plan = (obj["plan"] as? String).flatMap {
             let text = $0.trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : text
@@ -861,6 +923,343 @@ enum Orchestrator {
     static func isTaskID(_ id: String) -> Bool {
         guard id.count == 36 else { return false }
         return id.allSatisfy { ("a"..."f").contains($0) || $0.isNumber || $0 == "-" }
+    }
+
+    static func validIsolationBase(_ value: String) -> Bool {
+        guard !value.isEmpty, value.count <= 200, !value.hasPrefix("-"), !value.contains("..")
+        else { return false }
+        return value.allSatisfy {
+            ("a"..."z").contains($0) || ("A"..."Z").contains($0)
+                || ("0"..."9").contains($0) || $0 == "." || $0 == "_" || $0 == "/"
+                || $0 == "-" || $0 == "~"
+        }
+    }
+
+    static func worktreeBranch(for taskID: String) -> String? {
+        isTaskID(taskID) ? "clawdline/task/\(taskID)" : nil
+    }
+
+    /// The same identity spelling used by frozen claims: standardise, then follow symlinks once
+    /// while the repository exists. Every worktree path and stored repository value starts here.
+    static func canonicalFilesystemPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    private static func worktreeRepositorySlug(_ project: String) -> String {
+        let canonical = canonicalFilesystemPath(project)
+        let basename = URL(fileURLWithPath: canonical).lastPathComponent.lowercased()
+        var readable = String(basename.unicodeScalars.map { scalar -> Character in
+            let value = scalar.value
+            if (97...122).contains(value) || (48...57).contains(value) {
+                return Character(String(scalar))
+            }
+            return "-"
+        }.prefix(32))
+        if readable.isEmpty { readable = "repo" }
+        let digest = SHA256.hash(data: Data(canonical.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        return readable + "-" + String(digest.prefix(8))
+    }
+
+    static var worktreeRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Clawdline/worktrees",
+                                    isDirectory: true)
+    }
+
+    static func worktreePath(project: String, taskID: String) -> String? {
+        guard isTaskID(taskID) else { return nil }
+        return worktreeRoot
+            .appendingPathComponent(worktreeRepositorySlug(project), isDirectory: true)
+            .appendingPathComponent(taskID, isDirectory: true).path
+    }
+
+    private struct GitAnswer {
+        var output: String
+        var status: Int32
+    }
+
+    /// The only git execution seam for worktree lifecycle operations. Arguments never pass
+    /// through a shell, optional locks are disabled, and a wedged repository cannot hold the
+    /// broker queue indefinitely.
+    private static func git(_ arguments: [String], cwd: String,
+                            timeout: TimeInterval = 15) -> GitAnswer? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = arguments
+        process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
+        var environment = ProcessInfo.processInfo.environment
+        environment["GIT_OPTIONAL_LOCKS"] = "0"
+        process.environment = environment
+        let pipe = Pipe()
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do { try process.run() } catch { return nil }
+        let killer = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout,
+                                                       execute: killer)
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitQuietly()
+        killer.cancel()
+        return GitAnswer(output: String(data: data, encoding: .utf8) ?? "",
+                         status: process.terminationStatus)
+    }
+
+    private enum WorktreePreparation {
+        case ready(Worktree, warnings: [[String: Any]])
+        case bad(String)
+        case unavailable(String)
+    }
+
+    private static func filesystemFreeBytes(at path: String) -> Int64? {
+        if let value = try? URL(fileURLWithPath: path).resourceValues(
+            forKeys: [.volumeAvailableCapacityForImportantUsageKey]
+        ).volumeAvailableCapacityForImportantUsage {
+            return value
+        }
+        let attributes = try? FileManager.default.attributesOfFileSystem(forPath: path)
+        return (attributes?[.systemFreeSize] as? NSNumber)?.int64Value
+    }
+
+    private static func relativePath(from root: String, to child: String) -> String? {
+        let rootParts = URL(fileURLWithPath: canonicalFilesystemPath(root)).pathComponents
+        let childParts = URL(fileURLWithPath: canonicalFilesystemPath(child)).pathComponents
+        guard childParts.count >= rootParts.count,
+              Array(childParts.prefix(rootParts.count)) == rootParts else { return nil }
+        return childParts.dropFirst(rootParts.count).joined(separator: "/")
+    }
+
+    private static func prepareWorktree(for draft: Draft, taskID: String,
+                                        queued: Bool) -> WorktreePreparation {
+        guard let top = git(["rev-parse", "--show-toplevel"], cwd: draft.projectDir),
+              top.status == 0 else {
+            return .bad("isolation:\"worktree\" needs project_dir to be inside a Git repository.")
+        }
+        let repository = top.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard StartPoints.usable(repository) else {
+            return .bad("isolation:\"worktree\" could not resolve the repository containing project_dir.")
+        }
+        let requested = draft.isolationBase ?? "HEAD"
+        guard let resolved = git(["rev-parse", "--verify", "\(requested)^{commit}"], cwd: repository),
+              resolved.status == 0 else {
+            if draft.isolationBase == nil {
+                return .unavailable("This repository has no commit to use as a worktree base.")
+            }
+            return .bad("isolation_base does not resolve to a commit in project_dir.")
+        }
+        let base = resolved.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let branch = worktreeBranch(for: taskID),
+              let path = worktreePath(project: repository, taskID: taskID) else {
+            return .bad("task_id cannot name a worktree branch or path.")
+        }
+        let canonicalProject = canonicalFilesystemPath(draft.projectDir)
+        let canonicalRepository = canonicalFilesystemPath(repository)
+        guard let relative = relativePath(from: canonicalRepository, to: canonicalProject) else {
+            return .bad("project_dir is not inside its resolved Git repository.")
+        }
+        let childCwd = relative.isEmpty ? path
+            : URL(fileURLWithPath: path, isDirectory: true).appendingPathComponent(relative).path
+
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        guard let free = filesystemFreeBytes(at: home), free >= 2_000_000_000 else {
+            return .unavailable("The worktree volume needs at least 2 GB of available space.")
+        }
+        let status = git(["status", "--porcelain", "--untracked-files=all"], cwd: repository)
+        let dirty = status?.status == 0
+            ? status!.output.split(whereSeparator: \.isNewline).count : 0
+        var warnings: [[String: Any]] = []
+        if dirty > 0 {
+            let message = queued
+                ? "The base tree currently has \(dirty) uncommitted files; the clean checkout "
+                    + "created when this queued task starts will not contain them."
+                : "The base tree has \(dirty) uncommitted files; the worktree starts from commit "
+                    + "\(String(base.prefix(7))) and does not contain them."
+            warnings.append([
+                "code": "dirty_worktree_base",
+                "message": message,
+            ])
+        }
+        let gitDirectory = git(["rev-parse", "--git-dir"], cwd: repository)?.output
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let gitDirectory, !gitDirectory.isEmpty {
+            let absoluteGit = gitDirectory.hasPrefix("/") ? gitDirectory
+                : URL(fileURLWithPath: repository).appendingPathComponent(gitDirectory).path
+            let markers = ["MERGE_HEAD", "rebase-merge", "rebase-apply", "BISECT_LOG"]
+            let inProgress = markers.filter {
+                FileManager.default.fileExists(atPath:
+                    URL(fileURLWithPath: absoluteGit).appendingPathComponent($0).path)
+            }
+            if !inProgress.isEmpty {
+                warnings.append([
+                    "code": "git_operation_in_progress",
+                    "message": "The base repository has an operation in progress ("
+                        + inProgress.joined(separator: ", ") + "); integrating the branch may wait.",
+                ])
+            }
+        }
+        var worktree = Worktree(path: path, branch: branch, base: base,
+                                repository: canonicalRepository, cwd: childCwd)
+        worktree.baseDirty = dirty
+        worktree.requestedBase = requested
+        return .ready(worktree, warnings: warnings)
+    }
+
+    private static func resolveSpawnBase(in worktree: Worktree) -> Worktree? {
+        guard let answer = git(["rev-parse", "--verify",
+                                "\(worktree.requestedBase)^{commit}"],
+                               cwd: worktree.repository), answer.status == 0 else { return nil }
+        var resolved = worktree
+        resolved.base = answer.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return resolved
+    }
+
+    private static func pruneWorktrees(in repository: String) {
+        _ = git(["worktree", "prune"], cwd: repository)
+    }
+
+    /// Materialise only when the task is actually leaving the queue. A prepared task holds no
+    /// checkout and no branch while a serialization token is busy; spawn resolves its base again
+    /// and the resulting SHA becomes the immutable receipt.
+    private static func addWorktree(_ worktree: Worktree, taskID: String) -> String? {
+        let parent = URL(fileURLWithPath: worktree.path, isDirectory: true)
+            .deletingLastPathComponent()
+        do {
+            try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                                   ofItemAtPath: worktreeRoot.path)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                                   ofItemAtPath: parent.path)
+        } catch {
+            return "Could not create the private worktree directory: \(error.localizedDescription)"
+        }
+        guard let answer = git(["worktree", "add", "-b", worktree.branch,
+                                worktree.path, worktree.base], cwd: worktree.repository,
+                               timeout: 60) else {
+            pruneWorktrees(in: worktree.repository)
+            return "git worktree add could not be started"
+        }
+        guard answer.status == 0 else {
+            pruneWorktrees(in: worktree.repository)
+            let detail = answer.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            return String((detail.isEmpty ? "git worktree add failed" : detail).prefix(500))
+        }
+        let currentStatus = git(["status", "--porcelain", "--untracked-files=all"],
+                                cwd: worktree.repository)
+        let dirty = currentStatus?.status == 0
+            ? currentStatus!.output.split(whereSeparator: \.isNewline).count
+            : worktree.baseDirty
+        RemoteAuth.audit("orchestrator.worktree.add", [
+            "task": taskID, "base": worktree.base, "branch": worktree.branch,
+            "path": worktree.path, "dirty": String(dirty),
+        ])
+        guard FileManager.default.fileExists(atPath: worktree.cwd) else {
+            disposeWorktree(worktree, taskID: taskID, why: "spawn_failed")
+            return "The requested project_dir does not exist in base commit \(worktree.base)."
+        }
+        return nil
+    }
+
+    private struct WorktreeFacts {
+        var head: String?
+        var commits: Int?
+        var dirty: Bool?
+        var headOnBranch: Bool?
+        var branchExists: Bool
+    }
+
+    private static func inspectWorktree(_ worktree: Worktree) -> WorktreeFacts {
+        let branchRef = "refs/heads/\(worktree.branch)"
+        let branchAnswer = git(["rev-parse", "--verify", "\(branchRef)^{commit}"],
+                               cwd: worktree.repository)
+        let branchExists = branchAnswer?.status == 0
+        let head = branchExists
+            ? branchAnswer?.output.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        let countAnswer = branchExists
+            ? git(["rev-list", "--count", "\(worktree.base)..\(branchRef)"],
+                  cwd: worktree.repository) : nil
+        let commits = countAnswer?.status == 0
+            ? Int(countAnswer!.output.trimmingCharacters(in: .whitespacesAndNewlines)) : nil
+        guard FileManager.default.fileExists(atPath: worktree.path) else {
+            return WorktreeFacts(head: head, commits: commits, dirty: nil,
+                                 headOnBranch: nil, branchExists: branchExists)
+        }
+        let status = git(["status", "--porcelain", "--untracked-files=all"], cwd: worktree.path)
+        let dirty = status?.status == 0 ? !status!.output.isEmpty : nil
+        let symbolic = git(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd: worktree.path)
+        let headOnBranch = symbolic?.status == 0
+            ? symbolic!.output.trimmingCharacters(in: .whitespacesAndNewlines) == worktree.branch
+            : false
+        return WorktreeFacts(head: head, commits: commits, dirty: dirty,
+                             headOnBranch: headOnBranch, branchExists: branchExists)
+    }
+
+    private static func refreshedWorktree(_ original: Worktree) -> Worktree {
+        var worktree = original
+        let facts = inspectWorktree(worktree)
+        worktree.head = facts.head
+        worktree.commits = facts.commits
+        worktree.dirty = facts.dirty
+        return worktree
+    }
+
+    /// Remove through git or not at all. Even failed removals are followed by prune, while branch
+    /// deletion happens only after git removed a provably empty checkout successfully.
+    private static func disposeWorktree(_ worktree: Worktree, taskID: String, why: String,
+                                        allowCommitted: Bool = true) {
+        let facts = inspectWorktree(worktree)
+        let decision = worktreeDisposal(commits: facts.commits, dirty: facts.dirty,
+                                        headOnBranch: facts.headOnBranch,
+                                        branchExists: facts.branchExists)
+        guard decision != .keepEverything else {
+            let keptWhy: String
+            if facts.dirty == true { keptWhy = "dirty" }
+            else if facts.commits == 0 && facts.headOnBranch == false { keptWhy = "head_moved" }
+            else { keptWhy = "unreadable" }
+            RemoteAuth.audit("orchestrator.worktree.kept", [
+                "task": taskID, "branch": worktree.branch, "why": keptWhy,
+            ])
+            return
+        }
+        if decision == .removeTreeKeepBranch && !allowCommitted { return }
+        guard FileManager.default.fileExists(atPath: worktree.path) else {
+            // The checkout is already gone. The branch remains the delivery; never infer that a
+            // missing directory authorizes deleting it.
+            pruneWorktrees(in: worktree.repository)
+            return
+        }
+        let removed = git(["worktree", "remove", worktree.path], cwd: worktree.repository,
+                          timeout: 60)
+        pruneWorktrees(in: worktree.repository)
+        guard removed?.status == 0 else {
+            RemoteAuth.audit("orchestrator.worktree.kept", [
+                "task": taskID, "branch": worktree.branch, "why": "remove_failed",
+            ])
+            return
+        }
+        if decision == .removeAll {
+            let deleted = git(["branch", "-D", worktree.branch], cwd: worktree.repository)
+            guard deleted?.status == 0 else {
+                RemoteAuth.audit("orchestrator.worktree.kept", [
+                    "task": taskID, "branch": worktree.branch, "why": "remove_failed",
+                ])
+                return
+            }
+        }
+        RemoteAuth.audit("orchestrator.worktree.remove", [
+            "task": taskID, "branch": worktree.branch, "why": why,
+            "commits": String(facts.commits ?? 0),
+        ])
+    }
+
+    /// Enqueue only; callers on the main thread never execute a git subprocess themselves.
+    private static func scheduleWorktreeDisposal(_ worktree: Worktree, taskID: String,
+                                                 why: String,
+                                                 allowCommitted: Bool = true) {
+        worktreeQueue.async {
+            disposeWorktree(worktree, taskID: taskID, why: why,
+                            allowCommitted: allowCommitted)
+        }
     }
 
     /// Current holders followed by older waiters entitled to a shared token first. Roots are
@@ -893,14 +1292,27 @@ enum Orchestrator {
     /// creating a target (or a symlink below the root) can never change a lease's identity.
     static func freezeClaims(_ claims: [String], projectDir: String) -> [String] {
         guard !claims.isEmpty else { return [] }
-        let root = URL(fileURLWithPath: projectDir, isDirectory: true)
-            .standardizedFileURL.resolvingSymlinksInPath().path
+        let root = canonicalFilesystemPath(projectDir)
         let separator = root == "/" ? "" : "/"
         return claims.map { claim in
             let relative = claim.split(separator: "/", omittingEmptySubsequences: true)
                 .filter { $0 != "." }.joined(separator: "/")
             return relative.isEmpty ? root : root + separator + relative
         }
+    }
+
+    /// Relative claims name the shared checkout. An isolated child cannot touch those paths at
+    /// that spelling, so retaining the lease would only block useful work in the base tree.
+    static func prepareClaimsForIsolation(_ task: inout Task) -> [[String: Any]] {
+        guard task.isolation == .worktree, !task.claims.isEmpty else { return [] }
+        let ignored = task.claims
+        task.claims = []
+        task.claimKeys = []
+        return [[
+            "code": "claims_ignored_for_worktree",
+            "paths": ignored,
+            "message": "Claims inside project_dir were ignored because this task uses an isolated worktree.",
+        ]]
     }
 
     /// The shared descendant of two already-frozen claim keys. This is deliberately only string
@@ -968,10 +1380,8 @@ enum Orchestrator {
     /// Comparing components is what keeps `/a/b` separate from `/a/bc`, and also handles `/`
     /// without a special string-prefix case.
     static func sharedWorkspaceDirectory(_ first: String, _ second: String) -> String? {
-        let first = URL(fileURLWithPath: first).standardizedFileURL
-            .resolvingSymlinksInPath().path
-        let second = URL(fileURLWithPath: second).standardizedFileURL
-            .resolvingSymlinksInPath().path
+        let first = canonicalFilesystemPath(first)
+        let second = canonicalFilesystemPath(second)
         let firstParts = URL(fileURLWithPath: first).pathComponents
         let secondParts = URL(fileURLWithPath: second).pathComponents
         let common = min(firstParts.count, secondParts.count)
@@ -1034,7 +1444,7 @@ enum Orchestrator {
                   task.state == .spawning || task.state == .briefed,
                   item.rootKey != newRoot,
                   !declaredClaimsAreDisjoint(newTask, task),
-                  let shared = sharedWorkspaceDirectory(newTask.projectDir, task.projectDir)
+                  let shared = sharedWorkspaceDirectory(cwd(of: newTask), cwd(of: task))
             else { return nil }
             return WorkspaceOverlap(task: task, sharedDir: shared)
         }.sorted { left, right in
@@ -1055,10 +1465,12 @@ enum Orchestrator {
     /// here makes "absent, not an empty array" explicit and independently testable.
     static func dispatchPayload(record: [String: Any], taskID: String,
                                 overlaps: [WorkspaceOverlap],
-                                claimsOverlaps: [ClaimsOverlap] = []) -> [String: Any] {
+                                claimsOverlaps: [ClaimsOverlap] = [],
+                                additionalWarnings: [[String: Any]] = []) -> [String: Any] {
         var reply: [String: Any] = ["ok": true, "task": record]
         let warnings = overlaps.map { $0.warning(for: taskID) }
             + claimsOverlaps.filter { !$0.blocks }.map { $0.warning(for: taskID) }
+            + additionalWarnings
         if !warnings.isEmpty {
             reply["warnings"] = warnings
         }
@@ -1109,7 +1521,6 @@ enum Orchestrator {
         case .bad(let why): return .refused(422, "bad_task", why)
         case .ok(let ok): made = ok
         }
-
         // How deep this one sits. A dispatch names who asked, and if who asked is itself a live
         // child then this task is one level below that child's. Best-effort in the sense that a
         // caller can lie about its identity — but lying only ever moves a task *down* (the two
@@ -1142,6 +1553,23 @@ enum Orchestrator {
                             extra: ["retry_after": 60])
         }
 
+        // Git validation costs several subprocesses. Capacity and depth are facts the broker
+        // already knows, so answer those refusals before asking a repository anything.
+        var preparedWorktree: Worktree?
+        var worktreeWarnings: [[String: Any]] = []
+        if made.isolation == .worktree {
+            switch prepareWorktree(for: made, taskID: taskID,
+                                   queued: !made.serialize.isEmpty) {
+            case .ready(let worktree, let warnings):
+                preparedWorktree = worktree
+                worktreeWarnings = warnings
+            case .bad(let why):
+                return .refused(422, "bad_task", why)
+            case .unavailable(let why):
+                return .refused(409, "worktree_unavailable", why)
+            }
+        }
+
         // The ceiling is the default as well as the limit: a task that said nothing gets it, and
         // one that asked for more is quietly given it instead. Quietly on purpose — the work is
         // still worth doing more carefully, and a refusal here would only teach callers to ask
@@ -1158,6 +1586,9 @@ enum Orchestrator {
                         serialize: made.serialize, claims: made.claims,
                         claimsDeclared: made.claimsDeclared,
                         secretHash: hash(ofSecret: secret))
+        task.isolation = made.isolation
+        task.worktree = preparedWorktree
+        worktreeWarnings += prepareClaimsForIsolation(&task)
         task.claimKeys = freezeClaims(task.claims, projectDir: task.projectDir)
         if !task.serialize.isEmpty {
             guard let sealed = sealQueuedSecret(secret) else {
@@ -1191,7 +1622,8 @@ enum Orchestrator {
                                                    "cwd": made.projectDir, "kind": made.kind,
                                                    "depth": String(depth),
                                                    "model": made.model ?? "default",
-                                                   "permission": permission.rawValue])
+                                                   "permission": permission.rawValue,
+                                                   "isolation": made.isolation.rawValue])
 
         // Straight away rather than on the next beat: the root is holding its breath on this
         // request, and the answer should already say whether a terminal opened or which older
@@ -1205,7 +1637,8 @@ enum Orchestrator {
         DispatchQueue.main.async { SessionWatch.shared.nudge() }
         RemoteServer.shared.broadcastOrchestrator()
         let reply = successfulDispatchReply(for: task, notify: true,
-                                             claimsOverlaps: claimsOverlaps)
+                                             claimsOverlaps: claimsOverlaps,
+                                             additionalWarnings: worktreeWarnings)
         if needsPump { scheduleSerializePump() }
         return reply
     }
@@ -1213,7 +1646,8 @@ enum Orchestrator {
     /// One response builder for both the first request and an idempotent retry. The scan happens
     /// after spawn so a task that failed to open is already terminal and produces no warning.
     private static func successfulDispatchReply(for task: Task, notify: Bool = false,
-                                                claimsOverlaps: [ClaimsOverlap]? = nil) -> Reply {
+                                                claimsOverlaps: [ClaimsOverlap]? = nil,
+                                                additionalWarnings: [[String: Any]] = []) -> Reply {
         guard let record = existingRecord(task.id) else {
             return .refused(500, "internal", "The task was lost while being made.")
         }
@@ -1228,14 +1662,31 @@ enum Orchestrator {
             lock.unlock()
         }
         return .ok(dispatchPayload(record: record, taskID: task.id, overlaps: overlaps,
-                                   claimsOverlaps: claimWarnings))
+                                   claimsOverlaps: claimWarnings,
+                                   additionalWarnings: additionalWarnings))
     }
 
     private static func spawn(_ task: Task) -> Task {
         var task = task
         task.queuedSecret = nil
-        let place = StartPoints.Place(id: StartPoints.id(for: task.projectDir),
-                                      path: task.projectDir,
+        if let prepared = task.worktree {
+            guard let worktree = resolveSpawnBase(in: prepared) else {
+                task.state = .spawnFailed
+                task.summary = "The worktree base no longer resolves to a commit."
+                task.finishedAt = Date()
+                return task
+            }
+            task.worktree = worktree
+            if let failure = addWorktree(worktree, taskID: task.id) {
+                task.state = .spawnFailed
+                task.summary = String(failure.prefix(500))
+                task.finishedAt = Date()
+                return task
+            }
+        }
+        let workingDirectory = cwd(of: task)
+        let place = StartPoints.Place(id: StartPoints.id(for: workingDirectory),
+                                      path: workingDirectory,
                                       label: task.title, at: Date())
         // A place this session may reach, because everything it was sent to do is outside the
         // project its tab was opened in. The briefing, the task file, the artifacts: all of it
@@ -1259,6 +1710,9 @@ enum Orchestrator {
             task.state = .spawnFailed
             task.summary = "\(code): \(message)"
             task.finishedAt = Date()
+            if let worktree = task.worktree {
+                disposeWorktree(worktree, taskID: task.id, why: "spawn_failed")
+            }
         case .started(let id, let backend):
             task.state = .spawning
             task.spawnedAt = Date()
@@ -1492,11 +1946,19 @@ enum Orchestrator {
     /// actually be gone — a few hundred milliseconds when it leaves on the word, and a bounded
     /// five and a bit when it has to be made to. Both callers arrive on the server's queue.
     private static func cancelInPlace(_ task: Task) {
+        var tabEnded = true
         if let childID = task.childTerminalId,
            let child = target(withID: childID) {
-            _ = Targets.end(child)
+            tabEnded = Targets.end(child) == nil
         }
-        DispatchQueue.main.async { finalize(task.id, as: .cancelled, summary: "Cancelled.") }
+        let ended = tabEnded
+        DispatchQueue.main.async {
+            finalize(task.id, as: .cancelled, summary: "Cancelled.")
+            if ended, let worktree = task.worktree {
+                scheduleWorktreeDisposal(worktree, taskID: task.id, why: "empty",
+                                         allowCommitted: false)
+            }
+        }
     }
 
     /// The live tasks a root session dispatched, oldest first.
@@ -1682,6 +2144,9 @@ enum Orchestrator {
                                                 "why": "root_ended", "root": root])
         if let failure = endChildTab(child, justTheTab: justTheTab) {
             Log.write("orchestrator: could not close the child — \(failure)")
+        } else if let worktree = task.worktree {
+            scheduleWorktreeDisposal(worktree, taskID: task.id, why: "empty",
+                                     allowCommitted: false)
         }
         return true
     }
@@ -2289,6 +2754,10 @@ enum Orchestrator {
             task.closeAt = nil
             guard replaceTask(task, expecting: task.state) else { return false }
             Log.write("orchestrator: nothing left to close for \(task.id) — dropping its linger")
+            if let worktree = task.worktree {
+                scheduleWorktreeDisposal(worktree, taskID: task.id, why: "empty",
+                                         allowCommitted: false)
+            }
             return true
         case .close(let justTheTab):
             guard let child else { return false }
@@ -2309,6 +2778,9 @@ enum Orchestrator {
         DispatchQueue.global(qos: .utility).async {
             if let failure = endChildTab(child, justTheTab: justTheTab) {
                 Log.write("orchestrator: could not close the child — \(failure)")
+            } else if let worktree = task.worktree {
+                scheduleWorktreeDisposal(worktree, taskID: task.id, why: "empty",
+                                         allowCommitted: false)
             }
             DispatchQueue.main.async { SessionWatch.shared.nudge() }
         }
@@ -2416,8 +2888,48 @@ enum Orchestrator {
             tasks[taskID] = task
             lock.unlock()
         }
+        guard let worktree = task.worktree else {
+            completeFinalization(task, outcome: outcome, pumpQueue: pumpQueue)
+            return
+        }
+
+        // Git inspection is deliberately not a main-thread prerequisite for the terminal state,
+        // notification, cascade, or serialize pump. Merge only the worktree field back when its
+        // best-effort receipt arrives, so a simultaneous closeStep cannot have its closeAt
+        // decision resurrected by this older snapshot.
+        let removeEmpty = task.childTerminalId == nil
+            || (outcome == .spawnFailed && task.briefedAt == nil)
+        worktreeQueue.async {
+            let refreshed = refreshedWorktree(worktree)
+            if removeEmpty {
+                disposeWorktree(refreshed, taskID: task.id, why: "empty",
+                                allowCommitted: false)
+            }
+            DispatchQueue.main.async {
+                var changed = false
+                lock.lock()
+                if var current = tasks[taskID], current.state == outcome {
+                    if current.worktree?.path == refreshed.path {
+                        current.worktree = refreshed
+                        tasks[taskID] = current
+                        changed = true
+                    }
+                }
+                lock.unlock()
+                if changed {
+                    save()
+                    RemoteServer.shared.broadcastOrchestrator()
+                }
+            }
+        }
+        completeFinalization(task, outcome: outcome, pumpQueue: pumpQueue)
+    }
+
+    /// Main-thread tail of finalization, after any worktree receipt has arrived.
+    private static func completeFinalization(_ task: Task, outcome: State,
+                                             pumpQueue: Bool) {
         save()
-        RemoteAuth.audit("orchestrator.finish", ["task": taskID, "state": outcome.rawValue])
+        RemoteAuth.audit("orchestrator.finish", ["task": task.id, "state": outcome.rawValue])
         RemoteServer.shared.broadcastOrchestrator()
         notifyRoot(task)
         noteEnded(task)
@@ -2709,6 +3221,33 @@ enum Orchestrator {
 
     static func childBrief(for task: Task) -> String {
         let dir = "/tmp/.clawdline/\(task.id)"
+        let workspaceRule: String
+        let isolationSection: String
+        if let worktree = task.worktree {
+            workspaceRule = "- Work inside \(worktree.cwd). Commit repository changes there; put "
+                + "non-repository artifacts in \(dir)/artifacts/."
+            isolationSection = """
+
+            ## Your isolated checkout
+
+            This is a fresh checkout of commit `\(worktree.base)` on branch `\(worktree.branch)`.
+            Uncommitted files from the base repository are deliberately absent. Files ignored by
+            gitignore — dependencies, build caches, and local environment files — are absent too;
+            install them only after checking that doing so will not consume most of your timeout.
+
+            **Commit early and often.** Commit only on this branch: the branch is the delivery,
+            and uncommitted changes can be lost when the checkout is cleaned. You may use
+            `git add`, `git commit`, `git status`, `git diff`, `git log`, and `git show` here.
+            Do not push, switch or check out another branch, rebase, merge, hard-reset, stash,
+            use `--git-dir` or `git -C` to reach the base repository, run any `git worktree`
+            command, or run `./build.sh`. The app records commits, HEAD and dirty state from git;
+            these rules are briefing rules rather than a shell sandbox.
+            """
+        } else {
+            workspaceRule = "- Work inside \(task.projectDir). Put every file you produce in "
+                + "\(dir)/artifacts/\n  (create the directory if it is missing)."
+            isolationSection = ""
+        }
         // What this one may hand on in turn: the configured allowance while there is a level
         // below it, and nothing at all once it is standing on the floor. Written into the
         // briefing rather than left to be discovered, because a child that finds out by being
@@ -2739,14 +3278,13 @@ enum Orchestrator {
 
         ## Rules
 
-        - Work inside \(task.projectDir). Put every file you produce in \(dir)/artifacts/
-          (create the directory if it is missing).
+        \(workspaceRule)
         - \(handOnRule)
         - Do not read any directory under /tmp/.clawdline/ except your own, any you dispatched,
           and any your instructions name explicitly. That last one is how a reviewing node works:
           it is sent to read what other nodes produced, so its instructions list those paths.
         - Do not do work the task did not ask for.
-        - You have \(task.timeoutMinutes) minutes before the task is marked timed out.
+        - You have \(task.timeoutMinutes) minutes before the task is marked timed out.\(isolationSection)
         \(handOnSection(for: task, allowance: allowance))\(policySection(allowance: allowance))
         ## Reporting — this is the completion signal, do it exactly
 
@@ -2892,6 +3430,19 @@ enum Orchestrator {
       and some file paths.
     - **Work smaller than its own briefing.** If writing the instructions takes longer than doing it,
       that is the answer.
+
+    ## Then: should it use an isolated worktree?
+
+    Use `"isolation":"worktree"` for a code-producing child whose tracked-file edits can be
+    reviewed and landed as a branch. Its checkout starts from a commit, so uncommitted base-tree
+    work and gitignored dependencies are absent. The child commits only on its own branch; it does
+    not push, switch branches, or run `git worktree` itself.
+
+    Do not choose it for a running app or port, shared databases/devices/caches, work that needs
+    the base checkout's untracked state, artifact-only or review tasks, or ordinary reading. Those
+    either are not isolated by a worktree or produce no branch worth landing. This is a judgement,
+    not a refusal: say what does not fit and let the person decide. `serialize` remains available
+    for machine-global resources, and may be combined with isolation.
 
     ## Then: pick a shape
 
@@ -3295,6 +3846,21 @@ enum Orchestrator {
         if let summary = task.summary { out["summary"] = summary }
         if !task.artifacts.isEmpty { out["artifacts"] = task.artifacts }
         if task.claimsDeclared { out["claims"] = task.claims }
+        if let worktree = task.worktree {
+            out["isolation"] = Isolation.worktree.rawValue
+            // Before a tab exists the preparation has only a candidate base. `spawn` resolves it
+            // again after acquiring any mutex, so publishing it would turn a preview into a receipt.
+            if task.spawnedAt != nil {
+                out["worktree"] = [
+                    "path": worktree.path,
+                    "branch": worktree.branch,
+                    "base": worktree.base,
+                    "head": worktree.head as Any? ?? NSNull(),
+                    "commits": worktree.commits as Any? ?? NSNull(),
+                    "dirty": worktree.dirty as Any? ?? NSNull(),
+                ]
+            }
+        }
         if let usage = task.usage {
             var counts: [String: Any] = [
                 "input": usage.input, "output": usage.output,
@@ -3375,6 +3941,18 @@ enum Orchestrator {
         if !task.serialize.isEmpty { out["serialize"] = task.serialize }
         if task.claimsDeclared { out["claims"] = task.claims }
         if !task.claimKeys.isEmpty { out["claim_keys"] = task.claimKeys }
+        if let worktree = task.worktree {
+            out["isolation"] = Isolation.worktree.rawValue
+            var storedWorktree: [String: Any] = [
+                "path": worktree.path, "branch": worktree.branch, "base": worktree.base,
+                "repository": worktree.repository, "cwd": worktree.cwd,
+                "base_dirty": worktree.baseDirty, "requested_base": worktree.requestedBase,
+            ]
+            if let head = worktree.head { storedWorktree["head"] = head }
+            if let commits = worktree.commits { storedWorktree["commits"] = commits }
+            if let dirty = worktree.dirty { storedWorktree["dirty"] = dirty }
+            out["worktree"] = storedWorktree
+        }
         if let v = task.queuedSecret { out["queued_secret"] = v }
         if let v = task.childTerminalId { out["child_terminal"] = v }
         if let v = task.childBackend { out["child_backend"] = v.rawValue }
@@ -3437,6 +4015,31 @@ enum Orchestrator {
         task.claimKeys = storedClaimKeys.count == task.claims.count
             ? storedClaimKeys
             : freezeClaims(task.claims, projectDir: task.projectDir)
+        task.isolation = (obj["isolation"] as? String).flatMap(Isolation.init(rawValue:)) ?? .none
+        if task.isolation == .worktree {
+            guard let raw = obj["worktree"] as? [String: Any],
+                  let path = raw["path"] as? String, StartPoints.usable(path),
+                  let branch = raw["branch"] as? String,
+                  branch == worktreeBranch(for: task.id),
+                  let base = raw["base"] as? String, !base.isEmpty,
+                  let repository = raw["repository"] as? String, StartPoints.usable(repository),
+                  path == worktreePath(project: repository, taskID: task.id),
+                  let cwd = raw["cwd"] as? String, StartPoints.usable(cwd),
+                  relativePath(from: path, to: cwd) != nil else { return nil }
+            let requestedBase = raw["requested_base"] as? String ?? "HEAD"
+            guard validIsolationBase(requestedBase),
+                  (base.count == 40 || base.count == 64),
+                  base.allSatisfy({ ("0"..."9").contains($0) || ("a"..."f").contains($0) })
+            else { return nil }
+            var worktree = Worktree(path: path, branch: branch, base: base,
+                                    repository: repository, cwd: cwd)
+            worktree.head = raw["head"] as? String
+            worktree.commits = raw["commits"] as? Int
+            worktree.dirty = raw["dirty"] as? Bool
+            worktree.baseDirty = raw["base_dirty"] as? Int ?? 0
+            worktree.requestedBase = requestedBase
+            task.worktree = worktree
+        }
         task.queuedSecret = obj["queued_secret"] as? String
         // A registry written before tasks had a depth holds only tasks a root dispatched, which
         // is exactly what 1 means.
@@ -3478,6 +4081,57 @@ enum Orchestrator {
 
     // MARK: - Cleanup
 
+    private static func orphanWorktree(at path: String, taskID: String) -> Worktree? {
+        guard isTaskID(taskID), let branch = worktreeBranch(for: taskID),
+              let common = git(["rev-parse", "--git-common-dir"], cwd: path),
+              common.status == 0 else { return nil }
+        let rawCommon = common.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let commonPath = rawCommon.hasPrefix("/") ? rawCommon
+            : URL(fileURLWithPath: path).appendingPathComponent(rawCommon).standardizedFileURL.path
+        let repository = canonicalFilesystemPath(
+            URL(fileURLWithPath: commonPath).deletingLastPathComponent().path)
+        guard StartPoints.usable(repository),
+              let reflog = git(["reflog", "show", "--format=%H", branch],
+                               cwd: repository), reflog.status == 0,
+              // `git reflog show` is newest first. The branch-creation entry is the oldest and
+              // its new value is the commit from which `worktree add -b` created the branch.
+              let base = reflog.output.split(whereSeparator: \.isNewline).last.map(String.init)
+        else { return nil }
+        return Worktree(path: path, branch: branch, base: base,
+                        repository: repository, cwd: path)
+    }
+
+    /// Registry rows are capped, so the directory shape is a second index. If its git metadata
+    /// cannot prove the same disposal facts as a live row, the orphan is deliberately retained.
+    private static func cleanupOrphanWorktrees(knownTaskIDs: Set<String>, olderThan cutoff: Date) {
+        let manager = FileManager.default
+        guard let repositories = try? manager.contentsOfDirectory(at: worktreeRoot,
+            includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
+            return
+        }
+        for repositoryDirectory in repositories {
+            guard let tasks = try? manager.contentsOfDirectory(at: repositoryDirectory,
+                includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
+                continue
+            }
+            for directory in tasks {
+                let id = directory.lastPathComponent
+                guard isTaskID(id), !knownTaskIDs.contains(id) else { continue }
+                let modified = try? directory.resourceValues(
+                    forKeys: [.contentModificationDateKey]).contentModificationDate
+                guard let modified, modified < cutoff else { continue }
+                guard let worktree = orphanWorktree(at: directory.path, taskID: id) else {
+                    RemoteAuth.audit("orchestrator.worktree.kept", [
+                        "task": id, "branch": worktreeBranch(for: id) ?? "?",
+                        "why": "unreadable",
+                    ])
+                    continue
+                }
+                disposeWorktree(worktree, taskID: id, why: "swept")
+            }
+        }
+    }
+
     /// Task directories are working files, not the archive — the record survives here, the
     /// directory goes once it is a day old and its task is over. The registry itself is capped so
     /// a year of use cannot grow the file without bound.
@@ -3490,6 +4144,10 @@ enum Orchestrator {
         }
         lock.unlock()
         for task in done {
+            if let worktree = task.worktree,
+               FileManager.default.fileExists(atPath: worktree.path) {
+                disposeWorktree(worktree, taskID: task.id, why: "swept")
+            }
             try? FileManager.default.removeItem(at: task.dir)
         }
         lock.lock()
@@ -3499,6 +4157,8 @@ enum Orchestrator {
         }
         lock.unlock()
         if all.count > 200 { save() }
+        let retained = Set(all.prefix(200).map(\.id))
+        cleanupOrphanWorktrees(knownTaskIDs: retained, olderThan: cutoff)
     }
 
     // MARK: - Small lookups

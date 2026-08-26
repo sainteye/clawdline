@@ -1,16 +1,20 @@
 ---
 name: clawdline
-version: 2.0.0
+version: 2.1.0
 description: |
   Hand a piece of work to another session: open a child session (Claude Code or Codex) through the
   Clawdline app, type the first message into it, wait for it to write result.json, and report back
   when it lands. For work that does not need the conversation it was asked in — draw this, run the
-  suite, review a diff, a long tidying job.
+  suite, review a diff, a long tidying job. Also hands over a whole line of work — a Clawdline
+  handoff: write this conversation's state to a document and open a session that continues it (§7).
   Triggers on: "dispatch a task", "get codex to do it", "open a child session", "do X in the
   background", "run this in another session", "have codex draw an image", "get another agent to
-  review this", or several unrelated things wanted at once.
+  review this", or several unrelated things wanted at once; and for the handoff half, "use Clawdline
+  Handoff", "hand this over to a fresh session", "pick this up in Codex", "continue this tomorrow in
+  a new session".
   Also triggers on the same asks in Chinese: 「派任務」「派給 codex 做」「開一個 child／子 session」
-  「背景幫我做 X」「dispatch 一個任務」「另開一個 session 去跑」「用 codex 生一張圖」「叫另一個 agent 去審」.
+  「背景幫我做 X」「dispatch 一個任務」「另開一個 session 去跑」「用 codex 生一張圖」「叫另一個 agent 去審」
+  「使用 Clawdline Handoff」「handoff 給新 session」「交接給下一個 session」「明天用新 session 接著做」.
   Does not trigger on: anything this conversation can simply do (a child costs far more than doing
   it), search and analysis a Task/subagent already covers (that is a subagent, not a Clawdline
   child), or wanting to know which sessions are running (that is the Clawdline panel, or
@@ -28,6 +32,9 @@ up the tokens, and comes back to tell you. The **child** is the session that get
 one thing, and when it is done it writes `result.json`.
 
 There are six steps. Do them in order.
+
+Those six hand out a **task**. Handing over the **line of work itself** — this conversation's state,
+to a session that continues it — is a different move with different rules, and it is §7.
 
 ---
 
@@ -116,6 +123,23 @@ one found), dozens of small parallel jobs (every node is a real assistant holdin
 a hundred of them is slower, dearer and unreadable), anything on a path where somebody is waiting,
 anything needing agents to talk back and forth, output that has to be structured data a program
 will consume, and **work smaller than its own briefing**.
+
+### 2.0a Decide whether the task needs a private worktree
+
+Use `"isolation":"worktree"` for code changes that can be reviewed and landed as a Git branch.
+The broker creates a clean private checkout when the task actually starts; optional
+`isolation_base` names its Git revision, otherwise the then-current `HEAD` is used. Do not choose it
+for reviewers and other reading-only work, artifact-only output, work that needs untracked local
+state, or operations whose real collision is a running app, port, device, database, cache, or fixed
+build destination. Use `serialize` for those machine-global collisions.
+
+This changes the child rule narrowly. In a shared checkout a child still never commits. In its own
+worktree it should commit early and only on `clawdline/task/<complete-task-id>`; it must not push,
+switch branches, merge, rebase, stash, hard-reset, invoke `git worktree`, or run a machine-global
+installer such as `build.sh`. **The delivery is that branch, not the checkout directory and not an
+artifact diff.** The root reviews it with `git diff <base>...clawdline/task/<id>` and lands it by
+merge or cherry-pick. Worktree isolation protects tracked files only; it does not copy ignored
+dependencies, caches, or env files.
 
 ### 2.1 If it is going out, pick a shape
 
@@ -347,7 +371,7 @@ jq -n \
   --arg plan "$PLAN" \
   '{clawdline_protocol:1, task_id:$id, kind:$kind, assistant:$assistant, model:$model,
     permission_mode:"full",
-    project_dir:$dir, title:$title, instructions:$instructions, plan:$plan,
+    isolation:"none", project_dir:$dir, title:$title, instructions:$instructions, plan:$plan,
     deliverables:["artifacts/out.png"], timeout_minutes:30, created_at:$created,
     root:{session_id:(if $root_session=="" then null else $root_session end),
           assistant:"claude", project_dir:$dir, label:$root_label}}' \
@@ -371,6 +395,8 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `deliverables` | paths relative to the task directory; `artifacts/…` by convention |
 | `model` | optional. Lowercase letters, digits, `.` `_` `-`, ≤ 64 characters. Absent = that assistant's default |
 | `permission_mode` | optional. `ask` / `edits` / `full`. Absent = this Mac's ceiling (default `full`). Anything else, `auto` included, is `bad_task` |
+| `isolation` | optional. `none` / `worktree`; absent = `none`. Use `worktree` only after the §2.0a decision |
+| `isolation_base` | optional Git revision, legal only with `isolation: "worktree"`; absent means `HEAD` at actual start time |
 | `plan` | optional but **strongly recommended**: the whole graph, ≤ 4 KiB. Identical across the batch |
 | `timeout_minutes` | 1…240, 30 if absent |
 | `root.session_id` | found with the trick below; `null` if you cannot find it — never invented |
@@ -505,6 +531,98 @@ ls -la "/tmp/.clawdline/$task_id/artifacts/"
 `summary` in `result.json` is a sentence the child wrote itself, and `artifacts` is what it
 *claims* it produced — **a claim is a claim; `ls` the directory yourself**. Task directories are
 cleared 24 hours after they finish, so anything the user wants to keep has to be copied out.
+
+---
+
+## 7. Handoff — handing this line of work to the next session
+
+The six steps above hand out a **task**. This one hands over the **line of work itself**: you write
+down what this conversation knows, and a new session picks it up and carries on. The session it opens
+is a new **root**, not a child — no secret, no timeout, no `result.json`, and closing this session
+does not touch it.
+
+**Triggers:** "use Clawdline Handoff", "hand this over to a fresh session", "pick this up in Codex",
+"continue this tomorrow in a new session", 「使用 Clawdline Handoff」「handoff 給新 session」
+「交接給下一個 session」「明天用新 session 接著做」.
+
+**Not this, if `/compact` would do.** Same harness, same directory, an ordinary transition — compact
+it. A handoff buys portability, not compression: reach for it when the work has to *move* (a phase
+boundary, another harness or model, tomorrow, a parallel fork, another machine), or when the context
+window is about to make the decision for you. And not for a line of work smaller than the document
+that would describe it.
+
+**If you are a child (§0), this is not your move either.** Handing a line of work on is a decision
+about a root's conversation, and a child that opens a fresh root steps outside the tree it was placed
+in. Report to your task and let the root decide.
+
+Four steps.
+
+**1. Write the document, to the eight headings.** `OBJECTIVE` · `KEY DECISIONS` (marked *do not
+reopen*, each dated) · `CURRENT STATE` · `REFERENCES` · `CONSTRAINTS & PRINCIPLES` · `OPEN THREADS`
+(numbered) · `IMMEDIATE NEXT STEP` (one door) · `VERIFICATION`.
+
+Two rules do most of the work. **Do not repeat what a reference says** — point at it; a handoff that
+summarises its own sources will disagree with them by Thursday. And **`VERIFICATION` is three to five
+questions whose answers are deliberately not in the document**, each naming where the answer does
+live: that is what makes the receiver walk the chain, and a question it cannot answer is a break found
+at the cheapest possible moment. Check those pointers once before handing over — a wrong pointer looks
+exactly like a broken chain.
+
+**2. Durably archive anything volatile you cite, before citing it.** A design document living in a
+session scratchpad, an artifact that exists only as a URL, a file under `/tmp`: copy it into the
+repository — `artifacts/` for a record, `docs/` for a standing answer — and cite the copy. References
+are not duplicated; a volatile source is the exception. This is the step people skip and the one that
+breaks the chain a week later.
+
+**3. Build the package.**
+
+```bash
+hid=$(uuidgen | tr '[:upper:]' '[:lower:]')
+umask 077 && mkdir -p "/tmp/.clawdline/handoffs/$hid" && chmod 700 /tmp/.clawdline/handoffs "/tmp/.clawdline/handoffs/$hid"
+echo "$hid"
+```
+
+Write `handoff.md` into that directory with your file-writing tool, and put anything the receiver
+should read beside it under `attachments/` — **naming each attachment in `REFERENCES`**, by its path
+relative to `handoff.md`. An attachment no reference names is one the receiver never opens: the line
+it is given points at `handoff.md` and at nothing else. No secret, no token, nothing else — there is
+no credential in a handoff.
+
+**4. Open the session.**
+
+```bash
+curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/handoffs" \
+  -H "X-Clawdline-Orchestrator: $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"handoff_id\":\"$hid\",\"project_dir\":\"$PWD\",\"title\":\"Cloud planning line\",\"from_session\":\"$ROOT_SESSION\"}"
+```
+
+`assistant` (`claude` / `codex`; absent is `claude`) and `model` are optional. `title` names the tab
+— without it the tab is `handoff` and the first eight characters of the id — and `from_session` is
+where the receipt line goes: whatever this session's own id is, ≤ 200 characters, unrecognised is the
+same as absent. Both are best-effort, because **the app will not open `handoff.md` to work either of
+them out**. Branch on `code` as in §5: `forbidden`, `orchestrator_disabled` (the switch in Settings
+covers handoffs too), `bad_request`, `bad_task` (a bad field, or a package directory or `handoff.md`
+that is not there), `rate_limited` — the same brake dispatch uses, and a refusal spends a slot of it
+— and `not_found`, meaning this build has no handoff route.
+
+**While that route is still being built**, do steps 1–3 and hand the user this line to paste into a
+session they open themselves, with `<id>` filled in and **nothing else changed — not a word, and not
+into another language.** It is protocol text rather than something said to a person, and the app will
+type exactly this:
+
+```
+You are picking up a Clawdline handoff. Read /tmp/.clawdline/handoffs/<id>/handoff.md before anything else and follow it: walk its REFERENCES, answer its VERIFICATION questions from those sources, say plainly what you could not reach, then continue from OPEN THREADS.
+```
+
+The only thing the route adds is that nobody has to be holding the keyboard.
+
+Then tell the user what went where in two lines — what the handoff covers, and the path. If you are
+carrying on yourself rather than stopping, say so: **a handoff is a copy, not an ending.** Two roots
+in one working tree means `claims` on every dispatch either of you makes, and the tree's own rules
+([`AGENTS.md`](../../AGENTS.md)) reach the new session on arrival.
+
+The protocol in full — the package layout, why the app never reads the document, what the receiving
+session owes, the route's validation and refusals — is [`docs/handoff.md`](../../docs/handoff.md).
 
 ---
 

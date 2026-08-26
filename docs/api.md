@@ -958,12 +958,13 @@ already carried by `task_id`, which is the caller's own identifier for the work 
 per-attempt header. Send the same `task_id` twice and the second call answers `200` with the
 existing record, having opened nothing.
 
-Seven refusals, and a client should branch on all of them:
+Eight refusals, and a client should branch on all of them:
 
 | `code` | status | |
 |---|---|---|
 | `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
-| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an invalid `model`, `permission_mode`, `plan`, `claims`, or `serialize`. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
+| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `permission_mode`, `plan`, `claims`, or `serialize`. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
+| `worktree_unavailable` | 409 | worktree isolation was requested but the repository has no commit to use as a base or the destination volume has less than 2 GB available. This is an environment refusal rather than malformed JSON |
 | `workspace_busy` | 409 | a live task from another definitely identified root reserved an equal, ancestor, or descendant claim. The error object carries `blocking_task`, `title`, nullable `root_label`, Unix-second `created`, absolute `conflict_paths`, and advisory `retry_after`. The rejected task is not registered and does not spend dispatch rate-limit budget |
 | `depth_exceeded` | 409 | **the caller is already as deep as this Mac goes.** A root's child may dispatch; that child's may not. `orchestrator_max_grandchildren` of `0` puts the floor back at one level. Not a retry — stop |
 | `over_capacity` | 429 | this dispatcher's slots are full (`orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child), or the whole Mac's are. Registered `queued` tasks count toward these limits even before a tab opens, preventing an unbounded queue. The error object carries `retry_after` in seconds, and `message` says which |
@@ -994,6 +995,13 @@ whether to wait, coordinate with that root, or escalate.
 
 A `200` means *registered and being opened*, not *running*. `state` is `queued` or `spawning` when
 this answers and the child has typed nothing yet; watch the record, or wait to be told.
+
+`"isolation":"worktree"` asks for a clean private checkout and a delivery branch named
+`clawdline/task/<complete-task-id>`. Optional `isolation_base` is resolved to a commit; without it,
+the base is `HEAD`. A dirty base succeeds with a warning because its uncommitted files are absent
+from the isolated checkout. Unknown isolation values are refused rather than silently sharing the
+tree. The checkout lives under `~/Library/Application Support/Clawdline/worktrees/`; `dir` remains
+the task protocol directory under `/tmp/.clawdline`.
 
 An optional `serialize` array in `task.json` makes named operations machine-global mutexes. A task
 leaves `queued` only when it can acquire every name together; shared names are FIFO across roots,
@@ -1054,6 +1062,12 @@ A serialized task holds claims throughout `queued`, and that queued interval has
 (including timeout or cancellation), or cancellation of the queued task itself. A timeout is a
 terminal state and releases claims immediately, but its child tab is deliberately left open for
 inspection and may still be writing; the root's typed completion line calls out that window.
+
+For an isolated task, relative claims under `project_dir` are discarded and a
+`claims_ignored_for_worktree` warning names them: the child writes corresponding paths in its
+private checkout. `serialize` remains active and independent for ports, builds, devices, and other
+machine-global resources. Because isolated tasks have distinct effective cwd values, they do not
+produce L1 warnings merely because their `projectDir` fields name the same repository.
 
 It may also carry `warnings` beside `task`. Besides the same-root `claims_overlap` above, L1 adds
 advisory cross-root workspace overlap:
@@ -1119,12 +1133,21 @@ The record:
   "model": "gpt-5.1-codex",     // absent when the task did not name one
   "permission": "full",         // ask | edits | full — what was used, after this Mac's ceiling
   "projectDir": "/Users/you/code/clawdline",
+  "isolation": "worktree",     // absent for the shared-tree default
   "created": 1787100000,        // integer unix seconds, like every time in this API
   "depth": 1,                   // 1 for one a person's session dispatched, 2 for one its child did
   "spawnedAt": 1787100002,      // absent until a tab exists
   "briefedAt": 1787100014,      // absent until the first message landed
   "finishedAt": null,
   "dir": "/tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234",
+  "worktree": {
+    "path": "/Users/you/Library/Application Support/Clawdline/worktrees/clawdline-a1b2c3d4/3f9a21bc-…",
+    "branch": "clawdline/task/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234",
+    "base": "b7363e94f9d899d3f3903db7dbad075ce270494f",
+    "head": "2655757a…",       // best-effort at finalize; null if neither ref nor tree answers
+    "commits": 3,               // git rev-list --count base..branch; null when unreadable
+    "dirty": false              // worktree porcelain; null after the checkout disappeared
+  },
   "root":  {"sessionId": "841cbb8d-…", "label": "clawdline main", "terminalId": "27439AEE-…",
             "taskId": "a70c5e11-…"},   // the parent task — depth 2 only, and only when it said so
   "child": {"terminalId": "9A1F…", "backend": "iterm", "sessionId": "0f2b91ac-…"},
@@ -1152,6 +1175,13 @@ every OpenAI one, since Codex bills against a plan. Tokens are still counted. Nu
 omitted the way they are everywhere else on this API — read by name, and treat absent as unknown.
 `waiting_on` follows the same rule: it is present only on a queued serialized task with blockers,
 and it may name a current holder or an older FIFO waiter.
+
+`projectDir` never changes meaning: it is the repository/subdirectory the task concerns.
+`worktree.path` is the isolated checkout root, while `dir` is still the unrelated protocol and
+artifact directory. The broker, not the child, reads `head`, `commits`, and `dirty` from git. A
+serialized isolated task names `isolation: "worktree"` while queued but omits the `worktree`
+object until its tab exists: its base is resolved only when it acquires its mutex, so no preliminary
+SHA is presented as the receipt for what the child actually started from.
 
 The same payload goes out on [the event stream](#the-event-stream) as an `orchestrator` frame
 whenever any record changes, and once when a stream opens, right after `hello` and `sessions`.

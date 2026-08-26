@@ -6217,6 +6217,34 @@ group("a task.json is read before a terminal is opened for it") {
               && made(file(["claims": []]))?.claimsDeclared == true)
     check("an absent claims field preserves an unknown write set",
           made(file())?.claims == [] && made(file())?.claimsDeclared == false)
+    expect("an absent isolation field means the shared working tree",
+           made(file())?.isolation, Orchestrator.Isolation.none)
+    expect("a task may ask for a worktree",
+           made(file(["isolation": "worktree"]))?.isolation, .worktree)
+    expect("an explicit none is the default written out",
+           made(file(["isolation": "none"]))?.isolation, Orchestrator.Isolation.none)
+    check("an isolation nobody defined is refused rather than rounded down",
+          refused(file(["isolation": "container"])))
+    check("isolation is a string enum, not a truthy switch",
+          refused(file(["isolation": true])))
+    check("a base without worktree isolation is refused rather than ignored",
+          refused(file(["isolation_base": "main"])))
+    expect("a worktree may name a relative commit expression",
+           made(file(["isolation": "worktree", "isolation_base": "HEAD~3"]))?.isolationBase,
+           "HEAD~3")
+    check("a base cannot turn into another git flag",
+          refused(file(["isolation": "worktree", "isolation_base": "--force"])))
+    check("a revision range is not one commit-shaped base",
+          refused(file(["isolation": "worktree", "isolation_base": "a..b"])))
+    check("base validation rejects whitespace, controls and over-long values together",
+          refused(file(["isolation": "worktree", "isolation_base": "feature branch"]))
+              && refused(file(["isolation": "worktree", "isolation_base": "main\nnext"]))
+              && refused(file(["isolation": "worktree",
+                               "isolation_base": String(repeating: "a", count: 201)])))
+    expect("a full ref is still one valid revision name",
+           made(file(["isolation": "worktree",
+                      "isolation_base": "refs/heads/feature/x"]))?.isolationBase,
+           "refs/heads/feature/x")
     expect("one that names a model carries it", made(file(["model": "haiku"]))?.model, "haiku")
     expect("and one that names how far it may go carries that",
            made(file(["permission_mode": "edits"]))?.permission, .edits)
@@ -6453,6 +6481,173 @@ group("a task id is the name of a directory, so it may not be a path") {
           !Orchestrator.isTaskID("0f8fad5b-d9cb-469f-a165-70867728950g"))
     check("nor one character too few", !Orchestrator.isTaskID(String(taskID.dropLast())))
     check("nor nothing at all", !Orchestrator.isTaskID(""))
+}
+
+group("a worktree is named by repository and task, without accepting a path as a ref") {
+    expect("the branch is the complete task id in Clawdline's namespace",
+           Orchestrator.worktreeBranch(for: taskID), "clawdline/task/\(taskID)")
+    check("branch naming fails closed on anything that is not a task id",
+          Orchestrator.worktreeBranch(for: "../../main") == nil)
+
+    let first = Orchestrator.worktreePath(project: "/Users/me/code/two words/專案..", taskID: taskID)
+    let second = Orchestrator.worktreePath(project: "/Users/other/code/專案..", taskID: taskID)
+    check("the checkout path lives under Application Support and contains the task id",
+          first?.contains("/Library/Application Support/Clawdline/worktrees/") == true
+              && first?.hasSuffix("/\(taskID)") == true
+              && first.map(StartPoints.usable) == true)
+    let firstRepo = first.map { URL(fileURLWithPath: $0).deletingLastPathComponent().lastPathComponent }
+    let secondRepo = second.map { URL(fileURLWithPath: $0).deletingLastPathComponent().lastPathComponent }
+    check("a hostile-looking Unicode repository name becomes only an ASCII slug plus hash",
+          firstRepo?.allSatisfy {
+              ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "-"
+          } == true && firstRepo?.contains("..") == false)
+    check("equal basenames at different full paths receive different repository slugs",
+          firstRepo != secondRepo)
+    if let first {
+        check("worktree storage never becomes a remote-start place",
+              !StartPoints.isDurablePlace(first))
+    }
+}
+
+group("worktree cleanup chooses data preservation before disk reclamation") {
+    expect("an untouched checkout and its branch may both go",
+           Orchestrator.worktreeDisposal(commits: 0, dirty: false,
+                                         headOnBranch: true, branchExists: true), .removeAll)
+    expect("a clean committed checkout goes but its branch stays",
+           Orchestrator.worktreeDisposal(commits: 2, dirty: false,
+                                         headOnBranch: true, branchExists: true),
+           .removeTreeKeepBranch)
+    expect("a committed dirty checkout is the only copy and stays",
+           Orchestrator.worktreeDisposal(commits: 2, dirty: true,
+                                         headOnBranch: true, branchExists: true), .keepEverything)
+    expect("an uncommitted dirty checkout is the only copy and stays",
+           Orchestrator.worktreeDisposal(commits: 0, dirty: true,
+                                         headOnBranch: true, branchExists: true), .keepEverything)
+    expect("zero commits does not authorize deleting a checkout whose HEAD moved",
+           Orchestrator.worktreeDisposal(commits: 0, dirty: false,
+                                         headOnBranch: false, branchExists: true), .keepEverything)
+    expect("a missing branch is never recreated or cleaned around",
+           Orchestrator.worktreeDisposal(commits: 0, dirty: false,
+                                         headOnBranch: true, branchExists: false), .keepEverything)
+    expect("an unreadable git fact fails safe",
+           Orchestrator.worktreeDisposal(commits: nil, dirty: nil,
+                                         headOnBranch: nil, branchExists: true), .keepEverything)
+}
+
+group("worktree task records, briefings and shared-tree coordination stay distinct") {
+    func task(_ id: String = taskID, isolated: Bool) -> Orchestrator.Task {
+        var made = Orchestrator.Task(id: id, state: .briefed, kind: "custom", title: "edit it",
+                                     assistant: .codex, projectDir: "/repo/packages/app",
+                                     timeoutMinutes: 30, created: Date(),
+                                     secretHash: String(repeating: "0", count: 64))
+        if isolated {
+            made.isolation = .worktree
+            made.spawnedAt = Date()
+            let path = Orchestrator.worktreePath(project: "/repo", taskID: id)!
+            made.worktree = Orchestrator.Worktree(
+                path: path,
+                branch: "clawdline/task/\(id)", base: String(repeating: "a", count: 40),
+                repository: "/repo", cwd: path + "/packages/app")
+        }
+        return made
+    }
+
+    let shared = task(isolated: false)
+    let isolated = task(isolated: true)
+    let sharedRecord = Orchestrator.recordForTesting(shared)
+    let isolatedRecord = Orchestrator.recordForTesting(isolated)
+    check("a shared-tree record has no worktree key at all", sharedRecord["worktree"] == nil)
+    let worktree = isolatedRecord["worktree"] as? [String: Any]
+    check("an isolated record reports its path, branch and immutable base",
+          worktree?["path"] as? String == isolated.worktree?.path
+              && worktree?["branch"] as? String == isolated.worktree?.branch
+              && worktree?["base"] as? String == isolated.worktree?.base)
+    expect("projectDir remains the repository-facing path",
+           isolatedRecord["projectDir"] as? String, "/repo/packages/app")
+    var queuedIsolated = isolated
+    queuedIsolated.state = .queued
+    queuedIsolated.spawnedAt = nil
+    let queuedRecord = Orchestrator.recordForTesting(queuedIsolated)
+    check("a queued isolated record names the mode without publishing a candidate base receipt",
+          queuedRecord["isolation"] as? String == "worktree"
+              && queuedRecord["worktree"] == nil)
+
+    let restored = Orchestrator.task(from: Orchestrator.stored(isolated))
+    check("the registry round-trips all worktree identity and observed facts",
+          restored?.isolation == .worktree && restored?.worktree?.path == isolated.worktree?.path
+              && restored?.worktree?.branch == isolated.worktree?.branch
+              && restored?.worktree?.base == isolated.worktree?.base
+              && restored?.worktree?.repository == isolated.worktree?.repository
+              && restored?.worktree?.cwd == isolated.worktree?.cwd)
+    let tmpFixture = URL(fileURLWithPath: "/tmp", isDirectory: true)
+        .appendingPathComponent("clawdline-worktree-round-trip-\(UUID().uuidString)")
+    let tmpRepository = tmpFixture.appendingPathComponent("repository", isDirectory: true)
+    let tmpAlias = tmpFixture.appendingPathComponent("repository-link", isDirectory: true)
+    let manager = FileManager.default
+    let fixtureReady = (try? manager.createDirectory(at: tmpRepository,
+                                                      withIntermediateDirectories: true)) != nil
+        && (try? manager.createSymbolicLink(at: tmpAlias,
+                                            withDestinationURL: tmpRepository)) != nil
+    defer { try? manager.removeItem(at: tmpFixture) }
+    var tmpTask = task(isolated: false)
+    tmpTask.isolation = .worktree
+    let reportedTmpRepository = tmpAlias.path
+    let canonicalTmpRepository = tmpAlias.standardizedFileURL.resolvingSymlinksInPath().path
+    let tmpPath = Orchestrator.worktreePath(project: reportedTmpRepository, taskID: taskID)!
+    tmpTask.worktree = Orchestrator.Worktree(
+        path: tmpPath, branch: "clawdline/task/\(taskID)",
+        base: String(repeating: "b", count: 40), repository: canonicalTmpRepository, cwd: tmpPath)
+    let restoredTmp = Orchestrator.task(from: Orchestrator.stored(tmpTask))
+    check("a symlinked /tmp repository task survives a registry restart with one canonical slug",
+          fixtureReady && restoredTmp?.id == tmpTask.id
+              && restoredTmp?.worktree?.repository == canonicalTmpRepository
+              && restoredTmp?.worktree?.path == tmpTask.worktree?.path)
+    var legacy = Orchestrator.stored(shared)
+    legacy.removeValue(forKey: "isolation")
+    legacy.removeValue(forKey: "worktree")
+    check("a registry row from before isolation remains a shared-tree task",
+          Orchestrator.task(from: legacy)?.isolation == Orchestrator.Isolation.none
+              && Orchestrator.task(from: legacy)?.worktree == nil)
+
+    let savedGrandchildren = Config.shared.orchestratorMaxGrandchildren
+    Config.shared.orchestratorMaxGrandchildren = 0
+    defer { Config.shared.orchestratorMaxGrandchildren = savedGrandchildren }
+    let sharedBrief = Orchestrator.childBrief(for: shared)
+    let isolatedBrief = Orchestrator.childBrief(for: isolated)
+    check("a shared-tree child keeps the existing briefing without worktree rules",
+          !sharedBrief.lowercased().contains("worktree"))
+    check("an isolated child is told its branch, base, and commit-only delivery rule",
+          isolatedBrief.contains(isolated.worktree!.branch)
+              && isolatedBrief.contains(isolated.worktree!.base)
+              && isolatedBrief.contains("only on this branch")
+              && isolatedBrief.contains("Do not push")
+              && isolatedBrief.contains("gitignore"))
+    check("the work-inside line names the effective monorepo cwd, not projectDir",
+          isolatedBrief.contains("Work inside \(isolated.worktree!.cwd)."))
+
+    expect("transcript discovery uses the isolated cwd",
+           Orchestrator.cwd(of: isolated), isolated.worktree?.cwd)
+    expect("and shared-tree discovery still uses projectDir",
+           Orchestrator.cwd(of: shared), shared.projectDir)
+
+    var claiming = isolated
+    claiming.claims = ["Sources/Parser.swift"]
+    claiming.claimsDeclared = true
+    claiming.claimKeys = Orchestrator.freezeClaims(claiming.claims,
+                                                    projectDir: claiming.projectDir)
+    let claimWarnings = Orchestrator.prepareClaimsForIsolation(&claiming)
+    check("workspace-local claims are discarded with one typed warning",
+          claiming.claims.isEmpty && claiming.claimKeys.isEmpty
+              && claimWarnings.count == 1
+              && claimWarnings.first?["code"] as? String == "claims_ignored_for_worktree")
+
+    let other = task("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", isolated: false)
+    expect("an isolated task never receives a shared-project L1 overlap warning",
+           Orchestrator.workspaceOverlaps(for: isolated, among: [other]).count, 0)
+    var serialized = isolated
+    serialized.serialize = ["build"]
+    check("serialize and isolation retain both independent controls",
+          serialized.isolation == .worktree && serialized.serialize == ["build"])
 }
 
 group("workspace overlap is a path-component relationship") {

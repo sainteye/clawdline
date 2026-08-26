@@ -140,10 +140,9 @@ session's bucket rather than out of everybody's. The ceiling below is what close
 - **Four minutes to be briefed.** A tab that opens but never reaches a state where the first message
   can be typed — or that never records having received it, after five attempts — is `spawn_failed`
   rather than a tab sitting there forever with a task attached to it.
-  The likeliest cause of hitting it is a `project_dir` this Mac has never run that assistant in:
-  Claude Code asks *"Do you trust this folder?"* before it will take a first message, which is a
-  door in front of the session rather than inside it — `permission_mode` does not reach it. Dispatch
-  into a directory somebody has already opened by hand.
+  Claude Code may ask *"Do you trust this folder?"* before it will take a first message. Clawdline
+  recognises that one menu, answers option `1` once for the task, and leaves an audit receipt;
+  `permission_mode` does not govern that answer.
 
 And two more settings. `orchestrator_enabled`, default true — off, and dispatch is refused at the
 door. And `orchestrator_permission`, default `full`: **how far a child may go before it stops and
@@ -184,8 +183,8 @@ with the consequences. A task asking for more than the ceiling is quietly given 
 record says what was actually used, and so does the audit line.
 
 **What still stops even at `full`.** Two doors sit in front of the session rather than inside it,
-and no permission setting reaches either: the *"Do you trust this folder?"* prompt on a directory
-this Mac has never run that assistant in, and Claude Code's command screening, which refuses a
+and no permission setting reaches either: the trust prompt (which Clawdline answers once, with an
+audit receipt), and Claude Code's command screening, which refuses a
 `jq -n '{…}'` line on the shape of it alone (a brace beside a quote reads as obfuscation) and
 offers no "always allow". The second one is why a child that dispatches is the one case that
 genuinely needs `full`.
@@ -256,6 +255,13 @@ having a good day.
     artifacts/                   # whatever the child was asked to produce
 ```
 
+An isolated task's checkout is deliberately elsewhere:
+`~/Library/Application Support/Clawdline/worktrees/<repo-slug>/<task-id>/`, under a `0700` root.
+It is not task-protocol storage, not subject to `/tmp` cleanup, and never appears in the remote
+start-place list. Keeping it outside both `/tmp` and the repository prevents OS cleanup from
+leaving stale git administration records and prevents another session's `git status` from seeing
+the checkout. `CHILD.md`, the secret flow, `result.json`, and artifacts stay in the task directory.
+
 `0700` on both, and `/tmp` is a shared directory on a Unix machine — so a task directory is readable
 by you and by root and by nobody else on the box. It holds instructions and outputs and it never
 holds a secret: not the orchestrator token, and not the task secret.
@@ -307,6 +313,8 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `plan` | optional, ≤ 4 KiB. The whole graph this task is one node of |
 | `claims` | optional array of 0…32 unique POSIX paths relative to `project_dir`; each is 1…1024 characters, may not start with `/`, and may not contain a `..` component. A directory claim covers its whole subtree; `[]` explicitly declares read-only work |
 | `serialize` | optional array of 0…4 unique operation names. Each uses the `model` token rule: 1…64 characters from `[a-z0-9._-]`, not starting with `-` |
+| `isolation` | optional `none` or `worktree`; absent is `none`. Unknown values are refused, never downgraded |
+| `isolation_base` | optional Git revision, legal only with `isolation: "worktree"`; 1…200 characters from letters, digits, `._/-~`, not starting with `-` and not containing `..`. Absent means `HEAD`; it must resolve to a commit |
 | `project_dir` | absolute, exists, and is a directory — checked at dispatch, not at planning time |
 | `title` | ≤ 200 characters |
 | `instructions` | non-empty, ≤ 16 KiB |
@@ -349,6 +357,13 @@ lives in a rollout file rather than in the hook notes `root.session_id` is match
 it is what gets a task filed under its actual parent on the first try instead of being counted as a
 root's. Getting it wrong costs capacity and never buys any — [the two names are combined by taking
 the deeper answer](#depth-stops-at-two-and-the-floor-is-what-has-teeth).
+
+For `worktree`, the broker resolves the base to a commit SHA and records that immutable value.
+Branch names and `HEAD` can move while other sessions commit; the SHA is the receipt for what the
+child actually started from. A serialized task therefore omits the `worktree` object until its tab
+exists; its eventual base is resolved only as it leaves the queue. A dirty base is admitted with a warning:
+uncommitted files do not cross into the clean checkout. The branch is always
+`clawdline/task/<complete-task-id>`.
 
 ### Reserving declared write paths at dispatch
 
@@ -407,6 +422,12 @@ visibility; the broker does not infer a write set from instructions. Claims are 
 not filesystem enforcement, so a child can still write outside what it declared. Dispatch-time
 refusal is valuable precisely because it removes the human negotiation window in which both
 already-briefed tasks would otherwise keep editing while their roots decide what to do.
+
+With worktree isolation, relative claims under `project_dir` are discarded with a warning because
+the child edits the separate checkout, not those shared-tree paths. External machine resources
+still belong in `serialize`. This also removes the shared-tree timing mismatch where a claim is
+released at terminal state but work is not landed until a later commit: the isolated delivery
+remains on its branch until the root explicitly integrates it.
 
 A serialized task holds claims from dispatch throughout its entire `queued` wait. That wait has no
 independent timeout: it is bounded by its serialize blockers finishing, timing out, or being
@@ -562,8 +583,12 @@ without `serialize` is here only until the terminal is asked for a tab. A serial
 here until every requested operation is free; `waiting_on` says which older tasks stand ahead.
 
 **spawning** — all serialized operations, if any, have been acquired and the app is opening a tab.
+For an isolated task this is when the broker runs `git worktree add`, immediately before opening;
+queued tasks hold no idle checkout. Failure becomes `spawn_failed` with at most 500 characters of
+git's diagnostic, and the next attempt needs a fresh task id (therefore a fresh branch).
 Once it exists, `spawnedAt` and `child.terminalId` appear. The app uses its normal start-a-session
-machinery in `project_dir`, running the requested assistant — the same path
+machinery in the effective cwd — `project_dir` normally, or the worktree's matching monorepo
+subdirectory — running the requested assistant. This is the same path
 `POST /v1/places/:id/start` uses, so a Mac where that works is a Mac where this works. A refusal
 here (no terminal running, a terminal that cannot be driven) is `spawn_failed` with the reason kept.
 
@@ -590,6 +615,11 @@ run twice.
 A fresh directory raises Claude Code's trust prompt, and the app answers that one — option `1`,
 once per task, written to the audit log — because a task that stalls on a dialog nobody is looking
 at is a task that fails at the two-minute deadline for no reason anyone could see.
+
+This was exercised with a genuinely new checkout: the probe reached its briefing without a person
+touching the trust menu. Worktree isolation also improves Codex identity matching because rollout
+candidates are searched under the child's distinct cwd rather than among every session in the
+shared checkout.
 
 Once briefed, the plaintext secret is gone from memory and the task is the child's problem.
 
@@ -652,6 +682,41 @@ a file, and the timeout is arithmetic on a stored timestamp. So the app comes ba
 registry, and carries on watching. That is the one restart case that matters, because it is the one
 where a child is out there doing work.
 
+Replacing the app still has one unavoidable window: a task in `spawning` is failed closed on
+restart. A worktree preserves files and branch state, but task lifecycle belongs to the app process;
+isolation does not turn an interrupted spawn into a resumable dispatch.
+
+### A branch, not a diff
+
+An isolated child's delivery is `clawdline/task/<task-id>`. The child commits early, only on that
+branch, and never pushes or switches branches. Finalize reads git itself and adds this object to the
+record; `head`, `commits`, and `dirty` are best-effort and may be `null`:
+
+```jsonc
+"worktree": {
+  "path": "/Users/you/Library/Application Support/Clawdline/worktrees/repo-a1b2c3d4/<task-id>",
+  "branch": "clawdline/task/<task-id>",
+  "base": "b7363e94f9d899d3f3903db7dbad075ce270494f",
+  "head": "2655757a…",
+  "commits": 3,
+  "dirty": false
+}
+```
+
+Review and land it from the repository (three dots show the child's work since the fork; two dots
+also include unrelated movement at the other tip):
+
+```bash
+git -C <project_dir> log --oneline <base>..clawdline/task/<id>
+git -C <project_dir> diff <base>...clawdline/task/<id>
+git -C <project_dir> merge --no-ff clawdline/task/<id>   # or cherry-pick <sha>
+# alternatively: git -C <project_dir> rebase --onto main <base> clawdline/task/<id>
+git -C <project_dir> branch -d clawdline/task/<id>       # only after landing
+```
+
+Conflicts are the visible cost of parallel work and should be resolved during integration. Review
+the branch before landing it; a child commit has not become trusted merely by being isolated.
+
 **The tab goes away afterwards.** A child that reported — `success` or `failure` — has nothing left
 to say, so `orchestrator_child_linger` decides how long its terminal tab hangs around: three minutes
 by default, `0` to close it the moment the task finalizes, `-1` to leave it to you. A `timeout`
@@ -700,6 +765,17 @@ At start and every six hours: task directories for terminal tasks that finished 
 ago are removed, and the registry keeps its most recent 200 records. **Artifacts are in `/tmp` and
 they are not yours to keep** — if a child produced something worth having, copy it out. The
 directory going away after a day is the same promise `/tmp` always made, made explicitly.
+
+Worktrees follow a separate, fail-safe policy: an empty clean checkout whose `HEAD` remains on its
+task branch is removed with that empty branch when the child tab closes; after 24 hours a clean
+checkout with commits is removed while its branch is retained indefinitely; any dirty checkout,
+moved `HEAD`, missing branch, or unreadable git fact is kept. Removal always uses
+`git worktree remove` followed by `git worktree prune`, never filesystem deletion. The directory
+shape is also scanned for records evicted by the 200-row cap: the repository comes from the linked
+checkout's git metadata and the branch base from the oldest reflog entry, then the same disposal
+rules are applied. If either fact is unreadable, the checkout is kept and audited as `unreadable`;
+`remove_failed` is reserved for a removal that git actually rejected. **The `/tmp` 24-hour promise
+does not extend to branches**: Clawdline never automatically deletes the only copy of committed work.
 
 ---
 
@@ -805,6 +881,11 @@ account owns rather than a directory on your disk. A root session would not be a
 difference beyond the base URL, and neither would this document — which is the property worth
 protecting while it is still cheap to protect, and the reason the local implementation does not take
 shortcuts through anything terminal-shaped in the wire format.
+
+`isolation: "worktree"` is a workspace-shape contract — a clean independent Git checkout whose
+delivery is a branch — not a demand that a hosted broker invoke one particular command. A hosted
+implementation may use a clone, container, or snapshot. `task.json` says what is requested; the
+record's local `worktree.path` says what this broker actually did, just as `dir` and terminal ids do.
 
 Nothing here depends on that happening. It is written down so that the local version does not
 accidentally make it impossible.

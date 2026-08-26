@@ -1,13 +1,17 @@
 ---
 name: clawdline
-version: 2.0.0
+version: 2.1.0
 description: |
   把工作派給另一個 session 做：透過 Clawdline app 開一個 child session（Claude 或 Codex），
   注入第一句話、等它寫回 result.json，完成時回報給你。適合「這件事我不想在這條對話裡做」
-  的雜活——生圖、跑測試、審一份 diff、長時間的整理。
+  的雜活——生圖、跑測試、審一份 diff、長時間的整理。也負責把**整條線**交出去——Clawdline
+  handoff：把這條對話的狀態寫成一份文件，開一個 session 接著做（§7）。
   觸發時機：使用者說「派任務」「派給 codex 做」「開一個 child／子 session」「背景幫我做 X」
   「dispatch 一個任務」「另開一個 session 去跑」「用 codex 生一張圖」「叫另一個 agent 去審」，
-  或一次要平行做好幾件彼此不相干的事。
+  或一次要平行做好幾件彼此不相干的事；handoff 那半邊則是「使用 Clawdline Handoff」
+  「handoff 給新 session」「交接給下一個 session」「明天用新 session 接著做」，
+  以及同樣意思的英文說法 "use Clawdline Handoff"、"hand this over to a fresh session"、
+  "pick this up in Codex"、"continue this tomorrow in a new session"。
   不要觸發：這條對話自己動手就好的小事（開 child 的成本遠大於直接做）、Task/subagent 就能解決
   的檢索與分析（那是 subagent，不是 Clawdline child）、單純想知道現在有哪些 session 在跑
   （那是看 Clawdline 面板或 GET /v1/sessions）。**這個 session 自己就是 child 時，依據是 CHILD.md 不是這裡**——
@@ -26,6 +30,9 @@ last-updated: 2026-08-26
 它只做一件事，做完寫 `result.json`。
 
 整條路只有六步，照順序做完就對了。
+
+這六步派出去的是一件**任務**。把**整條線本身**交出去——這條對話累積的狀態，交給另一個 session
+接著做——是另一回事、另一套規矩，在 §7。
 
 ---
 
@@ -100,6 +107,21 @@ context 留給別的事、或單純想在一個分頁裡看著它跑。**他說�
 診斷與除錯（每一步都取決於上一步查到什麼）、幾十個細瑣的小工作（每個節點都是一個真的
 終端機，開一百個既慢又貴又沒人看得完）、有人在等的即時路徑、需要 agent 之間來回討論的、
 產出必須是程式直接吃的結構化資料、以及**寫指令比自己做還久的小事**。
+
+### 2.0a 決定這件任務要不要獨立 worktree
+
+能以 Git branch 審查、收進來的程式修改，才用 `"isolation":"worktree"`。broker 會在任務真的
+開始時建立乾淨的私有 checkout；選填的 `isolation_base` 指定 Git revision，不寫就是開始當下的
+`HEAD`。純讀的 reviewer、只產 artifacts 的工作、依賴本機未追蹤狀態的工作，不要隔離；真正會撞的
+若是跑著的 app、port、裝置、資料庫、cache 或固定 build 目的地，worktree 也幫不上忙，要用
+`serialize` 管機器全域資源。
+
+child 的規矩只在這裡窄幅翻轉：共用 checkout 的 child 仍然不 commit；進到自己的 worktree 後則要
+早點 commit，而且只能 commit 在 `clawdline/task/<完整-task-id>`。仍然禁止 push、換 branch、merge、
+rebase、stash、hard reset、任何 `git worktree`，以及 `build.sh` 這種會動到機器全域安裝的指令。
+**交付物是那條 branch，不是 checkout 目錄，也不是 artifact diff。** root 用
+`git diff <base>...clawdline/task/<id>` 審，再 merge 或 cherry-pick。worktree 只隔離 tracked files；
+gitignore 掉的依賴、cache 與 env 檔不會跟過去。
 
 ### 2.1 該派的話，先挑一個形狀
 
@@ -300,7 +322,7 @@ jq -n \
   --arg plan "$PLAN" \
   '{clawdline_protocol:1, task_id:$id, kind:$kind, assistant:$assistant, model:$model,
     permission_mode:"full",
-    project_dir:$dir, title:$title, instructions:$instructions, plan:$plan,
+    isolation:"none", project_dir:$dir, title:$title, instructions:$instructions, plan:$plan,
     deliverables:["artifacts/out.png"], timeout_minutes:30, created_at:$created,
     root:{session_id:(if $root_session=="" then null else $root_session end),
           assistant:"claude", project_dir:$dir, label:$root_label}}' \
@@ -323,6 +345,8 @@ jq -n \
 | `deliverables` | 相對於 task 目錄的路徑，慣例是 `artifacts/…` |
 | `model` | 選填。小寫字母、數字、`.` `_` `-`，最多 64 字元。不寫 ＝ 該助理的預設模型 |
 | `permission_mode` | 選填。`ask`／`edits`／`full`。不寫 ＝ 這台 Mac 的上限值（預設 `full`）。寫別的字（包括 `auto`）＝ `bad_task` |
+| `isolation` | 選填。`none`／`worktree`；不寫 ＝ `none`。只有通過 §2.0a 判斷才用 `worktree` |
+| `isolation_base` | 選填 Git revision，只能跟 `isolation: "worktree"` 一起用；不寫就是實際開始時的 `HEAD` |
 | `plan` | 選填但**強烈建議**：整張圖，≤ 4 KiB。同一批任務全部放同一份 |
 | `timeout_minutes` | 1…240，沒寫當 30 |
 | `root.session_id` | 下面那招查出來的；查不到就 `null`，不要瞎編 |
@@ -449,6 +473,89 @@ ls -la "/tmp/.clawdline/$task_id/artifacts/"
 `result.json` 裡的 `summary` 是 child 自己寫的一句話，`artifacts` 是它宣稱的產出——
 **宣稱歸宣稱，檔案在不在自己 `ls` 一次**。任務目錄在完成 24 小時後會被清掉，
 使用者要留的東西要複製出來。
+
+---
+
+## 7. Handoff——把這條線交給下一個 session
+
+上面六步派出去的是一件**任務**。這一步交出去的是**整條線**：把這條對話知道的事寫成一份文件，
+另一個 session 讀了它接著做。它開出來的那個 session 是新的 **root**，不是 child——沒有 secret、
+沒有 timeout、沒有 `result.json`，而且你這個 session 關掉不會動到它。
+
+**觸發詞：**「使用 Clawdline Handoff」「handoff 給新 session」「交接給下一個 session」
+「明天用新 session 接著做」，以及 "use Clawdline Handoff"、"hand this over to a fresh session"、
+"pick this up in Codex"、"continue this tomorrow in a new session"。
+
+**`/compact` 就夠的時候不要用這個。** 同一個 harness、同一個目錄、只是普通的階段轉換——compact
+就好。handoff 買的是**可攜性、不是壓縮**：要用在工作必須**移動**的時候（換階段、換 harness 或
+模型、明天再繼續、平行分岔、換機器），或是 context 快滿到會替你做決定的時候。整條線比那份文件
+還小的，也不要交接。
+
+**你自己是 child（§0）的話，這一步也不是你的。** 把一條線交出去是 root 對自己那條對話的決定，
+child 開一個新的 root 等於走出了它被放進去的那棵樹。回報給你的任務，讓 root 決定。
+
+四步。
+
+**1. 照八個標題寫文件。** `OBJECTIVE`／`KEY DECISIONS`（標「不要重新開題」，每條附日期）／
+`CURRENT STATE`／`REFERENCES`／`CONSTRAINTS & PRINCIPLES`／`OPEN THREADS`（編號）／
+`IMMEDIATE NEXT STEP`（一個入口）／`VERIFICATION`。
+
+兩條規則撐起大半。**引用過的東西不要重複寫一遍內容**——指路就好；一份會摘要自己來源的交接文件，
+禮拜四就會跟來源打架。還有 **`VERIFICATION` 是三到五題「答案刻意不在這份文件裡」的題目**，
+每題點名答案在哪：這才是逼接收端真的走完引用鏈的東西，而答不出來的那一題，就是在最便宜的時刻
+被抓到的斷點。交出去前把指路自己校一次——指錯的路和斷掉的鏈，看起來一模一樣。
+
+**2. 引用到易失的東西，先固化再引。** 活在 session scratchpad 裡的設計文件、只有 URL 的
+artifact、`/tmp` 底下的檔案：先複製進 repo——留紀錄用 `artifacts/`、要當常設答案用 `docs/`——
+然後引用那份固化的副本。引用不重複，但易失來源是例外。這步是最多人跳過的，也是一週後鏈會斷在
+那裡的那一步。
+
+**3. 建手交包。**
+
+```bash
+hid=$(uuidgen | tr '[:upper:]' '[:lower:]')
+umask 077 && mkdir -p "/tmp/.clawdline/handoffs/$hid" && chmod 700 /tmp/.clawdline/handoffs "/tmp/.clawdline/handoffs/$hid"
+echo "$hid"
+```
+
+用你的寫檔工具把 `handoff.md` 寫進那個目錄，接收端該讀的東西放旁邊的 `attachments/`——
+而且**每個附件都要在 `REFERENCES` 裡點名**，用相對於 `handoff.md` 的路徑。沒有被引用點名的附件，
+接收端永遠不會打開：它拿到的那一句只指向 `handoff.md`，不指向別的東西。
+沒有 secret、沒有 token、沒有別的——handoff 裡沒有憑證。
+
+**4. 開 session。**
+
+```bash
+curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/handoffs" \
+  -H "X-Clawdline-Orchestrator: $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"handoff_id\":\"$hid\",\"project_dir\":\"$PWD\",\"title\":\"Cloud 規劃線\",\"from_session\":\"$ROOT_SESSION\"}"
+```
+
+`assistant`（`claude`／`codex`，不給就是 `claude`）與 `model` 都是選配。`title` 是分頁的名字——
+不給的話分頁就叫 `handoff` 加 id 前八碼；`from_session` 是收據要打去哪：填你自己這個 session 的
+id，200 字元以內，認不出來就等於沒填。兩個都是 best-effort，因為 **app 不會為了湊出這兩個值去開
+`handoff.md`**。`code` 照 §5 的方式 branch：`forbidden`、`orchestrator_disabled`（Settings 裡那個
+開關連 handoff 一起管）、`bad_request`、`bad_task`（欄位不對，或手交包目錄、`handoff.md` 根本
+不在）、`rate_limited`（跟 dispatch 共用同一個煞車，被擋掉也照吃一格）、`not_found`（這版沒有
+handoff 路由）。
+
+**路由還在做的期間**，做完 1–3 步，然後把下面這一句交給使用者，讓他自己開一個 session 貼進去。
+`<id>` 換成真的 id，**其他一個字都不要改，也不要翻成中文**——這是協定文字，不是講給人聽的話，
+app 之後打的就是一字不差的這句：
+
+```
+You are picking up a Clawdline handoff. Read /tmp/.clawdline/handoffs/<id>/handoff.md before anything else and follow it: walk its REFERENCES, answer its VERIFICATION questions from those sources, say plainly what you could not reach, then continue from OPEN THREADS.
+```
+
+路由多做的事，只是不用有人握著鍵盤。
+
+然後用兩行告訴使用者東西去哪了——這次交接涵蓋什麼、檔案在哪。如果你自己還要繼續做而不是就此
+停手，講出來：**handoff 是複製，不是結束。** 一份工作區裡兩個 root，代表你們兩邊之後每次派工
+都要宣告 `claims`，而這棵樹自己的規矩（[`AGENTS.md`](../../AGENTS.md)）會在新 session 進門時
+自己送到它面前。
+
+完整協定——手交包的長相、app 為什麼從不讀那份文件、接收端欠什麼、路由的驗證與錯誤碼——在
+[`docs/handoff.md`](../../docs/handoff.md)。
 
 ---
 

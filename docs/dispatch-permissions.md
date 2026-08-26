@@ -20,7 +20,8 @@ those stand in front of the session rather than inside it.
 
 ### 1. Reading outside the working directory
 
-A child's working directory is its `project_dir`, but its entire task lives in
+A child's working directory is its `project_dir` in shared-tree mode, or its matching private
+checkout/subdirectory with `isolation: "worktree"`; its entire task still lives in
 `/tmp/.clawdline/<id>/`. So the **first thing it ever does** — open its own `CHILD.md` — is a read
 outside the tree it was started in, and it stops to ask about it.
 
@@ -52,14 +53,13 @@ Both prompts offer only *yes* and *no* — there is no "and always allow this", 
 same wall on every attempt. Either write the lines differently ([below](#how-a-child-should-write-a-file))
 or run at `bypassPermissions`.
 
-### 4. The trust prompt — **no setting reaches it**
+### 4. The trust prompt — **no setting reaches it; Clawdline answers it once**
 
 A `project_dir` this Mac has never run that assistant in gets *"Do you trust this folder?"* before
 the session will take a first message. It is asked before the session exists in any sense a
-permission mode could apply to. The task sits there and becomes `spawn_failed` four minutes later,
-with a menu on screen that looks like it came from nowhere.
-
-There is no fix in this app. Dispatch into a directory somebody has already opened by hand.
+permission mode could apply to. Clawdline recognises this specific menu, sends option `1` once per
+task, and writes `orchestrator.menu` to the audit log. A probe in a genuinely new checkout reached
+its briefing without a person touching the dialog. Any different menu remains unanswered.
 
 ### What follows from the four
 
@@ -205,9 +205,16 @@ Getting this wrong is expensive in both directions: another session's 376-line f
 read as a child's scope creep, which would have produced a completely wrong review; and a child's
 half-finished edits can be swept into somebody else's commit.
 
-So: **children do not commit, roots do.** Instructions should forbid `git commit`, `stash`,
-`reset` and `checkout` outright — and `./build.sh`, which restarts the app and kills whatever
-child somebody else is mid-spawn on.
+So, in the shared checkout: **children do not commit, roots do.** Instructions should forbid
+`git commit`, `stash`, `reset` and `checkout` outright — and `./build.sh`, which restarts the app
+and kills whatever child somebody else is mid-spawn on.
+
+`isolation: "worktree"` is the narrow exception. That child owns one checkout and one branch named
+`clawdline/task/<task-id>`; it commits early and only there, and the root reviews and lands the
+branch. It still must not push, switch branches, rebase, merge, stash, hard-reset, invoke
+`git worktree`, point git at the base repository, or run `./build.sh`. This is a briefing rule,
+not shell enforcement. The separate cwd also reduces Codex rollout candidates, making its
+filesystem-based identity match less ambiguous.
 
 Before dispatching to Codex, read its weekly quota off its status line (`weekly N% left`). At zero
 it stops mid-task and cannot even write the handover saying what it finished.
@@ -216,7 +223,7 @@ it stops mid-task and cannot even write the handover saying what it finished.
 
 ## Before you implement against this
 
-- Is `project_dir` a directory somebody has already opened by hand on this Mac? (Gate 4 has no fix.)
+- If this is a fresh directory, did `orchestrator.menu` record the one automatic trust answer?
 - Is `--add-dir` on the command line, and does a dispatching node get the *parent* directory?
 - Was the `--permission-mode` value tested on **the model you are actually going to use**?
 - Did that test have a control — with and without the flag, in the same directory?

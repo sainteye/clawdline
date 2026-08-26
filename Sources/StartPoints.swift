@@ -638,6 +638,9 @@ enum StartPoints {
         if isInside(path, resolved(home + "/.claude")) { return false }
         if isInside(path, resolved(home + "/.codex")) { return false }
         if isInside(path, resolved(home + "/Documents/Codex")) { return false }
+        if isInside(path, resolved(home + "/Library/Application Support/Clawdline/worktrees")) {
+            return false
+        }
         if isInside(path, temporary) { return false }
         // `NSTemporaryDirectory` normally resolves one per-user /var/folders root. These cover
         // deliberate /tmp worktrees and the `/private` spelling macOS reports through `lsof`.
