@@ -2011,7 +2011,7 @@ counts only when it was announced **and** has no ending under it.
 
 ```jsonc
 {
-  "role": "user",                  // "user" | "assistant" | "peer" | "tool"
+  "role": "user",                  // "user" | "assistant" | "peer" | "notice" | "tool"
   "text": "請幫我在網頁加入 favicon",
   "tool": "Bash",                  // present only on a tool call, absent on its result
   "at": 1787049580,                // absent if the record carried no timestamp
@@ -2027,6 +2027,42 @@ does not.
 For a `peer` entry, `source` is the other session's human-readable name, never its socket or
 transport path. `sourceMode` is the mode that session used to send the message. Either field is
 absent when the transcript did not carry a non-empty value.
+
+`peer` and `notice` are two different things and never stand in for one another: a `peer` entry is
+what another assistant session said to this one, a `notice` entry is what Clawdline said to it
+about a task. A row carries at most one of the two, so `source`/`sourceMode` never appear beside
+`notice`.
+
+`role: "notice"` is a versioned, single-line Clawdline envelope that either transcript reader
+recognized as a whole message. The wire wrapper contains no LF or CR. Its `text` is the
+human/model-readable fallback and it also carries a `notice` object. Clients must switch on its
+closed `kind` and `state` fields instead of parsing `text`:
+
+```jsonc
+{
+  "role": "notice",
+  "text": "[clawdline] task 3f9a21bc (…) finished: timeout — read …",
+  "notice": {
+    "kind": "task_finished",       // or "workspace_overlap"
+    "audience": "root",            // or "parent"
+    "task": {"id": "3f9a21bc-…", "title": "Project portrait"},
+    "state": "timeout",            // success | failure | timeout | cancelled | spawn_failed
+    "result_path": "/tmp/.clawdline/3f9a21bc-…/result.json",
+    "outstanding": 0,
+    "claims_released": true,
+    "child_may_still_write": true
+  }
+}
+```
+
+For `workspace_overlap`, `notice` has `kind`, `audience`, `task`, and a non-empty `overlaps`
+array of `{"task":{"id":…,"title":…},"path":…}`. It has no payload-defined HTML, CSS,
+actions, or executable links. The bundled Web client escapes every title and path, chooses the
+card wording and state styling itself, and keeps version 1 non-clickable. Malformed, partial,
+unknown-version, extra-field, and quoted lookalikes are never dropped and never partly
+interpreted: they keep their full visible text and stay whatever the row they arrived in already
+was. In an ordinary turn that is `role: "user"`; quoted inside a cross-session envelope it is
+`role: "peer"`, because who sent a message is a stronger fact than what its text looks like.
 
 `tool` is whatever the assistant calls it, so the vocabularies differ: Claude Code's are `Bash`,
 `Edit`, `Read` and the rest; Codex's are `shell` for a command, `edit` for a file change,

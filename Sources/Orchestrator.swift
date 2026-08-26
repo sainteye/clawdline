@@ -1042,7 +1042,7 @@ enum Orchestrator {
         var isTerminal: Bool {
             switch self {
             case .queued, .spawning, .briefed: return false
-            default: return true
+            case .success, .failure, .timeout, .cancelled, .spawnFailed: return true
             }
         }
     }
@@ -4981,8 +4981,8 @@ enum Orchestrator {
         }
     }
 
-    /// One line typed into whatever is waiting for this task, so the conversation that asked for
-    /// the work is the conversation that hears it finished.
+    /// One compact semantic message typed into whatever is waiting for this task, so the
+    /// conversation that asked for the work is the conversation that hears it finished.
     ///
     /// **Two readers, told different things.** A root is a conversation with a person behind it,
     /// and what it needs is enough to go and look: the id, the state, the file. A child is a
@@ -5088,23 +5088,60 @@ enum Orchestrator {
             + listed + " (claim narrower next time)"
     }
 
+    /// Keep the transport protocol's closed state vocabulary compiler-coupled to task state.
+    /// Non-terminal states do not produce completion notices; every terminal state maps here
+    /// explicitly so adding a state cannot silently make a notification disappear.
+    static func noticeState(for state: State) -> ClawdlineMessage.TaskState? {
+        switch state {
+        case .queued, .spawning, .briefed: return nil
+        case .success: return .success
+        case .failure: return .failure
+        case .timeout: return .timeout
+        case .cancelled: return .cancelled
+        case .spawnFailed: return .spawnFailed
+        }
+    }
+
+    /// The semantic completion message and its human/model-readable fallback. Kept pure so the
+    /// terminal delivery, both transcript readers, and tests all meet at one boundary.
+    static func taskFinishedNotice(for task: Task, audience: ClawdlineMessage.Audience,
+                                   outstanding: Int = 0) -> ClawdlineMessage.Notice? {
+        guard let state = noticeState(for: task.state) else { return nil }
+        let short = String(task.id.prefix(8))
+        let resultPath = "/tmp/.clawdline/\(task.id)/result.json"
+        let file = "read \(resultPath)"
+        let rest = outstanding == 0
+            ? "nothing else you handed on is still running"
+            : "\(outstanding) more of yours still running"
+        let prefix = audience == .parent ? "your task" : "task"
+        var body = "[clawdline] \(prefix) \(short) (\(task.title)) finished:"
+            + " \(state.rawValue) — \(file)"
+        if audience == .parent { body += " — \(rest)" }
+        body += timeoutClaimNotice(for: task)
+        body += untouchedClaimsNotice(for: task)
+        return ClawdlineMessage.Notice(
+            event: .taskFinished(
+                task: .init(id: task.id, title: task.title), state: state,
+                audience: audience, resultPath: resultPath,
+                outstanding: audience == .parent ? outstanding : 0,
+                claimsReleased: task.state == .timeout && !task.claims.isEmpty,
+                childMayStillWrite: task.state == .timeout && !task.claims.isEmpty
+            ),
+            body: body
+        )
+    }
+
     private static func notifyRoot(_ task: Task) {
         guard Config.shared.orchestratorNotifyRoot else { return }
-        let short = String(task.id.prefix(8))
-        let file = "read /tmp/.clawdline/\(task.id)/result.json"
-
         if let parentID = task.parentTaskId, let parent = held(parentID),
            !parent.state.isTerminal, let terminalID = parent.childTerminalId,
            let terminal = target(withID: terminalID) {
             // Words into a menu confirm the highlighted row instead of typing.
             guard !Targets.isChoosing(terminal) else { return }
             let outstanding = liveTasks(under: [parentID]).count
-            let rest = outstanding == 0
-                ? "nothing else you handed on is still running"
-                : "\(outstanding) more of yours still running"
-            let line = "[clawdline] your task \(short) (\(task.title)) finished:"
-                + " \(task.state.rawValue) — \(file) — \(rest)"
-                + timeoutClaimNotice(for: task) + untouchedClaimsNotice(for: task)
+            guard let notice = taskFinishedNotice(for: task, audience: .parent,
+                                                  outstanding: outstanding) else { return }
+            let line = ClawdlineMessage.encode(notice)
             if let failure = Targets.send(line, to: terminal) {
                 Log.write("orchestrator: could not notify the parent task — \(failure)")
             }
@@ -5120,9 +5157,8 @@ enum Orchestrator {
         // Words into a menu confirm the highlighted row instead of typing. Skip rather than risk
         // answering a question on the root's behalf; the record is still in the app and the page.
         guard !Targets.isChoosing(root) else { return }
-        let line = "[clawdline] task \(short) (\(task.title)) finished:"
-            + " \(task.state.rawValue) — \(file)" + timeoutClaimNotice(for: task)
-            + untouchedClaimsNotice(for: task)
+        guard let notice = taskFinishedNotice(for: task, audience: .root) else { return }
+        let line = ClawdlineMessage.encode(notice)
         if let failure = Targets.send(line, to: root) {
             Log.write("orchestrator: could not notify the root — \(failure)")
         }
@@ -5159,8 +5195,18 @@ enum Orchestrator {
             let line = "[clawdline] workspace overlap: task \(newTask.id.prefix(8)) "
                 + "(\(newTask.title)) overlaps \(overlaps.count) active "
                 + (overlaps.count == 1 ? "task: " : "tasks: ") + details
+            let semantic = ClawdlineMessage.Notice(
+                event: .workspaceOverlap(
+                    task: .init(id: newTask.id, title: newTask.title), audience: .root,
+                    overlaps: overlaps.map {
+                        .init(task: .init(id: $0.task.id, title: $0.task.title),
+                              path: $0.sharedDir)
+                    }
+                ),
+                body: line
+            )
             notices.append(WorkspaceOverlapNotice(rootSessionID: root, taskID: newTask.id,
-                                                   line: line))
+                                                   line: ClawdlineMessage.encode(semantic)))
         }
         for overlap in overlaps {
             let other = overlap.task
@@ -5168,8 +5214,16 @@ enum Orchestrator {
             let line = "[clawdline] workspace overlap: task \(newTask.id.prefix(8)) "
                 + "(\(newTask.title)) and task \(other.id.prefix(8)) (\(other.title)) "
                 + "share \(overlap.sharedDir)"
+            let semantic = ClawdlineMessage.Notice(
+                event: .workspaceOverlap(
+                    task: .init(id: newTask.id, title: newTask.title), audience: .root,
+                    overlaps: [.init(task: .init(id: other.id, title: other.title),
+                                             path: overlap.sharedDir)]
+                ),
+                body: line
+            )
             notices.append(WorkspaceOverlapNotice(rootSessionID: root, taskID: other.id,
-                                                   line: line))
+                                                   line: ClawdlineMessage.encode(semantic)))
         }
         return notices
     }

@@ -2540,7 +2540,9 @@ final class RemoteServer {
             signature = after
             text = fresh
         }
-        let entries = rows(of: Transcript.parse(text, assistant: record.assistant, limit: limit))
+        let entries = Self.transcriptRows(
+            Transcript.parse(text, assistant: record.assistant, limit: limit)
+        )
         return .json(["entries": entries, "signature": signature])
     }
 
@@ -2569,8 +2571,9 @@ final class RemoteServer {
         }
         // `sidechains: true` — every row in an agent's file is marked as one, because from the
         // session's point of view that is what an agent is. See `Transcript.parse`.
-        out["entries"] = rows(of: Transcript.parse(text, assistant: .claude, limit: limit,
-                                                   sidechains: true))
+        out["entries"] = Self.transcriptRows(
+            Transcript.parse(text, assistant: .claude, limit: limit, sidechains: true)
+        )
         out["signature"] = signature
         return .json(out)
     }
@@ -2610,23 +2613,28 @@ final class RemoteServer {
 
     /// Entries as the page reads them. One shape for both transcripts, because a reader following
     /// an agent should meet the same pane they left.
-    // Internal for direct serialization tests.
-    func rows(of entries: [Transcript.Entry]) -> [[String: Any]] {
+    // Internal, and static, for direct serialization tests: the shape a row takes is a pure
+    // function of the entries and nothing a running server owns.
+    static func transcriptRows(_ entries: [Transcript.Entry]) -> [[String: Any]] {
         entries.map { entry -> [String: Any] in
             var row: [String: Any] = ["role": name(of: entry.kind), "text": entry.text]
             if let tool = entry.tool { row["tool"] = tool }
             if let time = entry.time { row["at"] = Int(time.timeIntervalSince1970) }
             if let source = entry.source, !source.isEmpty { row["source"] = source }
             if let mode = entry.sourceMode, !mode.isEmpty { row["sourceMode"] = mode }
+            if let notice = entry.notice {
+                row["notice"] = ClawdlineMessage.webObject(for: notice)
+            }
             return row
         }
     }
 
-    private func name(of kind: Transcript.Entry.Kind) -> String {
+    private static func name(of kind: Transcript.Entry.Kind) -> String {
         switch kind {
         case .user:       return "user"
         case .assistant:  return "assistant"
         case .peer:       return "peer"
+        case .notice:     return "notice"
         case .tool:       return "tool"
         case .toolResult: return "tool"
         }
@@ -2743,6 +2751,18 @@ final class RemoteServer {
             "webTranscriptFailed": t.webTranscriptFailed,
             "webWhoYou": t.webWhoYou,
             "webWhoTool": t.webWhoTool,
+            "webNoticeTask": t.webNoticeTask,
+            "webNoticeCompleted": t.webNoticeCompleted,
+            "webNoticeFailed": t.webNoticeFailed,
+            "webNoticeTimedOut": t.webNoticeTimedOut,
+            "webNoticeCancelled": t.webNoticeCancelled,
+            "webNoticeCouldNotStart": t.webNoticeCouldNotStart,
+            "webNoticeFinished": t.webNoticeFinished,
+            "webNoticeWorkspaceOverlap": t.webNoticeWorkspaceOverlap,
+            "webNoticeNoSiblings": t.webNoticeNoSiblings,
+            "webNoticeOneSibling": t.webNoticeOneSibling,
+            "webNoticeManySiblings": t.webNoticeManySiblings,
+            "webNoticeClaimsReleased": t.webNoticeClaimsReleased,
             "webPending": t.webPending,
             "webAttachedImage": t.webAttachedImage,
             "webAttachedImages": t.webAttachedImages,

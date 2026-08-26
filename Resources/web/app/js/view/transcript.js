@@ -453,9 +453,11 @@ els.tx.addEventListener("keydown", function (ev) {
     ev.stopPropagation();
 });
 
-// User and tool are copy supplied by the server before the first render. Claude and Claude ↔
-// are names, and a name is the same word in fourteen languages. See `paintStatic`.
-export var WHO = { user: "you", assistant: "claude", peer: "Claude ↔", tool: "tool" };
+// User and tool are copy supplied by the server before the first render. Claude, Claude ↔ and
+// Clawdline are names, and a name is the same word in fourteen languages. See `paintStatic`.
+export var WHO = {
+    user: "you", assistant: "claude", peer: "Claude ↔", notice: "Clawdline", tool: "tool",
+};
 
 /** A transcript speaker, with the current assistant's mark when this browser opted into it. */
 function whoHTML(role, at) {
@@ -469,6 +471,7 @@ function whoHTML(role, at) {
 }
 
 function entryHTML(e) {
+    if (e.role === "notice") return noticeHTML(e);
     var role = WHO[e.role] ? e.role : "assistant";
     if (role === "peer") {
         var source = String(e.source || "session");
@@ -492,4 +495,69 @@ function entryHTML(e) {
     return '<div class="entry' + (e.pending ? ' pending' : '') + '" data-role="' + role + '">' +
         whoHTML(role, e.at) +
         '<div class="body">' + body + "</div></div>";
+}
+
+/**
+ * A semantic Clawdline notice. The server has already validated the closed protocol, but this
+ * renderer still treats every field as text and chooses every word, class and layout locally.
+ * In particular it never sends a notice field through the Markdown renderer and never creates
+ * links or actions from payload data.
+ */
+function noticeHTML(e) {
+    var n = e && e.notice;
+    if (!n || !n.task || typeof n.kind !== "string") {
+        // A mismatched old/new server remains visible, but cannot acquire notice presentation.
+        return entryHTML(Object.assign({}, e, { role: "assistant", notice: null }));
+    }
+    var task = n.task || {};
+    var identity = task.title || task.id || T.webNoticeTask;
+    var title = T.webNoticeFinished;
+    var tone = "neutral";
+    var detail = "";
+
+    if (n.kind === "task_finished") {
+        var states = {
+            success: [T.webNoticeCompleted, "success"],
+            failure: [T.webNoticeFailed, "failure"],
+            timeout: [T.webNoticeTimedOut, "timeout"],
+            cancelled: [T.webNoticeCancelled, "neutral"],
+            spawn_failed: [T.webNoticeCouldNotStart, "failure"]
+        };
+        var state = Object.prototype.hasOwnProperty.call(states, n.state)
+            ? states[n.state] : [T.webNoticeFinished, "neutral"];
+        title = state[0]; tone = state[1];
+        detail = '<div class="notice-task">' + esc(identity) + "</div>";
+        if (typeof n.result_path === "string" && n.result_path) {
+            detail += '<code class="notice-path">' + esc(n.result_path) + "</code>";
+        }
+        if (n.audience === "parent" && Number.isSafeInteger(n.outstanding)) {
+            var siblings = n.outstanding === 0 ? T.webNoticeNoSiblings : fill(
+                n.outstanding === 1 ? T.webNoticeOneSibling : T.webNoticeManySiblings,
+                { n: n.outstanding });
+            detail += '<div class="notice-meta">' + esc(siblings) + "</div>";
+        }
+        if (n.claims_released === true && n.child_may_still_write === true) {
+            detail += '<div class="notice-warning">' + esc(T.webNoticeClaimsReleased) + "</div>";
+        }
+    } else if (n.kind === "workspace_overlap") {
+        title = T.webNoticeWorkspaceOverlap; tone = "overlap";
+        detail = '<div class="notice-task">' + esc(identity) + "</div>";
+        var rows = Array.isArray(n.overlaps) ? n.overlaps : [];
+        detail += '<ul class="notice-overlaps">' + rows.map(function (row) {
+            var other = row && row.task || {};
+            var name = other.title || other.id || T.webNoticeTask;
+            var path = row && typeof row.path === "string" ? row.path : "";
+            return "<li><span>" + esc(name) + "</span>" +
+                (path ? '<code class="notice-path">' + esc(path) + "</code>" : "") + "</li>";
+        }).join("") + "</ul>";
+    } else {
+        // Unknown kinds cannot arrive from this protocol version, but visible fallback is safer
+        // than an empty card if client and server code ever get out of step.
+        return entryHTML(Object.assign({}, e, { role: "assistant", notice: null }));
+    }
+
+    return '<div class="entry clawdline-notice" data-role="notice" data-tone="' + tone + '">' +
+        whoHTML("notice", e.at) + '<div class="body"><div class="notice-card">' +
+        '<div class="notice-title">' + esc(title) + "</div>" + detail +
+        "</div></div></div>";
 }

@@ -478,6 +478,21 @@ protocol Copy {
     /// word each. Claude's own name is not here — it is a name, and it is not translated.
     var webWhoYou: String { get }
     var webWhoTool: String { get }
+    /// Semantic Clawdline notice cards. Clawdline itself is a product name and remains unchanged;
+    /// every descriptive word comes from the browser's negotiated language. Counted sibling
+    /// sentences use `{n}`, filled and escaped by the web client.
+    var webNoticeTask: String { get }
+    var webNoticeCompleted: String { get }
+    var webNoticeFailed: String { get }
+    var webNoticeTimedOut: String { get }
+    var webNoticeCancelled: String { get }
+    var webNoticeCouldNotStart: String { get }
+    var webNoticeFinished: String { get }
+    var webNoticeWorkspaceOverlap: String { get }
+    var webNoticeNoSiblings: String { get }
+    var webNoticeOneSibling: String { get }
+    var webNoticeManySiblings: String { get }
+    var webNoticeClaimsReleased: String { get }
     /// A sent message that the Mac has not picked up yet.
     var webPending: String { get }
     /// Attached-image counts for pending messages. `{n}` is replaced by the web client.

@@ -278,7 +278,23 @@ export var Mock = (function () {
     transcripts["A15E-77"] = [
         { role: "user", text: "read docs/devstack.md and tell me what is missing", tool: null, at: now - 3600 },
         { role: "tool", text: "docs/devstack.md", tool: "Read", at: now - 3590 },
-        { role: "assistant", text: "It explains the file and never says where to put it. Everything else assumes you already know that `devstack.json` sits at the root of the project it describes.", tool: null, at: now - 3580 }
+        { role: "assistant", text: "It explains the file and never says where to put it. Everything else assumes you already know that `devstack.json` sits at the root of the project it describes.", tool: null, at: now - 3580 },
+        { role: "notice", text: "[clawdline] task 2ef96bc1 finished: success", at: now - 3570,
+          notice: { kind: "task_finished", audience: "root", state: "success",
+                    task: { id: "2ef96bc1-13ac-41c9-9cdb-b709b3b56d09", title: "Review <unsafe> & finish" },
+                    result_path: "/tmp/.clawdline/2ef96bc1/result.json", outstanding: 0,
+                    claims_released: false, child_may_still_write: false } },
+        // A peer card beside the notice card, in one transcript, because that is the pair the
+        // two features exist to keep apart: `peer` is what another session said to this one,
+        // `notice` is what the app said to it about a task. Neither should look like the other.
+        { role: "peer", text: "The release notes still say **August**. Fix that before you push.", tool: null,
+          at: now - 3560, source: "release-room", sourceMode: "prompting" },
+        { role: "assistant", text: "Caught it — the heading was left over from the last cut. Changed to September and pushed.", tool: null, at: now - 3550 },
+        { role: "notice", text: "[clawdline] workspace overlap: task 7d40aa19 (Release notes) and task 2ef96bc1 (Review) share /Users/you/code/clawdline/docs", at: now - 3540,
+          notice: { kind: "workspace_overlap", audience: "root",
+                    task: { id: "7d40aa19-6f2b-4e88-a1c3-0d5e91b7fa42", title: "Release notes" },
+                    overlaps: [{ task: { id: "2ef96bc1-13ac-41c9-9cdb-b709b3b56d09", title: "Review <unsafe> & finish" },
+                                 path: "/Users/you/code/clawdline/docs" }] } }
     ];
 
     // Where a session may be started — the Mac's own list, which is not the session list and is

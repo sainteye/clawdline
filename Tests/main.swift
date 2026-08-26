@@ -2323,6 +2323,270 @@ group("transcript parsing") {
            Transcript.parse(wide, limit: 1)[0].text, "謝謝")
 }
 
+group("versioned Clawdline notices") {
+    let hostileTitle = #"Review </script><b>unsafe</b> & `markdown` \"quoted\" 🐈‍⬛"#
+    let hostilePath = #"/tmp/.clawdline/12345678-1234-1234-1234-123456789abc/result.json"#
+    let task = ClawdlineMessage.Task(id: "12345678-1234-1234-1234-123456789abc",
+                                     title: hostileTitle)
+    let made = ClawdlineMessage.Notice(
+        event: .taskFinished(task: task, state: .timeout, audience: .parent,
+                             resultPath: hostilePath, outstanding: 2,
+                             claimsReleased: true, childMayStillWrite: true),
+        body: "[clawdline] the task timed out — read \(hostilePath)"
+    )
+    let wire = ClawdlineMessage.encode(made)
+    check("the encoded envelope is one terminal-safe line",
+          !wire.contains("\n") && !wire.contains("\r"))
+    check("the exact wrapper carries a readable fallback", wire.hasPrefix("<clawdline-notice>{")
+          && wire.hasSuffix("}</clawdline-notice>") && wire.contains("[clawdline]"))
+    check("the wire carries the literal result.json path",
+          wire.contains(hostilePath) && !wire.contains(#"\/"#))
+    expect("the readable result.json wire still round-trips exactly",
+           ClawdlineMessage.decode(wire), made)
+
+    // The reviewed round swapped `hostilePath` for a clean one so that the two checks above
+    // could say something precise about slashes. That left `result_path` with no
+    // special-character coverage at all, so the awkward path comes back beside the clean one
+    // rather than in place of it: a path is a label the card prints, and the shell and markup
+    // characters a real temporary directory can hold must survive the envelope untouched.
+    let awkwardPath = #"/tmp/<task>&"odd"/result `x`.json"#
+    let awkward = ClawdlineMessage.Notice(
+        event: .taskFinished(task: task, state: .failure, audience: .root,
+                             resultPath: awkwardPath, outstanding: 0,
+                             claimsReleased: false, childMayStillWrite: false),
+        body: "[clawdline] the task failed — read \(awkwardPath)"
+    )
+    let awkwardWire = ClawdlineMessage.encode(awkward)
+    check("a result_path full of shell and markup characters is still one terminal-safe line",
+          !awkwardWire.contains("\n") && !awkwardWire.contains("\r"))
+    check("and its slashes and entities reach the wire unescaped",
+          awkwardWire.contains(#"/tmp/<task>&"#) && !awkwardWire.contains(#"\/"#)
+              && !awkwardWire.contains("&amp;") && !awkwardWire.contains("&#"))
+    expect("and an awkward result_path round-trips to the same typed payload",
+           ClawdlineMessage.decode(awkwardWire), awkward)
+    let awkwardRow = RemoteServer.transcriptRows(
+        [Transcript.Entry(kind: .notice, text: awkward.body, tool: nil, time: nil,
+                          notice: awkward)])
+    expect("and the HTTP card is handed the path exactly as it was given",
+           (awkwardRow.first?["notice"] as? [String: Any])?["result_path"] as? String,
+           awkwardPath)
+
+    for field in ["claims_released", "child_may_still_write"] {
+        for numeric in [0, 1] {
+            let numericBoolean = wire.replacingOccurrences(
+                of: "\"\(field)\":true", with: "\"\(field)\":\(numeric)")
+            check("\(field) rejects numeric \(numeric) instead of a JSON boolean",
+                  numericBoolean != wire && ClawdlineMessage.decode(numericBoolean) == nil)
+        }
+    }
+
+    let unknown = wire.replacingOccurrences(of: #""version":1"#,
+                                             with: #""version":2"#)
+    check("an unknown version is not interpreted", ClawdlineMessage.decode(unknown) == nil)
+    check("a quoted lookalike is not interpreted", ClawdlineMessage.decode("> " + wire) == nil)
+    check("a partial wrapper is not interpreted",
+          ClawdlineMessage.decode(String(wire.dropLast())) == nil)
+    check("prose around a valid envelope is not interpreted",
+          ClawdlineMessage.decode("quote:\n" + wire + "\nend quote") == nil)
+    let extra = wire.replacingOccurrences(of: #""version":1"#,
+                                          with: #""version":1,"action":"javascript:bad()""#)
+    check("unknown or executable fields make the closed schema invalid",
+          ClawdlineMessage.decode(extra) == nil)
+
+    let claudeRow = try! JSONSerialization.data(withJSONObject: [
+        "type": "user",
+        "message": ["role": "user", "content": [["type": "text", "text": wire]]],
+    ], options: [.sortedKeys])
+    let claudeEntries = Transcript.parse(String(decoding: claudeRow, as: UTF8.self))
+    expect("Claude normalizes an exact envelope to one entry", claudeEntries.count, 1)
+    expect("Claude gives it a dedicated notice kind", claudeEntries.first?.kind, .notice)
+    expect("Claude keeps the typed payload", claudeEntries.first?.notice, made)
+
+    let quotedRow = try! JSONSerialization.data(withJSONObject: [
+        "type": "user",
+        "message": ["role": "user", "content": [["type": "text", "text": "> " + wire]]],
+    ], options: [.sortedKeys])
+    let quotedEntries = Transcript.parse(String(decoding: quotedRow, as: UTF8.self))
+    expect("a Claude quoted lookalike stays visible as user text",
+           quotedEntries.first?.kind, .user)
+    check("fallback does not disappear on failed recognition",
+          quotedEntries.first?.text.contains("<clawdline-notice>") == true)
+
+    let severalClaudeBlocksRow = try! JSONSerialization.data(withJSONObject: [
+        "type": "user",
+        "message": ["role": "user", "content": [
+            ["type": "text", "text": wire],
+            ["type": "text", "text": "quoted beside the envelope"],
+        ]],
+    ], options: [.sortedKeys])
+    let severalClaudeBlocks = Transcript.parse(
+        String(decoding: severalClaudeBlocksRow, as: UTF8.self))
+    expect("an envelope beside another Claude block stays a user message",
+           severalClaudeBlocks.first?.kind, .user)
+
+    let codexEntries = Codex.entries(ofItem: [
+        "type": "UserMessage", "content": [["type": "text", "text": wire]],
+    ], at: nil)
+    expect("Codex gives the same envelope the same notice kind",
+           codexEntries.first?.kind, .notice)
+    expect("Codex keeps the same typed payload", codexEntries.first?.notice, made)
+
+    let severalCodexBlocks = Codex.entries(ofItem: [
+        "type": "UserMessage",
+        "content": [["type": "text", "text": wire], ["type": "text", "text": "quoted"]],
+    ], at: nil)
+    expect("an envelope beside another Codex block stays a user message",
+           severalCodexBlocks.first?.kind, .user)
+
+    let rows = RemoteServer.transcriptRows(claudeEntries)
+    expect("the HTTP transcript role is notice", rows.first?["role"] as? String, "notice")
+    let payload = rows.first?["notice"] as? [String: Any]
+    check("the HTTP row carries controlled semantic fields",
+          payload?["kind"] as? String == "task_finished"
+              && payload?["state"] as? String == "timeout"
+              && (payload?["task"] as? [String: Any])?["title"] as? String == hostileTitle)
+    check("the HTTP card payload carries no fallback markup or protocol machinery",
+          payload?["body"] == nil && payload?["protocol"] == nil && payload?["action"] == nil)
+}
+
+group("orchestrator notices preserve the model-readable completion contract") {
+    let id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    var task = Orchestrator.Task(id: id, state: .success, kind: "custom",
+                                 title: "A <title> & review", assistant: .codex,
+                                 projectDir: "/repo", timeoutMinutes: 30, created: Date(),
+                                 secretHash: String(repeating: "0", count: 64))
+    let parent = Orchestrator.taskFinishedNotice(for: task, audience: .parent, outstanding: 3)
+    check("a parent fallback names result.json and outstanding siblings",
+          parent?.body.contains("/tmp/.clawdline/\(id)/result.json") == true
+              && parent?.body.contains("3 more of yours still running") == true)
+    let stateContract: [(Orchestrator.State, Bool, ClawdlineMessage.TaskState?)] = [
+        (.queued, false, nil), (.spawning, false, nil), (.briefed, false, nil),
+        (.success, true, .success), (.failure, true, .failure),
+        (.timeout, true, .timeout), (.cancelled, true, .cancelled),
+        (.spawnFailed, true, .spawnFailed),
+    ]
+    for (source, terminal, expectedState) in stateContract {
+        expect("terminal classification for \(source.rawValue)", source.isTerminal, terminal)
+        expect("notice-state mapping for \(source.rawValue)",
+               Orchestrator.noticeState(for: source), expectedState)
+        task.state = source
+        let notice = Orchestrator.taskFinishedNotice(for: task, audience: .root)
+        check("notice presence follows terminal classification for \(source.rawValue)",
+              (notice != nil) == terminal)
+        if case let .taskFinished(_, actualState, _, _, _, _, _)? = notice?.event {
+            expect("typed notice state for \(source.rawValue)", actualState, expectedState)
+        }
+    }
+    task.state = .timeout
+    task.claims = ["Sources"]
+    let timeout = Orchestrator.taskFinishedNotice(for: task, audience: .root)
+    check("timeout semantics carry the released-claim warning",
+          timeout?.body.contains("claims released; child tab may still be writing") == true)
+    if case let .taskFinished(_, state, _, _, _, released, mayWrite)? = timeout?.event {
+        check("timeout state and warning are typed rather than parsed from prose",
+              state == .timeout && released && mayWrite)
+    } else {
+        check("timeout event is typed", false)
+    }
+}
+
+
+// Both completion call sites in `Orchestrator.notifyRoot` — the parent form and the root form —
+// send `ClawdlineMessage.encode(taskFinishedNotice(…))`, so this group is what stands between the
+// untouched-claims reminder and a merge that quietly drops it. It has happened once already: the
+// encoded notice replaced two hand-built `let line = "…"` statements that each ended in
+// `+ untouchedClaimsNotice(for: task)`, and the whole suite stayed green with the reminder gone,
+// because everything else here tests `untouchedClaimsNotice` as a pure function. The reminder is
+// prose inside `body` by decision, not a typed field, which is exactly why it needs pinning: no
+// schema check can miss it on the way out.
+group("both completion notices still carry the untouched-claims reminder") {
+    let id = "cafecafe-1111-2222-3333-444444444444"
+    var task = Orchestrator.Task(id: id, state: .success, kind: "custom",
+                                 title: "Wide claims", assistant: .claude,
+                                 projectDir: "/repo", timeoutMinutes: 30, created: Date(),
+                                 secretHash: String(repeating: "0", count: 64))
+    task.claims = ["Sources", "docs", "Tests"]
+    task.claimsDeclared = true
+    task.untouchedClaims = ["docs", "Tests"]
+    let reminder = Orchestrator.untouchedClaimsNotice(for: task)
+    check("the fixture really has something to report", !reminder.isEmpty)
+
+    for audience in [ClawdlineMessage.Audience.root, .parent] {
+        let notice = Orchestrator.taskFinishedNotice(for: task, audience: audience,
+                                                     outstanding: audience == .parent ? 2 : 0)
+        check("the \(audience.rawValue) notice body keeps the untouched-claims reminder",
+              notice?.body.hasSuffix(reminder) == true)
+        // What the call site actually types into the terminal, not just what it composed.
+        let wire = notice.map(ClawdlineMessage.encode) ?? ""
+        check("and it survives the wire to the \(audience.rawValue)",
+              ClawdlineMessage.decode(wire)?.body.contains("2 claimed path(s) never touched") == true
+                  && ClawdlineMessage.decode(wire)?.body.contains("claim narrower next time") == true)
+    }
+
+    // The reminder is the last thing on the line, after the timeout warning's slot, so the two
+    // orderings main shipped are preserved: root is "… — file — untouched", parent is
+    // "… — file — siblings — untouched".
+    let parent = Orchestrator.taskFinishedNotice(for: task, audience: .parent, outstanding: 2)
+    check("the parent line still reads siblings-then-claims",
+          parent?.body.contains("2 more of yours still running" + reminder) == true)
+
+    var clean = task
+    clean.untouchedClaims = []
+    let quiet = Orchestrator.taskFinishedNotice(for: clean, audience: .root)
+    check("a task that touched everything it claimed says nothing about claims",
+          quiet?.body.contains("never touched") == false)
+}
+
+group("the Web transcript has an inert Clawdline card") {
+    let js = (try? String(contentsOfFile: "Resources/web/app/js/view/transcript.js",
+                          encoding: .utf8)) ?? ""
+    let css = (try? String(contentsOfFile: "Resources/web/app/css/transcript.css",
+                           encoding: .utf8)) ?? ""
+    let mock = (try? String(contentsOfFile: "Resources/web/app/js/net/mock.js",
+                            encoding: .utf8)) ?? ""
+    check("the notice role is routed to a dedicated renderer",
+          js.contains(#"e.role === "notice""#) && js.contains("function noticeHTML"))
+    let noticeRenderer = js.components(separatedBy: "function noticeHTML(e) {").dropFirst().first?
+        .components(separatedBy: "\n}\n").first ?? ""
+    check("task states, overlap and plurals use fixed translation keys",
+          noticeRenderer.contains("T.webNoticeCompleted")
+              && noticeRenderer.contains("T.webNoticeTimedOut")
+              && noticeRenderer.contains("T.webNoticeWorkspaceOverlap")
+              && noticeRenderer.contains("T.webNoticeOneSibling")
+              && noticeRenderer.contains("fill("))
+    check("task state lookup rejects inherited object properties and keeps a generic title",
+          noticeRenderer.contains("Object.prototype.hasOwnProperty.call(states, n.state)")
+              && noticeRenderer.contains("var title = T.webNoticeFinished"))
+    check("notice data and translated copy are escaped",
+          noticeRenderer.contains("esc(identity)") && noticeRenderer.contains("esc(path)")
+              && noticeRenderer.contains("esc(title)")
+              && noticeRenderer.contains("esc(siblings)")
+              && noticeRenderer.contains("esc(T.webNoticeClaimsReleased)"))
+    check("the renderer has no payload-controlled rich text, link, action, style or copy key",
+          !noticeRenderer.contains("richText(") && !noticeRenderer.contains("inlineMd(")
+              && !noticeRenderer.contains("<a") && !noticeRenderer.contains("<button")
+              && !noticeRenderer.contains("href=") && !noticeRenderer.contains("style=")
+              && !noticeRenderer.contains("n.action") && !noticeRenderer.contains("n.style")
+              && !noticeRenderer.contains("n.class") && !noticeRenderer.contains("T[n."))
+    check("the card is a distinct inert role",
+          css.contains(#".entry[data-role="notice"]"#)
+              && css.contains(".notice-card") && !css.contains(".notice-card button"))
+    check("the mock transcript exercises the notice role and hostile title",
+          mock.contains(#"role: "notice""#) && mock.contains("Review <unsafe> & finish"))
+    // The one screen this pair of features exists to prove is a peer card and a notice card,
+    // visually distinct, in the same transcript — so `?mock=1` has to be able to draw it. It
+    // could not until this check existed: the fixture had the notice row and no peer row at all.
+    let mockTranscript = mock.components(separatedBy: #"transcripts["A15E-77"] = ["#)
+        .dropFirst().first?.components(separatedBy: "\n    ];").first ?? ""
+    check("and shows a peer card beside a notice card in one mock transcript",
+          mockTranscript.contains(#"role: "peer""#)
+              && mockTranscript.contains(#"role: "notice""#)
+              && mockTranscript.contains(#"source: "release-room""#))
+    check("the mock covers both notice kinds, so the overlap card is reachable too",
+          mockTranscript.contains(#"kind: "task_finished""#)
+              && mockTranscript.contains(#"kind: "workspace_overlap""#))
+}
+
 group("transcript tool summaries") {
     expect("command wins", Transcript.summarise(input: ["description": "d", "command": "ls -l"]), "ls -l")
     expect("then a path", Transcript.summarise(input: ["description": "d", "file_path": "/tmp/a"]), "/tmp/a")
@@ -6842,6 +7106,16 @@ group("every word the page can draw is a word the page is sent") {
     // it: a list you have to remember to extend is the thing that failed.
     let payload = RemoteServer.shared.route(remoteRequest("GET", "/v1/strings"))
     let sent = ((try? JSONSerialization.jsonObject(with: payload.body)) as? [String: Any]) ?? [:]
+    let fallbackSource = (try? String(contentsOfFile: "Resources/web/app/js/core/i18n.js",
+                                      encoding: .utf8)) ?? ""
+    let fallbackObject = fallbackSource.components(separatedBy: "export var T = {").dropFirst()
+        .first?.components(separatedBy: "\n};").first ?? ""
+    let fallbackKeys = Set(fallbackObject.split(separator: "\n").compactMap { line -> String? in
+        let parts = line.split(separator: ":", maxSplits: 1)
+        guard parts.count == 2 else { return nil }
+        let key = parts[0].trimmingCharacters(in: .whitespaces)
+        return key.hasPrefix("web") ? key : nil
+    })
 
     // Members the page is deliberately not given. Each one needs a reason written here, and
     // "the page does not use it yet" is not a reason — an unused string should not be in `Copy`.
@@ -6871,6 +7145,19 @@ group("every word the page can draw is a word the page is sent") {
     }
     check("and nothing is sent under a name Copy does not have", orphans.isEmpty,
           "sent but not in Copy: " + orphans.sorted().joined(separator: ", "))
+
+    // These three predate structured notices and are already absent in v2. Fixing their fallback
+    // copy requires changing i18n.js, which is deliberately outside this narrow correction.
+    let knownMissingFallbacks: Set<String> = [
+        "webSettingsAssistantIcons", "webSettingsAssistantIconsSay",
+        "webSettingsAssistantIconsShow",
+    ]
+    let absentFallbacks = sent.keys.filter {
+        $0.hasPrefix("web") && !knownMissingFallbacks.contains($0) && !fallbackKeys.contains($0)
+    }
+    check("and every in-scope browser string sent by the server has a fallback slot",
+          absentFallbacks.isEmpty,
+          "sent but absent from i18n.js T: " + absentFallbacks.sorted().joined(separator: ", "))
 }
 
 group("ending a session is the one route that destroys something") {
@@ -7747,7 +8034,7 @@ group("T9 a peer turn disproves ownership just like a user turn") {
 }
 
 group("T10 peer entries serialize their role and omit an empty source") {
-    let rows = RemoteServer.shared.rows(of: [
+    let rows = RemoteServer.transcriptRows([
         Transcript.Entry(kind: .peer, text: "hello", tool: nil, time: nil,
                          source: "", sourceMode: "bypass"),
     ])
@@ -7767,6 +8054,237 @@ group("T11 a newer repeated enqueue survives an older delivery") {
     check("T11 delivered first send and queued second send both remain",
           entries.count == 2 && entries.first?.isPeerDelivery == true
             && entries.last?.isPeerDelivery == false)
+}
+
+// MARK: - Peer messages and Clawdline notices in one transcript
+
+// The two features were built apart and meet here for the first time. `.peer` is what another
+// assistant session said to this one; `.notice` is what the app said to it about a task.
+// Neither may claim the other's rows, in the parser, in the de-duplicator, or on the wire.
+
+func noticeUserRow(_ wire: String, at: String) -> String {
+    peerTestLine([
+        "type": "user", "timestamp": at,
+        "message": ["role": "user", "content": [["type": "text", "text": wire]]],
+    ])
+}
+
+func noticeQueuedRow(_ wire: String, at: String) -> String {
+    peerTestLine([
+        "type": "queue-operation", "operation": "enqueue", "timestamp": at, "content": wire,
+    ])
+}
+
+let coexistenceNotice = ClawdlineMessage.Notice(
+    event: .taskFinished(
+        task: .init(id: "9f1c0a3e-2b44-4d61-8f0e-71aa2c6d5b93", title: "Project portrait"),
+        state: .success, audience: .root,
+        resultPath: "/tmp/.clawdline/9f1c0a3e-2b44-4d61-8f0e-71aa2c6d5b93/result.json",
+        outstanding: 0, claimsReleased: false, childMayStillWrite: false),
+    body: "[clawdline] task 9f1c0a3e (Project portrait) finished: success"
+        + " — read /tmp/.clawdline/9f1c0a3e-2b44-4d61-8f0e-71aa2c6d5b93/result.json")
+let coexistenceWire = ClawdlineMessage.encode(coexistenceNotice)
+
+group("T12 one transcript carries both a peer message and a Clawdline notice") {
+    let jsonl = [
+        queuedPeer("please inspect the deploy", at: "2026-08-26T10:00:00.000Z"),
+        noticeUserRow(coexistenceWire, at: "2026-08-26T10:00:01.000Z"),
+        deliveredPeer("and the rollback plan", at: "2026-08-26T10:00:02.000Z", id: "m-12",
+                      source: "release-room", mode: "bypass"),
+        noticeQueuedRow(coexistenceWire, at: "2026-08-26T10:00:03.000Z"),
+    ].joined(separator: "\n")
+    let entries = Transcript.parse(jsonl, assistant: .claude)
+    expect("T12 four rows, four entries", entries.count, 4)
+    check("T12 the queued cross-session envelope is a peer message, not a notice",
+          entries.count == 4 && entries[0].kind == .peer
+            && entries[0].text == "please inspect the deploy"
+            && entries[0].source == "payments-ops-12" && entries[0].notice == nil)
+    check("T12 the user-turn envelope is a notice, not a peer message",
+          entries.count == 4 && entries[1].kind == .notice
+            && entries[1].notice == coexistenceNotice
+            && entries[1].text == coexistenceNotice.body
+            && entries[1].source == nil && entries[1].isPeerDelivery == false)
+    check("T12 a delivered peer row keeps its own source beside a notice",
+          entries.count == 4 && entries[2].kind == .peer
+            && entries[2].text == "and the rollback plan"
+            && entries[2].source == "release-room" && entries[2].sourceMode == "bypass"
+            && entries[2].isPeerDelivery == true)
+    check("T12 a queued envelope that is a notice is a notice, not a peer message",
+          entries.count == 4 && entries[3].kind == .notice
+            && entries[3].notice == coexistenceNotice && entries[3].source == nil)
+
+    let rows = RemoteServer.transcriptRows(entries)
+    check("T12 the HTTP rows carry peer and notice on the right entries",
+          rows.count == 4
+            && rows[0]["role"] as? String == "peer"
+            && rows[0]["source"] as? String == "payments-ops-12"
+            && rows[0]["notice"] == nil
+            && rows[1]["role"] as? String == "notice"
+            && rows[1]["source"] == nil && rows[1]["sourceMode"] == nil
+            && (rows[1]["notice"] as? [String: Any])?["kind"] as? String == "task_finished"
+            && rows[2]["role"] as? String == "peer"
+            && rows[2]["source"] as? String == "release-room"
+            && rows[2]["notice"] == nil
+            && rows[3]["role"] as? String == "notice")
+}
+
+group("T13 peer de-duplication leaves notices alone") {
+    // Two identical notices are two things that happened: a task can finish, and the same
+    // sentence can be typed again. The enqueue/delivery pairing exists for Claude Code's
+    // double-write of one peer message and must not reach any other kind of entry.
+    let twice = [
+        noticeUserRow(coexistenceWire, at: "2026-08-26T10:00:00.000Z"),
+        noticeQueuedRow(coexistenceWire, at: "2026-08-26T10:00:01.000Z"),
+        noticeUserRow(coexistenceWire, at: "2026-08-26T10:00:02.000Z"),
+    ].joined(separator: "\n")
+    let repeated = Transcript.parse(twice, assistant: .claude)
+    check("T13 three identical notices stay three entries",
+          repeated.count == 3 && repeated.allSatisfy { $0.kind == .notice })
+
+    // The sharpest version of the same rule: a peer message whose prose is exactly the
+    // notice's fallback body. One is a person's words arriving from another session, the
+    // other is the app speaking; sharing a string does not make them one entry.
+    let sameWords = [
+        queuedPeer(coexistenceNotice.body, at: "2026-08-26T10:00:03.000Z"),
+        noticeUserRow(coexistenceWire, at: "2026-08-26T10:00:04.000Z"),
+    ].joined(separator: "\n")
+    let both = Transcript.parse(sameWords, assistant: .claude)
+    check("T13 a peer message and a notice with identical text are two entries",
+          both.count == 2 && both[0].kind == .peer && both[0].notice == nil
+            && both[1].kind == .notice && both[1].notice == coexistenceNotice)
+
+    // And the peer pairing still works while notices sit in the same window.
+    let interleaved = [
+        queuedPeer("status?", at: "2026-08-26T10:00:05.000Z"),
+        noticeUserRow(coexistenceWire, at: "2026-08-26T10:00:06.000Z"),
+        deliveredPeer("status?", at: "2026-08-26T10:00:07.000Z", id: "m-13"),
+    ].joined(separator: "\n")
+    let paired = Transcript.parse(interleaved, assistant: .claude)
+    check("T13 a notice between an enqueue and its delivery does not save the receipt",
+          paired.count == 2 && paired[0].kind == .notice
+            && paired[1].kind == .peer && paired[1].isPeerDelivery == true)
+}
+
+group("T14 an envelope quoted inside the other envelope stays what it arrived as") {
+    // A peer session that pastes a Clawdline envelope is still a peer session talking.
+    let quotedInPeer = Transcript.parse(
+        queuedPeer("look at this: " + coexistenceWire, at: "2026-08-26T10:00:00.000Z"),
+        assistant: .claude)
+    check("T14 a queued peer message quoting a notice is still a peer message",
+          quotedInPeer.count == 1 && quotedInPeer[0].kind == .peer
+            && quotedInPeer[0].text == "look at this: " + coexistenceWire
+            && quotedInPeer[0].notice == nil)
+
+    // Even when the quote is the whole message: `origin.kind == "peer"` is Claude Code saying
+    // who sent it, which is a stronger fact than what the text happens to look like.
+    let wholeQuote = Transcript.parse(
+        deliveredPeer(coexistenceWire, at: "2026-08-26T10:00:01.000Z", id: "m-14"),
+        assistant: .claude)
+    check("T14 a delivered peer message that is nothing but a notice envelope stays a peer",
+          wholeQuote.count == 1 && wholeQuote[0].kind == .peer
+            && wholeQuote[0].text == coexistenceWire
+            && wholeQuote[0].source == "payments-ops-12"
+            && wholeQuote[0].notice == nil)
+
+    // And the other way round: a notice whose readable body quotes a cross-session envelope
+    // is still the app speaking, because the wrapper around the whole line is Clawdline's.
+    let quoting = ClawdlineMessage.Notice(
+        event: .taskFinished(
+            task: .init(id: "3f9a21bc-0000-4000-8000-000000000000",
+                        title: peerEnvelope(body: "not a peer message")),
+            state: .failure, audience: .parent,
+            resultPath: "/tmp/.clawdline/3f9a21bc-0000-4000-8000-000000000000/result.json",
+            outstanding: 1, claimsReleased: false, childMayStillWrite: false),
+        body: "[clawdline] a title that quotes <cross-session-message from-name=\"nobody\">")
+    let quotingWire = ClawdlineMessage.encode(quoting)
+    let asNotice = Transcript.parse(noticeUserRow(quotingWire, at: "2026-08-26T10:00:02.000Z"),
+                                    assistant: .claude)
+    check("T14 a notice quoting a cross-session envelope stays a notice",
+          asNotice.count == 1 && asNotice[0].kind == .notice
+            && asNotice[0].notice == quoting && asNotice[0].source == nil)
+    let quotingRow = RemoteServer.transcriptRows(asNotice).first
+    check("T14 and reaches the wire as a notice with no peer attribution",
+          quotingRow?["role"] as? String == "notice" && quotingRow?["source"] == nil)
+}
+
+
+group("T15 a Clawdline notice does not disprove transcript ownership") {
+    // The mirror of T9, and the arm that group does not cover. A peer turn is another session
+    // talking; a notice is the app talking about a task, and the app types those into tabs it
+    // has already identified — including a child's own tab once that child dispatches in turn.
+    // So a notice is evidence of nothing, and `transcriptOwnership` must answer `.unavailable`
+    // ("says nothing") rather than `.other` ("somebody else's conversation").
+    let asUserTurn = noticeUserRow(coexistenceWire, at: "2026-08-26T10:00:00.000Z")
+    let asQueued = noticeQueuedRow(coexistenceWire, at: "2026-08-26T10:00:01.000Z")
+    check("T15 a delivered notice is not an external turn",
+          !Transcript.containsUserTurn(asUserTurn, assistant: .claude))
+    check("T15 a queued notice is not an external turn",
+          !Transcript.containsUserTurn(asQueued, assistant: .claude))
+    check("T15 but a peer turn beside it still is",
+          Transcript.containsUserTurn(
+              [asUserTurn, queuedPeer("who is on this?", at: "2026-08-26T10:00:02.000Z")]
+                  .joined(separator: "\n"), assistant: .claude))
+    check("T15 and so does a person's turn beside it",
+          Transcript.containsUserTurn(
+              [asUserTurn, peerTestLine([
+                  "type": "user", "timestamp": "2026-08-26T10:00:03.000Z",
+                  "message": ["role": "user", "content": [["type": "text", "text": "hello"]]],
+              ])].joined(separator: "\n"), assistant: .claude))
+
+    // Codex reaches the same answer through a different door: `firstUserMessage` looks for
+    // `.user`, and a Codex user item that is exactly an envelope is parsed as `.notice`.
+    let codexNotice = peerTestLine([
+        "type": "event_msg",
+        "payload": ["type": "item_completed",
+                    "item": ["type": "UserMessage",
+                             "content": [["type": "text", "text": coexistenceWire]]]],
+    ])
+    check("T15 a Codex notice item is not an external turn either",
+          !Transcript.containsUserTurn(codexNotice, assistant: .codex))
+    check("T15 while an ordinary Codex user item is",
+          Transcript.containsUserTurn(peerTestLine([
+              "type": "event_msg",
+              "payload": ["type": "item_completed",
+                          "item": ["type": "UserMessage",
+                                   "content": [["type": "text", "text": "hello"]]]],
+          ]), assistant: .codex))
+}
+
+group("T16 the two envelopes are mutually exclusive, so the order they are tried in is unobservable") {
+    // The `queue-operation` branch tries the peer envelope first and the notice envelope second.
+    // Nothing pins that order, and nothing can: no string satisfies both tests, so swapping the
+    // two lines is invisible. This group pins the property that actually holds. Because the peer
+    // test runs first, what `Transcript.parse` returns for a queued row IS the peer recogniser's
+    // own answer — a tie would show up here as a row that is both.
+    func queuedRaw(_ raw: String) -> String {
+        peerTestLine([
+            "type": "queue-operation", "operation": "enqueue",
+            "timestamp": "2026-08-26T10:00:00.000Z", "content": raw,
+        ])
+    }
+    let candidates: [(String, String)] = [
+        ("a plain peer envelope", peerEnvelope(body: "deploy when you can")),
+        ("a plain notice envelope", coexistenceWire),
+        ("a peer envelope whose whole body is a notice", peerEnvelope(body: coexistenceWire)),
+        ("a peer envelope on one line", "<cross-session-message from-name=\"ops\">"
+            + coexistenceWire + "</cross-session-message>"),
+        ("a notice with whitespace around it", "  " + coexistenceWire + "  "),
+        ("a notice with a peer envelope glued after it",
+         coexistenceWire + peerEnvelope(body: "and this")),
+        ("a peer envelope with a notice glued before it",
+         coexistenceWire + "\n" + peerEnvelope(body: "and this")),
+    ]
+    for (name, raw) in candidates {
+        let parsed = Transcript.parse(queuedRaw(raw), assistant: .claude).first
+        let peerWins = parsed?.kind == .peer
+        let noticeAccepts = ClawdlineMessage.decode(raw) != nil
+        check("T16 \(name) is not both a peer message and a notice", !(peerWins && noticeAccepts))
+    }
+    // And the structural reason, so a change to either wrapper that would make them overlap
+    // fails here rather than silently making the order load-bearing.
+    check("T16 the two recognisers require different opening tags",
+          !ClawdlineMessage.opening.hasPrefix("<cross-session-message")
+              && !"<cross-session-message".hasPrefix(ClawdlineMessage.opening))
 }
 
 // MARK: - Codex
@@ -9235,6 +9753,14 @@ group("workspace overlap follows the whole dispatch tree") {
     check("the aggregate line names every overlap",
           newSide.first?.line.contains(other.id.prefix(8)) == true
               && newSide.first?.line.contains(third.id.prefix(8)) == true)
+    let decodedOverlap = newSide.first.flatMap { ClawdlineMessage.decode($0.line) }
+    if case let .workspaceOverlap(task, audience, rows)? = decodedOverlap?.event {
+        check("workspace delivery is a typed aggregate notice",
+              task.id == scanningNewcomer.id && audience == .root && rows.count == 2
+                  && Set(rows.map(\.path)) == Set(["/a/b/c", "/a/b/third"]))
+    } else {
+        check("workspace delivery is a typed aggregate notice", false)
+    }
     expect("an identifiable opposing root receives its own line",
            notices.filter { $0.rootSessionID == secondRoot }.count, 1)
     expect("a null opposing root is quietly skipped", notices.count, 2)

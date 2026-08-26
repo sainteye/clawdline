@@ -123,6 +123,18 @@ enum Transcript {
     /// Whether the bounded beginning of a transcript contains any completed user turn.
     /// Startup metadata alone cannot disprove an identity: both assistants create their file
     /// before the first message is durable, so that state must remain eligible for another read.
+    ///
+    /// **`.peer` counts as an external turn and `.notice` deliberately does not.** A peer row is
+    /// another session addressing this one — somebody else's conversation reaching in, which
+    /// disproves ownership exactly as a person's turn does. A Clawdline notice is this app
+    /// speaking about a task, and the app types those into tabs it has already identified,
+    /// including a child's own tab as soon as that child hands work on in turn. Counting one
+    /// would let the app disprove an identity by talking to it. A transcript whose only
+    /// non-assistant content is a notice therefore stays `.unavailable` — says nothing — rather
+    /// than becoming `.other`, and the notice-only case is pinned by T15 the way the peer case is
+    /// pinned by T9. The Codex arm below reaches the same answer for the same reason:
+    /// `firstUserMessage` looks for `.user`, and a Codex user item that is exactly an envelope is
+    /// parsed as `.notice`.
     static func containsUserTurn(_ jsonl: String, assistant: Assistant) -> Bool {
         switch assistant {
         case .claude:
@@ -142,6 +154,7 @@ enum Transcript {
             case user
             case assistant
             case peer          // another Claude Code session addressing this one
+            case notice        // a versioned Clawdline message, not a person's words
             case tool          // a tool being called
             case toolResult    // what it returned
         }
@@ -157,6 +170,11 @@ enum Transcript {
         /// two real deliveries of identical prose from Claude's enqueue/delivery double-write.
         var peerMessageID: String? = nil
         var isPeerDelivery = false
+        /// The decoded payload of a ``.notice`` entry. Peer fields above and this one never
+        /// occupy the same entry: one is what another session said, the other is what the app
+        /// said about a task. Both are defaulted, so the synthesised memberwise initialiser
+        /// serves every call site and neither feature has to know about the other's fields.
+        var notice: ClawdlineMessage.Notice? = nil
     }
 
     // MARK: - Finding the file
@@ -600,6 +618,9 @@ enum Transcript {
                           peerMessageID: messageID.isEmpty ? nil : messageID,
                           isPeerDelivery: true)]
         }
+        // Clawdline's own notices need no exemption here: they are typed into the terminal the
+        // way a person types, so they arrive as ordinary non-meta input and every notice path
+        // below this filter is reached.
         if row["isMeta"] as? Bool == true { return [] }
 
         // Slash commands submitted by the remote page are recorded as top-level system rows,
@@ -624,7 +645,17 @@ enum Transcript {
             guard row["operation"] as? String == "enqueue",
                   let raw = row["content"] as? String
             else { return [] }
+            // Two different envelopes reach this one branch, and neither may claim the
+            // other's rows: a cross-session message is what another session said, a
+            // Clawdline notice is what the app said about a task. Both wrappers are
+            // all-or-nothing over the whole queued string, so a peer message that merely
+            // quotes a notice stays a peer message and the reverse cannot happen. The peer
+            // test runs first because its envelope is the one that carries a free-form body.
             if let peer = crossSessionMessage(in: raw, at: time) { return [peer] }
+            if let notice = ClawdlineMessage.decode(raw) {
+                return [Entry(kind: .notice, text: notice.body, tool: nil, time: time,
+                              notice: notice)]
+            }
             let text = withoutMachineBlocks(raw)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return [] }
@@ -638,6 +669,17 @@ enum Transcript {
             blocks = list
         } else if let text = message["content"] as? String {
             blocks = [["type": "text", "text": text]]
+        }
+
+        // The envelope owns the whole turn. Requiring one text block stops a pasted or quoted
+        // fragment beside an image or another block from changing roles merely because one part
+        // happens to contain a valid envelope.
+        if type == "user", blocks.count == 1,
+           blocks[0]["type"] as? String == "text",
+           let raw = blocks[0]["text"] as? String,
+           let notice = ClawdlineMessage.decode(raw) {
+            return [Entry(kind: .notice, text: notice.body, tool: nil, time: time,
+                          notice: notice)]
         }
 
         var out: [Entry] = []
@@ -1105,14 +1147,16 @@ extension Transcript {
         while i < entries.count {
             let entry = entries[i]
             switch entry.kind {
-            case .user, .assistant:
+            case .user, .assistant, .notice:
                 endBlock()
                 let isUser = entry.kind == .user
-                var label = isUser ? "YOU" : "CLAUDE"
+                let isNotice = entry.kind == .notice
+                var label = isUser ? "YOU" : (isNotice ? "CLAWDLINE" : "CLAUDE")
                 if let t = entry.time { label += "   \(clock.string(from: t))" }
                 add(label + "\n", [
                     .font: header,
-                    .foregroundColor: isUser ? Style.accent : NSColor.secondaryLabelColor,
+                    .foregroundColor: isUser || isNotice
+                        ? Style.accent : NSColor.secondaryLabelColor,
                     .kern: 1.1,
                     .paragraphStyle: headerStyle,
                 ])

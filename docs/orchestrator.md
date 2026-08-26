@@ -607,8 +607,8 @@ consume the work timeout: as for every task, `timeout_minutes` begins at `briefe
 Queued tasks are excluded from workspace-overlap scans because they have opened no tab and touched
 no file. When the background pump promotes one to `spawning`, it scans the then-current active
 tasks. The original dispatch response has already returned, so any overlap warning is delivered as
-the same best-effort typed `[clawdline]` line at promotion rather than retroactively added to that
-response.
+the same best-effort version-1 `workspace_overlap` notice at promotion rather than retroactively
+added to that response.
 
 ### When two roots share a workspace
 
@@ -640,10 +640,11 @@ dispatch response nor either root's typed line reports that pair. If either fiel
 warns as before. Intersecting non-empty declarations still go through claims arbitration first,
 including `409 workspace_busy` across two definitely identified roots.
 
-The new task's root also gets one aggregate `[clawdline]` line for all overlaps, while every other
-root that can be found gets the line concerning its task. A root with a null session id cannot be
-found and is quietly skipped. Delivery runs outside the request queue; as with completion
-notification, a root showing a menu or a failed terminal send does not affect dispatch.
+The new task's root also gets one aggregate `workspace_overlap` notice for all overlaps, while
+every other root that can be found gets the notice concerning its task. The fallback `body` keeps
+the former concise `[clawdline] workspace overlap: …` sentence. A root with a null session id
+cannot be found and is quietly skipped. Delivery runs outside the request queue; as with
+completion notification, a root showing a menu or a failed terminal send does not affect dispatch.
 `orchestrator_notify_root` turns these typed lines off too.
 
 ### `CHILD.md` — written by the app, read by the child
@@ -1004,16 +1005,31 @@ running, and the next two spawns failing for the reason the first four did.
 
 When a task finalizes, the app looks for the root's terminal — the root declared a session id, and
 Clawdline knows which tty each session id belongs to from [its hooks](hooks.md) — and if it finds
-one that is not currently showing a menu, it types one line into it:
+one that is not currently showing a menu, it types one compact semantic message into it. On the
+wire that message is one exact line: a wrapper around one JSON object with no LF or CR bytes, so
+both iTerm and tmux preserve it byte-for-byte:
 
 ```
-[clawdline] task 3f9a21bc (Project portrait, medieval hand-drawn) finished: success — see /tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234/result.json
+<clawdline-notice>{"audience":"root","body":"[clawdline] task 3f9a21bc (Project portrait) finished: success — read /tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234/result.json","child_may_still_write":false,"claims_released":false,"kind":"task_finished","outstanding":0,"protocol":"clawdline.notice","result_path":"/tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234/result.json","state":"success","task":{"id":"3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","title":"Project portrait"},"version":1}</clawdline-notice>
 ```
 
-That is the whole notification and it is deliberately small. It is not the summary — the summary can
-be a paragraph and this is a line typed into somebody's prompt, possibly while they are mid-sentence
-— it is a pointer, and the root reads the file when it gets round to it. One attempt; a failure is
-logged and not retried, because the second copy of a notification is worse than none.
+`protocol` and `version` identify the envelope. Version 1 has two closed `kind` values:
+`task_finished` and `workspace_overlap`. A completion has a closed terminal `state`, its task,
+audience, result path, outstanding-child count and the two timeout/claim flags. An overlap has the
+new task plus one or more `{task,path}` rows. `body` is the concise fallback the assistant can read;
+it still says what finished, where `result.json` is, whether sibling work remains, whether a
+timed-out tab may still write, and — as prose, with no field of its own — any declared claims the
+child never touched. It is not the child's summary.
+
+Recognition is strict and whole-message only. Any LF or CR, extra keys, unknown kinds or versions,
+malformed JSON, missing wrapper bytes, text before or after the wrapper, and quoted lookalikes are
+not partly interpreted. They remain visible with their full text, as whatever the row they arrived
+in already was — an ordinary user turn, or a peer message when the lookalike was quoted inside a
+cross-session envelope. Claude transcripts and Codex rollouts decode the same envelope to a
+dedicated notice entry; no reader reconstructs semantics from `body`.
+
+One delivery attempt; a failure is logged and not retried, because the second copy of a
+notification is worse than none.
 
 `orchestrator_notify_root` turns it off for anybody who would rather poll. Every task change also
 goes out on [the event stream](api.md#the-event-stream) as an `orchestrator` frame, which is how the

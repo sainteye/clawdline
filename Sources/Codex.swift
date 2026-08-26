@@ -375,6 +375,11 @@ enum Codex {
 
         switch item["type"] as? String {
         case "UserMessage":
+            if let raw = exactText(inContent: item["content"]),
+               let notice = ClawdlineMessage.decode(raw) {
+                return [Transcript.Entry(kind: .notice, text: notice.body, tool: nil,
+                                         time: time, notice: notice)]
+            }
             return [entry(.user, text(inContent: item["content"]))].compactMap { $0 }
 
         case "AgentMessage":
@@ -420,6 +425,16 @@ enum Codex {
         return blocks.compactMap { $0["text"] as? String }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
+    }
+
+    /// A whole user item containing exactly one textual body. Structured Clawdline input is
+    /// recognised only at this boundary; joining several blocks first would allow one valid
+    /// fragment inside a larger, user-authored turn to impersonate the whole message.
+    private static func exactText(inContent content: Any?) -> String? {
+        if let string = content as? String { return string }
+        guard let blocks = content as? [[String: Any]], blocks.count == 1,
+              let text = blocks[0]["text"] as? String else { return nil }
+        return text
     }
 
     /// A command as somebody would read it.
