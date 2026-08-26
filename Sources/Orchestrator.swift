@@ -254,6 +254,7 @@ enum Orchestrator {
     /// parameter for the reason ``Planner/draft(for:places:assistants:timeout:)`` has one — a
     /// test can describe a Mac rather than being run on one.
     private static func scheduleObject(from body: [String: Any], id: String, createdAt: Int?,
+                                       carrying previous: [String: Any] = [:],
                                        places: [StartPoints.Place],
                                        isDirectory: (String) -> Bool) -> ScheduleObject {
         let allowed = Set(["title", "at", "days", "place_id", "assistant", "instructions",
@@ -282,6 +283,16 @@ enum Orchestrator {
         // file carrying `"model": ""` is a field whoever opens it later has to read and dismiss.
         if let model = body["model"], (model as? String)?.isEmpty != true { task["model"] = model }
         if let timeout = body["timeout_minutes"] { task["timeout_minutes"] = timeout }
+        // **Fields no form has a control for are carried, not dropped.** A schedule written by
+        // hand with `claims` in it — and the Mac is where those live — would otherwise lose them
+        // the first time somebody opened it and pressed Save, silently, on either surface.
+        // Measured before this existed: claims and permission_mode were gone after one save.
+        // A create passes nothing here and so is unaffected; only a save over an existing file
+        // has anything to carry.
+        for key in ["claims", "permission_mode", "serialize", "isolation", "isolation_base",
+                    "deliverables", "kind", "plan"] where task[key] == nil {
+            if let kept = previous[key] { task[key] = kept }
+        }
         var obj: [String: Any] = [
             "clawdline_schedule": 1,
             "schedule_id": id,
@@ -463,9 +474,14 @@ enum Orchestrator {
                   .appendingPathComponent("\(id).json")) else {
             return .refused(404, "not_found", "No schedule named that")
         }
+        // The old task template, read back out of the file being replaced. It is the only place
+        // the carried fields exist.
+        let carried = ((try? JSONSerialization.jsonObject(with: previous)) as? [String: Any])?["task"]
+            as? [String: Any] ?? [:]
         let obj: [String: Any]
         switch scheduleObject(from: body, id: existing.id,
                               createdAt: existing.createdAt.map { Int($0.timeIntervalSince1970) },
+                              carrying: carried,
                               places: places, isDirectory: isDirectory) {
         case .refused(let reply): return reply
         case .built(let built, _): obj = built

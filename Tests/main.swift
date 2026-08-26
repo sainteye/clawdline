@@ -12680,6 +12680,59 @@ group("the Mac's schedule form and the file it wrote agree about what it says") 
            after?.taskTemplate["model"] as? String, "opus")
 }
 
+group("a save keeps the task fields no form has a control for") {
+    // Written by hand, with three fields the form cannot show. Opening such a file and pressing
+    // Save used to return it with `claims` and `permission_mode` gone — measured, not inferred,
+    // and on both surfaces. The Mac is where files like this actually live, so its Edit button
+    // is where somebody meets it first.
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-carry-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+        Orchestrator.scheduleDirectoryOverrideForTesting = nil
+    }
+    Orchestrator.scheduleDirectoryOverrideForTesting = directory
+
+    let id = "aaaaaaaa-1111-4222-8333-444444444444"
+    let handWritten: [String: Any] = [
+        "clawdline_schedule": 1, "schedule_id": id, "title": "posts",
+        "when": ["at": "09:00", "days": "daily"],
+        "task": ["assistant": "claude", "project_dir": "/tmp",
+                 "instructions": "publish today", "claims": ["posts"],
+                 "permission_mode": "edits", "kind": "custom"],
+        "enabled": true,
+    ]
+    try! JSONSerialization.data(withJSONObject: handWritten)
+        .write(to: directory.appendingPathComponent("\(id).json"))
+
+    let place = StartPoints.Place(id: "p1", path: "/tmp", label: "tmp", at: Date())
+    let saved = Orchestrator.updateSchedule(
+        id: id,
+        from: ["title": "posts", "at": "10:00", "days": "daily", "place_id": "p1",
+               "assistant": "claude", "instructions": "publish today", "enabled": true],
+        places: [place], isDirectory: { _ in true })
+    check("the save was accepted", { if case .refused = saved { return false }; return true }())
+
+    let after = (try? JSONSerialization.jsonObject(
+        with: Data(contentsOf: directory.appendingPathComponent("\(id).json")))) as? [String: Any]
+    let task = after?["task"] as? [String: Any] ?? [:]
+    expect("claims survived a save that never mentioned them", task["claims"] as? [String], ["posts"])
+    expect("and so did permission_mode", task["permission_mode"] as? String, "edits")
+    expect("and kind", task["kind"] as? String, "custom")
+    expect("while the field the form did change is the new one",
+           (after?["when"] as? [String: Any])?["at"] as? String, "10:00")
+    // A create has nothing to carry and must not invent any of it.
+    let made = Orchestrator.createSchedule(
+        from: ["title": "fresh", "at": "07:00", "days": "daily", "place_id": "p1",
+               "assistant": "claude", "instructions": "something new", "enabled": true],
+        places: [place], isDirectory: { _ in true })
+    check("a create still writes a task with no carried fields", { if case .refused = made { return false }; return true }())
+    let fresh = Orchestrator.schedules().first { $0.title == "fresh" }
+    let freshTask = fresh?.taskTemplate ?? [:]
+    check("a new schedule has no claims of its own", freshTask["claims"] == nil)
+}
+
 // MARK: - Result
 
 print("")
