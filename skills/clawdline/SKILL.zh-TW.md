@@ -324,6 +324,7 @@ jq -n \
   --arg instructions "……完整的任務說明……" \
   --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --arg root_session "$ROOT_SESSION" \
+  --arg root_assistant "$ROOT_ASSISTANT" \
   --arg root_label "clawdline 主控 session" \
   --arg model "haiku" \
   --arg plan "$PLAN" \
@@ -332,7 +333,7 @@ jq -n \
     isolation:"none", project_dir:$dir, title:$title, instructions:$instructions, plan:$plan,
     deliverables:["artifacts/out.png"], timeout_minutes:30, created_at:$created,
     root:{session_id:(if $root_session=="" then null else $root_session end),
-          assistant:"claude", project_dir:$dir, label:$root_label}}' \
+          assistant:$root_assistant, project_dir:$dir, label:$root_label}}' \
   > "/tmp/.clawdline/$task_id/task.json"
 ```
 
@@ -356,10 +357,26 @@ jq -n \
 | `isolation_base` | 選填 Git revision，只能跟 `isolation: "worktree"` 一起用；不寫就是實際開始時的 `HEAD` |
 | `plan` | 選填但**強烈建議**：整張圖，≤ 4 KiB。同一批任務全部放同一份 |
 | `timeout_minutes` | 1…240，沒寫當 30 |
-| `root.session_id` | 下面那招查出來的；查不到就 `null`，不要瞎編 |
+| `root.session_id` | 目前這個助理的 conversation id，照下面查；查不到就 `null`，不要瞎編 |
+| `root.assistant` | **派出這件 task 的助理**，`claude` 或 `codex`；不是最外層 `assistant` 所指定的 child |
 | `root.parent_task` | **只有你自己是 child 才要填**——填你自己那件 task 的 id（第一句話裡那個）。root 派工不用寫。填錯只會讓這件任務被算到別人頭上或被算得更深，不會佔到便宜 |
 
-### 查自己的 session id（best-effort，查不到就 null）
+### 查自己的助理與 session id（best-effort，查不到就 null）
+
+**Codex：**目前 rollout id 已直接放在環境變數裡。要跟寫 `task.json` 放在同一個 shell
+呼叫，兩個變數才會一起進 `jq`：
+
+```bash
+ROOT_ASSISTANT=codex
+ROOT_SESSION="${CODEX_THREAD_ID:-${CODEX_SESSION_ID:-}}"
+echo "root session = ${ROOT_SESSION:-null} ($ROOT_ASSISTANT)"
+```
+
+`CODEX_THREAD_ID` 與相容名稱 `CODEX_SESSION_ID` 就是 Codex rollout 裡的
+`session_meta.session_id`。Broker 只會在宣告的 Codex terminal **目前那個 pid** 正持有同一份
+user rollout 時接受它；從舊 rollout 複製來的 id 不會把 child 掛到被重用的 terminal 下。
+
+**Claude：**先設定助理，再用 nonce 去自己的 transcript 裡撈 id。
 
 Claude Code 沒有辦法直接問「我是誰」，所以用一個 nonce 去自己的 transcript 裡撈。
 **這招必須拆成兩個工具呼叫**——某個呼叫的指令文字，要等**那個呼叫結束之後**才會被寫進
@@ -367,11 +384,13 @@ transcript，所以「echo nonce 之後在同一個呼叫裡 grep」永遠撈不
 
 ```bash
 # 呼叫 A（跟步驟 3 同一個呼叫就行）：把 nonce 留進 transcript
+ROOT_ASSISTANT=claude
 echo "clawdline-nonce-$task_id"
 ```
 
 ```bash
 # 呼叫 B（下一個工具呼叫，跟步驟 4、5 放同一個呼叫）：這時候才撈得到
+ROOT_ASSISTANT=claude
 slug=$(printf '%s' "$PWD" | sed 's/[^a-zA-Z0-9]/-/g')
 f=$(grep -l "clawdline-nonce-<task_id>" "$HOME/.claude/projects/$slug/"*.jsonl 2>/dev/null | head -1)
 ROOT_SESSION=$(if [ -n "$f" ]; then basename "$f" .jsonl; fi)
@@ -401,8 +420,9 @@ echo "root session = ${ROOT_SESSION:-null}"
 **這件事有兩個用途，第二個很容易忘：** 一是完成時 app 要知道該回頭通知哪個終端機；二是
 **清單裡那個 child 的 row 要縮排掛在你底下**，靠的就是這個 id。填 `null` 的話任務照樣跑，
 但完成通知只能自己 poll，而且那一行會孤零零地浮在清單中間——上面標著 `Child`，卻不在任何人
-底下，看起來像分組壞掉。查不到就填 `null`（不要瞎編），但查得到就一定要填。`ROOT_SESSION` 要跟步驟 4 的 `jq` 在同一個
-bash 呼叫裡，不然變數不會留下來——或者直接把查到的字串貼進 `--arg`。
+底下，看起來像分組壞掉。查不到就填 `null`（不要瞎編），但查得到就一定要填。
+`ROOT_SESSION` 與 `ROOT_ASSISTANT` 都要跟步驟 4 的 `jq` 在同一個 bash 呼叫裡，不然變數
+不會留下來——或者直接把兩個字串貼進 `--arg`。
 
 ---
 
@@ -690,17 +710,23 @@ TOKEN=$(cat ~/.config/clawdline/orchestrator-token)
 task_id=<呼叫A印出的id>
 secret=$(openssl rand -hex 32)
 
-slug=$(printf '%s' "$PWD" | sed 's/[^a-zA-Z0-9]/-/g')
-f=$(grep -l "clawdline-nonce-$task_id" "$HOME/.claude/projects/$slug/"*.jsonl 2>/dev/null | head -1)
-ROOT_SESSION=$(if [ -n "$f" ]; then basename "$f" .jsonl; fi)
+if [ -n "${CODEX_THREAD_ID:-${CODEX_SESSION_ID:-}}" ]; then
+  ROOT_ASSISTANT=codex
+  ROOT_SESSION="${CODEX_THREAD_ID:-${CODEX_SESSION_ID:-}}"
+else
+  ROOT_ASSISTANT=claude
+  slug=$(printf '%s' "$PWD" | sed 's/[^a-zA-Z0-9]/-/g')
+  f=$(grep -l "clawdline-nonce-$task_id" "$HOME/.claude/projects/$slug/"*.jsonl 2>/dev/null | head -1)
+  ROOT_SESSION=$(if [ -n "$f" ]; then basename "$f" .jsonl; fi)
+fi
 
 jq -n --arg id "$task_id" --arg dir "$PWD" --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-      --arg rs "$ROOT_SESSION" \
+      --arg rs "$ROOT_SESSION" --arg ra "$ROOT_ASSISTANT" \
   '{clawdline_protocol:1, task_id:$id, kind:"image", assistant:"codex",
     project_dir:$dir, title:"專案肖像：中世紀手繪風",
     instructions:"你在 /Users/you/code/clawdline，這是一個 macOS 選單列 app，會盯著終端機裡的 Claude Code 與 Codex session，把它們的狀態畫在選單列、瀏海和一個浮動面板上。請先讀 README.md 和 docs/interface.md 弄懂它在做什麼，然後畫一張代表這個專案的圖：中世紀手抄本插畫風格，要有裝飾性邊框與手繪筆觸，高度藝術性。請用你的內建 image_gen 工具，橫幅、高品質。image_gen 只會寫到 ~/.codex/generated_images/<session>/、不能指定存檔位置，所以生完之後把那個 PNG 複製到 /tmp/.clawdline/<TASK_ID>/artifacts/project-portrait.png，並用 ls -la 確認檔案在。完成後照 CHILD.md 寫 result.json。",
     deliverables:["artifacts/project-portrait.png"], timeout_minutes:30, created_at:$created,
-    root:{session_id:(if $rs=="" then null else $rs end), assistant:"claude",
+    root:{session_id:(if $rs=="" then null else $rs end), assistant:$ra,
           project_dir:$dir, label:"clawdline 主控"}}' \
   > "/tmp/.clawdline/$task_id/task.json"
 

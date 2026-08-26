@@ -843,6 +843,9 @@ enum Orchestrator {
         var briefedAt: Date?
         var finishedAt: Date?
         var rootSessionId: String?
+        /// Which assistant owns `rootSessionId`. Older registry rows predate the field and are
+        /// Claude roots, so nil retains that spelling rather than making them unresolvable.
+        var rootAssistant: Assistant?
         var rootLabel: String?
         /// How far from the person at the keyboard this task is: `1` for one a human's session
         /// dispatched, `2` for one dispatched by a child of theirs. Stored rather than derived —
@@ -1563,6 +1566,7 @@ enum Orchestrator {
         var instructions = ""
         var timeoutMinutes = 30
         var rootSessionId: String?
+        var rootAssistant: Assistant?
         var rootLabel: String?
         var parentTaskId: String?
         var plan: String?
@@ -1772,6 +1776,13 @@ enum Orchestrator {
         }
         let rootObj = obj["root"] as? [String: Any] ?? [:]
         made.rootSessionId = rootObj["session_id"] as? String
+        if let rawAssistant = rootObj["assistant"], !(rawAssistant is NSNull) {
+            guard let name = rawAssistant as? String,
+                  let assistant = Assistant(rawValue: name) else {
+                return .bad("root.assistant must be claude or codex")
+            }
+            made.rootAssistant = assistant
+        }
         made.rootLabel = (rootObj["label"] as? String).map { String($0.prefix(120)) }
         // A child knows its own task id — it is in the first line it was ever sent — long before
         // this app has worked out what the session inside that tab calls itself. Naming it here
@@ -2632,6 +2643,7 @@ enum Orchestrator {
                         permission: permission, projectDir: made.projectDir,
                         timeoutMinutes: made.timeoutMinutes, created: Date(),
                         rootSessionId: made.rootSessionId,
+                        rootAssistant: made.rootAssistant,
                         rootLabel: schedule?.title ?? made.rootLabel,
                         depth: depth, parentTaskId: made.parentTaskId, plan: made.plan,
                         serialize: made.serialize, claims: made.claims,
@@ -3365,7 +3377,8 @@ enum Orchestrator {
     /// as the close having done nothing at all.
     @discardableResult
     static func cancelChildren(ofRoot session: TargetSession) -> [String] {
-        guard let rootSession = rootIdentity(of: session) else { return [] }
+        guard let rootSession = rootIdentity(
+                of: session, sessionID: Transcript.sessionID(of:)) else { return [] }
         let mine = liveTasks(dispatchedBy: rootSession)
         let lingering = lingeringTasks(dispatchedBy: rootSession)
         let below = liveTasks(under: mine + lingering)
@@ -3438,12 +3451,13 @@ enum Orchestrator {
         }
     }
 
-    /// What a session calls itself, which is what `rootSessionId` was written from — the terminal
-    /// id is this app's name for a tab and means nothing to the assistant inside it. Same
-    /// main-thread hop as `target(withID:)`, because that is where the notes are reloaded.
-    private static func rootIdentity(of session: TargetSession) -> String? {
-        if Thread.isMainThread { return HookBridge.note(for: session)?.session }
-        return DispatchQueue.main.sync { HookBridge.note(for: session)?.session }
+    /// What a session calls itself, which is what `rootSessionId` was written from. The unified
+    /// transcript lookup validates Claude against its current process/transcript and Codex
+    /// against the rollout held open by its current pid, so a reused tty cannot lend an old
+    /// conversation identity to the new process.
+    static func rootIdentity(of session: TargetSession,
+                             sessionID: (TargetSession) -> String?) -> String? {
+        sessionID(session)
     }
 
     // MARK: - Lifecycle: the beat
@@ -3870,7 +3884,10 @@ enum Orchestrator {
 
         guard Config.shared.orchestratorNotifyRoot,
               let from = envelope.fromSession,
-              let sender = target(forRootSession: from),
+              let sender = target(forRootSession: from, assistant: nil,
+                                  resolution: .handoff,
+                                  among: rootTargets(),
+                                  sessionID: Transcript.sessionID(of:)),
               !Targets.isChoosing(sender) else { return }
         let receipt = handoffReceipt(id: id, title: envelope.title, assistant: assistant,
                                      projectDir: envelope.projectDir, delivered: delivered)
@@ -4454,9 +4471,11 @@ enum Orchestrator {
         }
 
         guard let rootID = task.rootSessionId else { return }
-        guard let root = SessionWatch.shared.targets.first(where: {
-            HookBridge.note(for: $0)?.session == rootID
-        }) else { return }
+        guard let root = target(forRootSession: rootID,
+                                assistant: task.rootAssistant ?? .claude,
+                                resolution: .task,
+                                among: rootTargets(),
+                                sessionID: Transcript.sessionID(of:)) else { return }
         // Words into a menu confirm the highlighted row instead of typing. Skip rather than risk
         // answering a question on the root's behalf; the record is still in the app and the page.
         guard !Targets.isChoosing(root) else { return }
@@ -4515,7 +4534,11 @@ enum Orchestrator {
 
     private static func sendWorkspaceOverlap(_ line: String, toRootSession sessionID: String,
                                              taskID: String) {
-        guard let root = target(forRootSession: sessionID),
+        let assistant = held(taskID)?.rootAssistant ?? .claude
+        guard let root = target(forRootSession: sessionID, assistant: assistant,
+                                resolution: .task,
+                                among: rootTargets(),
+                                sessionID: Transcript.sessionID(of:)),
               !Targets.isChoosing(root) else { return }
         if let failure = Targets.send(line, to: root) {
             Log.write("orchestrator: could not notify task \(taskID) root of workspace overlap"
@@ -4605,9 +4628,10 @@ enum Orchestrator {
                                    done: batch.done, failed: batch.failed)
         var url = "/"
         if !key.hasPrefix("task:"),
-           let root = SessionWatch.shared.targets.first(where: {
-               HookBridge.note(for: $0)?.session == key
-           }) {
+           let root = target(forRootSession: key, assistant: nil,
+                             resolution: .task,
+                             among: rootTargets(),
+                             sessionID: Transcript.sessionID(of:)) {
             url = "/#session=\(root.id)"
         }
         WebPush.send(title: message.title, body: message.body, url: url,
@@ -5262,19 +5286,29 @@ enum Orchestrator {
         return handledScheduleFires[id]
     }
 
-    private static func record(of task: Task) -> [String: Any] {
-        var rootTerminal: String?
+    /// The terminal a task belongs under. Supplying the process-bound identity reader keeps the
+    /// selection pure enough to exercise without live terminals; production supplies
+    /// ``Transcript/sessionID(of:)``.
+    static func rootTerminalID(for task: Task, parentTerminalID: String?,
+                               among targets: [TargetSession],
+                               sessionID: (TargetSession) -> String?) -> String? {
         // The parent task first, when there is one. A dispatcher one level down is sitting in a
         // tab this app opened, so its terminal id is written in that task's record — whereas the
-        // hook notes below only know sessions that write them, which a Codex child never does.
-        if let parent = task.parentTaskId, let above = held(parent) {
-            rootTerminal = above.childTerminalId
-        }
-        if rootTerminal == nil, let rootID = task.rootSessionId {
-            rootTerminal = SessionWatch.shared.targets.first {
-                HookBridge.note(for: $0)?.session == rootID
-            }?.id
-        }
+        // transcript lookup below need not even run. This preserves the direct depth-2 mapping.
+        if let parentTerminalID { return parentTerminalID }
+        guard let rootID = task.rootSessionId else { return nil }
+        // Registry rows written before root.assistant existed can only have come from the
+        // Claude-only protocol. Defaulting those rows is compatibility, not a guess for new JSON.
+        let assistant = task.rootAssistant ?? .claude
+        return target(forRootSession: rootID, assistant: assistant,
+                      resolution: .task, among: targets, sessionID: sessionID)?.id
+    }
+
+    private static func record(of task: Task) -> [String: Any] {
+        let parentTerminal = task.parentTaskId.flatMap { held($0)?.childTerminalId }
+        let rootTerminal = rootTerminalID(for: task, parentTerminalID: parentTerminal,
+                                          among: SessionWatch.shared.targets,
+                                          sessionID: Transcript.sessionID(of:))
         return shape(task, rootTerminal: rootTerminal)
     }
 
@@ -5304,6 +5338,7 @@ enum Orchestrator {
         if let at = task.finishedAt { out["finishedAt"] = Int(at.timeIntervalSince1970) }
         var root: [String: Any] = [:]
         if let id = task.rootSessionId { root["sessionId"] = id }
+        if let assistant = task.rootAssistant { root["assistant"] = assistant.rawValue }
         if let label = task.rootLabel { root["label"] = label }
         if let terminal = rootTerminal { root["terminalId"] = terminal }
         if let parent = task.parentTaskId { root["taskId"] = parent }
@@ -5412,6 +5447,7 @@ enum Orchestrator {
         if let at = task.briefedAt { out["briefed_at"] = at.timeIntervalSince1970 }
         if let at = task.finishedAt { out["finished_at"] = at.timeIntervalSince1970 }
         if let v = task.rootSessionId { out["root_session"] = v }
+        if let v = task.rootAssistant { out["root_assistant"] = v.rawValue }
         if let v = task.rootLabel { out["root_label"] = v }
         if let v = task.parentTaskId { out["parent_task"] = v }
         if let v = task.model { out["model"] = v }
@@ -5502,6 +5538,7 @@ enum Orchestrator {
         task.briefedAt = (obj["briefed_at"] as? Double).map(Date.init(timeIntervalSince1970:))
         task.finishedAt = (obj["finished_at"] as? Double).map(Date.init(timeIntervalSince1970:))
         task.rootSessionId = obj["root_session"] as? String
+        task.rootAssistant = (obj["root_assistant"] as? String).flatMap(Assistant.init(rawValue:))
         task.rootLabel = obj["root_label"] as? String
         task.parentTaskId = obj["parent_task"] as? String
         task.model = StartPoints.modelName(obj["model"] as? String)
@@ -5709,14 +5746,28 @@ enum Orchestrator {
         return DispatchQueue.main.sync { SessionWatch.shared.targets.first { $0.id == id } }
     }
 
-    private static func target(forRootSession sessionID: String) -> TargetSession? {
-        let find = {
-            SessionWatch.shared.targets.first {
-                $0.id == sessionID || HookBridge.note(for: $0)?.session == sessionID
-            }
+    /// Task roots are conversation identities and therefore require the process-bound reader.
+    /// Handoff's documented `from_session` is deliberately wider: it may name the watched
+    /// terminal directly. Keeping the policies explicit prevents that compatibility shortcut
+    /// from weakening task mounting, notifications, overlap warnings, or root cancellation.
+    enum RootResolution: Equatable {
+        case task, handoff
+    }
+
+    static func target(forRootSession rootSessionID: String,
+                       assistant: Assistant?, resolution: RootResolution,
+                       among targets: [TargetSession],
+                       sessionID: (TargetSession) -> String?) -> TargetSession? {
+        targets.first { target in
+            guard assistant == nil || target.assistant == assistant else { return false }
+            if resolution == .handoff && target.id == rootSessionID { return true }
+            return sessionID(target) == rootSessionID
         }
-        if Thread.isMainThread { return find() }
-        return DispatchQueue.main.sync(execute: find)
+    }
+
+    private static func rootTargets() -> [TargetSession] {
+        if Thread.isMainThread { return SessionWatch.shared.targets }
+        return DispatchQueue.main.sync { SessionWatch.shared.targets }
     }
 
     /// Test seam: forget everything in memory.

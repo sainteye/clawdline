@@ -942,7 +942,9 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/handoffs \
 (the default) or `codex`; optional `model` is 1…64 lower-case letters, digits, `.`, `_`, or `-`,
 and cannot begin with `-`. Optional `title` and free-form `from_session` are each at most 200
 characters. `title` labels the tab; `from_session`, when it identifies a watched session, receives
-one best-effort typed delivery receipt.
+one best-effort typed delivery receipt. This is intentionally the loose resolver: a conversation
+id or the watched terminal's own id may identify the sender. Task `root.session_id` does not have
+that terminal-id shortcut.
 
 Opening the terminal is synchronous and is named in `opened`; composer waiting, trust confirmation,
 typing, and transcript confirmation happen after this response. The durable registry stores only
@@ -982,7 +984,7 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
     -H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)" \
     -H 'Content-Type: application/json' \
     -d "{\"task_id\":\"$TASK\",\"secret\":\"$SECRET\"}"
-{"ok":true,"task":{"id":"3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","state":"spawning","kind":"image","title":"Project portrait","assistant":"codex","projectDir":"/Users/you/code/clawdline","created":1787100000,"spawnedAt":1787100002,"dir":"/tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","root":{"sessionId":"841cbb8d-58b1-4765-9a71-bcdba19bcfef","label":"clawdline main"},"child":{"terminalId":"9A1F…","backend":"iterm"}}}
+{"ok":true,"task":{"id":"3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","state":"spawning","kind":"image","title":"Project portrait","assistant":"codex","projectDir":"/Users/you/code/clawdline","created":1787100000,"spawnedAt":1787100002,"dir":"/tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","root":{"sessionId":"841cbb8d-58b1-4765-9a71-bcdba19bcfef","assistant":"claude","label":"clawdline main"},"child":{"terminalId":"9A1F…","backend":"iterm"}}}
 ```
 
 *(Example. The orchestrator routes are newer than the server this page's other transcripts were run
@@ -1326,7 +1328,7 @@ The record:
     "commits": 3,               // git rev-list --count base..branch; null when unreadable
     "dirty": false              // worktree porcelain; null after the checkout disappeared
   },
-  "root":  {"sessionId": "841cbb8d-…", "label": "clawdline main", "terminalId": "27439AEE-…",
+  "root":  {"sessionId": "841cbb8d-…", "assistant": "claude", "label": "clawdline main", "terminalId": "27439AEE-…",
             "taskId": "a70c5e11-…"},   // the parent task — depth 2 only, and only when it said so
   "child": {"terminalId": "9A1F…", "backend": "iterm", "sessionId": "0f2b91ac-…"},
   "summary": "…",               // finished tasks; the child's own sentence
@@ -1343,9 +1345,15 @@ record. The at-rest key is a dedicated random 32-byte value in the app's private
 not a value derived from any request credential.
 
 `child.terminalId` is in the same space as every `id` in `/v1/sessions`, which is what makes the
-child row in a session list joinable to the task that opened it. `root.terminalId` is resolved live
-— from `root.taskId` when there is one, otherwise from the root's session id — and is absent when
-that session has gone. `depth` and `root.taskId` are what a client nests a list by: a `depth` of 2
+child row in a session list joinable to the task that opened it. `root.assistant` preserves the
+validated `task.json` field; an absent or explicit-null input is omitted, preserving legacy rows,
+which resolve as Claude. Empty strings and values other than `claude` or `codex` are refused.
+`root.terminalId` is resolved live — directly from `root.taskId` when there is one; otherwise the
+declared assistant must own the current process-bound identity. Claude's exact transcript must
+belong to its current process and must have been named by the process registry or hook; title/time
+ranking alone is display discovery, not identity. Codex's id must come from the user rollout held
+open by its current pid. Null or stale ids and reused terminals stay unresolved instead of mounting
+under a different row. `depth` and `root.taskId` are what a client nests a list by: a `depth` of 2
 means the row belongs under another *child* row, not under a root, and `taskId` says which. Two is
 the floor, so a client never has to draw a third level. `usage` appears at finalize and
 is best-effort: `costUsd` is `null` for any model without a published per-token price, which is

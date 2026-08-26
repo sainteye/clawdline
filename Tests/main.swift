@@ -7020,6 +7020,24 @@ group("a rollout says where its session is working") {
     try! Data((head + "\n").utf8).write(to: growing)
     expect("a newly appended session_meta is reconsidered after an earlier nil",
            Codex.head(of: growing)?.id, "01a02f3e-8f2c-7011-bb6d-49d2aaabd2a8")
+    expect("the unified parent identity reads the rollout's session id",
+           Transcript.sessionID(in: growing, assistant: .codex),
+           "01a02f3e-8f2c-7011-bb6d-49d2aaabd2a8")
+
+    let unfinished = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-unfinished-head-\(UUID().uuidString).jsonl")
+    defer { try? FileManager.default.removeItem(at: unfinished) }
+    try! Data(#"{"type":"session_meta","payload":{"cwd":"/w"}}"#.utf8)
+        .write(to: unfinished)
+    check("a rollout head with no id cannot identify a parent",
+          Transcript.sessionID(in: unfinished, assistant: .codex) == nil)
+
+    check("Claude root identity is absent when neither registry nor hook names a transcript",
+          Transcript.namedClaudeSessionID(registry: nil, hook: nil) == nil)
+    expect("Claude root identity prefers the process registry over a legacy hook",
+           Transcript.namedClaudeSessionID(registry: "current", hook: "stale"), "current")
+    check("an empty legacy hook cannot turn heuristic transcript ranking into identity",
+          Transcript.namedClaudeSessionID(registry: nil, hook: "") == nil)
 }
 
 group("the rollout a Codex process is holding open") {
@@ -7561,6 +7579,17 @@ group("a task.json is read before a terminal is opened for it") {
     expect("its kind", made(file())?.kind, "image")
     expect("its title", made(file())?.title, "draw the project")
     expect("and who asked for it", made(file())?.rootSessionId, "abc")
+    expect("and which assistant the root session is running",
+           made(file(["root": ["session_id": "abc", "assistant": "codex"]]))?.rootAssistant,
+           .codex)
+    check("an older task with no root assistant remains a legacy Claude row",
+          made(file())?.rootAssistant == nil)
+    let explicitNullRoot = made(file(["root": ["session_id": "abc",
+                                                  "assistant": NSNull()]]))
+    check("an explicit null root assistant has the same compatibility meaning as absence",
+          explicitNullRoot != nil && explicitNullRoot?.rootAssistant == nil)
+    check("a root assistant outside the closed set is refused",
+          refused(file(["root": ["session_id": "abc", "assistant": "emacs"]])))
     // The one identification a child can always make correctly: it has known its own task id
     // since its first message, whereas its session id is something this app works out later.
     let parent = "9f2b6a7e-5d0c-4123-8d4e-3f9a21bc8765"
@@ -7686,6 +7715,78 @@ group("a model name is a name, not a fragment of a command line") {
     check("and a refused name reaches that line as no flag rather than as an argument",
           StartPoints.itermLine(cwd: "/tmp/x", assistant: .claude, model: "haiku; id")
               .hasSuffix("&& claude"))
+}
+
+group("a child row resolves only to its current parent session") {
+    let wanted = "01a03d2c-c646-7521-b80b-7bc73cc1987e"
+    let current = "01a03d7e-1111-7222-a333-444444444444"
+    func target(_ id: String, _ assistant: Assistant, tty: String = "/dev/ttys7")
+        -> TargetSession {
+        TargetSession(backend: .iterm, id: id, name: "root", tty: tty,
+                      windowIndex: 0, tabIndex: 0, assistant: assistant)
+    }
+    func task(root: String? = wanted, assistant: Assistant? = .codex) -> Orchestrator.Task {
+        Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
+                          assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30,
+                          created: Date(), rootSessionId: root, rootAssistant: assistant,
+                          secretHash: String(repeating: "0", count: 64))
+    }
+    func resolve(_ task: Orchestrator.Task, parent: String? = nil,
+                 targets: [TargetSession], identities: [String: String]) -> String? {
+        Orchestrator.rootTerminalID(for: task, parentTerminalID: parent, among: targets,
+                                    sessionID: { identities[$0.id] })
+    }
+    func resolveTarget(root: String = wanted, assistant: Assistant? = .codex,
+                       resolution: Orchestrator.RootResolution = .task,
+                       targets: [TargetSession], identities: [String: String]) -> TargetSession? {
+        Orchestrator.target(forRootSession: root, assistant: assistant,
+                            resolution: resolution, among: targets,
+                            sessionID: { identities[$0.id] })
+    }
+
+    let codex = target("CODEX-TAB", .codex)
+    expect("a Codex rollout id mounts the child under that Codex terminal",
+           resolve(task(), targets: [codex], identities: [codex.id: wanted]), codex.id)
+    check("a null parent id never matches an unrelated terminal",
+          resolve(task(root: nil), targets: [codex], identities: [codex.id: wanted]) == nil)
+    check("a stale rollout id is not accepted from the current Codex process",
+          resolve(task(), targets: [codex], identities: [codex.id: current]) == nil)
+    check("the production task resolver does not accept a terminal id shortcut",
+          resolveTarget(root: codex.id, targets: [codex],
+                        identities: [codex.id: current]) == nil)
+    expect("the production task resolver accepts the process-bound conversation identity",
+           resolveTarget(targets: [codex], identities: [codex.id: wanted]), codex)
+    expect("handoff compatibility may address the watched terminal id directly",
+           resolveTarget(root: codex.id, assistant: nil, resolution: .handoff,
+                         targets: [codex], identities: [:]), codex)
+
+    // Same terminal and tty, but a different assistant now occupies them. Even a stale identity
+    // source claiming the old id cannot move this new process under the Codex root.
+    let reused = target(codex.id, .claude, tty: codex.tty)
+    check("terminal and tty reuse cannot cross the assistant boundary",
+          resolve(task(), targets: [reused], identities: [reused.id: wanted]) == nil)
+    check("the production resolver applies the assistant boundary to conversation identity",
+          resolveTarget(targets: [reused], identities: [reused.id: wanted]) == nil)
+
+    let claude = target("CLAUDE-TAB", .claude)
+    expect("a pre-root.assistant registry row keeps its Claude behaviour",
+           resolve(task(assistant: nil), targets: [claude], identities: [claude.id: wanted]),
+           claude.id)
+    expect("a declared parent task keeps the direct depth-2 mapping",
+           resolve(task(root: current), parent: "PARENT-CHILD-TAB", targets: [codex],
+                   identities: [codex.id: wanted]),
+           "PARENT-CHILD-TAB")
+    expect("root cancellation reads the same process-bound identity seam",
+           Orchestrator.rootIdentity(of: codex, sessionID: { candidate in
+               candidate.id == codex.id ? wanted : nil
+           }), wanted)
+
+    let stored = Orchestrator.stored(task())
+    expect("the root assistant survives the durable registry",
+           Orchestrator.task(from: stored)?.rootAssistant, .codex)
+    let publicRoot = Orchestrator.recordForTesting(task())["root"] as? [String: Any]
+    expect("the public record says which assistant owns its root id",
+           publicRoot?["assistant"] as? String, "codex")
 }
 
 group("how far a child may go is this Mac's answer, not the asking session's") {

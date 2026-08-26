@@ -375,6 +375,7 @@ jq -n \
   --arg instructions "…the full briefing…" \
   --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --arg root_session "$ROOT_SESSION" \
+  --arg root_assistant "$ROOT_ASSISTANT" \
   --arg root_label "clawdline root session" \
   --arg model "haiku" \
   --arg plan "$PLAN" \
@@ -383,7 +384,7 @@ jq -n \
     isolation:"none", project_dir:$dir, title:$title, instructions:$instructions, plan:$plan,
     deliverables:["artifacts/out.png"], timeout_minutes:30, created_at:$created,
     root:{session_id:(if $root_session=="" then null else $root_session end),
-          assistant:"claude", project_dir:$dir, label:$root_label}}' \
+          assistant:$root_assistant, project_dir:$dir, label:$root_label}}' \
   > "/tmp/.clawdline/$task_id/task.json"
 ```
 
@@ -408,10 +409,27 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `isolation_base` | optional Git revision, legal only with `isolation: "worktree"`; absent means `HEAD` at actual start time |
 | `plan` | optional but **strongly recommended**: the whole graph, ≤ 4 KiB. Identical across the batch |
 | `timeout_minutes` | 1…240, 30 if absent |
-| `root.session_id` | found with the trick below; `null` if you cannot find it — never invented |
+| `root.session_id` | this assistant's current conversation id, found below; `null` if unavailable — never invented |
+| `root.assistant` | **the assistant dispatching this task**, `claude` or `codex`; it is not the child named by top-level `assistant` |
 | `root.parent_task` | **only when you are yourself a child** — the id of your own task, the one in your first message. Root dispatches leave it out. Getting it wrong bills this task to somebody else or counts it as deeper than it is; there is nothing to gain |
 
-### Finding your own session id (best-effort; `null` if you cannot)
+### Finding your own assistant and session id (best-effort; `null` if you cannot)
+
+**Codex:** its current rollout id is exported directly. Do this in the same shell call that writes
+`task.json` so both variables reach `jq`:
+
+```bash
+ROOT_ASSISTANT=codex
+ROOT_SESSION="${CODEX_THREAD_ID:-${CODEX_SESSION_ID:-}}"
+echo "root session = ${ROOT_SESSION:-null} ($ROOT_ASSISTANT)"
+```
+
+`CODEX_THREAD_ID` and the compatible `CODEX_SESSION_ID` spelling name the
+`session_meta.session_id` in Codex's rollout. The broker accepts it only when the declared Codex
+terminal's **current pid** holds that same user rollout open; an id copied from an older rollout
+does not mount a child under a reused terminal.
+
+**Claude:** set the assistant, then leave a nonce and fish the id out of your own transcript.
 
 Claude Code has no way to ask "who am I", so leave a nonce and fish it out of your own transcript.
 **This has to be split across two tool calls** — a call's command text is only written to the
@@ -420,11 +438,13 @@ finds anything (measured; retries do not help):
 
 ```bash
 # Call A (the same call as step 3 is fine): leave the nonce in the transcript
+ROOT_ASSISTANT=claude
 echo "clawdline-nonce-$task_id"
 ```
 
 ```bash
 # Call B (the next tool call, together with steps 4 and 5): now it is findable
+ROOT_ASSISTANT=claude
 slug=$(printf '%s' "$PWD" | sed 's/[^a-zA-Z0-9]/-/g')
 f=$(grep -l "clawdline-nonce-<task_id>" "$HOME/.claude/projects/$slug/"*.jsonl 2>/dev/null | head -1)
 ROOT_SESSION=$(if [ -n "$f" ]; then basename "$f" .jsonl; fi)
@@ -458,8 +478,9 @@ which terminal to notify when the task finishes; two, **the child's row in the l
 under you because of this id**. With `null` the task still runs, but you have to poll for the
 finish yourself, and that row floats in the middle of the list marked `Child` with nobody above it,
 looking like the grouping is broken. Use `null` when you cannot find it — never a guess — but when
-you can find it, fill it in. `ROOT_SESSION` has to be in the same bash call as step 4's `jq`, or
-the variable will not survive; alternatively paste the string straight into `--arg`.
+you can find it, fill it in. `ROOT_SESSION` and `ROOT_ASSISTANT` have to be in the same bash call
+as step 4's `jq`, or the variables will not survive; alternatively paste both strings straight
+into `--arg`.
 
 ---
 
@@ -770,17 +791,23 @@ TOKEN=$(cat ~/.config/clawdline/orchestrator-token)
 task_id=<the id call A printed>
 secret=$(openssl rand -hex 32)
 
-slug=$(printf '%s' "$PWD" | sed 's/[^a-zA-Z0-9]/-/g')
-f=$(grep -l "clawdline-nonce-$task_id" "$HOME/.claude/projects/$slug/"*.jsonl 2>/dev/null | head -1)
-ROOT_SESSION=$(if [ -n "$f" ]; then basename "$f" .jsonl; fi)
+if [ -n "${CODEX_THREAD_ID:-${CODEX_SESSION_ID:-}}" ]; then
+  ROOT_ASSISTANT=codex
+  ROOT_SESSION="${CODEX_THREAD_ID:-${CODEX_SESSION_ID:-}}"
+else
+  ROOT_ASSISTANT=claude
+  slug=$(printf '%s' "$PWD" | sed 's/[^a-zA-Z0-9]/-/g')
+  f=$(grep -l "clawdline-nonce-$task_id" "$HOME/.claude/projects/$slug/"*.jsonl 2>/dev/null | head -1)
+  ROOT_SESSION=$(if [ -n "$f" ]; then basename "$f" .jsonl; fi)
+fi
 
 jq -n --arg id "$task_id" --arg dir "$PWD" --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-      --arg rs "$ROOT_SESSION" \
+      --arg rs "$ROOT_SESSION" --arg ra "$ROOT_ASSISTANT" \
   '{clawdline_protocol:1, task_id:$id, kind:"image", assistant:"codex",
     project_dir:$dir, title:"Project portrait, medieval manuscript style",
     instructions:"You are in /Users/you/code/clawdline, a macOS menu bar app that watches the Claude Code and Codex sessions in the terminal and draws their state in the menu bar, the notch and a floating panel. Read README.md and docs/interface.md first to understand what it does, then draw one image that stands for this project: medieval illuminated manuscript style, decorative border, hand-drawn strokes, highly artistic. Use your built-in image_gen tool, landscape, high quality. image_gen writes to ~/.codex/generated_images/<session>/ and cannot be told a destination, so when it is done copy that PNG to /tmp/.clawdline/<TASK_ID>/artifacts/project-portrait.png and confirm the file is there with ls -la. Then write result.json as CHILD.md describes.",
     deliverables:["artifacts/project-portrait.png"], timeout_minutes:30, created_at:$created,
-    root:{session_id:(if $rs=="" then null else $rs end), assistant:"claude",
+    root:{session_id:(if $rs=="" then null else $rs end), assistant:$ra,
           project_dir:$dir, label:"clawdline root"}}' \
   > "/tmp/.clawdline/$task_id/task.json"
 

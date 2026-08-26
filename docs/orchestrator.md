@@ -322,12 +322,15 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `title` | ≤ 200 characters |
 | `instructions` | non-empty, ≤ 16 KiB |
 | `timeout_minutes` | 1…240; absent means 30 |
-| `root.session_id` | a Claude Code session UUID, or `null` |
+| `root.session_id` | the dispatcher's assistant session id: Claude's transcript UUID or Codex's rollout `session_meta.session_id`; `null` when unavailable |
+| `root.assistant` | optional `claude` or `codex`. New dispatchers send it; absence or explicit `null` is read as missing, and missing is resolved as `claude` for registries and task writers from before this field existed. Other values, including an empty string, are refused |
 | `root.parent_task` | the dispatcher's **own** task id, when the dispatcher is a child. `null` from a root. A value that is not a task id is read as `null` |
 
-`root.session_id` being nullable is deliberate. A root that cannot work out its own id — Claude
-Code has no route to ask — still gets to dispatch. **A best-effort field must not be a required
-one**, or the honest answer "I don't know" becomes a reason to invent something.
+`root.session_id` being nullable is deliberate. A root that cannot work out its own id still gets
+to dispatch. **A best-effort field must not be a required one**, or the honest answer "I don't
+know" becomes a reason to invent something. Codex normally exports `CODEX_THREAD_ID` (with
+`CODEX_SESSION_ID` as the compatible spelling) and that value is the rollout session id. Claude
+has no direct self-query and uses the transcript nonce procedure in the skill.
 
 Two things follow from leaving it out, and the second one surprises people. The task is not told
 when it finishes, so the dispatcher has to poll. And **its row has nothing to sit under**: the
@@ -336,7 +339,22 @@ id, and a task that named nobody is filed under nobody. The row still says `Chil
 somebody's child is a fact about that session whether or not the parent is on screen — but it
 floats at whatever position the sort gave it, which reads at a glance like a bug in the grouping
 rather than a task that declined to say who asked. If a row belonging under yours matters, send
-the id.
+the id and `root.assistant` together.
+
+The broker does not trust either string on its own. For Claude it resolves the exact current
+process's transcript (using the validated process registry when available, otherwise a hook id
+whose named transcript postdates that process). With neither source naming a transcript, title
+and time may still help the transcript pane choose what to display but may not establish root
+identity. For Codex it asks the current pid which user
+rollout it holds open and reads that rollout's `session_meta.session_id`. The terminal must also
+be running the declared assistant. A stale rollout, a leftover hook on a reused tty, or a tab now
+occupied by the other assistant therefore produces no `root.terminalId`; it never mounts a child
+under the wrong row.
+
+The same strict conversation resolver is used for list mounting, completion lines, workspace
+overlap lines, root-close cancellation and batch-notification deep links. Handoff receipts are the
+one named compatibility exception: their free-form `from_session` may be either a conversation id
+or a watched terminal id, as the handoff API has always promised.
 
 `model` is the **only** string a dispatch puts on a command line, and it is shaped so that
 saying so is not alarming: not a fragment of a command but a name out of a closed alphabet. No
@@ -355,11 +373,11 @@ and an essay.
 
 `root.parent_task` is the same field one level down, and it exists because a child knows its own
 task id from the first line it was ever sent, long before this app has worked out what the session
-in that tab calls itself. For a Codex child it is the only usable answer at all: its session id
-lives in a rollout file rather than in the hook notes `root.session_id` is matched against. Naming
-it is what gets a task filed under its actual parent on the first try instead of being counted as a
-root's. Getting it wrong costs capacity and never buys any — [the two names are combined by taking
-the deeper answer](#depth-stops-at-two-and-the-floor-is-what-has-teeth).
+in that tab calls itself. It is the strongest answer for every child because the broker already
+owns that task-to-terminal link; it also works before either assistant's transcript identity is
+observable. Naming it is what gets a task filed under its actual parent on the first try instead
+of being counted as a root's. Getting it wrong costs capacity and never buys any — [the two names
+are combined by taking the deeper answer](#depth-stops-at-two-and-the-floor-is-what-has-teeth).
 
 For `worktree`, the broker resolves the base to a commit SHA and records that immutable value.
 Branch names and `HEAD` can move while other sessions commit; the SHA is the receipt for what the

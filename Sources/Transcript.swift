@@ -52,6 +52,58 @@ enum Transcript {
         }
     }
 
+    /// The assistant's durable id for the conversation currently occupying this terminal.
+    ///
+    /// This deliberately goes through ``record(of:)`` rather than reading a hook or rollout by
+    /// name. For Claude, that route requires the exact transcript to postdate the current
+    /// process. For Codex, it asks the current pid which user rollout it holds open. A stale hook,
+    /// an old rollout id, or a tty reused by another process therefore answers nil instead of
+    /// attaching that process to a conversation which has already gone.
+    static func sessionID(of session: TargetSession) -> String? {
+        // HookBridge's tty table is replaced on main. Preserve the same boundary the old root
+        // resolver used when Claude's registry is absent; Codex never touches that table.
+        if session.assistant == .claude && !Thread.isMainThread {
+            return DispatchQueue.main.sync { sessionID(of: session) }
+        }
+        if session.assistant == .claude {
+            // `record(of:)` is also the transcript-pane discovery path, where title and time are
+            // useful best-effort ranking. Identity has a stronger contract: without a registry
+            // or hook naming one transcript, no ranked candidate may become somebody's id.
+            guard let id = namedClaudeSessionID(
+                    registry: SessionRegistry.sessionID(of: session),
+                    hook: HookBridge.note(for: session)?.session),
+                  let cwd = Targets.workingDirectory(of: session),
+                  let url = locate(cwd: cwd, tabTitle: session.name,
+                                   startedAt: Targets.processStart(of: session), sessionID: id)
+            else { return nil }
+            return sessionID(in: url, assistant: .claude)
+        }
+        guard let record = record(of: session) else { return nil }
+        return sessionID(in: record.url, assistant: record.assistant)
+    }
+
+    /// Only sources that name a Claude conversation may establish root identity. Empty values
+    /// are treated as absent so a malformed legacy note cannot select the heuristic path.
+    static func namedClaudeSessionID(registry: String?, hook: String?) -> String? {
+        for candidate in [registry, hook] {
+            if let candidate, !candidate.isEmpty { return candidate }
+        }
+        return nil
+    }
+
+    /// The format-only half, split out so malformed and not-yet-written record heads are testable
+    /// without requiring a live terminal process.
+    static func sessionID(in record: URL, assistant: Assistant) -> String? {
+        switch assistant {
+        case .claude:
+            let id = record.deletingPathExtension().lastPathComponent
+            return id.isEmpty ? nil : id
+        case .codex:
+            guard let id = Codex.head(of: record)?.id, !id.isEmpty else { return nil }
+            return id
+        }
+    }
+
     /// A record as entries, whoever wrote it.
     ///
     /// **`sidechains` is what tells the two kinds of Claude file apart.** A session's own
