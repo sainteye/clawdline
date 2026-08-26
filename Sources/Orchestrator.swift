@@ -1058,6 +1058,22 @@ enum Orchestrator {
         case none, worktree
     }
 
+    enum LandingState: String {
+        case pending, landed, abandoned
+    }
+
+    /// The root-owned obligation after a child has delivered. This is deliberately observational:
+    /// it never extends a claim or participates in dispatch arbitration.
+    struct Landing {
+        let state: LandingState
+        let target: String?
+        let delivery: String?
+        let ownerRootKey: String
+        let since: Date
+        let commit: String?
+        let note: String?
+    }
+
     /// The checkout is disposable; the branch is the delivery. Repository and cwd are internal
     /// facts needed to operate a monorepo worktree and are stored beside the six public facts.
     struct Worktree {
@@ -1188,6 +1204,12 @@ enum Orchestrator {
         /// persisted so a later read shows the same verdict rather than re-checking a
         /// filesystem that has since moved on.
         var untouchedClaims: [String] = []
+        /// A root's durable declaration that delivered work is waiting to land, has landed, or
+        /// was abandoned. This is a signpost for other roots, never a write-path lease.
+        var landing: Landing?
+        /// What this session has said it is doing since it was briefed, oldest first, newest
+        /// ``Orchestrator/progressKept`` kept. The title is fixed at dispatch; this is not.
+        var progress: [ProgressNote] = []
         var isolation = Isolation.none
         var worktree: Worktree?
         var childTerminalId: String?
@@ -2738,22 +2760,39 @@ enum Orchestrator {
         return reply
     }
 
+    /// The one age formula used by workspace conflicts and landing records alike. A wall clock
+    /// moving backwards never turns an API duration negative.
+    static func ageSeconds(since: Date, now: Date) -> Int {
+        max(0, Int(now.timeIntervalSince(since)))
+    }
+
     /// The actionable context returned when another root already reserved a write path.
     /// `age_seconds` and `root_key` make the error self-sufficient without a follow-up GET:
     /// `root_label` is self-reported prose that can be stale or shared by two unrelated roots
     /// (two different trees both calling themselves "clawdline schedules" is a real case), while
     /// `root_key` is the same tree's identity every time, hashed rather than handed over raw.
     static func workspaceBusyExtra(_ overlap: ClaimsOverlap, now: Date = Date()) -> [String: Any] {
-        [
+        var extra: [String: Any] = [
             "blocking_task": overlap.task.id,
             "title": overlap.task.title,
             "root_label": overlap.rootLabel as Any? ?? NSNull(),
             "created": Int(overlap.task.created.timeIntervalSince1970),
             "conflict_paths": overlap.paths,
             "retry_after": 60,
-            "age_seconds": max(0, Int(now.timeIntervalSince(overlap.task.created))),
+            "age_seconds": ageSeconds(since: overlap.task.created, now: now),
             "root_key": overlap.rootKey.map(rootKeyDigest) as Any? ?? NSNull(),
         ]
+        // Landing never makes a task a blocker. This context covers a blocker already supplied
+        // by claims arbitration (including any separately held terminal task): it tells the
+        // caller that the task is over and its delivered tree is what remains outstanding.
+        if overlap.task.state.isTerminal, let landing = overlap.task.landing,
+           landing.state == .pending {
+            extra["landing"] = [
+                "target": landing.target as Any? ?? NSNull(),
+                "age_seconds": ageSeconds(since: landing.since, now: now),
+            ]
+        }
+        return extra
     }
 
     // MARK: - Assistant quota at the dispatch gate — Q1 design §D
@@ -3820,6 +3859,393 @@ enum Orchestrator {
                 "task": taskID, "paths": newlyReleased.joined(separator: ","),
             ])
         }
+        return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+    }
+
+    // MARK: - Root-owned landing record
+
+    /// Record the obligation that begins after a child delivers and ends only when root lands or
+    /// abandons it. The task secret remains verifiable after finalize, so this route needs no new
+    /// credential and cannot accidentally grant one root authority over another root's record.
+    static func updateLanding(taskID: String, secret: String, raw: [String: Any],
+                              now: Date = Date()) -> Reply {
+        guard let snapshot = held(taskID) else {
+            return .refused(404, "not_found", "No task named that")
+        }
+        guard !secret.isEmpty,
+              RemoteAuth.constantTimeEquals(snapshot.secretHash, hash(ofSecret: secret)) else {
+            RemoteAuth.audit("orchestrator.landing", ["task": taskID, "ok": "0",
+                                                       "why": "bad_secret"])
+            return .refused(403, "forbidden", "That is not this task's secret.")
+        }
+
+        let allowed: Set<String> = ["state", "target", "delivery", "commit", "note"]
+        let unknown = raw.keys.filter { !allowed.contains($0) }.sorted()
+        guard unknown.isEmpty else {
+            return .refused(400, "bad_request",
+                            "Unknown landing field(s): \(unknown.joined(separator: ", ")).")
+        }
+        guard let rawState = raw["state"] as? String,
+              let requestedState = LandingState(rawValue: rawState) else {
+            return .refused(400, "bad_request",
+                            "state must be pending, landed, or abandoned.")
+        }
+
+        var fields: [String: String] = [:]
+        for (name, limit) in [("target", 200), ("delivery", 500),
+                              ("commit", 200), ("note", 500)] {
+            guard let value = raw[name] else { continue }
+            guard let text = value as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  text.count <= limit else {
+                return .refused(400, "bad_request",
+                                "\(name) must be a non-empty string of at most \(limit) characters.")
+            }
+            fields[name] = text
+        }
+        if requestedState != .landed, fields["commit"] != nil {
+            return .refused(400, "bad_request", "commit is valid only when state is landed.")
+        }
+
+        load()
+        lock.lock()
+        guard var current = tasks[taskID] else {
+            lock.unlock()
+            return .refused(404, "not_found", "No task named that")
+        }
+        if let existing = current.landing, existing.state == requestedState {
+            lock.unlock()
+            return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+        }
+        if current.landing?.state == .landed {
+            lock.unlock()
+            return .refused(409, "invalid_transition",
+                            "A landed obligation cannot move back to another state; open a new task.")
+        }
+        if requestedState == .landed, !current.state.isTerminal {
+            lock.unlock()
+            return .refused(409, "not_terminal",
+                            "Only a terminal task can be marked landed.")
+        }
+        if requestedState == .landed, fields["commit"] == nil {
+            lock.unlock()
+            return .refused(400, "bad_request", "commit is required when state is landed.")
+        }
+
+        let existing = current.landing
+        current.landing = Landing(
+            state: requestedState,
+            target: fields["target"] ?? existing?.target,
+            delivery: fields["delivery"] ?? existing?.delivery,
+            ownerRootKey: existing?.ownerRootKey ?? rootKeyDigest(rootKeyLocked(of: current)),
+            since: existing?.since ?? now,
+            commit: requestedState == .landed ? fields["commit"] : nil,
+            note: fields["note"] ?? existing?.note)
+        tasks[taskID] = current
+        lock.unlock()
+
+        save()
+        RemoteServer.shared.broadcastOrchestrator()
+        RemoteAuth.audit("orchestrator.landing", [
+            "task": taskID, "ok": "1", "state": requestedState.rawValue,
+            "target": current.landing?.target ?? "",
+        ])
+        return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+    }
+
+    /// Every unresolved root-owned landing obligation, oldest first. This is a dashboard, not a
+    /// gate: reading or ignoring it changes no claim and blocks no dispatch.
+    static func landingRecords(now: Date = Date()) -> [[String: Any]] {
+        load()
+        lock.lock()
+        let indexed = tasks
+        let rows = tasks.values.compactMap { task -> [String: Any]? in
+            guard let landing = task.landing, landing.state == .pending else { return nil }
+            let root = rootTask(of: task, among: indexed)
+            return [
+                "id": task.id,
+                "title": task.title,
+                "root_key": landing.ownerRootKey,
+                "root_label": (root.rootLabel ?? task.rootLabel) as Any? ?? NSNull(),
+                "paths": task.claims,
+                "since": Int(landing.since.timeIntervalSince1970),
+                "age_seconds": ageSeconds(since: landing.since, now: now),
+                "target": landing.target as Any? ?? NSNull(),
+                "note": landing.note as Any? ?? NSNull(),
+            ]
+        }.sorted { left, right in
+            let first = left["since"] as? Int ?? 0
+            let second = right["since"] as? Int ?? 0
+            if first == second {
+                return (left["id"] as? String ?? "") < (right["id"] as? String ?? "")
+            }
+            return first < second
+        }
+        lock.unlock()
+        return rows
+    }
+
+    // MARK: - Work in flight
+
+    /// Why a piece of work is on the in-flight list, or why it is not.
+    ///
+    /// The list exists because a worktree makes work invisible: a delivery sitting finished on
+    /// `clawdline/task/…` shows up in no `git status`, no `git diff` and no file listing of the
+    /// shared checkout, and its claims were released the moment the task ended. A session asking
+    /// "has anyone done this?" looked at the tree, saw nothing, and did it again.
+    enum WorkVisibility: String {
+        /// A session is on it now.
+        case live
+        /// Finished, and its delivery is still on a branch nobody has merged.
+        case unmerged
+        /// Nothing outstanding — landed, abandoned, merged, or never isolated in the first place.
+        case settled
+    }
+
+    /// **How an entry stops being live, decided from git rather than from anybody's memory.**
+    ///
+    /// A registry that fills with work nobody is doing is worse than no registry, because it
+    /// still looks authoritative. So nothing here is a flag somebody has to remember to clear:
+    /// a delivery leaves the list when its branch is merged or deleted, which is the same moment
+    /// the work stops being invisible. The two declared answers — a root marking its landing
+    /// `landed` or `abandoned` — are honoured first because a root saying so is better evidence
+    /// than a branch this side has to guess about.
+    ///
+    /// **Unknown git facts keep the entry visible**, the same fail-safe direction
+    /// ``worktreeDisposal(commits:dirty:headOnBranch:branchExists:)`` takes with deletion. The
+    /// costs are not symmetric: showing a delivery that turns out to be merged costs a glance,
+    /// and hiding one that is not costs somebody a day of rebuilding it.
+    ///
+    /// A terminal task with no worktree is `settled` here, and that is a boundary rather than an
+    /// oversight: its edits are in the shared tree where `git status` already shows them. The way
+    /// such a delivery stays visible is the root declaring `landing: pending` — see
+    /// ``updateLanding(taskID:secret:raw:now:)``, which is the declared half of this and is not
+    /// duplicated by the derived half.
+    static func workVisibility(state: State, landing: Landing?, isolated: Bool,
+                               branchExists: Bool?, branchMerged: Bool?) -> WorkVisibility {
+        guard state.isTerminal else { return .live }
+        if let landing {
+            switch landing.state {
+            case .landed, .abandoned: return .settled
+            case .pending: return .unmerged
+            }
+        }
+        guard isolated else { return .settled }
+        if branchExists == false { return .settled }
+        if branchMerged == true { return .settled }
+        return .unmerged
+    }
+
+    /// What a repository can say about its own task branches, in two `for-each-ref` calls rather
+    /// than two per task. Thirteen delivery branches was the real count on the night this was
+    /// written; a `rev-list` each would be twenty-six subprocesses on a route a child calls
+    /// before it starts work.
+    struct RepositoryBranches: Equatable {
+        /// Branch name to the commit it currently points at.
+        var heads: [String: String] = [:]
+        /// Branches already contained in the repository's HEAD.
+        var merged: Set<String> = []
+        /// Whether git answered at all. False means every branch fact below is unknown, which
+        /// ``workVisibility(state:landing:isolated:branchExists:branchMerged:)`` reads as "keep
+        /// it visible" rather than as "it is gone".
+        var known = false
+    }
+
+    static func repositoryBranches(in repository: String) -> RepositoryBranches {
+        var found = RepositoryBranches()
+        guard let listed = git(["for-each-ref", "--format=%(refname:short) %(objectname)",
+                                "refs/heads/clawdline/task/"], cwd: repository),
+              listed.status == 0 else { return found }
+        found.known = true
+        for line in listed.output.split(separator: "\n") {
+            let parts = line.split(separator: " ", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            found.heads[String(parts[0])] = String(parts[1])
+        }
+        guard let contained = git(["for-each-ref", "--format=%(refname:short)", "--merged", "HEAD",
+                                   "refs/heads/clawdline/task/"], cwd: repository),
+              contained.status == 0 else { return found }
+        for line in contained.output.split(separator: "\n") where !line.isEmpty {
+            found.merged.insert(String(line))
+        }
+        return found
+    }
+
+    /// The repository a project directory belongs to, or nothing when it is not in one. The
+    /// caller never writes this path: it is resolved here from what the task already said.
+    static func inflightRepository(_ project: String) -> String? {
+        guard let answer = git(["rev-parse", "--show-toplevel"], cwd: project),
+              answer.status == 0 else { return nil }
+        let path = answer.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return path.hasPrefix("/") ? URL(fileURLWithPath: path).standardizedFileURL.path : nil
+    }
+
+    /// Every piece of work outstanding in a repository, newest first — live sessions and
+    /// delivered-but-unmerged branches alike, in one answer.
+    ///
+    /// The branch facts are a parameter so the whole shape can be exercised against a described
+    /// repository instead of a real one; production passes ``repositoryBranches(in:)``.
+    static func inflightRecords(repository: String, now: Date = Date(),
+                                branches: RepositoryBranches,
+                                excluding excluded: String? = nil) -> [[String: Any]] {
+        load()
+        lock.lock()
+        let all = tasks.values.sorted { $0.created > $1.created }
+        lock.unlock()
+        let prefix = repository.hasSuffix("/") ? repository : repository + "/"
+        return all.compactMap { task -> [String: Any]? in
+            guard task.id != excluded else { return nil }
+            let home = task.worktree?.repository ?? task.projectDir
+            guard home == repository || home.hasPrefix(prefix) else { return nil }
+            let branch = task.worktree?.branch
+            let visibility = workVisibility(
+                state: task.state, landing: task.landing, isolated: task.worktree != nil,
+                branchExists: branch.flatMap { branches.known ? branches.heads[$0] != nil : nil },
+                branchMerged: branch.flatMap { branches.known ? branches.merged.contains($0) : nil })
+            guard visibility != .settled else { return nil }
+            return inflightRow(task, visibility: visibility, branches: branches, now: now)
+        }
+    }
+
+    /// One row: the facts a reader needs to decide "is this my work?" and nothing else — what it
+    /// is, who has it, what state it is in, what it said about itself, and where the code lives.
+    ///
+    /// This is deliberately the *only* shape for that answer. When something reads this list in
+    /// natural language later it reads these rows rather than asking the broker again, so a fact
+    /// a reader needs belongs here and not in a second projection of the same records.
+    static func inflightRow(_ task: Task, visibility: WorkVisibility,
+                            branches: RepositoryBranches, now: Date) -> [String: Any] {
+        var row: [String: Any] = [
+            "id": task.id,
+            "title": task.title,
+            "state": task.state.rawValue,
+            "visibility": visibility.rawValue,
+            "assistant": task.assistant.rawValue,
+            "project_dir": task.projectDir,
+            "created": Int(task.created.timeIntervalSince1970),
+            "age_seconds": ageSeconds(since: task.created, now: now),
+            "claims": task.claims,
+        ]
+        if let label = task.rootLabel { row["root_label"] = label }
+        if let session = task.rootSessionId { row["root_key"] = rootKeyDigest(session) }
+        if !task.progress.isEmpty {
+            row["progress"] = task.progress.map {
+                ["note": $0.note, "at": Int($0.at.timeIntervalSince1970)] as [String: Any]
+            }
+        }
+        if let landing = task.landing { row["landing"] = landingRecord(landing) }
+        if let worktree = task.worktree {
+            var delivery: [String: Any] = ["branch": worktree.branch, "base": worktree.base]
+            // The ref listing is what the branch points at *now*; the stored head is what this
+            // app last recorded. Preferring the live one is the difference between reporting a
+            // delivery and reporting a memory of one.
+            if let head = branches.heads[worktree.branch] ?? worktree.head { delivery["head"] = head }
+            if let dirty = worktree.dirty { delivery["dirty"] = dirty }
+            if branches.known {
+                delivery["branch_exists"] = branches.heads[worktree.branch] != nil
+                delivery["merged"] = branches.merged.contains(worktree.branch)
+            }
+            row["worktree"] = delivery
+        }
+        return row
+    }
+
+    /// The list, answered to a task that names itself with its own secret.
+    ///
+    /// **A child has no orchestrator token and should not be taught to read one** — that file is
+    /// this Mac's credential, and a leaf that never dispatches has no other reason to touch it.
+    /// So the door a child uses is its own task secret, and the repository is not a parameter:
+    /// it is read off the task, which means a child cannot ask this about a tree it is not
+    /// working in. The same argument ``Planner`` makes for numbering places rather than taking
+    /// paths, made again at a smaller door.
+    ///
+    /// The asking task is left out of its own answer. A session reading a row about itself and
+    /// concluding somebody else is already on it is a loop with a very silly ending.
+    static func inflightReply(taskID: String, secret: String, now: Date = Date()) -> Reply {
+        guard let task = held(taskID) else {
+            return .refused(404, "not_found", "No task named that")
+        }
+        guard !secret.isEmpty,
+              RemoteAuth.constantTimeEquals(task.secretHash, hash(ofSecret: secret)) else {
+            return .refused(403, "forbidden", "That is not this task's secret.")
+        }
+        guard let repository = inflightRepository(cwd(of: task)) else {
+            return .refused(409, "not_a_repository",
+                            "This task's directory is not inside a Git repository.")
+        }
+        let branches = repositoryBranches(in: repository)
+        return .ok(["repository": repository,
+                    "inflight": inflightRecords(repository: repository, now: now,
+                                                branches: branches, excluding: taskID),
+                    "at": Int(now.timeIntervalSince1970)])
+    }
+
+    // MARK: - What a session says it is doing
+
+    /// One line a session wrote about its own work while it was doing it.
+    ///
+    /// The title is fixed at dispatch and is thin evidence: a child that decides mid-task to also
+    /// rewrite the fixture, or that finds the real problem is somewhere else, has nowhere to say
+    /// so until `result.json` — by which time somebody else may have spent an hour on the same
+    /// thing. This is deliberately one sentence and one curl, because a session that has to stop
+    /// and compose a status report will not do it.
+    struct ProgressNote: Equatable {
+        let note: String
+        let at: Date
+    }
+
+    /// A sentence, not a report.
+    static let progressLimit = 300
+    /// How many are kept. The newest few are what somebody deciding "is this my work?" reads;
+    /// the whole history of a task is its transcript's job, not the registry's.
+    static let progressKept = 5
+
+    /// Record what this task is actually doing now. Authenticated by the task secret, like
+    /// `complete` and `notify`: the child already has it, and it names exactly one task.
+    static func recordProgress(taskID: String, secret: String, note raw: String,
+                               now: Date = Date()) -> Reply {
+        guard let snapshot = held(taskID) else {
+            return .refused(404, "not_found", "No task named that")
+        }
+        guard !secret.isEmpty,
+              RemoteAuth.constantTimeEquals(snapshot.secretHash, hash(ofSecret: secret)) else {
+            RemoteAuth.audit("orchestrator.progress", ["task": taskID, "ok": "0",
+                                                       "why": "bad_secret"])
+            return .refused(403, "forbidden", "That is not this task's secret.")
+        }
+        let note = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !note.isEmpty, note.count <= progressLimit else {
+            return .refused(400, "bad_request",
+                            "note must be a non-empty sentence of at most \(progressLimit) "
+                            + "characters.")
+        }
+        guard !snapshot.state.isTerminal else {
+            return .refused(409, "not_live",
+                            "This task is over; what it did belongs in its summary.")
+        }
+
+        load()
+        lock.lock()
+        guard var current = tasks[taskID] else {
+            lock.unlock()
+            return .refused(404, "not_found", "No task named that")
+        }
+        // The same sentence twice is a loop, not news. Refusing it costs the caller nothing and
+        // keeps a retrying script from rewriting the registry to disk every second.
+        if current.progress.last?.note == note {
+            lock.unlock()
+            return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+        }
+        current.progress.append(ProgressNote(note: note, at: now))
+        if current.progress.count > progressKept {
+            current.progress.removeFirst(current.progress.count - progressKept)
+        }
+        tasks[taskID] = current
+        lock.unlock()
+
+        save()
+        RemoteServer.shared.broadcastOrchestrator()
+        RemoteAuth.audit("orchestrator.progress", ["task": taskID, "ok": "1"])
         return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
     }
 
@@ -5150,6 +5576,16 @@ enum Orchestrator {
             + listed + " (claim narrower next time)"
     }
 
+    /// One finish-line signpost for shared-tree work whose root has not recorded what happens
+    /// next. Finalize calls the completion transport once, so this is advisory once and never a
+    /// gate. A task whose every claim was observed untouched has left no claimed work to land.
+    static func landingNotice(for task: Task) -> String {
+        guard task.state.isTerminal, !task.claims.isEmpty, task.landing == nil,
+              !Set(task.claims).isSubset(of: Set(task.untouchedClaims)) else { return "" }
+        return " — claimed work may still be in the shared tree; mark landing pending so other "
+            + "roots can see it"
+    }
+
     /// Keep the transport protocol's closed state vocabulary compiler-coupled to task state.
     /// Non-terminal states do not produce completion notices; every terminal state maps here
     /// explicitly so adding a state cannot silently make a notification disappear.
@@ -5181,6 +5617,7 @@ enum Orchestrator {
         if audience == .parent { body += " — \(rest)" }
         body += timeoutClaimNotice(for: task)
         body += untouchedClaimsNotice(for: task)
+        body += landingNotice(for: task)
         return ClawdlineMessage.Notice(
             event: .taskFinished(
                 task: .init(id: task.id, title: task.title), state: state,
@@ -5497,6 +5934,8 @@ enum Orchestrator {
         - Do not read any directory under /tmp/.clawdline/ except your own, any you dispatched,
           and any your instructions name explicitly. That last one is how a reviewing node works:
           it is sent to read what other nodes produced, so its instructions list those paths.
+        - Landing records belong to the root after delivery; a child does not call its task's
+          `/landing` route itself.
         - Do not do work the task did not ask for.
         - You have \(task.timeoutMinutes) minutes before the task is marked timed out.\(isolationSection)
 
@@ -5518,6 +5957,40 @@ enum Orchestrator {
         Each task may send at most 5 notifications, and this Mac accepts at most 30 per hour.
         The user may turn agent notifications off. A `409 agent_notify_disabled` response is not
         your fault: leave the content in `result.json`, report failure honestly, and do not retry.
+
+        ## Say what you are doing, when it stops being what you were sent to do
+
+        Your title was fixed before you started. When what you are actually doing stops matching
+        it — you decide to rewrite the fixture too, the real problem turns out to be somewhere
+        else, you have moved on to the second half — say so in one line:
+
+        ```bash
+        curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/progress \\
+          -H "X-Clawdline-Task-Secret: <TASK_SECRET>" \\
+          -H 'Content-Type: application/json' \\
+          -d '{"note":"<one sentence, at most \(progressLimit) characters>"}'
+        ```
+
+        **This is not a status report and nobody is waiting to read it.** It is one sentence, it
+        costs you a second, and it is what another session sees when it asks whether the thing it
+        is about to start is already being done. The newest \(progressKept) are kept; sending the
+        same sentence twice is ignored rather than refused.
+
+        ## Before you start work you believe is new, look
+
+        Another session's isolated checkout is invisible from the shared tree: a finished
+        delivery sitting on a branch nobody has merged shows up in no `git status`, no `git diff`
+        and no file listing. So "nothing here does that yet" is not evidence. This is:
+
+        ```bash
+        curl -s http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/inflight \\
+          -H "X-Clawdline-Task-Secret: <TASK_SECRET>"
+        ```
+
+        Every line of work outstanding in this repository: what it is, who has it, what state it
+        is in, what files it claimed, and for isolated ones the branch and head where its code
+        actually lives. Read it before you build something you think nobody has built. If a row
+        looks like your job, say so in your result rather than doing it twice.
         \(handOnSection(for: task, allowance: allowance))\(policySection(allowance: allowance))
         ## Reporting — this is the completion signal, do it exactly
 
@@ -5529,12 +6002,22 @@ enum Orchestrator {
          "task_secret": "<the TASK_SECRET value from your first message>",
          "status": "success",
          "summary": "<one paragraph: what you did, or why it failed>",
+         "symbols": ["<every name your change introduced>", "..."],
          "artifacts": ["artifacts/<file>", "..."],
          "finished_at": "<ISO8601 UTC>"}
         ```
 
         Use "status": "failure" when you could not do it. Write it LAST — the moment it exists
         your work is considered finished.
+
+        **`symbols` is how your work is told apart from everybody else's.** This tree is shared:
+        by the time root commits, the files you edited may hold two or three sessions' unfinished
+        work, and root separates them by looking for vocabulary. Guessing that vocabulary is
+        error-prone — root has staged trees that would not compile because a hunk *reading* like
+        yours actually called somebody else's new function. So list what you introduced: new
+        functions and types, new fields, new string keys, the names of test groups you added.
+        Names, not descriptions. A wrong or missing list costs somebody an hour; it costs you a
+        minute.
 
         **If you handed work on and it did not arrive, say so in the summary.** Doing it yourself
         instead is usually right — the answer is what was asked for, not who produced it. What is
@@ -6132,6 +6615,8 @@ enum Orchestrator {
             }
         }
         if !task.untouchedClaims.isEmpty { out["untouched_claims"] = task.untouchedClaims }
+        if let landing = task.landing { out["landing"] = landingRecord(landing) }
+        if !task.progress.isEmpty { out["progress"] = task.progress.map(progressRecord) }
         if let worktree = task.worktree {
             out["isolation"] = Isolation.worktree.rawValue
             // Before a tab exists the preparation has only a candidate base. `spawn` resolves it
@@ -6515,6 +7000,49 @@ enum Orchestrator {
                                                ofItemAtPath: storeURL.path)
     }
 
+    private static func landingRecord(_ landing: Landing) -> [String: Any] {
+        var out: [String: Any] = [
+            "state": landing.state.rawValue,
+            "owner_root_key": landing.ownerRootKey,
+            "since": Int(landing.since.timeIntervalSince1970),
+        ]
+        if let target = landing.target { out["target"] = target }
+        if let delivery = landing.delivery { out["delivery"] = delivery }
+        if let commit = landing.commit { out["commit"] = commit }
+        if let note = landing.note { out["note"] = note }
+        return out
+    }
+
+    private static func stored(_ landing: Landing) -> [String: Any] {
+        var out = landingRecord(landing)
+        out["since"] = landing.since.timeIntervalSince1970
+        return out
+    }
+
+    /// A progress note on the wire — whole seconds, like every other time in a record.
+    private static func progressRecord(_ note: ProgressNote) -> [String: Any] {
+        ["note": note.note, "at": Int(note.at.timeIntervalSince1970)]
+    }
+
+    private static func stored(_ note: ProgressNote) -> [String: Any] {
+        ["note": note.note, "at": note.at.timeIntervalSince1970]
+    }
+
+    /// Notes back off disk. A row that lost its text or its clock is dropped rather than
+    /// resurrected with a guess, and the kept-count is applied again on the way in so an older
+    /// store written before the cap cannot reintroduce an unbounded list.
+    private static func progress(from raw: Any?) -> [ProgressNote] {
+        guard let rows = raw as? [[String: Any]] else { return [] }
+        let notes = rows.compactMap { row -> ProgressNote? in
+            guard let text = row["note"] as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  text.count <= progressLimit,
+                  let at = row["at"] as? Double else { return nil }
+            return ProgressNote(note: text, at: Date(timeIntervalSince1970: at))
+        }
+        return notes.count > progressKept ? Array(notes.suffix(progressKept)) : notes
+    }
+
     static func stored(_ task: Task) -> [String: Any] {
         var out: [String: Any] = [
             "id": task.id,
@@ -6556,6 +7084,8 @@ enum Orchestrator {
             }
         }
         if !task.untouchedClaims.isEmpty { out["untouched_claims"] = task.untouchedClaims }
+        if let landing = task.landing { out["landing"] = stored(landing) }
+        if !task.progress.isEmpty { out["progress"] = task.progress.map(stored) }
         if let worktree = task.worktree {
             out["isolation"] = Isolation.worktree.rawValue
             var storedWorktree: [String: Any] = [
@@ -6653,6 +7183,31 @@ enum Orchestrator {
                                 created: Date(timeIntervalSince1970: created), waiters: waiters)
     }
 
+    private static func landing(from obj: [String: Any]) -> Landing? {
+        guard let state = (obj["state"] as? String).flatMap(LandingState.init(rawValue:)),
+              let owner = obj["owner_root_key"] as? String, owner.count == 8,
+              owner.allSatisfy({ ("0"..."9").contains($0) || ("a"..."f").contains($0) }),
+              let since = obj["since"] as? Double else { return nil }
+        func text(_ key: String, limit: Int) -> String? {
+            guard let value = obj[key] as? String,
+                  !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  value.count <= limit else { return nil }
+            return value
+        }
+        let target = text("target", limit: 200)
+        let delivery = text("delivery", limit: 500)
+        let commit = text("commit", limit: 200)
+        let note = text("note", limit: 500)
+        guard (obj["target"] == nil || target != nil),
+              (obj["delivery"] == nil || delivery != nil),
+              (obj["commit"] == nil || commit != nil),
+              (obj["note"] == nil || note != nil),
+              (state == .landed) == (commit != nil) else { return nil }
+        return Landing(state: state, target: target, delivery: delivery,
+                       ownerRootKey: owner, since: Date(timeIntervalSince1970: since),
+                       commit: commit, note: note)
+    }
+
     static func handoff(from obj: [String: Any]) -> HandoffEnvelope? {
         guard let id = obj["handoff_id"] as? String, isTaskID(id),
               let projectDir = obj["project_dir"] as? String, StartPoints.usable(projectDir),
@@ -6722,6 +7277,10 @@ enum Orchestrator {
         task.untouchedClaims = (obj["untouched_claims"] as? [String] ?? []).filter {
             task.claims.contains($0)
         }
+        if let rawLanding = obj["landing"] as? [String: Any] {
+            task.landing = landing(from: rawLanding)
+        }
+        task.progress = progress(from: obj["progress"])
         task.isolation = (obj["isolation"] as? String).flatMap(Isolation.init(rawValue:)) ?? .none
         if task.isolation == .worktree {
             guard let raw = obj["worktree"] as? [String: Any],

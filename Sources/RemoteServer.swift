@@ -334,14 +334,22 @@ final class RemoteServer {
         // process running as the user can read — because through a tunnel every request arrives
         // from 127.0.0.1, and a paired phone must never be able to start sessions. Reads without
         // that token fall through to ordinary device auth, so the page can show the tasks; the
-        // complete and notify routes are gated inside their handlers by the per-task secret
-        // instead, which is the only credential a child was ever handed.
+        // complete, notify and landing routes are gated inside their handlers by the per-task
+        // secret instead. Landing is a root action, but reuses that durable credential rather
+        // than widening authority to every paired device.
         let orchestrated = request.path.hasPrefix("/v1/orchestrator/")
         let orchestratorAuthed = orchestrated
             && Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"])
-        let taskSecretRoute = orchestrated && request.method == "POST"
+        let taskSecretRoute = orchestrated
             && request.path.hasPrefix("/v1/orchestrator/tasks/")
-            && (request.path.hasSuffix("/complete") || request.path.hasSuffix("/notify"))
+            && ((request.method == "POST"
+                 && (request.path.hasSuffix("/complete") || request.path.hasSuffix("/notify")
+                     || request.path.hasSuffix("/landing")
+                     || request.path.hasSuffix("/progress")))
+                // The one read a task may make with its own secret: what else is in flight in
+                // the repository it was sent to. A child has no orchestrator token, and the
+                // alternative to this door is teaching every leaf to read one.
+                || (request.method == "GET" && request.path.hasSuffix("/inflight")))
         if !open.contains(request.path), !pairing, !shell, !icon, !orchestratorAuthed, !taskSecretRoute {
             if case .denied = permission(for: request) {
                 return .error(401, "unauthorized", "This needs a paired device.")
@@ -758,6 +766,29 @@ final class RemoteServer {
             return .json(["waits": Orchestrator.coordinationWaitRecords(),
                           "at": Int(Date().timeIntervalSince1970)])
 
+        case ("GET", "/v1/orchestrator/landings"):
+            return .json(["landings": Orchestrator.landingRecords(),
+                          "at": Int(Date().timeIntervalSince1970)])
+
+        // **What is being worked on in a repository right now, including what a worktree hides.**
+        //
+        // Read-level like the two lists above it, and mechanical: no model, no quota, no account.
+        // The agent below is the good answer and this is the one that always works, which is why
+        // both exist — an ask that cannot reach an assistant still hands the caller this list.
+        // `project` is any directory; the repository containing it is resolved on this side.
+        case ("GET", "/v1/orchestrator/inflight"):
+            let project = request.query["project"] ?? request.query["project_dir"] ?? ""
+            guard !project.isEmpty, project.hasPrefix("/"),
+                  let repository = Orchestrator.inflightRepository(project) else {
+                return .error(400, "bad_request",
+                              "project must be an absolute path inside a Git repository.")
+            }
+            let branches = Orchestrator.repositoryBranches(in: repository)
+            return .json(["repository": repository,
+                          "inflight": Orchestrator.inflightRecords(repository: repository,
+                                                                   branches: branches),
+                          "at": Int(Date().timeIntervalSince1970)])
+
         // What this Mac can say about each assistant's own account-level quota — one read of two
         // small local files, 5-second cached, and deliberately *not* behind `readingDepth`: it
         // has to be cheap enough for `Orchestrator.dispatch()` itself to call synchronously at
@@ -926,6 +957,30 @@ final class RemoteServer {
                                                    body: body["body"] as? String ?? ""))
 
         case ("POST", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
+            && path.hasSuffix("/landing"):
+            let id = String(path.dropFirst("/v1/orchestrator/tasks/".count)
+                .dropLast("/landing".count))
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            let secret = request.headers["x-clawdline-task-secret"] ?? ""
+            return answer(Orchestrator.updateLanding(taskID: id.removingPercentEncoding ?? id,
+                                                      secret: secret, raw: body))
+
+        // One sentence about what this task is actually doing, from the task itself. The
+        // per-task secret is the credential, like `complete` and `notify`: a child has it, it
+        // names exactly one task, and nothing here can reach another one's record.
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
+            && path.hasSuffix("/progress"):
+            let id = String(path.dropFirst("/v1/orchestrator/tasks/".count)
+                .dropLast("/progress".count))
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            let secret = request.headers["x-clawdline-task-secret"] ?? ""
+            return answer(Orchestrator.recordProgress(taskID: id.removingPercentEncoding ?? id,
+                                                      secret: secret,
+                                                      note: body["note"] as? String ?? ""))
+
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
             && path.hasSuffix("/cancel"):
             let id = String(path.dropFirst("/v1/orchestrator/tasks/".count)
                 .dropLast("/cancel".count))
@@ -951,6 +1006,15 @@ final class RemoteServer {
             let paths = body["paths"] as? [String] ?? []
             return answer(Orchestrator.releaseClaims(taskID: id.removingPercentEncoding ?? id,
                                                       paths: paths))
+
+        // Before the single-task read below, which would otherwise swallow this path.
+        case ("GET", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
+            && path.hasSuffix("/inflight"):
+            let id = String(path.dropFirst("/v1/orchestrator/tasks/".count)
+                .dropLast("/inflight".count))
+            return answer(Orchestrator.inflightReply(
+                taskID: id.removingPercentEncoding ?? id,
+                secret: request.headers["x-clawdline-task-secret"] ?? ""))
 
         case ("GET", let path) where path.hasPrefix("/v1/orchestrator/tasks/"):
             let id = String(path.dropFirst("/v1/orchestrator/tasks/".count))

@@ -2558,7 +2558,7 @@ group("both completion notices still carry the untouched-claims reminder") {
         let notice = Orchestrator.taskFinishedNotice(for: task, audience: audience,
                                                      outstanding: audience == .parent ? 2 : 0)
         check("the \(audience.rawValue) notice body keeps the untouched-claims reminder",
-              notice?.body.hasSuffix(reminder) == true)
+              notice?.body.contains(reminder) == true)
         // What the call site actually types into the terminal, not just what it composed.
         let wire = notice.map(ClawdlineMessage.encode) ?? ""
         check("and it survives the wire to the \(audience.rawValue)",
@@ -2566,8 +2566,8 @@ group("both completion notices still carry the untouched-claims reminder") {
                   && ClawdlineMessage.decode(wire)?.body.contains("claim narrower next time") == true)
     }
 
-    // The reminder is the last thing on the line, after the timeout warning's slot, so the two
-    // orderings main shipped are preserved: root is "… — file — untouched", parent is
+    // The reminder follows the timeout warning's slot and precedes any root-owned landing hint,
+    // so the two established orderings remain: root is "… — file — untouched", parent is
     // "… — file — siblings — untouched".
     let parent = Orchestrator.taskFinishedNotice(for: task, audience: .parent, outstanding: 2)
     check("the parent line still reads siblings-then-claims",
@@ -10464,6 +10464,535 @@ group("the claims/release HTTP route is orchestrator-token gated") {
     let released = record?["released_claims"] as? [[String: Any]]
     check("the HTTP body reflects the release",
           released?.first?["path"] as? String == "\(dir)/Sources/A.swift")
+}
+
+group("landing records enforce the root-owned state machine and keep idempotent receipts") {
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    let id = "10101010-2020-3030-4040-505050505050"
+    let secret = String(repeating: "a1", count: 32)
+    let root = "landing-root-session"
+    var made = Orchestrator.Task(
+        id: id, state: .briefed, kind: "custom", title: "landing state machine",
+        assistant: .codex, projectDir: "/repo", timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 1), rootSessionId: root,
+        claims: ["Sources/Landing.swift"], claimsDeclared: true,
+        secretHash: Orchestrator.hash(ofSecret: secret))
+    made.claimKeys = Orchestrator.freezeClaims(made.claims, projectDir: made.projectDir)
+    Orchestrator.holdScheduleTaskForTesting(made)
+
+    func landing(_ reply: Orchestrator.Reply) -> [String: Any]? {
+        guard case .ok(let body) = reply,
+              let task = body["task"] as? [String: Any] else { return nil }
+        return task["landing"] as? [String: Any]
+    }
+
+    let first = Orchestrator.updateLanding(
+        taskID: id, secret: secret,
+        raw: ["state": "pending", "target": "main", "delivery": "review/landing",
+              "note": "awaiting a safe shared tree"],
+        now: Date(timeIntervalSince1970: 10))
+    let pending = landing(first)
+    check("pending is accepted before final landing",
+          pending?["state"] as? String == "pending"
+              && pending?["target"] as? String == "main"
+              && pending?["delivery"] as? String == "review/landing"
+              && pending?["owner_root_key"] as? String == Orchestrator.rootKeyDigest(root)
+              && pending?["since"] as? Int == 10)
+
+    let repeated = Orchestrator.updateLanding(
+        taskID: id, secret: secret,
+        raw: ["state": "pending", "target": "different", "note": "different"],
+        now: Date(timeIntervalSince1970: 99))
+    check("repeating one state is a no-op with the original receipt",
+          landing(repeated)?["since"] as? Int == 10
+              && landing(repeated)?["target"] as? String == "main"
+              && landing(repeated)?["note"] as? String == "awaiting a safe shared tree")
+
+    if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
+        taskID: id, secret: secret,
+        raw: ["state": "landed", "commit": "abc123"],
+        now: Date(timeIntervalSince1970: 20)) {
+        check("a live child cannot be declared landed", status == 409 && code == "not_terminal")
+    } else {
+        check("a live child cannot be declared landed", false, "it answered ok")
+    }
+
+    Orchestrator.finalize(id, as: .success, summary: "delivered")
+    let landedReply = Orchestrator.updateLanding(
+        taskID: id, secret: secret,
+        raw: ["state": "landed", "commit": "abc123"],
+        now: Date(timeIntervalSince1970: 30))
+    let landed = landing(landedReply)
+    check("pending advances to landed only after the task is terminal and records its commit",
+          landed?["state"] as? String == "landed"
+              && landed?["commit"] as? String == "abc123"
+              && landed?["since"] as? Int == 10)
+
+    let landedAgain = Orchestrator.updateLanding(
+        taskID: id, secret: secret,
+        raw: ["state": "landed", "commit": "changed"],
+        now: Date(timeIntervalSince1970: 40))
+    check("repeating landed cannot rewrite its commit receipt",
+          landing(landedAgain)?["commit"] as? String == "abc123")
+    if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
+        taskID: id, secret: secret, raw: ["state": "pending"]) {
+        check("landed cannot move back to pending", status == 409 && code == "invalid_transition")
+    } else {
+        check("landed cannot move back to pending", false, "it answered ok")
+    }
+}
+
+group("landing routes use only the matching task secret and list only pending obligations") {
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    let firstID = "11111111-2222-3333-4444-555555555555"
+    let secondID = "66666666-7777-8888-9999-aaaaaaaaaaaa"
+    let thirdID = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+    let firstSecret = String(repeating: "b2", count: 32)
+    let secondSecret = String(repeating: "c3", count: 32)
+    let thirdSecret = String(repeating: "d4", count: 32)
+    func fixture(_ id: String, secret: String, title: String) -> Orchestrator.Task {
+        var task = Orchestrator.Task(
+            id: id, state: .success, kind: "custom", title: title, assistant: .claude,
+            projectDir: "/repo", timeoutMinutes: 30,
+            created: Date(timeIntervalSince1970: 1), rootSessionId: "root-\(id)",
+            rootLabel: "owner \(title)", claims: ["Sources/\(title).swift"],
+            claimsDeclared: true, secretHash: Orchestrator.hash(ofSecret: secret))
+        task.claimKeys = Orchestrator.freezeClaims(task.claims, projectDir: task.projectDir)
+        return task
+    }
+    Orchestrator.holdScheduleTaskForTesting(fixture(firstID, secret: firstSecret, title: "pending"))
+    Orchestrator.holdScheduleTaskForTesting(fixture(secondID, secret: secondSecret, title: "landed"))
+    Orchestrator.holdScheduleTaskForTesting(fixture(thirdID, secret: thirdSecret, title: "abandoned"))
+    let path = "/v1/orchestrator/tasks/\(firstID)/landing"
+
+    let missing = RemoteServer.shared.route(remoteRequest(
+        "POST", path, body: "{\"state\":\"pending\"}"))
+    expect("a missing task secret reaches the landing handler and is forbidden", missing.status, 403)
+    let wrong = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: ["X-Clawdline-Task-Secret": String(repeating: "e5", count: 32)],
+        body: "{\"state\":\"pending\"}"))
+    expect("a wrong task secret is forbidden", wrong.status, 403)
+    let another = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: ["X-Clawdline-Task-Secret": secondSecret],
+        body: "{\"state\":\"pending\"}"))
+    expect("another task's real secret is still forbidden", another.status, 403)
+
+    let unknown = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: ["X-Clawdline-Task-Secret": firstSecret],
+        body: "{\"state\":\"pending\",\"surprise\":true}"))
+    expect("unknown landing fields are a bad request", unknown.status, 400)
+    expect("with the ordinary typed code", remoteErrorCode(unknown), "bad_request")
+
+    let accepted = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: ["X-Clawdline-Task-Secret": firstSecret],
+        body: "{\"state\":\"pending\",\"target\":\"main\",\"note\":\"waiting\"}"))
+    expect("the matching task secret updates its landing record", accepted.status, 200)
+    // Replace the route fixture so the list assertions below have an exact, injected clock;
+    // route authentication itself was the fact the call above exercised.
+    Orchestrator.holdScheduleTaskForTesting(
+        fixture(firstID, secret: firstSecret, title: "pending"))
+    _ = Orchestrator.updateLanding(
+        taskID: firstID, secret: firstSecret,
+        raw: ["state": "pending", "target": "main", "note": "waiting"],
+        now: Date(timeIntervalSince1970: 1))
+    _ = Orchestrator.updateLanding(
+        taskID: secondID, secret: secondSecret,
+        raw: ["state": "landed", "target": "main", "commit": "def456"],
+        now: Date(timeIntervalSince1970: 20))
+    _ = Orchestrator.updateLanding(
+        taskID: thirdID, secret: thirdSecret,
+        raw: ["state": "abandoned", "target": "main"],
+        now: Date(timeIntervalSince1970: 30))
+
+    let firstLanding = Orchestrator.record(id: firstID)?["landing"] as? [String: Any]
+    let pendingSince = firstLanding?["since"] as? Int ?? 0
+    let pending = Orchestrator.landingRecords(
+        now: Date(timeIntervalSince1970: TimeInterval(pendingSince + 50)))
+    check("the registry lists only pending landing obligations",
+          pending.count == 1 && pending.first?["id"] as? String == firstID)
+    check("a pending row carries owner, claims, target and the shared non-negative age formula",
+          pending.first?["title"] as? String == "pending"
+              && pending.first?["root_label"] as? String == "owner pending"
+              && pending.first?["root_key"] as? String == Orchestrator.rootKeyDigest("root-\(firstID)")
+              && pending.first?["paths"] as? [String] == ["Sources/pending.swift"]
+              && pending.first?["target"] as? String == "main"
+              && pending.first?["age_seconds"] as? Int == 50)
+    expect("the age formula clamps a clock rollback to zero",
+           Orchestrator.landingRecords(
+                now: Date(timeIntervalSince1970: TimeInterval(pendingSince - 1)))
+                .first?["age_seconds"] as? Int,
+           0)
+
+    Orchestrator.saveForTesting()
+    Orchestrator.forget()
+    let reloaded = Orchestrator.record(id: firstID)?["landing"] as? [String: Any]
+    check("landing survives a registry save/load round trip",
+          reloaded?["state"] as? String == "pending"
+              && reloaded?["owner_root_key"] as? String == Orchestrator.rootKeyDigest("root-\(firstID)"))
+
+    let anonymous = RemoteServer.shared.route(remoteRequest("GET", "/v1/orchestrator/landings"))
+    expect("an anonymous landing-registry read stops at the door", anonymous.status, 401)
+    let phone = RemoteAuth.addDevice(name: "landing route reader", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: phone.id) }
+    let listed = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/landings",
+        headers: ["Authorization": "Bearer \(phone.token)"]))
+    expect("a paired reader may query pending landing obligations", listed.status, 200)
+    let listedJSON = (try? JSONSerialization.jsonObject(with: listed.body)) as? [String: Any]
+    expect("the GET route returns the same one pending row",
+           (listedJSON?["landings"] as? [[String: Any]])?.count, 1)
+}
+
+group("work visibility decides from git, not from anybody's memory") {
+    typealias V = Orchestrator.WorkVisibility
+    func visible(_ state: Orchestrator.State, landing: Orchestrator.Landing? = nil,
+                 isolated: Bool = true, exists: Bool? = true, merged: Bool? = false) -> V {
+        Orchestrator.workVisibility(state: state, landing: landing, isolated: isolated,
+                                    branchExists: exists, branchMerged: merged)
+    }
+    func landing(_ state: Orchestrator.LandingState) -> Orchestrator.Landing {
+        Orchestrator.Landing(state: state, target: "main", delivery: nil,
+                             ownerRootKey: "00000000", since: Date(timeIntervalSince1970: 1),
+                             commit: state == .landed ? "abc123" : nil, note: nil)
+    }
+
+    expect("a briefed task is live whatever its branch says",
+           visible(.briefed, exists: false, merged: true), V.live)
+    expect("a queued task is live before any branch exists",
+           visible(.queued, isolated: false, exists: nil, merged: nil), V.live)
+
+    expect("a finished delivery whose branch is unmerged stays visible",
+           visible(.success), V.unmerged)
+    expect("a task whose session died leaves its branch behind, and it stays visible",
+           visible(.failure), V.unmerged)
+    expect("a timed-out task is the same case", visible(.timeout), V.unmerged)
+
+    expect("a merged branch settles", visible(.success, merged: true), V.settled)
+    expect("a branch that disposal removed settles",
+           visible(.success, exists: false, merged: false), V.settled)
+
+    // Unknown git facts keep it visible: showing a merged delivery costs a glance, hiding an
+    // unmerged one costs a day. Same direction as worktreeDisposal's fail-safe.
+    expect("an unreadable repository does not erase a delivery",
+           visible(.success, exists: nil, merged: nil), V.unmerged)
+
+    expect("a root that said landed settles it even with commits on the branch",
+           visible(.success, landing: landing(.landed)), V.settled)
+    expect("a root that said abandoned settles it too",
+           visible(.success, landing: landing(.abandoned)), V.settled)
+    expect("a declared pending landing is visible with no worktree at all",
+           visible(.success, landing: landing(.pending), isolated: false,
+                   exists: nil, merged: nil), V.unmerged)
+
+    // The boundary between the derived half and the declared half: a finished non-isolated task
+    // left its edits in the shared tree, where git status already shows them.
+    expect("a finished non-isolated task with no landing settles",
+           visible(.success, isolated: false, exists: nil, merged: nil), V.settled)
+    expect("a live non-isolated task is still live",
+           visible(.spawning, isolated: false, exists: nil, merged: nil), V.live)
+}
+
+group("the in-flight list answers what a worktree hides") {
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+
+    let repository = "/repo"
+    func fixture(_ id: String, title: String, state: Orchestrator.State, secret: String,
+                 branch: String?, created: TimeInterval) -> Orchestrator.Task {
+        var made = Orchestrator.Task(
+            id: id, state: state, kind: "custom", title: title, assistant: .claude,
+            projectDir: repository, timeoutMinutes: 30,
+            created: Date(timeIntervalSince1970: created),
+            rootSessionId: "root-\(id)", rootLabel: "root of \(title)",
+            claims: ["Sources/\(title).swift"], claimsDeclared: true,
+            secretHash: Orchestrator.hash(ofSecret: secret))
+        if state.isTerminal { made.finishedAt = Date(timeIntervalSince1970: created + 60) }
+        if let branch {
+            made.isolation = .worktree
+            made.worktree = Orchestrator.Worktree(
+                path: "/worktrees/\(id)", branch: branch, base: "base000",
+                repository: repository, cwd: "/worktrees/\(id)", head: "stale00",
+                commits: 2, dirty: false)
+        }
+        return made
+    }
+
+    let liveID = "aaaaaaaa-1111-2222-3333-444444444444"
+    let deadID = "bbbbbbbb-1111-2222-3333-444444444444"
+    let doneID = "cccccccc-1111-2222-3333-444444444444"
+    let goneID = "dddddddd-1111-2222-3333-444444444444"
+    let otherID = "eeeeeeee-1111-2222-3333-444444444444"
+    let secret = String(repeating: "b2", count: 32)
+
+    var live = fixture(liveID, title: "live", state: .briefed, secret: secret,
+                       branch: "clawdline/task/aaaa", created: 100)
+    live.progress = [Orchestrator.ProgressNote(note: "the real problem is in Settings",
+                                               at: Date(timeIntervalSince1970: 150))]
+    Orchestrator.holdScheduleTaskForTesting(live)
+    // Its session ended without reporting: terminal, but its branch is still there.
+    Orchestrator.holdScheduleTaskForTesting(
+        fixture(deadID, title: "orphaned", state: .failure, secret: secret,
+                branch: "clawdline/task/bbbb", created: 90))
+    // Delivered and merged — nothing outstanding.
+    Orchestrator.holdScheduleTaskForTesting(
+        fixture(doneID, title: "merged", state: .success, secret: secret,
+                branch: "clawdline/task/cccc", created: 80))
+    // Its branch was disposed of.
+    Orchestrator.holdScheduleTaskForTesting(
+        fixture(goneID, title: "disposed", state: .success, secret: secret,
+                branch: "clawdline/task/dddd", created: 70))
+    var elsewhere = fixture(otherID, title: "elsewhere", state: .briefed, secret: secret,
+                            branch: nil, created: 60)
+    elsewhere.projectDir = "/another-repo"
+    Orchestrator.holdScheduleTaskForTesting(elsewhere)
+
+    var branches = Orchestrator.RepositoryBranches()
+    branches.known = true
+    branches.heads = ["clawdline/task/aaaa": "head0aa", "clawdline/task/bbbb": "head0bb",
+                      "clawdline/task/cccc": "head0cc"]
+    branches.merged = ["clawdline/task/cccc"]
+
+    let rows = Orchestrator.inflightRecords(repository: repository,
+                                            now: Date(timeIntervalSince1970: 400),
+                                            branches: branches)
+    let ids = rows.compactMap { $0["id"] as? String }
+    expect("only outstanding work is listed, newest first", ids, [liveID, deadID])
+    expect("a live session says so", rows.first?["visibility"] as? String, "live")
+    expect("a finished-but-unmerged delivery says so",
+           rows.last?["visibility"] as? String, "unmerged")
+    expect("and carries the state that made it terminal", rows.last?["state"] as? String, "failure")
+
+    let liveWorktree = rows.first?["worktree"] as? [String: Any]
+    expect("the branch is where the code lives",
+           liveWorktree?["branch"] as? String, "clawdline/task/aaaa")
+    expect("and the head is what the ref says now, not what was last recorded",
+           liveWorktree?["head"] as? String, "head0aa")
+    expect("the row says the branch is really there", liveWorktree?["branch_exists"] as? Bool, true)
+    expect("and that nobody has merged it", liveWorktree?["merged"] as? Bool, false)
+    expect("claims come along", rows.first?["claims"] as? [String], ["Sources/live.swift"])
+    expect("so does who has it", rows.first?["root_label"] as? String, "root of live")
+    expect("and the age, on the one shared formula",
+           rows.first?["age_seconds"] as? Int, 300)
+    let notes = rows.first?["progress"] as? [[String: Any]]
+    expect("what the session said about itself is the row's best evidence",
+           notes?.first?["note"] as? String, "the real problem is in Settings")
+
+    expect("a task in another repository is not this repository's business",
+           ids.contains(otherID), false)
+
+    // Unreadable git: every branch fact is unknown, and nothing is erased on that basis.
+    let blind = Orchestrator.inflightRecords(repository: repository,
+                                             now: Date(timeIntervalSince1970: 400),
+                                             branches: Orchestrator.RepositoryBranches())
+    expect("when git cannot be asked, every delivery stays visible",
+           blind.compactMap { $0["id"] as? String }.sorted(),
+           [liveID, deadID, doneID, goneID].sorted())
+
+    expect("a task is left out of its own answer",
+           Orchestrator.inflightRecords(repository: repository,
+                                        now: Date(timeIntervalSince1970: 400),
+                                        branches: branches, excluding: liveID)
+               .compactMap { $0["id"] as? String },
+           [deadID])
+
+    // The task's own door: its secret, and no repository parameter to get wrong.
+    let wrongSecret = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/tasks/\(liveID)/inflight",
+        headers: ["X-Clawdline-Task-Secret": String(repeating: "c3", count: 32)]))
+    expect("a wrong task secret is forbidden at the in-flight door", wrongSecret.status, 403)
+    let noSecret = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/tasks/\(liveID)/inflight"))
+    expect("and so is no secret at all", noSecret.status, 403)
+    let missing = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/tasks/00000000-0000-0000-0000-000000000000/inflight",
+        headers: ["X-Clawdline-Task-Secret": secret]))
+    expect("an unknown task is not found rather than forbidden", missing.status, 404)
+    let notARepo = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/tasks/\(liveID)/inflight",
+        headers: ["X-Clawdline-Task-Secret": secret]))
+    check("a task whose tree is not a repository is told so rather than given an empty list",
+          notARepo.status == 409 && remoteErrorCode(notARepo) == "not_a_repository")
+
+    let anonymous = RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/inflight?project=/repo"))
+    expect("the repository-wide listing stops at the door without a device", anonymous.status, 401)
+    let phone = RemoteAuth.addDevice(name: "inflight reader", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: phone.id) }
+    let noProject = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/inflight",
+        headers: ["Authorization": "Bearer \(phone.token)"]))
+    check("a listing with no project is a bad request",
+          noProject.status == 400 && remoteErrorCode(noProject) == "bad_request")
+    let relative = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/inflight?project=repo",
+        headers: ["Authorization": "Bearer \(phone.token)"]))
+    expect("and so is a project that is not an absolute path", relative.status, 400)
+}
+
+group("a session can say what it is doing without stopping to write a report") {
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+
+    let id = "12121212-3434-5656-7878-909090909090"
+    let secret = String(repeating: "d4", count: 32)
+    let made = Orchestrator.Task(
+        id: id, state: .briefed, kind: "custom", title: "the title fixed at dispatch",
+        assistant: .claude, projectDir: "/repo", timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 1), rootSessionId: "progress-root",
+        secretHash: Orchestrator.hash(ofSecret: secret))
+    Orchestrator.holdScheduleTaskForTesting(made)
+
+    func notes(_ reply: Orchestrator.Reply) -> [[String: Any]]? {
+        guard case .ok(let body) = reply, let task = body["task"] as? [String: Any]
+        else { return nil }
+        return task["progress"] as? [[String: Any]]
+    }
+
+    if case .refused(let status, let code, _, _) = Orchestrator.recordProgress(
+        taskID: id, secret: String(repeating: "0f", count: 32), note: "no") {
+        expect("a wrong secret cannot write into somebody else's record", status, 403)
+        expect("with the ordinary typed code", code, "forbidden")
+    } else { check("a wrong secret is refused", false) }
+
+    if case .refused(let status, _, _, _) = Orchestrator.recordProgress(
+        taskID: id, secret: secret, note: "   ") {
+        expect("an empty note is a bad request", status, 400)
+    } else { check("an empty note is refused", false) }
+
+    let long = String(repeating: "x", count: Orchestrator.progressLimit + 1)
+    if case .refused(let status, _, _, _) = Orchestrator.recordProgress(
+        taskID: id, secret: secret, note: long) {
+        expect("a note past the limit is a bad request", status, 400)
+    } else { check("an over-long note is refused", false) }
+
+    let first = Orchestrator.recordProgress(taskID: id, secret: secret,
+                                            note: "the fixture needs rewriting too",
+                                            now: Date(timeIntervalSince1970: 10))
+    expect("a sentence is accepted", notes(first)?.count, 1)
+    expect("with the time it was said", notes(first)?.first?["at"] as? Int, 10)
+
+    let repeated = Orchestrator.recordProgress(taskID: id, secret: secret,
+                                               note: "the fixture needs rewriting too",
+                                               now: Date(timeIntervalSince1970: 11))
+    expect("the same sentence twice is a loop, not news", notes(repeated)?.count, 1)
+
+    for step in 1...Orchestrator.progressKept + 2 {
+        _ = Orchestrator.recordProgress(taskID: id, secret: secret, note: "step \(step)",
+                                        now: Date(timeIntervalSince1970: TimeInterval(20 + step)))
+    }
+    let kept = Orchestrator.record(id: id)?["progress"] as? [[String: Any]]
+    expect("only the newest few are kept", kept?.count, Orchestrator.progressKept)
+    expect("and they are the newest", kept?.last?["note"] as? String,
+           "step \(Orchestrator.progressKept + 2)")
+    expect("oldest first", kept?.first?["note"] as? String, "step 3")
+
+    Orchestrator.saveForTesting()
+    Orchestrator.forget()
+    let reloaded = Orchestrator.record(id: id)?["progress"] as? [[String: Any]]
+    expect("progress survives a registry save/load round trip",
+           reloaded?.count, Orchestrator.progressKept)
+    expect("with its text intact", reloaded?.last?["note"] as? String,
+           "step \(Orchestrator.progressKept + 2)")
+
+    // A finished task's story is its summary. Recording into it would be a second answer to a
+    // question already answered, and a live-work list that shows dead work is the failure this
+    // whole change exists to avoid.
+    Orchestrator.finalize(id, as: .success, summary: "done")
+    if case .refused(let status, let code, _, _) = Orchestrator.recordProgress(
+        taskID: id, secret: secret, note: "still going") {
+        expect("a terminal task cannot record progress", status, 409)
+        expect("and is told why", code, "not_live")
+    } else { check("a terminal task is refused", false) }
+
+    let path = "/v1/orchestrator/tasks/\(id)/progress"
+    let unauthenticated = RemoteServer.shared.route(remoteRequest(
+        "POST", path, body: "{\"note\":\"hello\"}"))
+    expect("the route reaches the handler without a paired device and is forbidden there",
+           unauthenticated.status, 403)
+}
+
+group("workspace_busy explains when a terminal blocker is pending landing") {
+    var holder = Orchestrator.Task(
+        id: "abababab-cdcd-efef-0101-232323232323", state: .success, kind: "custom",
+        title: "terminal blocker", assistant: .claude, projectDir: "/repo",
+        timeoutMinutes: 30, created: Date(timeIntervalSince1970: 1),
+        secretHash: String(repeating: "0", count: 64))
+    holder.landing = Orchestrator.Landing(
+        state: .pending, target: "main", delivery: nil, ownerRootKey: "12345678",
+        since: Date(timeIntervalSince1970: 11), commit: nil, note: nil)
+    let overlap = Orchestrator.ClaimsOverlap(
+        task: holder, paths: ["/repo/Sources"], sameRoot: false, rootsKnown: true,
+        rootLabel: "blocking root", rootKey: "blocking-root")
+    let busy = Orchestrator.workspaceBusyExtra(overlap, now: Date(timeIntervalSince1970: 61))
+    let landing = busy["landing"] as? [String: Any]
+    check("the 409 distinguishes pending landing from still running",
+          landing?["target"] as? String == "main" && landing?["age_seconds"] as? Int == 50)
+
+    var landed = holder
+    landed.landing = Orchestrator.Landing(
+        state: .landed, target: "main", delivery: nil, ownerRootKey: "12345678",
+        since: Date(timeIntervalSince1970: 11), commit: "abc123", note: nil)
+    let doneOverlap = Orchestrator.ClaimsOverlap(
+        task: landed, paths: ["/repo/Sources"], sameRoot: false, rootsKnown: true,
+        rootLabel: "blocking root", rootKey: "blocking-root")
+    check("a landed blocker does not carry pending-landing context",
+          Orchestrator.workspaceBusyExtra(doneOverlap)["landing"] == nil)
+}
+
+group("terminal notices remind a root about unrecorded claimed work exactly where needed") {
+    var task = Orchestrator.Task(
+        id: "cdcdcdcd-efef-0101-2323-454545454545", state: .success, kind: "custom",
+        title: "shared-tree delivery", assistant: .codex, projectDir: "/repo",
+        timeoutMinutes: 30, created: Date(timeIntervalSince1970: 1),
+        claims: ["Sources", "Tests"], claimsDeclared: true,
+        secretHash: String(repeating: "0", count: 64))
+    let reminder = Orchestrator.landingNotice(for: task)
+    check("claimed terminal work with no landing record produces the root reminder",
+          !reminder.isEmpty && reminder.contains("landing"))
+    for audience in [ClawdlineMessage.Audience.root, .parent] {
+        let body = Orchestrator.taskFinishedNotice(for: task, audience: audience)?.body ?? ""
+        check("the \(audience.rawValue) completion line appends the reminder once",
+              body.hasSuffix(reminder)
+                  && body.components(separatedBy: reminder).count - 1 == 1)
+    }
+
+    task.untouchedClaims = task.claims
+    check("all claims judged untouched suppress the reminder",
+          Orchestrator.landingNotice(for: task).isEmpty)
+    task.untouchedClaims = ["Tests"]
+    check("one touched claim is enough to keep the reminder",
+          !Orchestrator.landingNotice(for: task).isEmpty)
+    task.landing = Orchestrator.Landing(
+        state: .pending, target: "main", delivery: nil, ownerRootKey: "12345678",
+        since: Date(timeIntervalSince1970: 2), commit: nil, note: nil)
+    check("any existing landing record suppresses the automatic reminder",
+          Orchestrator.landingNotice(for: task).isEmpty)
 }
 
 group("the terminal claims audit tells touched from untouched from gone") {

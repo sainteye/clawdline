@@ -111,8 +111,13 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/orchestrator/tasks/:id` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/tasks/:id/notify` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/complete` | that task's secret | — |
+| `POST` | `/v1/orchestrator/tasks/:id/landing` | that task's secret | — |
+| `POST` | `/v1/orchestrator/tasks/:id/progress` | that task's secret | — |
+| `GET` | `/v1/orchestrator/tasks/:id/inflight` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/cancel` | orchestrator token, **or** token + key | `send` **and** the write switch |
 | `GET` | `/v1/orchestrator/assistants` | orchestrator token, **or** token | `read` |
+| `GET` | `/v1/orchestrator/landings` | orchestrator token, **or** token | `read` |
+| `GET` | `/v1/orchestrator/inflight` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/waits` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/waits` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/waits/:id/release` | orchestrator token | — |
@@ -1122,7 +1127,7 @@ Nine refusals, and a client should branch on all of them:
 | `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `reasoning_effort`, `permission_mode`, `plan`, `claims`, or `serialize`. `reasoning_effort` is Codex-only and exactly `high` or `xhigh`; omission inherits Codex/user defaults. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
 | `assistant_exhausted` | 409 | the named assistant's own account-level quota reads `exhausted` — see [`GET /v1/orchestrator/assistants`](#get-v1orchestratorassistants). The error object carries `assistant`, `availability`, `source`, `observed_at`, `age_seconds`, `resets_at`, `retry_after` (`min(resets_at - now, 3600)`), and `alternatives` — every other assistant's own `id`/`availability`/`detail`, so a client can dispatch to one of those instead of retrying the same one blind. `task.json`'s `"ignore_quota": true` sends it anyway; the message names that field outright. Checked after capacity and depth, before any git subprocess — cheaper than either, and the reply's own `message` says why. This is a fact about the account, not the task: it fires whether or not the failing session sits in this Mac's own tree |
 | `worktree_unavailable` | 409 | worktree isolation was requested but the repository has no commit to use as a base or the destination volume has less than 2 GB available. This is an environment refusal rather than malformed JSON |
-| `workspace_busy` | 409 | a live task from another definitely identified root reserved an equal, ancestor, or descendant claim. The error object carries `blocking_task`, `title`, nullable `root_label`, Unix-second `created`, absolute `conflict_paths`, advisory `retry_after`, `age_seconds` (`now` minus the blocking task's `created`, an integer), and `root_key` (the blocking task's root tree, hashed — see below). The rejected task is not registered and does not spend dispatch rate-limit budget |
+| `workspace_busy` | 409 | a task from another definitely identified root reserved an equal, ancestor, or descendant claim. The error object carries `blocking_task`, `title`, nullable `root_label`, Unix-second `created`, absolute `conflict_paths`, advisory `retry_after`, `age_seconds` (`now` minus the blocking task's `created`, an integer), and `root_key` (the blocking task's root tree, hashed — see below). A terminal blocker with a pending landing receipt also carries `landing.target` and `landing.age_seconds`. The rejected task is not registered and does not spend dispatch rate-limit budget |
 | `depth_exceeded` | 409 | **the caller is already as deep as this Mac goes.** A root's child may dispatch; that child's may not. `orchestrator_max_grandchildren` of `0` puts the floor back at one level. Not a retry — stop |
 | `over_capacity` | 429 | this dispatcher's slots are full (`orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child), or the whole Mac's are. Registered `queued` tasks count toward these limits even before a tab opens, preventing an unbounded queue. The error object carries `retry_after` in seconds, and `message` says which |
 | `rate_limited` | 429 | more than ten dispatches in ten minutes, or more than one full tree's worth if that is larger |
@@ -1144,7 +1149,9 @@ A claims conflict is answered before serialization, spawning, or L1 workspace wa
           "created":1787696800,"age_seconds":42,
           "root_key":"9f1c2e7a",
           "conflict_paths":["/Users/you/code/clawdline/Sources/Orchestrator.swift"],
-          "retry_after":60,"request_id":"c1e0b7a4-2f5d-4a19-8b0e-71c93d5ea882"}}
+          "retry_after":60,
+          "landing":{"target":"main","age_seconds":900},
+          "request_id":"c1e0b7a4-2f5d-4a19-8b0e-71c93d5ea882"}}
 ```
 
 The failed attempt writes `orchestrator.claims.blocked` to the audit log but does not count toward
@@ -1157,6 +1164,9 @@ hypothetical — **while `root_key` is `Orchestrator.rootKeyDigest`: SHA-256 of 
 root key the broker already uses for identity (a live root's session id, or `task:<id>` for a
 task resolved back to itself), truncated to its first 8 hex characters.** The same tree always
 hashes to the same `root_key`; two roots that share a label do not share a `root_key`.
+The nested `landing` object is absent for a live blocker. When present, it means the blocking task
+has already ended but its root still reports the delivered work as pending landing; this extra
+context does not itself create or extend the block.
 
 A `200` means *registered and being opened*, not *running*. `state` is `queued` or `spawning` when
 this answers and the child has typed nothing yet; watch the record, or wait to be told.
@@ -1659,6 +1669,14 @@ The record:
     {"path": "/Users/you/code/clawdline/Sources/Orchestrator.swift", "released_at": 1787100090}
   ],
   "untouched_claims": ["Sources/Orchestrator.swift"],  // absent unless the terminal audit found any
+  "landing": {                         // absent until root records the post-delivery obligation
+    "state": "pending",               // pending | landed | abandoned
+    "target": "main",                 // optional branch or HEAD description
+    "delivery": "clawdline/task/3f9a21bc-…", // optional branch or review conclusion
+    "owner_root_key": "9f1c2e7a",     // rootKeyDigest, never a free-text label
+    "since": 1787100110,               // commit appears only when state is landed
+    "note": "waiting for the shared tree" // optional
+  },
   "usage": {"input": 48210, "output": 9330, "cacheRead": 412880, "cacheWrite": 31200,
             "total": 501620, "model": "claude-sonnet-4-5", "costUsd": 0.4243}
 }
@@ -1712,6 +1730,139 @@ until the first release. `untouched_claims` is written once, at the task's termi
 lists the *relative* declared `claims` whose path was never modified after `spawnedAt` — including
 one that no longer exists at all — so a root can see it over-declared and claim narrower next
 time. Both survive a restart like every other task field.
+
+`landing` is the root's durable post-delivery receipt. Its `owner_root_key` is derived from the
+same canonical root identity and `rootKeyDigest` used by claims conflicts; clients do not supply a
+label in its place. Optional values are omitted when unknown. The field is informational only: it
+does not retain claims, refuse a dispatch, or otherwise turn the task record into a lock.
+
+### `POST /v1/orchestrator/tasks/:id/landing`
+
+Updates the root-owned obligation attached to one task. It uses that task's durable secret hash,
+even after the task reaches a terminal state; the canonical credential is the
+`X-Clawdline-Task-Secret` header. This route belongs to the root after delivery, not to the child.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/landing \
+    -H "X-Clawdline-Task-Secret: $TASK_SECRET" -H 'Content-Type: application/json' \
+    -d '{"state":"pending","target":"main","delivery":"clawdline/task/3f9a21bc","note":"waiting for the shared tree"}'
+{"ok":true,"task":{"id":"3f9a21bc-…","state":"success",
+ "landing":{"state":"pending","target":"main","delivery":"clawdline/task/3f9a21bc",
+            "owner_root_key":"9f1c2e7a","since":1787100110,
+            "note":"waiting for the shared tree"}}}
+```
+
+The body accepts only `state`, `target`, `delivery`, `commit`, and `note`. `state` is required and
+is `pending`, `landed`, or `abandoned`; the other fields are optional non-empty strings. A repeated
+request for the current state is an idempotent no-op: it preserves the original `since` and
+receipts. Moving to `landed` requires a terminal task and a non-empty `commit`. Once landed, the
+record cannot move back; reopening work requires a new task. `since` is when this obligation was
+first recorded and is preserved through `pending -> landed`.
+
+| `code` | status | |
+|---|---|---|
+| `bad_request` | 400 | missing/unknown state, unknown field, invalid optional text, a commit on a non-landed state, or no commit for landed |
+| `forbidden` | 403 | the task-secret header is absent, wrong, or belongs to another task |
+| `not_found` | 404 | no retained task with that id |
+| `not_terminal` | 409 | `landed` was requested while the child task is still live |
+| `invalid_transition` | 409 | an already-landed receipt was asked to move to another state |
+
+### `GET /v1/orchestrator/landings`
+
+Lists only current `pending` obligations, oldest first. Authentication is identical to
+`GET /v1/orchestrator/waits`: the orchestrator token or a paired device with `read` may query it.
+
+```json
+{"landings":[{"id":"3f9a21bc-…","title":"Edit the orchestrator",
+ "root_key":"9f1c2e7a","root_label":"clawdline main",
+ "paths":["Sources/Orchestrator.swift"],"since":1787100110,"age_seconds":42,
+ "target":"main","note":"waiting for the shared tree"}],"at":1787100152}
+```
+
+`paths` is the task's original relative `claims`. `age_seconds` uses the same
+`max(0, now - since)` integer-seconds formula as `workspace_busy`, so a clock rollback reports zero.
+Nullable `target`, `note`, and `root_label` remain present in this list so a dashboard can render a
+stable row shape. A row is a signpost, not a gate: callers decide whether to wait or continue.
+
+### `GET /v1/orchestrator/inflight?project=<dir>`, `GET /v1/orchestrator/tasks/:id/inflight`
+
+**Every line of work outstanding in a repository, including work a worktree hides.**
+
+A delivery sitting finished on `clawdline/task/…` appears in no `git status`, no `git diff` and no
+file listing of the shared checkout, and its claims were released the moment the task ended. A
+session asking "has anyone done this?" looked at the tree, saw nothing, and did it again. This is
+the answer to that question.
+
+Two doors onto the same list. The repository-wide form takes any absolute `project` (or
+`project_dir`) directory and resolves the repository containing it on this side; authentication is
+identical to `GET /v1/orchestrator/landings`. The per-task form takes no directory at all — it
+reads the repository off the task and authenticates with that task's own secret, because **a child
+has no orchestrator token and should not be taught to read one**, and because a task that cannot
+write a path cannot ask about a tree it is not working in. The asking task is left out of its own
+answer.
+
+```json
+{"repository":"/Users/me/code/clawdline",
+ "inflight":[{"id":"3f9a21bc-…","title":"Add the schedules page","state":"briefed",
+   "visibility":"live","assistant":"claude","project_dir":"/Users/me/code/clawdline",
+   "created":1787100110,"age_seconds":2640,"claims":["Sources/RemoteServer.swift"],
+   "root_label":"clawdline schedules","root_key":"9f1c2e7a",
+   "progress":[{"note":"the real problem is in Settings, not the route","at":1787101400}],
+   "worktree":{"branch":"clawdline/task/3f9a21bc","base":"d6781a8","head":"c059bd6",
+     "dirty":false,"branch_exists":true,"merged":false}}],
+ "at":1787102750}
+```
+
+`visibility` is why the row is here, and it is the whole of the staleness policy:
+
+| value | means |
+| --- | --- |
+| `live` | a session is on it now — any non-terminal state |
+| `unmerged` | finished, and its delivery is still on a branch nobody has merged |
+
+There is a third value, `settled`, and it never appears in a list: it is how a row leaves. **An
+entry stops being live because git says so, not because somebody remembered to clear a flag.** A
+delivery disappears when its branch is merged into the repository's `HEAD` or deleted — the same
+moment the work stops being invisible. Two declared answers are honoured first, because a root
+saying so is better evidence than a branch this side has to guess about: `landing: landed` and
+`landing: abandoned` settle a row, and `landing: pending` keeps one visible even with no worktree.
+
+**Unknown git facts keep the entry visible.** If the repository cannot be read, every delivery in
+it stays listed. The costs are not symmetric: showing a delivery that turns out to be merged costs
+a glance, and hiding one that is not costs somebody a day of rebuilding it.
+
+A task whose session died has already been finalized as `failure` by the sixty-second rule in
+`Orchestrator.watch`, and its branch is kept by `worktreeDisposal` whenever it carries commits — so
+it appears here as `state: failure`, `visibility: unmerged`, which is exactly right: the work is
+there, on a branch, and nobody is doing it.
+
+A finished task that was **not** isolated is `settled` here, and that is a boundary rather than an
+oversight — its edits are in the shared tree where `git status` already shows them. The way such a
+delivery stays visible is its root declaring `landing: pending`, which is the declared half of this
+and is not duplicated by the derived half.
+
+Branch facts cost two `git for-each-ref` calls for the whole repository rather than two per task.
+`head` is what the ref points at now, falling back to what the app last recorded.
+
+### `POST /v1/orchestrator/tasks/:id/progress`
+
+**One line about what this task is actually doing**, authenticated by that task's secret like
+`complete` and `notify`.
+
+```bash
+curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/progress \
+  -H "X-Clawdline-Task-Secret: $TASK_SECRET" -H 'Content-Type: application/json' \
+  -d '{"note":"the real problem is in Settings, not the route"}'
+```
+
+The title is fixed at dispatch, and by the time `result.json` exists somebody else may have spent
+an hour on the same thing. This is the seam between those two moments, and it is deliberately one
+sentence and one curl: a session that has to stop and compose a status report will not do it.
+
+`note` is required, non-empty after trimming, and at most 300 characters. The newest 5 are kept and
+appear as `progress` on the task record and on every `inflight` row. Sending the same sentence as
+the newest one is accepted and ignored — a loop is not news, and refusing it would only cost the
+caller a retry. A terminal task is refused with `409 not_live`: what it did belongs in its summary.
 
 ### `POST /v1/orchestrator/tasks/:id/claims/release`
 
