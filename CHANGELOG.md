@@ -9,6 +9,30 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: schedules you can make, instead of only read
+
+A schedule — "every weekday at nine, open a session in this project and tell it to do this" —
+could until now only be made by writing a JSON file by hand. There is a + beside the Schedules
+list now, and a form behind it with a field for each thing the file holds: a title, a time, which
+days, which project, which assistant, the first message, and behind a fold the things with
+working defaults.
+
+You can also say it. The microphone that opens a session hears a schedule too — "every weekday at
+nine, run the tests in clawdline" — and hands what it worked out to the same form, leaving blank
+whatever it could not. That is the point of the form existing first: the parts a machine could not
+read are the parts you are shown. A confident draft still does not create anything on its own,
+because opening a session now and arranging one for every morning are not the same risk.
+
+What the page sends back is the id the Mac put on the project row, never a path, so a schedule
+cannot name a directory this device was never shown. And a schedule never runs for a time before
+it was made: it remembers when it was created, so arranging tomorrow's nine o'clock at one in the
+afternoon does nothing at all until tomorrow at nine.
+
+One thing worth stating plainly, because it moves a line this project drew on purpose: a paired
+phone can now arrange work that runs later, with nobody watching. It goes through the same gate
+as dictation — sending has to be switched on, and the device has to be allowed to send.
+
+
 ### Fixed: opening one session card no longer stops everything else on the phone
 
 The remote server read, decided and answered every request on one queue. That is what made its

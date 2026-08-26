@@ -73,6 +73,12 @@ falls back to a full JSON rewrite and records that fallback in the audit log.
 - `catch_up_hours` is an integer from `0` through `168`, default `6`.
 - `notify_on_failure` is a boolean, default `true`. It covers missed catch-up windows, dispatch
   refusals, failures, timeouts and spawn failures.
+- `created_at` is a Unix timestamp in seconds, written by `POST /v1/orchestrator/schedules` and
+  never named by the request. It exists so that an occurrence from before the schedule was made
+  is neither run nor counted as missed: without it, making a `09:00` schedule at one in the
+  afternoon opened a session within the minute, and making one in the evening pushed a
+  notification about a run that was never owed. **A file without it is not wrong** — a schedule
+  written by hand has always meant "as far back as anyone knows", and it still does.
 
 A scheduled task may also use the task-secret `/notify` route to push that day's **successful
 content** to the user — a daily forecast is the canonical shape. Say so in `task.instructions`;
@@ -130,6 +136,8 @@ The fields are the ones in [The file](#the-file), flattened, plus the `place_id`
 - optional: `enabled` (default `true`), `close_tab`, `catch_up_hours`, `notify_on_failure`,
   `timeout_minutes`, `model`. An empty `model` is left out of the file rather than written into
   it as an empty string.
+- written by the Mac, not by the request: `schedule_id`, the filename it must match, and
+  `created_at`.
 - `days` is **not** defaulted. A request that does not say which days is refused, because
   choosing `daily` on somebody's behalf is choosing how often their work runs. `enabled` is the
   opposite: a schedule somebody has just asked for is on.
