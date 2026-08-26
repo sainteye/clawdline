@@ -11599,6 +11599,226 @@ group("coordination wait routes keep their credential and ownership boundaries")
           Orchestrator.coordinationWaitRecords().isEmpty)
 }
 
+// The two file-wait messages are the app speaking into somebody else's session, so they take the
+// same closed envelope as every other thing the app says — and they carry the wait id, because a
+// notice an owner cannot act on is a notice that does nothing.
+group("a file-wait notice is the app speaking and carries its own release route") {
+    Orchestrator.forget()
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before {
+            try? before.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Orchestrator.forget()
+    }
+
+    let owner = "ENVELOPE-OWNER", waiter = "ENVELOPE-WAITER"
+    var delivered: [(String, String)] = []
+    let made = Orchestrator.registerCoordinationWait([
+        "repository": "/Users/me/code/clawdline",
+        "paths": ["Sources/Foo.swift", "Sources/Bar.swift"],
+        "owner_session_id": owner, "waiter_session_id": waiter,
+        "reason": "the waiter needs Foo.swift to stop moving",
+        "release_condition": "the paths are committed",
+    ], deliver: { target, text in delivered.append((target, text)); return nil })
+    guard case .ok(let payload) = made,
+          let row = payload["wait"] as? [String: Any],
+          let waitID = row["id"] as? String,
+          let requestLine = delivered.first?.1 else {
+        check("a file-wait fixture registers and delivers", false); return
+    }
+
+    guard let request = ClawdlineMessage.decode(requestLine) else {
+        check("the delivered request is a Clawdline notice rather than a bare line", false)
+        return
+    }
+    guard case let .fileWaitRequested(requestedWait, requestedWaiter, _,
+                                      requestedCondition, route) = request.event else {
+        check("the delivered request is the file-wait request event", false); return
+    }
+    expect("the payload names the wait the owner has to release", requestedWait.id, waitID)
+    expect("and the repository it is about", requestedWait.repository,
+           "/Users/me/code/clawdline")
+    expect("and the exact paths", requestedWait.paths,
+           ["Sources/Bar.swift", "Sources/Foo.swift"])
+    expect("and the session that is blocked", requestedWaiter, waiter)
+    expect("and the condition that ends the wait", requestedCondition,
+           "the paths are committed")
+    check("the payload carries the release route for this wait",
+          route.contains("/v1/orchestrator/waits/\(waitID)/release"))
+    check("the prose an assistant reads names the wait id and the release call",
+          request.body.contains(waitID)
+              && request.body.contains("/v1/orchestrator/waits/\(waitID)/release"))
+    check("and it reads the token out of its file instead of printing it",
+          request.body.contains("$(cat ~/.config/clawdline/orchestrator-token)")
+              && !request.body.contains(Orchestrator.dispatchToken()))
+
+    var releaseLines: [String] = []
+    let released = Orchestrator.releaseCoordinationWait(
+        id: waitID, ownerSessionID: owner, commit: "abc1234", note: "rebased first",
+        deliver: { _, text in releaseLines.append(text); return nil })
+    guard case .ok = released, let releaseLine = releaseLines.first,
+          let release = ClawdlineMessage.decode(releaseLine) else {
+        check("the release notice is a Clawdline notice too", false); return
+    }
+    guard case let .fileWaitReleased(releasedWait, commit, note) = release.event else {
+        check("the release notice is the file-wait release event", false); return
+    }
+    expect("a released waiter learns which wait was released", releasedWait.id, waitID)
+    expect("and the commit the owner named", commit, "abc1234")
+    expect("and the note", note, "rebased first")
+    check("the release prose still tells the waiter to re-read the tree itself",
+          release.body.contains(waitID) && release.body.contains("HEAD"))
+
+    // The closed schema is all-or-nothing for these two kinds as well: the envelope is the
+    // reason a notice may be presented as the app speaking, so anything unrecognised inside it
+    // has to come back as an ordinary message rather than a partly-trusted card.
+    let requestWire = ClawdlineMessage.encode(request)
+    expect("a file-wait request round-trips to the same typed payload",
+           ClawdlineMessage.decode(requestWire), request)
+    let releaseWire = ClawdlineMessage.encode(release)
+    expect("and so does a release", ClawdlineMessage.decode(releaseWire), release)
+    check("both are one terminal-safe line",
+          !requestWire.contains("\n") && !releaseWire.contains("\n")
+              && !requestWire.contains("\r") && !releaseWire.contains("\r"))
+    for wire in [requestWire, releaseWire] {
+        let extra = wire.replacingOccurrences(
+            of: #""version":1"#, with: #""version":1,"action":"javascript:bad()""#)
+        check("one field this version does not understand refuses the whole notice",
+              extra != wire && ClawdlineMessage.decode(extra) == nil)
+        let renamed = wire.replacingOccurrences(of: #""wait":{"id":"#,
+                                                with: #""wait":{"identifier":"#)
+        check("and so does a renamed field inside the wait",
+              renamed != wire && ClawdlineMessage.decode(renamed) == nil)
+    }
+    let nulledRoute = requestWire.replacingOccurrences(
+        of: #""release_route":"#, with: #""release_route":null,"unused":"#)
+    check("a release route that is not a string is not a file-wait request",
+          nulledRoute != requestWire && ClawdlineMessage.decode(nulledRoute) == nil)
+    let unreleasedCommit = releaseWire.replacingOccurrences(of: #""commit":"abc1234""#,
+                                                           with: #""commit":7"#)
+    check("and a commit that is neither a string nor null is not a release",
+          unreleasedCommit != releaseWire && ClawdlineMessage.decode(unreleasedCommit) == nil)
+
+    // A release without a commit is the ordinary "I let the paths go" case, and `null` keeps the
+    // key set fixed rather than making the envelope's shape depend on what the owner chose to say.
+    let plain = ClawdlineMessage.Notice(
+        event: .fileWaitReleased(wait: releasedWait, commit: nil, note: nil),
+        body: "[Clawdline file-wait release] Wait id: \(waitID). Re-check HEAD.")
+    let plainWire = ClawdlineMessage.encode(plain)
+    check("a release with nothing to add says so explicitly on the wire",
+          plainWire.contains(#""commit":null"#) && plainWire.contains(#""note":null"#))
+    expect("and round-trips to the same absence", ClawdlineMessage.decode(plainWire), plain)
+
+    // Claude Code records what the app typed as an ordinary user turn; the transcript reader is
+    // what turns it back into something the page can label as Clawdline rather than as the person.
+    let claudeRow = try! JSONSerialization.data(withJSONObject: [
+        "type": "user",
+        "message": ["role": "user", "content": [["type": "text", "text": requestWire]]],
+    ], options: [.sortedKeys])
+    let parsed = Transcript.parse(String(decoding: claudeRow, as: UTF8.self))
+    expect("a file-wait request in a transcript is not the person speaking",
+           parsed.first?.kind, .notice)
+    expect("and it keeps its decoded payload", parsed.first?.notice, request)
+}
+
+// Words sent into Claude Code's permission picker are discarded, and the Return that follows
+// answers whichever row is highlighted. Every other typing path in this app already refuses that;
+// these two were the ones still sending into it — and worse, recording the loss as a delivery.
+group("a file-wait notice is not typed into a session that is showing a picker") {
+    Orchestrator.forget()
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before {
+            try? before.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Orchestrator.forget()
+    }
+
+    let owner = "BUSY-OWNER", waiter = "BUSY-WAITER"
+    let body: [String: Any] = [
+        "repository": "/Users/me/code/clawdline", "paths": ["Sources/Foo.swift"],
+        "owner_session_id": owner, "waiter_session_id": waiter,
+        "reason": "the owner is mid-edit", "release_condition": "committed",
+    ]
+    var attempts: [String] = []
+    let blocked = Orchestrator.registerCoordinationWait(
+        body, readiness: { _ in "that session is showing a menu" },
+        deliver: { target, _ in attempts.append(target); return nil })
+    guard case .refused(let status, let code, _, _) = blocked else {
+        check("registering against a session showing a picker is refused", false); return
+    }
+    expect("a session that cannot be typed into has not failed to receive anything", status, 409)
+    expect("with a code that says the owner is busy rather than unreachable", code, "owner_busy")
+    check("nothing was typed into the picker", attempts.isEmpty)
+
+    func waiterRow() -> [String: Any] {
+        (Orchestrator.coordinationWaitRecords().first?["waiters"] as? [[String: Any]])?
+            .first(where: { $0["sessionId"] as? String == waiter }) ?? [:]
+    }
+    check("the wait is still durable so the waiter is not silently unblocked",
+          Orchestrator.coordinationWaitRecords().count == 1
+              && waiterRow()["sessionId"] as? String == waiter)
+    check("and the request is recorded as still owed, not as delivered",
+          waiterRow()["requestDeliveredAt"] == nil)
+    expect("the waiter's own overlay still names the wait",
+           Orchestrator.coordination(forTerminal: waiter).waitingOn.count, 1)
+
+    // The bug this pins: a blocked send that had been receipted as delivered would be deduplicated
+    // away here, and the owner would never hear about this waiter again.
+    let retry = Orchestrator.registerCoordinationWait(
+        body, readiness: { _ in nil },
+        deliver: { target, _ in attempts.append(target); return nil })
+    guard case .ok(let retried) = retry else {
+        check("the same registration can be retried once the picker is gone", false); return
+    }
+    expect("the retry reuses the relationship rather than making a second one",
+           retried["deduplicated"] as? Bool, true)
+    expect("and this time the owner is told", attempts, [owner])
+    check("and the delivery is receipted", waiterRow()["requestDeliveredAt"] != nil)
+
+    // Release takes the same guard, but keeps the existing partial-fan-out code: from the owner's
+    // side "one waiter did not get it, retry" is the same situation whether the message failed to
+    // send or was never sent at all.
+    guard let waitID = Orchestrator.coordinationWaitRecords().first?["id"] as? String else {
+        check("the group has an id to release", false); return
+    }
+    var releases: [String] = []
+    let held = Orchestrator.releaseCoordinationWait(
+        id: waitID, ownerSessionID: owner, commit: "beef123", note: nil,
+        readiness: { _ in "that session is showing a menu" },
+        deliver: { target, _ in releases.append(target); return nil })
+    guard case .refused(let heldStatus, let heldCode, _, let extra) = held else {
+        check("a release nobody could be told about is not a completed release", false); return
+    }
+    expect("an undeliverable release is the existing incomplete answer", heldStatus, 502)
+    expect("with the existing code", heldCode, "release_incomplete")
+    expect("and it counts the waiter still owed a notice", extra["pending"] as? Int, 1)
+    check("nothing was typed into the waiter's picker", releases.isEmpty)
+    check("and no release receipt was written",
+          waiterRow()["sessionId"] as? String == waiter
+              && waiterRow()["releaseDeliveredAt"] == nil)
+    expect("so the waiter is still shown as blocked",
+           Orchestrator.coordination(forTerminal: waiter).waitingOn.count, 1)
+
+    let completed = Orchestrator.releaseCoordinationWait(
+        id: waitID, ownerSessionID: owner, commit: "beef123", note: nil,
+        readiness: { _ in nil },
+        deliver: { target, _ in releases.append(target); return nil })
+    guard case .ok = completed else {
+        check("the release completes once the waiter can be typed into", false); return
+    }
+    expect("the retry reaches the waiter that was skipped", releases, [waiter])
+    check("and the fully released group leaves the registry",
+          Orchestrator.coordinationWaitRecords().isEmpty)
+}
+
 group("handing off is the other thing a paired device may not do") {
     Orchestrator.forget()
     defer { Orchestrator.forget() }

@@ -764,12 +764,14 @@ final class RemoteServer {
                self.session(withID: waiterID) == nil {
                 return .error(404, "waiter_not_found", "No waiter session named \(waiterID).")
             }
-            let reply = Orchestrator.registerCoordinationWait(body) { targetID, text in
-                guard let target = self.session(withID: targetID) else {
-                    return "No session named \(targetID)."
-                }
-                return Targets.send(text, to: target)
-            }
+            let reply = Orchestrator.registerCoordinationWait(
+                body, readiness: self.coordinationReadiness,
+                deliver: { targetID, text in
+                    guard let target = self.session(withID: targetID) else {
+                        return "No session named \(targetID)."
+                    }
+                    return Targets.send(text, to: target)
+                })
             DispatchQueue.main.async { SessionWatch.shared.nudge() }
             return answer(reply)
 
@@ -787,6 +789,7 @@ final class RemoteServer {
                 id: id.removingPercentEncoding ?? id,
                 ownerSessionID: body["owner_session_id"] as? String ?? "",
                 commit: body["commit"] as? String, note: body["note"] as? String,
+                readiness: self.coordinationReadiness,
                 deliver: { targetID, text in
                     guard let target = self.session(withID: targetID) else {
                         return "No session named \(targetID)."
@@ -2347,6 +2350,24 @@ final class RemoteServer {
     private func session(withID id: String) -> TargetSession? {
         if Thread.isMainThread { return SessionWatch.shared.targets.first { $0.id == id } }
         return DispatchQueue.main.sync { SessionWatch.shared.targets.first { $0.id == id } }
+    }
+
+    /// Whether Clawdline may type a coordination-wait notice into that session right now, in the
+    /// same terms `POST /v1/sessions/<id>/send` already uses: a picker discards the words and acts
+    /// on the Return that follows them, so a message sent into one is lost *and* answers somebody
+    /// else's permission question. Nothing stricter — a session that is merely busy, or holding a
+    /// half-typed line, still reads what arrives, and refusing those would park every wait behind
+    /// whatever the owner happens to be running.
+    ///
+    /// A session this Mac cannot see at all is not a readiness answer: that is the delivery
+    /// failure the caller already reports, and answering it here would file "the owner is gone"
+    /// under "the owner is busy".
+    private func coordinationReadiness(_ targetID: String) -> String? {
+        guard let target = session(withID: targetID),
+              SessionWatch.shared.states[target.id] == .waiting,
+              Targets.isChoosing(target) else { return nil }
+        return "That session is showing a menu, so typing into it would confirm whichever "
+            + "option is highlighted rather than deliver this notice."
     }
 
     private func json(of session: TargetSession) -> [String: Any] {

@@ -32,11 +32,29 @@ enum ClawdlineMessage {
         let path: String
     }
 
+    /// The durable coordination relationship a file-wait notice is about.
+    ///
+    /// The id is the whole point. A session told that somebody is blocked on its paths can do
+    /// nothing with that unless it can name the group it has to release, and the only other way
+    /// to learn the id is to list every wait on the Mac and match the row by hand.
+    struct FileWait: Equatable {
+        let id: String
+        let repository: String
+        let paths: [String]
+    }
+
     enum Event: Equatable {
         case taskFinished(task: Task, state: TaskState, audience: Audience,
                           resultPath: String, outstanding: Int,
                           claimsReleased: Bool, childMayStillWrite: Bool)
         case workspaceOverlap(task: Task, audience: Audience, overlaps: [Overlap])
+        /// Somebody is waiting for paths this session owns. `releaseRoute` is the call that ends
+        /// the wait, carried in the payload so a reader never has to guess the protocol.
+        case fileWaitRequested(wait: FileWait, waiterSessionID: String, reason: String,
+                               releaseCondition: String, releaseRoute: String)
+        /// The owner let the paths go. `commit` and `note` are what the owner chose to say, and
+        /// are `null` on the wire rather than absent, so the closed key set stays fixed.
+        case fileWaitReleased(wait: FileWait, commit: String?, note: String?)
     }
 
     struct Notice: Equatable {
@@ -69,17 +87,20 @@ enum ClawdlineMessage {
               string(obj["protocol"]) == protocolName,
               integer(obj["version"]) == version,
               let kind = string(obj["kind"]),
-              let body = string(obj["body"]), !body.isEmpty,
-              let audienceRaw = string(obj["audience"]),
-              let audience = Audience(rawValue: audienceRaw),
-              let task = task(obj["task"])
+              let body = string(obj["body"]), !body.isEmpty
         else { return nil }
 
+        // `audience` and `task` belong to the two task-tree events and are parsed inside them.
+        // A file-wait notice is about a relationship between two sessions rather than about a
+        // dispatched task, so requiring those fields of every kind would mean inventing a task
+        // that does not exist just to satisfy the envelope.
         switch kind {
         case "task_finished":
             guard keys(obj) == Set(["protocol", "version", "kind", "audience", "task",
                                     "state", "result_path", "outstanding",
                                     "claims_released", "child_may_still_write", "body"]),
+                  let audience = audience(obj["audience"]),
+                  let task = task(obj["task"]),
                   let rawState = string(obj["state"]),
                   let state = TaskState(rawValue: rawState),
                   let resultPath = string(obj["result_path"]), !resultPath.isEmpty,
@@ -97,11 +118,37 @@ enum ClawdlineMessage {
         case "workspace_overlap":
             guard keys(obj) == Set(["protocol", "version", "kind", "audience", "task",
                                     "overlaps", "body"]),
+                  let audience = audience(obj["audience"]),
+                  let task = task(obj["task"]),
                   let rows = obj["overlaps"] as? [Any], !rows.isEmpty else { return nil }
             let overlaps = rows.compactMap(overlap)
             guard overlaps.count == rows.count else { return nil }
             return Notice(event: .workspaceOverlap(task: task, audience: audience,
                                                     overlaps: overlaps), body: body)
+
+        case "file_wait_requested":
+            guard keys(obj) == Set(["protocol", "version", "kind", "wait", "waiter_session_id",
+                                    "reason", "release_condition", "release_route", "body"]),
+                  let wait = fileWait(obj["wait"]),
+                  let waiter = string(obj["waiter_session_id"]), !waiter.isEmpty,
+                  let reason = string(obj["reason"]), !reason.isEmpty,
+                  let condition = string(obj["release_condition"]), !condition.isEmpty,
+                  let route = string(obj["release_route"]), !route.isEmpty
+            else { return nil }
+            return Notice(event: .fileWaitRequested(wait: wait, waiterSessionID: waiter,
+                                                    reason: reason,
+                                                    releaseCondition: condition,
+                                                    releaseRoute: route), body: body)
+
+        case "file_wait_released":
+            guard keys(obj) == Set(["protocol", "version", "kind", "wait", "commit",
+                                    "note", "body"]),
+                  let wait = fileWait(obj["wait"]),
+                  let commit = nullableString(obj["commit"]),
+                  let note = nullableString(obj["note"])
+            else { return nil }
+            return Notice(event: .fileWaitReleased(wait: wait, commit: commit, note: note),
+                          body: body)
 
         default:
             return nil
@@ -146,12 +193,47 @@ enum ClawdlineMessage {
                     ["task": taskObject($0.task), "path": $0.path]
                 },
             ]) { _, new in new }
+        case let .fileWaitRequested(wait, waiter, reason, condition, route):
+            out.merge([
+                "kind": "file_wait_requested",
+                "wait": fileWaitObject(wait),
+                "waiter_session_id": waiter,
+                "reason": reason,
+                "release_condition": condition,
+                "release_route": route,
+            ]) { _, new in new }
+        case let .fileWaitReleased(wait, commit, note):
+            out.merge([
+                "kind": "file_wait_released",
+                "wait": fileWaitObject(wait),
+                "commit": commit as Any? ?? NSNull(),
+                "note": note as Any? ?? NSNull(),
+            ]) { _, new in new }
         }
         return out
     }
 
     private static func taskObject(_ task: Task) -> [String: Any] {
         ["id": task.id, "title": task.title]
+    }
+
+    private static func fileWaitObject(_ wait: FileWait) -> [String: Any] {
+        ["id": wait.id, "repository": wait.repository, "paths": wait.paths]
+    }
+
+    private static func fileWait(_ raw: Any?) -> FileWait? {
+        guard let obj = raw as? [String: Any],
+              keys(obj) == Set(["id", "repository", "paths"]),
+              let id = string(obj["id"]), !id.isEmpty,
+              let repository = string(obj["repository"]), !repository.isEmpty,
+              let rows = obj["paths"] as? [Any], !rows.isEmpty else { return nil }
+        let paths = rows.compactMap(string).filter { !$0.isEmpty }
+        guard paths.count == rows.count else { return nil }
+        return FileWait(id: id, repository: repository, paths: paths)
+    }
+
+    private static func audience(_ raw: Any?) -> Audience? {
+        string(raw).flatMap(Audience.init(rawValue:))
     }
 
     private static func task(_ raw: Any?) -> Task? {
@@ -170,6 +252,14 @@ enum ClawdlineMessage {
 
     private static func keys(_ obj: [String: Any]) -> Set<String> { Set(obj.keys) }
     private static func string(_ raw: Any?) -> String? { raw as? String }
+    /// A field that is either a non-empty string or an explicit JSON `null`. The key itself is
+    /// never optional: a missing key still fails the closed key set, so "the owner said nothing"
+    /// and "somebody rewrote the envelope" stay different things.
+    private static func nullableString(_ raw: Any?) -> String?? {
+        if raw is NSNull { return .some(nil) }
+        guard let text = string(raw), !text.isEmpty else { return nil }
+        return .some(text)
+    }
     private static func boolean(_ raw: Any?) -> Bool? {
         guard let number = raw as? NSNumber,
               CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }

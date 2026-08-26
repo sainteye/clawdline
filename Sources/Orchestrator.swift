@@ -6091,11 +6091,70 @@ enum Orchestrator {
 
     // MARK: - Cross-session coordination waits
 
+    /// The route that ends a wait, as the payload carries it. One string, so the field a reader
+    /// parses and the call the prose spells out cannot drift apart.
+    static func coordinationReleaseRoute(id: String) -> String {
+        "POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/waits/\(id)/release"
+    }
+
+    /// The release call, written the way `CHILD.md` writes every other call an assistant is asked
+    /// to make: one line it can copy, with the Mac's credential read out of its file rather than
+    /// printed into a terminal that keeps scrollback.
+    private static func coordinationReleaseCall(id: String, owner: String) -> String {
+        "curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)"
+            + "/v1/orchestrator/waits/\(id)/release "
+            + "-H \"X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)\" "
+            + "-H 'Content-Type: application/json' "
+            + "-d '{\"owner_session_id\":\"\(owner)\",\"commit\":\"<sha>\"}'"
+    }
+
+    /// What the owner is told, and what a transcript reader can recognise it by. The prose is for
+    /// whoever reads the terminal; the payload is so the same facts survive being read by the app.
+    static func coordinationRequestNotice(id: String, repository: String, paths: [String],
+                                          owner: String, waiter: String, reason: String,
+                                          condition: String) -> ClawdlineMessage.Notice {
+        let body = "[Clawdline file-wait] Repo: \(repository). "
+            + "Exact paths: \(paths.joined(separator: ", ")). "
+            + "Waiter Clawdline session id: \(waiter). Reason: \(reason). "
+            + "Release condition: \(condition). Wait id: \(id). "
+            + "After the condition is met, release this wait through Clawdline so every "
+            + "registered waiter is notified: \(coordinationReleaseCall(id: id, owner: owner))"
+        return ClawdlineMessage.Notice(
+            event: .fileWaitRequested(
+                wait: .init(id: id, repository: repository, paths: paths),
+                waiterSessionID: waiter, reason: reason, releaseCondition: condition,
+                releaseRoute: coordinationReleaseRoute(id: id)),
+            body: body)
+    }
+
+    /// What every waiter on the group is told. A notice is a wake-up, never a proof: the closing
+    /// sentence is the protocol's own rule that the waiter re-reads the tree for itself.
+    static func coordinationReleaseNotice(id: String, repository: String, paths: [String],
+                                          commit: String?, note: String?)
+        -> ClawdlineMessage.Notice {
+        var body = "[Clawdline file-wait release] Wait id: \(id). Repo: \(repository). "
+            + "Exact paths: \(paths.joined(separator: ", ")). "
+        if let commit { body += "Landed/released in commit \(commit). " }
+        else { body += "The owner explicitly released these paths without a commit. " }
+        if let note { body += "Note: \(note). " }
+        body += "Re-check HEAD, status and diff before editing or integrating."
+        return ClawdlineMessage.Notice(
+            event: .fileWaitReleased(wait: .init(id: id, repository: repository, paths: paths),
+                                     commit: commit, note: note),
+            body: body)
+    }
+
     /// Register a durable wait and deliver its request through Clawdline's own session transport.
     /// A failed delivery leaves the row pending, so retrying the same relationship can deliver it
     /// without losing the fact that the waiter is blocked.
+    ///
+    /// `readiness` answers whether words typed into that session would be read as words; a
+    /// reason means they would not, and nothing is sent. It defaults to "ready" so that tests
+    /// about the relationship itself stay about the relationship — the two routes that actually
+    /// type into a terminal both pass the real check.
     static func registerCoordinationWait(
         _ raw: [String: Any], now: Date = Date(),
+        readiness: (String) -> String? = { _ in nil },
         deliver: (String, String) -> String?
     ) -> Reply {
         guard let repositoryRaw = boundedCoordinationText(raw["repository"], limit: 4_096),
@@ -6147,11 +6206,23 @@ enum Orchestrator {
         save()
 
         if needsDelivery {
-            let pathList = paths.joined(separator: ", ")
-            let message = "[Clawdline file-wait] Repo: \(repository). Exact paths: \(pathList). "
-                + "Waiter Clawdline session id: \(waiter). Reason: \(reason). "
-                + "Release condition: \(condition). After the condition is met, release this "
-                + "wait through Clawdline so every registered waiter is notified."
+            // Refuse before typing rather than after: words sent into a permission picker are
+            // discarded and the Return that follows answers the highlighted row. Sending anyway
+            // would lose the request *and* answer a question on the owner's behalf — and the
+            // durable row would carry a receipt saying the owner had been told.
+            if let blocked = readiness(owner) {
+                RemoteAuth.audit("orchestrator.wait.register", [
+                    "wait": waitID, "owner": owner, "waiter": waiter, "result": "owner_busy",
+                ])
+                return .refused(status: 409, code: "owner_busy",
+                                message: blocked + " Nothing was sent and the wait is still "
+                                    + "recorded as undelivered; retry this registration.",
+                                extra: ["wait": coordinationWaitRecord(id: waitID) ?? [:]])
+            }
+            let message = ClawdlineMessage.encode(
+                coordinationRequestNotice(id: waitID, repository: repository, paths: paths,
+                                          owner: owner, waiter: waiter, reason: reason,
+                                          condition: condition))
             if let problem = deliver(owner, message) {
                 RemoteAuth.audit("orchestrator.wait.register", [
                     "wait": waitID, "owner": owner, "waiter": waiter,
@@ -6182,7 +6253,8 @@ enum Orchestrator {
     /// only addresses the waiters that did not receive the first fan-out.
     static func releaseCoordinationWait(
         id: String, ownerSessionID: String, commit: String?, note: String?,
-        now: Date = Date(), deliver: (String, String) -> String?
+        now: Date = Date(), readiness: (String) -> String? = { _ in nil },
+        deliver: (String, String) -> String?
     ) -> Reply {
         guard let owner = boundedCoordinationText(ownerSessionID, limit: 512),
               commit.map({ boundedCoordinationText($0, limit: 200) != nil }) ?? true,
@@ -6206,13 +6278,15 @@ enum Orchestrator {
         let commitText = commit.flatMap { boundedCoordinationText($0, limit: 200) }
         let noteText = note.flatMap { boundedCoordinationText($0, limit: 1_000) }
         var deliveredIDs: [String] = []
+        let message = ClawdlineMessage.encode(
+            coordinationReleaseNotice(id: id, repository: snapshot.repository,
+                                      paths: snapshot.paths, commit: commitText, note: noteText))
         for waiter in pending {
-            var message = "[Clawdline file-wait release] Repo: \(snapshot.repository). "
-                + "Exact paths: \(snapshot.paths.joined(separator: ", ")). "
-            if let commitText { message += "Landed/released in commit \(commitText). " }
-            else { message += "The owner explicitly released these paths without a commit. " }
-            if let noteText { message += "Note: \(noteText). " }
-            message += "Re-check HEAD, status and diff before editing or integrating."
+            // A waiter that cannot be typed into right now is simply not notified in this round.
+            // From the owner's side that is the situation `release_incomplete` already describes,
+            // so it needs no new code: no receipt is written and a retry reaches exactly the
+            // waiters that are still owed one.
+            guard readiness(waiter.sessionID) == nil else { continue }
             if deliver(waiter.sessionID, message) == nil { deliveredIDs.append(waiter.sessionID) }
         }
 
