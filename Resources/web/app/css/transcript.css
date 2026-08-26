@@ -112,7 +112,12 @@
    paths are labels, and an action can only be added later when the server resolves it from
    trusted orchestrator state rather than accepting one from the transcript payload. */
 /* Notice cards deliberately define no controls, links or action states. */
-.entry[data-role="notice"] .who { color: var(--accent); }
+/* "CLAWDLINE" is nine uppercase letters, and the only speaker label in the app that does not
+   fit the 62px gutter at the shared 10.5px/0.5px: it wrapped to "CLAWDLIN / E", twice the
+   height of every other row. Half a point smaller with the tracking closed up measures 58.8px
+   here and 60.3px in the widest font this stack can land on, so the word stays whole, the
+   gutter stays 62px for every role, and nothing else moves. */
+.entry[data-role="notice"] .who { color: var(--accent); font-size: 10px; letter-spacing: 0; }
 .notice-card {
     border: 1px solid var(--line);
     border-left: 3px solid var(--accent);

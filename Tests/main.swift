@@ -2535,6 +2535,29 @@ group("both completion notices still carry the untouched-claims reminder") {
     let quiet = Orchestrator.taskFinishedNotice(for: clean, audience: .root)
     check("a task that touched everything it claimed says nothing about claims",
           quiet?.body.contains("never touched") == false)
+
+    // Everything above tests `taskFinishedNotice` as a pure function, and a pure function stays
+    // green while the wire goes quiet: the reminder left the line once already because the two
+    // call sites in `notifyRoot` hand-built `"[clawdline] task …"` themselves, and the whole
+    // suite passed with it gone. `notifyRoot` is private and sends into a terminal, so the call
+    // sites are pinned the way this file already pins the Web renderer — by reading the source
+    // as text. Restoring either hand-built line turns three of these four red.
+    let orchestratorSource = (try? String(contentsOfFile: "Sources/Orchestrator.swift",
+                                          encoding: .utf8)) ?? ""
+    let notifyRootBody = orchestratorSource
+        .components(separatedBy: "private static func notifyRoot(_ task: Task) {")
+        .dropFirst().first?.components(separatedBy: "\n    }\n").first ?? ""
+    check("notifyRoot's body was located, so the checks below cannot pass on an empty string",
+          notifyRootBody.contains("task.rootSessionId") && notifyRootBody.contains("Targets.send("))
+    check("neither call site hand-builds a completion line of its own",
+          !notifyRootBody.contains("[clawdline]"))
+    check("both call sites compose their notice through taskFinishedNotice",
+          notifyRootBody.components(separatedBy: "taskFinishedNotice(for: task").count - 1 == 2)
+    let typed = notifyRootBody.components(separatedBy: "let line = ").dropFirst()
+        .map { $0.components(separatedBy: "\n").first ?? "" }
+    check("and type nothing but what ClawdlineMessage.encode returned for it",
+          typed.count == 2 && typed.allSatisfy { $0 == "ClawdlineMessage.encode(notice)" }
+              && notifyRootBody.components(separatedBy: "Targets.send(line,").count - 1 == 2)
 }
 
 group("the Web transcript has an inert Clawdline card") {
