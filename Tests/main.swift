@@ -1077,6 +1077,40 @@ group("transcript ownership repairs only identities it disproves") {
                                          taskID: ownershipTaskID,
                                          attempts: Orchestrator.briefingAttemptLimit,
                                          secondsSinceAttempt: 60), .exhausted)
+
+    let processStart = Date(timeIntervalSince1970: 2_000)
+    var malformedBeforeRestart = preBriefing
+    malformedBeforeRestart.childPID = 100
+    malformedBeforeRestart.childProcStart = processStart
+    malformedBeforeRestart.childSessionId = "restored-session"
+    malformedBeforeRestart.transcriptProven = true
+    var restarted = Orchestrator.task(from: Orchestrator.stored(malformedBeforeRestart))!
+    let matchingProcessWithoutRegistry = Orchestrator.ChildObservation(
+        pid: 100, procStart: processStart
+    )
+    let restoredProofWasDropped = !restarted.transcriptProven
+    let identityStayedProvisional = Orchestrator.identityStep(
+        for: restarted, seeing: matchingProcessWithoutRegistry
+    ) == .none
+    let siblingWasDisproved = Orchestrator.transcriptOwnership(
+        sibling, assistant: .claude, taskID: ownershipTaskID
+    ) == .other
+    let ownershipChanged = Orchestrator.noteTranscriptProof(in: &restarted)
+    let finalDecision = Orchestrator.briefingDecision(
+        screen: ready, assistant: .claude, transcript: nil,
+        transcriptKnown: restarted.transcriptPath != nil, taskID: ownershipTaskID,
+        attempts: Orchestrator.briefingAttemptLimit, secondsSinceAttempt: 60
+    )
+    // Removing the pre-briefing ownership guard must clear the malformed restored pair instead
+    // of preserving this fail-closed path through the bounded retry ceiling.
+    check("a restarted malformed pair fails closed at the briefing ceiling",
+          restoredProofWasDropped
+            && restarted.childPID == 100 && restarted.childProcStart == processStart
+            && restarted.childSessionId == "restored-session"
+            && restarted.transcriptPath == sibling.path
+            && identityStayedProvisional && siblingWasDisproved && !ownershipChanged
+            && finalDecision == .exhausted)
+
     var disproved = task(assistant: .claude, childSession: "sibling", transcript: sibling)
     check("a readable transcript belonging elsewhere changes the restored identity",
           Orchestrator.applyTranscriptOwnership(.other, transcript: sibling, to: &disproved))

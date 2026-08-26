@@ -227,11 +227,12 @@ enum Orchestrator {
         return true
     }
 
-    /// A current hook may correct a provisional pair only after this task has recorded the
-    /// Claude process that emitted it; the caller has already matched that pair to this beat.
-    /// The first note remains a fallback when process inspection is unavailable, but an
-    /// unverified later note never replaces identity. Once the briefing receipt pins the pair,
-    /// even the same process may be describing `/clear` or a parked chat.
+    /// A current hook may correct a provisional pair only when its note is no older than this
+    /// spawn and the recorded Claude process still matches this beat; the caller enforces both
+    /// before reaching this seam. The first note remains a fallback when process inspection is
+    /// unavailable, but an unverified later note never replaces identity. A correction drops the
+    /// old provisional path so locate can resolve the new session. Once the briefing receipt pins
+    /// the pair, even the same process may be describing `/clear` or a parked chat.
     static func adoptHookIdentity(sessionID: String, in task: inout Task) -> Bool {
         guard !(task.state == .briefed && task.transcriptProven),
               task.childSessionId != sessionID else { return false }
@@ -1997,6 +1998,10 @@ enum Orchestrator {
     /// share this because the transcript is now the boundary between those two states.
     private static func noteChildIdentity(_ child: TargetSession, in task: inout Task) -> Bool {
         var changed = false
+        // Claude writes a process registry, so its pid pair and registry supply identity before
+        // delivery pins the pair. Codex writes no registry, so it deliberately uses lsof to name
+        // a rollout and its task marker to prove delivery. In either branch the marker is a
+        // delivery receipt, not proof that two different processes share an identity.
         switch task.assistant {
         case .claude:
             let observedPID = Targets.pid(of: child)
@@ -2046,6 +2051,11 @@ enum Orchestrator {
                             "registry_transcript": comparison.registryTranscriptPath,
                             "legacy_session": comparison.legacySessionID ?? "?",
                             "legacy_transcript": comparison.legacyTranscriptPath ?? "?",
+                        ])
+                    } else {
+                        RemoteAuth.audit("orchestrator.identity.agreement", [
+                            "task": task.id,
+                            "session": sessionID,
                         ])
                     }
                 }
@@ -2137,7 +2147,8 @@ enum Orchestrator {
         case .other:
             // Before delivery, another first turn merely means the nominated file was observed
             // too early; clearing it here would also erase the exact path needed to verify and
-            // retry this child's briefing. Once briefed, it disproves a restored identity pair.
+            // retry this child's briefing. Once briefed, Codex still needs this disproof to clear
+            // an lsof rollout from another thread because it has no process registry to replace it.
             guard task.state == .briefed else { return false }
             task.childSessionId = nil
             task.transcriptPath = nil
