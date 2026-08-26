@@ -1,4 +1,4 @@
-import { T } from "../core/i18n.js";
+import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { shortPath, tint, toast } from "../core/util.js";
@@ -6,24 +6,29 @@ import { drawIcon } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { Schedules } from "../net/schedules.js";
 
-/* ---- making a schedule -----------------------------------------------------
+/* ---- making, changing and removing a schedule ------------------------------
    The markup, the ids and the styling are `#schedule-form` in `index.html` and
-   `.schedule-sheet` in `sheets.css` — both frozen, both drawn once in `bfb4c10`. This file is
-   what fills them in and what happens when Create is pressed.
+   `.schedule-sheet` in `sheets.css` — both frozen for *making* one, both drawn once in `bfb4c10`.
+   This file is what fills them in, and what happens when Create — now also Save — is pressed.
 
-   **Two doors, one sheet.** `open()` is the `+` beside the Schedules list: every field blank,
+   **Three doors, one sheet.** `open()` is the `+` beside the Schedules list: every field blank,
    the seven-days-and-daily row defaulting to daily, and a person filling in the rest by hand.
-   `openFrom(draft, instructions)` is the other one — `input/command.js` calls it when a spoken
+   `openFrom(draft, instructions)` is the second — `input/command.js` calls it when a spoken
    draft comes back with `kind: "schedule"` — and it is the same sheet holding whatever the
-   planner could work out, with whatever it could not left for a person to answer. Neither door
-   sends anything by itself: **a confident schedule draft still does not create one.** Opening a
-   session now and arranging one to run every morning are not the same risk, and only the first of
-   those two happens without a press.
+   planner could work out, with whatever it could not left for a person to answer. `openEdit(id)`
+   is the third: a row in the list, pressed, filled from `GET /v1/orchestrator/schedules/:id`
+   rather than from a person or a draft. Nothing sends by itself through any of the three: **a
+   confident schedule draft still does not create one**, and opening a row to look does not
+   change or remove it either. Opening a session now and arranging one to run every morning are
+   not the same risk, and only the first of those two happens without a press.
 
-   `POST /v1/orchestrator/schedules` is gated exactly like `/v1/voice` and `/v1/intents` — the
-   write switch, the `send` capability, an Idempotency-Key — never the orchestrator token, which
-   is local-only and could not reach a phone. A 400 from it carries a sentence the Swift parser
-   wrote about which field was wrong; that sentence is shown as it arrived; see `why` below.
+   `POST /v1/orchestrator/schedules` (making one) and `PATCH .../schedules/:id` (saving one
+   already made) are gated exactly like `/v1/voice` and `/v1/intents` — the write switch, the
+   `send` capability, an Idempotency-Key — never the orchestrator token, which is local-only and
+   could not reach a phone. `DELETE .../schedules/:id` is behind the same three, reached only
+   through the confirm sheet below rather than through Save. A 400 from any of the three carries a
+   sentence the Swift parser wrote about which field was wrong; that sentence is shown as it
+   arrived; see `why` below.
    ----------------------------------------------------------------------- */
 export var Schedule = (function () {
     var DAY_CODES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
@@ -53,9 +58,18 @@ export var Schedule = (function () {
     var closeTab = "on_success";
     var enabled = true;
     var notify = true;
-    var creating = false;       // the POST is in flight
+    var creating = false;       // the POST or the PATCH is in flight
+    // Non-null while this sheet is the edit door rather than the make-one door — the id being
+    // saved to or deleted, not a schedule pending creation. `reset()` clears it; `openEdit` sets
+    // it back once it knows which row was pressed.
+    var editingId = null;
+    var loadingEdit = false;    // `openEdit`'s own GET is in flight, filling the sheet in
+    // The DELETE from `#schedule-delete-confirm` is in flight. Kept apart from `busy()` above:
+    // that overlay hides `#schedule-form` for as long as it is open (see `askDelete`), so there
+    // is nothing on the sheet itself left to disable — only the confirm's own two buttons are.
+    var deleteBusy = false;
 
-    function busy() { return creating; }
+    function busy() { return creating || loadingEdit; }
 
     function said(words) { els["schedule-said"].textContent = words || ""; }
 
@@ -75,7 +89,7 @@ export var Schedule = (function () {
         var b = busy();
         els["schedule-sheet"].setAttribute("aria-busy", b ? "true" : "false");
         ["schedule-title", "schedule-at", "schedule-instructions", "schedule-catch",
-         "schedule-timeout", "schedule-cancel", "schedule-go"].forEach(function (id) {
+         "schedule-timeout", "schedule-cancel", "schedule-go", "schedule-delete"].forEach(function (id) {
             els[id].disabled = b;
         });
         ["schedule-with", "schedule-days", "schedule-close", "schedule-flags"].forEach(function (id) {
@@ -313,6 +327,8 @@ export var Schedule = (function () {
 
     function reset() {
         creating = false;
+        editingId = null;
+        loadingEdit = false;
         places = null; assistants = [];
         chosenPlace = null; chosenAssistant = null;
         days = "daily"; daysGuessed = false; closeTab = "on_success"; enabled = true; notify = true;
@@ -328,6 +344,11 @@ export var Schedule = (function () {
         // list would be back to filling the sheet before anybody had asked it to.
         els["schedule-picked"].setAttribute("aria-expanded", "false");
         els["schedule-places"].hidden = true;
+        // Create mode by default. `openEdit` overwrites these three the moment it knows better;
+        // `open` and `openFrom` are both fresh schedules and leave them exactly as this sets them.
+        els["schedule-form-title"].textContent = T.webScheduleNew;
+        els["schedule-go"].textContent = T.webScheduleCreate;
+        els["schedule-delete"].hidden = true;
         said("");
         drawWith(); drawDays(); drawClose(); drawFlags(); drawPlaces();
     }
@@ -377,6 +398,79 @@ export var Schedule = (function () {
         });
     }
 
+    /** The reverse of what `chosenPlace` normally holds: the file has a path, the form has an id,
+     *  and `GET /v1/orchestrator/schedules/:id` only ever answers with the first. A place this
+     *  device has not opened recently — or has never opened at all — leaves nothing picked, the
+     *  same as a fresh `open()` before anything has been chosen; a person has to pick again
+     *  rather than the sheet guessing at an id nothing on this list can confirm. */
+    function placeIdForPath(path) {
+        var match = (places || []).filter(function (p) { return p.path === path; })[0];
+        return match ? match.id : null;
+    }
+
+    /** The third door: a row in the Schedules list, pressed. `GET /v1/orchestrator/schedules/:id`
+     *  is read-level, the same door `schedules` itself is behind — a paired device with no `send`
+     *  can still open a row and look — so this opens and starts filling itself in regardless of
+     *  `S.write`. Only `create` (which now also saves) and the delete confirm below check that,
+     *  the moment there is something to send. */
+    function openEdit(id) {
+        if (!els["schedule-form"].hidden || !els["schedule-delete-confirm"].hidden) return;
+        reset();
+        editingId = id;
+        loadingEdit = true;
+        els["schedule-form-title"].textContent = T.webScheduleEdit;
+        els["schedule-go"].textContent = T.webScheduleSave;
+        els["schedule-delete"].hidden = false;
+        els["schedule-form"].hidden = false;
+        paint();
+        if (typeof api.schedule !== "function") {
+            loadingEdit = false;
+            said(T.webScheduleFailed);
+            paint();
+            return;
+        }
+        api.schedule(id).then(function (d) {
+            fillFromRecord((d && d.schedule) || {});
+        }).catch(function (e) {
+            loadingEdit = false;
+            said(why(e));
+            paint();
+        });
+    }
+
+    /** What `openEdit`'s GET fills the sheet with. Every field this reads has a counterpart
+     *  `create` already knows how to send back — see the field list on `POST
+     *  /v1/orchestrator/schedules` in the plan — so nothing here is new shape, only a new
+     *  direction for shape that already existed. */
+    function fillFromRecord(record) {
+        var when = record.when || {};
+        var task = record.task || {};
+        els["schedule-title"].value = record.title || "";
+        els["schedule-at"].value = when.at || "";
+        var heard = Array.isArray(when.days)
+            ? DAY_CODES.filter(function (c) { return when.days.indexOf(c) >= 0; })
+            : null;
+        days = (heard && heard.length) ? heard : "daily";
+        daysGuessed = false;
+        els["schedule-instructions"].value = task.instructions || "";
+        enabled = record.enabled !== false;
+        closeTab = CLOSE_VALUES.indexOf(record.close_tab) >= 0 ? record.close_tab : "on_success";
+        notify = record.notify_on_failure !== false;
+        els["schedule-catch"].value =
+            String(record.catch_up_hours != null ? record.catch_up_hours : CATCH_DEFAULT);
+        els["schedule-timeout"].value =
+            String(task.timeout_minutes != null ? task.timeout_minutes : TIMEOUT_DEFAULT);
+        drawDays(); drawClose(); drawFlags();
+        said("");
+        ensurePlaces().then(function () {
+            chosenPlace = placeIdForPath(task.project_dir);
+            defaultAssistant(task.assistant);
+            loadingEdit = false;
+            drawWith(); drawPlaces();
+            paint();
+        });
+    }
+
     function close() {
         // Refused while a request is in flight — the same rule `input/start.js`'s own `close`
         // and `ActionConfirm.close` follow, and the one the plan spells out for this sheet by
@@ -385,9 +479,73 @@ export var Schedule = (function () {
         els["schedule-form"].hidden = true;
     }
 
+    /** Deleting, asked about first. Held behind `#schedule-form`'s own overlay slot rather than
+     *  stacked over it — this hides the edit sheet and shows the confirm in its place, so
+     *  cancelling restores it exactly as it was, and there is only ever one dialog for `keys.js`'s
+     *  own Escape handling to know about (it has no case for `#schedule-delete-confirm` — see the
+     *  capture-phase listener at the bottom of this file, which is how Escape still reaches it). */
+    function askDelete() {
+        if (busy() || !editingId) return;
+        if (!S.write) { said(T.webStartOff); return; }
+        els["schedule-form"].hidden = true;
+        deleteBusy = false;
+        els["schedule-delete-confirm-title"].textContent = T.webScheduleDelete;
+        // `{title}` — the one schedule this press is about, not a generic warning. It is still on
+        // `#schedule-title` at this point: `openEdit`/`fillFromRecord` put it there and nothing
+        // between then and here clears it.
+        els["schedule-delete-confirm-say"].textContent =
+            fill(T.webScheduleDeleteAsk, { title: els["schedule-title"].value });
+        els["schedule-delete-confirm-go"].textContent = T.webScheduleDelete;
+        els["schedule-delete-confirm"].hidden = false;
+        paintDeleteConfirm();
+        els["schedule-delete-confirm-go"].focus({ preventScroll: true });
+    }
+
+    function closeDeleteConfirm(restore) {
+        if (deleteBusy) return;
+        els["schedule-delete-confirm"].hidden = true;
+        if (restore) {
+            els["schedule-form"].hidden = false;
+            els["schedule-delete"].focus({ preventScroll: true });
+        }
+    }
+
+    function paintDeleteConfirm() {
+        els["schedule-delete-confirm-sheet"].setAttribute("aria-busy", deleteBusy ? "true" : "false");
+        els["schedule-delete-confirm-cancel"].disabled = deleteBusy;
+        els["schedule-delete-confirm-go"].disabled = deleteBusy;
+    }
+
+    function confirmDelete() {
+        if (deleteBusy || !editingId) return;
+        if (typeof api.deleteSchedule !== "function") {
+            closeDeleteConfirm(true);
+            said(T.webScheduleFailed);
+            return;
+        }
+        var id = editingId;
+        deleteBusy = true;
+        paintDeleteConfirm();
+        api.deleteSchedule(id).then(function () {
+            deleteBusy = false;
+            // Nothing to restore — the row this sheet was editing is gone, so there is nothing
+            // left on `#schedule-form` worth looking at either. Both stay closed.
+            els["schedule-delete-confirm"].hidden = true;
+            editingId = null;
+            Schedules.refresh();
+            toast(T.webScheduleDeleted);
+        }).catch(function (e) {
+            deleteBusy = false;
+            closeDeleteConfirm(true);
+            said(why(e));
+        });
+    }
+
     /* ---- sending it ---------------------------------------------------------
-       `POST /v1/orchestrator/schedules` — the write route `Orchestrator.schedule(from:)` reads,
-       behind `writeGate` exactly like `/v1/voice` and `/v1/intents`. */
+       `POST /v1/orchestrator/schedules` making one, `PATCH /v1/orchestrator/schedules/:id`
+       saving one already made — the write routes `Orchestrator.schedule(from:)` reads either
+       way, behind `writeGate` exactly like `/v1/voice` and `/v1/intents`. `DELETE` is the third,
+       reached only through `#schedule-delete-confirm` above rather than through this button. */
 
     function why(e) {
         var code = e && e.code;
@@ -401,9 +559,17 @@ export var Schedule = (function () {
         // The parser's own sentence, about the one field it did not like. Shown as it arrived —
         // not translated, not replaced — because it is the only thing that says which field.
         if (code === "bad_request") return e.message;
+        // The GET this sheet opens with, and the PATCH or DELETE it can now send, all three 404
+        // with the same plain sentence when the file is gone — a second tab's delete, most often.
+        // Shown as it arrived, same reasoning as `bad_request` above.
+        if (code === "not_found") return e.message;
         return T.webScheduleFailed;
     }
 
+    /** Create and Save both land here — one button, and `editingId` says which of the two this
+     *  press actually is. Everything above the request itself is identical on purpose: the same
+     *  hint, the same guard, the same payload shape, because a save is a create that already
+     *  knows its id. */
     function create() {
         if (busy()) return;
         if (!S.write) { said(T.webStartOff); return; }
@@ -413,9 +579,13 @@ export var Schedule = (function () {
             if (!els["schedule-at"].value) els["schedule-at"].focus({ preventScroll: true });
             return;
         }
-        // The one place this sheet is examinable without a Mac that has this route yet — same
+        var editing = !!editingId;
+        // The one place this sheet is examinable without a Mac that has these routes yet — same
         // `typeof` guard as the six other places in this codebase; see `net/api.js:1-15`.
-        if (typeof api.createSchedule !== "function") { said(T.webScheduleFailed); return; }
+        if (typeof (editing ? api.updateSchedule : api.createSchedule) !== "function") {
+            said(T.webScheduleFailed);
+            return;
+        }
 
         var catchUp = parseInt(els["schedule-catch"].value, 10);
         if (!(catchUp >= 0)) catchUp = CATCH_DEFAULT;
@@ -435,21 +605,26 @@ export var Schedule = (function () {
             notify_on_failure: notify,
             timeout_minutes: timeout
         };
+        // `schedule_id` and `created_at` are deliberately not fields on this object. Neither is
+        // on `POST`'s own allowed list either — the server assigns both, and keeps both exactly
+        // as they were across a `PATCH`, which is the entire reason a save cannot rewrite when a
+        // schedule was made. See the plan's own paragraph on it.
 
         creating = true;
         said("");
         paint();
-        api.createSchedule(payload).then(function () {
+        var request = editing ? api.updateSchedule(editingId, payload) : api.createSchedule(payload);
+        request.then(function () {
             creating = false;
             // Closed rather than left open with a receipt in it — same as `input/command.js`'s
             // own `arrive` — because there is nothing left on this sheet worth looking at. The
-            // new row is asked for immediately below rather than waited for.
+            // row is asked for immediately below rather than waited for.
             close();
             // Ask the list to read again now. It has its own one-minute lane, and waiting for it
-            // here would leave the row that was just made missing from the only screen anybody is
-            // looking at — see `Schedules.refresh`.
+            // here would leave the row that was just made or just changed missing from the only
+            // screen anybody is looking at — see `Schedules.refresh`.
             Schedules.refresh();
-            toast(T.webScheduleCreated);
+            toast(editing ? T.webScheduleSaved : T.webScheduleCreated);
         }).catch(function (e) {
             creating = false;
             said(why(e));
@@ -457,8 +632,9 @@ export var Schedule = (function () {
         });
     }
 
-    return { open: open, openFrom: openFrom, close: close, create: create, pick: pickPlace,
-             toggle: togglePlaces };
+    return { open: open, openFrom: openFrom, openEdit: openEdit, close: close, create: create,
+             pick: pickPlace, toggle: togglePlaces, askDelete: askDelete,
+             closeDeleteConfirm: closeDeleteConfirm, confirmDelete: confirmDelete };
 })();
 
 /* ---- wiring ---------------------------------------------------------------- */
@@ -499,3 +675,45 @@ els["schedule-form"].addEventListener("keydown", function (ev) {
         ev.preventDefault(); items[ev.shiftKey ? items.length - 1 : 0].focus();
     }
 });
+
+/* ---- a row, opened ----------------------------------------------------------
+   Delegated on the list itself rather than one listener per row — `view/schedules.js` redraws
+   `#schedule-rows`' whole `innerHTML` on every refresh, which would otherwise mean re-wiring
+   every row every minute. Only a row with `data-id` answers; the one invalid row this list can
+   draw has no id and nothing this sheet could open. */
+els["schedule-rows"].addEventListener("click", function (ev) {
+    var row = ev.target.closest ? ev.target.closest(".schedule-row[data-id]") : null;
+    if (!row) return;
+    Schedule.openEdit(row.dataset.id);
+});
+els["schedule-rows"].addEventListener("keydown", function (ev) {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    var row = ev.target.closest ? ev.target.closest(".schedule-row[data-id]") : null;
+    if (!row) return;
+    ev.preventDefault();       // Space would otherwise scroll the page under a `role="button"` li
+    Schedule.openEdit(row.dataset.id);
+});
+
+els["schedule-delete"].addEventListener("click", function () { Schedule.askDelete(); });
+els["schedule-delete-confirm"].addEventListener("click", function () { Schedule.closeDeleteConfirm(true); });
+els["schedule-delete-confirm-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
+els["schedule-delete-confirm-cancel"].addEventListener("click", function () { Schedule.closeDeleteConfirm(true); });
+els["schedule-delete-confirm-go"].addEventListener("click", function () { Schedule.confirmDelete(); });
+els["schedule-delete-confirm"].addEventListener("keydown", function (ev) {
+    if (ev.key !== "Tab") return;
+    var items = [els["schedule-delete-confirm-cancel"], els["schedule-delete-confirm-go"]];
+    var at = items.indexOf(document.activeElement);
+    if (at < 0) return;
+    if ((!ev.shiftKey && at === items.length - 1) || (ev.shiftKey && at <= 0)) {
+        ev.preventDefault(); items[ev.shiftKey ? items.length - 1 : 0].focus();
+    }
+});
+// `keys.js` has a case for `#action-confirm` and `#schedule-form`; it has none for this overlay,
+// and it is not this round's file to add one to. Capture, ahead of its own bubble-phase document
+// listener, is how `input/action-confirm.js` solves the same problem for `#session-actions`'s own
+// nested confirm — copied here rather than invented, for the same reason.
+document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape" || els["schedule-delete-confirm"].hidden) return;
+    ev.preventDefault(); ev.stopPropagation();
+    Schedule.closeDeleteConfirm(true);
+}, true);

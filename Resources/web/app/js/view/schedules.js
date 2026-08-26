@@ -48,7 +48,16 @@ function validRow(schedule, at) {
             esc(new Date(schedule.last_missed_at * 1000).toLocaleString()) + '">' +
             esc(T.webScheduleMissed + " " + relativeTime(schedule.last_missed_at, at)) + '</time>'
         : "";
-    return '<li class="schedule-row">' +
+    // A row opens the same sheet the `+` does, filled in — `input/schedule.js` owns the click,
+    // reached through `data-id` rather than an import, so this file stays a renderer and does
+    // not have to know a sheet exists at all. `role="button" tabindex="0"` is the ARIA
+    // authoring-practice shape for a non-native control that does one thing when pressed; a real
+    // `<button>` would break the `.schedule-row + .schedule-row` divider in schedules.css, which
+    // only fires between direct siblings. The inline cursor is here rather than in schedules.css
+    // for the same reason — that file belongs to a different node's claim this round, and a
+    // clickable row needs at least this much said about it without touching it.
+    return '<li class="schedule-row" data-id="' + esc(schedule.id) + '" role="button" tabindex="0" ' +
+        'style="cursor:pointer">' +
         '<div class="schedule-name"><span class="enabled-dot" data-enabled="' +
             (schedule.enabled ? "1" : "0") + '" role="img" aria-label="' + enabled + '"></span>' +
             '<span class="schedule-title">' + esc(schedule.title || "Untitled schedule") + '</span></div>' +

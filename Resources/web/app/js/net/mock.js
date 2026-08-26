@@ -1000,50 +1000,162 @@ export var Mock = (function () {
 
 /* ---- schedules fixture ---------------------------------------------------
    Appended as its own block because this file is also an active editing surface.
-   Eight valid rows exercise every Orchestrator.State value, plus one invalid source.
-   `?schedules=empty` verifies that an empty inventory leaves no section behind.
+
+   One array of full rows backs every schedule route rather than four disconnected fixtures —
+   `Mock.schedules` reads it for the list, `Mock.schedule` for one record in full, and
+   `Mock.createSchedule`/`updateSchedule`/`deleteSchedule` mutate it, so a save or a delete made
+   from a file:// copy is visible the moment `Schedules.refresh()` asks again, the same as it
+   would be against a real Mac. Eight rows exercise every `Orchestrator.State` value, plus one
+   invalid source with no id — never reachable through a row press, since `view/schedules.js`
+   only puts `data-id` on a valid one.
+
+   `?schedules=empty` verifies that an empty inventory leaves no section behind; it is read only
+   by the list below, not by `schedule`/`updateSchedule`/`deleteSchedule`, which stay about one
+   row at a time regardless of what the list is showing.
    -------------------------------------------------------------------------- */
+
+// The two places this file's own `places` fixture (inside the closure above) names most often.
+// Not shared with it — `Mock.schedules` and friends are appended outside that closure on purpose,
+// so every place a schedule might name is repeated here rather than reached into.
+var SCHEDULE_PLACES = {
+    "3b9e26c1587facfd": { path: "/Users/you/code/clawdline", label: "clawdline" },
+    "24f9bac626da56ea": { path: "/Users/you/code/atrium", label: "atrium" },
+    "470885724e5330e1": { path: "/Users/you/code/cairn", label: "cairn" },
+    "9c1d4e77a0b3f215": { path: "/Users/you/code/notebook", label: "notebook" },
+    "b04f8a2c6d915e33": { path: "/Users/you/code/astro", label: "astro" },
+    "5e7a1c93f2680b4d": { path: "/Users/you/code/cairn/frontend", label: "frontend" },
+    "1f6b0d38e9a742c5": { path: "/Users/you/code/clawdline/docs", label: "docs" },
+    "c83e5f10ab24d967": { path: "/Users/you/code/sketches", label: "sketches" },
+    "7a2c9e46b1d05f38": { path: "/Users/you/code/website", label: "website" },
+    "e51b7d02c4a86f19": { path: "/Users/you/tmp/notes", label: "notes" }
+};
+
+var SCHEDULE_BASE = [
+    { id: "2bf37143-0a1c-4ba8-a04c-33acd3ee6801", title: "Publish the morning brief",
+      enabled: true, at: "07:30", days: "daily", placeId: "3b9e26c1587facfd", assistant: "claude",
+      instructions: "Read yesterday's merged PRs and post a two-paragraph summary.",
+      close_tab: "always", catch_up_hours: 6, notify_on_failure: true, timeout_minutes: 30,
+      nextFireOffset: 18 * 60, missedAgo: 6 * 86400,
+      lastRun: { task_id: "mock-schedule-success", state: "success", ago: 3 * 3600 } },
+    { id: "60dd72ae-777e-4e1e-a595-79cc2740cfb1", title: "Rebuild the search index",
+      enabled: true, at: "02:00", days: "daily", placeId: "3b9e26c1587facfd", assistant: "claude",
+      instructions: "Rebuild the index from the latest content export.",
+      close_tab: "on_success", catch_up_hours: 2, notify_on_failure: true, timeout_minutes: 45,
+      nextFireOffset: 2 * 3600,
+      lastRun: { task_id: "mock-schedule-failure", state: "failure", ago: 22 * 3600 } },
+    { id: "26c6e7a3-7fd4-470f-8cf2-70cc9362a63b", title: "Archive weekly reports",
+      enabled: false, at: "23:00", days: ["sun"], placeId: "1f6b0d38e9a742c5", assistant: "claude",
+      instructions: "Move last week's reports into the archive directory.",
+      close_tab: "never", catch_up_hours: 0, notify_on_failure: false, timeout_minutes: 20,
+      nextFireOffset: 26 * 3600,
+      lastRun: { task_id: "mock-schedule-timeout", state: "timeout", ago: 6 * 86400 } },
+    { id: "65d9d034-4158-484e-a95b-26ed80ed6d05", title: "Prepare the release notes",
+      enabled: true, at: "09:00", days: ["mon", "wed", "fri"], placeId: "3b9e26c1587facfd",
+      assistant: "claude", instructions: "Draft release notes from the commits since the last tag.",
+      close_tab: "on_success", catch_up_hours: 12, notify_on_failure: true, timeout_minutes: 60,
+      nextFireOffset: 3 * 3600,
+      lastRun: { task_id: "mock-schedule-queued", state: "queued", ago: 30 } },
+    // The one non-Claude row, so `drawWith`'s chip row has something to show when this is opened
+    // to edit — it stays hidden with fewer than two assistants on offer.
+    { id: "813fa8a7-ffca-4970-a395-e5302b1e5e79", title: "Check deployment readiness",
+      enabled: true, at: "08:00", days: "daily", placeId: "3b9e26c1587facfd", assistant: "codex",
+      instructions: "Confirm the last deploy is healthy before the day starts.",
+      close_tab: "always", catch_up_hours: 4, notify_on_failure: true, timeout_minutes: 15,
+      nextFireOffset: 4 * 3600,
+      lastRun: { task_id: "mock-schedule-spawning", state: "spawning", ago: 45 } },
+    { id: "3928f442-ed0a-48e8-b081-36942751fbad", title: "Publish the weekly digest",
+      enabled: true, at: "10:30", days: ["fri"], placeId: "3b9e26c1587facfd", assistant: "claude",
+      instructions: "Summarise the week's schedule runs into one digest message.",
+      close_tab: "on_success", catch_up_hours: 6, notify_on_failure: true, timeout_minutes: 30,
+      nextFireOffset: 5 * 3600,
+      lastRun: { task_id: "mock-schedule-briefed", state: "briefed", ago: 60 } },
+    { id: "b3c87bec-0544-476f-b2c4-55f20988856b", title: "Prune preview builds",
+      enabled: true, at: "04:00", days: "daily", placeId: "3b9e26c1587facfd", assistant: "claude",
+      instructions: "Delete preview deploys older than 14 days.",
+      close_tab: "always", catch_up_hours: 1, notify_on_failure: false, timeout_minutes: 10,
+      nextFireOffset: 6 * 3600,
+      lastRun: { task_id: "mock-schedule-cancelled", state: "cancelled", ago: 3600 } },
+    // No `nextFireOffset` at all — kept from the original fixture, the one case where `enabled`
+    // is true and there is still nothing to show in the "next" column.
+    { id: "8c8e0e67-f045-408c-882b-0abace9b2174", title: "Warm the documentation cache",
+      enabled: true, at: "06:00", days: "daily", placeId: "1f6b0d38e9a742c5", assistant: "claude",
+      instructions: "Prime the docs site's build cache before traffic picks up.",
+      close_tab: "on_success", catch_up_hours: 6, notify_on_failure: true, timeout_minutes: 30,
+      lastRun: { task_id: "mock-schedule-spawn-failed", state: "spawn_failed", ago: 7200 } }
+];
+var SCHEDULE_INVALID = { file: "nightly-maintenance.json", state: "invalid",
+                         error: "when must contain exactly at and days", error_kind: "schema" };
+
+var scheduleDeleted = {};   // id -> true, once `Mock.deleteSchedule` has taken it
+var scheduleEdits = {};     // id -> the row-shaped fields `Mock.updateSchedule` last saved for it
+var scheduleCreated = [];   // rows `Mock.createSchedule` has made this session, newest first
+
+function scheduleRow(id) {
+    if (scheduleDeleted[id]) return null;
+    var found = SCHEDULE_BASE.filter(function (s) { return s.id === id; })[0]
+        || scheduleCreated.filter(function (s) { return s.id === id; })[0];
+    return found ? Object.assign({}, found, scheduleEdits[id] || {}) : null;
+}
+
+function scheduleSummary(row, at) {
+    var out = { id: row.id, title: row.title, enabled: row.enabled };
+    if (row.nextFireOffset != null) out.next_fire = at + row.nextFireOffset;
+    if (row.lastRun) {
+        out.last_run = { task_id: row.lastRun.task_id, state: row.lastRun.state,
+                         at: at - row.lastRun.ago };
+    }
+    if (row.missedAgo != null) out.last_missed_at = at - row.missedAgo;
+    return out;
+}
+
+// Everything `Orchestrator.scheduleRecord(id:)` answers, off the same row the list above reads.
+function scheduleDetail(row) {
+    var place = SCHEDULE_PLACES[row.placeId] || { path: "/Users/you/tmp/unknown", label: "unknown" };
+    return {
+        id: row.id, title: row.title, enabled: row.enabled, file: row.id + ".json",
+        when: { at: row.at, days: row.days },
+        task: { assistant: row.assistant, project_dir: place.path, title: row.title,
+                instructions: row.instructions, timeout_minutes: row.timeout_minutes },
+        close_tab: row.close_tab, catch_up_hours: row.catch_up_hours,
+        notify_on_failure: row.notify_on_failure
+    };
+}
+
 Mock.schedules = function () {
     var at = Math.floor(Date.now() / 1000);
-    var schedules = params.get("schedules") === "empty" ? [] : [
-        { id: "2bf37143-0a1c-4ba8-a04c-33acd3ee6801", title: "Publish the morning brief",
-          enabled: true, next_fire: at + 18 * 60,
-          last_missed_at: at - 6 * 86400,
-          last_run: { task_id: "mock-schedule-success", state: "success", at: at - 3 * 3600 } },
-        { id: "60dd72ae-777e-4e1e-a595-79cc2740cfb1", title: "Rebuild the search index",
-          enabled: true, next_fire: at + 2 * 3600,
-          last_run: { task_id: "mock-schedule-failure", state: "failure", at: at - 22 * 3600 } },
-        { id: "26c6e7a3-7fd4-470f-8cf2-70cc9362a63b", title: "Archive weekly reports",
-          enabled: false, next_fire: at + 26 * 3600,
-          last_run: { task_id: "mock-schedule-timeout", state: "timeout", at: at - 6 * 86400 } },
-        { id: "65d9d034-4158-484e-a95b-26ed80ed6d05", title: "Prepare the release notes",
-          enabled: true, next_fire: at + 3 * 3600,
-          last_run: { task_id: "mock-schedule-queued", state: "queued", at: at - 30 } },
-        { id: "813fa8a7-ffca-4970-a395-e5302b1e5e79", title: "Check deployment readiness",
-          enabled: true, next_fire: at + 4 * 3600,
-          last_run: { task_id: "mock-schedule-spawning", state: "spawning", at: at - 45 } },
-        { id: "3928f442-ed0a-48e8-b081-36942751fbad", title: "Publish the weekly digest",
-          enabled: true, next_fire: at + 5 * 3600,
-          last_run: { task_id: "mock-schedule-briefed", state: "briefed", at: at - 60 } },
-        { id: "b3c87bec-0544-476f-b2c4-55f20988856b", title: "Prune preview builds",
-          enabled: true, next_fire: at + 6 * 3600,
-          last_run: { task_id: "mock-schedule-cancelled", state: "cancelled", at: at - 3600 } },
-        { id: "8c8e0e67-f045-408c-882b-0abace9b2174", title: "Warm the documentation cache",
-          enabled: true,
-          last_run: { task_id: "mock-schedule-spawn-failed", state: "spawn_failed", at: at - 7200 } },
-        { file: "nightly-maintenance.json", state: "invalid",
-          error: "when must contain exactly at and days", error_kind: "schema" }
-    ];
+    var list = params.get("schedules") === "empty" ? [] :
+        SCHEDULE_BASE.concat(scheduleCreated)
+            .map(function (s) { return scheduleRow(s.id); })
+            .filter(Boolean)
+            .map(function (row) { return scheduleSummary(row, at); })
+            .concat([SCHEDULE_INVALID]);
     return new Promise(function (done) {
-        setTimeout(function () { done({ schedules: schedules, at: at }); }, 180);
+        setTimeout(function () { done({ schedules: list, at: at }); }, 180);
     });
 };
 
-/* ---- making a schedule ----------------------------------------------------
-   Appended beside the read fixture above, for the same reason it is its own block.
-   `?scheduleCreate=` picks which refusal comes back — `busy` and `bad` are the two a person can
-   act on from `input/schedule.js`'s own sheet, and anything else is the ordinary confident
-   answer. Gated on `MOCK_WRITE` exactly like `intents` and `startPlace` above it.
+/// One schedule, in full — what `openEdit` in `input/schedule.js` reads to fill its sheet in.
+/// `?scheduleGet=notfound` is the row a second tab already deleted, or a link somebody kept past
+/// its schedule's own life.
+Mock.schedule = function (id) {
+    return new Promise(function (done, fail) {
+        setTimeout(function () {
+            var row = params.get("scheduleGet") === "notfound" ? null : scheduleRow(id);
+            if (!row) {
+                fail(Object.assign(new Error("No schedule named that"), { code: "not_found" }));
+                return;
+            }
+            done({ schedule: scheduleDetail(row) });
+        }, 220);
+    });
+};
+
+/* ---- making, changing and removing a schedule -----------------------------
+   Appended beside the read fixtures above, for the same reason they are their own block.
+   `?scheduleCreate=`, `?scheduleUpdate=` and `?scheduleDelete=` each pick a refusal: `busy` and
+   `bad` are the two a person can act on from `input/schedule.js`'s own sheet, `notfound` is what
+   a stale row answers with, and anything else is the ordinary confident answer. All three are
+   gated on `MOCK_WRITE`, exactly like `intents` and `startPlace` above them.
    -------------------------------------------------------------------------- */
 Mock.createSchedule = function (schedule) {
     return new Promise(function (done, fail) {
@@ -1061,9 +1173,79 @@ Mock.createSchedule = function (schedule) {
                 fail(Object.assign(new Error("when.at must be HH:MM in local time"), { code: "bad_request" }));
                 return;
             }
-            done({ ok: true, schedule: { id: uuid(), title: schedule && schedule.title || "",
-                                          enabled: !!(schedule && schedule.enabled),
-                                          next_fire: Math.floor(Date.now() / 1000) + 3600 } });
+            schedule = schedule || {};
+            var row = {
+                id: uuid(), title: schedule.title || "", at: schedule.at || "",
+                days: schedule.days || "daily", placeId: schedule.place_id || null,
+                assistant: schedule.assistant || "claude", instructions: schedule.instructions || "",
+                enabled: !!schedule.enabled, close_tab: schedule.close_tab || "on_success",
+                catch_up_hours: schedule.catch_up_hours != null ? schedule.catch_up_hours : 6,
+                notify_on_failure: schedule.notify_on_failure !== false,
+                timeout_minutes: schedule.timeout_minutes != null ? schedule.timeout_minutes : 30,
+                nextFireOffset: 3600
+            };
+            // Pushed into the same table the list and the detail route both read, so the row this
+            // press just made is what `Schedules.refresh()` finds a moment later — see the header
+            // on this block.
+            scheduleCreated.unshift(row);
+            done({ ok: true, schedule: { id: row.id, title: row.title, enabled: row.enabled,
+                                          next_fire: Math.floor(Date.now() / 1000) + row.nextFireOffset } });
+        }, 420);
+    });
+};
+
+/// Changing one already made. `id` never appears in the body — same as the real PATCH, whose id
+/// lives in the path — and `schedule_id`/`created_at` are not fields this fixture's edits can
+/// touch either, the same rule the plan's contract puts on the Swift side of this route.
+Mock.updateSchedule = function (id, body) {
+    return new Promise(function (done, fail) {
+        setTimeout(function () {
+            if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
+            var mode = params.get("scheduleUpdate") || "";
+            if (mode === "busy") {
+                fail(Object.assign(new Error("This Mac is already writing a schedule."), { code: "busy" }));
+                return;
+            }
+            if (mode === "bad") {
+                fail(Object.assign(new Error("when.at must be HH:MM in local time"), { code: "bad_request" }));
+                return;
+            }
+            if (mode === "notfound" || !scheduleRow(id)) {
+                fail(Object.assign(new Error("No schedule named that"), { code: "not_found" }));
+                return;
+            }
+            body = body || {};
+            // Row-shaped, not request-shaped — `place_id` becomes `placeId` here for the same
+            // reason `Orchestrator.updateSchedule` turns it into `task.project_dir`: the wire name
+            // and the field this fixture reads back are not the same word.
+            scheduleEdits[id] = {
+                title: body.title, at: body.at, days: body.days, placeId: body.place_id,
+                assistant: body.assistant, instructions: body.instructions,
+                enabled: !!body.enabled, close_tab: body.close_tab,
+                catch_up_hours: body.catch_up_hours, notify_on_failure: !!body.notify_on_failure,
+                timeout_minutes: body.timeout_minutes
+            };
+            var row = scheduleRow(id);
+            done({ ok: true, schedule: { id: row.id, title: row.title, enabled: row.enabled } });
+        }, 420);
+    });
+};
+
+Mock.deleteSchedule = function (id) {
+    return new Promise(function (done, fail) {
+        setTimeout(function () {
+            if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
+            var mode = params.get("scheduleDelete") || "";
+            if (mode === "busy") {
+                fail(Object.assign(new Error("This Mac is already writing a schedule."), { code: "busy" }));
+                return;
+            }
+            if (mode === "notfound" || !scheduleRow(id)) {
+                fail(Object.assign(new Error("No schedule named that"), { code: "not_found" }));
+                return;
+            }
+            scheduleDeleted[id] = true;
+            done({ ok: true });
         }, 420);
     });
 };

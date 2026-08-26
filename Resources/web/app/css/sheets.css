@@ -69,7 +69,8 @@
 .confirm-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
 .confirm-sheet .confirm-go { border-color: var(--accent-ed); color: var(--accent); }
 .confirm-sheet[data-kind="end"] .confirm-go,
-.confirm-sheet[data-kind="shell-stop"] .confirm-go { border-color: #57362e; color: #e09985; }
+.confirm-sheet[data-kind="shell-stop"] .confirm-go,
+.confirm-sheet[data-kind="schedule-delete"] .confirm-go { border-color: #57362e; color: #e09985; }
 .confirm-sheet .confirm-go .busy {
     display: inline-flex; align-items: center; justify-content: center; gap: 7px;
 }
@@ -501,6 +502,11 @@ a.dep:hover .host { color: var(--accent); }
 .schedule-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
 .schedule-sheet .confirm-go { border-color: var(--accent-ed); color: var(--accent); }
 .schedule-sheet .confirm-go[disabled] { opacity: 0.5; }
+/* Delete keeps to the opposite side of the row from Cancel/Save — `margin-right: auto` is what
+   pushes everything after it back to `flex-end` — so the one destructive control here is never
+   a finger-width away from the button that saves. Same red as the confirm sheet's own `.confirm-
+   go` for "end" and "shell-stop", because it is the same kind of press. */
+.schedule-sheet .buttons .danger { margin-right: auto; border-color: #57362e; color: #e09985; }
 /* A direct child, for the reason the command sheet learned the hard way: `.said` is also the
    class on the dictation clock, and a descendant selector reached it and pushed it off centre. */
 .schedule-sheet > .said { margin-top: 10px; display: flex; align-items: center; gap: 7px; }

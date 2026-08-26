@@ -324,3 +324,29 @@ Live.schedules = function () { return jsonFetch("/v1/orchestrator/schedules"); }
 Live.createSchedule = function (schedule) {
     return jsonFetch("/v1/orchestrator/schedules", post(schedule, { "Idempotency-Key": uuid() }));
 };
+
+/// One schedule, in full — the task template and every field the list route leaves out. Read
+/// level, same door as `schedules` above: a paired device without `send` can still open a row
+/// and look, and only the two writes below it ask for more.
+Live.schedule = function (id) {
+    return jsonFetch("/v1/orchestrator/schedules/" + encodeURIComponent(id));
+};
+
+/// Changing one already made. Same body `createSchedule` sends, same gate, same reason:
+/// `Orchestrator.updateSchedule(id:from:places:)` hands it to the same parser and only lets a
+/// file that reads back correctly survive the request. `schedule_id` and `created_at` are not on
+/// the body's allowed field list — the id is in the path, and the Mac is the one keeping the
+/// date. `post()` builds the body PATCH and POST share; only the verb differs.
+Live.updateSchedule = function (id, schedule) {
+    var opts = post(schedule, { "Idempotency-Key": uuid() });
+    opts.method = "PATCH";
+    return jsonFetch("/v1/orchestrator/schedules/" + encodeURIComponent(id), opts);
+};
+
+/// Removing one. There is no body to send — the id in the path is the whole request, the same
+/// shape `killShell` and `end` above already take for "there is nothing this page could send
+/// that would widen what happens" — and no undo route anywhere on this page once it lands.
+Live.deleteSchedule = function (id) {
+    return jsonFetch("/v1/orchestrator/schedules/" + encodeURIComponent(id),
+                     { method: "DELETE", headers: { "Idempotency-Key": uuid() } });
+};

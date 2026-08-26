@@ -213,10 +213,11 @@ document.documentElement.className = "booting";
             <div class="ptr" id="ptr"><span id="ptr-label">Pull to refresh</span></div>
             <ul class="rows" id="rows" role="listbox" aria-label="Claude Code sessions" tabindex="0"></ul>
             <div class="empty" id="list-empty" hidden></div>
-            <!-- A paired device can inspect schedules but cannot run one. The native disclosure
-                 is the only control in this section: rows are facts, never buttons or links, and
-                 no schedule write route is represented anywhere on this page. Hidden until a
-                 non-empty answer lands so an empty inventory costs the session list no space. -->
+            <!-- A paired device can inspect, make, change and remove a schedule — everything but
+                 run one early, which stays a Mac-only button nowhere on this page. Every row
+                 opens the same sheet the `+` does, filled in rather than blank; see
+                 `input/schedule.js`. Hidden until a non-empty answer lands so an empty inventory
+                 costs the session list no space. -->
             <details class="schedules" id="schedules" open hidden>
                 <summary><span>Schedules</span><span class="count" id="schedules-count"></span>
                     <!-- Inside the summary, so it sits on the one line this section has, and
@@ -615,7 +616,12 @@ document.documentElement.className = "booting";
 
      The same sheet is what a spoken schedule lands in: the planner fills what it heard, and
      whatever it could not work out is left for a person, which is the whole reason the form
-     exists before the voice does. -->
+     exists before the voice does.
+
+     A third door opens it already filled in, from a press on a row in the Schedules list —
+     `GET /v1/orchestrator/schedules/:id` read first, then the same fields, the same PATCH this
+     sheet's Save now sends instead of POST, and the Delete button `#schedule-delete` gains once
+     there is something to delete. See `openEdit` in `input/schedule.js`. -->
 <div class="overlay" id="schedule-form" hidden>
     <div class="sheet schedule-sheet" id="schedule-sheet" role="dialog" aria-modal="true"
          aria-labelledby="schedule-form-title">
@@ -687,8 +693,32 @@ document.documentElement.className = "booting";
         <p class="said" id="schedule-said" role="status" aria-live="polite"></p>
 
         <div class="buttons">
+            <!-- Hidden until `openEdit` has something to delete — a schedule being made has
+                 nothing behind it yet. Pushed to the far side of Cancel/Save by `.danger` in
+                 sheets.css, the same way a destructive action sits apart from the other two in
+                 every list of them this page draws. -->
+            <button class="chip danger" id="schedule-delete" type="button" hidden>Delete</button>
             <button class="chip" id="schedule-cancel" type="button">Cancel</button>
             <button class="chip confirm-go" id="schedule-go" type="button">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Deleting a schedule, asked about first. Behind `#schedule-form`'s own overlay slot rather
+     than stacked over it — one dialog on screen at a time, the same rule
+     `input/action-confirm.js` follows for its own confirm over `#session-actions` — so cancelling
+     this leaves the edit sheet exactly as it was instead of two backdrops deep. There is no undo
+     route once this is sent, which is the whole reason it exists rather than Delete sending
+     straight through like every other field on the sheet above it. -->
+<div class="overlay" id="schedule-delete-confirm" hidden>
+    <div class="sheet confirm-sheet" id="schedule-delete-confirm-sheet" role="alertdialog"
+         aria-modal="true" aria-labelledby="schedule-delete-confirm-title"
+         aria-describedby="schedule-delete-confirm-say" data-kind="schedule-delete">
+        <h2 id="schedule-delete-confirm-title">Delete schedule</h2>
+        <p class="say" id="schedule-delete-confirm-say">This cannot be undone.</p>
+        <div class="buttons">
+            <button class="chip" id="schedule-delete-confirm-cancel" type="button">Cancel</button>
+            <button class="chip confirm-go" id="schedule-delete-confirm-go" type="button">Delete</button>
         </div>
     </div>
 </div>

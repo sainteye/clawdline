@@ -32,7 +32,10 @@ export var els = {};
  "schedule-more", "schedule-more-label", "schedule-close-label", "schedule-close",
  "schedule-flags", "schedule-catch-label", "schedule-catch",
  "schedule-timeout-label", "schedule-timeout",
- "schedule-said", "schedule-cancel", "schedule-go",
+ "schedule-said", "schedule-cancel", "schedule-go", "schedule-delete",
+ "schedule-rows",
+ "schedule-delete-confirm", "schedule-delete-confirm-sheet", "schedule-delete-confirm-title",
+ "schedule-delete-confirm-say", "schedule-delete-confirm-cancel", "schedule-delete-confirm-go",
  "notify", "notify-go", "notify-go-label", "notify-say", "shots", "attach", "pick", "mic", "voice",
  "door", "door-mark", "door-name", "door-ask", "door-to-password", "door-digits", "door-confirm",
  "door-restart", "door-left", "door-password", "door-pw-name", "door-pw-go", "door-to-pair", "door-say"
