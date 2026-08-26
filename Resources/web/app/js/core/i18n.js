@@ -233,6 +233,9 @@ export var T = {
     webNotifyOffFailed: "Could not turn notifications off",
     webSettings: "Settings",
     webSettingsNotify: "Notifications",
+    webSettingsAssistantIcons: "Assistant icons",
+    webSettingsAssistantIconsSay: "Show the Claude or Codex mark before its name in the conversation.",
+    webSettingsAssistantIconsShow: "Show icons",
     // The sort order, which is a preference of this browser and now sits where the rest of them
     // do. `webOrderTip` is still the button's hover text — same words, same job, one row down.
     webSettingsOrder: "Transcript",
