@@ -313,6 +313,7 @@ holds a secret: not the orchestrator token, and not the task secret.
   "kind": "image",
   "assistant": "codex",
   "model": "gpt-5.1-codex",
+  "reasoning_effort": "high",
   "project_dir": "/Users/you/code/clawdline",
   "title": "Project portrait, medieval hand-drawn",
   "instructions": "You are in /Users/you/code/clawdline … write the SVG to artifacts/project-portrait.svg",
@@ -347,6 +348,7 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `kind` | `image` · `code-review` · `test` · `custom` |
 | `assistant` | `claude` or `codex` |
 | `model` | optional. `[a-z0-9._-]`, at most 64 characters, not starting with `-`. Absent means that assistant's own default |
+| `reasoning_effort` | optional and Codex-only: exactly `high` or `xhigh`. Absent adds no CLI override, preserving Codex's model default and the user's configuration. Empty, non-string, any other value, and use with Claude are refused |
 | `permission_mode` | optional. `ask` · `edits` · `full`. Absent takes `orchestrator_permission`, which is also the ceiling — asking for more than it gives you it instead |
 | `plan` | optional, ≤ 4 KiB. The whole graph this task is one node of |
 | `claims` | optional array of 0…32 unique POSIX paths relative to `project_dir`; each is 1…1024 characters, may not start with `/`, and may not contain a `..` component. A directory claim covers its whole subtree; `[]` explicitly declares read-only work |
@@ -391,13 +393,26 @@ overlap lines, root-close cancellation and batch-notification deep links. Handof
 one named compatibility exception: their free-form `from_session` may be either a conversation id
 or a watched terminal id, as the handoff API has always promised.
 
-`model` is the **only** string a dispatch puts on a command line, and it is shaped so that
+`model` is the only free-form string a dispatch puts on a command line, and it is shaped so that
 saying so is not alarming: not a fragment of a command but a name out of a closed alphabet. No
 character it admits is one a shell reads — no space, no quote, no `$`, no `;` — so
 `claude --model <name>` stays one command with one argument whatever arrives. It is checked in
 two places on purpose: here, where a typo can be answered with `bad_task` while somebody is still
 holding the request, and again in `StartPoints.modelName` on the way to the tab, where a name
 that fails becomes *no flag* rather than no session. The route a phone can reach passes nothing.
+
+`reasoning_effort` is different: it is a closed Codex-only enum, not a command fragment. `high`
+is the recommended coding setting and `xhigh` the recommended planning setting. The command
+converges in one place as `codex [--model <name>] --config model_reasoning_effort=<value>
+[--add-dir …] [permission flags]`. When the field is absent, the complete `--config` pair is
+absent too; Clawdline does not replace Codex's model or user default. `max` and `ultra` are not
+protocol values and are refused rather than passed through. The selected value is persisted,
+shown in the public task record, and written into `orchestrator.dispatch` audit metadata.
+
+A hand-written schedule task template may carry the same field. Schedule parsing applies the
+ordinary Codex-only validation, and an edit carries it forward because the schedule UI has no
+reasoning control. If the edit explicitly switches the assistant to Claude, the Mac removes that
+now-incompatible hidden override; putting it directly on a Claude template remains invalid.
 
 `plan` is the graph, not this task's job — the same text in every task of one dispatch. It goes
 near the top of `CHILD.md`, above even the language rule, because it is the context every other

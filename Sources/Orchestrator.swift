@@ -163,7 +163,7 @@ enum Orchestrator {
         guard let task = obj["task"] as? [String: Any] else {
             return .bad("task must be an object")
         }
-        let taskAllowed = Set(["assistant", "model", "project_dir", "title", "instructions",
+        let taskAllowed = Set(["assistant", "model", "reasoning_effort", "project_dir", "title", "instructions",
                                "claims", "serialize", "isolation", "isolation_base",
                                "permission_mode", "timeout_minutes", "deliverables", "kind", "plan"])
         let taskUnknown = Set(task.keys).subtracting(taskAllowed).sorted()
@@ -175,7 +175,7 @@ enum Orchestrator {
                   values.allSatisfy({ ($0 as? String).map { !$0.isEmpty && $0.count <= 300 } == true })
             else { return .bad("task.deliverables must be an array of at most 32 non-empty strings") }
         }
-        for key in ["model", "title", "permission_mode", "kind", "plan"]
+        for key in ["model", "reasoning_effort", "title", "permission_mode", "kind", "plan"]
             where task[key] != nil && !(task[key] is String) {
             return .bad("task.\(key) must be a string")
         }
@@ -333,6 +333,13 @@ enum Orchestrator {
         for key in ["claims", "permission_mode", "serialize", "isolation", "isolation_base",
                     "deliverables", "kind", "plan"] where task[key] == nil {
             if let kept = previous[key] { task[key] = kept }
+        }
+        // Reasoning is the one hidden field whose validity depends on a visible field. Keep it
+        // through an ordinary Codex edit, but an explicit assistant switch to Claude must not
+        // trap the form behind a value it has no control with which to remove.
+        if task["assistant"] as? String == Assistant.codex.rawValue,
+           let kept = previous["reasoning_effort"] {
+            task["reasoning_effort"] = kept
         }
         var obj: [String: Any] = [
             "clawdline_schedule": 1,
@@ -1121,6 +1128,7 @@ enum Orchestrator {
         /// The model the child was started on, when the task named one. Nil means whatever that
         /// assistant defaults to, which is the answer for most tasks and all older records.
         var model: String?
+        var reasoningEffort: ReasoningEffort?
         /// How far the child may go before stopping to ask — what was actually used, after this
         /// Mac's ceiling was applied to what the task asked for.
         var permission = Permission.ask
@@ -1894,6 +1902,9 @@ enum Orchestrator {
         var kind = "custom"
         var assistant = Assistant.claude
         var model: String?
+        /// A per-dispatch Codex override. Nil deliberately means no CLI config flag, preserving
+        /// both Codex's model default and the user's own configuration.
+        var reasoningEffort: ReasoningEffort?
         /// What the task asked for, before the ceiling. Nil means it did not ask, and takes the
         /// ceiling itself — the setting is the default as well as the limit.
         var permission: Permission?
@@ -2007,6 +2018,18 @@ enum Orchestrator {
             }
             model = ok
         }
+        var reasoningEffort: ReasoningEffort?
+        if let raw = obj["reasoning_effort"] {
+            guard assistant == .codex else {
+                return .bad("reasoning_effort is only valid when assistant is codex")
+            }
+            guard let name = raw as? String,
+                  let value = ReasoningEffort(rawValue: name) else {
+                return .bad("reasoning_effort must be one of: "
+                          + ReasoningEffort.allCases.map(\.rawValue).joined(separator: ", "))
+            }
+            reasoningEffort = value
+        }
         if let plan = obj["plan"] as? String, plan.utf8.count > planLimit {
             return .bad("plan must be at most \(planLimit / 1024) KiB")
         }
@@ -2103,6 +2126,7 @@ enum Orchestrator {
         made.id = id
         made.assistant = assistant
         made.model = model
+        made.reasoningEffort = reasoningEffort
         made.permission = permission
         made.serialize = serialize
         made.claims = claims
@@ -3130,6 +3154,7 @@ enum Orchestrator {
 
         var task = Task(id: taskID, state: .queued, kind: made.kind, title: made.title,
                         assistant: made.assistant, model: made.model,
+                        reasoningEffort: made.reasoningEffort,
                         permission: permission, projectDir: made.projectDir,
                         timeoutMinutes: made.timeoutMinutes, created: Date(),
                         rootSessionId: made.rootSessionId,
@@ -3178,6 +3203,7 @@ enum Orchestrator {
                                                    "cwd": made.projectDir, "kind": made.kind,
                                                    "depth": String(depth),
                                                    "model": made.model ?? "default",
+                                                   "reasoning_effort": made.reasoningEffort?.rawValue ?? "default",
                                                    "permission": permission.rawValue,
                                                    "isolation": made.isolation.rawValue])
 
@@ -3222,7 +3248,17 @@ enum Orchestrator {
                                    additionalWarnings: additionalWarnings))
     }
 
-    private static func spawn(_ task: Task) -> Task {
+    typealias TaskStarter = (StartPoints.Place, Assistant, String?, ReasoningEffort?,
+                             Permission, String?) -> StartPoints.Outcome
+
+    /// Internal so the final task-to-terminal wiring can be mutation-tested without opening a
+    /// real tab. The default remains the single production path into `StartPoints.start`.
+    static func spawn(_ task: Task,
+                      start: TaskStarter = { place, assistant, model, effort, permission, addDir in
+                          StartPoints.start(place, assistant: assistant, model: model,
+                                            reasoningEffort: effort, permission: permission,
+                                            addDir: addDir)
+                      }) -> Task {
         var task = task
         task.queuedSecret = nil
         if let prepared = task.worktree {
@@ -3259,9 +3295,8 @@ enum Orchestrator {
         // every grandchild was another question nobody was there to answer.
         let mayDispatch = task.depth < depthFloor
             && Config.shared.orchestratorMaxGrandchildren > 0
-        switch StartPoints.start(place, assistant: task.assistant, model: task.model,
-                                 permission: task.permission,
-                                 addDir: mayDispatch ? root.path : task.dir.path) {
+        switch start(place, task.assistant, task.model, task.reasoningEffort, task.permission,
+                     mayDispatch ? root.path : task.dir.path) {
         case .refused(_, let code, let message, _):
             task.state = .spawnFailed
             task.summary = "\(code): \(message)"
@@ -5812,7 +5847,11 @@ enum Orchestrator {
           somebody else.
         - `assistant` is `claude` or `codex`; `model` is optional and takes lower-case letters,
           digits and `. _ -` only. Pick both against the rules below, and say in the plan why.
-        - `permission_mode` is `ask`, `auto` or `full`, and leaving it out is right almost always
+        - `reasoning_effort` is Codex-only and optional: use `high` for coding.
+          Use `xhigh` for planning or review. Leave it out to inherit Codex and user defaults;
+          never put it on a Claude task. Other values, including `max` and `ultra`, are not part
+          of this protocol.
+        - `permission_mode` is `ask`, `edits` or `full`, and leaving it out is right almost always
           — it takes this Mac's own setting, which is `\(Config.shared.orchestratorPermission)`.
           Nobody watches a child's tab, so `ask` is a session that stops until it times out.
         - `plan` is the graph, not this leaf's job — the same text in every task you dispatch,
@@ -6043,6 +6082,7 @@ enum Orchestrator {
             "dir": "/tmp/.clawdline/\(task.id)",
         ]
         if let model = task.model { out["model"] = model }
+        if let effort = task.reasoningEffort { out["reasoning_effort"] = effort.rawValue }
         if let scheduleID = task.scheduleID { out["schedule_id"] = scheduleID }
         out["permission"] = task.permission.rawValue
         if task.state == .queued, !task.serialize.isEmpty {
@@ -6482,6 +6522,7 @@ enum Orchestrator {
         if let v = task.rootLabel { out["root_label"] = v }
         if let v = task.parentTaskId { out["parent_task"] = v }
         if let v = task.model { out["model"] = v }
+        if let v = task.reasoningEffort { out["reasoning_effort"] = v.rawValue }
         out["permission"] = task.permission.rawValue
         if let v = task.plan { out["plan"] = v }
         if let v = task.scheduleID {
@@ -6631,6 +6672,9 @@ enum Orchestrator {
         task.rootLabel = obj["root_label"] as? String
         task.parentTaskId = obj["parent_task"] as? String
         task.model = StartPoints.modelName(obj["model"] as? String)
+        task.reasoningEffort = assistant == .codex
+            ? (obj["reasoning_effort"] as? String).flatMap(ReasoningEffort.init(rawValue:))
+            : nil
         task.permission = (obj["permission"] as? String).flatMap(Permission.init(rawValue:)) ?? .ask
         task.plan = obj["plan"] as? String
         task.scheduleID = (obj["schedule_id"] as? String).flatMap { isTaskID($0) ? $0 : nil }

@@ -1,5 +1,15 @@
 import Foundation
 
+/// The two deliberate per-dispatch reasoning overrides Clawdline exposes for Codex.
+///
+/// This is a closed enum rather than a free-form config value: a task can ask for the careful
+/// coding default (`high`) or the deeper planning/review setting (`xhigh`). Omitting it leaves
+/// Codex and the user's own configuration untouched. Other Codex values are intentionally not
+/// part of the dispatch protocol.
+enum ReasoningEffort: String, CaseIterable {
+    case high, xhigh
+}
+
 /// How far a dispatched session may go before it stops and asks.
 ///
 /// Clawdline's own three words rather than either CLI's, because the two spell this differently
@@ -115,12 +125,13 @@ enum Assistant: String, CaseIterable {
         }
     }
 
-    /// The same command with a model named on it, a permission mode, a directory the session
-    /// may reach outside the one it was started in, and a conversation to pick back up.
+    /// The same command with a model named on it, an optional typed Codex reasoning override, a
+    /// permission mode, a directory the session may reach outside the one it was started in,
+    /// and a conversation to pick back up.
     ///
-    /// All three flags are spelled the same way by both CLIs — `--model`, and `--add-dir` — which
-    /// is the only reason this is one function rather than a switch. The values are the variable
-    /// part of the whole line, and what keeps them from being fragments of a command is
+    /// Model and reach are spelled the same way by both CLIs — `--model`, and `--add-dir` — while
+    /// reasoning is deliberately emitted only for Codex. The values are the variable part of
+    /// the whole line, and what keeps them from being fragments of a command is
     /// ``StartPoints/modelName(_:)``, ``StartPoints/extraDir(_:)`` and
     /// ``StartPoints/sessionName(_:)``: pass anything that has not been through those and the
     /// guarantee in `StartPoints`' header stops being true.
@@ -137,11 +148,15 @@ enum Assistant: String, CaseIterable {
     /// answer, so without this the first question is where the task stops. It is also the reason
     /// the second level felt so much worse than the first: a child that dispatches touches that
     /// directory a dozen more times, once per grandchild it makes, briefs and reads back.
-    func command(model: String?, permission: Permission = .ask, addDir: String? = nil,
+    func command(model: String?, reasoningEffort: ReasoningEffort? = nil,
+                 permission: Permission = .ask, addDir: String? = nil,
                  resume: String? = nil) -> String {
         var line = command
         if let resume, !resume.isEmpty { line += " " + resumeFlag + " " + resume }
         if let model, !model.isEmpty { line += " --model " + model }
+        if self == .codex, let reasoningEffort {
+            line += " --config model_reasoning_effort=" + reasoningEffort.rawValue
+        }
         if let addDir, !addDir.isEmpty { line += " --add-dir " + addDir }
         let flags = permission.flags(for: self)
         if !flags.isEmpty { line += " " + flags }

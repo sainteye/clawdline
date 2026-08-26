@@ -290,6 +290,13 @@ with a small one is a rubber stamp with a token cost.
 
 On the Codex side the same field takes its slug (e.g. `gpt-5.1-codex`).
 
+For a Codex task only, optional `reasoning_effort` is exactly `high` or `xhigh`. Use `high` for
+coding and `xhigh` for planning. Leave it out to inherit the Codex/model and user defaults:
+omission adds no command-line override. Empty values, non-strings, every other name (including
+`max` and `ultra`), and using the field with `assistant: "claude"` are `bad_task`. Hand-written
+schedule templates may carry it and Codex schedule edits preserve it even though there is no UI
+control; explicitly switching that schedule to Claude removes the incompatible hidden override.
+
 ### 2.7 Will the child stall on a permission prompt
 
 **Nobody is watching the child's tab.** A session that stops to ask you to approve something stops
@@ -409,6 +416,7 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `instructions` | non-empty, ≤ 16 KiB |
 | `deliverables` | paths relative to the task directory; `artifacts/…` by convention |
 | `model` | optional. Lowercase letters, digits, `.` `_` `-`, ≤ 64 characters. Absent = that assistant's default |
+| `reasoning_effort` | optional, Codex-only. Exactly `high` (coding) or `xhigh` (planning). Absent = inherit Codex/user defaults with no CLI override; `max` and `ultra` are not accepted |
 | `permission_mode` | optional. `ask` / `edits` / `full`. Absent = this Mac's ceiling (default `full`). Anything else, `auto` included, is `bad_task` |
 | `isolation` | optional. `none` / `worktree`; absent = `none`. Use `worktree` only after the §2.0a decision |
 | `isolation_base` | optional Git revision, legal only with `isolation: "worktree"`; absent means `HEAD` at actual start time |

@@ -253,6 +253,13 @@ codex features list | grep image_generation      # → image_generation  stable 
 
 Codex 那邊同一個欄位填它的 slug（例如 `gpt-5.1-codex`）。
 
+只有 Codex task 能選填 `reasoning_effort`，而且只能是 `high` 或 `xhigh`。寫程式建議用
+`high`，規劃建議用 `xhigh`。不寫就沿用 Codex／模型與使用者的預設，command line 不會多出
+override。空字串、非字串、任何其他名字（包括 `max`、`ultra`），以及搭配
+`assistant: "claude"` 都會回 `bad_task`。手寫的 schedule template 可以帶這個欄位；排程編輯
+雖然沒有 UI control，Codex 排程儲存時仍會保留它；若明確把助理改成 Claude，會移除這個不相容的
+hidden override。
+
 ### 2.7 child 會不會卡在權限確認
 
 **child 的分頁沒有人在看。** 一個停下來等你按「允許」的 session，會一路停到逾時——事後看起來
@@ -357,6 +364,7 @@ jq -n \
 | `instructions` | 非空、≤ 16 KiB |
 | `deliverables` | 相對於 task 目錄的路徑，慣例是 `artifacts/…` |
 | `model` | 選填。小寫字母、數字、`.` `_` `-`，最多 64 字元。不寫 ＝ 該助理的預設模型 |
+| `reasoning_effort` | 選填，只限 Codex。只能是 `high`（寫程式）或 `xhigh`（規劃）。不寫 ＝ 沿用 Codex／使用者預設且不加 CLI override；不接受 `max`、`ultra` |
 | `permission_mode` | 選填。`ask`／`edits`／`full`。不寫 ＝ 這台 Mac 的上限值（預設 `full`）。寫別的字（包括 `auto`）＝ `bad_task` |
 | `isolation` | 選填。`none`／`worktree`；不寫 ＝ `none`。只有通過 §2.0a 判斷才用 `worktree` |
 | `isolation_base` | 選填 Git revision，只能跟 `isolation: "worktree"` 一起用；不寫就是實際開始時的 `HEAD` |

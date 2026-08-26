@@ -1065,7 +1065,7 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
     -H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)" \
     -H 'Content-Type: application/json' \
     -d "{\"task_id\":\"$TASK\",\"secret\":\"$SECRET\"}"
-{"ok":true,"task":{"id":"3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","state":"spawning","kind":"image","title":"Project portrait","assistant":"codex","projectDir":"/Users/you/code/clawdline","created":1787100000,"spawnedAt":1787100002,"dir":"/tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","root":{"sessionId":"841cbb8d-58b1-4765-9a71-bcdba19bcfef","assistant":"claude","label":"clawdline main"},"child":{"terminalId":"9A1F…","backend":"iterm"}}}
+{"ok":true,"task":{"id":"3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","state":"spawning","kind":"image","title":"Project portrait","assistant":"codex","reasoning_effort":"high","projectDir":"/Users/you/code/clawdline","created":1787100000,"spawnedAt":1787100002,"dir":"/tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","root":{"sessionId":"841cbb8d-58b1-4765-9a71-bcdba19bcfef","assistant":"claude","label":"clawdline main"},"child":{"terminalId":"9A1F…","backend":"iterm"}}}
 ```
 
 *(Example. The orchestrator routes are newer than the server this page's other transcripts were run
@@ -1100,7 +1100,7 @@ Nine refusals, and a client should branch on all of them:
 | `code` | status | |
 |---|---|---|
 | `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
-| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `permission_mode`, `plan`, `claims`, or `serialize`. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
+| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `reasoning_effort`, `permission_mode`, `plan`, `claims`, or `serialize`. `reasoning_effort` is Codex-only and exactly `high` or `xhigh`; omission inherits Codex/user defaults. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
 | `assistant_exhausted` | 409 | the named assistant's own account-level quota reads `exhausted` — see [`GET /v1/orchestrator/assistants`](#get-v1orchestratorassistants). The error object carries `assistant`, `availability`, `source`, `observed_at`, `age_seconds`, `resets_at`, `retry_after` (`min(resets_at - now, 3600)`), and `alternatives` — every other assistant's own `id`/`availability`/`detail`, so a client can dispatch to one of those instead of retrying the same one blind. `task.json`'s `"ignore_quota": true` sends it anyway; the message names that field outright. Checked after capacity and depth, before any git subprocess — cheaper than either, and the reply's own `message` says why. This is a fact about the account, not the task: it fires whether or not the failing session sits in this Mac's own tree |
 | `worktree_unavailable` | 409 | worktree isolation was requested but the repository has no commit to use as a base or the destination volume has less than 2 GB available. This is an environment refusal rather than malformed JSON |
 | `workspace_busy` | 409 | a live task from another definitely identified root reserved an equal, ancestor, or descendant claim. The error object carries `blocking_task`, `title`, nullable `root_label`, Unix-second `created`, absolute `conflict_paths`, advisory `retry_after`, `age_seconds` (`now` minus the blocking task's `created`, an integer), and `root_key` (the blocking task's root tree, hashed — see below). The rejected task is not registered and does not spend dispatch rate-limit budget |
@@ -1465,7 +1465,7 @@ write.
 
 **The task-template fields no form has a control for are the exception, and they are carried
 rather than defaulted**: `claims`, `permission_mode`, `serialize`, `isolation`, `isolation_base`,
-`deliverables`, `kind`, `plan` and `model` are read off the file being replaced. A save that
+`deliverables`, `kind`, `plan`, `model` and `reasoning_effort` are read off the file being replaced. A save that
 dropped them would be an edit changing what it never put on screen — measured, `claims` and
 `permission_mode` were gone after one save from either surface. `model` is the one of those a body
 may still name, so the two spellings are held apart: **a body with no `model` key keeps the model
@@ -1497,6 +1497,11 @@ this instant into the file and the timer ignores every occurrence older than it;
 neither carries the old stamp across untouched, so a run that really was missed at nine is still
 missed after somebody fixes the title at eleven. Retiming the file by hand writes no stamp and
 behaves as it always has.
+
+For Codex schedules, a carried `reasoning_effort` remains exactly `high` or `xhigh`; omission
+continues to mean no Codex CLI override. The ordinary parser still refuses empty, non-string and
+unknown values. If an edit explicitly changes the assistant from Codex to Claude, the Mac removes
+that now-incompatible hidden override so the assistant change can be saved without a text editor.
 
 | | when |
 |---|---|
@@ -1597,6 +1602,7 @@ The record:
   "title": "Project portrait",
   "assistant": "codex",
   "model": "gpt-5.1-codex",     // absent when the task did not name one
+  "reasoning_effort": "high",   // Codex only; absent means no CLI override
   "permission": "full",         // ask | edits | full — what was used, after this Mac's ceiling
   "projectDir": "/Users/you/code/clawdline",
   "isolation": "worktree",     // absent for the shared-tree default
@@ -1659,6 +1665,12 @@ artifact directory. The broker, not the child, reads `head`, `commits`, and `dir
 serialized isolated task names `isolation: "worktree"` while queued but omits the `worktree`
 object until its tab exists: its base is resolved only when it acquires its mutex, so no preliminary
 SHA is presented as the receipt for what the child actually started from.
+
+For Codex dispatches, `reasoning_effort` accepts only `high` and `xhigh`; use `high` for coding and
+`xhigh` for planning. Empty, non-string, unknown values (including `max` and `ultra`), and the field
+on a Claude task all return `422 bad_task` with `reasoning_effort` in the message. Omission adds no
+`--config` argument. The optional value survives registry reloads, appears in this record, and is
+included in `orchestrator.dispatch` audit metadata.
 
 The same payload goes out on [the event stream](#the-event-stream) as an `orchestrator` frame
 whenever any record changes, and once when a stream opens, right after `hello` and `sessions`.

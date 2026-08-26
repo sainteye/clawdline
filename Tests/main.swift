@@ -9047,6 +9047,22 @@ group("a task.json is read before a terminal is opened for it") {
                       "isolation_base": "refs/heads/feature/x"]))?.isolationBase,
            "refs/heads/feature/x")
     expect("one that names a model carries it", made(file(["model": "haiku"]))?.model, "haiku")
+    expect("a Codex task may ask for high reasoning",
+           made(file(["reasoning_effort": "high"]))?.reasoningEffort, .high)
+    expect("a Codex task may ask for extra-high reasoning",
+           made(file(["reasoning_effort": "xhigh"]))?.reasoningEffort, .xhigh)
+    check("omitting reasoning effort inherits Codex and user defaults",
+          made(file())?.reasoningEffort == nil)
+    for invalid in ["", "low", "medium", "max", "ultra", "HIGH"] {
+        let why = refusal(file(["reasoning_effort": invalid])) ?? ""
+        check("reasoning effort \(invalid.isEmpty ? "empty" : invalid) is refused by name",
+              why.contains("reasoning_effort"))
+    }
+    check("a non-string reasoning effort is refused by name",
+          refusal(file(["reasoning_effort": 1]))?.contains("reasoning_effort") == true)
+    check("reasoning effort is Codex-only and the refusal names the field",
+          refusal(file(["assistant": "claude", "reasoning_effort": "high"]))?
+              .contains("reasoning_effort") == true)
     expect("and one that names how far it may go carries that",
            made(file(["permission_mode": "edits"]))?.permission, .edits)
     check("`auto` is not one of them — on Haiku that flag quietly means `manual`",
@@ -9270,6 +9286,18 @@ group("a model name is a name, not a fragment of a command line") {
               .hasPrefix("claude --model haiku "))
     expect("and not written at all when nothing was named", Assistant.claude.command(model: nil),
            "claude")
+    expect("Codex reasoning effort follows the model and precedes reach and permission",
+           Assistant.codex.command(model: "gpt-5.6-sol", reasoningEffort: .xhigh,
+                                   permission: .edits, addDir: "/tmp/.clawdline"),
+           "codex --model gpt-5.6-sol --config model_reasoning_effort=xhigh "
+             + "--add-dir /tmp/.clawdline --ask-for-approval on-request --sandbox workspace-write")
+    expect("omitted reasoning effort adds no Codex override",
+           Assistant.codex.command(model: "gpt-5.6-sol"),
+           "codex --model gpt-5.6-sol")
+    expect("StartPoints carries the typed override to the same command builder",
+           StartPoints.itermLine(cwd: "/tmp/x", assistant: .codex,
+                                 model: "gpt-5.6-sol", reasoningEffort: .high),
+           "cd '/tmp/x' && codex --model gpt-5.6-sol --config model_reasoning_effort=high")
     check("the line a tab is opened with is still one command",
           StartPoints.itermLine(cwd: "/tmp/x", assistant: .codex, model: "gpt-5.1-codex")
               .hasSuffix("&& codex --model gpt-5.1-codex"))
@@ -9348,6 +9376,40 @@ group("a child row resolves only to its current parent session") {
     let publicRoot = Orchestrator.recordForTesting(task())["root"] as? [String: Any]
     expect("the public record says which assistant owns its root id",
            publicRoot?["assistant"] as? String, "codex")
+}
+
+group("a task keeps its per-dispatch Codex reasoning effort") {
+    var task = Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "reason",
+                                 assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30,
+                                 created: Date(), secretHash: String(repeating: "0", count: 64))
+    task.reasoningEffort = .xhigh
+    let stored = Orchestrator.stored(task)
+    expect("the durable row names reasoning effort",
+           stored["reasoning_effort"] as? String, "xhigh")
+    expect("reasoning effort survives a registry reload",
+           Orchestrator.task(from: stored)?.reasoningEffort, .xhigh)
+    expect("the public task record exposes reasoning effort",
+           Orchestrator.recordForTesting(task)["reasoning_effort"] as? String, "xhigh")
+
+    task.state = .queued
+    task.model = "gpt-5.6-sol"
+    task.permission = .edits
+    var startedWith: (Assistant, String?, ReasoningEffort?, Permission)?
+    let spawned = Orchestrator.spawn(task) { _, assistant, model, effort, permission, _ in
+        startedWith = (assistant, model, effort, permission)
+        return .started(id: "reasoning-child", backend: .iterm)
+    }
+    expect("spawn carries reasoning effort into the terminal starter",
+           startedWith?.2, .xhigh)
+    check("and keeps the other typed launch choices beside it",
+          startedWith?.0 == .codex && startedWith?.1 == "gpt-5.6-sol"
+            && startedWith?.3 == .edits && spawned.state == .spawning)
+
+    var inherited = task
+    inherited.reasoningEffort = nil
+    check("an inherited default writes no durable or public field",
+          Orchestrator.stored(inherited)["reasoning_effort"] == nil
+            && Orchestrator.recordForTesting(inherited)["reasoning_effort"] == nil)
 }
 
 group("how far a child may go is this Mac's answer, not the asking session's") {
@@ -11141,6 +11203,13 @@ group("a child is told whether it may hand work on, and never has to find out by
           allowed.contains("at most 3 child sessions of your own"))
     check("and gets the recipe rather than a pointer to a skill — half of them are Codex",
           allowed.contains("## Handing work on") && allowed.contains("/v1/orchestrator/tasks"))
+    check("and the recipe teaches Codex's closed reasoning override",
+          allowed.contains("`reasoning_effort` is Codex-only")
+            && allowed.contains("`high` for coding")
+            && allowed.contains("`xhigh` for planning or review"))
+    check("and names only permission values the task parser accepts",
+          allowed.contains("`permission_mode` is `ask`, `edits` or `full`")
+            && !allowed.contains("`ask`, `auto` or `full`"))
     check("with its own task id already filled in as the parent, since that is the field nothing else would tell it",
           allowed.contains("\"root\": {\"parent_task\": \"\(taskID)\"}"))
     check("and the task file is built with a heredoc, since screening refuses a quoted jq filter",
@@ -14158,9 +14227,10 @@ group("a save keeps the task fields no form has a control for") {
     let handWritten: [String: Any] = [
         "clawdline_schedule": 1, "schedule_id": id, "title": "posts",
         "when": ["at": "09:00", "days": "daily"],
-        "task": ["assistant": "claude", "project_dir": "/tmp",
+        "task": ["assistant": "codex", "project_dir": "/tmp",
                  "instructions": "publish today", "claims": ["posts"],
-                 "permission_mode": "edits", "kind": "custom", "model": "opus"],
+                 "permission_mode": "edits", "reasoning_effort": "high",
+                 "kind": "custom", "model": "opus"],
         "enabled": true,
     ]
     try! JSONSerialization.data(withJSONObject: handWritten)
@@ -14170,7 +14240,7 @@ group("a save keeps the task fields no form has a control for") {
     let saved = Orchestrator.updateSchedule(
         id: id,
         from: ["title": "posts", "at": "10:00", "days": "daily", "place_id": "p1",
-               "assistant": "claude", "instructions": "publish today", "enabled": true],
+               "assistant": "codex", "instructions": "publish today", "enabled": true],
         places: [place], isDirectory: { _ in true })
     check("the save was accepted", { if case .refused = saved { return false }; return true }())
 
@@ -14179,6 +14249,8 @@ group("a save keeps the task fields no form has a control for") {
     let task = after?["task"] as? [String: Any] ?? [:]
     expect("claims survived a save that never mentioned them", task["claims"] as? [String], ["posts"])
     expect("and so did permission_mode", task["permission_mode"] as? String, "edits")
+    expect("and so did the hand-written Codex reasoning effort",
+           task["reasoning_effort"] as? String, "high")
     expect("and kind", task["kind"] as? String, "custom")
     // The ninth field, and the one the first pass at this missed. The page's form has no model
     // control and its body has no `model` key at all, so a save from a phone used to hand the
@@ -14188,6 +14260,21 @@ group("a save keeps the task fields no form has a control for") {
     expect("and the model no form has a control for", task["model"] as? String, "opus")
     expect("while the field the form did change is the new one",
            (after?["when"] as? [String: Any])?["at"] as? String, "10:00")
+
+    let changedAssistant = Orchestrator.updateSchedule(
+        id: id,
+        from: ["title": "posts", "at": "10:00", "days": "daily", "place_id": "p1",
+               "assistant": "claude", "instructions": "publish today", "enabled": true],
+        places: [place], isDirectory: { _ in true })
+    check("changing a Codex schedule to Claude is not trapped by its hidden effort",
+          { if case .refused = changedAssistant { return false }; return true }())
+    let changedFile = (try? JSONSerialization.jsonObject(
+        with: Data(contentsOf: directory.appendingPathComponent("\(id).json"))))
+        as? [String: Any]
+    let changedTask = changedFile?["task"] as? [String: Any] ?? [:]
+    check("the assistant change removes the now-incompatible hidden override",
+          changedTask["assistant"] as? String == "claude"
+            && changedTask["reasoning_effort"] == nil)
 
     // **A body that never mentions the model and one that sends an empty one are different
     // requests.** Carrying it on the same terms as `claims` would make the first work and the

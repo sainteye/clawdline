@@ -71,8 +71,9 @@ that fallback in the audit log.
 - `when.at` is `HH:MM` in the Mac's current local time zone. It is not UTC.
 - `when.days` is `"daily"` or a non-empty, duplicate-free array drawn from `sun`, `mon`, `tue`,
   `wed`, `thu`, `fri`, `sat`.
-- `task` contains the task-template fields `assistant`, optional `model`, `project_dir`, optional
-  `title`, `instructions`, `claims`, `serialize`, `isolation`, `isolation_base`,
+- `task` contains the task-template fields `assistant`, optional `model`, optional
+  `reasoning_effort`, `project_dir`, optional `title`, `instructions`, `claims`, `serialize`,
+  `isolation`, `isolation_base`,
   `permission_mode`, `timeout_minutes`, `deliverables`, `kind`, and `plan`. Their validation is the
   same as [`task.json`](orchestrator.md#taskjson--written-by-the-root-before-it-asks-for-anything).
   Clawdline generates `task_id`, the task secret, and `root`; templates cannot set them.

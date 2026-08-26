@@ -30,6 +30,9 @@ import Foundation
 ///   never opening with `-` — and no string it admits contains a character a shell reads. It is
 ///   checked there as well as wherever it came from, because the guarantee belongs to this file.
 ///   The route a phone can reach still passes nothing: only a dispatched task names a model.
+/// - **Codex reasoning is not free-form.** ``ReasoningEffort`` has exactly `high` and `xhigh`;
+///   this layer carries that typed choice to ``Assistant/command`` and cannot turn it into an
+///   arbitrary config fragment. Nil adds nothing and preserves Codex and user defaults.
 /// - **The list cannot name somewhere you have never been.** It is built from each assistant's
 ///   own record of where it has run and from the sessions clawdline can already see — all of
 ///   which are places this Mac has already run one of them in.
@@ -89,10 +92,12 @@ enum StartPoints {
     /// ``modelName(_:)`` if there is one. `cwd` is quoted with the same `shellQuoted`
     /// the git plumbing uses.
     static func itermLine(cwd: String, assistant: Assistant = .claude,
-                          model: String? = nil, permission: Permission = .ask,
+                          model: String? = nil, reasoningEffort: ReasoningEffort? = nil,
+                          permission: Permission = .ask,
                           addDir: String? = nil, resume: String? = nil) -> String {
         "cd " + Project.shellQuoted(cwd) + " && "
-            + assistant.command(model: modelName(model), permission: permission,
+            + assistant.command(model: modelName(model), reasoningEffort: reasoningEffort,
+                                permission: permission,
                                 addDir: extraDir(addDir), resume: sessionName(resume))
     }
 
@@ -238,7 +243,8 @@ enum StartPoints {
     /// created when there is not one already, and that is the one case where something may come
     /// forward — there is no way to make a window and not have it be a window.
     static func start(_ place: Place, assistant: Assistant = .claude,
-                      model: String? = nil, permission: Permission = .ask,
+                      model: String? = nil, reasoningEffort: ReasoningEffort? = nil,
+                      permission: Permission = .ask,
                       addDir: String? = nil, resume: String? = nil) -> Outcome {
         guard usable(place.path), isDirectory(place.path) else {
             return .refused(status: 404, code: "not_found",
@@ -249,6 +255,7 @@ enum StartPoints {
             guard let made = ITerm.newTab(line: itermLine(cwd: place.path,
                                                           assistant: assistant,
                                                           model: model,
+                                                          reasoningEffort: reasoningEffort,
                                                           permission: permission,
                                                           addDir: addDir,
                                                           resume: resume)) else {
@@ -265,6 +272,7 @@ enum StartPoints {
             // in a name it admits for that shell to read.
             guard let pane = Tmux.newWindow(cwd: place.path,
                                             command: assistant.command(model: modelName(model),
+                                                                       reasoningEffort: reasoningEffort,
                                                                        permission: permission,
                                                                        addDir: extraDir(addDir),
                                                                        resume: sessionName(resume))) else {
