@@ -39,11 +39,21 @@ export var Command = (function () {
     var SEND_TRIES = 4;
     var SEND_WAIT = 2000;
 
+    // What the planner is judging the job to be worth — see "Which model" in
+    // ~/.config/clawdline/dispatch-policy.md, carried into `Planner.swift`'s own prompt rather
+    // than read from that file at request time. Codex expresses difficulty as reasoning effort
+    // instead, so this row only ever means something for Claude — see `drawModel`.
+    var MODELS = ["haiku", "sonnet", "opus"];
+
     var phase = "idle";          // idle | thinking | draft | opening
     var places = null;           // GET /v1/places, fetched once and reused for this sheet's life
     var assistants = [];
     var chosenPlace = null;      // a place id, once the planner or a person has picked one
     var chosenAssistant = null;
+    // "" or one of `MODELS` — "" is its own answer, "whatever that assistant runs by default",
+    // and has to be reachable by pressing the lit chip a second time, the same as the planner
+    // never having named one at all.
+    var chosenModel = "";
     var openedId = null;         // a session `startPlace` already opened, so a retry sends into it
     /** Bumped whenever somebody abandons what is in flight. Everything asynchronous below carries
      *  the value it began under and drops its own answer when the two no longer match — the shape
@@ -83,6 +93,8 @@ export var Command = (function () {
         for (var i = 0; i < rows.length; i++) rows[i].disabled = b;
         var chips = els["command-with"].querySelectorAll(".chip");
         for (var j = 0; j < chips.length; j++) chips[j].disabled = b;
+        var mchips = els["command-model"].querySelectorAll(".chip");
+        for (var m = 0; m < mchips.length; m++) mchips[m].disabled = b;
         // Never disabled, `opening` included. The draft on screen is prose a model wrote, and
         // this sheet is the only place a person can read it before it is typed into an agent; a
         // reveal nobody can act on is a receipt rather than a review. Cancelling while a tab is
@@ -113,7 +125,46 @@ export var Command = (function () {
             chip.textContent = a.label || a.id;
             chip.setAttribute("aria-pressed", a.id === chosenAssistant ? "true" : "false");
             chip.disabled = busy();
-            chip.onclick = function () { chosenAssistant = a.id; drawWith(); };
+            chip.onclick = function () {
+                chosenAssistant = a.id;
+                // A model name is only ever sayable for Claude this round — see `drawModel` — so
+                // switching away from it drops whatever was picked rather than carrying a haiku
+                // or opus into a `/start/codex/opus` that can only ever 404.
+                if (chosenAssistant !== "claude") chosenModel = "";
+                drawWith();
+                drawModel();
+            };
+            row.appendChild(chip);
+        });
+    }
+
+    /// The same shape `drawWith` just built, one row down: what the planner judged the job was
+    /// worth, changeable before Start is pressed. `MODELS` is fixed rather than fetched — there
+    /// is nowhere on the wire this page could ask "which models does haiku/sonnet/opus mean on
+    /// this Mac", and the contract this round settled on is that those three names are what they
+    /// are called everywhere (see the plan). Pressing the chip already lit turns it back off:
+    /// that is how "" — "whatever that assistant runs by default" — stays reachable once a
+    /// person has picked something else, without a fourth chip that says nothing three don't.
+    function drawModel() {
+        var row = els["command-model"];
+        row.innerHTML = "";
+        // Codex expresses difficulty as reasoning effort, not a model name — see the plan's
+        // scope — and `StartPoints.start` 404s a model segment sent for it, so this stays out of
+        // reach rather than offering a chip that can only ever fail.
+        row.hidden = chosenAssistant !== "claude";
+        if (row.hidden) return;
+        var label = document.createElement("span");
+        label.className = "with-label";
+        label.textContent = T.webCommandModel;
+        row.appendChild(label);
+        MODELS.forEach(function (m) {
+            var chip = document.createElement("button");
+            chip.type = "button";
+            chip.className = "chip" + (m === chosenModel ? " on" : "");
+            chip.textContent = m;
+            chip.setAttribute("aria-pressed", m === chosenModel ? "true" : "false");
+            chip.disabled = busy();
+            chip.onclick = function () { chosenModel = (chosenModel === m) ? "" : m; drawModel(); };
             row.appendChild(chip);
         });
     }
@@ -215,9 +266,15 @@ export var Command = (function () {
         // Below the line the project is left unselected even when the planner named one — a
         // low-confidence guess is not a pick, and showing it selected would read as one.
         chosenPlace = confident ? draft.place_id : null;
+        // "" whenever the planner did not judge one, or judged it for an assistant that is not
+        // Claude — `Planner.Draft` already answers "" for codex, and `chosenAssistant` above may
+        // have fallen back to something the draft never named at all.
+        chosenModel = (chosenAssistant === "claude" && MODELS.indexOf(draft.model) >= 0)
+            ? draft.model : "";
 
         els["command-instructions"].value = instructionsText;
         drawWith();
+        drawModel();
         drawList();
         els["command-draft"].hidden = false;
         phase = "draft";
@@ -225,7 +282,7 @@ export var Command = (function () {
 
         if (confident) {
             paint();
-            openIt(chosenPlace, chosenAssistant, instructionsText);
+            openIt(chosenPlace, chosenAssistant, chosenModel, instructionsText);
             return;
         }
 
@@ -298,14 +355,14 @@ export var Command = (function () {
        dispatch is gated behind a local-only token for exactly this reason, and a phone must never
        be handed a shortcut that does the same thing through the ordinary device grant. */
 
-    function openIt(placeId, assistant, instructions) {
+    function openIt(placeId, assistant, model, instructions) {
         if (!S.write) { finish(T.webStartOff); return; }
         if (typeof api.startPlace !== "function") { finish(T.webCommandFailed); return; }
         var mine = ++run;
         phase = "opening";
         sayStatus(T.webStarting, true);
         paint();
-        api.startPlace(placeId, assistant).then(function (d) {
+        api.startPlace(placeId, assistant, model).then(function (d) {
             if (mine !== run) return;   // cancelled while the tab was opening
             var id = d && d.id;
             if (!id) {
@@ -413,7 +470,7 @@ export var Command = (function () {
             sendInstructions(openedId, els["command-instructions"].value, SEND_TRIES, mine);
             return;
         }
-        if (chosenPlace) openIt(chosenPlace, chosenAssistant, els["command-instructions"].value);
+        if (chosenPlace) openIt(chosenPlace, chosenAssistant, chosenModel, els["command-instructions"].value);
     }
 
     /* ---- open, close, heard -------------------------------------------------- */
@@ -421,11 +478,13 @@ export var Command = (function () {
     function reset() {
         phase = "idle";
         places = null; assistants = []; chosenPlace = null; chosenAssistant = null;
+        chosenModel = "";
         openedId = null;
         els["command-text"].value = "";
         els["command-instructions"].value = "";
         els["command-draft"].hidden = true;
         els["command-with"].innerHTML = "";
+        els["command-model"].innerHTML = "";
         els["command-list"].innerHTML = "";
         var label = document.getElementById("command-where-label");
         if (label) label.remove();

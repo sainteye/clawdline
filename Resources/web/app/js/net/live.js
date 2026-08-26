@@ -254,18 +254,27 @@ export var Live = {
 
     places: function () { return jsonFetch("/v1/places"); },
 
-    /// The id and the assistant are the whole request, and **both of them are in the path**.
-    /// There is no body on this route — not "an optional body", none is read — so there is
-    /// nothing this page could send that would widen what gets started, and the command at the
-    /// other end is a literal off a two-case enum. An assistant this page invented is a 404 at
-    /// the Mac rather than a string that reaches a shell. The key is minted once per press,
-    /// which is what makes a retry of *this* request the same start rather than a second tab.
+    /// The id, the assistant and now the model are the whole request, and **all three are in the
+    /// path**. There is no body on this route — not "an optional body", none is read — so there
+    /// is nothing this page could send that would widen what gets started, and the command at
+    /// the other end is a literal off a two-case enum plus a name `StartPoints.start` checks the
+    /// same way. An assistant or a model this page invented is a 404 at the Mac rather than a
+    /// string that reaches a shell — never a silent fallback to whatever the default would have
+    /// been. The key is minted once per press, which is what makes a retry of *this* request the
+    /// same start rather than a second tab.
+    ///
+    /// `model` is a fourth path segment, parsed the way the third already is, so it can only
+    /// appear once the third does — a bare model with no assistant would land in the assistant's
+    /// own slot and be read as one. `input/command.js` never sends one without the other; a
+    /// falsy `model` (the planner named none, or the chosen assistant is not Claude) leaves the
+    /// path exactly as it was before this segment existed.
     ///
     /// Named for what it starts. `start` on this object is the transport's own — the one `boot`
     /// calls to open the stream — and a second one would have quietly replaced it.
-    startPlace: function (id, assistant) {
+    startPlace: function (id, assistant, model) {
         var path = "/v1/places/" + encodeURIComponent(id) + "/start";
-        if (assistant) path += "/" + encodeURIComponent(assistant);
+        if (assistant || model) path += "/" + encodeURIComponent(assistant || "claude");
+        if (model) path += "/" + encodeURIComponent(model);
         return jsonFetch(path, post({}, { "Idempotency-Key": uuid() }));
     },
 

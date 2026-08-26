@@ -44,6 +44,11 @@ export var Schedule = (function () {
     // where a drafted answer is offered rather than asked about. Repeated here rather than
     // imported: command.js already imports this file, and this round does not touch command.js.
     var SURE = 0.5;
+    // Mirrors `MODELS` in input/command.js — same reasoning as `SURE` above, and the same three
+    // names: haiku, sonnet and opus, untranslated everywhere they appear. Codex expresses
+    // difficulty as reasoning effort instead, so this only ever means something for Claude — see
+    // `drawModel`.
+    var MODELS = ["haiku", "sonnet", "opus"];
 
     var places = null;          // GET /v1/places, fetched once and reused for this sheet's life
     var assistants = [];
@@ -52,6 +57,10 @@ export var Schedule = (function () {
     // could not be resolved to one — see `fillFromRecord` and `drawPicked`.
     var chosenPlacePath = null;
     var chosenAssistant = null;
+    // "" or one of `MODELS` — see the same field on `Command` in input/command.js. Sent as
+    // `task.model` in the create/save payload; "" leaves it out, the same as never having judged
+    // one at all.
+    var chosenModel = "";
     // "daily" or a non-empty array of DAY_CODES — never an empty array. See `toggleDay`.
     var days = "daily";
     // True only when `days` above is "daily" because nothing was heard, not because "daily" was
@@ -95,10 +104,11 @@ export var Schedule = (function () {
          "schedule-timeout", "schedule-cancel", "schedule-go", "schedule-delete"].forEach(function (id) {
             els[id].disabled = b;
         });
-        ["schedule-with", "schedule-days", "schedule-close", "schedule-flags"].forEach(function (id) {
-            var chips = els[id].querySelectorAll(".chip");
-            for (var i = 0; i < chips.length; i++) chips[i].disabled = b;
-        });
+        ["schedule-with", "schedule-model", "schedule-days", "schedule-close", "schedule-flags"]
+            .forEach(function (id) {
+                var chips = els[id].querySelectorAll(".chip");
+                for (var i = 0; i < chips.length; i++) chips[i].disabled = b;
+            });
         var rows = els["schedule-places"].querySelectorAll(".place");
         for (var j = 0; j < rows.length; j++) rows[j].disabled = b;
     }
@@ -131,7 +141,39 @@ export var Schedule = (function () {
             chip.className = "chip" + (a.id === chosenAssistant ? " on" : "");
             chip.textContent = a.label || a.id;
             chip.setAttribute("aria-pressed", a.id === chosenAssistant ? "true" : "false");
-            chip.onclick = function () { chosenAssistant = a.id; drawWith(); };
+            chip.onclick = function () {
+                chosenAssistant = a.id;
+                // Same reasoning as `Command`'s own version of this: a model name only means
+                // anything for Claude this round, so switching away from it drops whatever was
+                // picked rather than saving a haiku or opus against a Codex schedule.
+                if (chosenAssistant !== "claude") chosenModel = "";
+                drawWith();
+                drawModel();
+            };
+            row.appendChild(chip);
+        });
+        paint();
+    }
+
+    /// The same judgement `input/command.js`'s own draft sheet offers, one row down in "More" —
+    /// see `drawModel` there, which this copies rather than imports for the reason `MODELS`
+    /// above is repeated instead of shared. Pressing the lit chip again turns it back off, which
+    /// is how "" — nothing judged, or nothing worth saving over what the Mac already had — stays
+    /// reachable without a fourth chip.
+    function drawModel() {
+        var row = els["schedule-model"];
+        row.innerHTML = "";
+        var show = chosenAssistant === "claude";
+        els["schedule-model-label"].hidden = !show;
+        row.hidden = !show;
+        if (!show) return;
+        MODELS.forEach(function (m) {
+            var chip = document.createElement("button");
+            chip.type = "button";
+            chip.className = "chip" + (m === chosenModel ? " on" : "");
+            chip.textContent = m;
+            chip.setAttribute("aria-pressed", m === chosenModel ? "true" : "false");
+            chip.onclick = function () { chosenModel = (chosenModel === m) ? "" : m; drawModel(); };
             row.appendChild(chip);
         });
         paint();
@@ -372,7 +414,7 @@ export var Schedule = (function () {
         editingId = null;
         loadingEdit = false;
         places = null; assistants = [];
-        chosenPlace = null; chosenPlacePath = null; chosenAssistant = null;
+        chosenPlace = null; chosenPlacePath = null; chosenAssistant = null; chosenModel = "";
         days = "daily"; daysGuessed = false; closeTab = "on_success"; enabled = true; notify = true;
         els["schedule-title"].value = "";
         els["schedule-at"].value = "";
@@ -396,7 +438,7 @@ export var Schedule = (function () {
         // it saying this, true here and nowhere else. See `openEdit`.
         els["schedule-form-say"].textContent = T.webScheduleNewSay;
         said("");
-        drawWith(); drawDays(); drawClose(); drawFlags(); drawPlaces();
+        drawWith(); drawModel(); drawDays(); drawClose(); drawFlags(); drawPlaces();
     }
 
     /** The `+` beside the Schedules list. Every field blank, "Daily" the one thing already on. */
@@ -407,7 +449,7 @@ export var Schedule = (function () {
         els["schedule-title"].focus({ preventScroll: true });
         ensurePlaces().then(function () {
             defaultAssistant(null);
-            drawWith(); drawPlaces();
+            drawWith(); drawModel(); drawPlaces();
         });
     }
 
@@ -440,7 +482,11 @@ export var Schedule = (function () {
         els["schedule-title"].focus({ preventScroll: true });
         ensurePlaces().then(function () {
             defaultAssistant(draft.assistant);
-            drawWith(); drawPlaces();
+            // Same rule as `reveal` in input/command.js: "" whenever the planner did not judge
+            // one, or judged it for an assistant `defaultAssistant` did not end up choosing.
+            chosenModel = (chosenAssistant === "claude" && MODELS.indexOf(draft.model) >= 0)
+                ? draft.model : "";
+            drawWith(); drawModel(); drawPlaces();
         });
     }
 
@@ -522,8 +568,12 @@ export var Schedule = (function () {
             // is not the same as a schedule with no project. See `drawPicked`.
             chosenPlacePath = chosenPlace ? null : (task.project_dir || null);
             defaultAssistant(task.assistant);
+            // Same rule as above: a file naming a model against an assistant this device no
+            // longer resolves to Claude is not shown as though it were still choosable here.
+            chosenModel = (chosenAssistant === "claude" && MODELS.indexOf(task.model) >= 0)
+                ? task.model : "";
             loadingEdit = false;
-            drawWith(); drawPlaces();
+            drawWith(); drawModel(); drawPlaces();
             paint();
         });
     }
@@ -665,6 +715,7 @@ export var Schedule = (function () {
             days: days,
             place_id: chosenPlace,
             assistant: chosenAssistant,
+            model: chosenModel,
             instructions: els["schedule-instructions"].value,
             enabled: enabled,
             close_tab: closeTab,
@@ -681,7 +732,7 @@ export var Schedule = (function () {
         said("");
         paint();
         var request = editing ? api.updateSchedule(editingId, payload) : api.createSchedule(payload);
-        request.then(function () {
+        request.then(function (d) {
             creating = false;
             // Closed rather than left open with a receipt in it — same as `input/command.js`'s
             // own `arrive` — because there is nothing left on this sheet worth looking at. The
@@ -691,7 +742,12 @@ export var Schedule = (function () {
             // here would leave the row that was just made or just changed missing from the only
             // screen anybody is looking at — see `Schedules.refresh`.
             Schedules.refresh();
-            toast(editing ? T.webScheduleSaved : T.webScheduleCreated);
+            // `dispatch_enabled` rides beside a *made* schedule, not a saved one — writing a file
+            // is not dispatching, and this Mac may have that switch off in Settings regardless.
+            // False still means the file is written and valid; only "Created." would be the lie,
+            // since nothing runs it until that switch is on.
+            if (!editing && d && d.dispatch_enabled === false) { toast(T.webScheduleDispatchOff); }
+            else { toast(editing ? T.webScheduleSaved : T.webScheduleCreated); }
         }).catch(function (e) {
             creating = false;
             said(why(e, editing ? T.webRequestFailed : T.webScheduleFailed));

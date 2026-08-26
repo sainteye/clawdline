@@ -279,6 +279,8 @@ protocol Copy {
     var settingsPushFinishHint: String { get }
     var settingsPushDeploy: String { get }
     var settingsPushDeployHint: String { get }
+    var settingsAgentNotify: String { get }
+    var settingsAgentNotifyNote: String { get }
 
     // Handing work to another session — see Sources/Orchestrator.swift and docs/orchestrator.md.
     //
@@ -803,6 +805,10 @@ protocol Copy {
     var webCommandWhere: String { get }
     /// Label for the choice of assistant. Only worth a row when there is a choice to make.
     var webCommandWith: String { get }
+    /// Label over the model chips the planner picked among — haiku, sonnet, opus — for the
+    /// assistant chosen in `webCommandWith`. The chips carry their own names, unlocalized;
+    /// only this label is a translated word.
+    var webCommandModel: String { get }
     /// Label for the editable first message — editable because the planner's writing, in
     /// `instructions`, is read by a person before anything reaches a terminal.
     var webCommandFirst: String { get }
@@ -839,6 +845,10 @@ protocol Copy {
     /// The disclosure that folds away everything below — a schedule with all the defaults
     /// should not make somebody read six more fields to create it.
     var webScheduleMore: String { get }
+    /// Same label as `webCommandModel`, folded away here because a schedule already has a
+    /// model — the one the planner picked, or the assistant's own default — before anyone
+    /// opens "More".
+    var webScheduleModel: String { get }
     var webScheduleWhenDone: String { get }
     var webScheduleCloseSuccess: String { get }
     var webScheduleCloseAlways: String { get }
@@ -856,6 +866,11 @@ protocol Copy {
     /// Shown once `POST /v1/orchestrator/schedules` answers 200 — the only place this feature is
     /// allowed to say a schedule now exists.
     var webScheduleCreated: String { get }
+    /// Shown beside `webScheduleCreated` when that same reply's `dispatch_enabled` is false.
+    /// Not an error: the schedule was written exactly as asked, and is valid — this Mac's own
+    /// dispatch is simply off, so nothing runs it until Settings turns that on. `webStartOff`
+    /// is the nearest sentence in tone.
+    var webScheduleDispatchOff: String { get }
     var webScheduleFailed: String { get }
     /// The confirming button when the sheet is editing a schedule rather than making one — the
     /// create state's own button is ``webScheduleCreate``.

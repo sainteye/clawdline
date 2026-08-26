@@ -609,13 +609,23 @@ final class RemoteServer {
             && (path.hasSuffix("/start") || path.contains("/start/")):
             let rest = String(path.dropFirst("/v1/places/".count))
             let parts = rest.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-            guard parts.count == 2 || parts.count == 3, parts[1] == "start" else {
+            guard (2...4).contains(parts.count), parts[1] == "start" else {
                 return .error(404, "not_found", "No such route")
             }
             let id = parts[0]
-            let named = parts.count == 3 ? parts[2] : Assistant.claude.rawValue
+            let named = parts.count >= 3 ? parts[2] : Assistant.claude.rawValue
             guard let assistant = Assistant(rawValue: named) else {
                 return .error(404, "not_found", "No assistant named that")
+            }
+            // A fourth segment for the model, parsed exactly as the third already is: matched
+            // against ``Planner/models`` and nothing else, and refused by name rather than
+            // quietly ignored. This route has never silently substituted anything — an
+            // assistant nobody has heard of is a `404` — and a size it did not understand
+            // becoming "whichever one is the default" would be a session running on a model
+            // somebody did not ask for, with a `200` saying it worked.
+            let model = parts.count == 4 ? parts[3] : ""
+            guard parts.count < 4 || Planner.models.contains(model) else {
+                return .error(404, "not_found", "No model named that")
             }
             return writing(request) { _ in
                 guard let place = StartPoints.place(withID: id.removingPercentEncoding ?? id) else {
@@ -626,7 +636,8 @@ final class RemoteServer {
                                                      "why": "not_found"])
                     return .error(404, "not_found", "No place named that")
                 }
-                switch StartPoints.start(place, assistant: assistant) {
+                switch StartPoints.start(place, assistant: assistant,
+                                         model: model.isEmpty ? nil : model) {
                 case .refused(let status, let code, let message, let app):
                     RemoteAuth.audit("place.start", ["place": place.id, "cwd": place.path,
                                                      "assistant": assistant.rawValue,
@@ -639,8 +650,11 @@ final class RemoteServer {
                     // Read it back on the next beat, so whatever asked sees the new row arrive
                     // the same way every other client does rather than through a special case.
                     DispatchQueue.main.async { SessionWatch.shared.nudge() }
+                    // `model` is echoed the way `assistant` is, and is empty when the path did
+                    // not name one — a client that asked for a size should be able to see it
+                    // arrived rather than infer it from a `200`.
                     return .json(["ok": true, "id": made, "backend": backend.rawValue,
-                                  "assistant": assistant.rawValue,
+                                  "assistant": assistant.rawValue, "model": model,
                                   "place": place.id, "cwd": place.path,
                                   "at": Int(Date().timeIntervalSince1970)])
                 }
@@ -832,7 +846,9 @@ final class RemoteServer {
         // that the brake is still on long after it let go.
         case ("POST", "/v1/orchestrator/schedules"):
             return writing(request, keeping: { $0.status != 429 && $0.status < 500 }) { body in
-                self.answer(Orchestrator.createSchedule(from: body))
+                self.answer(RemoteServer.scheduleAnswer(
+                    Orchestrator.createSchedule(from: body),
+                    dispatchEnabled: Config.shared.orchestratorEnabled))
             }
 
         // One schedule, in full, including the task template the list leaves out — see
@@ -1912,6 +1928,28 @@ final class RemoteServer {
         }
     }
 
+    /// A created schedule, plus the one thing the file cannot say about itself: whether anything
+    /// on this Mac will ever run it.
+    ///
+    /// **Making one is deliberately not gated on the dispatch switch.** Writing a file is not
+    /// dispatching, and refusing to save an evening's arrangement because the switch is off
+    /// would be this route deciding what somebody may plan for later. What was missing is the
+    /// other half: with `Settings → Remote → Agent tasks → Let a session hand work to another`
+    /// off, the create said `Created.` and the minute timer then returned before it looked at
+    /// any schedule at all — no session, and no sentence anywhere saying why. So this is a fact
+    /// reported beside the answer, not a refusal added to it — `ok` is still true and the file
+    /// is still there.
+    ///
+    /// **A refusal passes through untouched.** Nothing was made, so there is nothing to say
+    /// about whether it would have run, and a client reading `dispatch_enabled` off a `400`
+    /// would be reading it off a schedule that does not exist.
+    static func scheduleAnswer(_ reply: Orchestrator.Reply,
+                               dispatchEnabled: Bool) -> Orchestrator.Reply {
+        guard case .ok(var payload) = reply else { return reply }
+        payload["dispatch_enabled"] = dispatchEnabled
+        return .ok(payload)
+    }
+
     /// An orchestrator reply, in the envelope everything else already uses.
     private func answer(_ reply: Orchestrator.Reply) -> Response {
         switch reply {
@@ -2827,6 +2865,7 @@ final class RemoteServer {
             "webCommandDraft": t.webCommandDraft,
             "webCommandWhere": t.webCommandWhere,
             "webCommandWith": t.webCommandWith,
+            "webCommandModel": t.webCommandModel,
             "webCommandFirst": t.webCommandFirst,
             "webCommandGo": t.webCommandGo,
             "webCommandUnsure": t.webCommandUnsure,
@@ -3056,6 +3095,7 @@ final class RemoteServer {
             "webScheduleOn": t.webScheduleOn,
             "webScheduleWhere": t.webScheduleWhere,
             "webScheduleWith": t.webScheduleWith,
+            "webScheduleModel": t.webScheduleModel,
             "webScheduleFirst": t.webScheduleFirst,
             "webScheduleMore": t.webScheduleMore,
             "webScheduleWhenDone": t.webScheduleWhenDone,
@@ -3069,6 +3109,9 @@ final class RemoteServer {
             "webScheduleTimeout": t.webScheduleTimeout,
             "webScheduleCreate": t.webScheduleCreate,
             "webScheduleCreated": t.webScheduleCreated,
+            // What `dispatch_enabled: false` on the create means, said where the page can draw
+            // it: the file is written and nothing on this Mac will run it until Settings says so.
+            "webScheduleDispatchOff": t.webScheduleDispatchOff,
             "webScheduleFailed": t.webScheduleFailed,
             "webScheduleNeedsTime": t.webScheduleNeedsTime,
             "webScheduleNeedsPlace": t.webScheduleNeedsPlace,

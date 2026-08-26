@@ -594,6 +594,10 @@ document.documentElement.className = "booting";
              as something already broken, and this one is empty for about five seconds. -->
         <div class="block draft" id="command-draft" hidden>
             <div class="row" id="command-with"></div>
+            <!-- What the planner judged this job was worth — haiku, sonnet or opus — and a way
+                 back to "whatever that assistant runs by default" for a person who disagrees.
+                 Built the same way `#command-with` is, in `Command.drawModel`. -->
+            <div class="row" id="command-model"></div>
             <ul class="places" id="command-list"></ul>
             <textarea class="find" id="command-instructions" rows="4"
                       aria-label="The first message it will be sent" spellcheck="false"
@@ -687,6 +691,13 @@ document.documentElement.className = "booting";
                     <span class="field-label">Give up after</span>
                     <input class="find" id="schedule-timeout" type="number" min="1" max="240" step="1">
                 </label>
+            </div>
+            <!-- Same judgement the planner makes for a spoken one, offered here for a typed or an
+                 edited schedule. Hidden along with the assistant chips: a model name only means
+                 anything for Claude this round — see `Schedule.drawModel`. -->
+            <div class="block">
+                <span class="field-label" id="schedule-model-label">Model</span>
+                <div class="row" id="schedule-model"></div>
             </div>
         </details>
 

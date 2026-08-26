@@ -91,6 +91,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/events` | token | `read` |
 | `POST` | `/v1/places/:id/start` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/places/:id/start/:assistant` | token + key | `send` **and** the write switch |
+| `POST` | `/v1/places/:id/start/:assistant/:model` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/places/:id/resume/:session` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/send` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/key` | token + key | `send` **and** the write switch |
@@ -728,11 +729,11 @@ transcript deleted since you last looked, an id from another project, or one tha
 a transcript open; a client that has been told `live` should go to that session instead of asking
 for this.
 
-### `POST /v1/places/:id/start`, `POST /v1/places/:id/start/:assistant`
+### `POST /v1/places/:id/start`, `POST /v1/places/:id/start/:assistant`, `POST /v1/places/:id/start/:assistant/:model`
 
-Opens a terminal tab in that place and runs an assistant in it. Without the last segment that is
-`claude`, which is what this route did before there was anything else to run — an existing client
-keeps working and does not have to know Codex exists.
+Opens a terminal tab in that place and runs an assistant in it. Without the last two segments that
+is `claude` on whatever model `claude` opens on, which is what this route did before there was
+anything else to run — an existing client keeps working and does not have to know Codex exists.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/start \
@@ -740,28 +741,46 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/start \
 {"error":{"code":"write_disabled","message":"Sending is switched off. Settings → Remote turns it on, and it is off by default because typing into a session runs code on this Mac.","request_id":"2fd356e8-bef8-4f54-a312-851c0cfa8045"}}
 ```
 
-With the switch on: `{"ok":true,"id":"…","backend":"iterm","assistant":"claude","place":"…","cwd":"…","at":…}`.
+With the switch on: `{"ok":true,"id":"…","backend":"iterm","assistant":"claude","model":"","place":"…","cwd":"…","at":…}`.
 
 To open Codex instead, name it:
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/start/codex \
     -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 6f1c9d3a-41b3' -d '{}'
-{"ok":true,"id":"…","backend":"iterm","assistant":"codex","place":"…","cwd":"…","at":…}
+{"ok":true,"id":"…","backend":"iterm","assistant":"codex","model":"","place":"…","cwd":"…","at":…}
 ```
+
+A fourth segment says how big the session should be. It is one of **`haiku`, `sonnet`, `opus`** and
+nothing else:
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/start/claude/opus \
+    -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 6f1c9d3a-41b4' -d '{}'
+{"ok":true,"id":"…","backend":"iterm","assistant":"claude","model":"opus","place":"…","cwd":"…","at":…}
+```
+
+`model` is echoed back the way `assistant` is, and is `""` when the path named none. **A name that
+is not one of the three is `404 not_found` with `"No model named that"`**, decided before the place
+is looked up and never quietly turned into the default: a `200` for a session running on a model
+nobody asked for is the one wrong answer nothing on screen would show. That is a shorter list than
+the model names a dispatched task may carry — those may be a dated build like
+`claude-opus-5-20260201`, and this is the list of *sizes* a person or a draft picks from.
 
 **There is no request body.** Not "the body is optional" — it is not read, and there is no field
 anywhere on this route that a directory or a command could be written into. The `id` in the path is
 resolved against a list the server builds at that moment and the server's own copy of the path is
 what gets used, so an id nobody was handed is `404 not_found` and never a directory.
 
-**The assistant is a path segment for the same reason.** It is matched against the two names in
-`/v1/places`' `assistants` and nothing else — `…/start/emacs` is `404 not_found` with
-`"No assistant named that"`, decided before the place is even looked up — and what runs is a
-literal picked out of a closed list, never a string that reaches a shell. Each of them runs with
-no arguments. Picking a recorded conversation back up is the second named action this said it
-would be if it were ever wanted — [`POST /v1/places/:id/resume/:session`](#post-v1placesidresumesession),
-with its own literal — and not a field on this one.
+**The assistant is a path segment for the same reason, and so is the model.** The assistant is
+matched against the two names in `/v1/places`' `assistants` and nothing else — `…/start/emacs` is
+`404 not_found` with `"No assistant named that"`, decided before the place is even looked up — and
+what runs is a literal picked out of a closed list, never a string that reaches a shell. The model
+is the same idea one segment further along: three names, matched exactly, and the only thing either
+of them can add to the command line is `--model <one of three>`. Picking a recorded conversation
+back up is the second named action this said it would be if it were ever wanted —
+[`POST /v1/places/:id/resume/:session`](#post-v1placesidresumesession), with its own literal — and
+not a field on this one.
 
 Three refusals are specific to this route and worth branching on:
 
@@ -1393,7 +1412,7 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/schedules \
     -d '{"title":"Publish the next post","at":"09:30","days":["mon","wed","fri"],
          "place_id":"3f2a91c47e0b5d68","assistant":"codex",
          "instructions":"Read the checklist and publish the next ready post."}'
-{"ok":true,"schedule":{"id":"4d2f54ce-…","title":"Publish the next post","enabled":true,"next_fire":1787880600}}
+{"ok":true,"schedule":{"id":"4d2f54ce-…","title":"Publish the next post","enabled":true,"next_fire":1787880600},"dispatch_enabled":true}
 ```
 
 Required: `title`, `at` as `HH:MM` in the Mac's local time, `days` as `"daily"` or a non-empty
@@ -1402,6 +1421,16 @@ weekday array, `place_id`, `assistant`, `instructions`. Optional: `enabled` (def
 is left out of the file rather than written into it. `days` has no default — picking `daily` for
 somebody would be choosing how often their work runs — while `enabled` does, because a schedule
 somebody has just asked for is on.
+
+**`dispatch_enabled` sits beside the schedule, not inside it.** It is not a field of the file — it
+is this Mac's `Settings → Remote → Agent tasks → Let a session hand work to another`, read at the
+moment the schedule was made. `false` means exactly this: *the file is written, it is valid, and
+nothing will run it until that switch is on.* Making one is deliberately **not** gated on it —
+writing a file is not dispatching, and refusing would be this route deciding what somebody may
+arrange for later — so the answer is still `200` with `ok: true` and the schedule is really there.
+It is absent from a refusal, because a refusal made nothing to say it about, and it is not on
+`PATCH` either: an edit is a change to a file that already exists, and the create is where somebody
+is told what they have just arranged.
 
 **The write gate, not the orchestrator token** — [all three gates](#writing-three-gates-in-this-order),
 like `/send` and `/v1/voice`. The orchestrator token is a `0600` file on this Mac, which is what
@@ -1740,7 +1769,8 @@ These routes let an agent send **content** the user is waiting for, through the 
 RFC 8291 WebPush path as Clawdline's state notifications. The task form is for a child: its secret
 is accepted in `X-Clawdline-Task-Secret` or the JSON body, exactly like `/complete`, and is compared
 in constant time with the task's stored hash. The header is the canonical form shown to children.
-It is valid while the task is live and for 60 seconds after `finished_at`:
+It is valid while the task is live and for 60 seconds after `finished_at`. If the user has turned
+agent notifications off in Settings → Remote, it returns `409 agent_notify_disabled`:
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/notify \
@@ -1749,7 +1779,8 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/notify \
 {"failed":0,"ok":true,"sent":1}
 ```
 
-The root form is for a local root session or script and takes the orchestrator token:
+The root form is for a local root session or script and takes the orchestrator token. It observes
+the same Settings → Remote preference and returns `409 agent_notify_disabled` while it is off:
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/notify \
@@ -1778,14 +1809,15 @@ caller-supplied `title` and `body` are never logged: the row has only `source=ta
 12-character attempt hash, and `result`. Three failed task-secret attempts are allowed in ten
 minutes; further attempts return 429 until the sliding window clears.
 
-Agent content deliberately bypasses the automatic push preference switches: it is an explicit
-delivery requested by the user through a root, task, or schedule, not a state/finish notice.
-Integrating agent-content delivery into a separate user preference remains backlog work.
+Agent content has its own `orchestrator_agent_notify` preference, on by default so an older config
+with no such key keeps its existing behavior. It remains separate from the automatic finish and
+deploy switches: turning agent notifications off does not turn those other notifications off.
 
 | `code` | status | |
 |---|---|---|
 | `unauthorized` | 401 | the root request has no recognized credential and stops at the device-auth door |
 | `forbidden` | 403 | the task secret is absent or wrong, or a paired device tries to replace the root orchestrator token |
+| `agent_notify_disabled` | 409 | the user turned agent notifications off in Settings → Remote; no delivery or allowance is attempted |
 | `not_found` | 404 | no task with that id |
 | `not_subscribed` | 409 | no device has asked for push notifications; no allowance is consumed |
 | `notify_expired` | 409 | the task finished more than 60 seconds ago |

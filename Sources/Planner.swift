@@ -58,6 +58,9 @@ enum Planner {
         /// An id from ``StartPoints/places()``, or nothing when no project on the list fitted.
         let placeID: String?
         let assistant: Assistant
+        /// One of ``Planner/models``, or empty for "open it on whatever that assistant opens on".
+        /// Always empty for Codex — see the note in ``draft(from:places:)``.
+        let model: String
         /// The first message. Untrusted prose — see the note in this file's header.
         let instructions: String
         let title: String
@@ -75,6 +78,7 @@ enum Planner {
         var payload: [String: Any] {
             ["place_id": placeID ?? NSNull(),
              "assistant": assistant.rawValue,
+             "model": model,
              "instructions": instructions,
              "title": title,
              "confidence": confidence,
@@ -102,6 +106,20 @@ enum Planner {
     /// model wrote while it was confident, which would otherwise have the page asking about a
     /// draft it had no doubts about.
     static let sure = 0.5
+
+    /// The sizes a session may be opened on, smallest first.
+    ///
+    /// One list, read by three things that would otherwise drift apart: the schema the model
+    /// answers against, the prompt that explains what to pick, and the check on the way back in.
+    /// `POST /v1/places/:id/start/:assistant/:model` resolves its fourth segment against this
+    /// same list — a draft that could name a size the route refuses would be a Start button that
+    /// answers `404`, which is the one failure a person cannot do anything about.
+    ///
+    /// **Not every model either CLI will answer to**, and deliberately so. ``StartPoints``
+    /// accepts any slug out of its closed alphabet because a dispatched task may name a dated
+    /// build; this is the shorter list of *sizes* a sentence can ask for, and a name outside it
+    /// is a wrong answer rather than an unusual one.
+    static let models = ["haiku", "sonnet", "opus"]
 
     /// The queue the model turn happens on.
     ///
@@ -163,6 +181,14 @@ enum Planner {
                 .map { "\($0.offset + 1). \($0.element.label) — \($0.element.path)" }
                 .joined(separator: "\n")
         let names = assistants.map(\.rawValue).joined(separator: ", ")
+        // Said only where it can happen. A Mac without Codex installed never drafts one, and a
+        // paragraph about an assistant that is not on the list above is a rule the model has to
+        // hold in mind for a choice it cannot make.
+        let codexTakesNone = assistants.contains(.codex)
+            ? " **Leave this empty when the assistant is codex.** Codex is told how hard to "
+                + "think in a way of its own, set when the work is handed to it, and there is no "
+                + "model name to write here for it."
+            : ""
         return """
         You turn one spoken sentence into a draft of a session somebody is about to start on this \
         Mac. You start nothing. What you write is shown to a person, who reads it, edits it, and \
@@ -181,6 +207,14 @@ enum Planner {
         - project: the NUMBER of one project above, or 0 when none of them fits. Never write a \
         path.
         - assistant: the first one on the list unless the speaker named another.
+        - model: how big a model that session should run on, out of \
+        \(models.joined(separator: ", ")). This is a judgement about the work and not about the \
+        speaker, so read what is being asked for. "haiku" is for mechanical single-source work \
+        where being wrong is obvious: reformat a list, rename something, read one file and pull \
+        three facts out of it. "sonnet" is for ordinary work with judgement in it — most of what \
+        anybody asks for, and the answer whenever you are unsure which of the three this is. \
+        "opus" is for work somebody will act on without checking it first: a decision, a design, \
+        a review, or anything that has to weigh several answers against each other.\(codexTakesNone)
         - instructions: the first message to send to that session. Say what the speaker wants \
         done, in their words, complete enough to act on without them saying anything more. \
         Leave out the part that chose the project. That session will already be open there, so a \
@@ -235,6 +269,7 @@ enum Planner {
     {"type":"object","properties":{\
     "project":{"type":"integer"},\
     "assistant":{"type":"string","enum":["claude","codex"]},\
+    "model":{"type":"string","enum":[\(([""] + models).map { "\"\($0)\"" }.joined(separator: ","))]},\
     "instructions":{"type":"string"},\
     "title":{"type":"string"},\
     "confidence":{"type":"number"},\
@@ -243,7 +278,7 @@ enum Planner {
     "at":{"type":"string"},\
     "days":{"type":"array","items":{"type":"string",\
     "enum":["daily","sun","mon","tue","wed","thu","fri","sat"]}}},\
-    "required":["project","assistant","instructions","title","confidence","question",\
+    "required":["project","assistant","model","instructions","title","confidence","question",\
     "kind","at","days"],\
     "additionalProperties":false}
     """
@@ -292,8 +327,23 @@ enum Planner {
         // because the two disagreeing would produce a draft that says it is sure of a time it
         // does not have — and this side is the one that cannot be talked out of it.
         if kind == .schedule, at.isEmpty { confidence = min(confidence, sure - 0.01) }
+        let assistant = Assistant(rawValue: named) ?? .claude
+        // The same treatment the assistant gets, and for the same reason: a size nobody has
+        // heard of is not a name to carry towards a command line. The answer is the empty
+        // string — open it on whatever that assistant opens on — rather than a guess at which
+        // of the three was meant, because a wrong guess here is a session running on a model
+        // the person did not ask for and would have no way to tell from one they did.
+        //
+        // **Codex names none of them.** How hard it should think is a separate field, set when
+        // work is dispatched to it, and a model name carried through here would be a second
+        // answer to the same question — decided on this side as well as in the prompt, since
+        // this is the side that cannot be talked out of it.
+        let wanted = (object["model"] as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let model = assistant == .codex || !models.contains(wanted) ? "" : wanted
         return Draft(placeID: place(number: number, in: places)?.id,
-                     assistant: Assistant(rawValue: named) ?? .claude,
+                     assistant: assistant,
+                     model: model,
                      instructions: instructions,
                      title: title,
                      confidence: confidence,

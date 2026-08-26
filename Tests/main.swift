@@ -1186,7 +1186,50 @@ group("one schedule can be read in full, and the write route is behind the write
     expect("and it is the typed one", remoteErrorCode(unknownPlace), "bad_request")
     expect("nothing was written", (try? FileManager.default
         .contentsOfDirectory(atPath: directory.path))?.count, 1)
+    // The create route now says whether anything will run what it made. A refusal made nothing,
+    // so it says nothing about it — a client reading that field off a `400` would be reading it
+    // off a schedule that does not exist.
+    // The whole body rather than one key of it: the create's extra fields sit beside `schedule`
+    // and a refusal's sit inside `error`, so a check that looked in one place would stay green
+    // while the field arrived in the other.
+    let refusedBody = String(data: unknownPlace.body, encoding: .utf8) ?? ""
+    check("and a refused create says nothing about whether dispatch is on",
+          !refusedBody.contains("dispatch_enabled"), refusedBody)
     Orchestrator.forget()
+}
+
+group("a schedule that was written says whether anything on this Mac will run it") {
+    // **Making one is deliberately not gated on the dispatch switch.** Writing a file is not
+    // dispatching, and a create that refused would be this route deciding what somebody may
+    // arrange for later. What was missing is the other half: with the switch off, the answer
+    // said `Created.` and the minute timer then returned before it looked at any schedule at
+    // all — no session, and no sentence anywhere saying why.
+    func made(_ dispatching: Bool) -> [String: Any] {
+        let reply = RemoteServer.scheduleAnswer(
+            .ok(["ok": true,
+                 "schedule": ["id": "4d2f54ce-77e2-4a1b-9f30-5c2d81aa6b04",
+                              "title": "publish the blog", "enabled": true]]),
+            dispatchEnabled: dispatching)
+        guard case .ok(let payload) = reply else { return [:] }
+        return payload
+    }
+    expect("with dispatch on, the answer says so", made(true)["dispatch_enabled"] as? Bool, true)
+    expect("with it off, the answer says that instead",
+           made(false)["dispatch_enabled"] as? Bool, false)
+    expect("the schedule is made either way", made(false)["ok"] as? Bool, true)
+    expect("and comes back whole beside the flag",
+           (made(false)["schedule"] as? [String: Any])?["title"] as? String, "publish the blog")
+
+    let refused = RemoteServer.scheduleAnswer(
+        .refused(400, "bad_request", "days must be daily or a list of weekdays"),
+        dispatchEnabled: false)
+    guard case .refused(let status, let code, _, let extra) = refused else {
+        check("a refusal is still a refusal", false)
+        return
+    }
+    expect("a refusal keeps its status", status, 400)
+    expect("and its code", code, "bad_request")
+    check("and is handed back with nothing added to it", extra.isEmpty)
 }
 
 group("a schedule can be changed and taken away, and an edit is not a way past the parser") {
@@ -4012,6 +4055,9 @@ group("the languages the interface speaks") {
         "fr:webInfoAssistant",
         "fr:webInfoTotal", "es:webInfoTotal", "pt:webInfoTotal", "id:webInfoTotal",
         "id:webInfoModel", "tr:webInfoModel",
+        // The same word again, on the two rows that pick a size rather than report one.
+        "id:webCommandModel", "tr:webCommandModel",
+        "id:webScheduleModel", "tr:webScheduleModel",
         "de:webInfoBranch", "it:webInfoBranch", "pt:webInfoBranch", "id:webInfoBranch",
         // Permission mode labels use the same native words: manual in Spanish, Portuguese and
         // Indonesian, and Plan in German and Turkish.
@@ -6381,9 +6427,35 @@ group("starting a session is behind the write gate, like everything else that ru
     let codex = post("/v1/places/\(bogusID)/start/codex", token: writer.token,
                      key: UUID().uuidString)
     expect("a named assistant gets as far as the place", remoteErrorCode(codex), "not_found")
-    let tooDeep = post("/v1/places/\(bogusID)/start/codex/now", token: writer.token,
+
+    // **The model is the fourth segment, and it is resolved the same way.** A size this Mac does
+    // not offer is refused by name rather than quietly becoming the default: this route has
+    // never substituted anything, and a `200` for a session running on a model nobody asked for
+    // is the one wrong answer a person cannot see from outside.
+    let inventedModel = post("/v1/places/\(bogusID)/start/claude/gpt-9", token: writer.token,
+                             key: UUID().uuidString)
+    expect("a size nobody offers is a 404", inventedModel.status, 404)
+    expect("and it is refused before the place is looked up",
+           remoteErrorMessage(inventedModel), "No model named that")
+    let dated = post("/v1/places/\(bogusID)/start/claude/claude-opus-5-20260201",
+                     token: writer.token, key: UUID().uuidString)
+    expect("a dated build is not one of the three sizes either",
+           remoteErrorMessage(dated), "No model named that")
+    let sized = post("/v1/places/\(bogusID)/start/claude/sonnet", token: writer.token,
+                     key: UUID().uuidString)
+    expect("a size that is on the list gets as far as the place",
+           remoteErrorCode(sized), "not_found")
+    expect("and it is the place that is missing, not the model",
+           remoteErrorMessage(sized), "No place named that")
+    let trailing = post("/v1/places/\(bogusID)/start/claude/", token: writer.token,
+                        key: UUID().uuidString)
+    expect("an empty fourth segment is not a way to ask for the default",
+           remoteErrorMessage(trailing), "No model named that")
+    let tooDeep = post("/v1/places/\(bogusID)/start/claude/opus/now", token: writer.token,
                        key: UUID().uuidString)
     expect("and nothing deeper than that is a route", tooDeep.status, 404)
+    expect("which is refused as a route rather than as a name",
+           remoteErrorMessage(tooDeep), "No such route")
 
     // The route this replaced took a `cwd` and a `command` out of the body and ran the second in
     // the first, which behind a tunnel is "run anything anywhere" with a token in front of it.
@@ -6467,6 +6539,15 @@ group("the page is given the words it draws the start sheet with") {
           (french["webScheduleNext"] as? String)
             .map { !$0.isEmpty && $0 != (english["webScheduleNext"] as? String) } == true,
           "fr said \((french["webScheduleNext"] as? String) ?? "nothing")")
+
+    // The three this round adds: the row that says how big a session will be, on the command
+    // sheet and on the schedule form, and the sentence a create shows when `dispatch_enabled`
+    // came back false. The same four-place rule applies to all of them, and this is the place
+    // that catches a string translated fourteen times and never sent.
+    let sizes = ["webCommandModel", "webScheduleModel", "webScheduleDispatchOff"]
+    let unsent = sizes.filter { (english[$0] as? String ?? "").isEmpty }
+    check("the model rows and the dispatch-off sentence are published", unsent.isEmpty,
+          "not on /v1/strings: " + unsent.joined(separator: ", "))
 }
 
 // MARK: - One sentence, turned into a draft of a session
@@ -6502,6 +6583,27 @@ group("the planner is shown a numbered list and never a way to write a path") {
     let alone = Planner.prompt(places: plannerPlaces, assistants: [.claude])
     check("the assistants offered are the ones passed in", alone.contains("you may pick: claude."))
     check("and codex is not one of them when it is not there", !alone.contains("codex"))
+
+    // How hard the work is, which is the second judgement made here about a session nobody will
+    // watch start. The schema refuses a name that is not one of the three and can say nothing
+    // about which of the three is right, so the prompt names all three by what they are for.
+    check("the three sizes are offered by name", prompt.contains("out of haiku, sonnet, opus"))
+    check("the smallest is for work where being wrong is obvious",
+          prompt.contains("\"haiku\" is for mechanical single-source work"))
+    check("the middle one is what to write when it is not clear which this is",
+          prompt.contains("the answer whenever you are unsure which of the three this is"))
+    check("and the largest is for something somebody acts on unchecked",
+          prompt.contains("\"opus\" is for work somebody will act on without checking it first"))
+    check("a Mac with one assistant is still asked how big the session should be",
+          alone.contains("out of haiku, sonnet, opus"))
+
+    // Codex says how hard a job is as reasoning effort, set where work is handed to it. A draft
+    // naming a model for it would be a second answer to the same question — and the rule is only
+    // worth prompt space on a Mac that has Codex to draft for.
+    check("codex is told to name none of them",
+          prompt.contains("Leave this empty when the assistant is codex"))
+    check("and the rule is left out where there is no codex to apply it to",
+          !alone.contains("Leave this empty"))
 
     // The transcript is speech, and the measured behaviour this buys is a misheard project name
     // matching the right project rather than being read as a new one.
@@ -6542,6 +6644,18 @@ group("the planner is shown a numbered list and never a way to write a path") {
     check("and told what to do with a sentence that asks for one",
           prompt.contains("\"tomorrow at three\"")
             && prompt.contains("confidence below \(Planner.sure) and a question"))
+
+    // The schema is built from the same list the prompt is and read by the primary engine only,
+    // so it is checked here rather than assumed: a fence-post in the interpolation would produce
+    // a `--json-schema` argument the CLI refuses, and the visible symptom is every draft falling
+    // through to the fallback engine.
+    check("the schema is still an object after the sizes were written into it",
+          (try? JSONSerialization.jsonObject(with: Data(Planner.schema.utf8))) != nil)
+    check("it offers the three sizes and the empty string, and nothing else",
+          Planner.schema.contains(
+            "\"model\":{\"type\":\"string\",\"enum\":[\"\",\"haiku\",\"sonnet\",\"opus\"]}"))
+    check("and asks for the field rather than letting it be left out",
+          Planner.schema.contains("\"assistant\",\"model\",\"instructions\""))
 }
 
 group("a time and a set of days survive the trip out of a model, or do not") {
@@ -6701,6 +6815,39 @@ group("what a model printed becomes a draft, or does not") {
     expect("a draft with nothing to say still names a place", silent?.placeID,
            plannerPlaces.first?.id)
     expect("and its first message is empty rather than blank", silent?.instructions, "")
+
+    // How big the session should be, checked on the way in like everything else here. A size
+    // that is not one of the three is the empty string rather than a guess: a wrong guess opens
+    // a session on a model nobody asked for, and nothing on screen says which one it is.
+    func sized(_ assistant: String, _ model: Any?) -> Planner.Draft? {
+        var body: [String: Any] = ["project": 1, "assistant": assistant,
+                                   "instructions": "do a thing", "title": "t",
+                                   "confidence": 0.9, "question": ""]
+        if let model { body["model"] = model }
+        return Planner.draft(from: body, places: plannerPlaces)
+    }
+    expect("a size the schema offers comes through", sized("claude", "opus")?.model, "opus")
+    expect("so does the smallest", sized("claude", "haiku")?.model, "haiku")
+    expect("and one written in capitals is the same size",
+           sized("claude", "Sonnet")?.model, "sonnet")
+    expect("a model nobody has heard of is no model", sized("claude", "gpt-9")?.model, "")
+    expect("nor is a dated build of one of the three",
+           sized("claude", "claude-opus-5-20260201")?.model, "")
+    expect("a number where the name goes is not one", sized("claude", 5)?.model, "")
+    expect("and a field the model left out is no model", sized("claude", nil)?.model, "")
+    // Codex expresses how hard a job is as reasoning effort, set when work is handed to it.
+    // Decided here as well as in the prompt, because this is the side that cannot be talked
+    // out of it.
+    expect("codex names no model, whatever it wrote", sized("codex", "opus")?.model, "")
+    expect("and an unknown assistant becomes claude, which may", sized("emacs", "opus")?.model,
+           "opus")
+
+    // The wire contract: the page carries this into the fourth segment of
+    // `POST /v1/places/:id/start/:assistant/:model`, so it has to be on the payload.
+    expect("the size is on the wire", sized("claude", "opus")?.payload["model"] as? String,
+           "opus")
+    expect("and an empty one is an empty string rather than a missing field",
+           sized("codex", "opus")?.payload["model"] as? String, "")
 }
 
 group("how sure the planner was decides whether the page asks") {
@@ -11829,11 +11976,40 @@ group("finishing a task takes that task's secret and nothing else") {
     expect("and says nothing else about it", remoteErrorCode(unknown), "not_found")
 }
 
+group("the agent-notification preference defaults on, including for old config files") {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-agent-notify-config-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let absent = Config(directoryForTesting: directory)
+    expect("agent notifications default on", absent.orchestratorAgentNotify, true)
+
+    try! Data("{}".utf8).write(to: directory.appendingPathComponent("config.json"))
+    let missing = Config(directoryForTesting: directory)
+    expect("an old config with no agent-notify key keeps them on",
+           missing.orchestratorAgentNotify, true)
+
+    try! Data("{\"orchestrator_agent_notify\":false}".utf8)
+        .write(to: directory.appendingPathComponent("config.json"))
+    let disabled = Config(directoryForTesting: directory)
+    expect("the explicit off value is loaded", disabled.orchestratorAgentNotify, false)
+    disabled.orchestratorAgentNotify = true
+    disabled.save()
+    let written = (try? Data(contentsOf: disabled.fileURL))
+        .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    expect("saving uses the orchestrator_agent_notify key",
+           written?["orchestrator_agent_notify"] as? Bool, true)
+}
+
 group("an agent notification is narrow, scarce and audited") {
     Orchestrator.forget()
+    let agentNotifyWasEnabled = Config.shared.orchestratorAgentNotify
     let store = Orchestrator.storeURL
     let before = try? Data(contentsOf: store)
     defer {
+        Config.shared.orchestratorAgentNotify = agentNotifyWasEnabled
         if let before {
             try? before.write(to: store, options: .atomic)
         } else {
@@ -11892,6 +12068,34 @@ group("an agent notification is narrow, scarce and audited") {
         displayedIcon = icon
         return delivered
     }
+    var disabledTaskPushes = 0
+    Orchestrator.agentPushForTesting = { _, _, _, _, _ in
+        disabledTaskPushes += 1
+        return delivered
+    }
+    Config.shared.orchestratorAgentNotify = false
+    let disabledTask = taskNotify(taskID)
+    expect("the task route names a disabled agent-notification preference",
+           disabledTask.status, 409)
+    expect("the task route returns its dedicated disabled code",
+           remoteErrorCode(disabledTask), "agent_notify_disabled")
+    check("the task refusal says who disabled it and where to re-enable it",
+          remoteErrorMessage(disabledTask).contains("user")
+              && remoteErrorMessage(disabledTask).contains("Settings → Remote"))
+    expect("the task route does not attempt delivery while disabled", disabledTaskPushes, 0)
+    Config.shared.orchestratorAgentNotify = true
+    Orchestrator.agentPushForTesting = { title, _, _, tag, icon in
+        displayedTitle = title
+        displayedTag = tag
+        displayedIcon = icon
+        return delivered
+    }
+    for index in 1...5 {
+        expect("a disabled refusal did not spend task allowance \(index)",
+               taskNotify(taskID).status, 200)
+    }
+    expect("only the sixth delivery after a disabled refusal spends past the task allowance",
+           taskNotify(taskID).status, 429)
     let wrong = taskNotify(taskID, secret: String(repeating: "e5", count: 32))
     expect("the task route rejects a different task's secret", wrong.status, 403)
     expect("with the complete route's error semantics", remoteErrorCode(wrong), "forbidden")
@@ -12027,6 +12231,31 @@ group("an agent notification is narrow, scarce and audited") {
             "POST", "/v1/orchestrator/notify", headers: auth,
             body: String(decoding: data, as: UTF8.self)))
     }
+    var disabledRootPushes = 0
+    Orchestrator.agentPushForTesting = { _, _, _, _, _ in
+        disabledRootPushes += 1
+        return delivered
+    }
+    Config.shared.orchestratorAgentNotify = false
+    let disabledRoot = rootNotify(title: "forecast", body: "sunny")
+    expect("the root route names a disabled agent-notification preference",
+           disabledRoot.status, 409)
+    expect("the root route returns its dedicated disabled code",
+           remoteErrorCode(disabledRoot), "agent_notify_disabled")
+    check("the root refusal says who disabled it and where to re-enable it",
+          remoteErrorMessage(disabledRoot).contains("user")
+              && remoteErrorMessage(disabledRoot).contains("Settings → Remote"))
+    expect("the root route does not attempt delivery while disabled", disabledRootPushes, 0)
+    Config.shared.orchestratorAgentNotify = true
+    Orchestrator.agentPushForTesting = { _, _, _, _, _ in delivered }
+    for index in 1...30 {
+        expect("a disabled refusal did not spend machine allowance \(index)",
+               rootNotify(title: "after refusal \(index)", body: "body").status, 200)
+    }
+    let afterDisabledCrowded = rootNotify(title: "after refusal 31", body: "body")
+    expect("only the thirty-first delivery after a disabled refusal is rate-limited",
+           afterDisabledCrowded.status, 429)
+    Orchestrator.forget()
     let anonymousRoot = RemoteServer.shared.route(remoteRequest(
         "POST", "/v1/orchestrator/notify", body: "{\"title\":\"x\",\"body\":\"y\"}"))
     expect("a root notification without any credential stops at the door",

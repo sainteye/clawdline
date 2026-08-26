@@ -759,15 +759,19 @@ export var Mock = (function () {
          * to see from a file:// copy same as everywhere else it applies.
          *
          * `?intents=` picks which of the measured shapes comes back: `noplanner` and `busy` are
-         * the two refusals, `unsure` is a low-confidence guess with a question attached, `silent`
+         * the two refusals, `unsure` is a low-confidence guess with a question attached — and a
+         * model judged anyway, since that is a separate question from which project — `silent`
          * is a draft with nothing to type — a request to open a session and no more — and `etc`
          * reproduces the exact case in `Planner.swift`'s own header — a model that would not pick
          * a directory outside the list but still wrote a sentence about one into `instructions`.
          * `schedule` is a spoken schedule the planner heard enough of to fill in; `scheduleunsure`
          * is the one the plan calls out by name, heard without a time. Both carry `kind:
          * "schedule"` and hand off to `input/schedule.js` instead of opening a session — see
-         * `reveal` in `input/command.js`. Anything else is the ordinary confident session answer,
-         * aimed at whichever project is first.
+         * `reveal` in `input/command.js`. `nomodel` is the ordinary confident answer with the
+         * judgement left out — `draft.model` absent entirely, the shape a Mac too old for this
+         * round's Planner sends. Anything else is the ordinary confident session answer, aimed at
+         * whichever project is first, and it is also where `draft.model` is exercised: the
+         * planner judged this one `sonnet`.
          */
         intents: function (text) {
             return new Promise(function (done, fail) {
@@ -788,8 +792,13 @@ export var Mock = (function () {
                         return;
                     }
                     if (mode === "unsure") {
-                        done({ draft: { place_id: null, assistant: "claude", instructions: text,
-                                        title: text.slice(0, 20), confidence: 0.3,
+                        // Unsure of the project and confident about the job in the same breath —
+                        // the two are judged separately (see the plan), so a low `confidence`
+                        // here still leaves `model` set. This is the shape that proves the model
+                        // chips render, and stay pressable, on a draft that stops for review
+                        // rather than the confident one that opens straight through.
+                        done({ draft: { place_id: null, assistant: "claude", model: "haiku",
+                                        instructions: text, title: text.slice(0, 20), confidence: 0.3,
                                         question: "Which project is this for?" }, ms: ms });
                         return;
                     }
@@ -809,9 +818,23 @@ export var Mock = (function () {
                         // `input/schedule.js` instead of opening a session — see the contract.
                         var here = places[0];
                         done({ draft: { kind: "schedule", place_id: here ? here.id : null,
-                                        assistant: "claude", at: "09:00", days: ["mon", "wed", "fri"],
-                                        instructions: text, title: text.slice(0, 20) || "a schedule",
+                                        assistant: "claude", model: "opus", at: "09:00",
+                                        days: ["mon", "wed", "fri"], instructions: text,
+                                        title: text.slice(0, 20) || "a schedule",
                                         confidence: 0.86, question: "" }, ms: ms });
+                        return;
+                    }
+                    if (mode === "nomodel") {
+                        // The ordinary confident draft below, minus the one field this round
+                        // added — a Mac whose Planner has not been rebuilt yet, or one that
+                        // judged the assistant to be codex and left it out on purpose. Either
+                        // way `chosenModel` in `input/command.js` has to fall back to "" rather
+                        // than choke on a key that is not there at all.
+                        var nowhere = places[0];
+                        done({ draft: { place_id: nowhere ? nowhere.id : null, assistant: "claude",
+                                        instructions: "Understood: " + text,
+                                        title: (text.slice(0, 20) || "a session"),
+                                        confidence: 0.82, question: "" }, ms: ms });
                         return;
                     }
                     if (mode === "scheduleunsure") {
@@ -834,7 +857,7 @@ export var Mock = (function () {
                     }
                     var place = places[0];
                     done({ draft: { place_id: place ? place.id : null, assistant: "claude",
-                                    instructions: "Understood: " + text,
+                                    model: "sonnet", instructions: "Understood: " + text,
                                     title: (text.slice(0, 20) || "a session"),
                                     confidence: 0.82, question: "" }, ms: ms });
                 }, ms);
@@ -941,7 +964,7 @@ export var Mock = (function () {
 
         /** The real one answers before the session exists, so this does too — and the row turns
          *  up a couple of seconds later, which is the gap the band above the list is for. */
-        startPlace: function (id, assistant) {
+        startPlace: function (id, assistant, model) {
             return new Promise(function (done, fail) {
                 setTimeout(function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
@@ -949,6 +972,16 @@ export var Mock = (function () {
                     for (var i = 0; i < places.length; i++) if (places[i].id === id) place = places[i];
                     if (!place || MOCK_START === "gone") {
                         fail(Object.assign(new Error("No place named that"), { code: "not_found" }));
+                        return;
+                    }
+                    // The fourth path segment, walked as a failing path on its own: a model this
+                    // fixture does not know is a 404, the same as an assistant it does not know —
+                    // never a silent fallback to whatever the default would have been. `?start=`
+                    // has no case for this because it needs no query flag: `input/command.js`'s
+                    // own chips can only ever send one of these three, so the only way to see it
+                    // is a Mac and a page that have drifted apart, which this checks for anyway.
+                    if (model && ["haiku", "sonnet", "opus"].indexOf(model) < 0) {
+                        fail(Object.assign(new Error("No model named that"), { code: "not_found" }));
                         return;
                     }
                     if (MOCK_START === "closed") {
@@ -1234,8 +1267,9 @@ Mock.schedule = function (id) {
    Appended beside the read fixtures above, for the same reason they are their own block.
    `?scheduleCreate=`, `?scheduleUpdate=` and `?scheduleDelete=` each pick a refusal: `busy` and
    `bad` are the two a person can act on from `input/schedule.js`'s own sheet, `notfound` is what
-   a stale row answers with, and anything else is the ordinary confident answer. All three are
-   gated on `MOCK_WRITE`, exactly like `intents` and `startPlace` above them.
+   a stale row answers with, `dispatchoff` (create only) is not a refusal at all — the file still
+   gets written — and anything else is the ordinary confident answer. All three are gated on
+   `MOCK_WRITE`, exactly like `intents` and `startPlace` above them.
    -------------------------------------------------------------------------- */
 Mock.createSchedule = function (schedule) {
     return new Promise(function (done, fail) {
@@ -1262,14 +1296,21 @@ Mock.createSchedule = function (schedule) {
                 catch_up_hours: schedule.catch_up_hours != null ? schedule.catch_up_hours : 6,
                 notify_on_failure: schedule.notify_on_failure !== false,
                 timeout_minutes: schedule.timeout_minutes != null ? schedule.timeout_minutes : 30,
+                model: schedule.model || null,
                 nextFireOffset: 3600
             };
             // Pushed into the same table the list and the detail route both read, so the row this
             // press just made is what `Schedules.refresh()` finds a moment later — see the header
             // on this block.
             scheduleCreated.unshift(row);
-            done({ ok: true, schedule: { id: row.id, title: row.title, enabled: row.enabled,
-                                          next_fire: Math.floor(Date.now() / 1000) + row.nextFireOffset } });
+            done({ ok: true,
+                   // Beside the schedule it made, never in place of it: the file this row stands
+                   // for is written and valid either way. `?scheduleCreate=dispatchoff` is the
+                   // one path through this fixture where `input/schedule.js` has to say so
+                   // instead of the ordinary "Created." — see `webScheduleDispatchOff`.
+                   dispatch_enabled: mode !== "dispatchoff",
+                   schedule: { id: row.id, title: row.title, enabled: row.enabled,
+                               next_fire: Math.floor(Date.now() / 1000) + row.nextFireOffset } });
         }, 420);
     });
 };
