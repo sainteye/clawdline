@@ -415,6 +415,7 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `title` | ≤ 200 characters, one line a person can read |
 | `instructions` | non-empty, ≤ 16 KiB |
 | `deliverables` | paths relative to the task directory; `artifacts/…` by convention |
+| `claims` | optional, and **declare it anyway**: 0…32 unique relative paths this task may write, each 1…1024 characters, no leading `/` and no `..`. `[]` positively declares the task read-only. See below |
 | `model` | optional. Lowercase letters, digits, `.` `_` `-`, ≤ 64 characters. Absent = that assistant's default |
 | `reasoning_effort` | optional, Codex-only. Exactly `high` (coding) or `xhigh` (planning). Absent = inherit Codex/user defaults with no CLI override; `max` and `ultra` are not accepted |
 | `permission_mode` | optional. `ask` / `edits` / `full`. Absent = this Mac's ceiling (default `full`). Anything else, `auto` included, is `bad_task` |
@@ -425,6 +426,16 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `root.session_id` | this assistant's current conversation id, found below; `null` if unavailable — never invented |
 | `root.assistant` | **the assistant dispatching this task**, `claude` or `codex`; it is not the child named by top-level `assistant` |
 | `root.parent_task` | **only when you are yourself a child** — the id of your own task, the one in your first message. Root dispatches leave it out. Getting it wrong bills this task to somebody else or counts it as deeper than it is; there is nothing to gain |
+
+**There are two ways to get `claims` wrong and only one of them is loud.** Leaving it out is the
+quiet one: the broker cannot prove your task is disjoint from anybody else's, so it falls back to
+warning about every pair that shares a directory. On 2026-08-26 that was a dozen notices in one
+evening, not one of which described a real conflict, while the single genuine collision that night
+was refused at dispatch with `409 workspace_busy` in the same breath. **Omitting `claims` is not
+the cautious choice; it is the one that produces noise instead of an answer.** Claiming too widely
+is the other one, and it announces itself: a claimed path blocks other trees whether or not you
+ever touch it, and at terminal state the broker names every claim the task never touched. Same
+error, pointing the other way — take that report seriously and declare narrower next time.
 
 ### Finding your own assistant and session id (best-effort; `null` if you cannot)
 
@@ -574,6 +585,14 @@ ls -la "/tmp/.clawdline/$task_id/artifacts/"
 `summary` in `result.json` is a sentence the child wrote itself, and `artifacts` is what it
 *claims* it produced — **a claim is a claim; `ls` the directory yourself**. Task directories are
 cleared 24 hours after they finish, so anything the user wants to keep has to be copied out.
+
+`symbols` is the field you cannot reconstruct afterwards: every name the child's change introduced
+— new functions and types, new fields, new string keys, the names of test groups it added. Names,
+not descriptions. This tree is shared, so by the time you come to commit, the files that child
+edited may hold two or three sessions' unfinished work, and that vocabulary is how you tell one
+session's hunks from another's. Guessing it has produced staged trees that would not compile. A
+child that reports nothing there has not told you it changed nothing; ask, or read the diff for the
+names yourself before staging.
 
 ### Child completion is not code completion
 
@@ -899,6 +918,24 @@ hand-written SVG instead — see §2.5.
 - **A child does not commit; root does.** Say so in the instructions: no `git commit` / `stash` /
   `reset` / `checkout`. They run in a shared working tree, and one `git reset --hard` takes
   everybody else's work with it.
+- **A child and a root are asking different questions, so they verify differently.** A child asks
+  "does what I wrote work?" — the working tree is the right subject, other sessions' half-finished
+  edits included, because a child does not commit and their mess cannot reach HEAD through it. Put
+  this in the instructions verbatim when the child will run tests:
+
+  ```bash
+  snapshot_dir=$(mktemp -d); test_tmp=$(mktemp -d)
+  git archive "$(git stash create)" | tar -x -C "$snapshot_dir"
+  (cd "$snapshot_dir" && TMPDIR="$test_tmp" ./test.sh)
+  ```
+
+  `git stash create` is the one exception to the bullet above: it writes a commit object holding the
+  working tree and touches neither the worktree nor the stash list. It prints nothing when the tree
+  is clean, so fall back to `HEAD`. **Never tell a child to use `git write-tree`** — that reads the
+  *index*, so it has to stage first, and the index is shared: the child sweeps up whatever another
+  session left in there, and then a root commits it. That has happened here. `write-tree` is root's
+  tool, because root is staging anyway and "will HEAD still build after this commit?" is a question
+  only the index can answer.
 - **The house rules are the user's, not yours.** Where `~/.config/clawdline/dispatch-policy.md`
   disagrees with your judgement, follow it, and say which rule you followed when you report back.
 - **A child opens a real terminal tab and runs real commands.** Dispatching is authorising it to

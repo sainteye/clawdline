@@ -461,6 +461,18 @@ An empty array gives a read-only task an active, harmless declaration. Silence t
 one meaning: both tasks supplied enough scope information to prove their frozen claim sets do not
 intersect. Merely omitting the field never makes that assertion.
 
+**There are two ways to get `claims` wrong, and only one of them is loud.** Omitting it is the
+quiet one, and it reads as caution while behaving as noise: with no declaration the broker cannot
+prove two tasks are disjoint, so it falls back to L1's directory-level warning about every pair
+sharing a `project_dir`. On 2026-08-26 that produced a dozen notices in one evening, none of which
+described a real conflict, while the single genuine collision that night was refused at dispatch
+with `409 workspace_busy` in the same breath — the mechanism that actually catches collisions is
+the one that needs the field. Claiming too widely is the other direction of the same error, and it
+does announce itself: an over-wide claim blocks other trees whether or not the task touches it, and
+[the terminal audit](#the-terminal-claims-audit) names every claimed path the task never touched.
+One failure mode is reported after the fact and the other is not reported at all, which is why the
+absent field is the more expensive of the two to leave alone.
+
 The check and registration happen atomically as soon as the dispatch has validated. A serialized
 task reserves its claims for its entire time in `queued`; promotion is not a second gap where
 another root can enter. A live claim from a different root refuses the new dispatch immediately
@@ -732,6 +744,7 @@ honestly, and explains that the user disabled agent notifications.
   "task_secret": "…the value from the first message…",
   "status": "success",
   "summary": "Wrote a 1024×1024 SVG portrait; border and lettering hand-pathed, no raster.",
+  "symbols": [],
   "artifacts": ["artifacts/project-portrait.svg"],
   "finished_at": "2026-08-24T10:41:55Z"
 }
@@ -742,6 +755,20 @@ sees half of it. The app checks it once a beat for every briefed task, hashes `t
 compares against what it stored at dispatch in constant time. A file whose secret does not match is
 **ignored** and logged once: a wrong secret in a task directory is either a bug or somebody
 poking, and neither is a reason to finalize somebody's task.
+
+`symbols` names every identifier the child's change introduced: new functions and types, new
+fields, new string keys, the names of test groups it added. Names, not descriptions — the portrait
+above introduced none, and `[]` says that positively where an absent field only says the child did
+not answer. For a code task the list reads like
+`["Orchestrator.Landing", "updateLanding(taskID:secret:raw:now:)", "orchestrator.landing"]`. It exists
+because a shared working tree makes authorship unreadable from the diff alone — by the time root
+comes to commit, the files a child edited may hold two or three sessions' unfinished work, and
+vocabulary is the only reliable way to tell one session's hunks from another's. Guessing it has
+produced staged trees that would not compile, which is the failure the field is there to prevent.
+The child's briefing asks for it; **the broker does not**. `readResult` takes `status`, `summary`
+and `artifacts` and ignores every other key, so `symbols` never appears on a task record, in a
+notification, or in any API answer — it is written for whichever root opens the file, and root has
+to open the file to get it.
 
 There is an HTTP way to say the same thing —
 [`POST /v1/orchestrator/tasks/:id/complete`](api.md#post-v1orchestratortasksidcomplete) — and it is

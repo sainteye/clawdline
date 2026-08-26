@@ -31,7 +31,22 @@ Do not infer ownership from a filename, a recent timestamp, or a new commit; ins
   be a reviewer; the last step of the work is still the root's landing closure.
 - Before reporting completion, the root must integrate without absorbing another session's dirty
   files, test the exact integrated tree with a private `TMPDIR`, and record the resulting target
-  commit. `SAFE TO LAND` is a pending state, not a completion phrase.
+  commit. `SAFE TO LAND` is a pending
+  state, not a completion phrase.
+- **HEAD must compile standing alone, and a commit is the only thing that can break that.** It
+  happened twice on 2026-08-26, from two different sessions: a whole-file `git add` carried three
+  lines whose type was defined in a file that stayed uncommitted, and a protocol requirement landed
+  in `Strings.swift` while its fourteen values stayed in the worktree. Both trees were green at the
+  moment of committing. **A green tree says nothing about HEAD while anything is uncommitted** — the
+  tree is the union of everybody's work and HEAD is only your slice, so a suite run in the tree is
+  answering a question nobody asked.
+  A partial commit is therefore not finished until its own slice has compiled on its own. Verify the
+  staged tree the way this file describes, and where a change spans files ask what else defines what
+  you are taking: a declaration without its values, a call without its function, a case without its
+  enum — each of them passes in the tree and fails in HEAD.
+  Recovering another session's half-landed commit is legitimate root work: restore the missing half,
+  or lift the orphaned lines back into the worktree where their owner can still see them. Say in the
+  message that it is not your line's work and why HEAD could not wait for its owner.
 - If overlapping uncommitted work makes integration unsafe, do not merge and do not close the task.
   Keep the landing obligation pending while coordinating with the owning session. If this root must
   stop, use a Clawdline handoff that names the delivery branch/base/head, target branch, verdict and
@@ -66,12 +81,40 @@ Do not infer ownership from a filename, a recent timestamp, or a new commit; ins
   committed is root's to recover or discard, exactly as with any other child that never reported.
 
 The working tree is an editing buffer shared with other sessions, not a reproducible build input.
-For an important commit, test the exact staged tree from an archive instead:
+**What you verify depends on which half of this protocol you are in, and the two are not the same
+question.**
+
+**A child asks "does what I wrote work?"** The working tree is the right subject — other sessions'
+half-finished edits included, because a child does not commit and their mess cannot reach HEAD
+through it. Snapshot it *without touching the shared index*:
 
 ```sh
-snapshot_dir=$(mktemp -d)
+snapshot_dir=$(mktemp -d); test_tmp=$(mktemp -d)
+git archive "$(git stash create)" | tar -x -C "$snapshot_dir"
+# stash create holds tracked files only. Untracked ones the suite needs — a new test file another
+# session has written but not committed — are absent, and the run fails on something nobody broke.
+git ls-files --others --exclude-standard -z \
+  | tar --null -T - -cf - | tar -xf - -C "$snapshot_dir"
+(cd "$snapshot_dir" && TMPDIR="$test_tmp" ./test.sh)
+```
+
+That second line is not optional and was found the hard way: the first child told to follow this
+recipe hit `test.sh` requiring `Tests/web-schedules.mjs`, which existed only as an untracked file
+from another session. It reported the gap instead of quietly working around it, which is the right
+thing to do with a rule that does not fit — the rule was wrong, not the situation.
+
+`git stash create` writes a commit object holding the working tree and leaves the index exactly as
+it found it; it prints nothing when the tree is clean, so fall back to `HEAD`. **A child must not
+use `git write-tree` for this.** That reads the *index*, so it requires staging first — and the
+index is shared. A child staging its own files sweeps up whatever another session left in there,
+and then a root commits it. That has happened here.
+
+**A root asks "will HEAD still build after this commit?"** The working tree cannot answer that, and
+neither can a green suite run inside it. Root is staging anyway, so the index is the right subject:
+
+```sh
+snapshot_dir=$(mktemp -d); test_tmp=$(mktemp -d)
 git archive "$(git write-tree)" | tar -x -C "$snapshot_dir"
-test_tmp=$(mktemp -d)
 (cd "$snapshot_dir" && TMPDIR="$test_tmp" ./test.sh)
 ```
 
@@ -100,6 +143,17 @@ Declare every path a task may write in `claims`, relative to `project_dir`:
 Claims reserve equal, ancestor, and descendant paths across separately identified root trees.
 A conflict is rejected before a child starts with `409 workspace_busy`, including the blocking
 task, root context, conflicting absolute paths, and retry advice.
+
+**There are two ways to get `claims` wrong and only one of them is loud.** Leaving it out is the
+quiet one: the broker cannot prove two tasks are disjoint, so it falls back to warning about every
+pair sharing a directory — on 2026-08-26 that was a dozen notices in an evening, not one of which
+described a real conflict, while the single genuine collision that night was caught by
+`workspace_busy` in the same breath as the dispatch. **Dispatching without `claims` is not the
+cautious choice; it is the one that produces noise instead of an answer.**
+Claiming too widely is the other, and the broker now names it: a task that finishes without ever
+touching a claimed path is reported as such. A path claimed and unused blocks other trees for
+nothing, so take the report seriously and narrow next time — this is the same error as the first
+one, pointing the other way.
 Claims are a dispatch gate, not filesystem enforcement; instructions must still restrict the child
 to its declared scope.
 

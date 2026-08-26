@@ -363,6 +363,7 @@ jq -n \
 | `title` | ≤ 200 字，人看的一句話 |
 | `instructions` | 非空、≤ 16 KiB |
 | `deliverables` | 相對於 task 目錄的路徑，慣例是 `artifacts/…` |
+| `claims` | 選填，但**還是要寫**：這件任務可能寫到的相對路徑，0…32 條、不重複、每條 1…1024 字元，開頭不能是 `/`、不能有 `..`。寫 `[]` 是正面宣告「這件事唯讀」。見下面那段 |
 | `model` | 選填。小寫字母、數字、`.` `_` `-`，最多 64 字元。不寫 ＝ 該助理的預設模型 |
 | `reasoning_effort` | 選填，只限 Codex。只能是 `high`（寫程式）或 `xhigh`（規劃）。不寫 ＝ 沿用 Codex／使用者預設且不加 CLI override；不接受 `max`、`ultra` |
 | `permission_mode` | 選填。`ask`／`edits`／`full`。不寫 ＝ 這台 Mac 的上限值（預設 `full`）。寫別的字（包括 `auto`）＝ `bad_task` |
@@ -373,6 +374,14 @@ jq -n \
 | `root.session_id` | 目前這個助理的 conversation id，照下面查；查不到就 `null`，不要瞎編 |
 | `root.assistant` | **派出這件 task 的助理**，`claude` 或 `codex`；不是最外層 `assistant` 所指定的 child |
 | `root.parent_task` | **只有你自己是 child 才要填**——填你自己那件 task 的 id（第一句話裡那個）。root 派工不用寫。填錯只會讓這件任務被算到別人頭上或被算得更深，不會佔到便宜 |
+
+**`claims` 有兩種寫錯的方式，只有一種會叫。** 不寫是安靜的那種：broker 沒辦法證明你這件事跟別人
+不相交，只好退回去對「每一對共用同一個目錄的任務」發警告。2026-08-26 那個晚上就是這樣——一晚十幾
+條通知，沒有一條在講真的衝突；而那晚唯一一次真的撞上，是在派工當下就被
+`409 workspace_busy` 擋掉的。**不寫 `claims` 不是保守，是拿一個答案去換一堆雜訊。**
+宣告過寬是另一種，而它會自己叫出來：宣告過的路徑不管你有沒有碰，都在擋別人的樹；任務走到終局狀態
+時，broker 會把「宣告了卻從沒碰過」的路徑一條條點名。同一個錯誤的反方向——收到那份報告就當真，
+下一次宣告窄一點。
 
 ### 查自己的助理與 session id（best-effort，查不到就 null）
 
@@ -513,6 +522,12 @@ ls -la "/tmp/.clawdline/$task_id/artifacts/"
 `result.json` 裡的 `summary` 是 child 自己寫的一句話，`artifacts` 是它宣稱的產出——
 **宣稱歸宣稱，檔案在不在自己 `ls` 一次**。任務目錄在完成 24 小時後會被清掉，
 使用者要留的東西要複製出來。
+
+`symbols` 是事後補不回來的那一欄：child 這次修改引入的每一個名字——新的 function、type、欄位、
+字串 key、它加的測試群組名稱。要的是名字，不是描述。這棵樹是共用的，等你要 commit 的時候，
+那個 child 動過的檔案裡可能同時躺著兩三個 session 沒做完的東西，而這份詞彙就是你分辨「哪幾段是誰的」
+的依據。用猜的已經產出過根本編譯不過的 staged tree。child 沒寫那一欄，不等於它宣告自己沒引入
+任何名字——去問，或自己讀 diff 把名字抓出來，再開始 stage。
 
 ### Child 完成不等於程式碼完成
 
@@ -806,6 +821,22 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
   反過來也一樣——child 改到一半的東西可能被另一個 session 順手 commit 進去。
 - **child 不 commit，root 才 commit。** 指令裡要明講禁止 `git commit`／`stash`／`reset`／
   `checkout`。它們在共用工作樹裡執行，一個 `git reset --hard` 會連別人的東西一起帶走。
+- **child 跟 root 問的是不同的問題，所以驗證方式也不同。** child 問的是「我寫的東西會不會動」——
+  該測的就是工作樹，連別人做到一半的東西都算在內，因為 child 不 commit，那些東西不會透過它進到
+  HEAD。child 要跑測試的話，把這段照抄進 `instructions`：
+
+  ```bash
+  snapshot_dir=$(mktemp -d); test_tmp=$(mktemp -d)
+  git archive "$(git stash create)" | tar -x -C "$snapshot_dir"
+  (cd "$snapshot_dir" && TMPDIR="$test_tmp" ./test.sh)
+  ```
+
+  `git stash create` 是上面那條禁令唯一的例外：它只寫出一個裝著工作樹的 commit object，
+  既不動工作樹也不動 stash 清單。樹乾淨的時候它什麼都不印，那就退回用 `HEAD`。
+  **絕對不要叫 child 用 `git write-tree`**——那讀的是 *index*，所以得先 stage，而 index 是共用的：
+  child 會把別的 session 留在裡面的東西一起掃進去，然後被某個 root commit 出去。這件事在這裡發生過。
+  `write-tree` 是 root 的工具，因為 root 本來就在 stage，而「commit 下去 HEAD 還編得過嗎」
+  這個問題只有 index 答得出來。
 - **派工的規矩是使用者的，不是你的。** `~/.config/clawdline/dispatch-policy.md` 跟你的判斷牴觸時
   照它做，並在回報時說一聲你照了哪一條。
 - **child 開的是真的終端機分頁，跑的是真的指令。** 派出去等於授權它在那個 `project_dir` 動手。
