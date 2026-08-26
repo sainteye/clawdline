@@ -123,6 +123,7 @@ export function paintStatic() {
     text(els["schedule-days-label"], T.webScheduleOn);
     attr(els["schedule-days"], "aria-label", T.webScheduleOn);
     text(els["schedule-where-label"], T.webScheduleWhere);
+    text(els["schedule-with-label"], T.webScheduleWith);
     attr(els["schedule-places"], "aria-label", T.webScheduleWhere);
     text(els["schedule-first-label"], T.webScheduleFirst);
     attr(els["schedule-instructions"], "aria-label", T.webScheduleFirst);

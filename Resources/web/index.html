@@ -641,8 +641,18 @@ document.documentElement.className = "booting";
 
         <div class="block">
             <span class="field-label" id="schedule-where-label">Where</span>
+            <!-- Collapsed to one line, and the reason is the phone. The project list is long
+                 enough to fill the screen and it scrolls inside itself, so a finger on it moves
+                 the list rather than the sheet — and everything below (the assistant, the
+                 message, the buttons) reads as though it were not there at all. -->
+            <button class="picked" id="schedule-picked" type="button"
+                    aria-expanded="false" aria-controls="schedule-places"></button>
+            <ul class="places" id="schedule-places" hidden></ul>
+        </div>
+
+        <div class="block">
+            <span class="field-label" id="schedule-with-label">With</span>
             <div class="row" id="schedule-with"></div>
-            <ul class="places" id="schedule-places"></ul>
         </div>
 
         <div class="block">

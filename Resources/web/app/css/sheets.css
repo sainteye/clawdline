@@ -442,7 +442,26 @@ a.dep:hover .host { color: var(--accent); }
 /* A time is as wide as the time in it. Stretched across the sheet it reads as a text field
    somebody forgot to fill in. */
 .schedule-sheet .time { width: auto; min-width: 118px; }
-.schedule-sheet .places { margin-top: 8px; }
+/* The collapsed project. Reads as the field's value, not as a button that does something —
+   the chevron is the only thing saying it opens. */
+.schedule-sheet .picked {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 9px;
+    padding: 8px 10px; font-size: 13px; color: var(--ink); text-align: left;
+}
+.schedule-sheet .picked:hover { background: var(--card-hi); }
+.schedule-sheet .picked canvas { flex: 0 0 auto; display: block; }
+.schedule-sheet .picked .name { flex: 0 0 auto; }
+.schedule-sheet .picked .where {
+    flex: 1 1 auto; min-width: 0; color: var(--faint); font-size: 11.5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.schedule-sheet .picked.none .name { color: var(--faint); }
+.schedule-sheet .picked .chev { flex: 0 0 auto; color: var(--faint); font-size: 11px; }
+.schedule-sheet .picked[aria-expanded="true"] .chev { color: var(--accent); }
+/* Shorter than the sheet-wide default: once it is a thing that opens, it only has to show that
+   there is more than one, not carry the whole list at once. */
+.schedule-sheet .places { margin-top: 8px; max-height: min(34vh, 260px); }
 .schedule-sheet .more { margin-bottom: 4px; }
 .schedule-sheet .more > summary {
     cursor: pointer; list-style: none;

@@ -91,11 +91,10 @@ export var Schedule = (function () {
         var row = els["schedule-with"];
         row.innerHTML = "";
         row.hidden = assistants.length < 2;
+        // The heading goes with it: a label for a control that is not there is a field somebody
+        // will look for.
+        els["schedule-with-label"].hidden = row.hidden;
         if (row.hidden) return;
-        var label = document.createElement("span");
-        label.className = "with-label";
-        label.textContent = T.webScheduleWith;
-        row.appendChild(label);
         assistants.forEach(function (a) {
             var chip = document.createElement("button");
             chip.type = "button";
@@ -224,7 +223,38 @@ export var Schedule = (function () {
             li.appendChild(row);
             list.appendChild(li);
         });
+        drawPicked();
         paint();
+    }
+
+    /** The project as one line. Shut, it is the value of this field; open, it is a chevron with
+     *  the list under it. Nothing is preselected — with no project chosen it says so in words
+     *  rather than drawing the first row as though somebody had picked it. */
+    function drawPicked() {
+        var box = els["schedule-picked"];
+        var open = box.getAttribute("aria-expanded") === "true";
+        var p = (places || []).filter(function (x) { return x.id === chosenPlace; })[0];
+        box.innerHTML = '<canvas></canvas><span class="name"></span>'
+            + '<span class="where"></span><span class="chev"></span>';
+        var mark = box.querySelector("canvas");
+        if (!p || !drawIcon(mark, p.icon, 4)) mark.classList.add("none");
+        box.classList.toggle("none", !p);
+        var name = box.querySelector(".name");
+        // Borrowed rather than invented: the start sheet already asks this question, in fourteen
+        // languages, and it is the same question.
+        name.textContent = p ? (p.label || p.path) : T.webStartPick;
+        name.style.color = p && p.icon ? tint(p.icon.accent) : "";
+        box.querySelector(".where").textContent = p ? shortPath(p.path) : "";
+        box.querySelector(".chev").textContent = open ? "\u2304" : "\u203A";
+    }
+
+    function togglePlaces() {
+        if (busy()) return;
+        var box = els["schedule-picked"];
+        var open = box.getAttribute("aria-expanded") === "true";
+        box.setAttribute("aria-expanded", open ? "false" : "true");
+        els["schedule-places"].hidden = open;
+        drawPicked();
     }
 
     function pickPlace(id) {
@@ -232,6 +262,11 @@ export var Schedule = (function () {
         chosenPlace = id;
         var rows = els["schedule-places"].querySelectorAll(".place");
         for (var i = 0; i < rows.length; i++) markPicked(rows[i], rows[i].dataset.id === id);
+        // Chosen is chosen. Folding it back up is what puts the rest of the form on screen again,
+        // which is the whole reason this field collapses at all.
+        els["schedule-picked"].setAttribute("aria-expanded", "false");
+        els["schedule-places"].hidden = true;
+        drawPicked();
         said("");
     }
 
@@ -396,7 +431,8 @@ export var Schedule = (function () {
         });
     }
 
-    return { open: open, openFrom: openFrom, close: close, create: create, pick: pickPlace };
+    return { open: open, openFrom: openFrom, close: close, create: create, pick: pickPlace,
+             toggle: togglePlaces };
 })();
 
 /* ---- wiring ---------------------------------------------------------------- */
@@ -414,6 +450,7 @@ els["schedule-form"].addEventListener("click", function () { Schedule.close(); }
 els["schedule-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
 els["schedule-cancel"].addEventListener("click", function () { Schedule.close(); });
 els["schedule-go"].addEventListener("click", function () { Schedule.create(); });
+els["schedule-picked"].addEventListener("click", function () { Schedule.toggle(); });
 els["schedule-places"].addEventListener("click", function (ev) {
     var row = ev.target.closest ? ev.target.closest(".place") : null;
     if (!row || row.disabled) return;
