@@ -4,6 +4,7 @@ import { els } from "../core/dom.js";
 import { shortPath, tint, toast } from "../core/util.js";
 import { drawIcon } from "../core/pixels.js";
 import { api } from "../net/api.js";
+import { Schedules } from "../net/schedules.js";
 
 /* ---- making a schedule -----------------------------------------------------
    The markup, the ids and the styling are `#schedule-form` in `index.html` and
@@ -381,9 +382,12 @@ export var Schedule = (function () {
             creating = false;
             // Closed rather than left open with a receipt in it — same as `input/command.js`'s
             // own `arrive` — because there is nothing left on this sheet worth looking at. The
-            // new row shows up in the list on its own slow lane; the toast is what says it worked
-            // in the meantime.
+            // new row is asked for immediately below rather than waited for.
             close();
+            // Ask the list to read again now. It has its own one-minute lane, and waiting for it
+            // here would leave the row that was just made missing from the only screen anybody is
+            // looking at — see `Schedules.refresh`.
+            Schedules.refresh();
             toast(T.webScheduleCreated);
         }).catch(function (e) {
             creating = false;

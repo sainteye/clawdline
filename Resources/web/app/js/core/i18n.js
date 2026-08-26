@@ -134,6 +134,7 @@ export var T = {
     webTaskDone: "done",
     webTaskFailed: "failed",
     webTaskRunning: "running",
+    webScheduleNext: "Next",
     webScheduleMissed: "Last missed",
     webScheduleNoNext: "No next run is scheduled.",
     // The page has been open longer than the app it came from.

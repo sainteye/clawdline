@@ -33,6 +33,18 @@ function beginWhenAuthed(attempt) {
 }
 
 export var Schedules = {
+    /** Read again now, rather than at the next tick of the slow lane. Making one is the single
+     *  moment somebody is watching this list, and a minute of nothing after the sheet closes
+     *  reads as a schedule that did not get made. A read already in the air was started before
+     *  the new file existed, so its answer cannot contain the new row — let it land first. */
+    refresh: function (tries) {
+        var n = tries || 0;
+        if (inFlight && n < 10) {
+            setTimeout(function () { Schedules.refresh(n + 1); }, 300);
+            return;
+        }
+        refresh();
+    },
     start: function () {
         if (started) return;
         started = true;
