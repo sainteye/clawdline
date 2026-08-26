@@ -131,9 +131,20 @@ enum Orchestrator {
         /// When the child's terminal was last seen in a reading — the difference between a child
         /// that finished and one whose tab was closed under it.
         var lastSeenChild: Date?
-        /// When the child's terminal is due to be closed, once it has reported. In memory only:
-        /// a tab is closed on the strength of what this process saw, never on what a previous
-        /// one wrote down.
+        /// When the child's terminal is due to be closed, once it has reported.
+        ///
+        /// **Written down, because three minutes is longer than this app stays running.**
+        /// It used to live in memory only, on the principle that a tab should be closed on the
+        /// strength of what this process saw rather than what a previous one believed — and the
+        /// principle is right, but the deadline was never the belief. `./build.sh` replaces the
+        /// app several times an hour; every child that reported inside the last three minutes
+        /// lost its deadline with the process, and nothing ever set one again. Of the eighteen
+        /// tabs left standing since the linger was written, seventeen had the app restart inside
+        /// their three minutes and the eighteenth had not run out yet — Claude Code's tabs and
+        /// Codex's alike, which is why this was not the assistant-specific fault it looked like.
+        ///
+        /// What crosses the restart is the deadline and nothing else. Whether that tab is still
+        /// the child's is asked again, of a reading this process took — see ``closeStep``.
         var closeAt: Date?
 
         var dir: URL { Orchestrator.root.appendingPathComponent(id, isDirectory: true) }
@@ -1759,8 +1770,49 @@ enum Orchestrator {
             orphaned.append(id)
         }
         lock.unlock()
-        if !orphaned.isEmpty { save() }
+        let rearmed = rearmLingers()
+        if !orphaned.isEmpty || rearmed { save() }
         scheduleSerializePump()
+    }
+
+    /// How long a restored linger waits before this process is willing to act on it.
+    ///
+    /// Long enough for the first reading to land, and no longer. `SessionWatch` takes one the
+    /// moment it starts, but it is a round trip to every terminal and the app may well have
+    /// opened in the background, where the cadence is twenty seconds. A deadline that already
+    /// ran out while the app was away would otherwise be judged against an empty list — and
+    /// ``closeStep`` now waits on one of those anyway, so this is the belt to that pair of braces.
+    /// It also keeps the ten-minute patience for a busy child measured from *this* process
+    /// rather than from a deadline that expired overnight.
+    static let restartGrace: TimeInterval = 20
+
+    /// Carry each reported child's linger across the restart that interrupted it.
+    ///
+    /// Only the deadline is restored, and only where a tab was named: whether that tab is still
+    /// the child's is a question for a reading this process took. A deadline already spent gets
+    /// ``restartGrace`` rather than being acted on the instant the app opens.
+    @discardableResult
+    private static func rearmLingers() -> Bool {
+        let linger = Config.shared.orchestratorChildLinger
+        let floor = Date().addingTimeInterval(restartGrace)
+        var changed = false
+        lock.lock()
+        for (id, task) in tasks where task.closeAt != nil {
+            var carried = task
+            // A tab with nothing named to close it, or a Mac that has since said tabs are never
+            // to be closed for a child: the deadline is not this process's to keep.
+            if task.childTerminalId == nil || linger < 0 {
+                carried.closeAt = nil
+            } else if let at = task.closeAt, at < floor {
+                carried.closeAt = floor
+            } else {
+                continue
+            }
+            tasks[id] = carried
+            changed = true
+        }
+        lock.unlock()
+        return changed
     }
 
     /// Main thread. Advances every live task one step; cheap when nothing is live.
@@ -2179,32 +2231,78 @@ enum Orchestrator {
         return note.session
     }
 
-    /// Close a reported child's terminal once its linger has run out. True when the record changed.
-    private static func closeChild(_ task: Task) -> Bool {
-        var task = task
-        guard let closeAt = task.closeAt, let childID = task.childTerminalId else { return false }
-        let now = Date()
-        guard now >= closeAt else { return false }
-        guard let child = SessionWatch.shared.targets.first(where: { $0.id == childID }),
-              child.assistant == nil || child.assistant == task.assistant,
-              task.childTTY == nil || child.tty == task.childTTY else {
-            // Gone already, or the terminal is somebody else's now: nothing here is ours to close.
-            task.closeAt = nil
-            guard replaceTask(task, expecting: task.state) else { return false }
-            return true
+    /// What to do about a finished child's tab, at one instant.
+    ///
+    /// Split out from the beat that runs it for the same reason ``Targets/Farewell/step(elapsed:pid:termed:killed:)``
+    /// is: the decisions are here, the terminal is there, and a decision that can only be
+    /// exercised by closing somebody's real tab is a decision with no tests. Every branch below
+    /// is one, and one of them is irreversible — see `.forget`.
+    enum CloseStep: Equatable {
+        /// Not yet. The deadline stands and the next beat asks again.
+        case wait
+        /// That tab has gone, or belongs to somebody else now. Drop the deadline: nothing here
+        /// is ours to close, and nothing will be.
+        case forget
+        /// Take it. `justTheTab` when there is nobody in there to say the quit word to.
+        case close(justTheTab: Bool)
+    }
+
+    /// `busy` is a closure because answering it costs a screen capture, and it is only worth
+    /// paying for once everything cheaper has already said the tab is ours and due.
+    static func closeStep(now: Date, closeAt: Date, sawTerminals: Bool, child: TargetSession?,
+                          assistant: Assistant, tty: String?,
+                          busy: () -> Bool) -> CloseStep {
+        guard now >= closeAt else { return .wait }
+        guard let child else {
+            // **`forget` is permanent**, and a reading with no terminals in it at all is not a
+            // reading that found this one gone: it is the first seconds after launch, or iTerm2
+            // not answering. Deciding on one closed nothing and left the tab standing for good.
+            return sawTerminals ? .forget : .wait
         }
+        guard child.assistant == nil || child.assistant == assistant,
+              tty == nil || child.tty == tty else { return .forget }
         // A child still mid-turn is left alone — result.json was meant to be the last thing it
         // wrote, but a tab closed under a running turn is a mess, not an exit. Ten minutes of
         // patience, then the tab goes without the courtesy of `/exit`, because typing into a
         // menu confirms whatever is highlighted. An assistant that already left on its own
         // gets the same treatment: there is nobody in that tab to say the word to.
-        let busy = childIsBusy(child)
+        let busyNow = busy()
         let overdue = now.timeIntervalSince(closeAt) > 600
-        if busy, !overdue { return false }
-        let justTheTab = busy || child.assistant == nil
+        if busyNow, !overdue { return .wait }
+        return .close(justTheTab: busyNow || child.assistant == nil)
+    }
+
+    /// Close a reported child's terminal once its linger has run out. True when the record changed.
+    private static func closeChild(_ task: Task) -> Bool {
+        var task = task
+        guard let closeAt = task.closeAt, let childID = task.childTerminalId else { return false }
+        let now = Date()
+        let seen = SessionWatch.shared.targets
+        let child = seen.first { $0.id == childID }
+        let step = closeStep(now: now, closeAt: closeAt, sawTerminals: !seen.isEmpty,
+                             child: child, assistant: task.assistant, tty: task.childTTY,
+                             busy: { child.map(childIsBusy) ?? false })
+        switch step {
+        case .wait:
+            return false
+        case .forget:
+            task.closeAt = nil
+            guard replaceTask(task, expecting: task.state) else { return false }
+            Log.write("orchestrator: nothing left to close for \(task.id) — dropping its linger")
+            return true
+        case .close(let justTheTab):
+            guard let child else { return false }
+            return takeChildTab(child, justTheTab: justTheTab, for: task)
+        }
+    }
+
+    /// The half of `closeChild` that touches a terminal, once the decision is made.
+    private static func takeChildTab(_ child: TargetSession, justTheTab: Bool,
+                                     for task: Task) -> Bool {
+        var task = task
         task.closeAt = nil
         guard replaceTask(task, expecting: task.state) else { return false }
-        RemoteAuth.audit("orchestrator.close", ["task": task.id, "child": childID,
+        RemoteAuth.audit("orchestrator.close", ["task": task.id, "child": child.id,
                                                  "how": justTheTab ? "tab" : "exit"])
         // Off the main thread: `end` types the quit word, waits for it to land, then closes the
         // tab, and a second of that on the main thread is a second the panel does not draw.
@@ -3140,6 +3238,10 @@ enum Orchestrator {
         shape(task, rootTerminal: nil)
     }
 
+    /// Test seam: the linger a held record is carrying. Not in the GET representation, which
+    /// describes the work rather than the housekeeping waiting on it.
+    static func closeAtForTesting(_ id: String) -> Date? { held(id)?.closeAt }
+
     private static func record(of task: Task) -> [String: Any] {
         var rootTerminal: String?
         // The parent task first, when there is one. A dispatcher one level down is sitting in a
@@ -3280,6 +3382,7 @@ enum Orchestrator {
         if let v = task.childPID { out["child_pid"] = Int(v) }
         if let v = task.childProcStart { out["child_proc_start"] = v.timeIntervalSince1970 }
         if let v = task.childSessionId { out["child_session"] = v }
+        if let at = task.closeAt { out["close_at"] = at.timeIntervalSince1970 }
         if let v = task.transcriptPath { out["transcript"] = v }
         if task.transcriptProven { out["transcript_proven"] = true }
         if let v = task.summary { out["summary"] = v }
@@ -3345,6 +3448,7 @@ enum Orchestrator {
         task.childProcStart = (obj["child_proc_start"] as? Double)
             .map(Date.init(timeIntervalSince1970:))
         task.childSessionId = obj["child_session"] as? String
+        task.closeAt = (obj["close_at"] as? Double).map(Date.init(timeIntervalSince1970:))
         task.transcriptPath = obj["transcript"] as? String
         task.transcriptProven = obj["transcript_proven"] as? Bool == true
             && task.childSessionId != nil && task.transcriptPath != nil

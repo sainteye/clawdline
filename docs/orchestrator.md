@@ -623,8 +623,10 @@ child is left on screen for a while so somebody can read what it did, and the pa
 indented under the root that asked for it. When that root leaves, the reader the linger was for
 has gone, and a row filed under a session no longer in the list is not a courtesy. Those closures
 are `orchestrator.close`, also with `why=root_ended`. The tab is what this is keyed on, not the
-linger deadline — that deadline lives only in memory, so every task older than the app's last
-restart has none while its tab is plainly still there, and the page decides the same way.
+linger deadline: a task can have a tab and no deadline — one dispatched before the linger existed,
+one on a Mac that set `orchestrator_child_linger` to `-1` — and closing the root should still take
+the row somebody is looking at. The page decides the same way, so what a close takes is what a
+reader sees.
 
 **Only an explicit close cascades.** Closing the tab by hand does not. The app never watches a root
 for signs of death, because "not in this reading" is a sentence that is also true of a terminal that
@@ -655,6 +657,16 @@ to say, so `orchestrator_child_linger` decides how long its terminal tab hangs a
 by default, `0` to close it the moment the task finalizes, `-1` to leave it to you. A `timeout`
 keeps its tab regardless, because whatever went wrong is written on that screen and closing it
 would throw away the only copy.
+
+**The deadline survives the restart that lands in the middle of it.** Three minutes is longer than
+this app stays running while it is being worked on, and a deadline that lived only in memory was
+lost every time — the tab then stood open for the rest of the day, because nothing sets a second
+one. It is written down now, and read back at startup. What crosses is the deadline and nothing
+else: whether that tab is still the child's is asked again, of a reading *this* process took,
+matching the terminal id, the tty, and the assistant in it. A deadline that ran out while the app
+was away gets twenty seconds first, so the first reading has landed before anything is judged
+missing — and a reading with no terminals in it at all decides nothing, since that is also what
+the first second after launch looks like, and what iTerm2 not answering looks like.
 
 **A `spawn_failed` that never reached briefing is the exception, and it closes at once.** Nothing
 of the task is on that screen: the session was opened and never spoken to, so what is there is a

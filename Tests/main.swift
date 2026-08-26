@@ -7952,6 +7952,117 @@ group("closing a root session takes the work it dispatched with it") {
            Orchestrator.cancelChildren(ofRoot: unknown), [])
 }
 
+group("what a linger running out decides, one instant at a time") {
+    let due = Date(timeIntervalSince1970: 1_787_400_000)
+    func child(_ assistant: Assistant?, tty: String = "/dev/ttys7") -> TargetSession {
+        TargetSession(backend: .iterm, id: "TAB", name: "x", tty: tty,
+                      windowIndex: 0, tabIndex: 0, assistant: assistant)
+    }
+    func step(now: Date, sawTerminals: Bool = true, child: TargetSession?,
+              tty: String? = "/dev/ttys7", busy: Bool = false) -> Orchestrator.CloseStep {
+        Orchestrator.closeStep(now: now, closeAt: due, sawTerminals: sawTerminals,
+                               child: child, assistant: .codex, tty: tty, busy: { busy })
+    }
+
+    expect("before the deadline, nothing happens",
+           step(now: due.addingTimeInterval(-1), child: child(.codex)), .wait)
+    expect("at the deadline the tab goes, and the assistant is asked to leave first",
+           step(now: due, child: child(.codex)), .close(justTheTab: false))
+    expect("an empty tab is taken without a word said into it",
+           step(now: due, child: child(nil)), .close(justTheTab: true))
+    expect("a child mid-turn is left alone",
+           step(now: due.addingTimeInterval(60), child: child(.codex), busy: true), .wait)
+    expect("but not for longer than ten minutes",
+           step(now: due.addingTimeInterval(601), child: child(.codex), busy: true),
+           .close(justTheTab: true))
+    expect("a tab that is somebody else's assistant now is not ours to close",
+           step(now: due, child: child(.claude)), .forget)
+    expect("nor is one whose tty moved under it",
+           step(now: due, child: child(.codex, tty: "/dev/ttys9")), .forget)
+    expect("a reading that found the tab gone ends the linger",
+           step(now: due, child: nil), .forget)
+
+    // **The one branch that cannot be taken back.** `forget` is permanent — nothing sets the
+    // deadline a second time — so it may only be reached from a reading that actually happened.
+    // A reading with no terminals in it at all is what the first seconds after launch look like,
+    // and what iTerm2 not answering looks like; deciding on one closed nothing and left every
+    // finished child's tab standing for the rest of the day.
+    expect("a reading that found no terminals at all decides nothing",
+           step(now: due, sawTerminals: false, child: nil), .wait)
+}
+
+group("a linger survives the restart that lands in the middle of it") {
+    Orchestrator.forget()
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before {
+            try? before.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Orchestrator.forget()
+    }
+
+    // A task exactly as `finalize` leaves one: reported, its tab named, and three minutes on the
+    // clock. The app is then replaced under it — which is what ./build.sh does, several times an
+    // hour, and is how a child's tab came to stand open until somebody noticed it.
+    let id = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    let soon = Date().addingTimeInterval(120)
+    let row: [String: Any] = [
+        "id": id, "state": "success", "kind": "custom", "title": "a task",
+        "assistant": "codex", "project_dir": "/path-that-does-not-exist-clawdline-test",
+        "timeout_minutes": 30, "created": Date().timeIntervalSince1970,
+        "secret_hash": Orchestrator.hash(ofSecret: "x"), "artifacts": [],
+        "child_terminal": "TAB", "child_tty": "/dev/ttys7",
+        "finished_at": Date().timeIntervalSince1970,
+        "close_at": soon.timeIntervalSince1970,
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: ["version": 1, "tasks": [row]])
+    try! data.write(to: store, options: .atomic)
+    Orchestrator.forget()
+    Orchestrator.resumeAfterRestart()
+
+    expect("the deadline is still the one the last process set",
+           Orchestrator.closeAtForTesting(id)?.timeIntervalSince1970, soon.timeIntervalSince1970)
+    expect("and a deadline this process sets is written down for the next one",
+           Orchestrator.stored(Orchestrator.task(from: row)!)["close_at"] as? Double,
+           soon.timeIntervalSince1970)
+
+    // The other half: a deadline that ran out while the app was away. It is not acted on the
+    // instant this process starts, because nothing has been read yet — and a tab closed on the
+    // strength of an empty reading is a tab closed for no reason.
+    let stale = Date().addingTimeInterval(-4 * 3600)
+    var staleRow = row
+    staleRow["close_at"] = stale.timeIntervalSince1970
+    let staleData = try! JSONSerialization.data(withJSONObject: ["version": 1, "tasks": [staleRow]])
+    try! staleData.write(to: store, options: .atomic)
+    Orchestrator.forget()
+    Orchestrator.resumeAfterRestart()
+    let rearmed = Orchestrator.closeAtForTesting(id)?.timeIntervalSinceNow ?? 0
+    check("a deadline that ran out while the app was away gets a breath, not the axe",
+          rearmed > 5 && rearmed <= Orchestrator.restartGrace,
+          "got \(rearmed)s from now")
+
+    // A Mac that has said a child's tab is never closed for it does not inherit one either.
+    let keep = Config.shared.orchestratorChildLinger
+    Config.shared.orchestratorChildLinger = -1
+    Orchestrator.forget()
+    Orchestrator.resumeAfterRestart()
+    check("and none of it happens where the linger has been turned off",
+          Orchestrator.closeAtForTesting(id) == nil)
+    Config.shared.orchestratorChildLinger = keep
+
+    // And the tab is still only closed on what *this* process can see: the record carries the
+    // deadline across, never the belief that the tab is still there.
+    let task = Orchestrator.task(from: staleRow)!
+    expect("the restored deadline still waits on a reading",
+           Orchestrator.closeStep(now: Date(), closeAt: Date().addingTimeInterval(-1),
+                                  sawTerminals: false, child: nil,
+                                  assistant: task.assistant, tty: task.childTTY, busy: { false }),
+           .wait)
+}
+
 group("the Session info card is read off the files, and says unknown rather than 0%") {
     // The porcelain, counted. A partial add is under both headings, as `git status` lists it.
     let porcelain = """
