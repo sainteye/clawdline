@@ -327,6 +327,7 @@ enum Orchestrator {
         let inventory = scheduleInventory()
         lock.lock()
         let snapshots = Array(tasks.values)
+        let missedSnapshots = lastMissedScheduleFires
         lock.unlock()
         let valid = inventory.valid.map { schedule -> [String: Any] in
             var out: [String: Any] = ["id": schedule.id, "title": schedule.title,
@@ -338,6 +339,9 @@ enum Orchestrator {
                 .max(by: { $0.created < $1.created }) {
                 out["last_run"] = ["task_id": last.id, "state": last.state.rawValue,
                                    "at": Int(last.created.timeIntervalSince1970)]
+            }
+            if let missed = missedSnapshots[schedule.id] {
+                out["last_missed_at"] = Int(missed.timeIntervalSince1970)
             }
             return out
         }
@@ -440,6 +444,7 @@ enum Orchestrator {
                 pendingScheduleFires[schedule.id] = fire
             } else if action != .alreadyHandled {
                 handledScheduleFires[schedule.id] = fire
+                if action == .missed { lastMissedScheduleFires[schedule.id] = fire }
             }
             lock.unlock()
             switch action {
@@ -1105,6 +1110,7 @@ enum Orchestrator {
     /// push per minute while the process stays up; a restart deliberately re-evaluates catch-up.
     private static var handledScheduleFires: [String: Date] = [:]
     private static var pendingScheduleFires: [String: Date] = [:]
+    private static var lastMissedScheduleFires: [String: Date] = [:]
     private static var dispatchingSchedules: Set<String> = []
     private static var invalidScheduleFingerprints: [String: String] = [:]
     private static let scheduleQueue = DispatchQueue(
@@ -5239,6 +5245,7 @@ enum Orchestrator {
         dispatchTimes = []
         handledScheduleFires = [:]
         pendingScheduleFires = [:]
+        lastMissedScheduleFires = [:]
         dispatchingSchedules = []
         invalidScheduleFingerprints = [:]
         scheduleRunnerForTesting = nil

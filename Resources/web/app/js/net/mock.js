@@ -942,3 +942,44 @@ export var Mock = (function () {
         }
     };
 })();
+
+/* ---- schedules fixture ---------------------------------------------------
+   Appended as its own block because this file is also an active editing surface.
+   Eight valid rows exercise every Orchestrator.State value, plus one invalid source.
+   `?schedules=empty` verifies that an empty inventory leaves no section behind.
+   -------------------------------------------------------------------------- */
+Mock.schedules = function () {
+    var at = Math.floor(Date.now() / 1000);
+    var schedules = params.get("schedules") === "empty" ? [] : [
+        { id: "2bf37143-0a1c-4ba8-a04c-33acd3ee6801", title: "Publish the morning brief",
+          enabled: true, next_fire: at + 18 * 60,
+          last_missed_at: at - 6 * 86400,
+          last_run: { task_id: "mock-schedule-success", state: "success", at: at - 3 * 3600 } },
+        { id: "60dd72ae-777e-4e1e-a595-79cc2740cfb1", title: "Rebuild the search index",
+          enabled: true, next_fire: at + 2 * 3600,
+          last_run: { task_id: "mock-schedule-failure", state: "failure", at: at - 22 * 3600 } },
+        { id: "26c6e7a3-7fd4-470f-8cf2-70cc9362a63b", title: "Archive weekly reports",
+          enabled: false, next_fire: at + 26 * 3600,
+          last_run: { task_id: "mock-schedule-timeout", state: "timeout", at: at - 6 * 86400 } },
+        { id: "65d9d034-4158-484e-a95b-26ed80ed6d05", title: "Prepare the release notes",
+          enabled: true, next_fire: at + 3 * 3600,
+          last_run: { task_id: "mock-schedule-queued", state: "queued", at: at - 30 } },
+        { id: "813fa8a7-ffca-4970-a395-e5302b1e5e79", title: "Check deployment readiness",
+          enabled: true, next_fire: at + 4 * 3600,
+          last_run: { task_id: "mock-schedule-spawning", state: "spawning", at: at - 45 } },
+        { id: "3928f442-ed0a-48e8-b081-36942751fbad", title: "Publish the weekly digest",
+          enabled: true, next_fire: at + 5 * 3600,
+          last_run: { task_id: "mock-schedule-briefed", state: "briefed", at: at - 60 } },
+        { id: "b3c87bec-0544-476f-b2c4-55f20988856b", title: "Prune preview builds",
+          enabled: true, next_fire: at + 6 * 3600,
+          last_run: { task_id: "mock-schedule-cancelled", state: "cancelled", at: at - 3600 } },
+        { id: "8c8e0e67-f045-408c-882b-0abace9b2174", title: "Warm the documentation cache",
+          enabled: true,
+          last_run: { task_id: "mock-schedule-spawn-failed", state: "spawn_failed", at: at - 7200 } },
+        { file: "nightly-maintenance.json", state: "invalid",
+          error: "when must contain exactly at and days", error_kind: "schema" }
+    ];
+    return new Promise(function (done) {
+        setTimeout(function () { done({ schedules: schedules, at: at }); }, 180);
+    });
+};

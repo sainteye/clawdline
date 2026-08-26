@@ -200,6 +200,18 @@ struct Russian: Copy {
     let settingsOrchestratorPolicyEdit = "Изменить правила"
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "Действуют — строк: \(lines)" }
     let settingsOrchestratorPolicyOff = "Правил нет — каждый раз решает тот, кто отправляет"
+    let settingsSchedules = "Расписания"
+    let settingsSchedulesEmpty = "Расписаний пока нет. Откройте папку schedules кнопкой ниже и добавьте JSON-файл."
+    let settingsScheduleRun = "Запустить"
+    let settingsScheduleReveal = "Показать в Finder"
+    let settingsSchedulesFolder = "Открыть папку schedules"
+    let settingsScheduleNext = "Следующий"
+    let settingsScheduleLast = "Последний"
+    let settingsScheduleNever = "Ещё не запускалось"
+    let settingsScheduleStarted = "Запуск начат."
+    let settingsScheduleActive = "Предыдущая задача этого расписания ещё выполняется."
+    let webScheduleMissed = "Последний пропуск"
+    let webScheduleNoNext = "Следующий запуск не запланирован."
     func childAnnounce(_ title: String) -> String { "Задача от Clawdline принята: \(title) — приступаю." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f с", value) }
 

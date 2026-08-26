@@ -2788,6 +2788,8 @@ final class RemoteServer {
             "webTaskDone": t.webTaskDone,
             "webTaskFailed": t.webTaskFailed,
             "webTaskRunning": t.webTaskRunning,
+            "webScheduleMissed": t.webScheduleMissed,
+            "webScheduleNoNext": t.webScheduleNoNext,
         ])
 
         // The Links sheet.

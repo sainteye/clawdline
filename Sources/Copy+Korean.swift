@@ -198,6 +198,18 @@ struct Korean: Copy {
     let settingsOrchestratorPolicyEdit = "규칙 편집"
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "적용 중 — \(lines)줄" }
     let settingsOrchestratorPolicyOff = "규칙 없음 — 맡길 때마다 맡기는 쪽이 정합니다"
+    let settingsSchedules = "예약 작업"
+    let settingsSchedulesEmpty = "예약 작업이 없습니다. 아래 버튼으로 schedules 폴더를 열고 JSON 파일을 추가하세요."
+    let settingsScheduleRun = "지금 실행"
+    let settingsScheduleReveal = "Finder에서 보기"
+    let settingsSchedulesFolder = "schedules 폴더 열기"
+    let settingsScheduleNext = "다음"
+    let settingsScheduleLast = "최근"
+    let settingsScheduleNever = "실행 기록 없음"
+    let settingsScheduleStarted = "실행을 시작했습니다."
+    let settingsScheduleActive = "이전 예약 작업이 아직 실행 중입니다."
+    let webScheduleMissed = "최근 놓친 실행"
+    let webScheduleNoNext = "다음 실행이 예약되지 않았습니다."
     func childAnnounce(_ title: String) -> String { "Clawdline이 맡긴 일을 받았습니다: \(title) — 지금 시작합니다." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f초", value) }
 

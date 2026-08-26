@@ -200,6 +200,18 @@ struct Turkish: Copy {
     let settingsOrchestratorPolicyEdit = "Kuralları düzenle"
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "Yürürlükte — \(lines) satır" }
     let settingsOrchestratorPolicyOff = "Kural yok — her seferinde veren kendisi karar verir"
+    let settingsSchedules = "Zamanlamalar"
+    let settingsSchedulesEmpty = "Henüz zamanlama yok. Aşağıdaki düğmeyle schedules klasörünü açıp bir JSON dosyası ekleyin."
+    let settingsScheduleRun = "Şimdi çalıştır"
+    let settingsScheduleReveal = "Finder’da göster"
+    let settingsSchedulesFolder = "schedules klasörünü aç"
+    let settingsScheduleNext = "Sonraki"
+    let settingsScheduleLast = "Son"
+    let settingsScheduleNever = "Henüz çalışmadı"
+    let settingsScheduleStarted = "Çalıştırma başladı."
+    let settingsScheduleActive = "Bu zamanlamanın önceki görevi hâlâ çalışıyor."
+    let webScheduleMissed = "Son kaçırılan"
+    let webScheduleNoNext = "Sonraki çalıştırma zamanlanmadı."
     func childAnnounce(_ title: String) -> String { "Clawdline'dan gelen görev alındı: \(title) — şimdi başlıyorum." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f sn", value) }
 

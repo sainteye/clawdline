@@ -199,6 +199,18 @@ struct English: Copy {
     let settingsOrchestratorPolicyEdit = "Edit the rules"
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "In force — \(lines) lines" }
     let settingsOrchestratorPolicyOff = "No house rules — every dispatch is the dispatcher's own call"
+    let settingsSchedules = "Schedules"
+    let settingsSchedulesEmpty = "No schedules yet. Use the button below to open the schedules folder and add a JSON file."
+    let settingsScheduleRun = "Run now"
+    let settingsScheduleReveal = "Reveal in Finder"
+    let settingsSchedulesFolder = "Open schedules folder"
+    let settingsScheduleNext = "Next"
+    let settingsScheduleLast = "Last"
+    let settingsScheduleNever = "Not run yet"
+    let settingsScheduleStarted = "Run started."
+    let settingsScheduleActive = "The previous task from this schedule is still active."
+    let webScheduleMissed = "Last missed"
+    let webScheduleNoNext = "No next run is scheduled."
     func childAnnounce(_ title: String) -> String { "Clawdline task received: \(title) — starting now." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

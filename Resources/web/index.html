@@ -117,6 +117,7 @@ document.documentElement.className = "booting";
 <link rel="stylesheet" href="/app/css/header.css">
 <link rel="stylesheet" href="/app/css/shell.css">
 <link rel="stylesheet" href="/app/css/list.css">
+<link rel="stylesheet" href="/app/css/schedules.css">
 <link rel="stylesheet" href="/app/css/detail.css">
 <link rel="stylesheet" href="/app/css/transcript.css">
 <link rel="stylesheet" href="/app/css/composer.css">
@@ -212,6 +213,14 @@ document.documentElement.className = "booting";
             <div class="ptr" id="ptr"><span id="ptr-label">Pull to refresh</span></div>
             <ul class="rows" id="rows" role="listbox" aria-label="Claude Code sessions" tabindex="0"></ul>
             <div class="empty" id="list-empty" hidden></div>
+            <!-- A paired device can inspect schedules but cannot run one. The native disclosure
+                 is the only control in this section: rows are facts, never buttons or links, and
+                 no schedule write route is represented anywhere on this page. Hidden until a
+                 non-empty answer lands so an empty inventory costs the session list no space. -->
+            <details class="schedules" id="schedules" open hidden>
+                <summary><span>Schedules</span><span class="count" id="schedules-count"></span></summary>
+                <ul class="schedule-rows" id="schedule-rows" aria-label="Scheduled tasks"></ul>
+            </details>
         </div>
         <!-- Whether this device gets told when a session is waiting. It keeps the bottom of
              this column because it is a setting you change once and the list above it is the

@@ -198,6 +198,18 @@ struct Japanese: Copy {
     let settingsOrchestratorPolicyEdit = "ルールを編集"
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "有効 — \(lines) 行" }
     let settingsOrchestratorPolicyOff = "決まりごとなし — 出すたびに出す側が決めます"
+    let settingsSchedules = "スケジュール"
+    let settingsSchedulesEmpty = "スケジュールはまだありません。下のボタンで schedules フォルダを開き、JSON ファイルを追加してください。"
+    let settingsScheduleRun = "今すぐ実行"
+    let settingsScheduleReveal = "Finderで表示"
+    let settingsSchedulesFolder = "schedulesフォルダを開く"
+    let settingsScheduleNext = "次回"
+    let settingsScheduleLast = "前回"
+    let settingsScheduleNever = "未実行"
+    let settingsScheduleStarted = "実行を開始しました。"
+    let settingsScheduleActive = "前回のスケジュールタスクはまだ実行中です。"
+    let webScheduleMissed = "前回の未実行"
+    let webScheduleNoNext = "次回の実行予定はありません。"
     func childAnnounce(_ title: String) -> String { "Clawdline から依頼を受け取りました：\(title)——いまから取りかかります。" }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 

@@ -74,6 +74,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     private var policyCard: NoteCard?
     private var deviceChips: DeviceChips?
     private var tunnelCard: NoteCard?
+    private var schedulesControl: ScheduleSettingsControl?
+    private var schedulesRefreshAt = Date.distantPast
+    private var schedulesRefreshing = false
+    private var schedulesRefreshPending = false
     private var mascotMark: MascotView?
     private var scopeView: AppScopeView?
     private var scopeSwitch: SwitchView?
@@ -86,7 +90,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
     func show() {
         if window != nil, builtFor != String(describing: type(of: L.t)) { tearDown() }
-        if window == nil { window = build() }
+        let wasBuilt = window != nil
+        if !wasBuilt { window = build() }
+        if wasBuilt { schedulesRefreshAt = .distantPast }
         refreshLive()
         startLiveTimer()
         NSApp.activate(ignoringOtherApps: true)
@@ -109,6 +115,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         root = nil
         strip = nil
         panes = []
+        schedulesControl = nil
+        schedulesRefreshAt = .distantPast
+        schedulesRefreshing = false
+        schedulesRefreshPending = false
     }
 
     private func startLiveTimer() {
@@ -442,6 +452,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
         pane.wide.block(label: L.t.settingsRemoteDevices, view: devicesControl(),
                         hint: L.t.settingsRemotePhoneHint)
+        pane.right.block(label: L.t.settingsSchedules, view: scheduleControl(),
+                         hint: Orchestrator.scheduleDirectory.path
+                            .replacingOccurrences(of: NSHomeDirectory(), with: "~"))
         return pane
     }
 
@@ -577,6 +590,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         refreshPolicyCard()
         refreshDevices()
         refreshTunnel()
+        if Date() >= schedulesRefreshAt { refreshSchedules() }
     }
 
     /// Something that changes size changed, so the tab is measured again. Only called when a
@@ -637,6 +651,100 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     }
 
     // MARK: - Remote
+
+    /// The schedule files are the settings. This view deliberately uses the orchestrator's
+    /// inventory rather than decoding a second notion of validity here, then writes the one field
+    /// the control owns back to the source file. The next refresh enters through that same
+    /// inventory, so an editor save and a switch click converge on one answer.
+    private func scheduleControl() -> NSView {
+        let control = ScheduleSettingsControl(text: L.t)
+        control.onToggle = { [weak self] row, enabled in
+            self?.setSchedule(row, enabled: enabled)
+        }
+        control.onRun = { [weak self] row in self?.runSchedule(row) }
+        control.onReveal = { [weak self] row in self?.revealSchedule(row) }
+        control.onOpenFolder = { [weak self] in self?.openScheduleFolder() }
+        control.onResize = { [weak self] in self?.relayoutCurrent() }
+        schedulesControl = control
+        refreshSchedules()
+        return control
+    }
+
+    private func refreshSchedules(force: Bool = false, clearMessage: Bool = true) {
+        guard force || Date() >= schedulesRefreshAt else { return }
+        if schedulesRefreshing {
+            schedulesRefreshPending = schedulesRefreshPending || force
+            return
+        }
+        schedulesRefreshAt = Date().addingTimeInterval(30)
+        schedulesRefreshing = true
+        if clearMessage { schedulesControl?.message = nil }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let rows = ScheduleSettingsRow.rows(from: Orchestrator.scheduleRecords())
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.schedulesRefreshing = false
+                if let control = self.schedulesControl, control.rows != rows {
+                    control.rows = rows
+                    self.relayoutCurrent()
+                }
+                if self.schedulesRefreshPending {
+                    self.schedulesRefreshPending = false
+                    self.schedulesRefreshAt = .distantPast
+                    self.refreshSchedules(force: true, clearMessage: false)
+                }
+            }
+        }
+    }
+
+    private func setSchedule(_ row: ScheduleSettingsRow, enabled: Bool) {
+        let url = Orchestrator.scheduleDirectory.appendingPathComponent(row.file)
+        do {
+            try ScheduleSettingsRow.setEnabled(enabled, at: url)
+            schedulesControl?.message = nil
+        } catch {
+            schedulesControl?.message = error.localizedDescription
+        }
+        schedulesRefreshAt = .distantPast
+        refreshSchedules(force: true, clearMessage: false)
+    }
+
+    private func runSchedule(_ row: ScheduleSettingsRow) {
+        guard let id = row.id else { return }
+        schedulesControl?.message = nil
+        RemoteServer.shared.serialized { [weak self] in
+            let reply = Orchestrator.runSchedule(id: id)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                switch reply {
+                case .ok:
+                    self.schedulesControl?.message = L.t.settingsScheduleStarted
+                case .refused(_, let code, _, _):
+                    self.schedulesControl?.message = code == "schedule_active"
+                        ? L.t.settingsScheduleActive : L.t.webRequestFailed
+                }
+                self.schedulesRefreshAt = .distantPast
+                self.refreshSchedules(force: true, clearMessage: false)
+            }
+        }
+    }
+
+    private func revealSchedule(_ row: ScheduleSettingsRow) {
+        let url = Orchestrator.scheduleDirectory.appendingPathComponent(row.file)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private func openScheduleFolder() {
+        do {
+            try FileManager.default.createDirectory(at: Orchestrator.scheduleDirectory,
+                withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            if !NSWorkspace.shared.open(Orchestrator.scheduleDirectory) {
+                schedulesControl?.message = Orchestrator.scheduleDirectory.path
+            }
+        } catch {
+            schedulesControl?.message = error.localizedDescription
+        }
+    }
 
     /// What can currently reach this Mac, and one button that stops all of it.
     ///
@@ -1002,6 +1110,168 @@ extension Notification.Name {
     /// has to be re-applied — the hotkey, the language, the mascot, the island — in one place,
     /// which is the same place "Reload config" has always used.
     static let clawdlineConfigChanged = Notification.Name("dev.sainteye.clawdline.configChanged")
+}
+
+/// The small, typed seam between the orchestrator's JSON-shaped inventory and the hand-built
+/// settings control. Kept free of AppKit so malformed-row assembly and the source-file edit can
+/// be exercised without constructing a window.
+struct ScheduleSettingsRow: Equatable {
+    let id: String?
+    let file: String
+    let title: String
+    let enabled: Bool?
+    let nextFire: Date?
+    let lastState: String?
+    let lastAt: Date?
+    let lastMissedAt: Date?
+    let error: String?
+
+    static func rows(from records: [[String: Any]]) -> [ScheduleSettingsRow] {
+        records.compactMap { record in
+            if record["state"] as? String == "invalid" {
+                let file = record["file"] as? String ?? "schedule.json"
+                return ScheduleSettingsRow(id: nil, file: file, title: file, enabled: nil,
+                    nextFire: nil, lastState: nil, lastAt: nil, lastMissedAt: nil,
+                    error: record["error"] as? String ?? "Invalid schedule")
+            }
+            // `scheduleRecords()` only emits a valid row after enforcing that its id matches the
+            // filename. A defensive row without that id must not grow controls that write a guess.
+            guard let id = record["id"] as? String else { return nil }
+            let last = record["last_run"] as? [String: Any]
+            return ScheduleSettingsRow(id: id, file: "\(id).json",
+                title: record["title"] as? String ?? id,
+                enabled: record["enabled"] as? Bool,
+                nextFire: date(from: record["next_fire"]),
+                lastState: last?["state"] as? String,
+                lastAt: date(from: last?["at"]),
+                lastMissedAt: date(from: record["last_missed_at"]), error: nil)
+        }
+    }
+
+    enum StatePresentation: Equatable {
+        case running, success, failure, timeout, cancelled, spawnFailed
+    }
+
+    static func presentation(for state: String) -> StatePresentation? {
+        switch state {
+        case "queued", "spawning", "briefed": return .running
+        case "success": return .success
+        case "failure": return .failure
+        case "timeout": return .timeout
+        case "cancelled": return .cancelled
+        case "spawn_failed": return .spawnFailed
+        default: return nil
+        }
+    }
+
+    private static func date(from value: Any?) -> Date? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        return Date(timeIntervalSince1970: number.doubleValue)
+    }
+
+    enum EditError: LocalizedError {
+        case notJSONObject
+        case missingEnabled
+        case verificationFailed
+
+        var errorDescription: String? {
+            switch self {
+            case .notJSONObject: return "The schedule file is not a JSON object."
+            case .missingEnabled: return "The schedule file has no boolean enabled field."
+            case .verificationFailed: return "The schedule file could not be verified after editing."
+            }
+        }
+    }
+
+    /// Replace only the top-level boolean token. These files belong to their authors, so a switch
+    /// must not reorder their keys or rewrite their whitespace. The full JSON rewrite is only a
+    /// recovery path for a valid object whose source token cannot be located, and is audited.
+    static func setEnabled(_ enabled: Bool, at url: URL) throws {
+        let data = try Data(contentsOf: url)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { throw EditError.notJSONObject }
+        guard let old = object["enabled"] as? NSNumber,
+              CFGetTypeID(old) == CFBooleanGetTypeID() else { throw EditError.missingEnabled }
+        let changed: Data
+        var rewrote = false
+        if let range = topLevelEnabledValue(in: data) {
+            var bytes = data
+            bytes.replaceSubrange(range, with: Data((enabled ? "true" : "false").utf8))
+            changed = bytes
+        } else {
+            var fallback = object
+            fallback["enabled"] = enabled
+            changed = try JSONSerialization.data(withJSONObject: fallback,
+                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+            rewrote = true
+        }
+        try changed.write(to: url, options: .atomic)
+        let written = try Data(contentsOf: url)
+        guard let verified = try JSONSerialization.jsonObject(with: written) as? [String: Any],
+              let value = verified["enabled"] as? NSNumber,
+              CFGetTypeID(value) == CFBooleanGetTypeID(), value.boolValue == enabled
+        else { throw EditError.verificationFailed }
+        if rewrote {
+            RemoteAuth.audit("orchestrator.schedule.rewritten", ["file": url.lastPathComponent])
+        }
+    }
+
+    private static func topLevelEnabledValue(in data: Data) -> Range<Data.Index>? {
+        let bytes = [UInt8](data)
+        var objectDepth = 0
+        var arrayDepth = 0
+        var index = 0
+        var found: Range<Data.Index>?
+        func whitespace(_ byte: UInt8) -> Bool {
+            byte == 0x20 || byte == 0x09 || byte == 0x0a || byte == 0x0d
+        }
+        while index < bytes.count {
+            let byte = bytes[index]
+            if byte == 0x22 {
+                let start = index
+                index += 1
+                var escaped = false
+                while index < bytes.count {
+                    let current = bytes[index]
+                    index += 1
+                    if escaped { escaped = false; continue }
+                    if current == 0x5c { escaped = true; continue }
+                    if current == 0x22 { break }
+                }
+                guard index <= bytes.count else { return nil }
+                if objectDepth == 1 && arrayDepth == 0 {
+                    var colon = index
+                    while colon < bytes.count && whitespace(bytes[colon]) { colon += 1 }
+                    if colon < bytes.count && bytes[colon] == 0x3a {
+                        let wrapped = Data([0x5b] + bytes[start..<index] + [0x5d])
+                        let decoded = try? JSONSerialization.jsonObject(with: wrapped)
+                        let key = (decoded as? [String])?.first
+                        if key == "enabled" {
+                            var value = colon + 1
+                            while value < bytes.count && whitespace(bytes[value]) { value += 1 }
+                            let tail = bytes[value...]
+                            if tail.starts(with: Array("true".utf8)) {
+                                found = value..<(value + 4)
+                            } else if tail.starts(with: Array("false".utf8)) {
+                                found = value..<(value + 5)
+                            }
+                        }
+                    }
+                }
+                continue
+            }
+            switch byte {
+            case 0x7b: objectDepth += 1
+            case 0x7d: objectDepth -= 1
+            case 0x5b: arrayDepth += 1
+            case 0x5d: arrayDepth -= 1
+            default: break
+            }
+            index += 1
+        }
+        return found
+    }
 }
 
 // MARK: - Measurements and ink
@@ -1565,6 +1835,231 @@ private final class NoteCard: NSView, SelfSizing {
         Style.chipFill.setFill()
         path.fill()
         Style.chipEdge.setStroke()
+        path.lineWidth = 1
+        path.stroke()
+    }
+}
+
+/// The schedule inventory as a stack of small cards followed by its folder action. The control
+/// owns no scheduler state: rebuilding from `scheduleRecords()` is cheap, keeps invalid neighbors
+/// visible, and means a file edited outside the app wins on the next thirty-second refresh.
+private final class ScheduleSettingsControl: NSView, SelfSizing {
+    var rows: [ScheduleSettingsRow] = [] {
+        didSet {
+            if rows != oldValue { rebuild(); onResize?() }
+        }
+    }
+    var message: String? {
+        didSet {
+            if message != oldValue { rebuild(); onResize?() }
+        }
+    }
+    var onToggle: ((ScheduleSettingsRow, Bool) -> Void)?
+    var onRun: ((ScheduleSettingsRow) -> Void)?
+    var onReveal: ((ScheduleSettingsRow) -> Void)?
+    var onOpenFolder: (() -> Void)?
+    var onResize: (() -> Void)?
+
+    private let text: Copy
+    private let folder: ChipButton
+    private var rowViews: [ScheduleSettingsRowView] = []
+    private var emptyLabel: NSTextField?
+    private var messageLabel: NSTextField?
+
+    init(text: Copy) {
+        self.text = text
+        self.folder = ChipButton(title: text.settingsSchedulesFolder)
+        super.init(frame: NSRect(x: 0, y: 0, width: 700, height: 80))
+        folder.action = { [weak self] in self?.onOpenFolder?() }
+        rebuild()
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var isFlipped: Bool { true }
+
+    private func rebuild() {
+        subviews.forEach { $0.removeFromSuperview() }
+        rowViews = rows.map { row in
+            let view = ScheduleSettingsRowView(row: row, text: text,
+                onToggle: { [weak self] enabled in self?.onToggle?(row, enabled) },
+                onRun: { [weak self] in self?.onRun?(row) },
+                onReveal: { [weak self] in self?.onReveal?(row) })
+            addSubview(view)
+            return view
+        }
+        emptyLabel = nil
+        if rows.isEmpty {
+            let label = makeLabel(text.settingsSchedulesEmpty, Metric.noteFont, Metric.faint)
+            addSubview(label)
+            emptyLabel = label
+        }
+        messageLabel = nil
+        if let message, !message.isEmpty {
+            let label = makeLabel(message, Metric.hintFont, Style.accent)
+            addSubview(label)
+            messageLabel = label
+        }
+        addSubview(folder)
+        needsLayout = true
+        superview?.needsLayout = true
+    }
+
+    func height(forWidth width: CGFloat) -> CGFloat {
+        var height: CGFloat = 0
+        if rows.isEmpty {
+            height = max(22, labelHeight(text.settingsSchedulesEmpty, Metric.noteFont, width: width)) + 8
+        } else {
+            for view in rowViews {
+                height += view.height(forWidth: width) + 8
+            }
+        }
+        if let message, !message.isEmpty {
+            height += labelHeight(message, Metric.hintFont, width: width) + 8
+        }
+        return height + 34
+    }
+
+    override func layout() {
+        super.layout()
+        var y: CGFloat = 0
+        if let emptyLabel {
+            let height = labelHeight(emptyLabel.stringValue, Metric.noteFont, width: bounds.width)
+            emptyLabel.preferredMaxLayoutWidth = bounds.width
+            emptyLabel.frame = NSRect(x: 0, y: y, width: bounds.width, height: height)
+            y += max(22, height) + 8
+        } else {
+            for view in rowViews {
+                let height = view.height(forWidth: bounds.width)
+                view.frame = NSRect(x: 0, y: y, width: bounds.width, height: height)
+                y += height + 8
+            }
+        }
+        if let messageLabel {
+            let height = labelHeight(messageLabel.stringValue, Metric.hintFont, width: bounds.width)
+            messageLabel.preferredMaxLayoutWidth = bounds.width
+            messageLabel.frame = NSRect(x: 0, y: y, width: bounds.width, height: height)
+            y += height + 8
+        }
+        folder.frame.origin = NSPoint(x: 0, y: y + 4)
+    }
+}
+
+/// One source file. Valid rows have a switch and a manual-run action; invalid rows retain the
+/// Finder action but trade controls for the schema error, which keeps a broken file repairable.
+private final class ScheduleSettingsRowView: NSView, SelfSizing {
+    private let row: ScheduleSettingsRow
+    private let title: NSTextField
+    private let detail: NSTextField
+    private let missed: NSTextField?
+    private let toggle: SwitchView?
+    private let run: ChipButton?
+    private let reveal: ChipButton
+
+    init(row: ScheduleSettingsRow, text: Copy,
+         onToggle: @escaping (Bool) -> Void, onRun: @escaping () -> Void,
+         onReveal: @escaping () -> Void) {
+        self.row = row
+        self.title = makeLabel(row.title, Metric.labelFont, Metric.label)
+        self.detail = makeLabel(Self.detail(for: row, text: text), Metric.hintFont,
+                                row.error == nil ? Metric.faint : Style.accent)
+        self.missed = row.lastMissedAt.map {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .full
+            return makeLabel("\(text.webScheduleMissed) \(formatter.localizedString(for: $0, relativeTo: Date()))",
+                             Metric.hintFont, Style.accent)
+        }
+        if let enabled = row.enabled {
+            self.toggle = SwitchView(isOn: enabled, onToggle)
+            let button = ChipButton(title: text.settingsScheduleRun)
+            button.action = onRun
+            self.run = button
+        } else {
+            self.toggle = nil
+            self.run = nil
+        }
+        self.reveal = ChipButton(title: text.settingsScheduleReveal)
+        super.init(frame: NSRect(x: 0, y: 0, width: 700, height: 80))
+        reveal.action = onReveal
+        addSubview(title)
+        addSubview(detail)
+        if let missed { addSubview(missed) }
+        if let toggle { addSubview(toggle) }
+        if let run { addSubview(run) }
+        addSubview(reveal)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var isFlipped: Bool { true }
+
+    private static func detail(for row: ScheduleSettingsRow,
+                               text: Copy) -> String {
+        if let error = row.error { return error }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        let next = row.nextFire.map(formatter.string(from:)) ?? text.webScheduleNoNext
+        let last: String
+        if let state = row.lastState {
+            let stateText: String
+            switch ScheduleSettingsRow.presentation(for: state) {
+            case .running: stateText = text.webTaskRunning
+            case .success: stateText = text.webTaskDone
+            case .failure, .timeout, .cancelled, .spawnFailed: stateText = text.webTaskFailed
+            case nil: stateText = "—"
+            }
+            last = row.lastAt.map { "\(stateText) · \(formatter.string(from: $0))" } ?? stateText
+        } else {
+            last = text.settingsScheduleNever
+        }
+        return "\(text.settingsScheduleNext): \(next)    ·    \(text.settingsScheduleLast): \(last)"
+    }
+
+    func height(forWidth width: CGFloat) -> CGFloat {
+        let detailHeight = labelHeight(detail.stringValue, Metric.hintFont,
+                                       width: max(60, width - 24))
+        let missedHeight = missed.map {
+            labelHeight($0.stringValue, Metric.hintFont, width: max(60, width - 24)) + 4
+        } ?? 0
+        return 14 + 16 + 5 + detailHeight + missedHeight + 8 + 26 + 12
+    }
+
+    override func layout() {
+        super.layout()
+        let inset: CGFloat = 12
+        let toggleWidth = toggle?.frame.width ?? 0
+        title.frame = NSRect(x: inset, y: 11,
+            width: max(40, bounds.width - inset * 2 - toggleWidth - (toggle == nil ? 0 : 12)),
+            height: 16)
+        if let toggle {
+            toggle.frame.origin = NSPoint(x: bounds.width - inset - toggle.frame.width, y: 8)
+        }
+        let detailHeight = labelHeight(detail.stringValue, Metric.hintFont,
+                                       width: max(60, bounds.width - inset * 2))
+        detail.preferredMaxLayoutWidth = bounds.width - inset * 2
+        detail.frame = NSRect(x: inset, y: 32, width: bounds.width - inset * 2,
+                              height: detailHeight)
+        if let missed {
+            let height = labelHeight(missed.stringValue, Metric.hintFont,
+                                     width: max(60, bounds.width - inset * 2))
+            missed.preferredMaxLayoutWidth = bounds.width - inset * 2
+            missed.frame = NSRect(x: inset, y: 32 + detailHeight + 4,
+                                  width: bounds.width - inset * 2, height: height)
+        }
+        let buttonY = bounds.height - 12 - 26
+        var x = inset
+        if let run {
+            run.frame.origin = NSPoint(x: x, y: buttonY)
+            x += run.frame.width + 8
+        }
+        reveal.frame.origin = NSPoint(x: x, y: buttonY)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
+                                xRadius: 8, yRadius: 8)
+        Style.chipFill.setFill()
+        path.fill()
+        (row.error == nil ? Style.chipEdge : Style.accent.withAlphaComponent(0.65)).setStroke()
         path.lineWidth = 1
         path.stroke()
     }

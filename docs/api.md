@@ -1161,6 +1161,7 @@ calculations are returned as epoch seconds:
     "title": "Publish the next post",
     "enabled": true,
     "next_fire": 1787880600,
+    "last_missed_at": 1787707800,
     "last_run": { "task_id": "...", "state": "success", "at": 1787794200 }
   }, {
     "file": "broken.json",
@@ -1172,13 +1173,17 @@ calculations are returned as epoch seconds:
 }
 ```
 
-`last_run` is absent before the first dispatched task and may become absent again after the
+`last_missed_at` is absent until an occurrence expires outside its catch-up window. It is an
+independent schedule fact, not a `last_run.state`. `last_run` is absent before the first dispatched task and may become absent again after the
 200-record registry retention limit removes it. Invalid rows never expose the task template;
 `error_kind` is `project_unavailable` for a temporarily missing `project_dir`, `schema` for a
 validation error, or `unreadable_json`. Invalid content is audited at most once per file revision
 and sends one push on first discovery when `notify_on_failure` is true (or absent, whose default is
 true). The file format, shared capacity bucket and retry boundary are in
 [`schedules.md`](schedules.md).
+
+There is no HTTP write route. The Settings app can change the source file's top-level `enabled`
+boolean with one switch; every other field remains user-owned.
 
 ### `POST /v1/orchestrator/schedules/:id/run`
 

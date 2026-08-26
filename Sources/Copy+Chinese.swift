@@ -201,6 +201,18 @@ struct TraditionalChinese: Copy {
     let settingsOrchestratorPolicyEdit = "編輯規矩"
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "生效中——\(lines) 行" }
     let settingsOrchestratorPolicyOff = "沒有規矩——每次派工由派的人自己決定"
+    let settingsSchedules = "排程"
+    let settingsSchedulesEmpty = "還沒有任何排程。用下面的按鈕打開 schedules 資料夾，放一個 JSON 檔進去。"
+    let settingsScheduleRun = "立即執行"
+    let settingsScheduleReveal = "在 Finder 顯示"
+    let settingsSchedulesFolder = "開啟 schedules 資料夾"
+    let settingsScheduleNext = "下次"
+    let settingsScheduleLast = "上次"
+    let settingsScheduleNever = "尚未執行"
+    let settingsScheduleStarted = "已開始執行。"
+    let settingsScheduleActive = "上一個排程工作還在執行中。"
+    let webScheduleMissed = "上次錯過"
+    let webScheduleNoNext = "沒有排定下次執行。"
     func childAnnounce(_ title: String) -> String { "收到 Clawdline 派來的任務：\(title)——開始處理。" }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 
@@ -748,6 +760,18 @@ struct SimplifiedChinese: Copy {
     let settingsOrchestratorPolicyEdit = "编辑规矩"
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "生效中——\(lines) 行" }
     let settingsOrchestratorPolicyOff = "没有规矩——每次派工由派的人自己决定"
+    let settingsSchedules = "计划任务"
+    let settingsSchedulesEmpty = "目前没有计划任务。用下面的按钮打开 schedules 文件夹，再放入一个 JSON 文件。"
+    let settingsScheduleRun = "立即运行"
+    let settingsScheduleReveal = "在 Finder 中显示"
+    let settingsSchedulesFolder = "打开 schedules 文件夹"
+    let settingsScheduleNext = "下次"
+    let settingsScheduleLast = "上次"
+    let settingsScheduleNever = "尚未运行"
+    let settingsScheduleStarted = "已开始运行。"
+    let settingsScheduleActive = "上一个计划任务仍在运行。"
+    let webScheduleMissed = "上次错过"
+    let webScheduleNoNext = "没有安排下次运行。"
     func childAnnounce(_ title: String) -> String { "收到 Clawdline 派来的任务：\(title)——开始处理。" }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f 秒", value) }
 

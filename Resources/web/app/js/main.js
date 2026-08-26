@@ -18,6 +18,7 @@ import { api, useApi } from "./net/api.js";
 import "./net/build.js";
 import "./net/handlers.js";
 import "./net/fetch.js";
+import { Schedules } from "./net/schedules.js";
 import { Live } from "./net/live.js";
 import { Mock } from "./net/mock.js";
 import "./door/door.js";
@@ -101,6 +102,7 @@ function boot(data) {
     // it, and a URL can carry both.
     routeTo(location.hash);
     api.start();
+    Schedules.start();
     Push.start();
 }
 

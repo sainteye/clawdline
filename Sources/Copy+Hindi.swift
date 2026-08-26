@@ -204,6 +204,18 @@ struct Hindi: Copy {
     let settingsOrchestratorPolicyEdit = "नियम बदलें"
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "लागू — \(lines) पंक्तियाँ" }
     let settingsOrchestratorPolicyOff = "कोई नियम नहीं — हर बार भेजने वाला खुद तय करता है"
+    let settingsSchedules = "शेड्यूल"
+    let settingsSchedulesEmpty = "अभी कोई शेड्यूल नहीं है। नीचे दिए बटन से schedules फ़ोल्डर खोलें और एक JSON फ़ाइल जोड़ें।"
+    let settingsScheduleRun = "अभी चलाएँ"
+    let settingsScheduleReveal = "Finder में दिखाएँ"
+    let settingsSchedulesFolder = "schedules फ़ोल्डर खोलें"
+    let settingsScheduleNext = "अगला"
+    let settingsScheduleLast = "पिछला"
+    let settingsScheduleNever = "अभी तक नहीं चला"
+    let settingsScheduleStarted = "चलना शुरू हुआ।"
+    let settingsScheduleActive = "इस शेड्यूल का पिछला काम अभी चल रहा है।"
+    let webScheduleMissed = "पिछली छूटी हुई बारी"
+    let webScheduleNoNext = "अगली बारी तय नहीं है।"
     func childAnnounce(_ title: String) -> String { "Clawdline से काम मिल गया: \(title) — अभी शुरू कर रहा हूँ।" }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f से॰", value) }
 

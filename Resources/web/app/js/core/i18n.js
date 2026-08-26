@@ -134,6 +134,8 @@ export var T = {
     webTaskDone: "done",
     webTaskFailed: "failed",
     webTaskRunning: "running",
+    webScheduleMissed: "Last missed",
+    webScheduleNoNext: "No next run is scheduled.",
     // The page has been open longer than the app it came from.
     webStale: "Clawdline has been rebuilt on the Mac. This page is the older one.",
     webStaleGo: "Reload",

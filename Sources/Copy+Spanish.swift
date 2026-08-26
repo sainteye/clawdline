@@ -200,6 +200,18 @@ struct Spanish: Copy {
     let settingsOrchestratorPolicyEdit = "Editar las reglas"
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "En vigor — \(lines) líneas" }
     let settingsOrchestratorPolicyOff = "Sin reglas — cada envío lo decide quien lo hace"
+    let settingsSchedules = "Tareas programadas"
+    let settingsSchedulesEmpty = "Aún no hay tareas programadas. Usa el botón de abajo para abrir la carpeta schedules y añade un archivo JSON."
+    let settingsScheduleRun = "Ejecutar ahora"
+    let settingsScheduleReveal = "Mostrar en Finder"
+    let settingsSchedulesFolder = "Abrir carpeta schedules"
+    let settingsScheduleNext = "Próxima"
+    let settingsScheduleLast = "Última"
+    let settingsScheduleNever = "Sin ejecuciones"
+    let settingsScheduleStarted = "Ejecución iniciada."
+    let settingsScheduleActive = "La tarea programada anterior sigue activa."
+    let webScheduleMissed = "Última omitida"
+    let webScheduleNoNext = "No hay una próxima ejecución programada."
     func childAnnounce(_ title: String) -> String { "Encargo de Clawdline recibido: \(title) — empiezo ahora." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 

@@ -307,3 +307,9 @@ export var Live = {
     /// asking device owns, so pressing this on a phone buzzes that phone and nobody else's.
     pushTest: function () { return jsonFetch("/v1/push/test", post({})); }
 };
+
+/* ---- schedules: read-only, on the slow lane ------------------------------
+   Kept outside the transport object above so the route's permission boundary is
+   conspicuous: this page can list schedules, and has no method that can run one.
+   -------------------------------------------------------------------------- */
+Live.schedules = function () { return jsonFetch("/v1/orchestrator/schedules"); };

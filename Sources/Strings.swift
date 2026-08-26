@@ -333,6 +333,18 @@ protocol Copy {
     /// context says less than the fact that it is there.
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String
     var settingsOrchestratorPolicyOff: String { get }
+    var settingsSchedules: String { get }
+    var settingsSchedulesEmpty: String { get }
+    var settingsScheduleRun: String { get }
+    var settingsScheduleReveal: String { get }
+    var settingsSchedulesFolder: String { get }
+    var settingsScheduleNext: String { get }
+    var settingsScheduleLast: String { get }
+    var settingsScheduleNever: String { get }
+    var settingsScheduleStarted: String { get }
+    var settingsScheduleActive: String { get }
+    var webScheduleMissed: String { get }
+    var webScheduleNoNext: String { get }
     /// The very first line a child session says, naming the task it has just taken on.
     ///
     /// A child works in a terminal tab somebody may be watching, and without this the tab opens

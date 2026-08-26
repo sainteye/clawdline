@@ -200,6 +200,18 @@ struct Indonesian: Copy {
     let settingsOrchestratorPolicyEdit = "Ubah aturan"
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "Berlaku — \(lines) baris" }
     let settingsOrchestratorPolicyOff = "Tidak ada aturan — setiap penugasan diputuskan sendiri oleh yang menugaskan"
+    let settingsSchedules = "Jadwal"
+    let settingsSchedulesEmpty = "Belum ada jadwal. Gunakan tombol di bawah untuk membuka folder schedules lalu tambahkan file JSON."
+    let settingsScheduleRun = "Jalankan sekarang"
+    let settingsScheduleReveal = "Tampilkan di Finder"
+    let settingsSchedulesFolder = "Buka folder schedules"
+    let settingsScheduleNext = "Berikutnya"
+    let settingsScheduleLast = "Terakhir"
+    let settingsScheduleNever = "Belum pernah dijalankan"
+    let settingsScheduleStarted = "Mulai dijalankan."
+    let settingsScheduleActive = "Tugas sebelumnya dari jadwal ini masih berjalan."
+    let webScheduleMissed = "Terakhir terlewat"
+    let webScheduleNoNext = "Tidak ada eksekusi berikutnya yang dijadwalkan."
     func childAnnounce(_ title: String) -> String { "Tugas dari Clawdline diterima: \(title) — mulai dikerjakan sekarang." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f dtk", value) }
 

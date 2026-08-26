@@ -16,6 +16,11 @@ there is deliberately no HTTP write route. Clawdline rereads them, rejects unkno
 each bad file as an `invalid` row, audits and notifies once per invalid content revision, and
 continues loading the valid neighbors.
 
+The Settings app owns one convenience edit: its switch changes only the top-level `enabled`
+boolean in place. Every other byte and every other field is always yours; edit those in the JSON
+file itself. If an unusual but valid JSON representation cannot be edited in place, Clawdline
+falls back to a full JSON rewrite and records that fallback in the audit log.
+
 ## The file
 
 ```json
@@ -103,8 +108,9 @@ curl -s -X POST \
   -H "X-Clawdline-Orchestrator: $token"
 ```
 
-`GET` returns `id`, `title`, `enabled`, the next local fire as `next_fire`, and an optional
-`last_run` with `task_id`, `state`, and `at`. `last_run` can disappear after the task registry's
+`GET` returns `id`, `title`, `enabled`, the next local fire as `next_fire`, an optional
+`last_missed_at` for the most recent occurrence that expired outside its catch-up window, and an
+optional `last_run` with `task_id`, `state`, and `at`. `last_run` can disappear after the task registry's
 200-record retention limit removes the task. A bad source file appears in the same `schedules`
 array with `state: "invalid"`, `file`, an `error` summary, and `error_kind`; a temporarily missing
 `project_dir` uses `error_kind: "project_unavailable"` so it is distinguishable from schema errors.

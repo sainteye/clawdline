@@ -290,6 +290,9 @@ group("bad schedule files are isolated and the routes use orchestrator envelopes
           validRow?["title"] as? String == "nightly"
             && validRow?["enabled"] as? Bool == true
             && validRow?["next_fire"] is Int)
+    let settingsRows = ScheduleSettingsRow.rows(from: listedRows)
+    check("the real inventory feeds a writable settings row with the enforced filename",
+          settingsRows.first?.id == id && settingsRows.first?.file == "\(id).json")
     let invalidRow = listedRows.first { $0["file"] as? String == "broken.json" }
     check("an invalid file remains visible with a useful error",
           invalidRow?["state"] as? String == "invalid"
@@ -361,6 +364,18 @@ group("bad schedule files are isolated and the routes use orchestrator envelopes
     Orchestrator.scheduleBeat(now: late)
     check("a missed occurrence is audited once and never dispatched",
           missedRuns == 0 && missedAuditCount() == auditsBeforeMiss + 1)
+    let missedRecord = Orchestrator.scheduleRecords(now: late)
+        .first { $0["id"] as? String == id }
+    expect("the inventory records the missed occurrence as its own fact",
+           missedRecord?["last_missed_at"] as? Int,
+           Int(timerFire.timeIntervalSince1970))
+    let missedResponse = RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/schedules", headers: auth))
+    let missedBody = (try? JSONSerialization.jsonObject(with: missedResponse.body)) as? [String: Any]
+    let missedRows = missedBody?["schedules"] as? [[String: Any]] ?? []
+    expect("GET carries last_missed_at without inventing a run state",
+           missedRows.first { $0["id"] as? String == id }?["last_missed_at"] as? Int,
+           Int(timerFire.timeIntervalSince1970))
 
     try! data.write(to: directory.appendingPathComponent("\(id).json"))
 
@@ -441,6 +456,81 @@ group("bad schedule files are isolated and the routes use orchestrator envelopes
     check("a successful manual run records the current occurrence",
           Orchestrator.handledScheduleFireForTesting(id) != nil)
     Orchestrator.forget()
+}
+
+group("the settings schedule switch changes only enabled") {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-settings-schedule-\(UUID().uuidString)")
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("schedule.json")
+    let original = """
+    {
+      "clawdline_schedule": 1,
+      "schedule_id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      "title": "publish",
+      "when": { "at": "09:30", "days": ["mon", "fri"] },
+      "task": { "assistant": "codex", "project_dir": "/tmp", "instructions": "publish",
+                "claims": ["posts"], "enabled": "neighbor stays byte-for-byte" },
+      "enabled": true,
+      "catch_up_hours": 12
+    }
+    """
+    try! Data(original.utf8).write(to: file)
+    do {
+        try ScheduleSettingsRow.setEnabled(false, at: file)
+    } catch {
+        check("the enabled edit succeeds", false, String(describing: error))
+    }
+    let changed = try! String(contentsOf: file, encoding: .utf8)
+    let expected = original.replacingOccurrences(of: "\n  \"enabled\": true,",
+                                                  with: "\n  \"enabled\": false,")
+    expect("only the top-level enabled token changes", changed, expected)
+
+    try! Data("{\"title\":\"missing enabled\"}".utf8).write(to: file)
+    var missingEnabled = false
+    do { try ScheduleSettingsRow.setEnabled(true, at: file) }
+    catch let error as ScheduleSettingsRow.EditError {
+        if case .missingEnabled = error { missingEnabled = true }
+    }
+    catch { }
+    check("a missing enabled field has its typed soft failure", missingEnabled)
+
+    try! Data("not json".utf8).write(to: file)
+    check("a malformed source reports a soft write failure", {
+        do { try ScheduleSettingsRow.setEnabled(true, at: file); return false }
+        catch { return true }
+    }())
+}
+
+group("schedule records become valid and warning rows for settings") {
+    let records: [[String: Any]] = [
+        ["id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "title": "Publish",
+         "enabled": true, "next_fire": 2_000,
+         "last_run": ["state": "success", "at": 1_000]],
+        ["file": "broken.json", "state": "invalid", "error_kind": "schema",
+         "error": "enabled must be a boolean"],
+    ]
+    let rows = ScheduleSettingsRow.rows(from: records)
+    expect("both inventory shapes stay visible", rows.count, 2)
+    check("the valid row carries every reading the control draws",
+          rows[0].id == "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+            && rows[0].file == "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.json"
+            && rows[0].title == "Publish" && rows[0].enabled == true
+            && rows[0].nextFire == Date(timeIntervalSince1970: 2_000)
+            && rows[0].lastState == "success"
+            && rows[0].lastAt == Date(timeIntervalSince1970: 1_000)
+            && rows[0].error == nil)
+    check("an invalid file becomes a non-toggleable warning row with its summary",
+          rows[1].id == nil && rows[1].file == "broken.json"
+            && rows[1].title == "broken.json" && rows[1].enabled == nil
+            && rows[1].error == "enabled must be a boolean")
+    expect("a valid-looking row without the orchestrator id is not writable",
+           ScheduleSettingsRow.rows(from: [["title": "orphan", "enabled": true]]).count, 0)
+    expect("all eight orchestrator truths share the explicit settings vocabulary",
+           ["queued", "spawning", "briefed", "success", "failure", "timeout", "cancelled",
+            "spawn_failed"].compactMap { ScheduleSettingsRow.presentation(for: $0) },
+           [.running, .running, .running, .success, .failure, .timeout, .cancelled, .spawnFailed])
 }
 
 // MARK: - Mascot packs that ship

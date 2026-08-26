@@ -203,6 +203,18 @@ struct Portuguese: Copy {
     let settingsOrchestratorPolicyEdit = "Editar as regras"
     func settingsOrchestratorPolicyOn(_ lines: Int) -> String { return "Em vigor — \(lines) linhas" }
     let settingsOrchestratorPolicyOff = "Sem regras — cada envio fica ao critério de quem envia"
+    let settingsSchedules = "Tarefas agendadas"
+    let settingsSchedulesEmpty = "Ainda não há tarefas agendadas. Use o botão abaixo para abrir a pasta schedules e adicione um ficheiro JSON."
+    let settingsScheduleRun = "Executar agora"
+    let settingsScheduleReveal = "Mostrar no Finder"
+    let settingsSchedulesFolder = "Abrir pasta schedules"
+    let settingsScheduleNext = "Próxima"
+    let settingsScheduleLast = "Última"
+    let settingsScheduleNever = "Nunca executada"
+    let settingsScheduleStarted = "Execução iniciada."
+    let settingsScheduleActive = "A tarefa agendada anterior ainda está ativa."
+    let webScheduleMissed = "Última não executada"
+    let webScheduleNoNext = "Não há uma próxima execução agendada."
     func childAnnounce(_ title: String) -> String { "Tarefa do Clawdline recebida: \(title) — começo já." }
     func settingsSeconds(_ value: Double) -> String { String(format: "%.1f s", value) }
 
