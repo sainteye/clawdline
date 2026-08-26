@@ -218,6 +218,23 @@ enum Orchestrator {
         return true
     }
 
+    /// A current hook may correct a provisional pair only after this task has recorded the
+    /// Claude process that emitted it; the caller has already matched that pair to this beat.
+    /// The first note remains a fallback when process inspection is unavailable, but an
+    /// unverified later note never replaces identity. Once the briefing receipt pins the pair,
+    /// even the same process may be describing `/clear` or a parked chat.
+    static func adoptHookIdentity(sessionID: String, in task: inout Task) -> Bool {
+        guard !(task.state == .briefed && task.transcriptProven),
+              task.childSessionId != sessionID else { return false }
+        let isFirstIdentity = task.childSessionId == nil && task.transcriptPath == nil
+        let hasProcessIdentity = task.childPID != nil && task.childProcStart != nil
+        guard isFirstIdentity || hasProcessIdentity else { return false }
+        task.childSessionId = sessionID
+        task.transcriptPath = nil
+        task.transcriptProven = false
+        return true
+    }
+
     /// The transition control samples each distinct registry answer once. The flag is transient,
     /// so a restart earns one fresh comparison without restoring per-beat I/O.
     static func beginRegistryControl(for sessionID: String, in task: inout Task) -> Bool {
@@ -2047,34 +2064,8 @@ enum Orchestrator {
                                                             in task: inout Task) -> Bool {
         var changed = noteTranscriptProof(in: &task)
         if let noted = childSessionID(from: HookBridge.note(for: child),
-                                      spawnedAt: task.spawnedAt),
-           task.childSessionId != noted {
-            if task.childSessionId == nil, task.transcriptPath == nil {
-                // The first current hook supplies an exact filename before Claude has made
-                // the file or received the briefing. It is useful for delivery, but does not
-                // become proven ownership until the marker appears below.
-                task.childSessionId = noted
-                task.transcriptProven = false
-                changed = true
-            } else {
-                // A tty survives the assistant process inside it. A later hook can therefore
-                // be a user-started conversation in a lingering child tab, not a correction
-                // to this task. Replace an existing identity only as one atomic, marker-proven
-                // pair; until its exact transcript carries this task's turn, keep the old one.
-                let candidate = Transcript.locate(cwd: task.projectDir,
-                                                  tabTitle: child.name,
-                                                  startedAt: task.spawnedAt,
-                                                  sessionID: noted)
-                if let replacement = replacementChildTranscript(
-                    currentSessionID: task.childSessionId, notedSessionID: noted,
-                    transcript: candidate, taskID: task.id
-                ) {
-                    task.childSessionId = noted
-                    task.transcriptPath = replacement.path
-                    task.transcriptProven = true
-                    changed = true
-                }
-            }
+                                      spawnedAt: task.spawnedAt) {
+            changed = adoptHookIdentity(sessionID: noted, in: &task) || changed
         }
         // Without an id, timestamps and titles only rank candidates, so the delivered task
         // marker must prove the winner. A current hook instead names the exact file needed to
@@ -2100,19 +2091,6 @@ enum Orchestrator {
         }
         changed = noteTranscriptProof(in: &task) || changed
         return changed
-    }
-
-    /// A later hook is allowed to replace identity only when its exact filename independently
-    /// carries this task's marker. Kept as a pure seam so the dangerous replacement policy is
-    /// tested directly rather than merely through candidate ranking.
-    static func replacementChildTranscript(currentSessionID: String?, notedSessionID: String,
-                                           transcript: URL?, taskID: String) -> URL? {
-        guard let currentSessionID, currentSessionID != notedSessionID,
-              let transcript,
-              transcript.deletingPathExtension().lastPathComponent == notedSessionID,
-              transcriptBelongsToTask(transcript, assistant: .claude, taskID: taskID)
-        else { return nil }
-        return transcript
     }
 
     /// Promote a candidate path only after its immutable first user turn proves ownership.

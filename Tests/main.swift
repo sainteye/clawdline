@@ -967,14 +967,33 @@ group("a task marker is the fallback transcript identity") {
     expect("an exact hook id carrying the marker is eligible to replace an earlier guess",
            Transcript.locate(in: dir, tabTitle: "Claude Code", startedAt: spawnedAt,
                              sessionID: "own", accepting: acceptsMine), own)
-    check("the orchestrator keeps proven identity when a later tty note names a user session",
-          Orchestrator.replacementChildTranscript(currentSessionID: "previously-proven",
-                                                  notedSessionID: "sibling", transcript: sibling,
-                                                  taskID: markerTaskID) == nil)
-    expect("the replacement policy admits a later identity after its own marker is proven",
-           Orchestrator.replacementChildTranscript(currentSessionID: "earlier-guess",
-                                                   notedSessionID: "own", transcript: own,
-                                                   taskID: markerTaskID), own)
+    var unverified = Orchestrator.Task(id: markerTaskID, state: .spawning, kind: "custom",
+                                       title: "a task", assistant: .claude, projectDir: "/tmp",
+                                       timeoutMinutes: 30, created: Date(),
+                                       secretHash: String(repeating: "0", count: 64))
+    unverified.childSessionId = "earlier-guess"; unverified.transcriptPath = sibling.path
+    var processBacked = unverified
+    processBacked.childPID = 100; processBacked.childProcStart = spawnedAt
+    let unverifiedChanged = Orchestrator.adoptHookIdentity(sessionID: "own", in: &unverified)
+    let processChanged = Orchestrator.adoptHookIdentity(sessionID: "own", in: &processBacked)
+    // Removing the complete-process requirement must let the unverified half change; refusing
+    // every correction must keep the process-backed half on its earlier provisional pair.
+    check("only a process-backed hook can correct provisional identity",
+          !unverifiedChanged
+            && unverified.childSessionId == "earlier-guess"
+            && unverified.transcriptPath == sibling.path
+            && processChanged
+            && processBacked.childSessionId == "own"
+            && processBacked.transcriptPath == nil
+            && !processBacked.transcriptProven)
+    var pinned = processBacked
+    pinned.state = .briefed; pinned.transcriptPath = own.path; pinned.transcriptProven = true
+    // Removing the receipt guard must let the later hook replace this pinned pair.
+    check("a later hook cannot replace receipt-pinned identity",
+          !Orchestrator.adoptHookIdentity(sessionID: "sibling", in: &pinned)
+            && pinned.childSessionId == "own"
+            && pinned.transcriptPath == own.path
+            && pinned.transcriptProven)
     expect("the creation-time fallback rejects a same-second sibling too",
            Transcript.locate(in: dir, tabTitle: "A title neither file has", startedAt: spawnedAt,
                              accepting: acceptsMine), own)
