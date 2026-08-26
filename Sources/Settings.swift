@@ -78,6 +78,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     private var schedulesRefreshAt = Date.distantPast
     private var schedulesRefreshing = false
     private var schedulesRefreshPending = false
+    /// The schedule form, while it is up. Non-nil is also what stops a second one being opened
+    /// over the first — two sheets on one window is a stack nobody asked for, and the lower one
+    /// would still be holding a half-written first message.
+    private var scheduleSheet: NSWindow?
+    private var scheduleForm: ScheduleFormView?
     private var mascotMark: MascotView?
     private var scopeView: AppScopeView?
     private var scopeSwitch: SwitchView?
@@ -102,6 +107,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         stopRecording()
+        closeScheduleForm()
         live?.invalidate()
         live = nil
         // The window itself is kept rather than rebuilt: which tab you were on is a thing you
@@ -110,6 +116,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
     private func tearDown() {
         stopRecording()
+        // Before the window goes: a sheet outlives the window it was attached to, and the only
+        // thing that reaches this path is picking a different language — which rebuilds every
+        // label in the window, including the ones on that form.
+        closeScheduleForm()
         window?.orderOut(nil)
         window = nil
         root = nil
@@ -663,6 +673,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         }
         control.onRun = { [weak self] row in self?.runSchedule(row) }
         control.onReveal = { [weak self] row in self?.revealSchedule(row) }
+        control.onEdit = { [weak self] row in self?.editSchedule(row) }
+        control.onNew = { [weak self] in self?.newSchedule() }
         control.onOpenFolder = { [weak self] in self?.openScheduleFolder() }
         control.onResize = { [weak self] in self?.relayoutCurrent() }
         schedulesControl = control
@@ -732,6 +744,181 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     private func revealSchedule(_ row: ScheduleSettingsRow) {
         let url = Orchestrator.scheduleDirectory.appendingPathComponent(row.file)
         NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    // MARK: - Making, changing and removing a schedule
+
+    /// The empty form. `StartPoints.places()` walks two assistants' records of where they have
+    /// been run, so it is asked for off the main thread — the same reason the list itself is
+    /// refreshed off it.
+    private func newSchedule() {
+        guard window != nil, scheduleSheet == nil else { return }
+        schedulesControl?.message = nil
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let places = StartPoints.places()
+            DispatchQueue.main.async {
+                self?.presentScheduleForm(editing: nil, places: places)
+            }
+        }
+    }
+
+    /// The same form, filled in from the file. Read through ``Orchestrator/schedules()`` rather
+    /// than by decoding the JSON here: the row on screen came through that inventory, and a
+    /// second reading of the same file is a second opinion about what it says.
+    private func editSchedule(_ row: ScheduleSettingsRow) {
+        guard let id = row.id, window != nil, scheduleSheet == nil else { return }
+        schedulesControl?.message = nil
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let schedule = Orchestrator.schedules().first { $0.id == id }
+            let places = StartPoints.places()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard let schedule else {
+                    // Gone since the list was drawn — another window, or the Finder. Nothing to
+                    // say that the row disappearing does not say better.
+                    self.schedulesRefreshAt = .distantPast
+                    self.refreshSchedules(force: true)
+                    return
+                }
+                self.presentScheduleForm(editing: schedule, places: places)
+            }
+        }
+    }
+
+    private func presentScheduleForm(editing schedule: Orchestrator.Schedule?,
+                                     places known: [StartPoints.Place]) {
+        guard let window, scheduleSheet == nil else { return }
+        let places = ScheduleFormState.placeChoices(
+            known, including: schedule?.taskTemplate["project_dir"] as? String)
+        let state = schedule.map { ScheduleFormState(schedule: $0, places: places) }
+            ?? ScheduleFormState()
+        let form = ScheduleFormView(state: state, places: places, assistants: Assistant.available,
+                                    editing: schedule != nil, text: L.t)
+        let id = schedule?.id
+        form.onCancel = { [weak self] in self?.closeScheduleForm() }
+        form.onSave = { [weak self] state in self?.saveSchedule(state, id: id, places: places) }
+        form.onDelete = { [weak self] in
+            guard let id, let schedule else { return }
+            self?.askDeleteSchedule(id: id, title: schedule.title)
+        }
+        form.onResize = { [weak self] in self?.resizeScheduleSheet() }
+
+        let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: ScheduleFormView.contentWidth,
+                                                 height: form.contentHeight),
+                             styleMask: [.titled], backing: .buffered, defer: false)
+        sheet.backgroundColor = Style.ink
+        // Dark whatever the system is, the same as the window it drops out of — every surface
+        // colour this project owns is white at a low alpha and disappears on a light ground.
+        sheet.appearance = NSAppearance(named: .darkAqua)
+        // Held here for as long as it is up, so it must not also be released on close — the same
+        // reason the settings window itself says so.
+        sheet.isReleasedWhenClosed = false
+        sheet.contentView = form
+        sheet.initialFirstResponder = form.firstField
+        form.frame = NSRect(x: 0, y: 0, width: ScheduleFormView.contentWidth,
+                            height: form.contentHeight)
+        scheduleSheet = sheet
+        scheduleForm = form
+        window.beginSheet(sheet)
+    }
+
+    /// The fold opened, or a refusal arrived and took a line. The sheet is as tall as what is in
+    /// it, the same rule the window itself follows when a tab changes.
+    private func resizeScheduleSheet() {
+        guard let sheet = scheduleSheet, let form = scheduleForm else { return }
+        let height = form.contentHeight
+        sheet.setContentSize(NSSize(width: ScheduleFormView.contentWidth, height: height))
+        form.frame = NSRect(x: 0, y: 0, width: ScheduleFormView.contentWidth, height: height)
+        form.needsLayout = true
+    }
+
+    private func closeScheduleForm() {
+        guard let sheet = scheduleSheet else { return }
+        window?.endSheet(sheet)
+        scheduleSheet = nil
+        scheduleForm = nil
+    }
+
+    /// Make one, or save one that exists — `id` is which of the two this is.
+    ///
+    /// Both go through ``RemoteServer/serialized(_:)``, the same serial gate a request from a
+    /// phone enters, so the Mac's own form cannot be writing a file while a `PATCH` for it is
+    /// half-written. Neither is validated here: the body goes to the orchestrator, and whatever
+    /// it refuses comes back as the sentence it wrote about the field it did not like.
+    private func saveSchedule(_ state: ScheduleFormState, id: String?,
+                              places: [StartPoints.Place]) {
+        guard let form = scheduleForm, !form.busy else { return }
+        form.busy = true
+        form.message = nil
+        let body = state.body
+        RemoteServer.shared.serialized { [weak self] in
+            let reply = id.map { Orchestrator.updateSchedule(id: $0, from: body, places: places) }
+                ?? Orchestrator.createSchedule(from: body, places: places)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.scheduleForm?.busy = false
+                switch reply {
+                case .ok:
+                    self.closeScheduleForm()
+                    self.schedulesControl?.message = id == nil
+                        ? L.t.webScheduleCreated : L.t.webScheduleSaved
+                    self.schedulesRefreshAt = .distantPast
+                    self.refreshSchedules(force: true, clearMessage: false)
+                case .refused(_, _, let message, _):
+                    // Left open, holding what was typed, with the refusal under the fields it is
+                    // about. Closing on a refusal would take away the only copy of a first
+                    // message somebody just wrote.
+                    self.scheduleForm?.message = message.isEmpty ? L.t.webScheduleFailed : message
+                }
+            }
+        }
+    }
+
+    /// Asked about first, because there is no undo and no route that could add one.
+    ///
+    /// `NSAlert` is this window's idiom for a question — see ``toggleHooks()`` — and the sheet it
+    /// opens on is the form's own, so the form stays on screen behind it and cancelling puts
+    /// everything back exactly as it was.
+    private func askDeleteSchedule(id: String, title: String) {
+        guard let sheet = scheduleSheet, scheduleForm?.busy == false else { return }
+        let alert = NSAlert()
+        alert.messageText = L.t.settingsScheduleDelete
+        alert.informativeText = L.t.webScheduleDeleteAsk
+            .replacingOccurrences(of: "{title}", with: title)
+        alert.alertStyle = .warning
+        let remove = alert.addButton(withTitle: L.t.settingsScheduleDelete)
+        let keep = alert.addButton(withTitle: L.t.webCancel)
+        remove.hasDestructiveAction = true
+        // Return cancels and does not delete. The default button of a dialog is the one a hand
+        // already moving hits, and this one takes a schedule away for good.
+        remove.keyEquivalent = ""
+        keep.keyEquivalent = "\r"
+        alert.beginSheetModal(for: sheet) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.deleteSchedule(id: id)
+        }
+    }
+
+    private func deleteSchedule(id: String) {
+        guard let form = scheduleForm, !form.busy else { return }
+        form.busy = true
+        form.message = nil
+        RemoteServer.shared.serialized { [weak self] in
+            let reply = Orchestrator.deleteSchedule(id: id)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.scheduleForm?.busy = false
+                switch reply {
+                case .ok:
+                    self.closeScheduleForm()
+                    self.schedulesControl?.message = L.t.webScheduleDeleted
+                    self.schedulesRefreshAt = .distantPast
+                    self.refreshSchedules(force: true, clearMessage: false)
+                case .refused(_, _, let message, _):
+                    self.scheduleForm?.message = message.isEmpty ? L.t.webScheduleFailed : message
+                }
+            }
+        }
     }
 
     private func openScheduleFolder() {
@@ -1271,6 +1458,197 @@ struct ScheduleSettingsRow: Equatable {
             index += 1
         }
         return found
+    }
+}
+
+/// Everything the Mac's schedule form holds, and the one place it becomes the body
+/// ``Orchestrator/createSchedule(from:places:now:isDirectory:)`` and
+/// ``Orchestrator/updateSchedule(id:from:places:now:isDirectory:)`` read.
+///
+/// Kept free of AppKit for the same reason ``ScheduleSettingsRow`` is: this is the part of the
+/// form with judgement in it — which weekday codes, which defaults, what an edit carries over —
+/// and it can be exercised without a window on screen.
+///
+/// **It does not validate.** `Orchestrator.schedule(from:)` refuses thirty-one distinct kinds of
+/// malformed input and has written a sentence about each; a second opinion here would be a second
+/// wording to keep in step, and the one that drifts is always the one nobody is reading. So the
+/// form collects fields, hands them over, and shows whatever comes back.
+struct ScheduleFormState: Equatable {
+
+    /// Sunday first — the order `Calendar` numbers weekdays in, the order the parser's own table
+    /// lists them in, and the order the chips are drawn in.
+    static let dayCodes = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+    static let closeValues = ["on_success", "always", "never"]
+    /// The same two numbers `Orchestrator.schedule(from:)` gives a file that leaves them out, so
+    /// somebody who never opens More gets exactly what the Mac would have picked anyway.
+    static let catchUpDefault = 6
+    static let timeoutDefault = 30
+    /// What an empty form opens on. A round hour rather than whatever time it happens to be:
+    /// a picker showing 14:37 reads as a value somebody chose, and this one is a placeholder.
+    static let timeDefault = "09:00"
+
+    var title = ""
+    /// `HH:MM` in local time, produced by the picker rather than typed — see ``time(from:calendar:)``.
+    var at = ScheduleFormState.timeDefault
+    var daily = true
+    /// Only read when ``daily`` is false. Codes from ``dayCodes``.
+    var weekdays: Set<String> = []
+    /// A `place_id` from ``StartPoints/places()``, never a path. See ``placeChoices(_:including:)``.
+    var placeID = ""
+    var assistant = ""
+    var instructions = ""
+    var enabled = true
+    var closeTab = "on_success"
+    var catchUpHours = ScheduleFormState.catchUpDefault
+    var notifyOnFailure = true
+    var timeoutMinutes = ScheduleFormState.timeoutDefault
+    /// Carried across a save and never shown. There is no control for it — the form offers the
+    /// fields the page's form offers — but `scheduleObject(from:)` builds the whole task template
+    /// out of the body it is handed, so a field left out of a save is a field taken off the
+    /// schedule. Dropping somebody's `"model": "opus"` because this form never offered to change
+    /// it would be the form editing something it did not show.
+    var model = ""
+
+    init() {}
+
+    /// The form, filled in from a schedule that already exists.
+    ///
+    /// `places` is passed in rather than read here so that the same list the Where popup is built
+    /// from is the list this resolves against — see ``placeChoices(_:including:)`` for why those
+    /// two must not be allowed to disagree.
+    init(schedule: Orchestrator.Schedule, places: [StartPoints.Place]) {
+        let task = schedule.taskTemplate
+        title = schedule.title
+        at = String(format: "%02d:%02d", schedule.hour, schedule.minute)
+        daily = schedule.weekdays == nil
+        weekdays = Set((schedule.weekdays ?? []).compactMap(Self.code(forWeekday:)))
+        // The file has a path and the form has an id, the same way round as the page's own
+        // `placeIdForPath`. Nothing is guessed when it is not on the list: `placeChoices` is what
+        // makes sure it is.
+        let directory = task["project_dir"] as? String
+        placeID = places.first { $0.path == directory }?.id ?? ""
+        assistant = task["assistant"] as? String ?? ""
+        instructions = task["instructions"] as? String ?? ""
+        enabled = schedule.enabled
+        closeTab = schedule.closeTab.rawValue
+        catchUpHours = schedule.catchUpHours
+        notifyOnFailure = schedule.notifyOnFailure
+        timeoutMinutes = task["timeout_minutes"] as? Int ?? Self.timeoutDefault
+        model = task["model"] as? String ?? ""
+    }
+
+    /// The flat body both orchestrator functions read.
+    var body: [String: Any] {
+        var out: [String: Any] = [
+            "title": title,
+            "at": at,
+            "days": daily ? "daily" : Self.dayCodes.filter { weekdays.contains($0) },
+            "place_id": placeID,
+            "assistant": assistant,
+            "instructions": instructions,
+            "enabled": enabled,
+            "close_tab": closeTab,
+            "catch_up_hours": catchUpHours,
+            "notify_on_failure": notifyOnFailure,
+            "timeout_minutes": timeoutMinutes,
+        ]
+        // Empty means "whatever that assistant runs by default", and the allowlist would take
+        // `"model": ""` happily — leaving a field in the file whoever opens it later has to read
+        // and dismiss. See the same rule in `Orchestrator.scheduleObject(from:)`.
+        if !model.isEmpty { out["model"] = model }
+        return out
+    }
+
+    /// Daily, or some weekdays, never neither — the one shape the parser refuses outright, made
+    /// unreachable here rather than sent and refused. Picking a day while Daily is on replaces it
+    /// rather than adding to it, because a chip meaning "every day" stops meaning that the moment
+    /// one day is chosen instead.
+    mutating func toggle(day code: String) {
+        guard !daily else {
+            daily = false
+            weekdays = [code]
+            return
+        }
+        if weekdays.contains(code) {
+            weekdays.remove(code)
+            if weekdays.isEmpty { daily = true }
+        } else {
+            weekdays.insert(code)
+        }
+    }
+
+    /// 1 = Sunday … 7 = Saturday, the numbering `Calendar` uses and the one a parsed schedule
+    /// keeps its days in.
+    static func code(forWeekday number: Int) -> String? {
+        guard (1...7).contains(number) else { return nil }
+        return dayCodes[number - 1]
+    }
+
+    /// The picker's instant as `when.at`: two digits, a colon, two digits, in local time.
+    static func time(from date: Date, calendar: Calendar = .current) -> String {
+        let parts = calendar.dateComponents([.hour, .minute], from: date)
+        return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
+    }
+
+    /// The reverse, so the picker can open on the time the file already says. Any day will do —
+    /// only the hour and the minute are ever read back out of it.
+    static func date(forTime text: String, on day: Date = Date(),
+                     calendar: Calendar = .current) -> Date? {
+        // Two digits each, the same test `Orchestrator.schedule(from:)` makes of `when.at`. A
+        // looser reading here would have this form opening happily on a time the parser is about
+        // to refuse, and the refusal would arrive on Save naming a field nobody had touched.
+        let parts = text.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts[0].count == 2, parts[1].count == 2,
+              let hour = Int(parts[0]), let minute = Int(parts[1]),
+              (0...23).contains(hour), (0...59).contains(minute) else { return nil }
+        return calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day)
+    }
+
+    /// What a box holding a number says, or the default when it says something else.
+    ///
+    /// The same fallback the page's form makes, and for the same reason: an empty catch-up box is
+    /// somebody who did not want to choose, not a request for zero hours. Anything the box can
+    /// still hold that this lets through — 4000 hours — is the parser's to refuse, in its words.
+    static func number(_ text: String, atLeast floor: Int, or fallback: Int) -> Int {
+        guard let value = Int(text.trimmingCharacters(in: .whitespaces)), value >= floor else {
+            return fallback
+        }
+        return value
+    }
+
+    /// The list the Where popup offers: the recent places, plus — when it is not already among
+    /// them — the directory the schedule being edited already names.
+    ///
+    /// `StartPoints.places()` is the forty most recently worked-in directories, and a schedule
+    /// that has been running quietly since spring is exactly the one whose project has fallen off
+    /// that list. Without this, opening such a row to fix a typo would leave Where unanswered and
+    /// Save refused, and the only way to keep the schedule would be the text editor this form
+    /// exists to replace.
+    ///
+    /// It is not the loophole it looks like. The argument for `place_id` is that a *device* can
+    /// only name a project this Mac has already shown it; this path is the Mac's own window, and
+    /// the path it adds came off a file already on disk rather than out of a request. The parser
+    /// still refuses it if that directory has since gone.
+    static func placeChoices(_ known: [StartPoints.Place],
+                             including path: String?) -> [StartPoints.Place] {
+        guard let path, !path.isEmpty, !known.contains(where: { $0.path == path }) else {
+            return known
+        }
+        return known + [StartPoints.Place(id: StartPoints.id(for: path), path: path,
+                                          label: StartPoints.label(for: path), at: .distantPast)]
+    }
+
+    /// What each place is called in the popup: the project's own name, unless two of them share
+    /// it — a list with `clawdline` twice in it is a list nobody can pick from. `home` is a
+    /// parameter so a test can describe a Mac rather than being run on one.
+    static func placeLabels(_ places: [StartPoints.Place],
+                            home: String = NSHomeDirectory()) -> [String] {
+        var counts: [String: Int] = [:]
+        for place in places { counts[place.label, default: 0] += 1 }
+        return places.map { place in
+            guard (counts[place.label] ?? 0) > 1 else { return place.label }
+            return "\(place.label) — \(place.path.replacingOccurrences(of: home, with: "~"))"
+        }
     }
 }
 
@@ -1857,11 +2235,17 @@ private final class ScheduleSettingsControl: NSView, SelfSizing {
     var onToggle: ((ScheduleSettingsRow, Bool) -> Void)?
     var onRun: ((ScheduleSettingsRow) -> Void)?
     var onReveal: ((ScheduleSettingsRow) -> Void)?
+    var onEdit: ((ScheduleSettingsRow) -> Void)?
+    var onNew: (() -> Void)?
     var onOpenFolder: (() -> Void)?
     var onResize: (() -> Void)?
 
     private let text: Copy
     private let folder: ChipButton
+    /// Lit rather than plain: on a card whose other actions are all about a row that already
+    /// exists, this is the one that makes one, and it is what somebody arriving at an empty list
+    /// is looking for.
+    private let new: ChipButton
     private var rowViews: [ScheduleSettingsRowView] = []
     private var emptyLabel: NSTextField?
     private var messageLabel: NSTextField?
@@ -1869,8 +2253,10 @@ private final class ScheduleSettingsControl: NSView, SelfSizing {
     init(text: Copy) {
         self.text = text
         self.folder = ChipButton(title: text.settingsSchedulesFolder)
+        self.new = ChipButton(title: text.settingsScheduleNew, prominent: true)
         super.init(frame: NSRect(x: 0, y: 0, width: 700, height: 80))
         folder.action = { [weak self] in self?.onOpenFolder?() }
+        new.action = { [weak self] in self?.onNew?() }
         rebuild()
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -1883,7 +2269,8 @@ private final class ScheduleSettingsControl: NSView, SelfSizing {
             let view = ScheduleSettingsRowView(row: row, text: text,
                 onToggle: { [weak self] enabled in self?.onToggle?(row, enabled) },
                 onRun: { [weak self] in self?.onRun?(row) },
-                onReveal: { [weak self] in self?.onReveal?(row) })
+                onReveal: { [weak self] in self?.onReveal?(row) },
+                onEdit: { [weak self] in self?.onEdit?(row) })
             addSubview(view)
             return view
         }
@@ -1899,6 +2286,7 @@ private final class ScheduleSettingsControl: NSView, SelfSizing {
             addSubview(label)
             messageLabel = label
         }
+        addSubview(new)
         addSubview(folder)
         needsLayout = true
         superview?.needsLayout = true
@@ -1916,7 +2304,14 @@ private final class ScheduleSettingsControl: NSView, SelfSizing {
         if let message, !message.isEmpty {
             height += labelHeight(message, Metric.hintFont, width: width) + 8
         }
-        return height + 34
+        return height + (actionsWrap(width: width) ? 68 : 34)
+    }
+
+    /// Whether the two actions under the list need a line each. They fit side by side in English
+    /// and in most of the fourteen; "Neuen Zeitplan anlegen" beside "Zeitplan-Ordner öffnen" does
+    /// not, and a chip drawn past the right edge of a column is a chip nobody can press.
+    private func actionsWrap(width: CGFloat) -> Bool {
+        new.frame.width + 8 + folder.frame.width > width
     }
 
     override func layout() {
@@ -1940,7 +2335,12 @@ private final class ScheduleSettingsControl: NSView, SelfSizing {
             messageLabel.frame = NSRect(x: 0, y: y, width: bounds.width, height: height)
             y += height + 8
         }
-        folder.frame.origin = NSPoint(x: 0, y: y + 4)
+        new.frame.origin = NSPoint(x: 0, y: y + 4)
+        if actionsWrap(width: bounds.width) {
+            folder.frame.origin = NSPoint(x: 0, y: y + 4 + 34)
+        } else {
+            folder.frame.origin = NSPoint(x: new.frame.width + 8, y: y + 4)
+        }
     }
 }
 
@@ -1953,11 +2353,12 @@ private final class ScheduleSettingsRowView: NSView, SelfSizing {
     private let missed: NSTextField?
     private let toggle: SwitchView?
     private let run: ChipButton?
+    private let edit: ChipButton?
     private let reveal: ChipButton
 
     init(row: ScheduleSettingsRow, text: Copy,
          onToggle: @escaping (Bool) -> Void, onRun: @escaping () -> Void,
-         onReveal: @escaping () -> Void) {
+         onReveal: @escaping () -> Void, onEdit: @escaping () -> Void) {
         self.row = row
         self.title = makeLabel(row.title, Metric.labelFont, Metric.label)
         self.detail = makeLabel(Self.detail(for: row, text: text), Metric.hintFont,
@@ -1973,9 +2374,17 @@ private final class ScheduleSettingsRowView: NSView, SelfSizing {
             let button = ChipButton(title: text.settingsScheduleRun)
             button.action = onRun
             self.run = button
+            // Only a row the orchestrator gave an id to. An invalid file has no id to address, and
+            // an edit replaces the whole file — there would be nothing to fill the form in from
+            // and nothing to carry `created_at` over off. Reveal in Finder stays, which is the
+            // repair a broken file actually wants.
+            let editButton = ChipButton(title: text.settingsScheduleEdit)
+            editButton.action = onEdit
+            self.edit = editButton
         } else {
             self.toggle = nil
             self.run = nil
+            self.edit = nil
         }
         self.reveal = ChipButton(title: text.settingsScheduleReveal)
         super.init(frame: NSRect(x: 0, y: 0, width: 700, height: 80))
@@ -1984,6 +2393,7 @@ private final class ScheduleSettingsRowView: NSView, SelfSizing {
         addSubview(detail)
         if let missed { addSubview(missed) }
         if let toggle { addSubview(toggle) }
+        if let edit { addSubview(edit) }
         if let run { addSubview(run) }
         addSubview(reveal)
     }
@@ -2047,6 +2457,12 @@ private final class ScheduleSettingsRowView: NSView, SelfSizing {
         }
         let buttonY = bounds.height - 12 - 26
         var x = inset
+        // Edit first: it is the one this row is most often pressed for, and the other two are
+        // things you do to a schedule you have already decided is right.
+        if let edit {
+            edit.frame.origin = NSPoint(x: x, y: buttonY)
+            x += edit.frame.width + 8
+        }
         if let run {
             run.frame.origin = NSPoint(x: x, y: buttonY)
             x += run.frame.width + 8
@@ -2063,6 +2479,502 @@ private final class ScheduleSettingsRowView: NSView, SelfSizing {
         path.lineWidth = 1
         path.stroke()
     }
+}
+
+/// A row of chips that wraps rather than running off the edge.
+///
+/// Eight of them — Daily and seven weekdays — do not fit on one line of a sheet this wide in
+/// every language, and a chip drawn past the right edge is a chip nobody can press.
+private final class ChipWrap: NSView, SelfSizing {
+
+    private let chips: [ChipButton]
+    private let gap: CGFloat = 6
+
+    init(chips: [ChipButton]) {
+        self.chips = chips
+        super.init(frame: NSRect(x: 0, y: 0, width: 400, height: 26))
+        for chip in chips { addSubview(chip) }
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var isFlipped: Bool { true }
+
+    /// One walk, used both to measure and to place, so the two cannot disagree about where the
+    /// line breaks — the mistake that leaves a control drawn outside the frame reserved for it.
+    @discardableResult
+    private func walk(width: CGFloat, place: Bool) -> CGFloat {
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        for chip in chips {
+            if x > 0, x + chip.frame.width > width {
+                x = 0
+                y += chip.frame.height + gap
+            }
+            if place { chip.frame.origin = NSPoint(x: x, y: y) }
+            x += chip.frame.width + gap
+        }
+        return y + (chips.first?.frame.height ?? 26)
+    }
+
+    func height(forWidth width: CGFloat) -> CGFloat { walk(width: width, place: false) }
+
+    override func layout() {
+        super.layout()
+        walk(width: bounds.width, place: true)
+    }
+}
+
+/// A label with something small on the right of it — what a switch needs and what the stacked
+/// label-above-control shape of the rest of this form would read badly for.
+private final class FlagRow: NSView {
+
+    private let label: NSTextField
+    private let control: NSView
+
+    init(label text: String, control: NSView) {
+        self.label = makeLabel(text, Metric.labelFont, Metric.label)
+        self.control = control
+        super.init(frame: NSRect(x: 0, y: 0, width: 400, height: max(22, control.frame.height)))
+        addSubview(label)
+        addSubview(control)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var isFlipped: Bool { true }
+
+    override func layout() {
+        super.layout()
+        let height = labelHeight(label.stringValue, Metric.labelFont,
+                                 width: max(60, bounds.width - control.frame.width - 12))
+        label.preferredMaxLayoutWidth = bounds.width - control.frame.width - 12
+        label.frame = NSRect(x: 0, y: (bounds.height - height) / 2,
+                             width: bounds.width - control.frame.width - 12, height: height)
+        control.frame.origin = NSPoint(x: bounds.width - control.frame.width,
+                                       y: (bounds.height - control.frame.height) / 2)
+    }
+}
+
+/// The form the Mac never had: one schedule, made or changed.
+///
+/// **A sheet rather than a block in the Schedules card.** What it holds is a dozen fields, and a
+/// tab that grows by four hundred points when somebody presses New is a tab that has moved
+/// everything else out from under the pointer — including, on the Remote tab, the switch that
+/// turns the server off.
+///
+/// **Label above control**, not the label column the settings tabs use. These labels are whole
+/// sentences in fourteen languages — "If it was missed, catch up within (hours)" — and a column
+/// wide enough for the German one is a column with nothing in the right two thirds of it.
+///
+/// The fields are the page's fields, in the page's order, with the same five behind the same
+/// fold: a schedule that takes all the defaults should not make anybody read past them. See
+/// `Resources/web/app/js/input/schedule.js`, which this is the Mac's half of.
+private final class ScheduleFormView: NSView {
+
+    static let contentWidth: CGFloat = 468
+    private static let inset: CGFloat = 22
+
+    /// What the controls have been changed to. Read out with ``gather()`` rather than kept in
+    /// step keystroke by keystroke: a text field that reports on every character is a text field
+    /// that has to say what it means by a half-typed number.
+    private var state: ScheduleFormState
+    private let text: Copy
+    private let places: [StartPoints.Place]
+
+    var onSave: ((ScheduleFormState) -> Void)?
+    var onDelete: (() -> Void)?
+    var onCancel: (() -> Void)?
+    var onResize: (() -> Void)?
+
+    /// The refusal, in the words whoever refused wrote. See ``SettingsWindow/saveSchedule(_:id:places:)``.
+    var message: String? {
+        didSet {
+            guard message != oldValue else { return }
+            rebuildMessage()
+            onResize?()
+        }
+    }
+
+    /// A write is in flight. Everything that could start a second one goes quiet — the file is
+    /// written and read back before the answer arrives, and two saves racing on one name is the
+    /// one thing this sheet must not be able to ask for.
+    var busy = false {
+        didSet {
+            guard busy != oldValue else { return }
+            save.isEnabled = !busy
+            cancel.isEnabled = !busy
+            delete?.isEnabled = !busy
+        }
+    }
+
+    private let heading: NSTextField
+    private let titleField = NSTextField(string: "")
+    private let timePicker = NSDatePicker()
+    private var dayChips: [ChipButton] = []
+    private let instructions = NSTextView()
+    private let more: ChipButton
+    private let catchField = NSTextField(string: "")
+    private let timeoutField = NSTextField(string: "")
+    private var messageLabel: NSTextField?
+    private let save: ChipButton
+    private let cancel: ChipButton
+    private let delete: ChipButton?
+
+    private var expanded = false
+    private var fields: [Field] = []
+
+    private struct Field {
+        let label: NSTextField?
+        let view: NSView
+        /// Behind the fold.
+        let advanced: Bool
+    }
+
+    init(state: ScheduleFormState, places: [StartPoints.Place], assistants: [Assistant],
+         editing: Bool, text: Copy) {
+        self.state = state
+        self.text = text
+        self.places = places
+        self.heading = makeLabel(editing ? text.webScheduleEdit : text.webScheduleNew,
+                                 Metric.tabFont, Metric.label)
+        self.more = ChipButton(title: text.webScheduleMore)
+        self.save = ChipButton(title: text.settingsScheduleSave, prominent: true)
+        self.cancel = ChipButton(title: text.webCancel)
+        self.delete = editing ? ChipButton(title: text.settingsScheduleDelete) : nil
+        super.init(frame: NSRect(x: 0, y: 0, width: Self.contentWidth, height: 400))
+        build(assistants: assistants)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var isFlipped: Bool { true }
+
+    // MARK: - Building it
+
+    private func build(assistants: [Assistant]) {
+        addSubview(heading)
+
+        let inner = Self.contentWidth - Self.inset * 2
+
+        titleField.stringValue = state.title
+        titleField.font = Metric.labelFont
+        titleField.frame = NSRect(x: 0, y: 0, width: inner, height: 24)
+        add(text.webScheduleTitle, titleField)
+
+        // A picker rather than a box holding "09:30". The parser has a sentence for a time it
+        // cannot read and this form would rather never need it: the control cannot be typed into
+        // a shape `when.at` refuses, and it reads back as hour and minute whether the person's
+        // locale shows them nine in the morning or 9 AM.
+        timePicker.datePickerStyle = .textFieldAndStepper
+        timePicker.datePickerElements = [.hourMinute]
+        timePicker.dateValue = ScheduleFormState.date(forTime: state.at) ?? Date()
+        timePicker.sizeToFit()
+        add(text.webScheduleAt, timePicker)
+
+        dayChips = ([text.webScheduleDaily] + Self.dayNames(text)).enumerated().map { index, name in
+            let chip = ChipButton(title: name)
+            chip.action = { [weak self] in self?.pickDay(index) }
+            return chip
+        }
+        let days = ChipWrap(chips: dayChips)
+        days.frame.size = NSSize(width: inner, height: days.height(forWidth: inner))
+        add(text.webScheduleOn, days)
+        paintDays()
+
+        // The popup picks its first item when it is handed a `current` it cannot find, and says
+        // nothing about having done so. Agreeing with it here rather than leaving the selection
+        // and the state saying two different things: what is on screen is what gets sent.
+        if !places.contains(where: { $0.id == state.placeID }) {
+            state.placeID = places.first?.id ?? ""
+        }
+        let labels = ScheduleFormState.placeLabels(places)
+        let placePopUp = ChoicePopUp(options: zip(labels, places.map(\.id))
+            .map { (label: $0.0, value: $0.1) }, current: state.placeID) { [weak self] value in
+            self?.state.placeID = value
+        }
+        // The whole path, on the item rather than in the label: two projects called the same
+        // thing are told apart by their labels already, and this answers "which one is that" for
+        // every other row without spending a line of the sheet on it.
+        for (index, place) in places.enumerated() where index < placePopUp.numberOfItems {
+            placePopUp.item(at: index)?.toolTip = place.path
+        }
+        add(text.webScheduleWhere, placePopUp)
+
+        // The same rule the page's own `drawWith` follows: one assistant is not a choice, and a
+        // label over a control that is not there is a field somebody will go looking for.
+        //
+        // The list is what this Mac has installed, plus — when the schedule already names one it
+        // has not — the one it names. A row written for Codex on a Mac that has since lost it is
+        // still that row's answer, and a popup quietly reading "Claude Code" over a file that
+        // says `codex` is a form lying about what it is holding.
+        var choices = assistants.map { (label: $0.label, value: $0.rawValue) }
+        if !state.assistant.isEmpty, !choices.contains(where: { $0.value == state.assistant }) {
+            choices.append((label: Assistant(rawValue: state.assistant)?.label ?? state.assistant,
+                            value: state.assistant))
+        }
+        if state.assistant.isEmpty { state.assistant = choices.first?.value ?? "" }
+        if choices.count > 1 {
+            add(text.webScheduleWith,
+                ChoicePopUp(options: choices, current: state.assistant) { [weak self] value in
+                    self?.state.assistant = value
+                })
+        }
+
+        add(text.webScheduleFirst, instructionsBox(width: inner))
+
+        more.action = { [weak self] in self?.toggleMore() }
+        add(nil, more)
+
+        let closeStops: [(label: String, value: String)] = [
+            (label: text.webScheduleCloseSuccess, value: "on_success"),
+            (label: text.webScheduleCloseAlways, value: "always"),
+            (label: text.webScheduleCloseNever, value: "never"),
+        ]
+        add(text.webScheduleWhenDone,
+            ChoicePopUp(options: closeStops, current: state.closeTab) { [weak self] value in
+                self?.state.closeTab = value
+            }, advanced: true)
+
+        let enabled = SwitchView(isOn: state.enabled) { [weak self] on in self?.state.enabled = on }
+        add(nil, FlagRow(label: text.webScheduleEnabled, control: enabled), advanced: true)
+        let notify = SwitchView(isOn: state.notifyOnFailure) { [weak self] on in
+            self?.state.notifyOnFailure = on
+        }
+        add(nil, FlagRow(label: text.webScheduleNotify, control: notify), advanced: true)
+
+        catchField.stringValue = String(state.catchUpHours)
+        catchField.font = Metric.labelFont
+        catchField.frame = NSRect(x: 0, y: 0, width: 92, height: 24)
+        add(text.webScheduleCatchUp, catchField, advanced: true)
+
+        timeoutField.stringValue = String(state.timeoutMinutes)
+        timeoutField.font = Metric.labelFont
+        timeoutField.frame = NSRect(x: 0, y: 0, width: 92, height: 24)
+        add(text.webScheduleTimeout, timeoutField, advanced: true)
+
+        save.action = { [weak self] in self?.commit() }
+        cancel.action = { [weak self] in self?.onCancel?() }
+        delete?.action = { [weak self] in self?.onDelete?() }
+        addSubview(save)
+        addSubview(cancel)
+        if let delete { addSubview(delete) }
+    }
+
+    private func add(_ label: String?, _ view: NSView, advanced: Bool = false) {
+        let field = Field(label: label.map { makeLabel($0, Metric.hintFont, Metric.soft) },
+                          view: view, advanced: advanced)
+        if let text = field.label { addSubview(text) }
+        addSubview(view)
+        fields.append(field)
+    }
+
+    private func instructionsBox(width: CGFloat) -> NSView {
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: 96))
+        scroll.borderType = .bezelBorder
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        let size = scroll.contentSize
+        instructions.frame = NSRect(x: 0, y: 0, width: size.width, height: size.height)
+        instructions.minSize = NSSize(width: 0, height: size.height)
+        instructions.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                                      height: CGFloat.greatestFiniteMagnitude)
+        instructions.isVerticallyResizable = true
+        instructions.isHorizontallyResizable = false
+        instructions.autoresizingMask = [.width]
+        instructions.textContainer?.containerSize = NSSize(width: size.width,
+                                                           height: CGFloat.greatestFiniteMagnitude)
+        instructions.textContainer?.widthTracksTextView = true
+        instructions.font = Metric.labelFont
+        instructions.isRichText = false
+        instructions.allowsUndo = true
+        instructions.insertionPointColor = Style.accent
+        instructions.string = state.instructions
+        scroll.documentView = instructions
+        return scroll
+    }
+
+    private static func dayNames(_ text: Copy) -> [String] {
+        [text.webScheduleSun, text.webScheduleMon, text.webScheduleTue, text.webScheduleWed,
+         text.webScheduleThu, text.webScheduleFri, text.webScheduleSat]
+    }
+
+    // MARK: - What the controls do
+
+    /// Index 0 is Daily; 1 through 7 are the weekdays in ``ScheduleFormState/dayCodes`` order.
+    private func pickDay(_ index: Int) {
+        if index == 0 {
+            state.daily = true
+            state.weekdays = []
+        } else {
+            state.toggle(day: ScheduleFormState.dayCodes[index - 1])
+        }
+        paintDays()
+    }
+
+    private func paintDays() {
+        for (index, chip) in dayChips.enumerated() {
+            chip.armed = index == 0
+                ? state.daily
+                : (!state.daily && state.weekdays.contains(ScheduleFormState.dayCodes[index - 1]))
+        }
+    }
+
+    private func toggleMore() {
+        expanded.toggle()
+        more.armed = expanded
+        needsLayout = true
+        onResize?()
+    }
+
+    /// Everything the controls hold that is not read as it is typed. The picker is asked here
+    /// rather than on every turn of its stepper, and the two number boxes get their fallback here
+    /// rather than leaving a half-typed field to be sent as it stands.
+    private func gather() -> ScheduleFormState {
+        var out = state
+        out.title = titleField.stringValue.trimmingCharacters(in: .whitespaces)
+        out.at = ScheduleFormState.time(from: timePicker.dateValue)
+        out.instructions = instructions.string
+        out.catchUpHours = ScheduleFormState.number(catchField.stringValue, atLeast: 0,
+                                                    or: ScheduleFormState.catchUpDefault)
+        out.timeoutMinutes = ScheduleFormState.number(timeoutField.stringValue, atLeast: 1,
+                                                      or: ScheduleFormState.timeoutDefault)
+        return out
+    }
+
+    private func commit() {
+        guard !busy else { return }
+        // The field editor keeps what is being typed to itself until it gives up first responder,
+        // so a save pressed straight after a keystroke would send the value from before it.
+        window?.makeFirstResponder(nil)
+        state = gather()
+        // Written back so the boxes show what is about to be sent — a `catch_up_hours` box left
+        // holding "seven" must not go on saying that after the six behind it has been used.
+        catchField.stringValue = String(state.catchUpHours)
+        timeoutField.stringValue = String(state.timeoutMinutes)
+        onSave?(state)
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        guard !busy else { return }
+        onCancel?()
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard !busy else { return super.performKeyEquivalent(with: event) }
+        // Escape here rather than only in `cancelOperation`: with the caret in the first message,
+        // the field editor takes Escape for itself and the sheet would be one that cannot be
+        // closed from the keyboard while somebody is typing in it.
+        if event.keyCode == 53 {
+            onCancel?()
+            return true
+        }
+        // Command-Return saves from anywhere in the sheet, including from inside the first
+        // message — where a bare Return is a new line and has to stay one.
+        guard event.modifierFlags.contains(.command), event.keyCode == 36 else {
+            return super.performKeyEquivalent(with: event)
+        }
+        commit()
+        return true
+    }
+
+    // MARK: - Laying it out
+
+    private func rebuildMessage() {
+        messageLabel?.removeFromSuperview()
+        messageLabel = nil
+        guard let message, !message.isEmpty else { return }
+        let label = makeLabel(message, Metric.hintFont, Style.accent)
+        addSubview(label)
+        messageLabel = label
+        needsLayout = true
+    }
+
+    private func height(of field: Field, width: CGFloat) -> CGFloat {
+        var height: CGFloat = 0
+        if let label = field.label {
+            height += labelHeight(label.stringValue, Metric.hintFont, width: width) + 5
+        }
+        if let sizing = field.view as? SelfSizing {
+            height += sizing.height(forWidth: width)
+        } else {
+            height += field.view.frame.height
+        }
+        return height
+    }
+
+    /// How tall the sheet has to be for what is currently showing. One walk with the placing
+    /// switched off, for the same reason ``ChipWrap`` has one.
+    var contentHeight: CGFloat {
+        walk(place: false)
+    }
+
+    override func layout() {
+        super.layout()
+        _ = walk(place: true)
+    }
+
+    @discardableResult
+    private func walk(place: Bool) -> CGFloat {
+        let width = Self.contentWidth - Self.inset * 2
+        var y: CGFloat = Self.inset
+
+        let headHeight = labelHeight(heading.stringValue, Metric.tabFont, width: width)
+        if place {
+            heading.preferredMaxLayoutWidth = width
+            heading.frame = NSRect(x: Self.inset, y: y, width: width, height: headHeight)
+        }
+        y += headHeight + 16
+
+        for field in fields {
+            let hidden = field.advanced && !expanded
+            if place {
+                field.label?.isHidden = hidden
+                field.view.isHidden = hidden
+            }
+            guard !hidden else { continue }
+            if let label = field.label {
+                let height = labelHeight(label.stringValue, Metric.hintFont, width: width)
+                if place {
+                    label.preferredMaxLayoutWidth = width
+                    label.frame = NSRect(x: Self.inset, y: y, width: width, height: height)
+                }
+                y += height + 5
+            }
+            let viewHeight = (field.view as? SelfSizing)?.height(forWidth: width)
+                ?? field.view.frame.height
+            if place {
+                // Popups and the two number boxes keep the width they sized themselves to; only
+                // the things that fill the sheet are stretched to it.
+                let stretch = field.view is ChipWrap || field.view is FlagRow
+                    || field.view is NSScrollView || field.view === titleField
+                field.view.frame = NSRect(x: Self.inset, y: y,
+                                          width: stretch ? width : field.view.frame.width,
+                                          height: viewHeight)
+            }
+            y += viewHeight + 14
+        }
+
+        if let label = messageLabel {
+            let height = labelHeight(label.stringValue, Metric.hintFont, width: width)
+            if place {
+                label.preferredMaxLayoutWidth = width
+                label.frame = NSRect(x: Self.inset, y: y, width: width, height: height)
+            }
+            y += height + 12
+        }
+
+        if place {
+            // Delete on the left, away from the pair that ends the sheet ordinarily. It is the
+            // one press here with nothing behind it — see the alert it opens — and putting it
+            // next to Save is how somebody means to press Save and does not.
+            delete?.frame.origin = NSPoint(x: Self.inset, y: y)
+            save.frame.origin = NSPoint(x: Self.contentWidth - Self.inset - save.frame.width, y: y)
+            cancel.frame.origin = NSPoint(
+                x: Self.contentWidth - Self.inset - save.frame.width - 8 - cancel.frame.width, y: y)
+        }
+        return (y + 26 + Self.inset).rounded()
+    }
+
+    /// Where the keyboard should be when the sheet opens: the first thing somebody has to answer.
+    var firstField: NSView { titleField }
 }
 
 /// A switch, drawn.
@@ -2181,6 +3093,16 @@ private final class ChipButton: NSView {
         }
     }
     var armed = false { didSet { if armed != oldValue { needsDisplay = true } } }
+    /// Greyed and unpressable while something it started is still in flight. Only the schedule
+    /// form uses it — everything else in this window applies the moment it is touched, so there
+    /// is no interval in which a second press would mean anything.
+    var isEnabled = true {
+        didSet {
+            guard isEnabled != oldValue else { return }
+            if !isEnabled { hovering = false; pressed = false }
+            needsDisplay = true
+        }
+    }
     var minimumWidth: CGFloat = 0 { didSet { resize() } }
     var action: (() -> Void)?
 
@@ -2220,10 +3142,15 @@ private final class ChipButton: NSView {
         tracking = area
     }
 
-    override func mouseEntered(with event: NSEvent) { hovering = true; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) {
+        guard isEnabled else { return }
+        hovering = true
+        needsDisplay = true
+    }
     override func mouseExited(with event: NSEvent) { hovering = false; needsDisplay = true }
 
     override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
         pressed = true
         needsDisplay = true
     }
@@ -2231,13 +3158,17 @@ private final class ChipButton: NSView {
     override func mouseUp(with event: NSEvent) {
         pressed = false
         needsDisplay = true
-        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+        guard isEnabled, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
         window?.makeFirstResponder(self)
         action?()
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 49 || event.keyCode == 36 { action?() } else { super.keyDown(with: event) }
+        if isEnabled, event.keyCode == 49 || event.keyCode == 36 {
+            action?()
+        } else {
+            super.keyDown(with: event)
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -2261,7 +3192,9 @@ private final class ChipButton: NSView {
         }
 
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: font, .foregroundColor: lit ? Style.accent : Metric.soft,
+            .font: font,
+            .foregroundColor: (lit ? Style.accent : Metric.soft)
+                .withAlphaComponent(isEnabled ? 1 : 0.4),
         ]
         let size = title.size(withAttributes: attrs)
         title.draw(at: NSPoint(x: (bounds.midX - size.width / 2).rounded(),

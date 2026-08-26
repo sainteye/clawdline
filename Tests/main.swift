@@ -12530,6 +12530,156 @@ group("the list of background sessions is a list of jobs, not a question") {
           SessionState.isChoosing(screen, hookWaiting: true) == false)
 }
 
+group("the Mac's schedule form collects fields and never checks them twice") {
+    let fresh = ScheduleFormState()
+    let body = fresh.body
+    expect("a new form asks for every day", body["days"] as? String, "daily")
+    expect("and opens on a round hour rather than on whatever time it is", body["at"] as? String,
+           "09:00")
+    expect("with the parser's own catch-up default", body["catch_up_hours"] as? Int, 6)
+    expect("and the parser's own timeout", body["timeout_minutes"] as? Int, 30)
+    check("an empty model is left out, not written as an empty string", body["model"] == nil)
+    // `scheduleObject(from:)` refuses the whole request over one field it does not recognise, so
+    // a field this form invents is a form that cannot save at all.
+    let allowed = Set(["title", "at", "days", "place_id", "assistant", "instructions", "enabled",
+                       "close_tab", "catch_up_hours", "notify_on_failure", "timeout_minutes",
+                       "model"])
+    let unknown = Set(body.keys).subtracting(allowed).sorted()
+    check("and nothing is sent that the orchestrator's allowlist would refuse", unknown.isEmpty,
+          unknown.joined(separator: ", "))
+
+    var picked = ScheduleFormState()
+    picked.toggle(day: "mon")
+    check("picking a day while Daily is on replaces it rather than adding to it",
+          !picked.daily && picked.weekdays == ["mon"])
+    picked.toggle(day: "fri")
+    expect("the days are sent in weekday order however they were picked",
+           picked.body["days"] as? [String], ["mon", "fri"])
+    picked.toggle(day: "fri")
+    picked.toggle(day: "mon")
+    check("and turning the last one off falls back to daily rather than to nothing",
+          picked.daily && (picked.body["days"] as? String) == "daily")
+
+    expect("Calendar's weekday numbers are the codes a schedule file keeps",
+           (1...7).compactMap(ScheduleFormState.code(forWeekday:)),
+           ["sun", "mon", "tue", "wed", "thu", "fri", "sat"])
+    check("and nothing outside that week is a weekday",
+          ScheduleFormState.code(forWeekday: 0) == nil
+            && ScheduleFormState.code(forWeekday: 8) == nil)
+
+    // The picker is the only thing that writes `at`, so what matters is that the two directions
+    // agree — and that a shape `when.at` refuses is one the picker cannot be set from in the
+    // first place. A stated calendar rather than the machine's, so this says the same thing on a
+    // runner in another time zone.
+    var berlin = Calendar(identifier: .gregorian)
+    berlin.timeZone = TimeZone(identifier: "Europe/Berlin")!
+    let day = Date(timeIntervalSince1970: 1_700_000_000)
+    guard let five = ScheduleFormState.date(forTime: "09:05", on: day, calendar: berlin),
+          let midnight = ScheduleFormState.date(forTime: "00:00", on: day, calendar: berlin) else {
+        check("the picker can be set from a time the parser accepts", false)
+        return
+    }
+    expect("the picker's instant comes back as HH:MM in local time",
+           ScheduleFormState.time(from: five, calendar: berlin), "09:05")
+    expect("midnight keeps both its pairs of zeros",
+           ScheduleFormState.time(from: midnight, calendar: berlin), "00:00")
+    check("and the shapes the parser refuses are ones the picker cannot be set from",
+          ScheduleFormState.date(forTime: "9:05", on: day, calendar: berlin) == nil
+            && ScheduleFormState.date(forTime: "24:00", on: day, calendar: berlin) == nil
+            && ScheduleFormState.date(forTime: "09:60", on: day, calendar: berlin) == nil
+            && ScheduleFormState.date(forTime: "", on: day, calendar: berlin) == nil)
+
+    expect("a number box holding a number is that number",
+           ScheduleFormState.number("  12 ", atLeast: 0, or: 6), 12)
+    expect("one holding nothing is somebody who did not want to choose",
+           ScheduleFormState.number("", atLeast: 0, or: 6), 6)
+    expect("one holding a word is the same answer",
+           ScheduleFormState.number("soon", atLeast: 1, or: 30), 30)
+    expect("no minutes at all is not a timeout somebody meant",
+           ScheduleFormState.number("0", atLeast: 1, or: 30), 30)
+    expect("but no catch-up at all is a real answer",
+           ScheduleFormState.number("0", atLeast: 0, or: 6), 0)
+
+    let home = "/Users/somebody"
+    let mine = StartPoints.Place(id: "aaa", path: "\(home)/code/clawdline", label: "clawdline",
+                                 at: Date(timeIntervalSince1970: 2))
+    let theirs = StartPoints.Place(id: "bbb", path: "\(home)/work/clawdline", label: "clawdline",
+                                   at: Date(timeIntervalSince1970: 1))
+    expect("two projects with one name are told apart by where they are",
+           ScheduleFormState.placeLabels([mine, theirs], home: home),
+           ["clawdline — ~/code/clawdline", "clawdline — ~/work/clawdline"])
+    expect("a name nothing shares is left as the name",
+           ScheduleFormState.placeLabels([mine], home: home), ["clawdline"])
+    expect("a schedule whose project has fallen off the recent list can still be saved",
+           ScheduleFormState.placeChoices([mine], including: "\(home)/old/site").map(\.path),
+           ["\(home)/code/clawdline", "\(home)/old/site"])
+    expect("one still on it is not offered twice",
+           ScheduleFormState.placeChoices([mine], including: mine.path).count, 1)
+    expect("and a form with no schedule behind it adds nothing",
+           ScheduleFormState.placeChoices([mine], including: nil).count, 1)
+}
+
+group("the Mac's schedule form and the file it wrote agree about what it says") {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-schedule-form-\(UUID().uuidString)")
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+        Orchestrator.scheduleDirectoryOverrideForTesting = nil
+        Orchestrator.forget()
+    }
+    Orchestrator.scheduleDirectoryOverrideForTesting = directory
+    Orchestrator.forget()
+
+    let place = StartPoints.Place(id: StartPoints.id(for: "/tmp"), path: "/tmp", label: "tmp",
+                                  at: Date(timeIntervalSince1970: 1))
+    var made = ScheduleFormState()
+    made.title = "publish the blog"
+    made.at = "07:05"
+    made.toggle(day: "mon")
+    made.toggle(day: "thu")
+    made.placeID = place.id
+    made.assistant = "codex"
+    made.instructions = "publish the next ready post"
+    made.closeTab = "never"
+    made.catchUpHours = 12
+    made.notifyOnFailure = false
+    made.timeoutMinutes = 45
+    made.model = "opus"
+
+    let reply = Orchestrator.createSchedule(from: made.body, places: [place],
+                                            isDirectory: { $0 == "/tmp" })
+    if case .refused(_, _, let why, _) = reply {
+        check("the form's own body is one the orchestrator accepts", false, why)
+        return
+    }
+    guard let written = Orchestrator.schedules().first else {
+        check("the form's own body is one the orchestrator accepts", false, "nothing on disk")
+        return
+    }
+    // The whole point of the edit door: what comes back out of the file is what went in, or the
+    // form is showing somebody something other than the schedule they asked to change.
+    expect("the form opens on exactly what it sent",
+           ScheduleFormState(schedule: written, places: [place]), made)
+
+    var edited = ScheduleFormState(schedule: written, places: [place])
+    edited.title = "publish, later"
+    edited.at = "08:30"
+    let saved = Orchestrator.updateSchedule(id: written.id, from: edited.body, places: [place],
+                                            isDirectory: { $0 == "/tmp" })
+    if case .refused(_, _, let why, _) = saved {
+        check("an edit assembled by the form is accepted too", false, why)
+    }
+    let after = Orchestrator.schedules().first
+    expect("the title is the changed one", after?.title, "publish, later")
+    expect("the schedule keeps the id it was made under", after?.id, written.id)
+    expect("and keeps when it was made, which is what stops it running for this morning",
+           after?.createdAt ?? nil, written.createdAt)
+    // No control shows it, and a save that dropped it would be this form editing something it
+    // never put on screen.
+    expect("the model the form never showed is still on the schedule",
+           after?.taskTemplate["model"] as? String, "opus")
+}
+
 // MARK: - Result
 
 print("")
