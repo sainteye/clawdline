@@ -451,9 +451,12 @@ a.dep:hover .host { color: var(--accent); }
 }
 .schedule-sheet .picked:hover { background: var(--card-hi); }
 .schedule-sheet .picked canvas { flex: 0 0 auto; display: block; image-rendering: pixelated; }
-/* The same placeholder `.sheet .place` uses. Without a size here a canvas with nothing drawn in
-   it is 300x150 — the HTML default, not zero. */
+/* The same placeholder `.sheet .place` uses, for a project that has no mark of its own. Without
+   a size here a canvas with nothing drawn in it is 300x150 — the HTML default, not zero. */
 .schedule-sheet .picked canvas.none { width: 16px; height: 12px; border-radius: 2px; background: #202028; }
+/* But no project chosen is not a project without a mark. There is nothing to stand in for, and
+   the square reads as a symbol nobody can name. */
+.schedule-sheet .picked.none canvas { display: none; }
 .schedule-sheet .picked .name {
     flex: 0 1 auto; min-width: 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
