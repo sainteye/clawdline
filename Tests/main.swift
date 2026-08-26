@@ -197,13 +197,13 @@ group("schedule fire arithmetic crosses midnight and filters days") {
     func date(_ value: String) -> Date { formatter.date(from: value)! }
     let daily = Orchestrator.Schedule(id: "a", title: "a", hour: 23, minute: 45,
         weekdays: nil, taskTemplate: [:], enabled: true, closeTab: .onSuccess,
-        catchUpHours: 6, notifyOnFailure: true, createdAt: nil)
+        catchUpHours: 6, notifyOnFailure: true, createdAt: nil, whenChangedAt: nil)
     expect("after midnight sees yesterday's fire",
            Orchestrator.latestFire(of: daily, at: date("2026-08-26T00:15:00Z"), calendar: calendar),
            date("2026-08-25T23:45:00Z"))
     let monday = Orchestrator.Schedule(id: "b", title: "b", hour: 9, minute: 0,
         weekdays: Set([2]), taskTemplate: [:], enabled: true, closeTab: .onSuccess,
-        catchUpHours: 6, notifyOnFailure: true, createdAt: nil)
+        catchUpHours: 6, notifyOnFailure: true, createdAt: nil, whenChangedAt: nil)
     expect("Tuesday looks back to the selected Monday",
            Orchestrator.latestFire(of: monday, at: date("2026-08-25T10:00:00Z"), calendar: calendar),
            date("2026-08-24T09:00:00Z"))
@@ -214,19 +214,22 @@ group("catch-up, active-task and close-tab policies are explicit") {
     expect("a fire inside the catch-up window runs",
            Orchestrator.scheduleAction(now: fire.addingTimeInterval(5 * 3600), fire: fire,
                                        catchUpHours: 6, lastRunCreated: nil,
-                                       lastRunTerminal: nil, createdAt: nil), .run)
+                                       lastRunTerminal: nil, createdAt: nil,
+                                       whenChangedAt: nil), .run)
     expect("a fire outside the window is missed",
            Orchestrator.scheduleAction(now: fire.addingTimeInterval(7 * 3600), fire: fire,
                                        catchUpHours: 6, lastRunCreated: nil,
-                                       lastRunTerminal: nil, createdAt: nil), .missed)
+                                       lastRunTerminal: nil, createdAt: nil,
+                                       whenChangedAt: nil), .missed)
     expect("the same occurrence does not run twice",
            Orchestrator.scheduleAction(now: fire, fire: fire, catchUpHours: 6,
                                        lastRunCreated: fire, lastRunTerminal: true,
-                                       createdAt: nil), .alreadyHandled)
+                                       createdAt: nil, whenChangedAt: nil), .alreadyHandled)
     expect("an older still-running occurrence blocks overlap",
            Orchestrator.scheduleAction(now: fire, fire: fire, catchUpHours: 6,
                                        lastRunCreated: fire.addingTimeInterval(-86400),
-                                       lastRunTerminal: false, createdAt: nil), .active)
+                                       lastRunTerminal: false, createdAt: nil,
+                                       whenChangedAt: nil), .active)
     let now = Date()
     check("on-success closes a successful child immediately",
           Orchestrator.scheduledCloseAt(policy: .onSuccess, outcome: .success,
@@ -254,11 +257,13 @@ group("catch-up, active-task and close-tab policies are explicit") {
     expect("zero-hour catch-up still has its one-minute floor",
            Orchestrator.scheduleAction(now: fire.addingTimeInterval(60), fire: fire,
                                        catchUpHours: 0, lastRunCreated: nil,
-                                       lastRunTerminal: nil, createdAt: nil), .run)
+                                       lastRunTerminal: nil, createdAt: nil,
+                                       whenChangedAt: nil), .run)
     expect("and expires immediately after that minute",
            Orchestrator.scheduleAction(now: fire.addingTimeInterval(61), fire: fire,
                                        catchUpHours: 0, lastRunCreated: nil,
-                                       lastRunTerminal: nil, createdAt: nil), .missed)
+                                       lastRunTerminal: nil, createdAt: nil,
+                                       whenChangedAt: nil), .missed)
 
     let scheduleID = "dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbb"
     let row: [String: Any] = [
@@ -290,10 +295,11 @@ group("no occurrence from before a schedule was made is an occurrence it missed"
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
     let formatter = ISO8601DateFormatter()
     func date(_ value: String) -> Date { formatter.date(from: value)! }
-    func nine(madeAt: Date?) -> Orchestrator.Schedule {
+    func nine(madeAt: Date?, changedAt: Date? = nil) -> Orchestrator.Schedule {
         Orchestrator.Schedule(id: "c", title: "c", hour: 9, minute: 0, weekdays: nil,
                               taskTemplate: [:], enabled: true, closeTab: .onSuccess,
-                              catchUpHours: 6, notifyOnFailure: true, createdAt: madeAt)
+                              catchUpHours: 6, notifyOnFailure: true, createdAt: madeAt,
+                              whenChangedAt: changedAt)
     }
     // The beat's own two steps: the newest occurrence at or before `now`, and what to do about it.
     func beatWould(_ schedule: Orchestrator.Schedule, at now: Date) -> Orchestrator.ScheduleAction? {
@@ -302,7 +308,8 @@ group("no occurrence from before a schedule was made is an occurrence it missed"
         return Orchestrator.scheduleAction(now: now, fire: fire,
                                            catchUpHours: schedule.catchUpHours,
                                            lastRunCreated: nil, lastRunTerminal: nil,
-                                           createdAt: schedule.createdAt)
+                                           createdAt: schedule.createdAt,
+                                           whenChangedAt: schedule.whenChangedAt)
     }
     let madeAtTimes = ["08:00", "09:30", "13:00", "14:59", "15:01", "20:00"]
     for time in madeAtTimes {
@@ -339,6 +346,99 @@ group("no occurrence from before a schedule was made is an occurrence it missed"
     expect("and one second earlier is not",
            beatWould(nine(madeAt: made.addingTimeInterval(1)), at: made.addingTimeInterval(60)),
            .beforeCreation)
+}
+
+group("an edit does not fire the occurrence it has just invented") {
+    // The reviewer's second table, measured by lifting `latestFire` and `scheduleAction` out and
+    // running them. A schedule made yesterday at 08:00 to run "21:00 daily", which ran yesterday
+    // at 21:00. Move it to "09:00 daily" from a phone at two in the afternoon and the next
+    // minute's beat opened a session for this morning's nine o'clock — an occurrence that did not
+    // exist until the save invented it — while the same save's `200` said the next run was
+    // tomorrow. Do it at five instead, past the six-hour catch-up window, and it pushed
+    // "Scheduled run missed its catch-up window" about a run nobody was ever owed.
+    //
+    // `created_at` cannot answer this and must not try: the schedule really is a day old, and a
+    // save that restamped it would break the thing that field does hold. What was missing is a
+    // second stamp saying when the firing times last moved.
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let formatter = ISO8601DateFormatter()
+    func date(_ value: String) -> Date { formatter.date(from: value)! }
+    let madeAt = date("2026-08-25T08:00:00Z")
+    let ranYesterday = date("2026-08-25T21:00:00Z")
+    func schedule(hour: Int, changedAt: Date?) -> Orchestrator.Schedule {
+        Orchestrator.Schedule(id: "d", title: "d", hour: hour, minute: 0, weekdays: nil,
+                              taskTemplate: [:], enabled: true, closeTab: .onSuccess,
+                              catchUpHours: 6, notifyOnFailure: true, createdAt: madeAt,
+                              whenChangedAt: changedAt)
+    }
+    func beatWould(_ schedule: Orchestrator.Schedule, at now: Date,
+                   ranAt lastRun: Date?) -> Orchestrator.ScheduleAction? {
+        guard let fire = Orchestrator.latestFire(of: schedule, at: now, calendar: calendar)
+        else { return nil }
+        return Orchestrator.scheduleAction(now: now, fire: fire,
+                                           catchUpHours: schedule.catchUpHours,
+                                           lastRunCreated: lastRun,
+                                           lastRunTerminal: lastRun.map { _ in true },
+                                           createdAt: schedule.createdAt,
+                                           whenChangedAt: schedule.whenChangedAt)
+    }
+    // The two rows of the table, and beside each one the answer a file with no second stamp still
+    // gives: a schedule somebody retimed in a text editor, and every file written before this
+    // field existed. Those answers are the old ones and nothing here is allowed to change them.
+    for (time, unstamped) in [("14:00", Orchestrator.ScheduleAction.run),
+                              ("17:00", Orchestrator.ScheduleAction.missed)] {
+        let savedAt = date("2026-08-26T\(time):00Z")
+        let beat = savedAt.addingTimeInterval(60)
+        expect("moved to 09:00 at \(time) in an editor, the beat answers as it always has",
+               beatWould(schedule(hour: 9, changedAt: nil), at: beat, ranAt: ranYesterday),
+               unstamped)
+        expect("moved to 09:00 at \(time) through a save, this morning is not a run it missed",
+               beatWould(schedule(hour: 9, changedAt: savedAt), at: beat, ranAt: ranYesterday),
+               .beforeRetiming)
+    }
+    // The control the reviewer ran beside it: the same schedule created rather than edited at two
+    // in the afternoon is already covered, by the stamp this one deliberately leaves alone.
+    let savedAt = date("2026-08-26T14:00:00Z")
+    let beat = savedAt.addingTimeInterval(60)
+    expect("a schedule created at 14:00 was already safe, and still is",
+           beatWould(Orchestrator.Schedule(id: "e", title: "e", hour: 9, minute: 0, weekdays: nil,
+                                           taskTemplate: [:], enabled: true, closeTab: .onSuccess,
+                                           catchUpHours: 6, notifyOnFailure: true,
+                                           createdAt: savedAt, whenChangedAt: nil),
+                     at: beat, ranAt: nil),
+           .beforeCreation)
+    // Moving one *later* invents an occurrence too, and on a schedule that has not run the old
+    // answer was a push claiming a run was missed.
+    expect("moved to 21:00 at 14:00, yesterday evening is not a run it missed either",
+           beatWould(schedule(hour: 21, changedAt: savedAt), at: beat, ranAt: nil),
+           .beforeRetiming)
+    expect("and in an editor that same move still pushes what it always pushed",
+           beatWould(schedule(hour: 21, changedAt: nil), at: beat, ranAt: nil), .missed)
+    // The schedule is not thereby dead. The first occurrence under the new terms is the one the
+    // save's own answer named, and that one runs.
+    guard let next = Orchestrator.nextFire(of: schedule(hour: 9, changedAt: savedAt),
+                                           after: savedAt, calendar: calendar) else {
+        check("there is a next occurrence at all", false)
+        return
+    }
+    expect("tomorrow's nine o'clock, the first one the new time really has, runs",
+           beatWould(schedule(hour: 9, changedAt: savedAt), at: next.addingTimeInterval(60),
+                     ranAt: ranYesterday), .run)
+    // A stamp from an earlier day gates nothing today, which is what keeps a real catch-up alive
+    // for every schedule that was retimed once and has been left alone since.
+    expect("a schedule retimed days ago catches up exactly as an untouched one does",
+           beatWould(schedule(hour: 9, changedAt: date("2026-08-20T14:00:00Z")),
+                     at: date("2026-08-26T13:00:00Z"), ranAt: ranYesterday), .run)
+    // The boundary, stated rather than inferred: the occurrence at the instant of the save
+    // belongs to the new terms, and the second before it does not.
+    let nineToday = date("2026-08-26T09:00:00Z")
+    expect("an occurrence exactly at the save is one the new time really has",
+           beatWould(schedule(hour: 9, changedAt: nineToday),
+                     at: nineToday.addingTimeInterval(60), ranAt: nil), .run)
+    expect("and one second earlier is not",
+           beatWould(schedule(hour: 9, changedAt: nineToday.addingTimeInterval(1)),
+                     at: nineToday.addingTimeInterval(60), ranAt: nil), .beforeRetiming)
 }
 
 group("bad schedule files are isolated and the routes use orchestrator envelopes") {
@@ -1149,6 +1249,9 @@ group("a schedule can be changed and taken away, and an edit is not a way past t
     check("a schedule to change is made first", !id.isEmpty)
     expect("and it carries the instant it was made", source(id)["created_at"] as? Int,
            Int(madeAt.timeIntervalSince1970))
+    // Nothing has been retimed, so there is nothing to say about it. A create writing this field
+    // would be answering a question nobody asked and putting a second stamp in every file.
+    check("and says nothing about having been retimed", source(id)["when_changed_at"] == nil)
 
     var changed = made
     changed["title"] = "publish the newsletter"
@@ -1171,6 +1274,11 @@ group("a schedule can be changed and taken away, and an edit is not a way past t
     expect("the id survives an edit", source(id)["schedule_id"] as? String, id)
     expect("and so does the instant it was made",
            source(id)["created_at"] as? Int, Int(madeAt.timeIntervalSince1970))
+    // And the field the request may not name either, written *because* the time moved. Without
+    // it the next minute's beat opens a session for 07:05 this morning, an occurrence that did
+    // not exist until this save, while the answer above says the next run is tomorrow.
+    expect("a save that moved the time records when it moved",
+           source(id)["when_changed_at"] as? Int, Int(savedAt.timeIntervalSince1970))
     let reloaded = Orchestrator.schedules().first { $0.id == id }
     check("the rewritten file is one the ordinary inventory reads back", reloaded != nil)
     expect("the new hour is on disk", reloaded?.hour, 7)
@@ -1182,6 +1290,35 @@ group("a schedule can be changed and taken away, and an edit is not a way past t
     expect("a saved file is still private", (try? FileManager.default.attributesOfItem(
             atPath: directory.appendingPathComponent("\(id).json").path))?[.posixPermissions]
             as? Int, 0o600)
+
+    // A second save an hour later that leaves the firing times exactly where they are. The stamp
+    // must not move: a schedule that really was missed at nine is still missed after somebody
+    // fixes its title at eleven, and a save that restamped on every write would swallow that run
+    // — which is the one way this fix could be worse than the bug it closes.
+    var renamed = changed
+    renamed["title"] = "publish the newsletter, later"
+    let renamedAt = savedAt.addingTimeInterval(3_600)
+    if case .refused(_, _, let why, _) = Orchestrator.updateSchedule(
+        id: id, from: renamed, places: [place, elsewhere], now: renamedAt, isDirectory: known) {
+        check("a save that changes only the title is written", false, why)
+    }
+    expect("the title change landed", source(id)["title"] as? String,
+           "publish the newsletter, later")
+    expect("and a save that did not move the time did not move the stamp",
+           source(id)["when_changed_at"] as? Int, Int(savedAt.timeIntervalSince1970))
+    // Which days it runs on is as much a part of when it fires as the hour is, and the comparison
+    // is on the parsed schedule rather than on the body, so `"daily"` against `["mon","tue",…]`
+    // is answered by what those two mean rather than by how they are spelled.
+    var fewerDays = renamed
+    fewerDays["days"] = ["mon", "thu"]
+    let daysChangedAt = renamedAt.addingTimeInterval(3_600)
+    if case .refused(_, _, let why, _) = Orchestrator.updateSchedule(
+        id: id, from: fewerDays, places: [place, elsewhere], now: daysChangedAt,
+        isDirectory: known) {
+        check("a save that changes only the days is written", false, why)
+    }
+    expect("dropping to two weekdays is a retiming too",
+           source(id)["when_changed_at"] as? Int, Int(daysChangedAt.timeIntervalSince1970))
 
     // Every rejection the create route is held to, aimed at an edit. Letting one through here
     // would make saving a schedule the way to write a file that creating one refuses to write.
@@ -1233,6 +1370,8 @@ group("a schedule can be changed and taken away, and an edit is not a way past t
         ("an id of its own", { (value: inout [String: Any]) in
             value["schedule_id"] = UUID().uuidString.lowercased() }),
         ("a made-at of its own", { (value: inout [String: Any]) in value["created_at"] = 0 }),
+        ("a retiming stamp of its own", { (value: inout [String: Any]) in
+            value["when_changed_at"] = 0 }),
     ] {
         var broken = changed
         mutate(&broken)
@@ -1266,6 +1405,12 @@ group("a schedule can be changed and taken away, and an edit is not a way past t
     }
     check("and an edit does not stamp a made-at onto a file that never had one",
           source(plainID)["created_at"] == nil)
+    // The other stamp goes the other way, and the difference is what each of them claims.
+    // `created_at` would be a guess about a past this app was not there for; this save really did
+    // move 09:00 daily to 09:30 on two weekdays, and it is the one thing standing between that
+    // move and a session opening for a 09:30 that did not exist a second ago.
+    expect("but retiming a hand-written file does write when it was retimed",
+           source(plainID)["when_changed_at"] as? Int, Int(savedAt.timeIntervalSince1970))
     expect("while the change itself landed", source(plainID)["title"] as? String,
            "renamed in the app")
 
@@ -13167,7 +13312,7 @@ group("a save keeps the task fields no form has a control for") {
         "when": ["at": "09:00", "days": "daily"],
         "task": ["assistant": "claude", "project_dir": "/tmp",
                  "instructions": "publish today", "claims": ["posts"],
-                 "permission_mode": "edits", "kind": "custom"],
+                 "permission_mode": "edits", "kind": "custom", "model": "opus"],
         "enabled": true,
     ]
     try! JSONSerialization.data(withJSONObject: handWritten)
@@ -13187,8 +13332,38 @@ group("a save keeps the task fields no form has a control for") {
     expect("claims survived a save that never mentioned them", task["claims"] as? [String], ["posts"])
     expect("and so did permission_mode", task["permission_mode"] as? String, "edits")
     expect("and kind", task["kind"] as? String, "custom")
+    // The ninth field, and the one the first pass at this missed. The page's form has no model
+    // control and its body has no `model` key at all, so a save from a phone used to hand the
+    // schedule back running whatever that assistant runs by default. The Mac's form kept it,
+    // which is the worse half: the same schedule came back different depending on which screen
+    // pressed Save.
+    expect("and the model no form has a control for", task["model"] as? String, "opus")
     expect("while the field the form did change is the new one",
            (after?["when"] as? [String: Any])?["at"] as? String, "10:00")
+
+    // **A body that never mentions the model and one that sends an empty one are different
+    // requests.** Carrying it on the same terms as `claims` would make the first work and the
+    // second impossible, and then no request could ever take a model off a schedule again.
+    func saveModel(_ model: Any?) -> [String: Any] {
+        var body: [String: Any] = ["title": "posts", "at": "10:00", "days": "daily",
+                                   "place_id": "p1", "assistant": "claude",
+                                   "instructions": "publish today", "enabled": true]
+        if let model { body["model"] = model }
+        _ = Orchestrator.updateSchedule(id: id, from: body, places: [place],
+                                        isDirectory: { _ in true })
+        let file = (try? JSONSerialization.jsonObject(
+            with: Data(contentsOf: directory.appendingPathComponent("\(id).json"))))
+            as? [String: Any]
+        return file?["task"] as? [String: Any] ?? [:]
+    }
+    expect("naming a different model replaces it", saveModel("sonnet")["model"] as? String,
+           "sonnet")
+    expect("a body that never mentions it leaves it exactly where it was",
+           saveModel(nil)["model"] as? String, "sonnet")
+    check("and an empty one is how a form asks for that assistant's default",
+          saveModel("")["model"] == nil)
+    check("which the next save that says nothing does not undo",
+          saveModel(nil)["model"] == nil)
     // A create has nothing to carry and must not invent any of it.
     let made = Orchestrator.createSchedule(
         from: ["title": "fresh", "at": "07:00", "days": "daily", "place_id": "p1",

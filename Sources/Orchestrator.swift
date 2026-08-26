@@ -47,6 +47,18 @@ enum Orchestrator {
         /// a minute later or pushes that it missed a morning it was not there for. Nil is what
         /// every hand-written file has always meant: as far back as anyone knows.
         let createdAt: Date?
+        /// When `when` last changed, or nil for a file whose firing times have never been edited.
+        ///
+        /// ``createdAt`` answers "did this schedule exist yet"; this answers the question an edit
+        /// asks instead, which is "did this *occurrence* exist yet". Moving a `21:00` schedule to
+        /// `09:00` at two in the afternoon invents an occurrence six hours old, and without a
+        /// second stamp the timer cannot tell it from a morning the Mac slept through: measured,
+        /// it dispatched within the minute while the save's own answer said tomorrow.
+        ///
+        /// Only a save that really changes the hour, the minute or the days moves it. A save that
+        /// changes a title must not, or fixing a typo at eleven would swallow the nine o'clock run
+        /// that was genuinely missed at nine.
+        let whenChangedAt: Date?
     }
 
     enum ScheduleDraftOutcome {
@@ -74,7 +86,11 @@ enum Orchestrator {
     }
 
     enum ScheduleAction: Equatable {
-        case run, alreadyHandled, active, missed, beforeCreation
+        /// `beforeCreation` is "the schedule did not exist yet"; `beforeRetiming` is "this
+        /// occurrence did not exist yet". They are one line apart in the timer and identical in
+        /// what they do — nothing — but they are different sentences about why, and a reader of an
+        /// audit or a test is owed the right one.
+        case run, alreadyHandled, active, missed, beforeCreation, beforeRetiming
     }
 
     private static func scheduleBool(_ raw: Any?) -> Bool? {
@@ -101,7 +117,7 @@ enum Orchestrator {
         -> ScheduleDraftOutcome {
         let allowed = Set(["clawdline_schedule", "schedule_id", "title", "when", "task",
                            "enabled", "close_tab", "catch_up_hours", "notify_on_failure",
-                           "created_at"])
+                           "created_at", "when_changed_at"])
         let unknown = Set(obj.keys).subtracting(allowed).sorted()
         guard unknown.isEmpty else { return .bad("unknown field: \(unknown.joined(separator: ", "))") }
         guard scheduleInt(obj["clawdline_schedule"]) == 1 else {
@@ -206,27 +222,41 @@ enum Orchestrator {
             notify = true
         }
         // Unix seconds, like every other instant this app writes into JSON, and **optional on
-        // purpose**. Files written before this field existed do not have it and neither does one
-        // somebody typed in an editor; both keep working exactly as they did, because a missing
-        // stamp means "as far back as anyone knows" rather than "made just now".
-        let createdAt: Date?
-        if let raw = obj["created_at"] {
+        // purpose**. Files written before these fields existed do not have them and neither does
+        // one somebody typed in an editor; both keep working exactly as they did, because a
+        // missing stamp means "as far back as anyone knows" rather than "made just now".
+        //
+        // Both are read the same way and refused the same way. They decide whether a session
+        // opens, so a value that is not a whole number of seconds is a bad file rather than
+        // something to make the best of.
+        var badStamp: String?
+        func stamp(_ key: String) -> Date? {
+            guard let raw = obj[key] else { return nil }
             guard let value = scheduleInt(raw), value >= 0 else {
-                return .bad("created_at must be a whole number of seconds since 1970")
+                badStamp = "\(key) must be a whole number of seconds since 1970"
+                return nil
             }
-            createdAt = Date(timeIntervalSince1970: TimeInterval(value))
-        } else {
-            createdAt = nil
+            return Date(timeIntervalSince1970: TimeInterval(value))
         }
+        let createdAt = stamp("created_at")
+        let whenChangedAt = stamp("when_changed_at")
+        if let badStamp { return .bad(badStamp) }
         return .ok(Schedule(id: id, title: title, hour: hour, minute: minute,
                             weekdays: weekdays, taskTemplate: task, enabled: enabled,
                             closeTab: closeTab, catchUpHours: catchUpHours,
-                            notifyOnFailure: notify, createdAt: createdAt))
+                            notifyOnFailure: notify, createdAt: createdAt,
+                            whenChangedAt: whenChangedAt))
     }
 
     /// What ``Orchestrator/scheduleObject(from:id:createdAt:places:isDirectory:)`` decided.
+    ///
+    /// `made` is the object above after the parser has read it back, and it is handed out so that
+    /// an edit can ask what the *new* firing times are without parsing the same object twice. It
+    /// is the only way to compare them honestly: `09:00` and `9:00` are different strings and the
+    /// second is not a time this parser accepts, so a comparison of raw bodies would be answering
+    /// a question about spelling.
     private enum ScheduleObject {
-        case built([String: Any], place: StartPoints.Place)
+        case built([String: Any], made: Schedule, place: StartPoints.Place)
         case refused(Reply)
     }
 
@@ -281,7 +311,18 @@ enum Orchestrator {
         ]
         // An empty model is how a form says "whatever that assistant runs by default", and a
         // file carrying `"model": ""` is a field whoever opens it later has to read and dismiss.
-        if let model = body["model"], (model as? String)?.isEmpty != true { task["model"] = model }
+        //
+        // **A body that never mentions `model` and a body that sends an empty one are different
+        // requests**, which is why this is not on the carried list below. The page's form has no
+        // model control and sends no `model` key at all, so folding the two together would mean
+        // either that a phone save silently drops somebody's `"model": "opus"` — measured, and
+        // exactly the class of bug the carried list exists to close — or that no request can ever
+        // take a model off a schedule again.
+        if let model = body["model"] {
+            if (model as? String)?.isEmpty != true { task["model"] = model }
+        } else if let kept = previous["model"] {
+            task["model"] = kept
+        }
         if let timeout = body["timeout_minutes"] { task["timeout_minutes"] = timeout }
         // **Fields no form has a control for are carried, not dropped.** A schedule written by
         // hand with `claims` in it — and the Mac is where those live — would otherwise lose them
@@ -318,11 +359,12 @@ enum Orchestrator {
         for key in ["close_tab", "catch_up_hours", "notify_on_failure"] {
             if let value = body[key] { obj[key] = value }
         }
-        if case .bad(let why) = schedule(from: obj, filename: "\(id).json",
-                                         isDirectory: isDirectory) {
+        switch schedule(from: obj, filename: "\(id).json", isDirectory: isDirectory) {
+        case .bad(let why):
             return .refused(.refused(400, "bad_request", why))
+        case .ok(let made):
+            return .built(obj, made: made, place: place)
         }
-        return .built(obj, place: place)
     }
 
     /// Put one assembled schedule object on disk under `<id>.json`, and read it back **off disk,
@@ -420,10 +462,13 @@ enum Orchestrator {
         let id = UUID().uuidString.lowercased()
         let obj: [String: Any]
         let place: StartPoints.Place
+        // No `when_changed_at` is written here on purpose. Nothing has changed yet, and
+        // `created_at` — this same instant — already answers everything the timer needs to ask
+        // about a schedule's first day.
         switch scheduleObject(from: body, id: id, createdAt: Int(now.timeIntervalSince1970),
                               places: places, isDirectory: isDirectory) {
         case .refused(let reply): return reply
-        case .built(let built, let chosen): obj = built; place = chosen
+        case .built(let built, _, let chosen): obj = built; place = chosen
         }
         // `rate_limited` rather than `busy`: everywhere else in this app `busy` is queue depth —
         // something already in hand that drains in seconds — and `rate_limited` is a sliding
@@ -478,13 +523,36 @@ enum Orchestrator {
         // the carried fields exist.
         let carried = ((try? JSONSerialization.jsonObject(with: previous)) as? [String: Any])?["task"]
             as? [String: Any] ?? [:]
-        let obj: [String: Any]
+        var obj: [String: Any]
+        let made: Schedule
         switch scheduleObject(from: body, id: existing.id,
                               createdAt: existing.createdAt.map { Int($0.timeIntervalSince1970) },
                               carrying: carried,
                               places: places, isDirectory: isDirectory) {
         case .refused(let reply): return reply
-        case .built(let built, _): obj = built
+        case .built(let built, let parsed, _): obj = built; made = parsed
+        }
+        // The second stamp, and the whole of the rule: an occurrence that only exists because of
+        // this save is not one this Mac slept through. Moving `21:00` to `09:00` at two in the
+        // afternoon used to dispatch today's nine o'clock within the minute — while this route's
+        // own answer said tomorrow — or, past the catch-up window, push that a run was missed.
+        //
+        // **Only a change to the firing times moves it.** Every other save carries the old stamp
+        // across untouched, for the reason `created_at` is carried rather than restamped: a
+        // schedule that really was missed at nine is still missed after somebody fixes its title
+        // at eleven, and a save that swallowed that would be this route deciding a run did not
+        // matter because an unrelated word changed.
+        //
+        // A file that never had one is stamped here, unlike `created_at`, and the difference is
+        // what the two fields claim. `created_at` would be a guess about a past this app was not
+        // there for; this is a fact it is watching happen.
+        if made.hour == existing.hour, made.minute == existing.minute,
+           made.weekdays == existing.weekdays {
+            if let unchanged = existing.whenChangedAt {
+                obj["when_changed_at"] = Int(unchanged.timeIntervalSince1970)
+            }
+        } else {
+            obj["when_changed_at"] = Int(now.timeIntervalSince1970)
         }
         // The same brake as a create, and for the same reason: what it bounds is a client
         // retrying in a loop with a fresh key each time, and a loop of saves writes a file per
@@ -635,10 +703,18 @@ enum Orchestrator {
     /// — and made in the evening it instead pushes that a run was missed and shows "last missed 1
     /// day ago". A nil `createdAt` is a file that never said when it was made, and keeps the
     /// behaviour every hand-written schedule has always had.
+    ///
+    /// `whenChangedAt` is the same gate one question further along, and it is read second because
+    /// the two answer different things: the first is "was there a schedule here", the second is
+    /// "was there an occurrence here". A save that moves `21:00` to `09:00` at two in the
+    /// afternoon leaves `created_at` correctly alone — the schedule is days old — and invents an
+    /// occurrence six hours in the past, which is inside the default catch-up window and so was
+    /// dispatched within the minute. Nobody missed a nine o'clock that did not exist at nine.
     static func scheduleAction(now: Date, fire: Date, catchUpHours: Int,
                                lastRunCreated: Date?, lastRunTerminal: Bool?,
-                               createdAt: Date?) -> ScheduleAction {
+                               createdAt: Date?, whenChangedAt: Date?) -> ScheduleAction {
         if let createdAt, fire < createdAt { return .beforeCreation }
+        if let whenChangedAt, fire < whenChangedAt { return .beforeRetiming }
         if let created = lastRunCreated, created >= fire { return .alreadyHandled }
         if lastRunTerminal == false { return .active }
         let window = TimeInterval(max(60, catchUpHours * 3600))
@@ -860,10 +936,12 @@ enum Orchestrator {
                                         catchUpHours: schedule.catchUpHours,
                                         lastRunCreated: latest?.created,
                                         lastRunTerminal: active ? false : latest.map { _ in true },
-                                        createdAt: schedule.createdAt)
+                                        createdAt: schedule.createdAt,
+                                        whenChangedAt: schedule.whenChangedAt)
             // Only the two outcomes that *consume* an occurrence write it down. An occurrence
-            // from before the schedule was made is not one of them: nothing missed it, so it
-            // leaves no `last_missed_at` behind for the list to draw and nothing to audit.
+            // from before the schedule was made — or from before the save that invented it — is
+            // not one of them: nothing missed it, so it leaves no `last_missed_at` behind for the
+            // list to draw and nothing to audit.
             if action == .run {
                 pendingScheduleFires[schedule.id] = fire
             } else if action == .active || action == .missed {
@@ -886,7 +964,7 @@ enum Orchestrator {
                     sendSchedulePush(schedule, body: "Scheduled run missed its catch-up window.",
                                      tag: "schedule-\(schedule.id)-missed")
                 }
-            case .alreadyHandled, .beforeCreation: break
+            case .alreadyHandled, .beforeCreation, .beforeRetiming: break
             }
         }
     }

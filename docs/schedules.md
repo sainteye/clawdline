@@ -26,8 +26,10 @@ creation had to be cleaned up back at the desk.
 
 Files are still the source of truth and hand-editing is still a first-class way to work. What the
 routes do not do is guess: an edit replaces the whole file from the same fields a create takes,
-and `schedule_id` and `created_at` are carried across from the file being replaced rather than
-taken from the request.
+`schedule_id` and `created_at` are carried across from the file being replaced rather than taken
+from the request, and the task-template fields no form can show are carried too rather than
+dropped. A save that moves the firing times also records when it moved them, so an edit cannot
+fire an occurrence that did not exist until the edit.
 
 The Settings app owns one convenience edit: its switch changes only the top-level `enabled`
 boolean in place. Every other byte and every other field is always yours; edit those in the JSON
@@ -89,6 +91,19 @@ that fallback in the audit log.
   afternoon opened a session within the minute, and making one in the evening pushed a
   notification about a run that was never owed. **A file without it is not wrong** — a schedule
   written by hand has always meant "as far back as anyone knows", and it still does.
+- `when_changed_at` is the same kind of stamp one question further along, written by
+  `PATCH /v1/orchestrator/schedules/:id` and by the Mac's Edit button, never named by a request.
+  `created_at` answers *did this schedule exist yet*; this answers *did this occurrence exist
+  yet*. Moving a `21:00` schedule to `09:00` at two in the afternoon invents an occurrence six
+  hours old — inside the default catch-up window — and without a second stamp the timer cannot
+  tell it from a morning the Mac slept through: measured, it opened a session within the minute
+  while the save's own answer said the next run was tomorrow, and past the window it pushed that
+  a run had been missed. Only a save that really moves `when.at` or `when.days` writes it; a save
+  that changes a title carries the old value across untouched, so a nine o'clock that genuinely
+  was missed is still missed after somebody fixes a typo at eleven. A file without it is a
+  schedule whose firing times have never been edited through the app, and it behaves exactly as
+  every schedule always has — including one retimed by hand in this file, which is the one path
+  no stamp can cover.
 
 A scheduled task may also use the task-secret `/notify` route to push that day's **successful
 content** to the user — a daily forecast is the canonical shape. Say so in `task.instructions`;
@@ -130,6 +145,16 @@ name a project this Mac has already shown it. An id that is not on the list is a
 guess, and `project_dir`, `claims`, `permission_mode` and every other task-template field are not
 fields a request may carry at all.
 
+**They are not fields a request may set, and on a save they are fields a request keeps.** Those
+are different statements and only the first one used to be worth making. Since a save stopped
+dropping the fields no form can show, a paired phone can rewrite the title, the times and the
+**first message** of a schedule that runs with `"permission_mode": "full"` and a list of `claims`
+— it cannot name those fields, it cannot add them to a schedule that has none, and it cannot
+raise the permission of one it is editing, but the instructions it does rewrite are the ones that
+run under them. That is the sharpest thing on this page: the alternative was a save that silently
+took somebody's `permission_mode` away, which is worse, but the trade is real and belongs in
+writing rather than in a commit message.
+
 Then the part that is genuinely new, because burying it would be the only dishonest way to write
 this page: **a paired phone can now arrange work that runs later, in a session nobody is watching,
 in a project that was on the list when the phone last looked.** Everything before this needed
@@ -146,8 +171,8 @@ The fields are the ones in [The file](#the-file), flattened, plus the `place_id`
 - optional: `enabled` (default `true`), `close_tab`, `catch_up_hours`, `notify_on_failure`,
   `timeout_minutes`, `model`. An empty `model` is left out of the file rather than written into
   it as an empty string.
-- written by the Mac, not by the request: `schedule_id`, the filename it must match, and
-  `created_at`.
+- written by the Mac, not by the request: `schedule_id`, the filename it must match, `created_at`,
+  and — on a save that moves the firing times — `when_changed_at`.
 - `days` is **not** defaulted. A request that does not say which days is refused, because
   choosing `daily` on somebody's behalf is choosing how often their work runs. `enabled` is the
   opposite: a schedule somebody has just asked for is on.
@@ -182,18 +207,40 @@ curl -s -X DELETE "http://127.0.0.1:$port/v1/orchestrator/schedules/4d2f54ce-…
 ```
 
 `PATCH` takes the body `POST` takes, every field of it, and **rewrites the whole file** — it is a
-save, not a patch of individual keys, and a field left out of the body goes back to the parser's
-default rather than staying as it was. Both routes are behind the same three gates as the create
-route, for the same reason: they are for the phone, and the orchestrator token is a local
+save, not a patch of individual keys. A field the body may name and leaves out goes back to the
+parser's default rather than staying as it was, so read the current schedule with
+[`GET /v1/orchestrator/schedules/:id`](api.md#get-v1orchestratorschedulesid) and send it back with
+the changes in it. The exceptions are the fields no form has a control for — `claims`,
+`permission_mode`, `serialize`, `isolation`, `isolation_base`, `deliverables`, `kind`, `plan` and
+`model` — which are read off the file being replaced and carried across, because a save that
+dropped them would be an edit changing something it never put on screen. `model` is the one of
+those a body may still name, and the two spellings mean different things: **no `model` key leaves
+the model alone, `"model": ""` takes it off.** Both routes are behind the same three gates as the
+create route, for the same reason: they are for the phone, and the orchestrator token is a local
 credential a phone cannot hold.
 
-**`schedule_id` and `created_at` are read off the file being replaced and are not fields a
-request may carry** — naming either is refused as an unknown field, alongside `project_dir`. The
-second one is not bookkeeping. `created_at` is what keeps a schedule from running for an
-occurrence that predates it, so a save that restamped it would make editing a `09:00` schedule at
-lunchtime open a session for this morning: the same bug that field was added to stop, handed back
-through a different door. A hand-written file that never had a `created_at` does not get one from
-being edited either — it goes on meaning *as far back as anyone knows*.
+**`schedule_id`, `created_at` and `when_changed_at` are the Mac's and are not fields a request may
+carry** — naming any of them is refused as an unknown field, alongside `project_dir`. The last two
+are not bookkeeping.
+
+`created_at` is what keeps a schedule from running for an occurrence that predates it, so a save
+that restamped it would make editing a `09:00` schedule at lunchtime open a session for this
+morning: the same bug that field was added to stop, handed back through a different door. A
+hand-written file that never had a `created_at` does not get one from being edited either — it
+goes on meaning *as far back as anyone knows*.
+
+`when_changed_at` closes the half of that bug carrying `created_at` across leaves open. A schedule
+made last week is a week old however its times move, so its own age cannot say whether *this
+morning's nine o'clock* is a run the Mac slept through or one this save invented sixty seconds
+ago. Moving `21:00` to `09:00` at two in the afternoon used to dispatch today's nine within the
+minute — while this route's own answer said tomorrow — and past the catch-up window it pushed that
+a run had been missed. So a save that moves `when.at` or `when.days` stamps this instant, the
+timer ignores every occurrence older than it, and **a save that moves neither carries the old
+value across untouched**: a nine o'clock that really was missed is still missed after somebody
+fixes the title at eleven. Unlike `created_at`, a hand-written file *does* get one the first time
+a save retimes it, because the two claim different things — one would be a guess about a past this
+app was not there for, the other is a fact it is watching happen. Retiming this file by hand
+writes nothing and is the one path no stamp covers; it behaves as it always has.
 
 Everything the create route refuses, an edit refuses, because both assemble the same object and
 hand it to the same parser: the refusal carries that parser's own sentence, and an edit is not a

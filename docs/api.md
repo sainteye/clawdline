@@ -1453,24 +1453,52 @@ $ curl -s -X PATCH http://127.0.0.1:7717/v1/orchestrator/schedules/4d2f54ce-… 
 {"ok":true,"schedule":{"id":"4d2f54ce-…","title":"Publish the next post","enabled":true,"next_fire":1787905500}}
 ```
 
-**A save, not a patch of individual keys.** The whole file is rewritten, so a field left out of
-the body goes back to the parser's default rather than staying as it was — read the current one
-with [`GET /v1/orchestrator/schedules/:id`](#get-v1orchestratorschedulesid), which exists for
-exactly this, and send it back with the changes in it. Required and optional fields, the
-`place_id`, the gates and every refusal are the create route's, because both assemble the same
+**A save, not a patch of individual keys.** The whole file is rewritten, so a field the body may
+name and leaves out goes back to the parser's default rather than staying as it was — read the
+current one with [`GET /v1/orchestrator/schedules/:id`](#get-v1orchestratorschedulesid), which
+exists for exactly this, and send it back with the changes in it. Required and optional fields,
+the `place_id`, the gates and every refusal are the create route's, because both assemble the same
 object and hand it to the same parser: an edit is not a way to write a file a create would not
 write.
 
-**`schedule_id` and `created_at` are read off the file being replaced and are not fields this
-request may carry** — naming either is a `400` for an unknown field, like `project_dir`. The
-second matters beyond tidiness: `created_at` is what makes the minute timer ignore an occurrence
-older than the schedule, so a save that restamped it would make editing a `09:00` schedule at
-lunchtime open a session for this morning. A hand-written file with no `created_at` does not
-acquire one by being edited.
+**The task-template fields no form has a control for are the exception, and they are carried
+rather than defaulted**: `claims`, `permission_mode`, `serialize`, `isolation`, `isolation_base`,
+`deliverables`, `kind`, `plan` and `model` are read off the file being replaced. A save that
+dropped them would be an edit changing what it never put on screen — measured, `claims` and
+`permission_mode` were gone after one save from either surface. `model` is the one of those a body
+may still name, so the two spellings are held apart: **a body with no `model` key keeps the model
+that is there, and `"model": ""` takes it off.** The page's form sends no `model` key at all,
+which is why folding those together would hand a `"model": "opus"` schedule back running the
+assistant's default.
+
+**What this widens, said plainly.** A phone cannot name `permission_mode` or `claims`, cannot add
+either to a schedule that has none, and cannot raise the permission of one it is editing — but it
+can now rewrite the title, the times and the **first message** of a schedule that already runs
+with `"permission_mode": "full"`, and those instructions run under that permission. The
+alternative was a save that silently stripped the field, which is worse; the trade is real and is
+written down rather than left in a commit message.
+
+**`schedule_id`, `created_at` and `when_changed_at` are the Mac's and are not fields this request
+may carry** — naming any of them is a `400` for an unknown field, like `project_dir`. The last two
+matter beyond tidiness. `created_at` is what makes the minute timer ignore an occurrence older
+than the schedule, so a save that restamped it would make editing a `09:00` schedule at lunchtime
+open a session for this morning. A hand-written file with no `created_at` does not acquire one by
+being edited.
+
+`when_changed_at` is the other half of that, and the answer to a bug carrying `created_at` across
+leaves open: a schedule made last week is a week old however its times move, so its age cannot say
+whether this morning's nine o'clock is a run this Mac slept through or one this save invented a
+minute ago. Measured, moving `21:00` to `09:00` at 14:00 dispatched today's nine within the minute
+— while the `200` below said `next_fire` was tomorrow — and the same edit at 17:00 pushed
+"Scheduled run missed its catch-up window" instead. A save that moves `at` or `days` now stamps
+this instant into the file and the timer ignores every occurrence older than it; a save that moves
+neither carries the old stamp across untouched, so a run that really was missed at nine is still
+missed after somebody fixes the title at eleven. Retiming the file by hand writes no stamp and
+behaves as it always has.
 
 | | when |
 |---|---|
-| `400 bad_request` | no `Idempotency-Key`; an unknown field, `schedule_id` and `created_at` among them; a `place_id` that is not on the list; or any field the [schedule parser](schedules.md#the-file) refuses, carrying that parser's own sentence |
+| `400 bad_request` | no `Idempotency-Key`; an unknown field, `schedule_id`, `created_at` and `when_changed_at` among them; a `place_id` that is not on the list; or any field the [schedule parser](schedules.md#the-file) refuses, carrying that parser's own sentence |
 | `401 unauthorized` | no token, or one this Mac does not know |
 | `403 write_disabled`, `403 forbidden` | the write switch is off; or this device may read and not send |
 | `404 not_found` | no schedule with that id, an id that is not an id, or a source file this app cannot itself parse — see below |
