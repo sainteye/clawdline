@@ -7734,6 +7734,52 @@ group("every word the page can draw is a word the page is sent") {
           "sent but absent from i18n.js T: " + absentFallbacks.sorted().joined(separator: ", "))
 }
 
+group("health and hello carry the same fields their shared handler reads") {
+    // `/v1/health` also has route-only facts (`ok`, `auth`, `password`, `authed`) which an SSE
+    // frame cannot all compute: the stream no longer has the Request that proved authentication.
+    // The contract is the set consumed by both paths through handlers.hello. It is derived from
+    // those reads rather than repeated here, because `build` was once added to health and to the
+    // consumer but not to hello; a hand-maintained expected list would recreate that exact bug.
+    let frontendPaths = ["Resources/web/app/js/net/build.js",
+                         "Resources/web/app/js/net/handlers.js"]
+    let frontend = frontendPaths.compactMap {
+        try? String(contentsOfFile: $0, encoding: .utf8)
+    }.joined(separator: "\n")
+    let legacy = (try? String(contentsOfFile: "Resources/web/index.html", encoding: .utf8)) ?? ""
+    let consumer = frontend.isEmpty ? legacy : frontend
+    let pattern = try! NSRegularExpression(pattern: #"\binfo\.([A-Za-z_$][A-Za-z0-9_$]*)"#)
+    let whole = NSRange(consumer.startIndex..<consumer.endIndex, in: consumer)
+    let consumed = Set(pattern.matches(in: consumer, range: whole).compactMap { match -> String? in
+        guard let range = Range(match.range(at: 1), in: consumer) else { return nil }
+        return String(consumer[range])
+    })
+
+    let response = RemoteServer.shared.route(remoteRequest("GET", "/v1/health"))
+    let health = Set((((try? JSONSerialization.jsonObject(with: response.body))
+        as? [String: Any]) ?? [:]).keys)
+
+    let swift = (try? String(contentsOfFile: "Sources/RemoteServer.swift", encoding: .utf8)) ?? ""
+    let helloMarker = "write(event: \"hello\", data: ["
+    let helloEnd = "], to: stream)"
+    var hello: Set<String> = []
+    if let start = swift.range(of: helloMarker),
+       let end = swift.range(of: helloEnd, range: start.upperBound..<swift.endIndex) {
+        for line in swift[start.upperBound..<end.lowerBound].split(separator: "\n") {
+            let part = line.trimmingCharacters(in: .whitespaces)
+            guard part.first == "\"", let close = part.dropFirst().firstIndex(of: "\"") else { continue }
+            hello.insert(String(part[part.index(after: part.startIndex)..<close]))
+        }
+    }
+
+    let healthFields = health.intersection(consumed)
+    let helloFields = hello.intersection(consumed)
+    let healthMissing = consumed.subtracting(health).sorted()
+    let helloMissing = consumed.subtracting(hello).sorted()
+    check("the health answer and hello event agree on every client-state key",
+          !consumed.isEmpty && healthFields == consumed && helloFields == consumed,
+          "consumed: \(consumed.sorted()); health missing: \(healthMissing); hello missing: \(helloMissing)")
+}
+
 group("ending a session is the one route that destroys something") {
     let wasWriting = Config.shared.remoteWrite
     defer { Config.shared.remoteWrite = wasWriting }

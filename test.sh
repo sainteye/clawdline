@@ -25,6 +25,8 @@ fi
 # — but only if something checks. A release added to Compat.swift and not regenerated here is a
 # page claiming support for a version that was never tried.
 tools/build-compatibility.py --check
+tools/check-web-strings.py
+tools/check-web-ids.py
 
 # Keep the small browser-independent renderer contracts beside the Swift suite. The web app's
 # scoped package.json marks its shipped files as ESM, matching the browser's module entry.

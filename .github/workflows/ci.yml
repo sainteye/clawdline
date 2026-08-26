@@ -12,6 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 tools/validate-pack.py Resources/mascots/*.json
+      # Pure stdlib checks: run them here for the fast Linux answer as well as in ./test.sh.
+      - run: python3 tools/check-web-strings.py
+      - run: python3 tools/check-web-ids.py
 
   tests:
     name: Swift tests
