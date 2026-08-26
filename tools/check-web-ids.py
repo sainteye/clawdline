@@ -79,6 +79,8 @@ def starts_regex(text, last, last_index):
         start = last_index
         while start and (text[start - 1].isalnum() or text[start - 1] in "_$"):
             start -= 1
+        if start and text[start - 1] == ".":
+            return False  # `iter.return / 2` is a property read, so the slash divides.
         return text[start:last_index + 1] in REGEX_AFTER_WORD
     return False
 
