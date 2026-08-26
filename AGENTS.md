@@ -30,6 +30,10 @@ test_tmp=$(mktemp -d)
 Use a new, private `TMPDIR` for every `./test.sh` run.
 The script writes its test binary to the fixed path `${TMPDIR}/clawdline-tests`; shared `TMPDIR`
 values race and overwrite it.
+
+A new test must be seen red before the change that makes it green. A test born green proves
+nothing: reviews here have repeatedly found suites that stayed green after the guarded logic was
+replaced with a stub — or deleted outright. Break the thing once, watch the test catch it, then fix it.
 Do not build from the live working tree, because it may contain another session's partial edits or
 untracked files.
 
