@@ -592,6 +592,7 @@ Everything the app does is logged to `~/Library/Logs/Clawdline.log`.
 | --- | --- |
 | [The bar, up close](docs/interface.md) | the session list, the <kbd>⌘</kbd><kbd>J</kbd> pane, dictation, files, the notch |
 | [Handing work off](docs/orchestrator.md) | one session dispatching another: the protocol, the credentials, the lifecycle |
+| [Continuing work in a new session](docs/handoff.md) | one session handing its whole line of work to the next |
 | [Where a dispatched session stops](docs/dispatch-permissions.md) | the four gates in order, and the flag that means the opposite on the cheapest model |
 | [Connecting a project](docs/connect.md) | written for an agent: the files to create and how to check them |
 | [The dev stack](docs/devstack.md) · [adopting it](docs/devstack-adopting.md) | `.devstack.json`, and the three heights of adopting it |

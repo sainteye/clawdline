@@ -762,7 +762,8 @@ web interface and anything else watching finds out without asking.
 ### Cleanup
 
 At start and every six hours: task directories for terminal tasks that finished more than 24 hours
-ago are removed, and the registry keeps its most recent 200 records. **Artifacts are in `/tmp` and
+ago are removed; terminal handoff envelopes and packages are removed 24 hours after their `created`
+time. The registry keeps its most recent 200 task records. **Artifacts are in `/tmp` and
 they are not yours to keep** — if a child produced something worth having, copy it out. The
 directory going away after a day is the same promise `/tmp` always made, made explicitly.
 
@@ -823,7 +824,7 @@ cp skills/clawdline/SKILL.md ~/.claude/skills/clawdline/SKILL.md      # or SKILL
 ```
 
 There is an English `SKILL.md` and a Traditional Chinese `SKILL.zh-TW.md` of the same text. Install
-one of them, not both — they declare the same `name:`. Six steps:
+one of them, not both — they declare the same `name:`. Seven sections:
 
 1. **Find the door.** `remote_port` out of `config.json` (7717 if absent),
    `~/.config/clawdline/orchestrator-token` for the token. Either one missing is a full stop with an
@@ -849,6 +850,10 @@ one of them, not both — they declare the same `name:`. Six steps:
    on.
 6. **Report, then get out of the way.** No polling loop. The notification arrives on its own, and
    `GET /v1/orchestrator/tasks/:id` answers when somebody asks.
+7. **Hand a whole line of work on when dispatch is the wrong motion.** The same skill writes the
+   continuation package and calls `POST /v1/orchestrator/handoffs`; the receiver is a new root,
+   not a child. The complete package and receiving contract are in
+   [`docs/handoff.md`](handoff.md).
 
 **Drawing is a real branch inside step 2.** Codex has an image model built in — `image_gen`, on by
 default, no API key, billed to the account the child is already signed in as — so *"draw this"*
@@ -860,7 +865,7 @@ anything that has to stay editable.
 
 The one rule stated before any of them: **a child dispatches only if its briefing said it could,
 and what it opens opens nothing.** `CHILD.md` is where a child reads that, and it carries the same
-six steps in miniature — spelled out rather than pointed at the skill, because half of these
+dispatch steps in miniature — spelled out rather than pointed at the skill, because half of these
 sessions are Codex and Codex has no skills.
 
 ---

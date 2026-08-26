@@ -185,6 +185,64 @@ enum Orchestrator {
         var dir: URL { Orchestrator.root.appendingPathComponent(id, isDirectory: true) }
     }
 
+    // MARK: - A handoff envelope
+
+    enum HandoffState: String {
+        case opening, delivered
+        case spawnFailed = "spawn_failed"
+
+        var isTerminal: Bool { self != .opening }
+    }
+
+    /// The durable postman's memory. It deliberately contains no assistant transcript, package
+    /// path, terminal id, model, or byte from handoff.md; those are delivery mechanics rather
+    /// than the envelope the protocol permits the registry to remember.
+    struct HandoffEnvelope {
+        let id: String
+        let projectDir: String
+        let title: String?
+        let fromSession: String?
+        let created: Date
+        var state: HandoffState
+
+        var dir: URL {
+            Orchestrator.handoffRoot.appendingPathComponent(id, isDirectory: true)
+        }
+    }
+
+    struct HandoffDraft: Equatable {
+        let id: String
+        let projectDir: String
+        let assistant: Assistant
+        let model: String?
+        let title: String?
+        let fromSession: String?
+    }
+
+    enum HandoffDraftOutcome: Equatable {
+        case ok(HandoffDraft)
+        case bad(String)
+
+        var isBad: Bool {
+            if case .bad = self { return true }
+            return false
+        }
+    }
+
+    /// Everything needed only while the line is in flight. Losing this on restart is deliberate:
+    /// the durable row prevents a second tab; startup settles an interrupted opening as failed.
+    private struct HandoffDelivery {
+        let id: String
+        let assistant: Assistant
+        let model: String?
+        let terminalID: String
+        let backend: Backend
+        let spawnedAt: Date
+        var attempts = 0
+        var lastInjectAt: Date?
+        var answeredMenu = false
+    }
+
     /// The directory whose assistant-owned records belong to this child. Kept separate from the
     /// dispatch project so task isolation can choose a different working tree at this seam.
     static func cwd(of task: Task) -> String {
@@ -373,6 +431,21 @@ enum Orchestrator {
         }
     }
 
+    static func transcriptContainsHandoff(_ transcript: String?, assistant: Assistant,
+                                          handoffID: String) -> Bool {
+        guard let transcript else { return false }
+        let line = handoffLine(id: handoffID)
+        return Transcript.parse(transcript, assistant: assistant, limit: 100).contains { entry in
+            entry.kind == .user && entry.text.contains(line)
+        }
+    }
+
+    /// A first send needs only a ready composer. Every retry additionally needs a known
+    /// transcript, exactly as a dispatched briefing does: absence is not evidence of rejection.
+    static func handoffRetryAllowed(attempts: Int, transcriptKnown: Bool) -> Bool {
+        attempts == 0 || transcriptKnown
+    }
+
     enum TranscriptOwnership: Equatable {
         case belongs, other, unavailable
     }
@@ -488,6 +561,11 @@ enum Orchestrator {
     // MARK: - Where everything lives
 
     static let root = URL(fileURLWithPath: "/tmp/.clawdline", isDirectory: true)
+    static var handoffRootOverrideForTesting: URL?
+    static var handoffRoot: URL {
+        handoffRootOverrideForTesting
+            ?? root.appendingPathComponent("handoffs", isDirectory: true)
+    }
 
     static var storeURL: URL { RemoteAuth.directory.appendingPathComponent("orchestrator.json") }
     static var tokenURL: URL { RemoteAuth.directory.appendingPathComponent("orchestrator-token") }
@@ -511,6 +589,8 @@ enum Orchestrator {
     private static let storeSaveLock = NSLock()
     private static var loaded = false
     private static var tasks: [String: Task] = [:]
+    private static var handoffs: [String: HandoffEnvelope] = [:]
+    private static var handoffDeliveries: [String: HandoffDelivery] = [:]
     /// How many `beat` walks are inside the loop, and which walk this is. Both exist to catch the
     /// overlap that should not be possible; neither changes what a walk does.
     private static var beatsInFlight = 0
@@ -523,6 +603,8 @@ enum Orchestrator {
     /// Child terminal id → task title, rebuilt whenever the tasks change. Read on every redraw
     /// of every session row, which is why it is a dictionary and not a walk over the tasks.
     private static var titlesByTerminal: [String: String] = [:]
+    /// Handoff tabs are roots, not task roles, but still keep the protocol's requested label.
+    private static var handoffTitlesByTerminal: [String: String] = [:]
 
     /// Terminal id → where that tab sits in the tree. Rebuilt beside ``titlesByTerminal``.
     private static var rolesByTerminal: [String: Role] = [:]
@@ -567,7 +649,7 @@ enum Orchestrator {
 
     /// Under the lock.
     private static func reindex() {
-        var found: [String: String] = [:]
+        var found = handoffTitlesByTerminal
         var roles: [String: Role] = [:]
         for task in tasks.values {
             guard let terminal = task.childTerminalId else { continue }
@@ -584,6 +666,17 @@ enum Orchestrator {
         }
         titlesByTerminal = found
         rolesByTerminal = roles
+    }
+
+    /// Handoff labels are transient UI state. Keep one while its tab is visible or its first line
+    /// is still in flight; once a closed tab disappears from the reading, its reusable id must
+    /// not carry the old root's label into a later session.
+    static func pruneClosedHandoffTitles(visible: Set<String>) {
+        let delivering = Set(handoffDeliveries.values.map(\.terminalID))
+        handoffTitlesByTerminal = handoffTitlesByTerminal.filter {
+            visible.contains($0.key) || delivering.contains($0.key)
+        }
+        reindex()
     }
 
     /// Commit a value copy only while the record is still the state the caller worked from.
@@ -1489,6 +1582,193 @@ enum Orchestrator {
         ]
     }
 
+    // MARK: - Handoff
+
+    static func handoffPackageReady(id: String) -> Bool {
+        let manager = FileManager.default
+        let parent = handoffRoot.deletingLastPathComponent()
+        do {
+            for directory in [parent, handoffRoot] {
+                try manager.createDirectory(at: directory, withIntermediateDirectories: true,
+                                            attributes: [.posixPermissions: 0o700])
+                try manager.setAttributes([.posixPermissions: 0o700],
+                                          ofItemAtPath: directory.path)
+            }
+        } catch {
+            return false
+        }
+        let directory = handoffRoot.appendingPathComponent(id, isDirectory: true)
+        var isDirectory: ObjCBool = false
+        guard manager.fileExists(atPath: directory.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else { return false }
+        let letter = directory.appendingPathComponent("handoff.md")
+        guard let attributes = try? manager.attributesOfItem(atPath: letter.path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let size = attributes[.size] as? NSNumber else { return false }
+        // Size is the only fact read. The postman never opens the letter to judge its contents.
+        return size.int64Value > 0
+    }
+
+    static func handoffDraft(from obj: [String: Any],
+                             isDirectory: (String) -> Bool = StartPoints.isDirectory,
+                             packageIsReady: ((String) -> Bool)? = nil)
+        -> HandoffDraftOutcome {
+        guard let id = obj["handoff_id"] as? String, isTaskID(id) else {
+            return .bad("handoff_id must be a lowercase UUID")
+        }
+        guard let projectDir = obj["project_dir"] as? String,
+              StartPoints.usable(projectDir), isDirectory(projectDir) else {
+            return .bad("project_dir must be an absolute path to a directory")
+        }
+        let assistant: Assistant
+        if let raw = obj["assistant"] {
+            guard let name = raw as? String, let selected = Assistant(rawValue: name) else {
+                return .bad("assistant must be claude or codex")
+            }
+            assistant = selected
+        } else {
+            assistant = .claude
+        }
+        var model: String?
+        if let raw = obj["model"] {
+            guard let name = raw as? String, StartPoints.modelName(name) == name else {
+                return .bad("model must be a model name: lower-case letters, digits, . _ -, "
+                          + "at most 64 characters")
+            }
+            model = name
+        }
+        func optionalString(_ key: String) -> String?? {
+            guard let raw = obj[key] else { return .some(nil) }
+            guard let value = raw as? String, value.count <= 200 else { return nil }
+            return .some(.some(value))
+        }
+        guard let title = optionalString("title") else {
+            return .bad("title must be a string of at most 200 characters")
+        }
+        guard let fromSession = optionalString("from_session") else {
+            return .bad("from_session must be a string of at most 200 characters")
+        }
+        let ready = packageIsReady?(id) ?? handoffPackageReady(id: id)
+        guard ready else {
+            return .bad("No non-empty regular handoff.md under "
+                      + "/tmp/.clawdline/handoffs/<handoff_id>/")
+        }
+        return .ok(HandoffDraft(id: id, projectDir: projectDir, assistant: assistant,
+                                model: model, title: title, fromSession: fromSession))
+    }
+
+    /// The one protocol sentence typed into every receiving assistant. Keep it assembled here so
+    /// tests compare the exact bytes rather than searching for a convenient fragment.
+    static func handoffLine(id: String) -> String {
+        "You are picking up a Clawdline handoff. Read /tmp/.clawdline/handoffs/\(id)/handoff.md "
+            + "before anything else and follow it: walk its REFERENCES, answer its VERIFICATION "
+            + "questions from those sources, say plainly what you could not reach, then continue "
+            + "from OPEN THREADS."
+    }
+
+    static func handoffReceipt(id: String, title: String?, assistant: Assistant,
+                               projectDir: String, delivered: Bool) -> String {
+        let short = String(id.prefix(8))
+        guard delivered else {
+            return "[clawdline] handoff \(short) opened a tab but the first line never landed "
+                + "— type it in by hand"
+        }
+        let named = title.map { " (\($0))" } ?? ""
+        return "[clawdline] handoff \(short)\(named) picked up by \(assistant.rawValue) "
+            + "in \(projectDir)"
+    }
+
+    private static func successfulHandoffReply(for envelope: HandoffEnvelope,
+                                               draft: HandoffDraft? = nil,
+                                               terminalID: String? = nil,
+                                               backend: Backend? = nil) -> Reply {
+        var record: [String: Any] = [
+            "id": envelope.id,
+            "state": envelope.state.rawValue,
+            "projectDir": envelope.projectDir,
+            "dir": envelope.dir.path,
+        ]
+        if let title = envelope.title { record["title"] = title }
+        if let from = envelope.fromSession { record["fromSession"] = from }
+        if let draft { record["assistant"] = draft.assistant.rawValue }
+        if let terminalID, let backend {
+            record["opened"] = ["terminalId": terminalID, "backend": backend.rawValue]
+        }
+        return .ok(["ok": true, "handoff": record])
+    }
+
+    typealias HandoffStarter = (StartPoints.Place, Assistant, String?, String?)
+        -> StartPoints.Outcome
+
+    /// Register and synchronously open one receiving tab. Waiting for a composer and confirming
+    /// the first turn happen on the ordinary orchestrator beat after the HTTP connection closes.
+    static func handoff(_ obj: [String: Any],
+                        start: HandoffStarter = { place, assistant, model, addDir in
+                            StartPoints.start(place, assistant: assistant, model: model,
+                                              addDir: addDir)
+                        }) -> Reply {
+        guard Config.shared.orchestratorEnabled else {
+            return .refused(403, "orchestrator_disabled",
+                            "Task dispatch is switched off in Settings.")
+        }
+        guard let id = obj["handoff_id"] as? String, isTaskID(id) else {
+            return .refused(422, "bad_task", "handoff_id must be a lowercase UUID.")
+        }
+        if let existing = heldHandoff(id) { return successfulHandoffReply(for: existing) }
+        guard takeDispatchRate() != nil else {
+            return .refused(429, "rate_limited", "Too many dispatches; wait a few minutes.")
+        }
+        let draft: HandoffDraft
+        switch handoffDraft(from: obj) {
+        case .bad(let why): return .refused(422, "bad_task", why)
+        case .ok(let valid): draft = valid
+        }
+        let envelope = HandoffEnvelope(id: draft.id, projectDir: draft.projectDir,
+                                       title: draft.title, fromSession: draft.fromSession,
+                                       created: Date(), state: .opening)
+        lock.lock()
+        // The server queue is serial, but the lock keeps direct test callers and any future
+        // entry point from crossing the open-tab side effect together.
+        if let existing = handoffs[id] {
+            lock.unlock()
+            return successfulHandoffReply(for: existing)
+        }
+        handoffs[id] = envelope
+        lock.unlock()
+        save()
+        RemoteAuth.audit("handoff.open", ["handoff": id, "assistant": draft.assistant.rawValue,
+                                           "cwd": draft.projectDir,
+                                           "title": draft.title ?? "handoff \(id.prefix(8))"])
+
+        let place = StartPoints.Place(id: StartPoints.id(for: draft.projectDir),
+                                      path: draft.projectDir,
+                                      label: draft.title ?? "handoff \(id.prefix(8))", at: Date())
+        switch start(place, draft.assistant, draft.model, envelope.dir.path) {
+        case .refused(let status, let code, let message, let app):
+            lock.lock()
+            var failed = handoffs[id] ?? envelope
+            failed.state = .spawnFailed
+            handoffs[id] = failed
+            lock.unlock()
+            save()
+            RemoteAuth.audit("handoff.undelivered", ["handoff": id, "why": code])
+            return .refused(status: status, code: code, message: message,
+                            extra: app.map { ["app": $0] } ?? [:])
+        case .started(let terminalID, let backend):
+            let delivery = HandoffDelivery(id: id, assistant: draft.assistant,
+                                           model: draft.model, terminalID: terminalID,
+                                           backend: backend, spawnedAt: Date())
+            lock.lock()
+            handoffDeliveries[id] = delivery
+            handoffTitlesByTerminal[terminalID] = place.label
+            reindex()
+            lock.unlock()
+            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+            return successfulHandoffReply(for: envelope, draft: draft,
+                                          terminalID: terminalID, backend: backend)
+        }
+    }
+
     // MARK: - Dispatch
 
     /// Runs on the server queue. Everything filesystem- and process-shaped is safe there — the
@@ -2234,9 +2514,19 @@ enum Orchestrator {
             tasks[id] = dead
             orphaned.append(id)
         }
+        var interruptedHandoffs: [String] = []
+        for (id, envelope) in handoffs where envelope.state == .opening {
+            var failed = envelope
+            failed.state = .spawnFailed
+            handoffs[id] = failed
+            interruptedHandoffs.append(id)
+        }
         lock.unlock()
+        for id in interruptedHandoffs {
+            RemoteAuth.audit("handoff.undelivered", ["handoff": id, "why": "app_restarted"])
+        }
         let rearmed = rearmLingers()
-        if !orphaned.isEmpty || rearmed { save() }
+        if !orphaned.isEmpty || !interruptedHandoffs.isEmpty || rearmed { save() }
         scheduleSerializePump()
     }
 
@@ -2298,7 +2588,9 @@ enum Orchestrator {
         // It counts rather than blocks, and that is still deliberate. A dropped walker leaves
         // nothing to read, and the record cannot be damaged by a stale copy anyway: `replaceTask`
         // refuses to move a task backwards.
+        let visibleTerminals = Set(SessionWatch.shared.targets.map(\.id))
         lock.lock()
+        pruneClosedHandoffTitles(visible: visibleTerminals)
         beatSequence += 1
         let sequence = beatSequence
         let overlapping = beatsInFlight > 0
@@ -2306,6 +2598,7 @@ enum Orchestrator {
         let liveIDs = tasks.values
             .filter { !$0.state.isTerminal || $0.closeAt != nil }
             .map(\.id)
+        let liveHandoffs = Array(handoffDeliveries.keys)
         lock.unlock()
         defer {
             lock.lock(); beatsInFlight -= 1; lock.unlock()
@@ -2321,6 +2614,9 @@ enum Orchestrator {
         // tab, the last task of a fan-out leaves nothing in `liveIDs` at all — and a batch that
         // announces only while something is still on the list is one that never announces.
         sweepBatches()
+
+        for id in liveHandoffs { handoffStep(id) }
+        if fromTimer, !liveHandoffs.isEmpty { SessionWatch.shared.nudge() }
 
         guard !liveIDs.isEmpty else { return }
 
@@ -2465,6 +2761,124 @@ enum Orchestrator {
                                                         "child": task.childTerminalId ?? "?",
                                                         "attempt": String(task.injectAttempts)])
         return true
+    }
+
+    /// Advance one handoff while it is waiting for a composer or a transcript receipt. This is
+    /// deliberately not a task watcher: the entry disappears the instant delivery settles.
+    private static func handoffStep(_ id: String) {
+        lock.lock()
+        guard var delivery = handoffDeliveries[id], let envelope = handoffs[id],
+              envelope.state == .opening else {
+            handoffDeliveries.removeValue(forKey: id)
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+
+        if Date().timeIntervalSince(delivery.spawnedAt) > readyLimit {
+            settleHandoff(id, delivered: false, assistant: delivery.assistant,
+                          why: "prompt_timeout")
+            return
+        }
+        guard let child = SessionWatch.shared.targets.first(where: {
+            $0.id == delivery.terminalID && $0.assistant == delivery.assistant
+        }) else { return }
+
+        let line = handoffLine(id: id)
+        let recorded: Bool
+        let transcriptKnown: Bool
+        switch delivery.assistant {
+        case .claude:
+            var sawTranscript = false
+            let url = Transcript.locate(cwd: envelope.projectDir, tabTitle: child.name,
+                                        startedAt: delivery.spawnedAt,
+                                        sessionID: SessionRegistry.sessionID(of: child),
+                                        accepting: { url in
+                sawTranscript = true
+                let text = try? String(contentsOf: url, encoding: .utf8)
+                return transcriptContainsHandoff(text, assistant: .claude, handoffID: id)
+            })
+            transcriptKnown = sawTranscript
+            recorded = url != nil
+        case .codex:
+            if let rollout = Codex.locate(cwd: envelope.projectDir,
+                                          startedAt: delivery.spawnedAt,
+                                          pid: Targets.pid(of: child)),
+               let text = try? String(contentsOf: rollout, encoding: .utf8) {
+                transcriptKnown = true
+                recorded = transcriptContainsHandoff(text, assistant: .codex, handoffID: id)
+            } else {
+                transcriptKnown = false
+                recorded = false
+            }
+        }
+        if recorded {
+            settleHandoff(id, delivered: true, assistant: delivery.assistant, why: nil)
+            return
+        }
+
+        let screen = Targets.capture(child)
+        if let screen, SessionState.isChoosing(screen, assistant: delivery.assistant) {
+            if !delivery.answeredMenu {
+                delivery.answeredMenu = true
+                lock.lock()
+                if handoffDeliveries[id] != nil { handoffDeliveries[id] = delivery }
+                lock.unlock()
+                _ = Targets.answer(0x31, to: child)
+                RemoteAuth.audit("handoff.menu", ["handoff": id, "answer": "1"])
+            }
+            return
+        }
+        guard briefingInputReady(screen, assistant: delivery.assistant) else { return }
+        guard handoffRetryAllowed(attempts: delivery.attempts,
+                                  transcriptKnown: transcriptKnown) else { return }
+        if let last = delivery.lastInjectAt,
+           Date().timeIntervalSince(last) < briefingReceiptDelay { return }
+        if delivery.attempts >= briefingAttemptLimit {
+            settleHandoff(id, delivered: false, assistant: delivery.assistant,
+                          why: "delivery_unconfirmed")
+            return
+        }
+        delivery.attempts += 1
+        delivery.lastInjectAt = Date()
+        let failure = Targets.send(line, to: child)
+        if failure != nil { delivery.lastInjectAt = nil }
+        lock.lock()
+        if handoffDeliveries[id] != nil { handoffDeliveries[id] = delivery }
+        lock.unlock()
+        RemoteAuth.audit("handoff.inject", ["handoff": id,
+                                             "attempt": String(delivery.attempts),
+                                             "ok": failure == nil ? "1" : "0"])
+        if failure != nil, delivery.attempts >= briefingAttemptLimit {
+            settleHandoff(id, delivered: false, assistant: delivery.assistant,
+                          why: "send_failed")
+        }
+    }
+
+    static func settleHandoff(_ id: String, delivered: Bool, assistant: Assistant,
+                              why: String?) {
+        lock.lock()
+        guard var envelope = handoffs[id], envelope.state == .opening else {
+            lock.unlock()
+            return
+        }
+        envelope.state = delivered ? .delivered : .spawnFailed
+        handoffs[id] = envelope
+        handoffDeliveries.removeValue(forKey: id)
+        lock.unlock()
+        save()
+        RemoteAuth.audit(delivered ? "handoff.delivered" : "handoff.undelivered",
+                         ["handoff": id, "why": why ?? "delivered"])
+
+        guard Config.shared.orchestratorNotifyRoot,
+              let from = envelope.fromSession,
+              let sender = target(forRootSession: from),
+              !Targets.isChoosing(sender) else { return }
+        let receipt = handoffReceipt(id: id, title: envelope.title, assistant: assistant,
+                                     projectDir: envelope.projectDir, delivered: delivered)
+        if let failure = Targets.send(receipt, to: sender) {
+            Log.write("orchestrator: could not send handoff receipt — \(failure)")
+        }
     }
 
     /// Watch a briefed child for its result, its death, or its deadline. True when the record
@@ -3777,6 +4191,15 @@ enum Orchestrator {
         return record(of: task)
     }
 
+    /// The durable handoff envelope, in its registry spelling. There is intentionally no public
+    /// GET route; this seam exists for round-trip and cleanup tests.
+    static func handoffRecord(id: String) -> [String: Any]? {
+        guard let envelope = heldHandoff(id) else { return nil }
+        return stored(envelope)
+    }
+
+    static func saveForTesting() { save() }
+
     /// The stored fields only — safe off the main thread, used where a route already holds the
     /// answer and only needs its shape.
     private static func existingRecord(_ id: String) -> [String: Any]? {
@@ -3888,8 +4311,14 @@ enum Orchestrator {
             guard let task = task(from: row) else { continue }
             found[task.id] = task
         }
+        var foundHandoffs: [String: HandoffEnvelope] = [:]
+        for row in obj["handoffs"] as? [[String: Any]] ?? [] {
+            guard let envelope = handoff(from: row) else { continue }
+            foundHandoffs[envelope.id] = envelope
+        }
         lock.lock()
         tasks = found
+        handoffs = foundHandoffs
         reindex()
         lock.unlock()
     }
@@ -3899,8 +4328,10 @@ enum Orchestrator {
         lock.lock()
         reindex()
         let rows = tasks.values.sorted { $0.created < $1.created }.map { stored($0) }
+        let handoffRows = handoffs.values.sorted { $0.created < $1.created }
+            .map { stored($0) }
         lock.unlock()
-        let obj: [String: Any] = ["version": 1, "tasks": rows]
+        let obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows]
         guard let data = try? JSONSerialization.data(withJSONObject: obj,
                                                      options: [.prettyPrinted, .sortedKeys,
                                                                .withoutEscapingSlashes]) else {
@@ -3973,6 +4404,31 @@ enum Orchestrator {
             out["usage"] = counts
         }
         return out
+    }
+
+    static func stored(_ envelope: HandoffEnvelope) -> [String: Any] {
+        var out: [String: Any] = [
+            "handoff_id": envelope.id,
+            "project_dir": envelope.projectDir,
+            "created": envelope.created.timeIntervalSince1970,
+            "state": envelope.state.rawValue,
+        ]
+        if let title = envelope.title { out["title"] = title }
+        if let from = envelope.fromSession { out["from_session"] = from }
+        return out
+    }
+
+    static func handoff(from obj: [String: Any]) -> HandoffEnvelope? {
+        guard let id = obj["handoff_id"] as? String, isTaskID(id),
+              let projectDir = obj["project_dir"] as? String, StartPoints.usable(projectDir),
+              let created = obj["created"] as? Double,
+              let state = (obj["state"] as? String).flatMap(HandoffState.init(rawValue:))
+        else { return nil }
+        let title = (obj["title"] as? String).flatMap { $0.count <= 200 ? $0 : nil }
+        let from = (obj["from_session"] as? String).flatMap { $0.count <= 200 ? $0 : nil }
+        return HandoffEnvelope(id: id, projectDir: projectDir, title: title,
+                               fromSession: from, created: Date(timeIntervalSince1970: created),
+                               state: state)
     }
 
     static func task(from obj: [String: Any]) -> Task? {
@@ -4142,6 +4598,9 @@ enum Orchestrator {
         let done = tasks.values.filter { task in
             task.state.isTerminal && (task.finishedAt ?? task.created) < cutoff
         }
+        let expiredHandoffs = handoffs.values.filter {
+            $0.state.isTerminal && $0.created < cutoff
+        }
         lock.unlock()
         for task in done {
             if let worktree = task.worktree,
@@ -4150,13 +4609,20 @@ enum Orchestrator {
             }
             try? FileManager.default.removeItem(at: task.dir)
         }
+        for envelope in expiredHandoffs {
+            try? FileManager.default.removeItem(at: envelope.dir)
+        }
         lock.lock()
+        for envelope in expiredHandoffs {
+            handoffs.removeValue(forKey: envelope.id)
+            handoffDeliveries.removeValue(forKey: envelope.id)
+        }
         let all = tasks.values.sorted { $0.created > $1.created }
         if all.count > 200 {
             for task in all.dropFirst(200) { tasks.removeValue(forKey: task.id) }
         }
         lock.unlock()
-        if all.count > 200 { save() }
+        if all.count > 200 || !expiredHandoffs.isEmpty { save() }
         let retained = Set(all.prefix(200).map(\.id))
         cleanupOrphanWorktrees(knownTaskIDs: retained, olderThan: cutoff)
     }
@@ -4167,6 +4633,12 @@ enum Orchestrator {
         load()
         lock.lock(); defer { lock.unlock() }
         return tasks[id]
+    }
+
+    private static func heldHandoff(_ id: String) -> HandoffEnvelope? {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        return handoffs[id]
     }
 
     private static func heldSecret(_ id: String) -> String? {
@@ -4182,7 +4654,7 @@ enum Orchestrator {
     private static func target(forRootSession sessionID: String) -> TargetSession? {
         let find = {
             SessionWatch.shared.targets.first {
-                HookBridge.note(for: $0)?.session == sessionID
+                $0.id == sessionID || HookBridge.note(for: $0)?.session == sessionID
             }
         }
         if Thread.isMainThread { return find() }
@@ -4193,6 +4665,9 @@ enum Orchestrator {
     static func forget() {
         lock.lock()
         tasks = [:]
+        handoffs = [:]
+        handoffDeliveries = [:]
+        handoffTitlesByTerminal = [:]
         secrets = [:]
         dispatchTimes = []
         workspaceOverlapObserverForTesting = nil

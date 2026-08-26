@@ -7907,6 +7907,264 @@ group("the graph and the house rules reach the child that needs them") {
           Orchestrator.policy(reading: "   \n  ") == nil)
 }
 
+group("a handoff envelope is validated without reading its letter") {
+    let id = "7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431"
+    let base: [String: Any] = ["handoff_id": id, "project_dir": "/tmp"]
+    func draft(_ changes: [String: Any] = [:], packageReady: Bool = true)
+        -> Orchestrator.HandoffDraftOutcome {
+        var request = base
+        for (key, value) in changes { request[key] = value }
+        return Orchestrator.handoffDraft(from: request,
+            isDirectory: { $0 == "/tmp" }, packageIsReady: { _ in packageReady })
+    }
+
+    guard case .ok(let defaults) = draft() else {
+        check("the smallest valid envelope is accepted", false); return
+    }
+    expect("the default receiver is Claude", defaults.assistant, .claude)
+    expect("and no absent field is invented", defaults.title, nil)
+    expect("nor is a sender invented", defaults.fromSession, nil)
+    check("a lowercase UUID is required",
+          draft(["handoff_id": id.uppercased()]).isBad)
+    check("and the task UUID rule does not admit a path",
+          draft(["handoff_id": "../../../../tmp/handoff-letter-123456"]).isBad)
+    check("a project must be absolute", draft(["project_dir": "tmp"]).isBad)
+    check("and must exist as a directory",
+          Orchestrator.handoffDraft(from: base, isDirectory: { _ in false },
+                                    packageIsReady: { _ in true }).isBad)
+    check("the receiver is a closed choice", draft(["assistant": "other"]).isBad)
+    check("a shell-shaped model is refused", draft(["model": "opus; touch /tmp/x"]).isBad)
+    check("an empty model is refused too", draft(["model": ""]).isBad)
+    check("a title may be exactly 200 characters",
+          !draft(["title": String(repeating: "t", count: 200)]).isBad)
+    check("but not 201", draft(["title": String(repeating: "t", count: 201)]).isBad)
+    check("a sender name is free-form at its boundary",
+          !draft(["from_session": String(repeating: "會", count: 200)]).isBad)
+    check("but has the same boundary",
+          draft(["from_session": String(repeating: "會", count: 201)]).isBad)
+    check("the package directory and non-empty regular handoff.md are mandatory",
+          draft(packageReady: false).isBad)
+
+    expect("the injected line is the canonical protocol sentence, byte for byte",
+           Orchestrator.handoffLine(id: id),
+           "You are picking up a Clawdline handoff. Read /tmp/.clawdline/handoffs/"
+             + id
+             + "/handoff.md before anything else and follow it: walk its REFERENCES, answer its "
+             + "VERIFICATION questions from those sources, say plainly what you could not reach, "
+             + "then continue from OPEN THREADS.")
+    let line = Orchestrator.handoffLine(id: id)
+    let claudeReceipt = """
+    {"type":"user","message":{"role":"user","content":"\(line)"}}
+    """
+    check("Claude's exact first user turn confirms delivery",
+          Orchestrator.transcriptContainsHandoff(claudeReceipt, assistant: .claude,
+                                                 handoffID: id))
+    let wrappedClaudeReceipt = """
+    {"type":"user","message":{"role":"user","content":"already queued\\n\(line)"}}
+    """
+    check("a canonical line inside a longer first user turn confirms delivery",
+          Orchestrator.transcriptContainsHandoff(wrappedClaudeReceipt, assistant: .claude,
+                                                 handoffID: id))
+    let codexReceipt = """
+    {"type":"event_msg","payload":{"type":"item_completed","item":\
+    {"type":"UserMessage","content":[{"type":"text","text":"\(line)"}]}}}
+    """
+    check("Codex's exact first user turn confirms delivery too",
+          Orchestrator.transcriptContainsHandoff(codexReceipt, assistant: .codex,
+                                                 handoffID: id))
+    check("a merely similar turn is not a receipt",
+          !Orchestrator.transcriptContainsHandoff(
+              claudeReceipt.replacingOccurrences(of: "OPEN THREADS.", with: "OPEN THREADS"),
+              assistant: .claude, handoffID: id))
+    check("a missing handoff transcript never authorises a retry",
+          !Orchestrator.handoffRetryAllowed(attempts: 1, transcriptKnown: false))
+    check("the first handoff send does not require a transcript that cannot exist yet",
+          Orchestrator.handoffRetryAllowed(attempts: 0, transcriptKnown: false))
+    expect("a titled receipt names the line and receiver",
+           Orchestrator.handoffReceipt(id: id, title: "Cloud planning line",
+                                       assistant: .codex, projectDir: "/tmp", delivered: true),
+           "[clawdline] handoff 7c1e9b02 (Cloud planning line) picked up by codex in /tmp")
+    expect("an untitled failure receipt does not grow empty brackets",
+           Orchestrator.handoffReceipt(id: id, title: nil, assistant: .claude,
+                                       projectDir: "/tmp", delivered: false),
+           "[clawdline] handoff 7c1e9b02 opened a tab but the first line never landed — type it in by hand")
+}
+
+group("handoff envelopes survive restart and terminal ones are swept as one unit") {
+    Orchestrator.forget()
+    let handoffBase = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-handoffs-\(UUID().uuidString)", isDirectory: true)
+    Orchestrator.handoffRootOverrideForTesting = handoffBase.appendingPathComponent(
+        "handoffs", isDirectory: true)
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    let id = UUID().uuidString.lowercased()
+    let opening = UUID().uuidString.lowercased()
+    let directory = Orchestrator.handoffRoot.appendingPathComponent(id, isDirectory: true)
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.handoffRootOverrideForTesting = nil
+        try? FileManager.default.removeItem(at: handoffBase)
+        Orchestrator.forget()
+    }
+    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try? Data("the app must never persist these words".utf8)
+        .write(to: directory.appendingPathComponent("handoff.md"), options: .atomic)
+    let old = Date().addingTimeInterval(-25 * 3600).timeIntervalSince1970
+    let rows: [[String: Any]] = [
+        ["handoff_id": id, "project_dir": "/tmp", "title": "Old line",
+         "from_session": "sender", "created": old, "state": "delivered"],
+        ["handoff_id": opening, "project_dir": "/tmp", "created": old, "state": "opening"],
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: ["version": 1, "tasks": [],
+                                                              "handoffs": rows])
+    try? FileManager.default.createDirectory(at: store.deletingLastPathComponent(),
+                                             withIntermediateDirectories: true)
+    try! data.write(to: store, options: .atomic)
+    Orchestrator.load(force: true)
+    let loaded = Orchestrator.handoffRecord(id: id)
+    expect("the envelope comes back across a reload", loaded?["state"] as? String, "delivered")
+    check("only envelope fields came back",
+          Set(loaded?.keys.map { $0 } ?? []) == Set(["handoff_id", "project_dir", "title",
+                                                    "from_session", "created", "state"]))
+    Orchestrator.saveForTesting()
+    let saved = (try? String(contentsOf: store, encoding: .utf8)) ?? ""
+    check("the registry did not read and remember the letter",
+          !saved.contains("the app must never persist these words"))
+
+    Orchestrator.cleanup()
+    check("a day-old terminal envelope is removed", Orchestrator.handoffRecord(id: id) == nil)
+    check("its package goes with it", !FileManager.default.fileExists(atPath: directory.path))
+    check("an old opening envelope is retained", Orchestrator.handoffRecord(id: opening) != nil)
+    Orchestrator.forget()
+    Orchestrator.load(force: true)
+    check("the removal itself survives restart", Orchestrator.handoffRecord(id: id) == nil)
+}
+
+group("handoff registration opens once and shares the dispatch brake") {
+    Orchestrator.forget()
+    let handoffBase = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-handoffs-\(UUID().uuidString)", isDirectory: true)
+    Orchestrator.handoffRootOverrideForTesting = handoffBase.appendingPathComponent(
+        "handoffs", isDirectory: true)
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    var made: [URL] = []
+    defer {
+        for directory in made { try? FileManager.default.removeItem(at: directory) }
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.handoffRootOverrideForTesting = nil
+        try? FileManager.default.removeItem(at: handoffBase)
+        Orchestrator.forget()
+    }
+    func envelope(_ id: String) -> [String: Any] {
+        let directory = Orchestrator.handoffRoot.appendingPathComponent(id, isDirectory: true)
+        made.append(directory)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? Data("# handoff\n".utf8)
+            .write(to: directory.appendingPathComponent("handoff.md"), options: .atomic)
+        return ["handoff_id": id, "project_dir": "/tmp", "assistant": "codex"]
+    }
+    let id = UUID().uuidString.lowercased()
+    var opens = 0
+    var grantedDirectory: String?
+    let first = Orchestrator.handoff(envelope(id)) { _, _, _, addDir in
+        opens += 1
+        grantedDirectory = addDir
+        return .started(id: "%handoff", backend: .tmux)
+    }
+    guard case .ok(let payload) = first,
+          let handoff = payload["handoff"] as? [String: Any] else {
+        check("a valid handoff opens", false); return
+    }
+    expect("the synchronous answer is opening", handoff["state"] as? String, "opening")
+    expect("it names the selected assistant", handoff["assistant"] as? String, "codex")
+    expect("and the terminal that was opened",
+           (handoff["opened"] as? [String: Any])?["terminalId"] as? String, "%handoff")
+    expect("the receiver can read precisely its package directory", grantedDirectory,
+           Orchestrator.handoffRoot.appendingPathComponent(id).path)
+    expect("an unnamed tab gets the documented fallback label",
+           Orchestrator.title(forTerminal: "%handoff"), "handoff \(id.prefix(8))")
+    let parentMode = (try? FileManager.default.attributesOfItem(
+        atPath: Orchestrator.handoffRoot.deletingLastPathComponent().path)[.posixPermissions])
+        as? NSNumber
+    let rootMode = (try? FileManager.default.attributesOfItem(
+        atPath: Orchestrator.handoffRoot.path)[.posixPermissions]) as? NSNumber
+    expect("the app secures the handoff parent directory", parentMode?.intValue, 0o700)
+    expect("and secures the handoff root directory", rootMode?.intValue, 0o700)
+    Orchestrator.settleHandoff(id, delivered: true, assistant: .codex, why: nil)
+    Orchestrator.pruneClosedHandoffTitles(visible: ["%handoff"])
+    expect("a visible handed-off root keeps its title",
+           Orchestrator.title(forTerminal: "%handoff"), "handoff \(id.prefix(8))")
+    Orchestrator.pruneClosedHandoffTitles(visible: [])
+    check("a closed handed-off root forgets its title",
+          Orchestrator.title(forTerminal: "%handoff") == nil)
+
+    _ = Orchestrator.handoff(envelope(id)) { _, _, _, _ in
+        opens += 1
+        return .refused(status: 500, code: "internal", message: "should not run", app: nil)
+    }
+    expect("an in-process retry does not open another tab", opens, 1)
+    Orchestrator.forget()
+    Orchestrator.load(force: true)
+    _ = Orchestrator.handoff(envelope(id)) { _, _, _, _ in
+        opens += 1
+        return .refused(status: 500, code: "internal", message: "should not run", app: nil)
+    }
+    expect("nor does the same id after a registry reload", opens, 1)
+
+    Orchestrator.forget()
+    for _ in 0..<max(10, Config.shared.orchestratorMaxDescendants) {
+        let next = UUID().uuidString.lowercased()
+        _ = Orchestrator.handoff(envelope(next)) { _, _, _, _ in
+            .refused(status: 409, code: "terminal_closed", message: "closed", app: "iTerm2")
+        }
+    }
+    check("terminal refusals still spend the shared ticket", Orchestrator.takeDispatchRate() == nil)
+}
+
+group("handing off is the other thing a paired device may not do") {
+    Orchestrator.forget()
+    defer { Orchestrator.forget() }
+    let phone = RemoteAuth.addDevice(name: "a phone that may send", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: phone.id) }
+    let body = "{\"handoff_id\":\"\(taskID)\"}"
+
+    let anonymous = RemoteServer.shared.route(
+        remoteRequest("POST", "/v1/orchestrator/handoffs", body: body))
+    expect("a handoff with no credential is stopped at the door", anonymous.status, 401)
+    expect("by ordinary unauthorised auth", remoteErrorCode(anonymous), "unauthorized")
+    let paired = RemoteServer.shared.route(
+        remoteRequest("POST", "/v1/orchestrator/handoffs",
+                      headers: ["Authorization": "Bearer \(phone.token)",
+                                "Idempotency-Key": UUID().uuidString], body: body))
+    expect("a paired device cannot hand work to a new tab", paired.status, 403)
+    expect("the refusal is the orchestrator credential", remoteErrorCode(paired), "forbidden")
+}
+
+group("a handoff request is parsed before the shared switch, and no further") {
+    Orchestrator.forget()
+    let enabled = Config.shared.orchestratorEnabled
+    defer { Config.shared.orchestratorEnabled = enabled; Orchestrator.forget() }
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    Config.shared.orchestratorEnabled = false
+    let malformed = RemoteServer.shared.route(
+        remoteRequest("POST", "/v1/orchestrator/handoffs", headers: auth, body: "no"))
+    expect("a non-JSON body is a request refusal first", malformed.status, 400)
+    expect("and uses the existing envelope word", remoteErrorCode(malformed), "bad_request")
+    let missing = RemoteServer.shared.route(
+        remoteRequest("POST", "/v1/orchestrator/handoffs", headers: auth, body: "{}"))
+    expect("a missing id is the same request refusal", missing.status, 400)
+    let disabled = RemoteServer.shared.route(
+        remoteRequest("POST", "/v1/orchestrator/handoffs", headers: auth,
+                      body: "{\"handoff_id\":\"\(taskID)\"}"))
+    expect("only a shaped request reaches the shared switch", disabled.status, 403)
+    expect("and gets the dispatch switch's code", remoteErrorCode(disabled), "orchestrator_disabled")
+}
+
 group("dispatching is the one thing a paired device may not do") {
     // The whole point of the second credential. A phone with `send` can already type into a
     // session; opening a *new* one from a task file somebody else wrote is a different power, and

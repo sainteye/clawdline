@@ -539,15 +539,9 @@ id，200 字元以內，認不出來就等於沒填。兩個都是 best-effort�
 不在）、`rate_limited`（跟 dispatch 共用同一個煞車，被擋掉也照吃一格）、`not_found`（這版沒有
 handoff 路由）。
 
-**路由還在做的期間**，做完 1–3 步，然後把下面這一句交給使用者，讓他自己開一個 session 貼進去。
-`<id>` 換成真的 id，**其他一個字都不要改，也不要翻成中文**——這是協定文字，不是講給人聽的話，
-app 之後打的就是一字不差的這句：
-
-```
-You are picking up a Clawdline handoff. Read /tmp/.clawdline/handoffs/<id>/handoff.md before anything else and follow it: walk its REFERENCES, answer its VERIFICATION questions from those sources, say plainly what you could not reach, then continue from OPEN THREADS.
-```
-
-路由多做的事，只是不用有人握著鍵盤。
+遇到 `not_found` 時，做完第 1–3 步，並把
+[`docs/handoff.md`〈The line〉](../../docs/handoff.md#the-line) 的 canonical 句原封不動交給使用者自行貼上：
+`You are picking up a Clawdline handoff. Read /tmp/.clawdline/handoffs/<id>/handoff.md before anything else and follow it: walk its REFERENCES, answer its VERIFICATION questions from those sources, say plainly what you could not reach, then continue from OPEN THREADS.`
 
 然後用兩行告訴使用者東西去哪了——這次交接涵蓋什麼、檔案在哪。如果你自己還要繼續做而不是就此
 停手，講出來：**handoff 是複製，不是結束。** 一份工作區裡兩個 root，代表你們兩邊之後每次派工

@@ -703,6 +703,16 @@ final class RemoteServer {
         // docs/orchestrator.md; who may call what is decided above, where `orchestratorAuthed`
         // is computed.
 
+        case ("POST", "/v1/orchestrator/handoffs"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden", "Handing off needs the orchestrator token.")
+            }
+            guard let body = try? JSONSerialization.jsonObject(with: request.body),
+                  let obj = body as? [String: Any], obj["handoff_id"] != nil else {
+                return .error(400, "bad_request", "handoff_id is required.")
+            }
+            return answer(Orchestrator.handoff(obj))
+
         case ("POST", "/v1/orchestrator/tasks"):
             guard orchestratorAuthed else {
                 return .error(403, "forbidden", "Dispatching needs the orchestrator token.")

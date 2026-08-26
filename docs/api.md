@@ -103,6 +103,7 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/auth/password` | — | — |
 | `POST` | `/v1/auth/adopt` | a token in the body | — |
 | `POST` | `/v1/auth/logout` | — | — |
+| `POST` | `/v1/orchestrator/handoffs` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/tasks` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/tasks` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/tasks/:id` | orchestrator token, **or** token | `read` |
@@ -121,8 +122,9 @@ nobody asked for.
 capability.** The *orchestrator token* is `~/.config/clawdline/orchestrator-token`, mode `0600`,
 minted alongside the one above and **never served over HTTP** — it proves "a process running as
 this user on this Mac", which is a different claim from "a device somebody paired", and it is the
-only thing that may dispatch. No device token dispatches: not with `send`, not with `admin`, not
-over a tunnel. The *task secret* is narrower still — one task, made by whoever dispatched it, and
+only thing that may dispatch or hand a line of work to a new tab. No device token does either: not
+with `send`, not with `admin`, not over a tunnel. The *task secret* is narrower still — one task,
+made by whoever dispatched it, and
 the only thing it can do is report that task finished. What each one can and cannot do is
 [`docs/orchestrator.md`](orchestrator.md#what-it-costs-before-anything-else); this page is the
 wire.
@@ -911,6 +913,52 @@ These five are the only mutating routes that do **not** want an `Idempotency-Key
 idempotent either. Each is its own kind of one-shot: a retried pairing is a new pairing with a new
 code on the Mac's screen, and there is no request here whose repeat could quietly do something
 twice.
+
+### `POST /v1/orchestrator/handoffs`
+
+Open a new root session and give it a continuation package. The sender first creates
+`/tmp/.clawdline/handoffs/<handoff_id>/handoff.md`; the app verifies only that this is a non-empty
+regular file and never reads its contents. The full package and receiving contract are
+[`docs/handoff.md`](handoff.md).
+
+```console
+$ H=$(uuidgen | tr 'A-Z' 'a-z'); umask 077; mkdir -p /tmp/.clawdline/handoffs/$H
+$ # write a non-empty handoff.md, then:
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/handoffs \
+    -H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)" \
+    -H 'Content-Type: application/json' \
+    -d "{\"handoff_id\":\"$H\",\"project_dir\":\"$PWD\",\"assistant\":\"codex\"}"
+{"ok":true,"handoff":{"id":"7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431","state":"opening","projectDir":"/Users/you/code/clawdline","assistant":"codex","dir":"/tmp/.clawdline/handoffs/7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431","opened":{"terminalId":"9A1F…","backend":"iterm"}}}
+```
+
+`handoff_id` is a 36-character lowercase UUID in the same `[a-f0-9-]` shape as `task_id`.
+`project_dir` is required, absolute, and an existing directory. Optional `assistant` is `claude`
+(the default) or `codex`; optional `model` is 1…64 lower-case letters, digits, `.`, `_`, or `-`,
+and cannot begin with `-`. Optional `title` and free-form `from_session` are each at most 200
+characters. `title` labels the tab; `from_session`, when it identifies a watched session, receives
+one best-effort typed delivery receipt.
+
+Opening the terminal is synchronous and is named in `opened`; composer waiting, trust confirmation,
+typing, and transcript confirmation happen after this response. The durable registry stores only
+`handoff_id`, `project_dir`, optional `title` and `from_session`, `created`, and `state`. Repeating an
+id replays that envelope and opens no second tab, including after restart. A replay contains neither
+`opened` nor `assistant`, because only the envelope is stored. Terminal envelopes and their package
+directories are removed 24 hours after `created`. There is no GET, cancel, or completion route.
+
+The route uses the same orchestrator switch and ten-minute brake as dispatch. Replays do not take a
+ticket; every new call that gets past its id does, including a refusal. Errors are decided in this
+order:
+
+| `code` | status | |
+|---|---|---|
+| `forbidden` | 403 | the orchestrator header is missing or wrong; a device token never reaches the body |
+| `bad_request` | 400 | the body is not a JSON object or has no `handoff_id` |
+| `orchestrator_disabled` | 403 | the shared orchestrator switch is off |
+| `bad_task` | 422 | an invalid field, project directory, package directory, or empty/missing `handoff.md` |
+| `rate_limited` | 429 | the shared dispatch-and-handoff brake is full |
+| `terminal_closed` / `terminal_unsupported` | 409 | the selected terminal cannot be opened; `app` names it |
+| `internal` | 500 or 502 | terminal automation failed |
+| `not_found` | 404 | this build has no handoff route |
 
 ### `POST /v1/orchestrator/tasks`
 

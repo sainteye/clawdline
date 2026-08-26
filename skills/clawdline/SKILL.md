@@ -605,16 +605,9 @@ covers handoffs too), `bad_request`, `bad_task` (a bad field, or a package direc
 that is not there), `rate_limited` — the same brake dispatch uses, and a refusal spends a slot of it
 — and `not_found`, meaning this build has no handoff route.
 
-**While that route is still being built**, do steps 1–3 and hand the user this line to paste into a
-session they open themselves, with `<id>` filled in and **nothing else changed — not a word, and not
-into another language.** It is protocol text rather than something said to a person, and the app will
-type exactly this:
-
-```
-You are picking up a Clawdline handoff. Read /tmp/.clawdline/handoffs/<id>/handoff.md before anything else and follow it: walk its REFERENCES, answer its VERIFICATION questions from those sources, say plainly what you could not reach, then continue from OPEN THREADS.
-```
-
-The only thing the route adds is that nobody has to be holding the keyboard.
+On `not_found`, finish steps 1–3 and give the user the canonical sentence from
+[`docs/handoff.md` § “The line”](../../docs/handoff.md#the-line) verbatim to paste themselves:
+`You are picking up a Clawdline handoff. Read /tmp/.clawdline/handoffs/<id>/handoff.md before anything else and follow it: walk its REFERENCES, answer its VERIFICATION questions from those sources, say plainly what you could not reach, then continue from OPEN THREADS.`
 
 Then tell the user what went where in two lines — what the handoff covers, and the path. If you are
 carrying on yourself rather than stopping, say so: **a handoff is a copy, not an ending.** Two roots
