@@ -10,6 +10,7 @@ import { ActionConfirm } from "./action-confirm.js";
 import { Settings } from "./settings.js";
 import { Start } from "./start.js";
 import { Command } from "./command.js";
+import { Schedule } from "./schedule.js";
 import { Info } from "./info.js";
 
 /* ==========================================================================
@@ -67,6 +68,9 @@ document.addEventListener("keydown", function (ev) {
         // `Command.close` no-ops on its own while a request is in flight — see the comment there
         // — so this needs no extra check: Escape either closes the sheet or does nothing.
         if (!els.command.hidden) { Command.close(); return; }
+        // Same rule as `Command.close`, one line up: refused rather than skipped while the POST
+        // that makes the schedule is in flight — see `Schedule.close`.
+        if (!els["schedule-form"].hidden) { Schedule.close(); return; }
         if (!els.settings.hidden) { Settings.close(); return; }
         if (!els.keys.hidden) { els.keys.hidden = true; return; }
         if (document.activeElement === els.filter) {
@@ -85,7 +89,8 @@ document.addEventListener("keydown", function (ev) {
     if (typing(document.activeElement)) return;
     if (meta || ev.altKey) return;
     // A sheet is over the page, so `j` is not "move down the list behind it".
-    if (!els.settings.hidden || !els.start.hidden || !els.command.hidden) return;
+    if (!els.settings.hidden || !els.start.hidden || !els.command.hidden
+        || !els["schedule-form"].hidden) return;
 
     switch (key) {
         case "ArrowDown": case "j": ev.preventDefault(); move(1); break;

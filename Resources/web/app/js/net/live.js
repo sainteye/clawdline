@@ -308,8 +308,19 @@ export var Live = {
     pushTest: function () { return jsonFetch("/v1/push/test", post({})); }
 };
 
-/* ---- schedules: read-only, on the slow lane ------------------------------
-   Kept outside the transport object above so the route's permission boundary is
-   conspicuous: this page can list schedules, and has no method that can run one.
+/* ---- schedules: reading is ambient, making one is gated ------------------
+   Kept outside the transport object above so the two permissions stay visible at a glance:
+   listing needs nothing but pairing, the same as everything else on `Live`. Making one goes
+   through `writeGate` exactly like `voice` and `intents` below it — the write switch, the `send`
+   capability, an Idempotency-Key — and never the orchestrator token, which is local-only and
+   could not reach a phone. Neither route can make an existing schedule *run* early; that button
+   does not exist anywhere on this page.
    -------------------------------------------------------------------------- */
 Live.schedules = function () { return jsonFetch("/v1/orchestrator/schedules"); };
+
+/// One schedule, made. `input/schedule.js` is the only caller and the only place that builds
+/// `schedule` — see the field list on `POST /v1/orchestrator/schedules` in the plan this task
+/// came with. The key is minted once per press, so a retry of *this* request does not make two.
+Live.createSchedule = function (schedule) {
+    return jsonFetch("/v1/orchestrator/schedules", post(schedule, { "Idempotency-Key": uuid() }));
+};

@@ -1,5 +1,6 @@
 import { esc } from "../core/esc.js";
 import { T } from "../core/i18n.js";
+import { S } from "../core/state.js";
 
 var section = document.getElementById("schedules");
 var count = document.getElementById("schedules-count");
@@ -38,7 +39,7 @@ function validRow(schedule, at) {
     var next = schedule.next_fire ? relativeTime(schedule.next_fire, at) : "";
     var nextTitle = schedule.next_fire
         ? new Date(schedule.next_fire * 1000).toLocaleString() : "";
-    var enabled = schedule.enabled ? "Enabled" : "Disabled";
+    var enabled = schedule.enabled ? T.webScheduleEnabled : "Disabled";
     var nextLine = schedule.next_fire
         ? (schedule.enabled ? "Next " : "Disabled · next ") + next
         : T.webScheduleNoNext;
@@ -70,7 +71,12 @@ function invalidRow(schedule) {
 export function renderSchedules(schedules, at) {
     schedules = schedules || [];
     if (!section || !rows || !count) return;
-    section.hidden = schedules.length === 0;
+    // An empty inventory used to cost the session list no space — true back when this section
+    // was read-only and there was nothing to do about an empty list. Now `#schedule-new` lives in
+    // this section's own `<summary>`, so hiding it on zero schedules would also hide the one way
+    // to make a first one. It still folds away with nothing to show when writing is off, same as
+    // before.
+    section.hidden = schedules.length === 0 && !S.write;
     if (!schedules.length) {
         rows.innerHTML = "";
         count.textContent = "";

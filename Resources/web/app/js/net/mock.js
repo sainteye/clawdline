@@ -184,6 +184,7 @@ export var Mock = (function () {
         // and forgets its children falls over.
         ["tool", "curl -s /v1/artifacts/" + unbreakable, "Bash"],
         ["assistant", "The upload came back as `" + unbreakable + "` — one token, no spaces, and nowhere for a line to break.", null],
+        ["peer", "I have released `Sources/Webhook.swift`; the migration path is yours. I will keep working in `Sources/Ledger.swift`.", null, "payments-ops-12"],
         ["user", "summarise what changed", null],
         // Everything the renderer knows how to draw, in one answer, so the fixture is also the
         // test: a table with alignment markers, a heading, both kinds of list, a quote, a rule.
@@ -192,7 +193,7 @@ export var Mock = (function () {
 
     var transcripts = {};
     transcripts["8F3A-1C"] = script.map(function (e, i) {
-        return { role: e[0], text: e[1], tool: e[2], at: now - (script.length - i) * 47 };
+        return { role: e[0], text: e[1], tool: e[2], source: e[3], at: now - (script.length - i) * 47 };
     });
     // A question, in the shape the wire carries one: the marker, then the questions as data.
     // See `ASK_MARK`. The fixture is also where the block's layout is worked on, so it has both
@@ -699,7 +700,11 @@ export var Mock = (function () {
          * is a draft with nothing to type — a request to open a session and no more — and `etc`
          * reproduces the exact case in `Planner.swift`'s own header — a model that would not pick
          * a directory outside the list but still wrote a sentence about one into `instructions`.
-         * Anything else is the ordinary confident answer, aimed at whichever project is first.
+         * `schedule` is a spoken schedule the planner heard enough of to fill in; `scheduleunsure`
+         * is the one the plan calls out by name, heard without a time. Both carry `kind:
+         * "schedule"` and hand off to `input/schedule.js` instead of opening a session — see
+         * `reveal` in `input/command.js`. Anything else is the ordinary confident session answer,
+         * aimed at whichever project is first.
          */
         intents: function (text) {
             return new Promise(function (done, fail) {
@@ -733,6 +738,27 @@ export var Mock = (function () {
                         done({ draft: { place_id: quiet ? quiet.id : null, assistant: "claude",
                                         instructions: "", title: "a session", confidence: 0.9,
                                         question: "" }, ms: ms });
+                        return;
+                    }
+                    if (mode === "schedule") {
+                        // A schedule the planner heard enough of: a time, some days, a project.
+                        // `input/command.js` reads `kind` and hands the whole draft to
+                        // `input/schedule.js` instead of opening a session — see the contract.
+                        var here = places[0];
+                        done({ draft: { kind: "schedule", place_id: here ? here.id : null,
+                                        assistant: "claude", at: "09:00", days: ["mon", "wed", "fri"],
+                                        instructions: text, title: text.slice(0, 20) || "a schedule",
+                                        confidence: 0.86, question: "" }, ms: ms });
+                        return;
+                    }
+                    if (mode === "scheduleunsure") {
+                        // The one the plan calls out by name: no time heard, confidence below
+                        // `sure`, and the form opens holding what little there is rather than a
+                        // question this sheet has nowhere to ask.
+                        done({ draft: { kind: "schedule", place_id: null, assistant: "claude",
+                                        at: "", days: [], instructions: text,
+                                        title: text.slice(0, 20) || "a schedule", confidence: 0.2,
+                                        question: "What time should this run?" }, ms: ms });
                         return;
                     }
                     if (mode === "etc") {
@@ -981,5 +1007,34 @@ Mock.schedules = function () {
     ];
     return new Promise(function (done) {
         setTimeout(function () { done({ schedules: schedules, at: at }); }, 180);
+    });
+};
+
+/* ---- making a schedule ----------------------------------------------------
+   Appended beside the read fixture above, for the same reason it is its own block.
+   `?scheduleCreate=` picks which refusal comes back — `busy` and `bad` are the two a person can
+   act on from `input/schedule.js`'s own sheet, and anything else is the ordinary confident
+   answer. Gated on `MOCK_WRITE` exactly like `intents` and `startPlace` above it.
+   -------------------------------------------------------------------------- */
+Mock.createSchedule = function (schedule) {
+    return new Promise(function (done, fail) {
+        setTimeout(function () {
+            if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
+            var mode = params.get("scheduleCreate") || "";
+            if (mode === "busy") {
+                fail(Object.assign(new Error("This Mac is already writing a schedule."), { code: "busy" }));
+                return;
+            }
+            if (mode === "bad") {
+                // The exact shape `Orchestrator.schedule(from:)` writes for a bad `when.at` — see
+                // `Sources/Orchestrator.swift`. Shown as it arrives, unedited — see `why` in
+                // `input/schedule.js`.
+                fail(Object.assign(new Error("when.at must be HH:MM in local time"), { code: "bad_request" }));
+                return;
+            }
+            done({ ok: true, schedule: { id: uuid(), title: schedule && schedule.title || "",
+                                          enabled: !!(schedule && schedule.enabled),
+                                          next_fire: Math.floor(Date.now() / 1000) + 3600 } });
+        }, 420);
     });
 };

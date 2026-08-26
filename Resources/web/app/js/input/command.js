@@ -8,6 +8,7 @@ import { api } from "../net/api.js";
 import { byId } from "../view/derive.js";
 import { openSession } from "../session/open.js";
 import { Voice } from "./voice.js";
+import { Schedule } from "./schedule.js";
 
 /* ---- saying what to start -------------------------------------------------
    The header microphone and the same one inside this sheet both press through `Voice`, the way
@@ -196,6 +197,16 @@ export var Command = (function () {
     var SURE = 0.5;
 
     function reveal(draft, instructionsText, manual) {
+        // A schedule, not a session — the planner's own `kind`, read here and nowhere upstream of
+        // it. This sheet is not the one that shows it: `input/schedule.js` owns everything about
+        // making a schedule, including the form's own safety rule that a confident draft still
+        // does not create one by itself. Closing rather than leaving this sheet stacked behind
+        // the one that opens — nothing here has anything left to say once the hand-off happens.
+        if (draft.kind === "schedule") {
+            close();
+            Schedule.openFrom(draft, instructionsText);
+            return;
+        }
         chosenAssistant = draft.assistant && assistants.some(function (a) { return a.id === draft.assistant; })
             ? draft.assistant
             : (assistants.length ? assistants[0].id : null);

@@ -110,6 +110,35 @@ export function paintStatic() {
     text(els["command-cancel"], T.webCancel);
     text(els["command-go"], T.webCommandGo);
 
+    // Making a schedule. `input/schedule.js` owns everything that changes while the sheet is
+    // open; what is here never does — it is the same split as the command sheet two blocks up.
+    attr(els["schedule-new"], "title", T.webScheduleNew);
+    attr(els["schedule-new"], "aria-label", T.webScheduleNew);
+    text(els["schedule-form-title"], T.webScheduleNew);
+    text(els["schedule-form-say"], T.webScheduleNewSay);
+    text(els["schedule-title-label"], T.webScheduleTitle);
+    attr(els["schedule-title"], "aria-label", T.webScheduleTitle);
+    text(els["schedule-at-label"], T.webScheduleAt);
+    attr(els["schedule-at"], "aria-label", T.webScheduleAt);
+    text(els["schedule-days-label"], T.webScheduleOn);
+    attr(els["schedule-days"], "aria-label", T.webScheduleOn);
+    text(els["schedule-where-label"], T.webScheduleWhere);
+    attr(els["schedule-places"], "aria-label", T.webScheduleWhere);
+    text(els["schedule-first-label"], T.webScheduleFirst);
+    attr(els["schedule-instructions"], "aria-label", T.webScheduleFirst);
+    text(els["schedule-more-label"], T.webScheduleMore);
+    text(els["schedule-close-label"], T.webScheduleWhenDone);
+    attr(els["schedule-close"], "aria-label", T.webScheduleWhenDone);
+    // The two number fields' words are on a `<span>` with no id of its own — the label element
+    // dom.js registered wraps both that span and the input — so it is found from there rather
+    // than added to the list in `dom.js`, which is one of the four files nobody here re-edits.
+    text(els["schedule-catch-label"] && els["schedule-catch-label"].querySelector(".field-label"),
+        T.webScheduleCatchUp);
+    text(els["schedule-timeout-label"] && els["schedule-timeout-label"].querySelector(".field-label"),
+        T.webScheduleTimeout);
+    text(els["schedule-cancel"], T.webCancel);
+    text(els["schedule-go"], T.webScheduleCreate);
+
     // The transcript's left margin. Claude's own name is not in the strings and is not
     // translated — it is a name, and it is the same name in fourteen languages.
     WHO.user = T.webWhoYou;
