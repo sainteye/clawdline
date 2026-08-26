@@ -111,6 +111,10 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/orchestrator/tasks/:id/notify` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/complete` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/cancel` | orchestrator token, **or** token + key | `send` **and** the write switch |
+| `GET` | `/v1/orchestrator/schedules` | orchestrator token, **or** token | `read` |
+| `GET` | `/v1/orchestrator/schedules/:id` | orchestrator token, **or** token | `read` |
+| `POST` | `/v1/orchestrator/schedules` | token + key | `send` **and** the write switch |
+| `POST` | `/v1/orchestrator/schedules/:id/run` | orchestrator token | — |
 | `GET` | `/`, `/index.html`, `/manifest.webmanifest` | — | — |
 | `GET` | `/favicon.ico`, `/icon-<size>.png` | — | — |
 
@@ -1184,8 +1188,77 @@ and sends one push on first discovery when `notify_on_failure` is true (or absen
 true). The file format, shared capacity bucket and retry boundary are in
 [`schedules.md`](schedules.md).
 
-There is no HTTP write route. The Settings app can change the source file's top-level `enabled`
-boolean with one switch; every other field remains user-owned.
+[`POST /v1/orchestrator/schedules`](#post-v1orchestratorschedules) below creates one; nothing over
+HTTP edits or deletes one. The Settings app can change an existing source file's top-level
+`enabled` boolean with one switch; every other field remains user-owned.
+
+### `GET /v1/orchestrator/schedules/:id`
+
+One schedule in full, under `schedule`. Everything the list row carries, plus `file`, `when` in the
+file's own spelling, `close_tab`, `catch_up_hours`, `notify_on_failure`, and the whole `task`
+template — `project_dir`, `instructions` and all. The list deliberately exposes none of that, which
+is the right amount for a row and the wrong amount for the only screen where somebody can check
+what a schedule actually does. Same door as the list: `read` is enough, and the orchestrator token
+works too. `404 not_found` for an id that is unknown, invalid, or not an id at all.
+
+```json
+{"schedule":{"id":"4d2f54ce-…","title":"Publish the next post","enabled":true,
+             "file":"4d2f54ce-….json","next_fire":1787880600,
+             "when":{"at":"09:30","days":["mon","wed","fri"]},
+             "close_tab":"on_success","catch_up_hours":6,"notify_on_failure":true,
+             "task":{"assistant":"codex","project_dir":"/Users/me/code/blog",
+                     "instructions":"Publish the next ready post."}}}
+```
+
+### `POST /v1/orchestrator/schedules`
+
+Makes a schedule file. The only route that writes one, and it never edits or deletes one.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/schedules \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: 3f9a1c04-77e2' \
+    -d '{"title":"Publish the next post","at":"09:30","days":["mon","wed","fri"],
+         "place_id":"3f2a91c47e0b5d68","assistant":"codex",
+         "instructions":"Read the checklist and publish the next ready post."}'
+{"ok":true,"schedule":{"id":"4d2f54ce-…","title":"Publish the next post","enabled":true,"next_fire":1787880600}}
+```
+
+Required: `title`, `at` as `HH:MM` in the Mac's local time, `days` as `"daily"` or a non-empty
+weekday array, `place_id`, `assistant`, `instructions`. Optional: `enabled` (default `true`),
+`close_tab`, `catch_up_hours`, `notify_on_failure`, `timeout_minutes`, `model`. An empty `model`
+is left out of the file rather than written into it. `days` has no default — picking `daily` for
+somebody would be choosing how often their work runs — while `enabled` does, because a schedule
+somebody has just asked for is on.
+
+**The write gate, not the orchestrator token** — [all three gates](#writing-three-gates-in-this-order),
+like `/send` and `/v1/voice`. The orchestrator token is a `0600` file on this Mac, which is what
+makes it a proof of being local, and a phone cannot have one; this route is for the phone. Sending
+the orchestrator header in place of a device token is refused as a device that may not send.
+
+**A `place_id`, never a path.** It is an id from [`/v1/places`](#get-v1places), resolved against
+that list on the Mac. There is nowhere in the body to write a directory, and `project_dir`,
+`claims`, `permission_mode` and every other task-template field are refused as unknown fields
+rather than honoured. What this does add is stated plainly in
+[`schedules.md`](schedules.md#making-one-without-a-text-editor): a paired phone can arrange work
+that runs later with nobody watching.
+
+| | when |
+|---|---|
+| `400 bad_request` | no `Idempotency-Key`; an unknown field; a `place_id` that is not on the list; or any field the [schedule parser](schedules.md#the-file) refuses — the refusal carries that parser's own sentence |
+| `401 unauthorized` | no token, or one this Mac does not know |
+| `403 write_disabled`, `403 forbidden` | the write switch is off; or this device may read and not send |
+| `429 busy` | ten schedules have been made in the last ten minutes |
+| `500 write_failed` | the file could not be written, or could not be read back through the parser afterwards — in which case it has been removed |
+
+The answer is filed under the `Idempotency-Key` like every other write, **except `429` and the
+two `500`s**: those are facts about this machine at this moment rather than about the request, and
+a cached one would tell the retry that was supposed to work that the brake is still on long after
+it let go. The audit line is `orchestrator.schedule.created`, written whichever way it goes.
+
+Every schedule is validated by being assembled into a source file, parsed, written, and then
+**read back off disk through the same parser** before the request is answered. A file this app
+cannot itself parse never survives the request that made it.
 
 ### `POST /v1/orchestrator/schedules/:id/run`
 
@@ -1598,7 +1671,7 @@ it draws them, and that is a drawing decision which does not travel over the wir
 | `already_done` | 409 | that task has already reported; the first report wins |
 | `bad_task` | 422 | a `task.json` that is missing, unparseable, or out of range. `message` names the field |
 | `rate_limited` | 429 | too many pairing attempts |
-| `busy` | 429 | a queue on this Mac is full. On `/v1/voice`, one recording is being read and one is waiting. On `/v1/sessions/:id/info` and `/v1/places`, eight slow reads are already in hand — `/v1/sessions/:id/transcript` stands in that same queue but is never refused by this number. Both drain on their own, and neither is filed under an `Idempotency-Key` |
+| `busy` | 429 | a queue or a brake on this Mac is full. On `/v1/voice`, one recording is being read and one is waiting. On `/v1/sessions/:id/info` and `/v1/places`, eight slow reads are already in hand — `/v1/sessions/:id/transcript` stands in that same queue but is never refused by this number. On `/v1/orchestrator/schedules`, ten schedules have been made in the last ten minutes. All of them drain on their own, and none is filed under an `Idempotency-Key` |
 | `over_capacity` | 429 | the dispatcher's child slots are full — `orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child — or the whole Mac's are. `retry_after` is seconds. (`rate_limited` covers the other orchestrator limit: dispatches per ten minutes) |
 | `internal` | 500, 502 | a tab that would not open; a terminal that would not take the text |
 | `no_whisper` | 503 | `/v1/voice` only: this Mac has nothing to transcribe with. `reason` is `no_binary` or `no_model` |

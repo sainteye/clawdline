@@ -203,6 +203,194 @@ enum Orchestrator {
                             notifyOnFailure: notify))
     }
 
+    /// The one way anything other than a text editor makes a schedule file.
+    ///
+    /// **The parser above is still the authority.** This assembles the object it expects and
+    /// hands it straight back to it, so every rule it enforces is enforced here once rather than
+    /// twice, and a refusal carries the parser's own sentence — those sentences were written for
+    /// somebody to read, and a second wording of them is a second thing to keep in step.
+    ///
+    /// Then the file is read back **off disk, through the same parser**, before the caller is
+    /// told it worked. A file this app cannot itself parse must not survive the request that made
+    /// it: it would come back as an `invalid` row, audit itself and send a push, and nobody would
+    /// know which request had left it there.
+    ///
+    /// **A place id, never a path.** The directory comes from ``StartPoints/places()`` on this
+    /// side, which is the argument `POST /v1/places/:id/start` makes and it is worth making
+    /// twice: a device can only name a project this Mac has already shown it. `places` is a
+    /// parameter for the reason ``Planner/draft(for:places:assistants:timeout:)`` has one — a
+    /// test can describe a Mac rather than being run on one.
+    static func createSchedule(from body: [String: Any],
+                               places: [StartPoints.Place] = StartPoints.places(),
+                               isDirectory: (String) -> Bool = StartPoints.isDirectory) -> Reply {
+        let allowed = Set(["title", "at", "days", "place_id", "assistant", "instructions",
+                           "enabled", "close_tab", "catch_up_hours", "notify_on_failure",
+                           "timeout_minutes", "model"])
+        let unknown = Set(body.keys).subtracting(allowed).sorted()
+        guard unknown.isEmpty else {
+            return .refused(400, "bad_request",
+                            "unknown field: \(unknown.joined(separator: ", "))")
+        }
+        // Refused rather than guessed at, and it is the same road as an id nobody was handed: a
+        // `project_dir` is not on the list of things a request may carry, so there is nowhere
+        // else for the directory to come from.
+        guard let placeID = body["place_id"] as? String,
+              let place = places.first(where: { $0.id == placeID }) else {
+            return .refused(400, "bad_request",
+                            "place_id must be one of the ids GET /v1/places lists.")
+        }
+        let id = UUID().uuidString.lowercased()
+        var task: [String: Any] = [
+            "assistant": body["assistant"] ?? "",
+            "project_dir": place.path,
+            "title": body["title"] ?? "",
+            "instructions": body["instructions"] ?? "",
+        ]
+        // An empty model is how a form says "whatever that assistant runs by default", and a
+        // file carrying `"model": ""` is a field whoever opens it later has to read and dismiss.
+        if let model = body["model"], (model as? String)?.isEmpty != true { task["model"] = model }
+        if let timeout = body["timeout_minutes"] { task["timeout_minutes"] = timeout }
+        var obj: [String: Any] = [
+            "clawdline_schedule": 1,
+            "schedule_id": id,
+            "title": body["title"] ?? "",
+            // `days` is deliberately not defaulted. A missing time or a missing set of days is a
+            // request that did not say when, and the parser has a sentence for each; picking
+            // `daily` on their behalf would be this route quietly choosing how often somebody
+            // else's work runs. `enabled` is the opposite and is defaulted below: a schedule
+            // somebody has just asked for is on.
+            "when": ["at": body["at"] ?? "", "days": body["days"] ?? ""],
+            "task": task,
+            "enabled": body["enabled"] ?? true,
+        ]
+        // Written only when they were asked for, so the parser's defaults stay the one place
+        // those three numbers are decided.
+        for key in ["close_tab", "catch_up_hours", "notify_on_failure"] {
+            if let value = body[key] { obj[key] = value }
+        }
+        let filename = "\(id).json"
+        if case .bad(let why) = schedule(from: obj, filename: filename,
+                                         isDirectory: isDirectory) {
+            return .refused(400, "bad_request", why)
+        }
+        guard takeScheduleWriteRate() else {
+            return .refused(429, "busy",
+                            "This Mac has been asked for several schedules in the last few "
+                            + "minutes. Try again shortly.")
+        }
+        let file = scheduleDirectory.appendingPathComponent(filename)
+        // Named out here so the failure path can take it away again. A `.new` left behind is
+        // hidden and does not end in `.json`, so the inventory never sees it — which is exactly
+        // why it would sit there forever if nothing swept it.
+        let staging = scheduleDirectory.appendingPathComponent(".\(filename).new")
+        do {
+            let manager = FileManager.default
+            // Created 0o700 when it is not there, and **left exactly as it is when it is**. The
+            // directory may predate this route and belongs to whoever made it; a write route
+            // that also tightened permissions on somebody's existing directory would be doing a
+            // second thing nobody asked for.
+            if !manager.fileExists(atPath: scheduleDirectory.path) {
+                try manager.createDirectory(at: scheduleDirectory, withIntermediateDirectories: true,
+                                            attributes: [.posixPermissions: 0o700])
+            }
+            let data = try JSONSerialization.data(withJSONObject: obj,
+                                                  options: [.prettyPrinted, .sortedKeys,
+                                                            .withoutEscapingSlashes])
+            // Through a neighbouring file rather than straight to the name, so the mode is 0o600
+            // before the schedule exists under a name anything reads. `Data.write(_:.atomic)`
+            // renames a temporary file into place too, but the mode it lands with is the
+            // process umask's, and the minute timer reads this directory while the request is
+            // still in flight. Task files are 0o600; a schedule carries the same first message.
+            try data.write(to: staging, options: .atomic)
+            try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: staging.path)
+            try manager.moveItem(at: staging, to: file)
+        } catch {
+            try? FileManager.default.removeItem(at: staging)
+            RemoteAuth.audit("orchestrator.schedule.created",
+                             ["schedule": id, "ok": "0", "why": "write_failed"])
+            return .refused(500, "write_failed", "The schedule file could not be written.")
+        }
+        guard let written = try? Data(contentsOf: file),
+              let readBack = (try? JSONSerialization.jsonObject(with: written)) as? [String: Any],
+              case .ok(let made) = schedule(from: readBack, filename: filename,
+                                            isDirectory: isDirectory) else {
+            try? FileManager.default.removeItem(at: file)
+            RemoteAuth.audit("orchestrator.schedule.created",
+                             ["schedule": id, "ok": "0", "why": "unreadable"])
+            return .refused(500, "write_failed",
+                            "The schedule was written and could not be read back, so it has been "
+                            + "removed.")
+        }
+        RemoteAuth.audit("orchestrator.schedule.created",
+                         ["schedule": id, "place": place.id, "cwd": place.path, "ok": "1"])
+        var record: [String: Any] = ["id": made.id, "title": made.title, "enabled": made.enabled]
+        if let next = nextFire(of: made, after: Date()) {
+            record["next_fire"] = Int(next.timeIntervalSince1970)
+        }
+        return .ok(["ok": true, "schedule": record])
+    }
+
+    /// Ten new schedules in ten minutes, and the eleventh is told to come back.
+    ///
+    /// A brake on a loop rather than a cap on how many schedules a Mac may hold — there is no
+    /// number of files that is too many, and somebody filling a form cannot reach this. What it
+    /// bounds is a client that retries in a tight loop with a fresh `Idempotency-Key` each time,
+    /// which would otherwise leave one repeating dispatch per attempt behind it.
+    ///
+    /// Deliberately **not** ``takeDispatchRate()``: making a schedule is not a dispatch, and
+    /// spending the tree's tickets on it would have a phone's form quietly stopping a root
+    /// session from opening children.
+    private static func takeScheduleWriteRate() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let now = Date()
+        scheduleWriteTimes = scheduleWriteTimes.filter { now.timeIntervalSince($0) < 600 }
+        guard scheduleWriteTimes.count < 10 else { return false }
+        scheduleWriteTimes.append(now)
+        return true
+    }
+
+    /// Everything one schedule is, including the task template the list route leaves out.
+    ///
+    /// The list is a list — it says what exists, when it next fires and how the last run went,
+    /// and it says nothing about what any of them actually *does*. That is the right amount for
+    /// a row, and the wrong amount for the only screen where somebody can check what they just
+    /// made, which is why this exists and why it is the same read-level door the list is behind.
+    static func scheduleRecord(id: String, now: Date = Date()) -> [String: Any]? {
+        guard isTaskID(id), let schedule = schedules().first(where: { $0.id == id }) else {
+            return nil
+        }
+        var out: [String: Any] = ["id": schedule.id, "title": schedule.title,
+                                  "enabled": schedule.enabled,
+                                  "file": "\(schedule.id).json",
+                                  "task": schedule.taskTemplate,
+                                  "close_tab": schedule.closeTab.rawValue,
+                                  "catch_up_hours": schedule.catchUpHours,
+                                  "notify_on_failure": schedule.notifyOnFailure]
+        let names = [1: "sun", 2: "mon", 3: "tue", 4: "wed", 5: "thu", 6: "fri", 7: "sat"]
+        let time = String(format: "%02d:%02d", schedule.hour, schedule.minute)
+        // Back in the shape the file used and the form sends, rather than the Calendar numbers
+        // this holds in memory: a page that had to know Sunday is 1 would be a second place the
+        // weekday order is written down.
+        out["when"] = ["at": time,
+                       "days": schedule.weekdays.map { found in
+                           (1...7).compactMap { found.contains($0) ? names[$0] : nil }
+                       } ?? "daily"]
+        if let next = nextFire(of: schedule, after: now) {
+            out["next_fire"] = Int(next.timeIntervalSince1970)
+        }
+        lock.lock()
+        let snapshots = Array(tasks.values)
+        let missed = lastMissedScheduleFires[schedule.id]
+        lock.unlock()
+        if let last = snapshots.filter({ $0.scheduleID == schedule.id })
+            .max(by: { $0.created < $1.created }) {
+            out["last_run"] = ["task_id": last.id, "state": last.state.rawValue,
+                               "at": Int(last.created.timeIntervalSince1970)]
+        }
+        if let missed { out["last_missed_at"] = Int(missed.timeIntervalSince1970) }
+        return out
+    }
+
     static func latestFire(of schedule: Schedule, at now: Date,
                            calendar: Calendar = .autoupdatingCurrent) -> Date? {
         let start = calendar.startOfDay(for: now)
@@ -1124,6 +1312,9 @@ enum Orchestrator {
     private static var lastMissedScheduleFires: [String: Date] = [:]
     private static var dispatchingSchedules: Set<String> = []
     private static var invalidScheduleFingerprints: [String: String] = [:]
+    /// When the last ten schedules were written through the HTTP route — see
+    /// ``takeScheduleWriteRate()``.
+    private static var scheduleWriteTimes: [Date] = []
     private static let scheduleQueue = DispatchQueue(
         label: "dev.sainteye.clawdline.orchestrator.schedules", qos: .utility)
     static var scheduleRunnerForTesting: ((Schedule) -> Reply)?
@@ -5498,6 +5689,7 @@ enum Orchestrator {
         lastMissedScheduleFires = [:]
         dispatchingSchedules = []
         invalidScheduleFingerprints = [:]
+        scheduleWriteTimes = []
         scheduleRunnerForTesting = nil
         scheduleDispatchEnqueuerForTesting = nil
         workspaceOverlapObserverForTesting = nil

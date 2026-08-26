@@ -744,6 +744,33 @@ final class RemoteServer {
             return .json(["schedules": Orchestrator.scheduleRecords(),
                           "at": Int(Date().timeIntervalSince1970)])
 
+        // **The first way anything but a text editor makes a schedule.**
+        //
+        // Gated by the three gates every other paired-device write goes through, and
+        // deliberately *not* by the orchestrator token: that token is a `0600` file on this Mac,
+        // which is exactly what makes it a proof of being local, and a phone cannot have one.
+        // This route is for the phone. What it adds to a paired device's reach is real and is
+        // said out loud in docs/schedules.md — a phone can now arrange work that runs later with
+        // nobody watching it — and what it does not add is anywhere to write a path: the body
+        // carries a `place_id` from `/v1/places` and the directory is looked up on this side.
+        //
+        // `429` and the two `write_failed` fives are the answers not filed under the key, for the
+        // reason `transcribe` spells out: they are facts about this machine at this moment rather
+        // than about the request, and a cached one would tell the retry that was supposed to work
+        // that the brake is still on long after it let go.
+        case ("POST", "/v1/orchestrator/schedules"):
+            return writing(request, keeping: { $0.status != 429 && $0.status < 500 }) { body in
+                self.answer(Orchestrator.createSchedule(from: body))
+            }
+
+        // One schedule, in full, including the task template the list leaves out — see
+        // `Orchestrator.scheduleRecord(id:now:)`. Read-level, like the list it came from.
+        case ("GET", let path) where path.hasPrefix("/v1/orchestrator/schedules/"):
+            let id = String(path.dropFirst("/v1/orchestrator/schedules/".count))
+            guard let record = Orchestrator.scheduleRecord(id: id.removingPercentEncoding ?? id)
+            else { return .error(404, "not_found", "No schedule named that") }
+            return .json(["schedule": record])
+
         case ("POST", let path) where path.hasPrefix("/v1/orchestrator/schedules/")
             && path.hasSuffix("/run"):
             guard orchestratorAuthed else {
@@ -1332,10 +1359,21 @@ final class RemoteServer {
                           for request: Request, by device: String) {
         idempotent = idempotent.filter { Date().timeIntervalSince($0.value.at) < 600 }
         idempotent[key] = (Date(), response)
+        note(response, for: request, by: device)
+    }
+
+    /// The line that says what happened, on its own — because an answer that is deliberately not
+    /// filed under its key is still an answer somebody may have to find in the log afterwards.
+    private func note(_ response: Response, for request: Request, by device: String) {
         Log.write("remote: \(request.method) \(request.path) by \(device) → \(response.status)")
     }
 
-    private func writing(_ request: Request,
+    /// `keeping` is what the ten-minute cache is allowed to hold on to. It says yes to everything
+    /// by default, because the ordinary case is that a retry must not repeat an effect and a
+    /// refusal had no effect to repeat either way. A route passes something narrower when one of
+    /// its answers is a fact about *this machine at this moment* rather than about the request —
+    /// see the note in `transcribe` about `429` and `503`, which is the same argument.
+    private func writing(_ request: Request, keeping keep: (Response) -> Bool = { _ in true },
                          _ body: ([String: Any]) -> Response) -> Response {
         switch writeGate(request) {
         case .refused(let response), .replay(let response):
@@ -1343,7 +1381,8 @@ final class RemoteServer {
         case .go(let device, let key):
             let parsed = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
             let response = body(parsed)
-            remember(response, under: key, for: request, by: device)
+            if keep(response) { remember(response, under: key, for: request, by: device) }
+            else { note(response, for: request, by: device) }
             return response
         }
     }
@@ -2414,6 +2453,8 @@ final class RemoteServer {
             var row: [String: Any] = ["role": name(of: entry.kind), "text": entry.text]
             if let tool = entry.tool { row["tool"] = tool }
             if let time = entry.time { row["at"] = Int(time.timeIntervalSince1970) }
+            if let source = entry.source, !source.isEmpty { row["source"] = source }
+            if let mode = entry.sourceMode, !mode.isEmpty { row["sourceMode"] = mode }
             return row
         }
     }
@@ -2422,6 +2463,7 @@ final class RemoteServer {
         switch kind {
         case .user:       return "user"
         case .assistant:  return "assistant"
+        case .peer:       return "peer"
         case .tool:       return "tool"
         case .toolResult: return "tool"
         }
@@ -2813,6 +2855,41 @@ final class RemoteServer {
             "webTaskRunning": t.webTaskRunning,
             "webScheduleMissed": t.webScheduleMissed,
             "webScheduleNoNext": t.webScheduleNoNext,
+        ])
+
+        // The form that makes one — see `POST /v1/orchestrator/schedules`, which is the only
+        // route allowed to write a schedule file.
+        add([
+            "webScheduleNew": t.webScheduleNew,
+            "webScheduleNewSay": t.webScheduleNewSay,
+            "webScheduleTitle": t.webScheduleTitle,
+            "webScheduleAt": t.webScheduleAt,
+            "webScheduleOn": t.webScheduleOn,
+            "webScheduleWhere": t.webScheduleWhere,
+            "webScheduleWith": t.webScheduleWith,
+            "webScheduleFirst": t.webScheduleFirst,
+            "webScheduleMore": t.webScheduleMore,
+            "webScheduleWhenDone": t.webScheduleWhenDone,
+            "webScheduleCloseSuccess": t.webScheduleCloseSuccess,
+            "webScheduleCloseAlways": t.webScheduleCloseAlways,
+            "webScheduleCloseNever": t.webScheduleCloseNever,
+            "webScheduleEnabled": t.webScheduleEnabled,
+            "webScheduleNotify": t.webScheduleNotify,
+            "webScheduleCatchUp": t.webScheduleCatchUp,
+            "webScheduleTimeout": t.webScheduleTimeout,
+            "webScheduleCreate": t.webScheduleCreate,
+            "webScheduleCreated": t.webScheduleCreated,
+            "webScheduleFailed": t.webScheduleFailed,
+            "webScheduleNeedsTime": t.webScheduleNeedsTime,
+            "webScheduleNeedsPlace": t.webScheduleNeedsPlace,
+            "webScheduleDaily": t.webScheduleDaily,
+            "webScheduleSun": t.webScheduleSun,
+            "webScheduleMon": t.webScheduleMon,
+            "webScheduleTue": t.webScheduleTue,
+            "webScheduleWed": t.webScheduleWed,
+            "webScheduleThu": t.webScheduleThu,
+            "webScheduleFri": t.webScheduleFri,
+            "webScheduleSat": t.webScheduleSat,
         ])
 
         // The Links sheet.

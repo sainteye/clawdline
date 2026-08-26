@@ -11,10 +11,14 @@ Put one JSON file per schedule at:
 ~/.config/clawdline/schedules/<schedule-id>.json
 ```
 
-The filename and `schedule_id` must be the same lower-case UUID. Files are the source of truth:
-there is deliberately no HTTP write route. Clawdline rereads them, rejects unknown fields, exposes
-each bad file as an `invalid` row, audits and notifies once per invalid content revision, and
-continues loading the valid neighbors.
+The filename and `schedule_id` must be the same lower-case UUID. Files are the source of truth.
+Clawdline rereads them, rejects unknown fields, exposes each bad file as an `invalid` row, audits
+and notifies once per invalid content revision, and continues loading the valid neighbors.
+
+One route writes one: [`POST /v1/orchestrator/schedules`](#making-one-without-a-text-editor). It
+creates a file and never edits or deletes one, and it is the only thing in the app besides a text
+editor that can. Changing an existing schedule is still done in the file, with the one exception
+below.
 
 The Settings app owns one convenience edit: its switch changes only the top-level `enabled`
 boolean in place. Every other byte and every other field is always yours; edit those in the JSON
@@ -76,6 +80,72 @@ content** to the user — a daily forecast is the canonical shape. Say so in `ta
 content delivery deliberately bypasses the automatic push preference switches; a separate
 agent-content preference remains backlog work.
 
+## Making one without a text editor
+
+`POST /v1/orchestrator/schedules` is the only route that writes a schedule file. It takes the
+fields a person filled in, generates the id, assembles the object above, and hands it to the same
+parser every source file goes through — then reads the file back off disk through that parser
+before answering. A schedule this app cannot itself parse must not survive the request that made
+it: it would come back as an `invalid` row, audit itself and send a push, and nobody would be able
+to say which request left it there.
+
+```sh
+curl -s -X POST "http://127.0.0.1:$port/v1/orchestrator/schedules" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"title":"Publish the next post","at":"09:30","days":["mon","wed","fri"],
+       "place_id":"3f2a91c47e0b5d68","assistant":"codex",
+       "instructions":"Read the publishing checklist and publish the next ready post."}'
+{"ok":true,"schedule":{"id":"4d2f54ce-…","title":"Publish the next post","enabled":true,
+                       "next_fire":1787880600}}
+```
+
+**It is behind the write gate a paired device passes, not the orchestrator token.** The three
+gates are the ones `POST /v1/voice` and `POST /v1/intents` already sit behind: the write switch in
+Settings → Remote, the `send` capability on the device, and an `Idempotency-Key`. The orchestrator
+token is a `0600` file on this Mac — that is what makes it a proof of being local — and a phone
+cannot have one. This route exists for the phone, and sending the orchestrator header instead of a
+device token is refused like any other device that may not send.
+
+**A `place_id`, never a path.** The body has nowhere to write a directory. `place_id` is an id
+from [`GET /v1/places`](api.md#get-v1places) and is resolved against that list on the Mac, which
+is the argument `POST /v1/places/:id/start` makes and is worth making twice: a device can only
+name a project this Mac has already shown it. An id that is not on the list is a `400`, never a
+guess, and `project_dir`, `claims`, `permission_mode` and every other task-template field are not
+fields a request may carry at all.
+
+Then the part that is genuinely new, because burying it would be the only dishonest way to write
+this page: **a paired phone can now arrange work that runs later, in a session nobody is watching,
+in a project that was on the list when the phone last looked.** Everything before this needed
+somebody at the Mac — either at a terminal with the orchestrator token, or in a text editor. What
+bounds it is what bounds the rest: the switch that can be turned off, a device that can be
+revoked, the same capacity and claims checks every dispatch meets when the schedule finally fires,
+and a written record of every one of them. A schedule created while task dispatch is switched off
+is listed and never fires.
+
+The fields are the ones in [The file](#the-file), flattened, plus the `place_id` that replaces
+`project_dir`:
+
+- required: `title`, `at`, `days`, `place_id`, `assistant`, `instructions`.
+- optional: `enabled` (default `true`), `close_tab`, `catch_up_hours`, `notify_on_failure`,
+  `timeout_minutes`, `model`. An empty `model` is left out of the file rather than written into
+  it as an empty string.
+- `days` is **not** defaulted. A request that does not say which days is refused, because
+  choosing `daily` on somebody's behalf is choosing how often their work runs. `enabled` is the
+  opposite: a schedule somebody has just asked for is on.
+- Every refusal carries the parser's own sentence — `when.at must be HH:MM in local time` and the
+  rest. They were written for a person to read and there is no second wording of them worth
+  inventing.
+
+Ten of these in ten minutes is the brake, answered as `429 busy`. It is aimed at a client
+retrying in a loop with a fresh key each time rather than at anybody filling in a form, and it is
+deliberately not the dispatch brake: making a schedule is not a dispatch, and spending a tree's
+tickets on it would have a form on a phone quietly stopping a root session from opening children.
+
+New files are `0600`, and the schedules directory is created `0700` when it is not already there —
+the same as task files, because a schedule carries the same first message and the same absolute
+path. An existing directory's mode is left exactly as it is.
+
 ## The minute that actually fires
 
 Clawdline checks once a minute. The first check after wake naturally sees the most recent scheduled
@@ -99,14 +169,19 @@ launch daemon and does not wake a powered-off Mac.
 
 ## Inspect and verify
 
-The examples use the orchestrator token. It authenticates both routes; a paired device with read
-access may also use `GET`, while manual `POST` requires the orchestrator token just like dispatch:
+The examples use the orchestrator token. It authenticates every route here; a paired device with
+read access may also use both `GET`s, while a manual run requires the orchestrator token just like
+dispatch. Creating one is the exception and goes the other way — see
+[Making one without a text editor](#making-one-without-a-text-editor):
 
 ```sh
 port=$(jq -r '.remote_port // 7717' ~/.config/clawdline/config.json 2>/dev/null || echo 7717)
 token=$(cat ~/.config/clawdline/orchestrator-token)
 
 curl -s "http://127.0.0.1:$port/v1/orchestrator/schedules" \
+  -H "X-Clawdline-Orchestrator: $token"
+
+curl -s "http://127.0.0.1:$port/v1/orchestrator/schedules/4d2f54ce-b4b5-4f60-8623-34011f35aa43" \
   -H "X-Clawdline-Orchestrator: $token"
 
 curl -s -X POST \
@@ -120,12 +195,20 @@ optional `last_run` with `task_id`, `state`, and `at`. `last_run` can disappear 
 200-record retention limit removes the task. A bad source file appears in the same `schedules`
 array with `state: "invalid"`, `file`, an `error` summary, and `error_kind`; a temporarily missing
 `project_dir` uses `error_kind: "project_unavailable"` so it is distinguishable from schema errors.
-No task-template field is exposed. Manual run ignores `enabled` and the clock but refuses while
-any task from that schedule is active; a successful answer has the same task and warning payload
-as ordinary dispatch.
+No task-template field is exposed.
 
-A paired device (read-only is sufficient) sees the schedule list through this same GET route;
-manual POST remains restricted to the orchestrator token.
+`GET /v1/orchestrator/schedules/:id` is the one place that does expose it. The list is a list — it
+says what exists, when it next fires and how the last run went — which is the right amount for a
+row and the wrong amount for the only screen where somebody can check what they just made. It adds
+`file`, `when` in the file's own spelling, `close_tab`, `catch_up_hours`, `notify_on_failure`, and
+the whole `task` template including `project_dir` and `instructions`. An unknown or invalid id is
+`404`; a `read` device may ask, like it may ask for the list.
+
+Manual run ignores `enabled` and the clock but refuses while any task from that schedule is
+active; a successful answer has the same task and warning payload as ordinary dispatch.
+
+A paired device (read-only is sufficient) sees the schedule list and any single schedule through
+these same GET routes; a manual run remains restricted to the orchestrator token.
 
 The local scheduler is the on-Mac form of the cloud blueprint's Phase 6: the trigger and worker
 may move to another machine later, while the task protocol and lifecycle stay the same.

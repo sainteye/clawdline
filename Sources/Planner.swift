@@ -30,6 +30,31 @@ enum Planner {
 
     /// A session somebody might start, before anybody has agreed to it.
     struct Draft: Equatable {
+        /// What the sentence asked for: a session to open now, or one that repeats.
+        enum Kind: String { case session, schedule }
+
+        /// Which days a repeating draft repeats on. Three cases rather than an array, because
+        /// "every day" and "the sentence named no day" are different answers and an empty array
+        /// cannot be both.
+        enum Days: Equatable {
+            case daily
+            /// Lower-case three-letter names, in week order, no duplicates.
+            case named([String])
+            /// The sentence did not say.
+            case unsaid
+
+            /// What goes on the wire — `"daily"`, the names, or `[]`. The shape
+            /// `POST /v1/orchestrator/schedules` takes for its `days` field, so a draft can be
+            /// carried into that form without being translated on the way.
+            var payload: Any {
+                switch self {
+                case .daily: return "daily"
+                case .named(let names): return names
+                case .unsaid: return [String]()
+                }
+            }
+        }
+
         /// An id from ``StartPoints/places()``, or nothing when no project on the list fitted.
         let placeID: String?
         let assistant: Assistant
@@ -40,6 +65,10 @@ enum Planner {
         let confidence: Double
         /// What to ask when the draft is a guess, and empty when it is not. See ``sure``.
         let question: String
+        let kind: Kind
+        /// `HH:MM` on a 24-hour clock, or empty when the sentence gave no time.
+        let at: String
+        let days: Days
 
         /// The object `POST /v1/intents` answers with. Keys are the wire contract; nothing else
         /// in the app reads them, so they are spelled here once and not derived.
@@ -49,7 +78,10 @@ enum Planner {
              "instructions": instructions,
              "title": title,
              "confidence": confidence,
-             "question": question]
+             "question": question,
+             "kind": kind.rawValue,
+             "at": at,
+             "days": days.payload]
         }
     }
 
@@ -158,9 +190,29 @@ enum Planner {
         empty first message opens the session and types nothing, which is exactly what was \
         asked for. Do not invent a greeting to put here.
         - title: what to call the session, 6-20 characters.
-        - confidence: 0 to 1. Below \(sure) when you are guessing which project, or when the \
-        sentence does not say enough to act on.
+        - kind: "schedule" when the sentence asks for work to happen at a time of day, or every \
+        day, or on named days — "every morning at nine", "run the tests at 18:00 on Fridays". \
+        "session" for everything else, which is a session to open now. When it could be either it \
+        is "session": a session nobody wanted is one tab to close, and a schedule nobody wanted \
+        opens one every day until somebody finds it.
+        - at: the time of day as HH:MM on a 24-hour clock, and "" when the sentence gave no time. \
+        "half past six" in the evening is "18:30".
+        - days: the days a schedule repeats on, as a list: ["daily"] for every day, or the days \
+        that were named, from sun, mon, tue, wed, thu, fri and sat. "every weekday" is \
+        ["mon","tue","wed","thu","fri"]. **A time with nothing said about which day is \
+        ["daily"]** — that is what "at half past six" asks for, not a guess at a weekday. Write \
+        [] for a session.
+        - confidence: 0 to 1. Below \(sure) when you are guessing which project, when the \
+        sentence does not say enough to act on, or when it is a schedule and you have no time to \
+        put in `at`.
         - question: the one thing to ask when you are not sure, and "" when you are.
+
+        **There are no one-off schedules on this Mac.** A schedule repeats — every day, or on the \
+        days you name — and there is nowhere to put a single date. "tomorrow at three", "on the \
+        14th" and "in twenty minutes" are things this cannot express, and writing them down as a \
+        weekly repeat would arrange work nobody asked for, every week, until they noticed. Draft \
+        those with a confidence below \(sure) and a question that says only a repeating time can \
+        be set.
 
         Write instructions, title and question in the language the SENTENCE is written in, \
         matched word for word: an English sentence gets an English draft, a Chinese sentence a \
@@ -186,8 +238,13 @@ enum Planner {
     "instructions":{"type":"string"},\
     "title":{"type":"string"},\
     "confidence":{"type":"number"},\
-    "question":{"type":"string"}},\
-    "required":["project","assistant","instructions","title","confidence","question"],\
+    "question":{"type":"string"},\
+    "kind":{"type":"string","enum":["session","schedule"]},\
+    "at":{"type":"string"},\
+    "days":{"type":"array","items":{"type":"string",\
+    "enum":["daily","sun","mon","tue","wed","thu","fri","sat"]}}},\
+    "required":["project","assistant","instructions","title","confidence","question",\
+    "kind","at","days"],\
     "additionalProperties":false}
     """
 
@@ -221,11 +278,20 @@ enum Planner {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let number = (object["project"] as? NSNumber)?.intValue ?? 0
         let named = (object["assistant"] as? String ?? "").lowercased()
-        let confidence = min(1, max(0, (object["confidence"] as? NSNumber)?.doubleValue ?? 0))
         let title = (object["title"] as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let question = (object["question"] as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        // Anything that is not one of the two words is a session. A model that wrote something
+        // else has not asked for a schedule, and the cheaper mistake of the two is the tab.
+        let kind = Draft.Kind(rawValue: (object["kind"] as? String ?? "").lowercased()) ?? .session
+        let at = time(inAnswer: object["at"])
+        var confidence = min(1, max(0, (object["confidence"] as? NSNumber)?.doubleValue ?? 0))
+        // **A schedule with no time is not one anybody can save**, so the page's job is to ask
+        // for the time rather than to offer a Save button. Decided here as well as in the prompt,
+        // because the two disagreeing would produce a draft that says it is sure of a time it
+        // does not have — and this side is the one that cannot be talked out of it.
+        if kind == .schedule, at.isEmpty { confidence = min(confidence, sure - 0.01) }
         return Draft(placeID: place(number: number, in: places)?.id,
                      assistant: Assistant(rawValue: named) ?? .claude,
                      instructions: instructions,
@@ -233,7 +299,65 @@ enum Planner {
                      confidence: confidence,
                      // A model that is sure and still wrote a question would have the page asking
                      // about a draft it had no doubts about. The threshold decides, once, here.
-                     question: confidence >= sure ? "" : question)
+                     question: confidence >= sure ? "" : question,
+                     kind: kind,
+                     at: at,
+                     days: weekdays(inAnswer: object["days"]))
+    }
+
+    /// The time a model wrote, in the one spelling the schedule file takes, or "" for anything
+    /// that is not a time.
+    ///
+    /// `9:00` and `09:00` are the same time and only the second is a schedule file's `when.at`,
+    /// so this pads rather than refuses — the alternative is a form that opens empty because the
+    /// model dropped a zero. Everything else is "", including a time nobody can have: `25:00`
+    /// carried through would become a file the parser refuses, one screen later and with a worse
+    /// sentence attached to it.
+    static func time(inAnswer raw: Any?) -> String {
+        guard let text = (raw as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return "" }
+        let parts = text.split(separator: ":", omittingEmptySubsequences: false)
+        // Digits only, and ASCII ones: `Int("٩")` is nil but `Int("+9")` is 9, and a time with a
+        // sign in it is not a time.
+        guard parts.count == 2,
+              parts.allSatisfy({ !$0.isEmpty && $0.count <= 2
+                                 && $0.allSatisfy { $0.isASCII && $0.isNumber } }),
+              let hour = Int(parts[0]), let minute = Int(parts[1]),
+              (0...23).contains(hour), (0...59).contains(minute) else { return "" }
+        return String(format: "%02d:%02d", hour, minute)
+    }
+
+    /// The days a model wrote, in this app's spelling and in week order.
+    ///
+    /// `Monday`, `monday` and `mon` are one day: three letters is how the file spells it and it
+    /// is the prefix of every long form of all seven, so matching on the prefix costs nothing and
+    /// saves the ordinary case of a model writing the whole word. A name that is not one of the
+    /// seven is dropped rather than passed on — `when.days` is an allowlist in the parser, and a
+    /// draft that carried "weekdays" into the form would be a field somebody has to clear.
+    static func weekdays(inAnswer raw: Any?) -> Draft.Days {
+        let names = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+        func day(_ value: String) -> String? {
+            let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return names.first { cleaned.hasPrefix($0) }
+        }
+        // The schema asks for a list, and `["daily"]` is how it spells every day. The fallback
+        // engine has no schema and writes the bare word about as often, so both are read here.
+        if let text = raw as? String {
+            let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if cleaned == "daily" { return .daily }
+            return day(cleaned).map { Draft.Days.named([$0]) } ?? .unsaid
+        }
+        guard let values = raw as? [Any] else { return .unsaid }
+        var found: Set<String> = []
+        for value in values {
+            guard let text = value as? String else { continue }
+            if text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "daily" {
+                return .daily
+            }
+            if let one = day(text) { found.insert(one) }
+        }
+        let ordered = names.filter { found.contains($0) }
+        return ordered.isEmpty ? .unsaid : .named(ordered)
     }
 
     /// The object out of what `claude -p --output-format json` printed.

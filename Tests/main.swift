@@ -533,6 +533,340 @@ group("schedule records become valid and warning rows for settings") {
            [.running, .running, .running, .success, .failure, .timeout, .cancelled, .spawnFailed])
 }
 
+group("a schedule made over HTTP is one the parser above would have accepted") {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-schedule-writes-\(UUID().uuidString)")
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+        Orchestrator.scheduleDirectoryOverrideForTesting = nil
+        Orchestrator.forget()
+    }
+    // Deliberately not created here: the first write has to make it, and it has to make it 0700.
+    Orchestrator.scheduleDirectoryOverrideForTesting = directory
+    Orchestrator.forget()
+
+    let place = StartPoints.Place(id: StartPoints.id(for: "/tmp"), path: "/tmp",
+                                  label: "tmp", at: Date(timeIntervalSince1970: 1))
+    let good: [String: Any] = [
+        "title": "publish the blog", "at": "09:30", "days": ["wed", "mon"],
+        "place_id": place.id, "assistant": "codex",
+        "instructions": "publish the next ready post", "enabled": true,
+    ]
+    func create(_ body: [String: Any]) -> Orchestrator.Reply {
+        Orchestrator.createSchedule(from: body, places: [place], isDirectory: { $0 == "/tmp" })
+    }
+    func files() -> [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []).sorted()
+    }
+    func refusal(_ reply: Orchestrator.Reply) -> (status: Int, code: String, message: String)? {
+        guard case .refused(let status, let code, let message, _) = reply else { return nil }
+        return (status, code, message)
+    }
+
+    var madeID = ""
+    switch create(good) {
+    case .refused(_, _, let message, _):
+        check("an ordinary request is written", false, message)
+    case .ok(let payload):
+        let schedule = payload["schedule"] as? [String: Any]
+        madeID = schedule?["id"] as? String ?? ""
+        check("the answer names the schedule it made",
+              payload["ok"] as? Bool == true && UUID(uuidString: madeID) != nil
+                && madeID == madeID.lowercased())
+        expect("and carries the title back", schedule?["title"] as? String, "publish the blog")
+        expect("and whether it is on", schedule?["enabled"] as? Bool, true)
+        check("and when it will next fire", schedule?["next_fire"] is Int)
+    }
+
+    // The whole of the round-trip: what came out is a file the parser reads, which is the only
+    // definition of a valid schedule this app has.
+    expect("the file is named after the id it generated", files(), ["\(madeID).json"])
+    let loaded = Orchestrator.schedules()
+    expect("and it is loaded back off disk by the ordinary inventory", loaded.count, 1)
+    expect("with the weekdays it was asked for", loaded.first?.weekdays, Set([2, 4]))
+    expect("the hour survived the round trip", loaded.first?.hour, 9)
+    expect("and the minute", loaded.first?.minute, 30)
+    expect("the place id became the project directory, and never came from the request",
+           loaded.first?.taskTemplate["project_dir"] as? String, "/tmp")
+    check("the defaults are the parser's rather than written into the file twice", {
+        guard let data = try? Data(contentsOf: directory
+            .appendingPathComponent("\(madeID).json")),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return false }
+        return obj["close_tab"] == nil && obj["catch_up_hours"] == nil
+            && obj["notify_on_failure"] == nil
+    }())
+
+    // Task files are 0600 inside a 0700 directory; a schedule carries the same first message and
+    // the same absolute path, so it is worth exactly as much to somebody else on this Mac.
+    func mode(_ path: String) -> Int? {
+        (try? FileManager.default.attributesOfItem(atPath: path))?[.posixPermissions] as? Int
+    }
+    expect("the directory it had to create is private", mode(directory.path), 0o700)
+    expect("and the file in it is too",
+           mode(directory.appendingPathComponent("\(madeID).json").path), 0o600)
+
+    // Every one of these is a rejection the parser above already enumerates. A serialiser that
+    // could produce one of them would be a route that writes files this app then reports as
+    // invalid, audits, and pushes about — with nobody able to say which request left it there.
+    for (name, mutate) in [
+        ("empty title", { (value: inout [String: Any]) in value["title"] = "" }),
+        ("oversized title", { (value: inout [String: Any]) in
+            value["title"] = String(repeating: "x", count: 121) }),
+        ("numeric title", { (value: inout [String: Any]) in value["title"] = 7 }),
+        ("missing title", { (value: inout [String: Any]) in value.removeValue(forKey: "title") }),
+        ("missing time", { (value: inout [String: Any]) in value.removeValue(forKey: "at") }),
+        ("bad minute", { (value: inout [String: Any]) in value["at"] = "23:60" }),
+        ("bad hour", { (value: inout [String: Any]) in value["at"] = "24:00" }),
+        ("unpadded time", { (value: inout [String: Any]) in value["at"] = "9:30" }),
+        ("missing days", { (value: inout [String: Any]) in value.removeValue(forKey: "days") }),
+        ("empty days", { (value: inout [String: Any]) in value["days"] = [] }),
+        ("unknown weekday", { (value: inout [String: Any]) in value["days"] = ["monday"] }),
+        ("duplicate day", { (value: inout [String: Any]) in value["days"] = ["mon", "mon"] }),
+        ("numeric enabled", { (value: inout [String: Any]) in value["enabled"] = 1 }),
+        ("unknown close policy", { (value: inout [String: Any]) in value["close_tab"] = "later" }),
+        ("boolean catch-up", { (value: inout [String: Any]) in value["catch_up_hours"] = true }),
+        ("oversized catch-up", { (value: inout [String: Any]) in value["catch_up_hours"] = 169 }),
+        ("negative catch-up", { (value: inout [String: Any]) in value["catch_up_hours"] = -1 }),
+        ("numeric notification", { (value: inout [String: Any]) in
+            value["notify_on_failure"] = 1 }),
+        ("numeric model", { (value: inout [String: Any]) in value["model"] = 7 }),
+        ("bad model name", { (value: inout [String: Any]) in value["model"] = "GPT 5!" }),
+        ("bad assistant", { (value: inout [String: Any]) in value["assistant"] = "shell" }),
+        ("missing assistant", { (value: inout [String: Any]) in
+            value.removeValue(forKey: "assistant") }),
+        ("missing instructions", { (value: inout [String: Any]) in
+            value.removeValue(forKey: "instructions") }),
+        ("empty instructions", { (value: inout [String: Any]) in value["instructions"] = "" }),
+        ("zero timeout", { (value: inout [String: Any]) in value["timeout_minutes"] = 0 }),
+        ("boolean timeout", { (value: inout [String: Any]) in value["timeout_minutes"] = true }),
+        // The four the request cannot even name. These are the fields the parser owns, and a
+        // route that let one through would be a route that writes its own schema version.
+        ("a schema version of its own", { (value: inout [String: Any]) in
+            value["clawdline_schedule"] = 2 }),
+        ("an id of its own", { (value: inout [String: Any]) in
+            value["schedule_id"] = UUID().uuidString.lowercased() }),
+        ("a when object of its own", { (value: inout [String: Any]) in
+            value["when"] = ["at": "23:45", "days": "daily", "zone": "UTC"] }),
+        ("a task template of its own", { (value: inout [String: Any]) in
+            value["task"] = ["assistant": "codex", "project_dir": "/etc",
+                             "instructions": "print the hosts file"] }),
+        // And the one this whole route is shaped around: a directory, by any name.
+        ("a project directory", { (value: inout [String: Any]) in value["project_dir"] = "/etc" }),
+        ("claims", { (value: inout [String: Any]) in value["claims"] = ["posts"] }),
+        ("a permission mode", { (value: inout [String: Any]) in value["permission_mode"] = "full" }),
+    ] {
+        var broken = good
+        mutate(&broken)
+        let reply = refusal(create(broken))
+        check("rejects \(name)", reply?.status == 400 && reply?.code == "bad_request",
+              String(describing: reply))
+        check("and leaves nothing behind for \(name)", files() == ["\(madeID).json"])
+    }
+
+    // The id is the whole of the argument that a device cannot name a directory it was never
+    // shown, so it is checked before anything else in the body is read.
+    for (name, body) in [
+        ("no place at all", [:] as [String: Any]),
+        ("an id nobody was handed", ["place_id": "0123456789abcdef"] as [String: Any]),
+        ("an empty one", ["place_id": ""] as [String: Any]),
+        ("a path where the id goes", ["place_id": "/tmp"] as [String: Any]),
+        ("a number", ["place_id": 1] as [String: Any]),
+    ] {
+        var attempt = good
+        attempt.removeValue(forKey: "place_id")
+        for (key, value) in body { attempt[key] = value }
+        let reply = refusal(create(attempt))
+        check("\(name) is a bad request and never a guess",
+              reply?.status == 400 && reply?.code == "bad_request"
+                && reply?.message.contains("place_id") == true,
+              String(describing: reply))
+    }
+
+    // Everything optional, and the answer still parses back — the shape a form sends when
+    // somebody opened the extra fields and filled them in.
+    var full = good
+    full["days"] = "daily"
+    full["close_tab"] = "always"
+    full["catch_up_hours"] = 12
+    full["notify_on_failure"] = false
+    full["timeout_minutes"] = 45
+    full["model"] = "gpt-5.6-sol"
+    full["enabled"] = false
+    if case .refused(_, _, let why, _) = create(full) {
+        check("a request that sets every field is written too", false, why)
+    }
+    let both = Orchestrator.schedules()
+    expect("both schedules are on disk", both.count, 2)
+    let second = both.first { $0.id != madeID }
+    check("daily is a schedule with no weekday filter",
+          second != nil && second?.weekdays == nil)
+    expect("the close policy came through", second?.closeTab, .always)
+    expect("the catch-up window came through", second?.catchUpHours, 12)
+    expect("the failure notification came through", second?.notifyOnFailure, false)
+    expect("a disabled schedule can be made", second?.enabled, false)
+    expect("the model came through", second?.taskTemplate["model"] as? String, "gpt-5.6-sol")
+    expect("and so did the timeout",
+           (second?.taskTemplate["timeout_minutes"] as? NSNumber)?.intValue, 45)
+
+    // An empty model is a form saying "whatever that assistant runs by default", and a file
+    // carrying `"model": ""` is a field whoever opens it later has to read and dismiss.
+    var blankModel = good
+    blankModel["model"] = ""
+    if case .ok(let payload) = create(blankModel),
+       let id = (payload["schedule"] as? [String: Any])?["id"] as? String {
+        let written = Orchestrator.schedules().first { $0.id == id }
+        check("an empty model is left out of the file rather than written down",
+              written != nil && written?.taskTemplate["model"] == nil)
+    } else {
+        check("an empty model is left out of the file rather than written down", false)
+    }
+
+    // **The read-back, which is the whole reason this is a serialiser and not a formatter.** The
+    // directory going away between the parse and the read is the honest way to produce a file
+    // this app cannot load: everything about the request was valid when it was checked. What must
+    // not happen is a 200 — that file would come back as an `invalid` row, audit itself, push
+    // about itself, and give nobody a way to say which request left it there.
+    var checked = false
+    let before = files()
+    let vanishing = Orchestrator.createSchedule(from: good, places: [place], isDirectory: { _ in
+        defer { checked = true }
+        return !checked
+    })
+    if case .refused(let status, let code, _, _) = vanishing {
+        check("a file that cannot be read back is a write failure",
+              status == 500 && code == "write_failed")
+    } else {
+        check("a file that cannot be read back is a write failure", false, "it answered 200")
+    }
+    check("and it does not survive the request that made it", files() == before)
+
+    // The other half: nowhere to put the file at all.
+    let blocked = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-schedule-blocked-\(UUID().uuidString)")
+    try! Data("this is a file, not a directory".utf8).write(to: blocked)
+    Orchestrator.scheduleDirectoryOverrideForTesting = blocked
+    if case .refused(let status, let code, _, _) = create(good) {
+        check("a directory that cannot be made is a write failure",
+              status == 500 && code == "write_failed")
+    } else {
+        check("a directory that cannot be made is a write failure", false, "it answered 200")
+    }
+    try? FileManager.default.removeItem(at: blocked)
+    Orchestrator.scheduleDirectoryOverrideForTesting = directory
+
+    // The brake. Ten in ten minutes, and it exists for the client that retries in a loop with a
+    // fresh key each time rather than for anybody filling in a form.
+    var refusedAt = 0
+    for attempt in 1...12 {
+        if case .refused(let status, let code, _, _) = create(good) {
+            if refusedAt == 0 { refusedAt = attempt }
+            check("the brake refuses with the code the page knows",
+                  status == 429 && code == "busy")
+        }
+    }
+    expect("ten writes get through a ten-minute window and the eleventh does not", refusedAt, 6)
+    Orchestrator.forget()
+}
+
+group("one schedule can be read in full, and the write route is behind the write gate") {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-schedule-routes-\(UUID().uuidString)")
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let wasWriting = Config.shared.remoteWrite
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+        Orchestrator.scheduleDirectoryOverrideForTesting = nil
+        Config.shared.remoteWrite = wasWriting
+        Orchestrator.forget()
+    }
+    Orchestrator.scheduleDirectoryOverrideForTesting = directory
+    let id = "cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa"
+    let source: [String: Any] = [
+        "clawdline_schedule": 1, "schedule_id": id, "title": "nightly",
+        "when": ["at": "01:30", "days": ["mon", "fri"]],
+        "task": ["assistant": "codex", "project_dir": "/tmp",
+                 "instructions": "do the nightly work", "claims": ["posts"]],
+        "enabled": true, "close_tab": "always", "catch_up_hours": 12,
+    ]
+    try! JSONSerialization.data(withJSONObject: source)
+        .write(to: directory.appendingPathComponent("\(id).json"))
+
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let one = RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/schedules/\(id)", headers: auth))
+    expect("one schedule has a route of its own", one.status, 200)
+    let oneBody = (try? JSONSerialization.jsonObject(with: one.body)) as? [String: Any]
+    let record = oneBody?["schedule"] as? [String: Any]
+    check("it carries what the list already said",
+          record?["id"] as? String == id && record?["title"] as? String == "nightly"
+            && record?["enabled"] as? Bool == true && record?["next_fire"] is Int)
+    check("and the task template the list deliberately leaves out",
+          (record?["task"] as? [String: Any])?["instructions"] as? String == "do the nightly work"
+            && (record?["task"] as? [String: Any])?["project_dir"] as? String == "/tmp")
+    check("the weekdays come back in the file's own spelling, not Calendar numbers",
+          (record?["when"] as? [String: Any])?["days"] as? [String] == ["mon", "fri"]
+            && (record?["when"] as? [String: Any])?["at"] as? String == "01:30")
+    check("with the three policies a person set", record?["close_tab"] as? String == "always"
+            && record?["catch_up_hours"] as? Int == 12
+            && record?["notify_on_failure"] as? Bool == true)
+    expect("an id nobody has is a 404", RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/schedules/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                      headers: auth)).status, 404)
+    expect("and so is something that is not an id at all", RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/schedules/..%2F..%2Fetc", headers: auth)).status,
+        404)
+
+    let reader = RemoteAuth.addDevice(name: "a phone that may read", caps: [.read])
+    let writer = RemoteAuth.addDevice(name: "a phone that may send", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: reader.id); RemoteAuth.revoke(id: writer.id) }
+    expect("a read-only device may read one schedule, like it may read the list",
+           RemoteServer.shared.route(remoteRequest(
+            "GET", "/v1/orchestrator/schedules/\(id)",
+            headers: ["Authorization": "Bearer \(reader.token)"])).status, 200)
+
+    let body = "{\"title\":\"x\",\"at\":\"09:00\",\"days\":\"daily\",\"place_id\":\"nope\","
+        + "\"assistant\":\"claude\",\"instructions\":\"do a thing\"}"
+    func post(_ token: String?, key: String?,
+              header: [String: String] = [:]) -> RemoteServer.Response {
+        var headers = header
+        if let token { headers["Authorization"] = "Bearer \(token)" }
+        if let key { headers["Idempotency-Key"] = key }
+        headers["Content-Type"] = "application/json"
+        return RemoteServer.shared.route(remoteRequest("POST", "/v1/orchestrator/schedules",
+                                                       headers: headers, body: body))
+    }
+    Config.shared.remoteWrite = true
+    expect("making a schedule with no token at all is refused",
+           post(nil, key: UUID().uuidString).status, 401)
+    // The one that would quietly undo the argument in the plan: this route is for the phone, so
+    // the local credential is not a way past the gate the phone has to pass.
+    let orchestratorOnly = post(nil, key: UUID().uuidString, header: auth)
+    expect("and the orchestrator token is not a way around the write gate",
+           orchestratorOnly.status, 403)
+    expect("it is refused as a device that may not send",
+           remoteErrorCode(orchestratorOnly), "forbidden")
+    expect("a device that may read and not send is refused",
+           remoteErrorCode(post(reader.token, key: UUID().uuidString)), "forbidden")
+    Config.shared.remoteWrite = false
+    expect("the write switch is checked first",
+           remoteErrorCode(post(writer.token, key: UUID().uuidString)), "write_disabled")
+    Config.shared.remoteWrite = true
+    // Checked by its sentence and not only by its status: this route has a `400` of its own for a
+    // body it cannot use, so a check that only counted to 400 would stay green with the gate gone.
+    let noKey = post(writer.token, key: nil)
+    expect("a retryable write with no idempotency key is refused", noKey.status, 400)
+    check("and it is refused for the header rather than for the body",
+          remoteErrorMessage(noKey).contains("Idempotency-Key"), remoteErrorMessage(noKey))
+    let unknownPlace = post(writer.token, key: UUID().uuidString)
+    expect("past all three gates, an id nobody was handed is a bad request",
+           unknownPlace.status, 400)
+    expect("and it is the typed one", remoteErrorCode(unknownPlace), "bad_request")
+    expect("nothing was written", (try? FileManager.default
+        .contentsOfDirectory(atPath: directory.path))?.count, 1)
+    Orchestrator.forget()
+}
+
 // MARK: - Mascot packs that ship
 
 group("shipped packs decode and validate") {
@@ -5053,6 +5387,22 @@ group("the page is given the words it draws the start sheet with") {
     check("and they arrive in the language the browser asked for",
           (french["webStart"] as? String).map { !$0.isEmpty && $0 != (english["webStart"] as? String) } == true,
           "fr said \((french["webStart"] as? String) ?? "nothing")")
+
+    // The same rule for the form that makes a schedule: a string in `Copy` is not a string on the
+    // page, and thirteen of the start sheet's words sat translated into fourteen languages for a
+    // whole release without being on this route.
+    let scheduleForm = ["webScheduleNew", "webScheduleNewSay", "webScheduleTitle", "webScheduleAt",
+                        "webScheduleOn", "webScheduleWhere", "webScheduleWith", "webScheduleFirst",
+                        "webScheduleMore", "webScheduleWhenDone", "webScheduleCloseSuccess",
+                        "webScheduleCloseAlways", "webScheduleCloseNever", "webScheduleEnabled",
+                        "webScheduleNotify", "webScheduleCatchUp", "webScheduleTimeout",
+                        "webScheduleCreate", "webScheduleCreated", "webScheduleFailed",
+                        "webScheduleNeedsTime", "webScheduleNeedsPlace", "webScheduleDaily",
+                        "webScheduleSun", "webScheduleMon", "webScheduleTue", "webScheduleWed",
+                        "webScheduleThu", "webScheduleFri", "webScheduleSat"]
+    let missing = scheduleForm.filter { (english[$0] as? String ?? "").isEmpty }
+    check("every word the schedule form draws is published", missing.isEmpty,
+          "not on /v1/strings: " + missing.joined(separator: ", "))
 }
 
 // MARK: - One sentence, turned into a draft of a session
@@ -5107,6 +5457,85 @@ group("the planner is shown a numbered list and never a way to write a path") {
     // answers.
     check("the confidence the prompt names is the one the code reads",
           prompt.contains("Below \(Planner.sure) when you are guessing"))
+
+    // A sentence can now ask for work that repeats, which is a second thing to be told and a
+    // second thing to be told not to invent.
+    check("the two things a sentence can ask for are named",
+          prompt.contains("\"schedule\" when the sentence asks for work to happen at a time"))
+    check("and the tie is broken towards the cheaper mistake",
+          prompt.contains("When it could be either it is \"session\""))
+    check("the time is asked for in the spelling the schedule file takes",
+          prompt.contains("as HH:MM on a 24-hour clock"))
+    check("a time with no day named is every day, rather than a guess at one",
+          prompt.contains("A time with nothing said about which day is [\"daily\"]"))
+    check("and the weekday example is the one the plan named",
+          prompt.contains("[\"mon\",\"tue\",\"wed\",\"thu\",\"fri\"]"))
+
+    // The one this system cannot express. A model left to itself turns "tomorrow at three" into
+    // a weekly repeat, which is work nobody asked for arriving every week until they find it.
+    check("the model is told there are no one-off schedules here",
+          prompt.contains("There are no one-off schedules on this Mac"))
+    check("and told what to do with a sentence that asks for one",
+          prompt.contains("\"tomorrow at three\"")
+            && prompt.contains("confidence below \(Planner.sure) and a question"))
+}
+
+group("a time and a set of days survive the trip out of a model, or do not") {
+    // Padded rather than refused: `9:00` and `09:00` are the same time and only the second is a
+    // schedule file's `when.at`, so a dropped zero must not empty the form.
+    expect("an unpadded hour is padded", Planner.time(inAnswer: "9:00"), "09:00")
+    expect("an already-padded one is left alone", Planner.time(inAnswer: "09:30"), "09:30")
+    expect("midnight is a time", Planner.time(inAnswer: "0:0"), "00:00")
+    expect("and the last minute of the day", Planner.time(inAnswer: "23:59"), "23:59")
+    expect("surrounding whitespace is not part of it", Planner.time(inAnswer: " 9:05 "), "09:05")
+
+    // Everything that is not a time is no time at all, and it has to be decided here: carried
+    // through, `25:00` becomes a file the parser refuses one screen later, with a worse sentence
+    // attached to it than the form could have shown.
+    expect("an hour nobody has is nothing", Planner.time(inAnswer: "25:00"), "")
+    expect("and a minute nobody has", Planner.time(inAnswer: "09:60"), "")
+    expect("a time with no colon is nothing", Planner.time(inAnswer: "0930"), "")
+    expect("nor is a signed one", Planner.time(inAnswer: "+9:00"), "")
+    expect("nor one with seconds on it", Planner.time(inAnswer: "09:30:00"), "")
+    expect("nor digits that are not ASCII", Planner.time(inAnswer: "٠٩:٣٠"), "")
+    expect("an empty string says the sentence had no time", Planner.time(inAnswer: ""), "")
+    expect("and so does a missing field", Planner.time(inAnswer: nil), "")
+    expect("a number where the time goes is not one", Planner.time(inAnswer: 930), "")
+
+    // The schema asks for a list and spells every day `["daily"]`; the fallback engine has no
+    // schema and writes the bare word about as often.
+    expect("the schema's spelling of every day", Planner.weekdays(inAnswer: ["daily"]),
+           Planner.Draft.Days.daily)
+    expect("and the bare word", Planner.weekdays(inAnswer: "daily"), Planner.Draft.Days.daily)
+    expect("long weekday names are the same days as short ones",
+           Planner.weekdays(inAnswer: ["Monday", "wednesday"]),
+           Planner.Draft.Days.named(["mon", "wed"]))
+    expect("they come back in week order however they were written",
+           Planner.weekdays(inAnswer: ["fri", "mon", "sun"]),
+           Planner.Draft.Days.named(["sun", "mon", "fri"]))
+    expect("a day said twice is one day", Planner.weekdays(inAnswer: ["mon", "Mon"]),
+           Planner.Draft.Days.named(["mon"]))
+    // `when.days` is an allowlist in the parser, so a word that is not one of the seven has to be
+    // dropped here — carried into the form it would be a field somebody has to clear.
+    expect("a word that is not a day is dropped", Planner.weekdays(inAnswer: ["weekdays"]),
+           Planner.Draft.Days.unsaid)
+    expect("and a number among them", Planner.weekdays(inAnswer: ["mon", 3]),
+           Planner.Draft.Days.named(["mon"]))
+    expect("an empty list says the sentence named none",
+           Planner.weekdays(inAnswer: [String]()),
+           Planner.Draft.Days.unsaid)
+    expect("and so does a missing field", Planner.weekdays(inAnswer: nil),
+           Planner.Draft.Days.unsaid)
+    expect("every day wins over a day named beside it",
+           Planner.weekdays(inAnswer: ["mon", "daily"]), Planner.Draft.Days.daily)
+
+    // What goes on the wire is the shape POST /v1/orchestrator/schedules takes, so a draft can be
+    // carried into that form without being translated on the way.
+    expect("daily is a string on the wire", Planner.Draft.Days.daily.payload as? String, "daily")
+    expect("named days are an array", Planner.Draft.Days.named(["mon"]).payload as? [String],
+           ["mon"])
+    expect("and nothing said is an empty one",
+           Planner.Draft.Days.unsaid.payload as? [String], [])
 }
 
 group("a number the planner wrote is mapped back to a place, and nothing else is") {
@@ -5234,6 +5663,65 @@ group("how sure the planner was decides whether the page asks") {
     expect("a confidence past one is one", draft(12, question: "")?.confidence, 1)
     expect("and one below nought is nought", draft(-3, question: "x")?.confidence, 0)
     expect("nought is still a guess, so it still asks", draft(-3, question: "x")?.question, "x")
+
+    // A schedule with no time is not one anybody can save, so however sure the model said it was,
+    // the page has to ask rather than offer a Save button. Decided on this side as well as in the
+    // prompt: the two disagreeing would be a draft claiming to be sure of a time it does not have.
+    func timed(_ kind: String, at: String, confidence: Double,
+               question: String = "") -> Planner.Draft? {
+        Planner.draft(from: ["project": 1, "assistant": "claude", "instructions": "run the tests",
+                             "title": "a title", "confidence": confidence, "question": question,
+                             "kind": kind, "at": at, "days": ["daily"]],
+                      places: plannerPlaces)
+    }
+    check("a schedule with no time is never offered as an answer",
+          (timed("schedule", at: "", confidence: 0.95)?.confidence ?? 1) < Planner.sure)
+    expect("and the question the model wrote about it survives",
+           timed("schedule", at: "", confidence: 0.95, question: "what time?")?.question,
+           "what time?")
+    expect("a schedule that does have one keeps what the model said",
+           timed("schedule", at: "09:00", confidence: 0.95)?.confidence, 0.95)
+    expect("and a session with no time is not a schedule with a missing one",
+           timed("session", at: "", confidence: 0.95)?.confidence, 0.95)
+}
+
+group("a draft says whether the sentence asked for a session now or one that repeats") {
+    func draft(_ object: [String: Any]) -> Planner.Draft? {
+        var body: [String: Any] = ["project": 1, "assistant": "claude",
+                                   "instructions": "run the tests", "title": "a title",
+                                   "confidence": 0.9, "question": ""]
+        for (key, value) in object { body[key] = value }
+        return Planner.draft(from: body, places: plannerPlaces)
+    }
+
+    let repeating = draft(["kind": "schedule", "at": "9:00",
+                           "days": ["fri", "mon"]])
+    expect("a schedule says so", repeating?.kind, Planner.Draft.Kind.schedule)
+    expect("its time arrives in the spelling the schedule file takes", repeating?.at, "09:00")
+    expect("and its days in week order", repeating?.days,
+           Planner.Draft.Days.named(["mon", "fri"]))
+
+    // The default is the cheaper mistake: a session nobody wanted is one tab to close, and a
+    // schedule nobody wanted opens one every day until somebody finds it.
+    expect("a draft that says nothing about it is a session", draft([:])?.kind,
+           Planner.Draft.Kind.session)
+    expect("and so is a word that is neither", draft(["kind": "cron"])?.kind,
+           Planner.Draft.Kind.session)
+    expect("a session names no time", draft([:])?.at, "")
+    expect("and no days", draft([:])?.days, Planner.Draft.Days.unsaid)
+
+    // The wire contract. The page carries these three straight into the form that posts to
+    // /v1/orchestrator/schedules, so they have to arrive in the shape that route takes.
+    let payload = repeating?.payload ?? [:]
+    expect("kind is on the wire", payload["kind"] as? String, "schedule")
+    expect("so is the time", payload["at"] as? String, "09:00")
+    expect("and the days, as the array that route takes", payload["days"] as? [String],
+           ["mon", "fri"])
+    expect("every day is that route's string rather than seven names",
+           (draft(["kind": "schedule", "at": "07:00", "days": "daily"])?.payload["days"]) as? String,
+           "daily")
+    expect("and a session's days are an empty array rather than a missing field",
+           draft([:])?.payload["days"] as? [String], [])
 }
 
 group("the sentence POST /v1/intents plans from, before it costs a model turn") {
