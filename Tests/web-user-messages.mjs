@@ -25,11 +25,12 @@ const pending = [
 
 const messages = userMessageEntries(transcript, pending);
 assert.deepEqual(messages.map((entry) => entry.text), [
-    "first question",
+    "still sending",
     "second question",
-    "still sending"
+    "first question"
 ]);
-assert.equal(messages[0], transcript[1], "entries are not copied or rewritten");
+assert.equal(messages[0], pending[0], "the newest pending turn is first");
+assert.equal(messages[2], transcript[1], "entries are not copied or rewritten");
 assert.deepEqual(userMessageEntries(null, undefined), []);
 
 assert.equal(copyForUserMessages("zh-TW").title, "我傳出的訊息");

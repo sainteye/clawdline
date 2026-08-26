@@ -1,14 +1,14 @@
 /**
- * The one narrow view this feature promises: turns authored by the person, in the same order
- * they appear in the transcript. A message that is still travelling to the Mac belongs at the
- * end too; `Optimistic` has already removed it by the time the persisted copy appears.
+ * The one narrow view this feature promises: turns authored by the person, newest first. A
+ * message that is still travelling to the Mac belongs at the top too; `Optimistic` has already
+ * removed it by the time the persisted copy appears.
  */
 export function userMessageEntries(entries, pending) {
     var saved = Array.isArray(entries) ? entries : [];
     var tail = Array.isArray(pending) ? pending : [];
     return saved.concat(tail).filter(function (entry) {
         return !!entry && entry.role === "user";
-    });
+    }).reverse();
 }
 
 /**

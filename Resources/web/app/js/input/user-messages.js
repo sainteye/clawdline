@@ -69,9 +69,8 @@ function draw() {
         list.innerHTML = '<p class="user-messages-empty">' + esc(copy().empty) + '</p>';
         return;
     }
-    if (S.newestFirst) entries.reverse();
     list.innerHTML = entries.map(entryHTML).join("");
-    list.scrollTop = S.newestFirst ? 0 : list.scrollHeight;
+    list.scrollTop = 0;
 }
 
 function open() {
