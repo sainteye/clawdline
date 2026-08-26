@@ -111,6 +111,7 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/orchestrator/tasks/:id/notify` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/complete` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/cancel` | orchestrator token, **or** token + key | `send` **and** the write switch |
+| `GET` | `/v1/orchestrator/assistants` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/waits` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/waits` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/waits/:id/release` | orchestrator token | — |
@@ -399,6 +400,74 @@ top of that route's `git`, this one reads the transcript, which can be fifty meg
 a card is opened; not something to do on every beat of the stream. Everything here is read and
 nothing is written — the `git` runs with `GIT_OPTIONAL_LOCKS=0` and a deadline, and nothing is
 asked of GitHub that `/links` did not already ask.
+
+### `GET /v1/orchestrator/assistants`
+
+What this Mac can say about each assistant's own **account-level** quota — a machine-level fact,
+not a per-session one. Every Claude Code or Codex session on this Mac shares the same five-hour or
+weekly window, so this answers "does claude or codex have anything left" once, rather than by
+opening a session and asking `/v1/sessions/:id/info`, which needs one already running and is the
+expensive route besides.
+
+**Deliberately not on that queue.** Both providers are one read of at most a handful of small
+local files, 5-second cached — cheap enough that `Orchestrator.dispatch()` calls it synchronously
+at its own gate, on every dispatch. See
+[docs/orchestrator.md's "An assistant with no quota left"](orchestrator.md#an-assistant-with-no-quota-left)
+for that gate and `409 assistant_exhausted`.
+
+```console
+$ curl -s -H "Authorization: Bearer $TOKEN" .../v1/orchestrator/assistants
+{
+  "at": 1787745138,
+  "assistants": [
+    {"id":"claude","label":"Claude Code","installed":true,"logged_in":null,"plan":null,
+     "availability":"ok","source":"observed","observed_at":1787745100,"age_seconds":38,
+     "stale":false,"resets_at":null,"detail":"5h 4%, 7d 69%",
+     "windows":[{"name":"5h","usedPercent":4,"resetsAt":1787761200,"hit":false},
+                {"name":"7d","usedPercent":69,"resetsAt":1787860800,"hit":false}]},
+    {"id":"codex","label":"Codex","installed":true,"logged_in":null,"plan":null,
+     "availability":"exhausted","source":"observed","observed_at":1787743430,"age_seconds":1708,
+     "stale":false,"resets_at":1788272000,
+     "detail":"7d 100%; resets in 6d2h; premium credits exhausted",
+     "windows":[{"name":"7d","usedPercent":100,"resetsAt":1788272000,"hit":true}]}
+  ]
+}
+```
+
+| field | |
+|---|---|
+| `availability` | one of `ok` · `low` · `exhausted` · `unknown` — **always present, and the one field a client must read.** No remaining-percentage number is ever computed here: both providers answer "what the account last said", which can be minutes or days old, and a number would claim a precision neither can promise |
+| `source` | `observed` (a file the provider itself wrote), `probed` (its own identity command, login state only — see below), or `self_reported`, which nothing in v1 produces |
+| `observed_at` | the signal's **own** time, not when this request read it. `null` exactly when `availability` is `unknown` and nothing usable has been seen |
+| `age_seconds` | `at` minus `observed_at`, an integer number of seconds — the identical formula `409 workspace_busy`'s `age_seconds` and every `claims_overlap` warning already use. `null` alongside a `null` `observed_at` |
+| `stale` | whether this reading is old enough that a fresher one should be preferred once available, without being old enough to discard. See the aging rule below |
+| `resets_at` | the tightest live window's reset, when known |
+| `detail` | one sentence a client with no UI of its own can print as-is |
+| `windows` | the exact shape `/v1/sessions/:id/info`'s `limits.windows` already uses — `name`, `usedPercent`, `resetsAt`, `hit`. **An empty array means nobody said**, drawn as unknown rather than 0%, same rule as there |
+| `logged_in`, `plan` | `null` until the identity probe has run for that assistant at least once — which nothing in this build does automatically yet; see `Sources/AssistantQuota.swift`'s note on `refreshIdentityIfDue`. Once it has, `logged_in` is a bool and `plan` is a string such as `"max"` or `"prolite"`, or still `null` if the provider did not say |
+
+**Aging is not one TTL.** Because a provider's own `used_percent` only rises within one window, an
+old reading is a floor rather than an estimate, so each `availability` ages differently:
+`exhausted` does not expire on its own — it holds until `resets_at` itself has passed, then becomes
+`unknown` rather than `ok`, because the new window has no reading of its own yet. `low` keeps
+reading `low` however old, but is marked `stale`. `ok` decays to `unknown` past its own staleness
+window (5% of the tightest window's length, clamped 15 minutes–6 hours — a convention, not a
+measurement, and documented as such in the source). `unknown` is already the floor.
+
+**Codex's one extra rule.** Once its primary bucket is full, the next `token_count` record often
+answers from an unnamed credits bucket instead — `rate_limits.limit_id` turns from `"codex"` to
+`"premium"`, `primary`/`secondary` both `null`. That shape alone proves nothing (a fresh rollout
+with no usage yet looks the same); paired with a last named window that was already at 95% or
+higher, it is `exhausted` too, and `detail` says so in words (`"; premium credits exhausted"`)
+rather than only in the number.
+
+**The two biggest honest gaps.** Claude Code has no free way to answer this before the first
+window is hit — no CLI subcommand, and the file this route reads
+(`~/.claude/statusline-cache/rate-limits.json`) exists only on a Mac running
+[claude-bestiary](https://github.com/sainteye/claude-bestiary)'s status line, and only once a
+session has actually rendered it; see [`docs/compatibility.md`](compatibility.md). And neither
+provider can say how much of the *current* task a task would spend — `low` is the honest ceiling on
+what this can tell a caller planning ahead.
 
 ### `GET /v1/sessions/:id/skills`
 
@@ -1026,12 +1095,13 @@ already carried by `task_id`, which is the caller's own identifier for the work 
 per-attempt header. Send the same `task_id` twice and the second call answers `200` with the
 existing record, having opened nothing.
 
-Eight refusals, and a client should branch on all of them:
+Nine refusals, and a client should branch on all of them:
 
 | `code` | status | |
 |---|---|---|
 | `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
 | `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `permission_mode`, `plan`, `claims`, or `serialize`. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
+| `assistant_exhausted` | 409 | the named assistant's own account-level quota reads `exhausted` — see [`GET /v1/orchestrator/assistants`](#get-v1orchestratorassistants). The error object carries `assistant`, `availability`, `source`, `observed_at`, `age_seconds`, `resets_at`, `retry_after` (`min(resets_at - now, 3600)`), and `alternatives` — every other assistant's own `id`/`availability`/`detail`, so a client can dispatch to one of those instead of retrying the same one blind. `task.json`'s `"ignore_quota": true` sends it anyway; the message names that field outright. Checked after capacity and depth, before any git subprocess — cheaper than either, and the reply's own `message` says why. This is a fact about the account, not the task: it fires whether or not the failing session sits in this Mac's own tree |
 | `worktree_unavailable` | 409 | worktree isolation was requested but the repository has no commit to use as a base or the destination volume has less than 2 GB available. This is an environment refusal rather than malformed JSON |
 | `workspace_busy` | 409 | a live task from another definitely identified root reserved an equal, ancestor, or descendant claim. The error object carries `blocking_task`, `title`, nullable `root_label`, Unix-second `created`, absolute `conflict_paths`, advisory `retry_after`, `age_seconds` (`now` minus the blocking task's `created`, an integer), and `root_key` (the blocking task's root tree, hashed — see below). The rejected task is not registered and does not spend dispatch rate-limit budget |
 | `depth_exceeded` | 409 | **the caller is already as deep as this Mac goes.** A root's child may dispatch; that child's may not. `orchestrator_max_grandchildren` of `0` puts the floor back at one level. Not a retry — stop |
@@ -1116,6 +1186,22 @@ Every `claims_overlap` and `claims_overlap_unknown_root` warning carries the sam
 and `root_key` the `409` above does, computed against the other task named in `task`. `root_key`
 is present whenever that task's own root resolves, even inside an otherwise-unknown pair — only a
 blocker whose own root cannot be resolved leaves `root_key` absent.
+
+A named assistant that reads `low` rather than `exhausted` warns the same way rather than
+refusing — see [`GET /v1/orchestrator/assistants`](#get-v1orchestratorassistants):
+
+```json
+{"ok":true,"task":{"id":"3f9a21bc-…","state":"queued"},
+ "warnings":[{"code":"assistant_low","assistant":"codex",
+              "message":"Codex is at 7d 92% (observed 3 minutes ago). Resets in 5d2h. A long task may not finish.",
+              "availability":"low","observed_at":1787744958,"age_seconds":180,
+              "resets_at":1788272000}]}
+```
+
+An `exhausted` assistant dispatched anyway with `"ignore_quota": true` warns under
+`assistant_exhausted` instead of the `409` above, with the same fields plus a message that says the
+override was honored — and, when the account's own reset falls after this task's own
+`timeout_minutes`, says that too.
 
 The wire field has three distinct states, preserved through the registry and all GET responses:
 

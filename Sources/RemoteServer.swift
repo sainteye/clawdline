@@ -744,6 +744,15 @@ final class RemoteServer {
             return .json(["waits": Orchestrator.coordinationWaitRecords(),
                           "at": Int(Date().timeIntervalSince1970)])
 
+        // What this Mac can say about each assistant's own account-level quota — one read of two
+        // small local files, 5-second cached, and deliberately *not* behind `readingDepth`: it
+        // has to be cheap enough for `Orchestrator.dispatch()` itself to call synchronously at
+        // its own gate. See docs/api.md and Sources/AssistantQuota.swift.
+        case ("GET", "/v1/orchestrator/assistants"):
+            let now = Date()
+            return .json(["at": Int(now.timeIntervalSince1970),
+                          "assistants": AssistantQuota.all(now: now).map { $0.payload(now: now) }])
+
         case ("POST", "/v1/orchestrator/waits"):
             guard orchestratorAuthed else {
                 return .error(403, "forbidden",
@@ -2153,7 +2162,13 @@ final class RemoteServer {
             // What may be started, from this end rather than from a list baked into the page.
             // Whether Codex is on this Mac is something only this side can answer, and a button
             // for an assistant that is not installed opens a tab saying "command not found".
-            "assistants": Assistant.available.map { ["id": $0.rawValue, "label": $0.label] },
+            // `availability` alone, no window detail: enough for a start button to grey itself
+            // out or carry a badge, without paying for the fuller answer nobody asked for here.
+            // See `GET /v1/orchestrator/assistants` for the rest.
+            "assistants": Assistant.available.map {
+                ["id": $0.rawValue, "label": $0.label,
+                 "availability": AssistantQuota.current(for: $0).availability.rawValue]
+            },
             "places": StartPoints.places().map { place -> [String: Any] in
                 var row: [String: Any] = [
                     "id": place.id,

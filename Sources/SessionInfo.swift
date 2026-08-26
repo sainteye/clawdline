@@ -81,6 +81,23 @@ enum SessionInfo {
         var windows: [Window] = []
         /// When the record this came from was written. Unix seconds.
         var at: Int?
+        /// Codex only. Set when the newest `rate_limits` record read had no named window at
+        /// all — the shape found the night a weekly window ran out: `limit_id` turns from
+        /// `"codex"` to something else (`"premium"`), `primary`/`secondary` are both `null`, and
+        /// the account is answering from an unnamed credits bucket instead. Holds the *first* —
+        /// i.e. newest — such record seen while `codexLimits(rollout:)` kept looking backward for
+        /// a named window, so a caller that also has that named window's percentage can tell
+        /// "the bucket is genuinely exhausted" apart from "this rollout merely predates any real
+        /// usage". `nil` when the newest record already named a window, or when there was none.
+        var depleted: Depleted?
+
+        struct Depleted: Equatable {
+            var limitID: String
+            var hasCredits: Bool
+            /// Unix seconds, of the depleted record itself — not of the named window that
+            /// answers `windows` above.
+            var at: Int?
+        }
     }
 
     /// A window's name from its length. Codex says `window_minutes`; Claude names the type.
@@ -298,8 +315,19 @@ enum SessionInfo {
 
     /// The plan's state as a Codex rollout records it: every `token_count` event carries
     /// `rate_limits.primary` — `used_percent`, `window_minutes`, `resets_at` — and sometimes a
-    /// `secondary`; the newest event is the whole answer, as it is for the token totals.
+    /// `secondary`; the newest event *that names a window* is the whole answer, as it is for the
+    /// token totals.
+    ///
+    /// **Not simply the newest event.** Once the primary bucket is full, Codex's next
+    /// `token_count` often falls back to an unnamed credits bucket — `rate_limits.limit_id` turns
+    /// from `"codex"` to `"premium"`, and `primary`/`secondary` are both `null`. Stopping at that
+    /// record and returning its empty `windows` answers *unknown* for an account that a moment
+    /// earlier was at 100% — the night this was found, that was the literal difference between
+    /// the truth and what this function said. So a record with no named window is remembered
+    /// (`Limits.depleted`) rather than returned: the scan keeps going backward for one that
+    /// actually names a percentage, because that percentage is the account's real state.
     static func codexLimits(rollout data: Data) -> Limits {
+        var depleted: Limits.Depleted?
         for line in data.split(separator: 0x0A).reversed() {
             let text = String(decoding: line, as: UTF8.self)
             guard text.contains("token_count"), text.contains("rate_limits"),
@@ -315,9 +343,23 @@ enum SessionInfo {
                 out.windows.append(Window(name: windowName(minutes: minutes), usedPercent: used,
                                           resetsAt: int(window["resets_at"]), hit: used >= 100))
             }
+            guard !out.windows.isEmpty else {
+                // Only the first (newest) one seen is kept; anything further back is either the
+                // same story again or no longer today's answer either way.
+                if depleted == nil {
+                    let credits = rates["credits"] as? [String: Any]
+                    depleted = Limits.Depleted(limitID: rates["limit_id"] as? String ?? "",
+                                               hasCredits: credits?["has_credits"] as? Bool ?? false,
+                                               at: out.at)
+                }
+                continue
+            }
+            out.depleted = depleted
             return out
         }
-        return Limits()
+        var out = Limits()
+        out.depleted = depleted
+        return out
     }
 
     // MARK: - Permission mode

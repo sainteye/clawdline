@@ -203,6 +203,11 @@ reviewer 不是第五個工人，是一個讀者：只讀別人的產出、只�
 **codex 的 sandbox 預設禁外連**——要上網的任務不要給它，會卡在核准或直接失敗。
 （生圖不受這條影響，見 §2.5。）
 
+**挑之前先查額度。** `curl -s http://127.0.0.1:7717/v1/orchestrator/assistants`
+（帶 `X-Clawdline-Orchestrator`）會回兩邊各自的 `availability`——`ok`、`low`、`exhausted`，
+或近期沒人查過的 `unknown`。派給已經 `exhausted` 的那個會被 `409 assistant_exhausted` 擋下，
+它的 `alternatives` 陣列會列出該改派誰。
+
 ### 2.5 產出是圖的時候
 
 **codex 有真的影像模型。** 那不是退而求其次，也不需要 API key：`image_gen` 是它的內建工具、

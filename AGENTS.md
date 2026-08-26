@@ -60,6 +60,10 @@ Do not infer ownership from a filename, a recent timestamp, or a new commit; ins
   handoff, landing, claims, file-wait or cross-session communication semantics must update that
   standalone `kind=state` HTML in the same line of work and re-check it against the authoritative
   docs. A protocol change is not closed while its Artifact still teaches the previous behavior.
+- Check `GET /v1/orchestrator/assistants` before dispatching, and read a `409
+  assistant_exhausted`'s `alternatives` before retrying the same assistant. This closure still
+  applies when a child dies mid-task because its assistant ran out of quota: whatever it had not
+  committed is root's to recover or discard, exactly as with any other child that never reported.
 
 The working tree is an editing buffer shared with other sessions, not a reproducible build input.
 For an important commit, test the exact staged tree from an archive instead:

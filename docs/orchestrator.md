@@ -198,6 +198,41 @@ four gates in order, the flag-by-model table that shows `--permission-mode auto`
 spawn dies, and how to check whether a child was ever actually asked. Everything on that page was
 read off a terminal rather than taken from a help text.
 
+### An assistant with no quota left
+
+Capacity and depth say whether *this Mac* has room. This gate answers a different question: does
+the *assistant account* the task named have anything left to spend at all. It sits right after the
+machine-wide capacity ceiling and before the first git subprocess, for the same reason capacity is
+checked before git is: it is a fact the broker already knows, cheaper than any subprocess, so it
+answers before asking a repository anything.
+
+The read is [`GET /v1/orchestrator/assistants`](api.md#get-v1orchestratorassistants)'s own
+`AssistantQuota.current(for:)` — one 5-second-cached pass over at most a handful of small local
+files, no network, no `codex`/`claude` subprocess. **Codex's `app-server` exposes
+`account_processor/rate_limit_resets`, which could answer a quota probe directly — v1 deliberately
+does not use it.** It needs a running `app-server` daemon, an authenticated request to
+`chatgpt.com/backend-api`, and has no published contract; reading the rollout it already writes is
+free and needs none of that. It remains the one real upgrade path if a future version needs an
+answer this reading cannot give. An `exhausted` reading is `409
+assistant_exhausted`, carrying `alternatives`: every other assistant's own `availability` and
+`detail`, so the refusal itself says who to send the work to instead. A `low` reading dispatches
+and adds an `assistant_low` warning to the same `warnings` array `workspace_overlap` and
+`claims_overlap` already use. `unknown` — no signal yet, or none of this Mac's files say so —
+dispatches quietly: **absence of a reading is not bad news**, and warning about it would train
+whoever reads these responses to ignore the warnings that matter.
+
+**Why a refusal here and a warning everywhere else.** Every other warning in this protocol
+describes something that *might* go wrong — a shared directory, a shared claim. `exhausted`
+describes a tab that is *certain* to die: the night this was built, dispatching into one cost a
+cold start, a `spawn_failed`/timeout wait, and thirteen files frozen on a shared index waiting for
+somebody else to commit them, because the assistant inside that tab never had anything to answer
+with. A caller that already knows better sets `"ignore_quota": true` in `task.json`; the 409's own
+`message` names that field, so a stuck root does not have to already know it exists to get past it.
+
+This reading is a fact about the **account**, not about the task or this Mac's tree — it fires the
+same way whether the exhausted session belongs to this Mac's own dispatch graph or not, because the
+quota it describes is the provider's, shared by everything running under that login.
+
 ### House rules
 
 `~/.config/clawdline/dispatch-policy.md` is what this Mac says about **how** work should be
@@ -897,6 +932,15 @@ exact paths, owner and waiter terminal-neutral Clawdline session ids, reason and
 Clawdline canonicalizes the paths, deduplicates the same waiter, persists the group in its
 orchestrator store, and delivers the file-wait message to the owner through Clawdline's terminal
 transport.
+
+**Two different namespaces, and only one of them is what `GET /v1/sessions` lists.** A root
+identifies itself in `task.json` with whatever id its own assistant gave it — Claude Code's own
+`sessionId`, or a Codex thread id — and that is *not* the terminal-neutral session `id` this app
+assigns and `GET /v1/sessions` lists as `id`. Comparing a root's self-reported id against that `id`
+column is comparing two different namespaces; a miss there proves nothing about whether the other
+session is still alive, only that the two ids do not name the same thing. To find whether a
+particular root is still around, compare against `sessions[].sessionId` instead — the field this
+app fills in from its own hook identification, in the same namespace the root named itself in.
 
 The owner uses `POST /v1/orchestrator/waits/:id/release` only after committing or explicitly
 releasing the paths, naming its own Clawdline session id and the commit when one exists. Clawdline

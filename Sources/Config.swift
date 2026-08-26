@@ -277,6 +277,15 @@ final class Config {
     /// Only a child that reported — success or failure — is closed; one that timed out or never
     /// came up is left where it is, because what went wrong is on that screen.
     var orchestratorChildLinger = 180
+    /// The used-percentage at which an assistant's quota reads as `low` rather than `ok`, both
+    /// from `GET /v1/orchestrator/assistants` and at the dispatch gate — see
+    /// `Sources/AssistantQuota.swift`.
+    ///
+    /// 85 by default, which is not picked to match anything about this feature: it is the exact
+    /// threshold `claude-bestiary`'s `statusline.py` already turns a terminal red at
+    /// (`c = "\x1b[31m" if pct >= 85 else …`), so the color somebody sees in a terminal and the
+    /// word this API gives about the same account agree rather than disagreeing by a few points.
+    var assistantQuotaLowThreshold: Double = 85
     /// Where the project status files are read from, and where the icon registry lives.
     ///
     /// Both default to what claude-bestiary writes, because that is what most people reading this
@@ -344,6 +353,9 @@ final class Config {
         if let v = obj["orchestrator_child_linger"] as? Int, v >= -1, v <= 3600 {
             orchestratorChildLinger = v
         }
+        if let v = obj["assistant_quota_low_threshold"] as? Double, v > 0, v < 100 {
+            assistantQuotaLowThreshold = v
+        }
         if let v = obj["status_dir"] as? String { statusDir = v }
         if let v = obj["icons_file"] as? String { iconsFile = v }
         if let v = obj["output_height"] as? Double, v >= 80, v <= 900 { outputHeight = CGFloat(v) }
@@ -402,6 +414,7 @@ final class Config {
             "orchestrator_permission": orchestratorPermission,
             "orchestrator_notify_root": orchestratorNotifyRoot,
             "orchestrator_child_linger": orchestratorChildLinger,
+            "assistant_quota_low_threshold": assistantQuotaLowThreshold,
             "status_dir": statusDir,
             "icons_file": iconsFile,
             "output_height": Double(outputHeight),

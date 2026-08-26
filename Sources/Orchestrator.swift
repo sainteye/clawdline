@@ -1833,6 +1833,11 @@ enum Orchestrator {
         var claimsDeclared = false
         var isolation = Isolation.none
         var isolationBase: String?
+        /// The Q1 design's §D.3 override: send this task even though the assistant it named
+        /// reads `exhausted`. A reading can be stale, wrong, or about to be moot — a task whose
+        /// window opens after the account's own reset has nothing to lose. Never widens anything
+        /// else: `unknown` and `ok` already dispatch without this, and `low` only ever warns.
+        var ignoreQuota = false
     }
 
     /// A live task whose working directory intersects the one being dispatched. The task is a
@@ -2026,6 +2031,7 @@ enum Orchestrator {
         made.claimsDeclared = claimsDeclared
         made.isolation = isolation
         made.isolationBase = isolationBase
+        made.ignoreQuota = obj["ignore_quota"] as? Bool ?? false
         made.plan = (obj["plan"] as? String).flatMap {
             let text = $0.trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : text
@@ -2648,6 +2654,98 @@ enum Orchestrator {
         ]
     }
 
+    // MARK: - Assistant quota at the dispatch gate — Q1 design §D
+
+    /// `age_seconds` for an `AssistantQuota`, in the identical shape `ClaimsOverlap.warning(for:)`
+    /// and `workspaceBusyExtra` above already use: an integer number of seconds, `max(0, now -
+    /// observed)`. Not a second formula for the same idea.
+    private static func assistantAgeSeconds(_ quota: AssistantQuota, now: Date) -> Int? {
+        quota.observedAt.map { max(0, Int(now.timeIntervalSince1970) - $0) }
+    }
+
+    /// §D.4: the 409 a dispatch gets when the assistant it named has no quota left.
+    /// `alternatives` is the whole value of this over a bare refusal — it names who else to
+    /// dispatch to in the same response that said no, so a root can act on it without a
+    /// follow-up read. The message names `ignore_quota` outright: §D.3 requires that a caller who
+    /// hits this can see its way out without having to already know this field exists.
+    static func assistantExhaustedReply(_ quota: AssistantQuota, now: Date = Date()) -> Reply {
+        let ageSeconds = assistantAgeSeconds(quota, now: now)
+        let secondsToReset = quota.resetsAt.map { $0 - Int(now.timeIntervalSince1970) } ?? 3_600
+        let retryAfter = max(0, min(secondsToReset, 3_600))
+        let alternatives = AssistantQuota.all(now: now)
+            .filter { $0.assistant != quota.assistant }
+            .map { alt -> [String: Any] in
+                ["id": alt.assistant.rawValue, "availability": alt.availability.rawValue,
+                 "detail": alt.detail]
+            }
+        let message = "\(quota.assistant.label) has no quota left (\(quota.detail)). Dispatch to "
+            + "another assistant instead, wait for the reset, or set \"ignore_quota\": true in "
+            + "task.json to send it anyway."
+        let extra: [String: Any] = [
+            "assistant": quota.assistant.rawValue,
+            "availability": quota.availability.rawValue,
+            "source": quota.source.rawValue,
+            "observed_at": quota.observedAt as Any? ?? NSNull(),
+            "age_seconds": ageSeconds as Any? ?? NSNull(),
+            "resets_at": quota.resetsAt as Any? ?? NSNull(),
+            "retry_after": retryAfter,
+            "alternatives": alternatives,
+        ]
+        return .refused(status: 409, code: "assistant_exhausted", message: message, extra: extra)
+    }
+
+    /// §D.3/§D.4's last paragraph: `ignore_quota` sent an exhausted assistant anyway, so this is
+    /// a warning rather than the 409 above — but it still says so, and it says one more thing the
+    /// 409 could not: whether the window this task is betting on resets before the task's own
+    /// `timeout_minutes` runs out.
+    static func assistantOverrideWarning(_ quota: AssistantQuota, timeoutMinutes: Int,
+                                         now: Date = Date()) -> [String: Any] {
+        var message = "\(quota.assistant.label) has no quota left (\(quota.detail)), but "
+            + "ignore_quota was set; sending it anyway."
+        if let resets = quota.resetsAt {
+            let deadline = now.addingTimeInterval(Double(timeoutMinutes) * 60)
+            if Double(resets) > deadline.timeIntervalSince1970 {
+                message += " Its window will not reset before this task's timeout."
+            }
+        }
+        return [
+            "code": "assistant_exhausted",
+            "assistant": quota.assistant.rawValue,
+            "message": message,
+            "availability": quota.availability.rawValue,
+            "observed_at": quota.observedAt as Any? ?? NSNull(),
+            "age_seconds": assistantAgeSeconds(quota, now: now) as Any? ?? NSNull(),
+            "resets_at": quota.resetsAt as Any? ?? NSNull(),
+        ]
+    }
+
+    /// §D.6: `low` never refuses, only warns — reusing the same `warnings` array
+    /// `dispatchPayload(record:taskID:overlaps:)` already fills with `workspace_overlap` and
+    /// `claims_overlap` rows, so a root reading that one array sees every reason to be careful in
+    /// one place.
+    static func assistantLowWarning(_ quota: AssistantQuota, now: Date = Date()) -> [String: Any] {
+        let ageSeconds = assistantAgeSeconds(quota, now: now)
+        let ageText = ageSeconds.map { seconds -> String in
+            let minutes = max(1, seconds / 60)
+            return "\(minutes) minute\(minutes == 1 ? "" : "s") ago"
+        } ?? "a while ago"
+        var message = "\(quota.assistant.label) is at \(quota.detail) (observed \(ageText))."
+        if let resets = quota.resetsAt, Double(resets) > now.timeIntervalSince1970 {
+            message += " Resets in "
+                + AssistantQuota.formatDuration(seconds: Double(resets) - now.timeIntervalSince1970) + "."
+        }
+        message += " A long task may not finish."
+        return [
+            "code": "assistant_low",
+            "assistant": quota.assistant.rawValue,
+            "message": message,
+            "availability": quota.availability.rawValue,
+            "observed_at": quota.observedAt as Any? ?? NSNull(),
+            "age_seconds": ageSeconds as Any? ?? NSNull(),
+            "resets_at": quota.resetsAt as Any? ?? NSNull(),
+        ]
+    }
+
     // MARK: - Handoff
 
     static func handoffPackageReady(id: String) -> Bool {
@@ -2899,6 +2997,29 @@ enum Orchestrator {
                             extra: ["retry_after": 60])
         }
 
+        // The named assistant's own quota is a fact the broker already knows too — one
+        // 5-second-cached read of at most two local files (`AssistantQuota.current(for:)`),
+        // cheaper than the git subprocesses right after this. `exhausted` is the one answer that
+        // is not "maybe trouble" but "this tab is opening to die": the night this was built, that
+        // cost a tab, a cold start, a `spawn_failed`/timeout wait, and thirteen files frozen on a
+        // shared index waiting for somebody else to commit them. So it refuses rather than warns,
+        // with the one override a stale or soon-to-be-moot reading needs — see
+        // docs/orchestrator.md and the Q1 design's §D.
+        var quotaWarnings: [[String: Any]] = []
+        let quota = AssistantQuota.current(for: made.assistant)
+        switch quota.availability {
+        case .exhausted where !made.ignoreQuota:
+            refundDispatchRate(rateTicket)
+            return assistantExhaustedReply(quota)
+        case .exhausted:
+            // `ignore_quota` was set: the reading stands, but the caller said to send it anyway.
+            quotaWarnings.append(assistantOverrideWarning(quota, timeoutMinutes: made.timeoutMinutes))
+        case .low:
+            quotaWarnings.append(assistantLowWarning(quota))
+        case .ok, .unknown:
+            break   // `unknown` dispatches quietly — no signal is not bad news. See §D.1.
+        }
+
         // Git validation costs several subprocesses. Capacity and depth are facts the broker
         // already knows, so answer those refusals before asking a repository anything.
         var preparedWorktree: Worktree?
@@ -2989,7 +3110,7 @@ enum Orchestrator {
         RemoteServer.shared.broadcastOrchestrator()
         let reply = successfulDispatchReply(for: task, notify: true,
                                              claimsOverlaps: claimsOverlaps,
-                                             additionalWarnings: worktreeWarnings)
+                                             additionalWarnings: quotaWarnings + worktreeWarnings)
         if needsPump { scheduleSerializePump() }
         return reply
     }
@@ -5555,6 +5676,13 @@ enum Orchestrator {
           "as described above" reaches it as an empty file.
         - Branch on the reply's `code`: `over_capacity` means wait or ask for fewer,
           `depth_exceeded` means this Mac goes no deeper and the work is yours to do.
+        - Before dispatching, `curl -s http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/assistants`
+          (same `X-Clawdline-Orchestrator` header) says whether claude or codex has any quota left
+          right now — a fact this Mac already has, not a guess worth spending a dispatch on.
+        - A dispatch can also come back `409 assistant_exhausted`: the assistant you named is out,
+          and its `alternatives` array names who to send instead — read that rather than retrying
+          the same one. `assistant_low` inside `warnings` is not a refusal; it means a long task
+          there may not finish before the quota runs out.
         - The orchestrator token is this Mac's credential, not yours to pass on. Do not write it
           into a file, do not put it in /tmp, do not hand it to anything you dispatch.
         - Its answer arrives as `/tmp/.clawdline/$sub/result.json`. The file appearing is the

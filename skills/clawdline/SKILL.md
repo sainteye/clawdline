@@ -235,6 +235,11 @@ If the user named one, use it. Otherwise:
 open web; it will stall on an approval or simply fail. (Image generation is not affected; see
 §2.5.)
 
+**Check quota before picking one.** `curl -s http://127.0.0.1:7717/v1/orchestrator/assistants`
+(with `X-Clawdline-Orchestrator`) answers `availability` for both — `ok`, `low`, `exhausted`, or
+`unknown` when nobody has looked recently. Dispatching to an `exhausted` one is refused with `409
+assistant_exhausted`; its `alternatives` array names who to send instead.
+
 ### 2.5 When the deliverable is an image
 
 **Codex has a real image model.** It is not a fallback and it needs no API key: `image_gen` is a

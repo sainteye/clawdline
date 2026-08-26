@@ -8451,6 +8451,78 @@ group("a task.json is read before a terminal is opened for it") {
           everyClaimProblem.contains("claims[1]") && everyClaimProblem.contains("claims[2]")
               && everyClaimProblem.contains("claims[3]")
               && everyClaimProblem.contains("claims[4]"))
+
+    // Q2's dispatch-gate override — see docs/orchestrator.md's assistant_exhausted section.
+    check("an absent ignore_quota leaves the exhausted gate standing", made(file())?.ignoreQuota == false)
+    check("ignore_quota: true is read as the override it is",
+          made(file(["ignore_quota": true]))?.ignoreQuota == true)
+    check("ignore_quota: false is the same as absent",
+          made(file(["ignore_quota": false]))?.ignoreQuota == false)
+    check("a non-bool ignore_quota is not an error — it is simply not true",
+          made(file(["ignore_quota": "yes"]))?.ignoreQuota == false)
+}
+
+group("the assistant-quota dispatch gate names the override and the age the same way "
+    + "workspace_busy already does") {
+    let now = Date(timeIntervalSince1970: 1_787_745_138)
+    let codexExhausted = AssistantQuota(
+        assistant: .codex, installed: true, loggedIn: true, plan: "prolite",
+        availability: .exhausted, source: .observed,
+        observedAt: Int(now.timeIntervalSince1970) - 1_708,
+        resetsAt: Int(now.timeIntervalSince1970) + 3_600 * 24 * 5,
+        detail: "7d 100%; resets in 5d0h", windows: [])
+
+    let reply = Orchestrator.assistantExhaustedReply(codexExhausted, now: now)
+    guard case .refused(let status, let code, let message, let extra) = reply else {
+        check("assistantExhaustedReply refuses", false); return
+    }
+    expect("the 409 the Q1 design settled on", status, 409)
+    expect("with its own code", code, "assistant_exhausted")
+    check("the message tells a stuck root exactly how to get past this",
+          message.contains("ignore_quota"))
+    expect("the assistant that was named", extra["assistant"] as? String, "codex")
+    expect("its availability", extra["availability"] as? String, "exhausted")
+    // The exact formula the B-task's ClaimsOverlap.warning(for:now:) and workspaceBusyExtra
+    // already use: max(0, Int(now - observed)), an integer number of seconds.
+    expect("age_seconds uses the one formula this app already agreed on",
+           extra["age_seconds"] as? Int, 1_708)
+    expect("retry_after is capped at an hour even though the reset is five days out",
+           extra["retry_after"] as? Int, 3_600)
+    let alternatives = extra["alternatives"] as? [[String: Any]]
+    expect("the other assistant is offered by name — the whole value of refusing this way",
+           alternatives?.map { $0["id"] as? String ?? "" }, ["claude"])
+    check("it carries its own availability, not just its id",
+          alternatives?.first?["availability"] is String)
+
+    let overridden = Orchestrator.assistantOverrideWarning(codexExhausted, timeoutMinutes: 40, now: now)
+    expect("an override is a warning, not a refusal — its own code says which one",
+           overridden["code"] as? String, "assistant_exhausted")
+    check("and it says the override actually happened",
+          (overridden["message"] as? String)?.contains("ignore_quota") == true)
+    check("with a five-day reset against a forty-minute timeout, it warns the window will not "
+        + "reset before this task's timeout",
+          (overridden["message"] as? String)?.contains("will not reset before this task's timeout")
+              == true)
+
+    var soonExhausted = codexExhausted
+    soonExhausted.resetsAt = Int(now.timeIntervalSince1970) + 60
+    let overriddenSoon = Orchestrator.assistantOverrideWarning(soonExhausted, timeoutMinutes: 40, now: now)
+    check("but not when the task's own timeout comfortably outlasts the reset",
+          (overriddenSoon["message"] as? String)?.contains("will not reset") == false)
+
+    let codexLow = AssistantQuota(
+        assistant: .codex, installed: true, loggedIn: true, plan: "prolite",
+        availability: .low, source: .observed,
+        observedAt: Int(now.timeIntervalSince1970) - 180,
+        resetsAt: Int(now.timeIntervalSince1970) + 3_600 * 24 * 5,
+        detail: "7d 92%", windows: [])
+    let low = Orchestrator.assistantLowWarning(codexLow, now: now)
+    expect("low warns under its own code, never assistant_exhausted's",
+           low["code"] as? String, "assistant_low")
+    expect("naming which assistant", low["assistant"] as? String, "codex")
+    expect("with the same age formula as everywhere else", low["age_seconds"] as? Int, 180)
+    check("the message says a long task might not finish, not that it will be refused",
+          (low["message"] as? String)?.contains("may not finish") == true)
 }
 
 group("a model name is a name, not a fragment of a command line") {
@@ -11668,6 +11740,36 @@ group("the Session info card is read off the files, and says unknown rather than
     check("a rollout with no token_count is unknown",
           SessionInfo.codexLimits(rollout: Data("{\"type\":\"session_meta\"}\n".utf8)).windows.isEmpty)
 
+    // §2.4: once the primary bucket is full, the *next* token_count often falls back to an
+    // unnamed "premium" credits bucket with no window at all — `limit_id` turns from "codex" to
+    // "premium", `primary`/`secondary` are both null, `credits.balance` is "0". The newest record
+    // is still the one with no window in it, so a reader that simply returns the newest record's
+    // windows answers "unknown" for an account that is, in fact, still at 100%.
+    let fullWindow = line(["timestamp": "2026-08-26T11:13:50.177Z", "type": "event_msg",
+                           "payload": ["type": "token_count", "info": [:],
+                                       "rate_limits": ["primary": ["used_percent": 100.0,
+                                                                   "window_minutes": 10080,
+                                                                   "resets_at": 1_788_272_000],
+                                                       "secondary": NSNull()]]])
+    let depletedLine = line(["timestamp": "2026-08-26T11:13:50.169Z", "type": "event_msg",
+                             "payload": ["type": "token_count", "info": [:],
+                                         "rate_limits": ["limit_id": "premium",
+                                                         "primary": NSNull(), "secondary": NSNull(),
+                                                         "credits": ["has_credits": false,
+                                                                    "unlimited": false,
+                                                                    "balance": "0"]]]])
+    let afterDepletion = SessionInfo.codexLimits(
+        rollout: Data((fullWindow + "\n" + depletedLine + "\n").utf8))
+    expect("a record with no named window does not erase the last real one",
+           afterDepletion.windows.map(\.name), ["7d"])
+    expect("its percentage is what the window last actually said",
+           afterDepletion.windows.first?.usedPercent, 100)
+    expect("and it is still marked hit", afterDepletion.windows.first?.hit, true)
+    expect("the skipped record's limit_id is remembered rather than discarded",
+           afterDepletion.depleted?.limitID, "premium")
+    expect("so is whether it still had credits to fall back on",
+           afterDepletion.depleted?.hasCredits, false)
+
     expect("five hours", SessionInfo.windowName(minutes: 300), "5h")
     expect("seven days", SessionInfo.windowName(minutes: 10080), "7d")
     expect("a day", SessionInfo.windowName(minutes: 1440), "1d")
@@ -11724,6 +11826,252 @@ group("the Session info card is read off the files, and says unknown rather than
     // And the one `git` it runs answers nothing outside a repository rather than a clean tree.
     check("a directory that is not a repository has no count",
           SessionInfo.files(cwd: NSTemporaryDirectory()) == nil)
+}
+
+group("an assistant's quota reads as one of four values, and ages by its own rule") {
+    let now = Date(timeIntervalSince1970: 1_787_745_138)
+    let threshold = 85.0
+
+    func window(_ name: String, _ pct: Double?, resetsAt: Int? = 1_787_900_000,
+               hit: Bool = false) -> SessionInfo.Window {
+        SessionInfo.Window(name: name, usedPercent: pct, resetsAt: resetsAt, hit: hit)
+    }
+
+    // §A.1: the tightest live window decides, and a window whose reset has already passed does
+    // not count as live at all.
+    expect("no windows at all is unknown",
+           AssistantQuota.availability(from: [], now: now, lowThreshold: threshold), .unknown)
+    expect("a window under the low threshold is ok",
+           AssistantQuota.availability(from: [window("5h", 40)], now: now, lowThreshold: threshold),
+           .ok)
+    expect("at or over the low threshold is low",
+           AssistantQuota.availability(from: [window("5h", 85)], now: now, lowThreshold: threshold),
+           .low)
+    expect("at 100% is exhausted even with hit left false",
+           AssistantQuota.availability(from: [window("5h", 100)], now: now, lowThreshold: threshold),
+           .exhausted)
+    expect("hit alone is exhausted even at a lower percentage",
+           AssistantQuota.availability(from: [window("5h", 60, hit: true)], now: now,
+                                       lowThreshold: threshold),
+           .exhausted)
+    expect("the tighter of two windows decides",
+           AssistantQuota.availability(from: [window("5h", 40), window("7d", 90)], now: now,
+                                       lowThreshold: threshold),
+           .low)
+    expect("a window whose own reset has passed is not live, and is not the answer",
+           AssistantQuota.availability(from: [window("5h", 100, resetsAt: 1_787_000_000, hit: true)],
+                                       now: now, lowThreshold: threshold),
+           .unknown)
+
+    // §A.1's Codex-only rule needs both halves: the depleted record's own shape, and a last named
+    // window that was already almost full.
+    func depleted(_ limitID: String = "premium", hasCredits: Bool = false) -> SessionInfo.Limits.Depleted {
+        SessionInfo.Limits.Depleted(limitID: limitID, hasCredits: hasCredits, at: 1_787_745_000)
+    }
+    check("no depleted record at all is not exhausted",
+          AssistantQuota.codexCreditsDepleted(nil, lastNamedUsedPercent: 100) == false)
+    check("credits still available is not exhausted",
+          AssistantQuota.codexCreditsDepleted(depleted(hasCredits: true), lastNamedUsedPercent: 99) == false)
+    check("the ordinary named bucket falling back to itself proves nothing",
+          AssistantQuota.codexCreditsDepleted(depleted("codex"), lastNamedUsedPercent: 99) == false)
+    check("a last window nowhere near full is not exhausted, whatever the bucket says",
+          AssistantQuota.codexCreditsDepleted(depleted(), lastNamedUsedPercent: 40) == false)
+    check("no last named window at all is not exhausted — there is nothing to correlate with",
+          AssistantQuota.codexCreditsDepleted(depleted(), lastNamedUsedPercent: nil) == false)
+    check("premium, no credits, and a last window at 95% or more is exhausted",
+          AssistantQuota.codexCreditsDepleted(depleted(), lastNamedUsedPercent: 95) == true)
+    check("and comfortably so at 100%",
+          AssistantQuota.codexCreditsDepleted(depleted(), lastNamedUsedPercent: 100) == true)
+
+    // §A.2: 5% of a window's own length, clamped 15 minutes–6 hours.
+    expect("a five-hour window clamps to the 15-minute floor",
+           AssistantQuota.staleAfter(windowMinutes: 300), 15 * 60)
+    expect("a seven-day window clamps to the 6-hour ceiling",
+           AssistantQuota.staleAfter(windowMinutes: 10_080), 6 * 3_600)
+    expect("a one-day window is inside both clamps: 5% of it, unclamped",
+           AssistantQuota.staleAfter(windowMinutes: 1_440), 4_320)
+
+    // §A.2's decay: each state ages by its own rule rather than sharing one TTL.
+    let recentExhausted = AssistantQuota(assistant: .codex, installed: true, loggedIn: nil, plan: nil,
+                                         availability: .exhausted, source: .observed,
+                                         observedAt: Int(now.timeIntervalSince1970) - 60,
+                                         resetsAt: Int(now.timeIntervalSince1970) + 3_600,
+                                         detail: "x", windows: [window("7d", 100, hit: true)])
+    let stillExhausted = AssistantQuota.decayed(recentExhausted, now: now)
+    expect("exhausted does not expire before its own resets_at",
+           stillExhausted.availability, .exhausted)
+    check("and it is not marked stale on the way there — exhausted has no such state",
+          stillExhausted.stale == false)
+
+    var pastReset = recentExhausted
+    pastReset.resetsAt = Int(now.timeIntervalSince1970) - 1
+    let afterReset = AssistantQuota.decayed(pastReset, now: now)
+    expect("once resets_at has passed, exhausted becomes unknown rather than ok",
+           afterReset.availability, .unknown)
+    check("with nothing carried over — a new window has no reading of its own yet",
+          afterReset.windows.isEmpty && afterReset.observedAt == nil && afterReset.resetsAt == nil)
+
+    // A 5h window's staleAfter is 900s (the 15-minute floor); 4,000s old is well past it.
+    let oldLow = AssistantQuota(assistant: .codex, installed: true, loggedIn: nil, plan: nil,
+                                availability: .low, source: .observed,
+                                observedAt: Int(now.timeIntervalSince1970) - 4_000, resetsAt: nil,
+                                detail: "x", windows: [window("5h", 90)])
+    let agedLow = AssistantQuota.decayed(oldLow, now: now)
+    expect("low stays low however old", agedLow.availability, .low)
+    check("but is marked stale past its window's staleAfter", agedLow.stale)
+
+    let freshOk = AssistantQuota(assistant: .claude, installed: true, loggedIn: nil, plan: nil,
+                                 availability: .ok, source: .observed,
+                                 observedAt: Int(now.timeIntervalSince1970) - 30, resetsAt: nil,
+                                 detail: "x", windows: [window("5h", 10)])
+    let stillOk = AssistantQuota.decayed(freshOk, now: now)
+    expect("a fresh ok stays ok", stillOk.availability, .ok)
+    check("and is not stale yet", stillOk.stale == false)
+
+    var oldOk = freshOk
+    oldOk.observedAt = Int(now.timeIntervalSince1970) - 4_000
+    let decayedOk = AssistantQuota.decayed(oldOk, now: now)
+    expect("an old ok decays to unknown rather than staying ok", decayedOk.availability, .unknown)
+    expect("keeping what it was, so a client can say so", decayedOk.lastKnown, .ok)
+
+    let noSignal = AssistantQuota(assistant: .claude, installed: true, loggedIn: nil, plan: nil,
+                                  availability: .unknown, source: .observed, observedAt: nil,
+                                  resetsAt: nil, detail: "x", windows: [])
+    expect("unknown with no observedAt is returned unchanged rather than crashing",
+           AssistantQuota.decayed(noSignal, now: now).availability, .unknown)
+
+    // The one sentence an API client can print as-is.
+    expect("no windows and nothing better to say", AssistantQuota.detail(windows: [], availability: .unknown), "no signal yet")
+    expect("no windows but a last known state",
+           AssistantQuota.detail(windows: [], availability: .unknown, lastKnown: .ok),
+           "no fresh signal; last known ok")
+    expect("credits exhausted with no windows names the bucket, not a percentage",
+           AssistantQuota.detail(windows: [], availability: .exhausted, creditsExhausted: true),
+           "premium credits exhausted; no windows reported")
+    expect("windows are joined name and percentage",
+           AssistantQuota.detail(windows: [window("5h", 4, resetsAt: nil), window("7d", 69, resetsAt: nil)],
+                                 availability: .ok, now: now),
+           "5h 4%, 7d 69%")
+    expect("an exhausted window's detail says when it resets",
+           AssistantQuota.detail(windows: [window("7d", 100, resetsAt: Int(now.timeIntervalSince1970) + 450_000, hit: true)],
+                                 availability: .exhausted, now: now),
+           "7d 100%; resets in 5d5h")
+    expect("credits exhausted alongside real windows still names the bucket",
+           AssistantQuota.detail(windows: [window("7d", 100, resetsAt: nil, hit: true)],
+                                 availability: .exhausted, creditsExhausted: true, now: now),
+           "7d 100%; premium credits exhausted")
+
+    expect("under a minute still reads as a minute rather than nothing",
+           AssistantQuota.formatDuration(seconds: 5), "1m")
+    expect("minutes alone", AssistantQuota.formatDuration(seconds: 90), "1m")
+    expect("hours and minutes", AssistantQuota.formatDuration(seconds: 3_600 * 2 + 60 * 5), "2h5m")
+    expect("an exact number of hours drops the minutes", AssistantQuota.formatDuration(seconds: 3_600 * 6), "6h")
+    expect("days and hours", AssistantQuota.formatDuration(seconds: 86_400 * 5 + 3_600 * 2), "5d2h")
+    expect("an exact number of days drops the hours", AssistantQuota.formatDuration(seconds: 86_400 * 3), "3d")
+
+    // §B.3: identity probes read login state, never a quota number — and the wire shapes are
+    // exactly what the CLIs themselves print (Q1 design §1.6/§2.1).
+    expect("claude auth status is already JSON",
+           AssistantQuota.parseClaudeAuthStatus(
+               "{\"loggedIn\":true,\"authMethod\":\"claude.ai\",\"subscriptionType\":\"max\"}"),
+           AssistantQuota.Identity(loggedIn: true, plan: "max"))
+    expect("logged out carries no plan",
+           AssistantQuota.parseClaudeAuthStatus("{\"loggedIn\":false}"),
+           AssistantQuota.Identity(loggedIn: false, plan: nil))
+    check("text that is not JSON at all answers nothing rather than guessing",
+          AssistantQuota.parseClaudeAuthStatus("not json") == nil)
+    check("an empty string is the same", AssistantQuota.parseClaudeAuthStatus("") == nil)
+
+    expect("codex login status is plain text, not JSON",
+           AssistantQuota.parseCodexLoginStatus("Logged in using ChatGPT\n"),
+           AssistantQuota.Identity(loggedIn: true, plan: nil))
+    expect("a refusal that contains the same words the confirmation does is still read as a refusal",
+           AssistantQuota.parseCodexLoginStatus("Not logged in"),
+           AssistantQuota.Identity(loggedIn: false, plan: nil))
+    check("an empty string answers nothing", AssistantQuota.parseCodexLoginStatus("") == nil)
+}
+
+group("the machine-level providers read the same file shapes /info already reads, "
+    + "and the route answers with what they found") {
+    let now = Date(timeIntervalSince1970: 1_787_745_138)
+    let tmp = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-quota-test-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    // Claude: the same rate-limits.json shape SessionInfo.claudeLimits(cacheDirectory:) already
+    // reads directly — this only checks that the shaping and §A.1/§A.2 on top of it are wired.
+    let cacheDir = tmp.appendingPathComponent("claude-cache", isDirectory: true)
+    try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+    let rateLimitsJSON = """
+    {"at": 1787745100, "session_id": "s", "rate_limits": {
+      "five_hour": {"used_percentage": 4, "resets_at": 1787761200},
+      "seven_day": {"used_percentage": 69, "resets_at": 1787860800}}}
+    """
+    try? rateLimitsJSON.write(to: cacheDir.appendingPathComponent("rate-limits.json"),
+                              atomically: true, encoding: .utf8)
+    let claudeQuota = AssistantQuota.claude(cacheDirectory: cacheDir, now: now)
+    expect("claude reads straight off the status line's cache", claudeQuota.availability, .ok)
+    expect("with both windows", claudeQuota.windows.map(\.name), ["5h", "7d"])
+    expect("stamped with the cache's own time, not now", claudeQuota.observedAt, 1_787_745_100)
+    expect("and a human sentence to match", claudeQuota.detail, "5h 4%, 7d 69%")
+
+    // Codex: §2.3's exact incident shape, replayed from a real rollout file on disk — a named
+    // 100% window, then the account falling back to premium credits with none left. This is the
+    // end-to-end proof that the §2.4 fix and the §A.1 credits rule actually meet: before the fix,
+    // this same file made `/info` answer "unknown" for an account that was, in fact, exhausted.
+    func line(_ obj: [String: Any]) -> String {
+        (try? JSONSerialization.data(withJSONObject: obj)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    }
+    let sessionsRoot = tmp.appendingPathComponent("codex-sessions", isDirectory: true)
+    let day = sessionsRoot.appendingPathComponent("2026/08/26", isDirectory: true)
+    try? FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+    let fullWindow = line(["timestamp": "2026-08-26T11:13:50.177Z", "type": "event_msg",
+                           "payload": ["type": "token_count", "info": [:],
+                                       "rate_limits": ["primary": ["used_percent": 100.0,
+                                                                   "window_minutes": 10_080,
+                                                                   "resets_at": 1_788_272_000],
+                                                       "secondary": NSNull()]]])
+    let depletedLine = line(["timestamp": "2026-08-26T11:51:28.524Z", "type": "event_msg",
+                             "payload": ["type": "token_count", "info": [:],
+                                         "rate_limits": ["limit_id": "premium",
+                                                         "primary": NSNull(), "secondary": NSNull(),
+                                                         "credits": ["has_credits": false,
+                                                                    "unlimited": false,
+                                                                    "balance": "0"]]]])
+    try? (fullWindow + "\n" + depletedLine + "\n").write(
+        to: day.appendingPathComponent("rollout-test-incident.jsonl"),
+        atomically: true, encoding: .utf8)
+    let codexQuota = AssistantQuota.codex(sessionsRoot: sessionsRoot, now: now)
+    expect("the account reads as exhausted, not unknown", codexQuota.availability, .exhausted)
+    expect("carrying the window that actually named the percentage",
+           codexQuota.windows.compactMap(\.usedPercent), [100])
+    check("and a detail sentence that names the credits, not just the percentage",
+          codexQuota.detail.contains("premium credits exhausted"))
+
+    // The route and /v1/places both answer with what these providers found — real machine state,
+    // since neither route takes an injectable path, so only structure is asserted here.
+    let phone = RemoteAuth.addDevice(name: "assistant quota reader", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: phone.id) }
+    let anon = RemoteServer.shared.route(remoteRequest("GET", "/v1/orchestrator/assistants"))
+    expect("an anonymous read stops at the door, same as every other orchestrator GET",
+           anon.status, 401)
+    let paired = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/assistants", headers: ["Authorization": "Bearer \(phone.token)"]))
+    expect("a paired reader may see it", paired.status, 200)
+    let json = (try? JSONSerialization.jsonObject(with: paired.body)) as? [String: Any]
+    let rows = json?["assistants"] as? [[String: Any]]
+    expect("both assistants answer", rows?.map { $0["id"] as? String ?? "" }.sorted(),
+           ["claude", "codex"])
+    check("availability is always present, the one field a client must read",
+          rows?.allSatisfy { $0["availability"] is String } ?? false)
+
+    let placesResponse = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/places", headers: ["Authorization": "Bearer \(phone.token)"]))
+    let places = (try? JSONSerialization.jsonObject(with: placesResponse.body)) as? [String: Any]
+    let placeAssistants = places?["assistants"] as? [[String: Any]]
+    check("/v1/places carries the same availability word, with no window detail alongside it",
+          placeAssistants?.allSatisfy { $0["availability"] is String && $0["windows"] == nil } ?? false)
 }
 
 group("the models a session can be moved to, and the word that moves each") {
