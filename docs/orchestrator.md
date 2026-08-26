@@ -430,7 +430,9 @@ With worktree isolation, relative claims under `project_dir` are discarded with 
 the child edits the separate checkout, not those shared-tree paths. External machine resources
 still belong in `serialize`. This also removes the shared-tree timing mismatch where a claim is
 released at terminal state but work is not landed until a later commit: the isolated delivery
-remains on its branch until the root explicitly integrates it.
+remains on its branch until the root explicitly integrates it. That safety property also means a
+terminal child state cannot be the completion state of a code-producing root graph: the delivery is
+durable, but still pending.
 
 A serialized task holds claims from dispatch throughout its entire `queued` wait. That wait has no
 independent timeout: it is bounded by its serialize blockers finishing, timing out, or being
@@ -743,6 +745,76 @@ git -C <project_dir> branch -d clawdline/task/<id>       # only after landing
 Conflicts are the visible cost of parallel work and should be resolved during integration. Review
 the branch before landing it; a child commit has not become trusted merely by being isolated.
 
+### Landing is a root obligation, not a child state
+
+The lifecycle above answers whether a child ran and reported. It deliberately does not claim that
+a code delivery reached `main` (or any other target ref). For a code-producing graph, root carries
+one additional protocol obligation:
+
+```
+delivered -> reviewed -> pending landing -> landed
+```
+
+`success` supplies **delivered**. An independent `SAFE TO LAND` verdict supplies **reviewed** and
+opens **pending landing**. Neither is `landed`. The root that dispatched the graph owns the pending
+landing unless a named root accepts it through a Clawdline handoff; an unspecified future session
+is not an owner.
+
+The graph's `plan` must therefore name the delivery branch, target branch, landing owner, review
+node and root-owned landing closure before the first child is dispatched. Follow-up implementation
+rounds use another isolated worktree based on the previous delivery branch or commit. Turning a
+code branch into an artifact bundle for later editing drops the broker's base/head/dirty receipt and
+is not a substitute for worktree delivery.
+
+After review, root closes the obligation by checking that receipt and verdict, reading the target
+repository's current head and status, integrating without absorbing another session's uncommitted
+files, testing the exact integrated tree under the repository's rules, and recording the target
+commit that contains the delivery. Only then may it report the user's code change complete.
+
+An overlapping dirty shared tree is a landing delay, not a completed outcome. Root leaves the
+obligation pending, identifies and coordinates with the owning session through Clawdline's session
+and task views, and retries when integration is safe. If root must stop first, its handoff package
+names the delivery branch/base/head, target branch/current head, verdict and test receipts,
+overlapping paths and known owner, and exactly one next landing action. The original root remains
+responsible until Clawdline's handoff receipt confirms that the first line reached the named
+receiving root. For this explicitly assigned obligation, that receipt transfers ownership; it does
+not say that the delivery landed.
+
+### File release waits belong to Clawdline
+
+A root waiting for paths in a shared tree must not create a relationship that exists only inside
+Claude Code or Codex. It resolves the owner through Clawdline's session and Git readings, addresses
+the terminal-neutral Clawdline session `id`, and sends the wait request through
+`POST /v1/sessions/:id/send`. The request names the repository, exact paths, waiter session id,
+reason and release condition. The owner retains all waiters and sends every one a Clawdline release
+notice after committing or otherwise releasing the paths, including the commit when there is one.
+
+This composes the assistant-neutral session surface that exists today: a Claude root may wait on a
+Codex owner or the other way round. A release notice only wakes a waiter; the waiter still reads
+HEAD, status and diff before acting.
+
+The durable broker form of the same protocol keeps repository identity, canonical paths, owner
+Clawdline id, all waiter ids, creation time and release condition in Clawdline; deduplicates repeated
+registrations; fans out a structured notice on explicit owner release; and keeps unresolved waits
+visible when an owner disappears. It does not guess from a transient clean status. Until that
+registry exists, the paired Clawdline messages carry the relationship and the owner session keeps
+the list. Provider-native messages are never a fallback because they would divide one safety rule
+into incompatible Claude and Codex halves.
+
+### The protocol has a living Claude Code Artifact
+
+`artifacts/2026-08-26-clawdline-communication-protocol.html` is the human-readable, visual surface of
+this protocol. It is a standalone HTML Artifact with `artifact:kind=state`, so it is not a historical
+audit: it must describe the current dispatch, review, landing, handoff, claim, file-wait and
+cross-assistant notification behavior.
+
+Every change to those semantics includes an update to that same Artifact in its root-owned landing
+closure. A Claude Code session reads the full authoritative sources — `AGENTS.md`, this document,
+`docs/api.md`, `docs/handoff.md`, both language versions of the Clawdline skill and the machine's
+dispatch policy — and updates the Artifact's diagrams, state words, source pointers and operator
+checklist. Root then verifies the standalone file against those sources. A green implementation or
+review verdict does not close a protocol change while the Artifact still describes the old rules.
+
 **The tab goes away afterwards.** A child that reported — `success` or `failure` — has nothing left
 to say, so `orchestrator_child_linger` decides how long its terminal tab hangs around: three minutes
 by default, `0` to close it the moment the task finalizes, `-1` to leave it to you. A `timeout`
@@ -863,7 +935,8 @@ one of them, not both — they declare the same `name:`. Seven sections:
    splitting a job beat one child that will hand half of it on. Instructions have to stand on
    their own — the child cannot see the conversation they came from, so *"do what we discussed"*
    is an empty file with extra steps — and the graph goes in `plan`, the same text in every task
-   of the batch.
+   of the batch. For code, that graph names the delivery branch, target, review node, landing owner
+   and final root-owned landing-and-verification step.
 3. **Make the directory.** `uuidgen`, `openssl rand -hex 32`, `umask 077`, and a `task.json` built
    with `jq -n` rather than string concatenation.
 4. **Find its own session id**, best-effort, with a nonce: `echo clawdline-nonce-<task-id>` puts
@@ -874,8 +947,11 @@ one of them, not both — they declare the same `name:`. Seven sections:
    to fix and re-send under the same id, and **`depth_exceeded` means this session is already as
    deep as this Mac goes** — the work is its own to do, not something to find another way to hand
    on.
-6. **Report, then get out of the way.** No polling loop. The notification arrives on its own, and
-   `GET /v1/orchestrator/tasks/:id` answers when somebody asks.
+6. **Report, wait, then close the root obligation.** No polling loop. The notification arrives on
+   its own, and `GET /v1/orchestrator/tasks/:id` answers when somebody asks. A child `success` and
+   `SAFE TO LAND` remain delivered/reviewed facts; for code, root integrates on the named target,
+   verifies the exact integrated tree and records its commit before reporting completion. An unsafe
+   dirty tree keeps that obligation pending or sends it through a named, receipted handoff.
 7. **Hand a whole line of work on when dispatch is the wrong motion.** The same skill writes the
    continuation package and calls `POST /v1/orchestrator/handoffs`; the receiver is a new root,
    not a child. The complete package and receiving contract are in

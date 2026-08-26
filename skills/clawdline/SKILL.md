@@ -141,6 +141,12 @@ artifact diff.** The root reviews it with `git diff <base>...clawdline/task/<id>
 merge or cherry-pick. Worktree isolation protects tracked files only; it does not copy ignored
 dependencies, caches, or env files.
 
+Follow-up implementation rounds are code changes too. Base the next isolated task on the previous
+delivery branch or commit with `isolation_base`; do not turn the delivery into a bundle in an
+artifact-only task merely to continue editing it. Keeping every implementation round in a brokered
+worktree keeps the branch, base, head, commit count and dirtiness in the task record that root must
+later close.
+
 ### 2.1 If it is going out, pick a shape
 
 The policy file's "pick a shape" section names a few. **Pick one; do not improvise.** In short:
@@ -153,8 +159,9 @@ The policy file's "pick a shape" section names a few. **Pick one; do not improvi
 | **Batch with takeover** | the same mechanical change across independent modules | one node per module; a dead tab keeps its state for a person to finish |
 | **Candidates** | a design trade-off where what is being compared is taste | several nodes each produce a complete answer, **a person picks, no judge node** |
 
-**New features are always Build then read.** Any graph producing code ends with an independent
-review node — the rules are at the end of §2.2.
+**New features are always Build then read.** The child graph producing code ends with an independent
+review node; the root's work ends only after the landing closure in §6. The rules for the reviewer
+are at the end of §2.2.
 
 ### 2.2 Draw the graph first; do not improvise as you dispatch
 
@@ -175,11 +182,13 @@ in a graph nobody thought through, the mistake surfaces at the deepest level.
 the second way costs a level of latency and one more round of paraphrase. Go deeper only when the
 second level's work genuinely cannot be named until the first level has answered.
 
-**When the output is code, or a decision somebody will act on, the graph ends in a review node.**
-Not a fifth worker — a reader: it reads what the others produced, writes down what is wrong, and
-does not fix anything (fixing belongs to the next round or to a person, and that holds even when
-it is sure it knows the fix — a repair quietly buries the judgement somebody needed to see). Five
-rules:
+**When the output is code, or a decision somebody will act on, the child graph ends in a review
+node. The root-owned graph does not.** Its final box is `root: land reviewed delivery on <target>
+and verify the integrated tree`. Put that box, the delivery branch, the target branch and the root
+landing owner in `plan` before dispatch. The reviewer is not a fifth worker but a reader: it reads
+what the others produced, writes down what is wrong, and does not fix anything (fixing belongs to
+the next round or to a person, and that holds even when it is sure it knows the fix — a repair
+quietly buries the judgement somebody needed to see). Five rules:
 
 1. **It took no part in building the thing.** Self-review is measurably bad: a model judging its
    own output misses about a third of its own semantic drift, and the mechanism is structural
@@ -487,7 +496,7 @@ tab. So a retry after a timeout is just a resend; there is no need for an `Idemp
 
 ---
 
-## 6. Report, then wait
+## 6. Report, wait, then close the root obligation
 
 As soon as it is out, tell the user: **how many, what each is, who is doing it, and where the
 output will be.** One line each; the first 8 characters of the `task_id` is enough.
@@ -531,6 +540,88 @@ ls -la "/tmp/.clawdline/$task_id/artifacts/"
 `summary` in `result.json` is a sentence the child wrote itself, and `artifacts` is what it
 *claims* it produced — **a claim is a claim; `ls` the directory yourself**. Task directories are
 cleared 24 hours after they finish, so anything the user wants to keep has to be copied out.
+
+### Child completion is not code completion
+
+The orchestrator states above describe the **child task**. For a code-producing graph, keep a
+separate root-owned obligation with these meanings:
+
+```
+delivered -> reviewed -> pending landing -> landed
+```
+
+- `success` means the child delivered what it claims.
+- `SAFE TO LAND` means an independent reader found no blocker. It moves the root obligation to
+  **pending landing**; it does not mean merged, shipped, complete, or done.
+- `landed` means the intended target ref contains the reviewed change and the exact integrated tree
+  passed its required verification.
+
+The dispatching root is the landing owner unless a named root accepts a Clawdline handoff. A vague
+"someone later" is not an owner. Do not give the user a completion answer while the obligation is
+`delivered`, `reviewed`, or `pending landing`.
+
+### Close a code delivery
+
+After the terminal review verdict, root does all of this:
+
+1. Read the broker's worktree receipt and the review evidence. Confirm the delivery branch, base,
+   head, commit count and clean/dirty fact are the ones reviewed.
+2. Read the target repository's current branch, head and status. Integrate by merge, cherry-pick or
+   rebase without staging, rewriting or absorbing another session's pre-existing changes.
+3. If overlapping uncommitted work makes that unsafe, stop the merge attempt but **keep the
+   obligation pending**. Use Clawdline's session/task view to identify and coordinate with the
+   owner, then retry when the tree is safe. Shared-tree safety is a reason to wait, not a reason to
+   declare the work complete.
+4. Test the exact integrated tree according to the repository's rules, using private temporary
+   paths. Then verify the target ref contains the intended delivery and record the target commit.
+5. Only now report `landed` or `complete` to the user. Say which target and commit received it.
+
+### Wait for files through Clawdline
+
+Do not coordinate a shared-tree wait with Claude Code's native messages, a Codex-specific channel,
+or an assistant conversation id. The broker boundary is Clawdline:
+
+1. Use `GET /v1/sessions` and the relevant `/git` readings to find the owning root. Address sessions
+   by Clawdline's terminal-neutral `id`, not provider-specific `sessionId`.
+2. Send the owner a wait request with `POST /v1/sessions/:id/send`. Name the repository, exact paths,
+   this waiter's Clawdline session id, why it is waiting, and the release condition. Use the local
+   remote credential without printing or copying it into a task.
+3. The owner records **every** waiter. After it commits or otherwise releases those paths, it sends
+   each waiter a Clawdline release notice naming the paths and commit when there is one. One owner
+   may fan out to Claude and Codex sessions without knowing which assistant each runs.
+4. A release notice is a wake-up signal, not proof. Every waiter re-reads target HEAD, status and
+   diff before staging or integrating.
+
+Until Clawdline has a durable waiter registry, those paired Clawdline messages are the protocol's
+transport and the owner session holds the waiter list. A first-class broker implementation should
+persist repository identity, canonical paths, owner Clawdline id, all waiter ids, creation time and
+release condition; deduplicate repeated waits; fan out a structured release notice only after an
+explicit owner release; and keep an unresolved wait visible if its owner disappears. It must not
+infer release merely because one momentary `git status` was clean.
+
+### Keep the communication-protocol Artifact current
+
+The living visual explanation is
+`artifacts/2026-08-26-clawdline-communication-protocol.html`, a standalone Claude Code Artifact with
+`<meta name="artifact:kind" content="state">`. Any change to task dispatch, handoff, claims,
+landing closure, file waits, ownership transfer, structured notices or other cross-session
+communication updates that same file before the protocol work closes. Do not create a dated audit
+beside it as a substitute: `state` means this one Artifact must equal now.
+
+Have a Claude Code session read the complete authoritative protocol rather than paraphrasing the
+current conversation. It updates the diagrams, state labels, source links and the human checklist,
+then root opens or otherwise inspects the standalone HTML and verifies every claimed transition
+against `AGENTS.md`, `docs/orchestrator.md`, `docs/api.md`, `docs/handoff.md`, this skill and the
+machine's dispatch policy. If those sources changed and the Artifact did not, the landing
+obligation remains pending.
+
+If this root must stop before step 5, make a Clawdline handoff rather than dropping the obligation.
+Its `CURRENT STATE`, `OPEN THREADS` and `IMMEDIATE NEXT STEP` must name the delivery branch, base and
+head; target branch and current head; review verdict and test receipts; overlapping paths and their
+owner when known; and exactly one next landing action. A handoff is not itself landing, and the
+original root remains responsible until Clawdline's receipt confirms the first line reached the
+named receiving root. That receipt is the ownership-transfer point for this explicitly named
+obligation; it is not evidence that the code landed.
 
 ---
 
@@ -727,6 +818,15 @@ hand-written SVG instead — see §2.5.
   dispatched once every leaf's `result.json` is there, and its `instructions` must name the exact
   `/tmp/.clawdline/<id>/artifacts/` directories to read. That ordering is root's job; the app does
   not sequence anything for you.
+- **The reviewer finishing is not the code finishing.** `SAFE TO LAND` creates a root-owned pending
+  landing obligation. Close it on the named target and verify the integrated tree, or hand that
+  obligation to a named root; never translate it into "done" by itself.
+- **File waiters are Clawdline relationships.** Request and release through Clawdline session ids,
+  notify every waiter when paths are released, and revalidate after notification. Never make this
+  safety protocol depend on Claude Code or Codex messaging.
+- **The protocol Artifact is part of the protocol.** Any communication-semantics change updates
+  `artifacts/2026-08-26-clawdline-communication-protocol.html` through Claude Code and verifies it
+  against every authoritative source before completion.
 - **Assume anything new in the working tree is not the child's.** Several sessions usually share
   one checkout on this Mac, and they are editing and committing too. If `git status` grows a few
   files after you dispatch, or `git log` grows an entry, **that is not the child's report card**.

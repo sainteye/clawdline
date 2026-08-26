@@ -17,6 +17,36 @@ Do not infer ownership from a filename, a recent timestamp, or a new commit; ins
 - A child or worker session does not commit. It hands its changes back to the root session for
   review and commit.
 
+### Root-owned landing closure
+
+- A child task reaching `success`, and a reviewer saying `SAFE TO LAND`, mean **delivered** and
+  **reviewed**. Neither means the user's code change is complete. The root session that dispatched
+  the graph owns integration until the intended target branch contains the reviewed change.
+- Plan code-producing graphs through the root-owned landing step: name the delivery branch, target
+  branch, landing owner, independent review, and post-integration verification. The last child may
+  be a reviewer; the last step of the work is still the root's landing closure.
+- Before reporting completion, the root must integrate without absorbing another session's dirty
+  files, test the exact integrated tree with a private `TMPDIR`, and record the resulting target
+  commit. `SAFE TO LAND` is a pending state, not a completion phrase.
+- If overlapping uncommitted work makes integration unsafe, do not merge and do not close the task.
+  Keep the landing obligation pending while coordinating with the owning session. If this root must
+  stop, use a Clawdline handoff that names the delivery branch/base/head, target branch, verdict and
+  test evidence, overlapping paths and owner if known, and the one next landing action. Never leave
+  integration to an unnamed future session. The original root remains owner until Clawdline's
+  handoff receipt confirms that the first line reached the named receiving root.
+- File-release coordination goes through Clawdline, never an assistant provider's native message
+  mechanism. Address the terminal-neutral session `id` returned by `GET /v1/sessions`, and send the
+  request or release through `POST /v1/sessions/:id/send` so Claude and Codex participate equally.
+- A wait request names the repository, exact paths, waiter session id, and release condition. The
+  owner keeps every waiter and, after committing or otherwise releasing those paths, sends each one
+  a Clawdline release notice with the paths and commit when there is one. A notice wakes the waiter;
+  it never replaces the waiter's own status and diff verification.
+- The living Claude Code Artifact for this protocol is
+  `artifacts/2026-08-26-clawdline-communication-protocol.html`. Any change to Clawdline task,
+  handoff, landing, claims, file-wait or cross-session communication semantics must update that
+  standalone `kind=state` HTML in the same line of work and re-check it against the authoritative
+  docs. A protocol change is not closed while its Artifact still teaches the previous behavior.
+
 The working tree is an editing buffer shared with other sessions, not a reproducible build input.
 For an important commit, test the exact staged tree from an archive instead:
 

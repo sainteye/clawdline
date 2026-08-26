@@ -44,6 +44,17 @@ And the sender does not have to die. A handoff is a copy of state, not a transfe
 a line off to run in parallel and there are now two equal roots in one working tree, with everything
 [that section](#two-roots-in-one-working-tree) says about it applying to both.
 
+There is one deliberate ownership convention on top of that transport fact. A root that must stop
+while it holds a named pending obligation — for example, landing a reviewed delivery branch — writes
+that obligation and the receiving root's ownership explicitly into `handoff.md`, supplies
+`from_session`, and waits for Clawdline's *picked up* receipt before stopping. The receipt proves only
+that the first line reached the named root; at that point the named obligation has an owner that can
+outlive the sender. It does not prove that the package was understood or that the work was completed.
+Without that explicit assignment, handoff remains a copy and both roots retain their own work.
+If the obligation owns paths with Clawdline waiters, the package also names every waiter session id,
+its exact paths and release condition. The receiving owner assumes the eventual Clawdline fan-out;
+handoff must not strand a waiter inside the sending assistant's private message system.
+
 ---
 
 ## When it is worth doing, and when `/compact` is the answer

@@ -123,6 +123,11 @@ rebase、stash、hard reset、任何 `git worktree`，以及 `build.sh` 這種�
 `git diff <base>...clawdline/task/<id>` 審，再 merge 或 cherry-pick。worktree 只隔離 tracked files；
 gitignore 掉的依賴、cache 與 env 檔不會跟過去。
 
+後續修 findings 的實作輪也是程式修改。下一個 isolated task 要用 `isolation_base` 接在上一輪的
+delivery branch 或 commit 上；不要只為了繼續改，就把交付物轉成 artifact-only task 裡的一包 bundle。
+每一輪實作都留在 broker 建的 worktree，root 最後要關閉的 task record 才會持續帶著 branch、base、
+head、commit 數與 dirty 狀態。
+
 ### 2.1 該派的話，先挑一個形狀
 
 政策檔的「pick a shape」一節列了幾個具名的形狀，**挑一個，不要即興**。摘要：
@@ -135,8 +140,8 @@ gitignore 掉的依賴、cache 與 env 檔不會跟過去。
 | **Batch with takeover** | 同一種機械修改跨多個獨立模組 | 一個模組一個節點；死掉的分頁留著讓人接手 |
 | **Candidates** | 設計取捨、要比較的是品味 | 幾個節點各做一個完整方案，**人直接挑，不設 judge 節點** |
 
-**寫新功能一律是 Build then read。** 產出程式碼的圖，最後一定要有一個獨立的審查節點——
-規則在 §2.2 的最後一段。
+**寫新功能一律是 Build then read。** 產出程式碼的 child graph，最後一定要有一個獨立審查節點；
+root 的工作則要到 §6 的 landing closure 才結束。審查規則在 §2.2 的最後一段。
 
 ### 2.2 先畫圖，不要邊派邊想
 
@@ -155,9 +160,11 @@ root（你）
 **廣度優先。** 兩個 child 各做一半，比一個 child 做一半再往下派好：後者多一層延遲、多一次
 轉述失真。只有在「第二層要做什麼，非得等第一層答完才講得出來」的時候，才往下走一層。
 
-**產出是程式碼、或是有人會照著做的決定時，圖的最後要有一個審查節點。** 它不是第五個工人，
-是一個讀者：只讀別人的產出、只寫「哪裡有問題」，不動手修（修是下一輪或人的事，就算它確定
-知道怎麼改也一樣——順手修掉等於把人本來該看到的判斷埋了）。五條規則：
+**產出是程式碼、或是有人會照著做的決定時，child graph 的最後要有一個審查節點；root-owned
+graph 不能停在那裡。** 它最後一格必須是 `root：把審過的 delivery 落到 <target>，並驗證整合後
+的 tree`。派工前就把這一格、delivery branch、target branch 與 root landing owner 寫進 `plan`。
+reviewer 不是第五個工人，是一個讀者：只讀別人的產出、只寫「哪裡有問題」，不動手修（修是下一輪
+或人的事，就算它確定知道怎麼改也一樣——順手修掉等於把人本來該看到的判斷埋了）。五條規則：
 
 1. **它沒有參與生產。** 自審是量測過的差：模型審自己的產出會漏掉約三分之一的語意漂移，
    而且機制是結構性的不是能力問題——judge 偏好低困惑度的文本，而模型自己的輸出對它自己
@@ -432,7 +439,7 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
 
 ---
 
-## 6. 回報、等完成
+## 6. 回報、等完成、關閉 root 的責任
 
 派完馬上告訴使用者：**幾件、各是什麼、給誰做、產出會在哪**。一行一件，附 `task_id` 前 8 碼就夠了。
 
@@ -473,6 +480,81 @@ ls -la "/tmp/.clawdline/$task_id/artifacts/"
 `result.json` 裡的 `summary` 是 child 自己寫的一句話，`artifacts` 是它宣稱的產出——
 **宣稱歸宣稱，檔案在不在自己 `ls` 一次**。任務目錄在完成 24 小時後會被清掉，
 使用者要留的東西要複製出來。
+
+### Child 完成不等於程式碼完成
+
+上面的 orchestrator state 描述的是 **child task**。產出程式碼的 graph 另外有一個 root-owned
+obligation，語意如下：
+
+```
+delivered -> reviewed -> pending landing -> landed
+```
+
+- `success` 只表示 child 交出了它宣稱的東西。
+- `SAFE TO LAND` 只表示獨立讀者沒找到 blocker；它把 root 的責任推到 **pending landing**，
+  不代表已 merge、已 ship、已完成或 done。
+- `landed` 才表示指定 target ref 已包含審過的修改，而且整合後的精確 tree 通過必要驗證。
+
+除非另一個具名 root 接受了一份 Clawdline handoff，派工的 root 就是 landing owner。「未來某個人」
+不是 owner。責任還在 `delivered`、`reviewed` 或 `pending landing` 時，不得對使用者回報完成。
+
+### 關閉一份 code delivery
+
+終局 reviewer 給出 verdict 後，root 要完成下面每一步：
+
+1. 讀 broker 的 worktree receipt 與 review evidence，確認 delivery branch、base、head、commit 數與
+   clean/dirty 事實，正是 reviewer 審過的那一份。
+2. 讀 target repository 當下的 branch、head 與 status；用 merge、cherry-pick 或 rebase 整合，
+   但不得 stage、改寫或吸收另一個 session 原本就在工作樹裡的修改。
+3. 重疊的 uncommitted work 讓整合不安全時，停止 merge 嘗試，但**責任維持 pending**。用 Clawdline
+   的 session/task view 找到 owner、協調，等工作樹安全後再試。共享樹安全是等待的理由，不是把工作
+   宣告完成的理由。
+4. 依 repository 規則、用私有暫存路徑測整合後的精確 tree；接著確認 target ref 包含預期 delivery，
+   並記下 target commit。
+5. 到這裡才能向使用者說 `landed` 或完成，並講出落到哪個 target 與 commit。
+
+### 透過 Clawdline 等檔案
+
+共享樹等待不能用 Claude Code 原生 message、Codex 專屬 channel，或任何 assistant conversation id
+協調。broker 邊界是 Clawdline：
+
+1. 用 `GET /v1/sessions` 與相關 `/git` reading 找 owning root。地址用 Clawdline assistant-neutral
+   的 terminal session `id`，不用 provider-specific `sessionId`。
+2. 用 `POST /v1/sessions/:id/send` 傳 wait request 給 owner，寫出 repository、精確 paths、這個 waiter
+   的 Clawdline session id、等待理由與 release condition。本機 remote credential 只能拿來呼叫，不能
+   印出或複製進 task。
+3. owner 要記下**每一個** waiter。commit 或以其他方式釋放那些 paths 後，逐一用 Clawdline 傳
+   release notice，列出 paths 與有的話 commit。同一個 owner 可以 fan-out 給 Claude 與 Codex，
+   不需要知道每個 session 跑哪個 assistant。
+4. release notice 只是喚醒，不是證明。每個 waiter 在 stage 或 integrate 前都要重讀 target HEAD、
+   status 與 diff。
+
+Clawdline 還沒有 durable waiter registry 之前，成對的 Clawdline message 是這份協定的 transport，
+waiter list 暫由 owner session 持有。未來 broker 的正式實作應持久保存 repository identity、canonical
+paths、owner Clawdline id、全部 waiter ids、建立時間與 release condition；重複等待要 deduplicate；
+只有 owner 明確 release 才 fan-out structured release notice；owner 消失時未解等待仍要看得到。
+不能只因某一次 `git status` 短暫乾淨就自行判定已釋放。
+
+### 維持 communication-protocol Artifact 等於現在
+
+這份協定的 living visual explanation 是
+`artifacts/2026-08-26-clawdline-communication-protocol.html`：一個 standalone Claude Code Artifact，
+帶 `<meta name="artifact:kind" content="state">`。任何 task dispatch、handoff、claims、landing
+closure、file wait、ownership transfer、structured notice 或其他 cross-session communication
+語意變更，都要在協定工作關閉前更新同一個檔案。不能另開一份 dated audit 當作替代；`state` 的意思
+就是這一份 Artifact 必須等於現在。
+
+要讓 Claude Code session 讀完整 authoritative protocol，不能只轉述當下對話。它更新 diagrams、
+state labels、source links 與人的 checklist；root 再打開或用其他方式檢查 standalone HTML，逐項對照
+`AGENTS.md`、`docs/orchestrator.md`、`docs/api.md`、`docs/handoff.md`、這份 skill 與本機 dispatch
+policy。來源改了而 Artifact 沒改，landing obligation 就維持 pending。
+
+這個 root 若必須在第 5 步之前停下來，要用 Clawdline handoff 交接，不能把責任丟著。handoff 的
+`CURRENT STATE`、`OPEN THREADS`、`IMMEDIATE NEXT STEP` 必須寫出 delivery branch/base/head、target
+branch 與目前 head、review verdict 與測試 receipts、重疊路徑及已知 owner，還有唯一一個下一步
+landing action。handoff 本身不是 landing；Clawdline receipt 確認第一句已送達具名接收 root 前，
+原 root 仍然負責。對這個被明確點名的 obligation，那張 receipt 是 ownership transfer 的時點，
+不是程式碼已落地的證據。
 
 ---
 
@@ -651,6 +733,14 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
 - **葉節點跑完不等於圖跑完。** 如果圖裡有一個「彙整」節點，那個節點要等所有葉節點的
   `result.json` 都在了才派得出去——它的 `instructions` 要指名去讀哪幾個
   `/tmp/.clawdline/<id>/artifacts/`。這是 root 的責任，app 不會替你排順序。
+- **reviewer 跑完不等於程式碼完成。** `SAFE TO LAND` 會建立一個 root-owned pending landing
+  obligation。要嘛在具名 target 上關掉它並驗證整合後 tree，要嘛交給一個具名 root；不能單靠 verdict
+  把它翻成「做完了」。
+- **file waiter 是 Clawdline relationship。** request 與 release 都用 Clawdline session id，paths
+  釋放時通知每一個 waiter，收到後再重驗。這份安全協定不能依賴 Claude Code 或 Codex message。
+- **protocol Artifact 是協定的一部分。** 任何 communication semantics 修改，都要透過 Claude Code
+  更新 `artifacts/2026-08-26-clawdline-communication-protocol.html`，並在完成前對照所有 authoritative
+  source 驗證。
 - **工作樹裡多出來的東西，先假設不是 child 做的。** 這台 Mac 上通常有好幾個 session 共用同一個
   工作區，而它們也在改檔案、也在 commit。派工之後看到 `git status` 多了幾個檔、或 `git log`
   多了一筆，**那不是 child 的成績單**——在把任何改動算到 child 頭上之前，先做這三件事：
