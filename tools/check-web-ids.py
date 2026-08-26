@@ -11,6 +11,28 @@ WEB = ROOT / "Resources" / "web"
 INDEX = WEB / "index.html"
 JS_ROOT = WEB / "app" / "js"
 
+# Nearly every id this check knows about comes out of one literal array, matched by one regular
+# expression in registry_ids().  Rewriting its callback as an arrow function, or putting a
+# grouping comment inside the array, drops the match to nothing — and the script would then print
+# "web ids agree: 4 looked up at load time" and exit 0 with an id genuinely missing from the page.
+# So the count is a tripwire, not a coverage target: the smallest registry in this repository's
+# history is the 27 ids of c2730db (2026-08-18) and it has only ever grown, so no real tree has
+# ever come near 24, while every way of breaking the pattern that has been tried lands on 0.
+# If the registry ever legitimately shrinks past this, lower it in the commit that shrinks it.
+REGISTRY_FLOOR = 24
+
+# A `/` after one of these is a regular expression; after anything else it is division.  This is
+# what a JavaScript lexer does, and it is the whole of the ambiguity: the same character opens a
+# literal or divides two numbers depending on the token in front of it.
+REGEX_AFTER = "(,;:=!&|?+-*%~^<>[{}"
+REGEX_AFTER_WORD = {"return", "typeof", "instanceof", "in", "of", "new", "delete",
+                    "void", "throw", "case", "do", "else", "yield", "await"}
+
+
+def fail(message):
+    print(f"check-web-ids: {message}")
+    sys.exit(2)
+
 
 class Scripts(HTMLParser):
     def __init__(self):
@@ -45,13 +67,34 @@ def registry_ids(text):
     return out
 
 
+def starts_regex(text, last, last_index):
+    """Is a `/` following text[last_index] the start of a literal rather than a division?"""
+    if not last:
+        return True
+    if last in REGEX_AFTER:
+        return True
+    if last.isalnum() or last in "_$":
+        start = last_index
+        while start and (text[start - 1].isalnum() or text[start - 1] in "_$"):
+            start -= 1
+        return text[start:last_index + 1] in REGEX_AFTER_WORD
+    return False
+
+
 def code_depths(text):
-    """Brace depth for code bytes; comments and string contents are marked non-code."""
+    """Brace depth for code bytes; comments, strings and regex bodies are marked non-code.
+
+    Returns the depths and what the scanner was still holding at the end.  A file it followed
+    all the way through ends at depth 0 in code; anything else means it lost its place partway,
+    and every depth it recorded after that point is a guess — see scan(), which refuses them.
+    """
     depths = [-1] * len(text)
     depth = 0
     i = 0
     state = "code"
     quote = ""
+    last = ""
+    last_index = 0
     while i < len(text):
         char = text[i]
         nxt = text[i + 1] if i + 1 < len(text) else ""
@@ -72,9 +115,30 @@ def code_depths(text):
                 i += 2
             elif char == quote:
                 state = "code"
+                last, last_index = char, i
                 i += 1
             else:
                 i += 1
+            continue
+        if state in ("regex", "class"):
+            # A regex literal cannot span a line, so a newline here means the `/` that opened it
+            # was really a division.  Closing it at the break keeps that mistake one line wide
+            # instead of swallowing the rest of the file, and leaves the depth check to notice.
+            if char == "\\":
+                i += 2
+                continue
+            if char == "\n":
+                state = "code"
+            elif state == "class":
+                if char == "]":
+                    state = "regex"
+            elif char == "[":
+                # `/[/]/` is legal: inside a character class the delimiter is an ordinary byte.
+                state = "class"
+            elif char == "/":
+                state = "code"
+                last, last_index = char, i
+            i += 1
             continue
         if char == "/" and nxt == "/":
             state = "line"
@@ -83,6 +147,13 @@ def code_depths(text):
         if char == "/" and nxt == "*":
             state = "block"
             i += 2
+            continue
+        if char == "/" and starts_regex(text, last, last_index):
+            # Without this, `.replace(/"/g, …)` opens a string on the quote inside the pattern,
+            # `/^https?:\/\//i` reads as a line comment, and a backtick in a pattern turns the
+            # rest of the file into a template literal.  All three are in this tree.
+            state = "regex"
+            i += 1
             continue
         if char in "'\"`":
             state, quote = "string", char
@@ -93,13 +164,30 @@ def code_depths(text):
             depth += 1
         elif char == "}" and depth:
             depth -= 1
+        if not char.isspace():
+            last, last_index = char, i
         i += 1
+    return depths, depth, state
+
+
+def scan(label, text):
+    """code_depths for one source, refusing one whose depths cannot be trusted.
+
+    Three files in this tree used to end at a non-zero depth because of regex literals the
+    scanner did not know, which quietly put every lookup in them outside the guarantee: a
+    top-level getElementById in core/esc.js was scored at depth 1 and never checked at all.
+    A blank answer that reads as agreement is the failure this whole check exists to prevent,
+    so an unbalanced file is loud.
+    """
+    depths, depth, state = code_depths(text)
+    if depth or state not in ("code", "line"):
+        fail(f"{label}: the brace scanner ended at depth {depth} in {state} rather than depth 0 "
+             f"in code — it lost its place, so the depths it recorded there mean nothing")
     return depths
 
 
-def top_level_ids(text):
+def top_level_ids(text, depths):
     """Literal, unguarded getElementById calls at module/script top level."""
-    depths = code_depths(text)
     pattern = re.compile(
         r"document\s*\.\s*getElementById\s*\(\s*(['\"])([^'\"]+)\1\s*\)"
     )
@@ -111,19 +199,24 @@ def main():
     try:
         html = INDEX.read_text()
     except OSError as error:
-        print(f"check-web-ids: {error}")
-        return 2
+        fail(str(error))
 
     defined = set(re.findall(r"\bid\s*=\s*['\"]([^'\"]+)['\"]", html))
     required = defaultdict(list)
+    registry = set()
 
     modules = sorted(JS_ROOT.rglob("*.js")) if JS_ROOT.exists() else []
     for path in modules:
-        text = path.read_text()
+        try:
+            text = path.read_text()
+        except OSError as error:
+            fail(str(error))
         label = str(path.relative_to(ROOT))
+        depths = scan(label, text)
         for element_id in registry_ids(text):
             required[element_id].append(label)
-        for element_id, line in top_level_ids(text):
+            registry.add(element_id)
+        for element_id, line in top_level_ids(text, depths):
             required[element_id].append(f"{label}:{line}")
 
     # index.html still contains small inline boot scripts.  More importantly, this makes the
@@ -132,10 +225,21 @@ def main():
     parser = Scripts()
     parser.feed(html)
     inline = "\n".join(parser.parts)
+    inline_depths = scan("Resources/web/index.html (inline scripts)", inline)
     for element_id in registry_ids(inline):
         required[element_id].append("Resources/web/index.html (inline registry)")
-    for element_id, line in top_level_ids(inline):
+        registry.add(element_id)
+    for element_id, line in top_level_ids(inline, inline_depths):
         required[element_id].append(f"Resources/web/index.html (inline script line {line})")
+
+    # Before comparing, say whether there was anything to compare.  Everything above can come
+    # back empty — a renamed directory, a rewritten callback — and an empty answer here would
+    # otherwise print agreement and exit 0.
+    if len(registry) < REGISTRY_FLOOR:
+        fail(f"found {len(registry)} ids in the els registry, under the floor of {REGISTRY_FLOOR}: "
+             f"the literal array feeding els[id] = document.getElementById(id) is not in "
+             f"{JS_ROOT.relative_to(ROOT)} or in the inline scripts of "
+             f"{INDEX.relative_to(ROOT)} in the shape registry_ids() looks for")
 
     missing = sorted(set(required) - defined)
     if missing:
