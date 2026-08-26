@@ -97,6 +97,9 @@ enum Orchestrator {
         /// Paths this task may write, relative to `projectDir`. Unlike `serialize`, these are
         /// reserved from registration (including while queued) until every terminal outcome.
         var claims: [String] = []
+        /// Whether `claims` was present in task.json. An empty declared set means read-only;
+        /// absence means the write set is unknown, so L1 must retain its directory warning.
+        var claimsDeclared = false
         /// Absolute, canonical-root comparison keys frozen when the lease is registered. These
         /// are persisted because a claim must not change identity as its target comes into being.
         var claimKeys: [String] = []
@@ -650,6 +653,7 @@ enum Orchestrator {
         var plan: String?
         var serialize: [String] = []
         var claims: [String] = []
+        var claimsDeclared = false
     }
 
     /// A live task whose working directory intersects the one being dispatched. The task is a
@@ -764,13 +768,14 @@ enum Orchestrator {
             if !errors.isEmpty { return .bad(errors.joined(separator: "; ")) }
         }
         var claims: [String] = []
+        var claimsDeclared = false
         if let raw = obj["claims"] {
             guard let values = raw as? [Any] else {
-                return .bad("claims must be an array of 1–32 relative POSIX paths")
+                return .bad("claims must be an array of 0–32 relative POSIX paths")
             }
             var errors: [String] = []
-            if values.isEmpty || values.count > 32 {
-                errors.append("claims must contain 1–32 paths")
+            if values.count > 32 {
+                errors.append("claims must contain 0–32 paths")
             }
             var seen: Set<String> = []
             for (index, value) in values.enumerated() {
@@ -798,6 +803,7 @@ enum Orchestrator {
                 claims.append(path)
             }
             if !errors.isEmpty { return .bad(errors.joined(separator: "; ")) }
+            claimsDeclared = true
         }
         var permission: Permission?
         if let named = obj["permission_mode"] as? String, !named.isEmpty {
@@ -814,6 +820,7 @@ enum Orchestrator {
         made.permission = permission
         made.serialize = serialize
         made.claims = claims
+        made.claimsDeclared = claimsDeclared
         made.plan = (obj["plan"] as? String).flatMap {
             let text = $0.trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : text
@@ -893,6 +900,15 @@ enum Orchestrator {
         let secondPrefix = second == "/" ? "/" : second + "/"
         if first.hasPrefix(secondPrefix) { return first }
         return nil
+    }
+
+    /// Two explicit write declarations make L1 redundant when their frozen scopes do not meet.
+    /// The empty declaration is the useful edge: it positively says the task is read-only.
+    private static func declaredClaimsAreDisjoint(_ first: Task, _ second: Task) -> Bool {
+        guard first.claimsDeclared, second.claimsDeclared else { return false }
+        return !first.claimKeys.contains { claimed in
+            second.claimKeys.contains { sharedClaimPath(claimed, $0) != nil }
+        }
     }
 
     /// Pure dispatch-time claims scan. Unlike L1, queued tasks participate: a claim is a
@@ -1005,6 +1021,7 @@ enum Orchestrator {
             guard task.id != newTask.id,
                   task.state == .spawning || task.state == .briefed,
                   item.rootKey != newRoot,
+                  !declaredClaimsAreDisjoint(newTask, task),
                   let shared = sharedWorkspaceDirectory(newTask.projectDir, task.projectDir)
             else { return nil }
             return WorkspaceOverlap(task: task, sharedDir: shared)
@@ -1127,6 +1144,7 @@ enum Orchestrator {
                         rootSessionId: made.rootSessionId, rootLabel: made.rootLabel,
                         depth: depth, parentTaskId: made.parentTaskId, plan: made.plan,
                         serialize: made.serialize, claims: made.claims,
+                        claimsDeclared: made.claimsDeclared,
                         secretHash: hash(ofSecret: secret))
         task.claimKeys = freezeClaims(task.claims, projectDir: task.projectDir)
         if !task.serialize.isEmpty {
@@ -3106,6 +3124,11 @@ enum Orchestrator {
         return shape(task, rootTerminal: nil)
     }
 
+    /// Test seam for the GET representation, including optional fields whose absence is semantic.
+    static func recordForTesting(_ task: Task) -> [String: Any] {
+        shape(task, rootTerminal: nil)
+    }
+
     private static func record(of task: Task) -> [String: Any] {
         var rootTerminal: String?
         // The parent task first, when there is one. A dispatcher one level down is sitting in a
@@ -3158,7 +3181,7 @@ enum Orchestrator {
         if !child.isEmpty { out["child"] = child }
         if let summary = task.summary { out["summary"] = summary }
         if !task.artifacts.isEmpty { out["artifacts"] = task.artifacts }
-        if !task.claims.isEmpty { out["claims"] = task.claims }
+        if task.claimsDeclared { out["claims"] = task.claims }
         if let usage = task.usage {
             var counts: [String: Any] = [
                 "input": usage.input, "output": usage.output,
@@ -3237,7 +3260,7 @@ enum Orchestrator {
         out["permission"] = task.permission.rawValue
         if let v = task.plan { out["plan"] = v }
         if !task.serialize.isEmpty { out["serialize"] = task.serialize }
-        if !task.claims.isEmpty { out["claims"] = task.claims }
+        if task.claimsDeclared { out["claims"] = task.claims }
         if !task.claimKeys.isEmpty { out["claim_keys"] = task.claimKeys }
         if let v = task.queuedSecret { out["queued_secret"] = v }
         if let v = task.childTerminalId { out["child_terminal"] = v }
@@ -3286,12 +3309,14 @@ enum Orchestrator {
         task.serialize = (obj["serialize"] as? [String] ?? []).filter {
             StartPoints.modelName($0) == $0
         }
-        task.claims = (obj["claims"] as? [String] ?? []).filter { path in
+        let rawClaims = obj["claims"] as? [String]
+        task.claims = (rawClaims ?? []).filter { path in
             !path.isEmpty && path.count <= 1_024 && !path.hasPrefix("/")
                 && !path.split(separator: "/", omittingEmptySubsequences: false)
                     .contains(where: { $0 == ".." })
                 && !path.unicodeScalars.contains(where: { $0.value == 0 })
         }
+        task.claimsDeclared = rawClaims.map { $0.count == task.claims.count } ?? false
         let storedClaimKeys = (obj["claim_keys"] as? [String] ?? []).filter {
             $0.hasPrefix("/")
         }

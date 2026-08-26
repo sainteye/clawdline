@@ -963,7 +963,7 @@ Seven refusals, and a client should branch on all of them:
 | `code` | status | |
 |---|---|---|
 | `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
-| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an invalid `model`, `permission_mode`, `plan`, `claims`, or `serialize`. `claims` is 1…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
+| `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an invalid `model`, `permission_mode`, `plan`, `claims`, or `serialize`. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
 | `workspace_busy` | 409 | a live task from another definitely identified root reserved an equal, ancestor, or descendant claim. The error object carries `blocking_task`, `title`, nullable `root_label`, Unix-second `created`, absolute `conflict_paths`, and advisory `retry_after`. The rejected task is not registered and does not spend dispatch rate-limit budget |
 | `depth_exceeded` | 409 | **the caller is already as deep as this Mac goes.** A root's child may dispatch; that child's may not. `orchestrator_max_grandchildren` of `0` puts the floor back at one level. Not a retry — stop |
 | `over_capacity` | 429 | this dispatcher's slots are full (`orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child), or the whole Mac's are. Registered `queued` tasks count toward these limits even before a tab opens, preventing an unbounded queue. The error object carries `retry_after` in seconds, and `message` says which |
@@ -1027,16 +1027,27 @@ above. A same-root conflict is admitted and adds a warning beside the task:
               "message":"Task 3f9a21bc-… shares claimed paths with task a70c5e11-…: /Users/you/code/clawdline/Sources/Orchestrator.swift."}]}
 ```
 
+The wire field has three distinct states, preserved through the registry and all GET responses:
+
+| `claims` value | Meaning | Effect |
+|---|---|---|
+| one or more paths | declared write scopes | freezes and holds those lease keys |
+| `[]` | explicit read-only declaration | holds no lease, never conflicts or receives claims `409`, and participates in L1 silence |
+| field absent | unknown write scope | holds no lease and retains L1 directory warnings |
+
+`[]` gives read-only work a proactive, harmless way to say so. Silence now has only one meaning:
+both sides supplied declarations whose frozen scopes do not intersect; omission says nothing.
+
 If either task's root cannot be resolved, the dispatch is also admitted and the warning has the
 same fields and message with `code: "claims_overlap_unknown_root"`. An unknown root never has the
 authority to hard-block another task.
 
-Every GET record retains the declared `claims`. All terminal states release them, including a
-queued task that reaches `spawn_failed` in the serialization pump. A task with no `claims` is
-unchanged and has only the L1 directory-level warning described below. Claims protect only
-declaring tasks from one another and are a dispatch gate, not filesystem enforcement; the broker
-does not stop a child from writing outside its declaration. Cleanup, rollback, cancellation, and
-revert tasks must claim the paths they may change just like entry work does.
+Every GET record retains the declared `claims`, including an empty array; an absent declaration
+remains absent. All terminal states release non-empty leases, including a queued task that reaches
+`spawn_failed` in the serialization pump. A task whose field is absent keeps the L1 directory-level
+warning described below. Claims are a dispatch gate, not filesystem enforcement; the broker does
+not stop a child from writing outside its declaration. Cleanup, rollback, cancellation, and revert
+tasks must claim the paths they may change just like entry work does.
 
 A serialized task holds claims throughout `queued`, and that queued interval has no independent
 `timeout_minutes` clock. Its practical bound is the serialize blockers reaching a terminal state
@@ -1063,6 +1074,12 @@ warning never blocks or delays registration; with no overlaps the entire field i
 empty array. An idempotent retry uses this same response shape and recomputes currently active
 overlaps. Both identifiable roots also receive a best-effort typed line outside the request queue,
 so terminal delivery cannot delay the response.
+
+L1 omits a directory-overlap pair when both tasks have a `claims` field (including `[]`) and their
+frozen claim scopes do not intersect. That pair is absent both from the dispatch `warnings` array
+and from the typed lines sent to the two roots. If either task omitted `claims`, L1 warns exactly as
+before. Intersecting non-empty declarations are still handled first by claims arbitration, so a
+cross-root conflict between definitely identified roots remains `409 workspace_busy`.
 
 `queued` tasks are not active for this overlap scan: they have not opened a tab or touched a file.
 When a serialized task is promoted to `spawning`, the pump runs the scan against the active world

@@ -6178,8 +6178,11 @@ group("a task.json is read before a terminal is opened for it") {
     expect("a task may reserve relative write paths from dispatch",
            made(file(["claims": ["Sources", "docs/api.md"]]))?.claims,
            ["Sources", "docs/api.md"])
-    expect("an absent claims field preserves the old dispatch behavior",
-           made(file())?.claims, [])
+    check("an empty claims array is a positive read-only declaration",
+          made(file(["claims": []]))?.claims == []
+              && made(file(["claims": []]))?.claimsDeclared == true)
+    check("an absent claims field preserves an unknown write set",
+          made(file())?.claims == [] && made(file())?.claimsDeclared == false)
     expect("one that names a model carries it", made(file(["model": "haiku"]))?.model, "haiku")
     expect("and one that names how far it may go carries that",
            made(file(["permission_mode": "edits"]))?.permission, .edits)
@@ -6259,7 +6262,12 @@ group("a task.json is read before a terminal is opened for it") {
           everyProblem.contains("serialize[1]") && everyProblem.contains("serialize[2]")
               && everyProblem.contains("serialize[3]"))
     check("claims must be an array", refused(file(["claims": "Sources"])))
-    check("claims rejects an empty reservation", refused(file(["claims": []])))
+    check("claims range errors describe the accepted zero-through-thirty-two range",
+          refusal(file(["claims": "Sources"]))?.contains("0–32") == true
+              && refusal(file(["claims": (0...32).map { "path-\($0)" }]))?
+                  .contains("0–32") == true)
+    check("claims accepts an empty declaration for read-only work",
+          !refused(file(["claims": []])))
     check("claims accepts at most thirty-two paths",
           refused(file(["claims": (0...32).map { "path-\($0)" }])))
     check("claims names the index of a non-string path",
@@ -6434,12 +6442,18 @@ group("workspace overlap follows the whole dispatch tree") {
     let firstRoot = "11111111-2222-3333-4444-555555555555"
     let secondRoot = "66666666-7777-8888-9999-aaaaaaaaaaaa"
     func task(_ id: String, dir: String, root: String?, state: Orchestrator.State = .briefed,
-              created: TimeInterval = 1) -> Orchestrator.Task {
-        Orchestrator.Task(id: id, state: state, kind: "custom", title: "a task",
-                          assistant: .claude, projectDir: dir, timeoutMinutes: 30,
-                          created: Date(timeIntervalSince1970: created),
-                          rootSessionId: root,
-                          secretHash: String(repeating: "0", count: 64))
+              created: TimeInterval = 1, claims: [String]? = nil) -> Orchestrator.Task {
+        var made = Orchestrator.Task(id: id, state: state, kind: "custom", title: "a task",
+                                     assistant: .claude, projectDir: dir, timeoutMinutes: 30,
+                                     created: Date(timeIntervalSince1970: created),
+                                     rootSessionId: root,
+                                     secretHash: String(repeating: "0", count: 64))
+        if let claims {
+            made.claims = claims
+            made.claimsDeclared = true
+            made.claimKeys = Orchestrator.freezeClaims(claims, projectDir: dir)
+        }
+        return made
     }
 
     let otherID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -6450,6 +6464,67 @@ group("workspace overlap follows the whole dispatch tree") {
     let newcomer = task(taskID, dir: "/a/b/c/d", root: firstRoot)
     let across = Orchestrator.workspaceOverlaps(for: newcomer, among: [other])
     expect("different roots warn", across.count, 1)
+    let declaredNewcomer = task(taskID, dir: "/a/b", root: firstRoot,
+                                claims: ["Sources"])
+    let declaredOther = task(otherID, dir: "/a/b/c", root: secondRoot,
+                             claims: ["Tests"])
+    let disjointOverlaps = Orchestrator.workspaceOverlaps(for: declaredNewcomer,
+                                                           among: [declaredOther])
+    expect("disjoint declarations silence the directory warning",
+           disjointOverlaps.count, 0)
+    check("neither side gets a typed line for a disjoint declared pair",
+          Orchestrator.workspaceOverlapNotices(newTask: declaredNewcomer,
+                                               overlaps: disjointOverlaps).isEmpty)
+    let intersectingUnknown = task(otherID, dir: "/a/b/c", root: nil,
+                                   claims: ["Sources"])
+    let intersectingNewcomer = task(taskID, dir: "/a/b", root: firstRoot,
+                                    claims: ["c/Sources"])
+    expect("intersecting declarations with an unknown root still warn",
+           Orchestrator.workspaceOverlaps(for: intersectingNewcomer,
+                                          among: [intersectingUnknown]).count, 1)
+    let readOnlyNewcomer = task(taskID, dir: "/a/b", root: firstRoot, claims: [])
+    let readOnlyOther = task(otherID, dir: "/a/b/c", root: secondRoot, claims: [])
+    expect("a declaration paired with read-only is quiet",
+           Orchestrator.workspaceOverlaps(for: declaredNewcomer,
+                                          among: [readOnlyOther]).count, 0)
+    expect("two read-only declarations are quiet",
+           Orchestrator.workspaceOverlaps(for: readOnlyNewcomer,
+                                          among: [readOnlyOther]).count, 0)
+    expect("a declaration paired with an absent field still warns",
+           Orchestrator.workspaceOverlaps(for: declaredNewcomer, among: [other]).count, 1)
+    let absentOverlaps = Orchestrator.workspaceOverlaps(for: declaredNewcomer, among: [other])
+    let absentNotices = Orchestrator.workspaceOverlapNotices(newTask: declaredNewcomer,
+                                                              overlaps: absentOverlaps)
+    check("both sides get typed lines when one claims field is absent",
+          absentNotices.count == 2
+              && absentNotices.contains {
+                  $0.rootSessionID == firstRoot && $0.taskID == declaredNewcomer.id
+              }
+              && absentNotices.contains {
+                  $0.rootSessionID == secondRoot && $0.taskID == other.id
+              })
+    expect("two absent fields still warn",
+           Orchestrator.workspaceOverlaps(for: newcomer, among: [other]).count, 1)
+    let mixedDisjoint = task("10101010-2020-3030-4040-505050505050",
+                             dir: "/a/b/c", root: secondRoot, claims: ["Tests"])
+    let mixedSameRoot = task("20202020-3030-4040-5050-606060606060",
+                             dir: "/a/b", root: firstRoot, claims: ["Sources"])
+    let mixed = Orchestrator.workspaceOverlaps(
+        for: declaredNewcomer, among: [mixedDisjoint, other, mixedSameRoot]
+    )
+    check("silence is decided per pair within one dispatch",
+          mixed.map { $0.task.id } == [other.id])
+    let mixedNotices = Orchestrator.workspaceOverlapNotices(newTask: declaredNewcomer,
+                                                             overlaps: mixed)
+    check("typed lines contain only the warning pair from a mixed dispatch",
+          mixedNotices.count == 2
+              && mixedNotices.allSatisfy {
+                  $0.taskID != mixedDisjoint.id && $0.taskID != mixedSameRoot.id
+                      && !$0.line.contains(mixedDisjoint.id.prefix(8))
+                      && !$0.line.contains(mixedSameRoot.id.prefix(8))
+              }
+              && mixedNotices.contains { $0.taskID == declaredNewcomer.id }
+              && mixedNotices.contains { $0.taskID == other.id })
     expect("different roots in unrelated directories remain quiet",
            Orchestrator.workspaceOverlaps(
                for: task(taskID, dir: "/unrelated", root: firstRoot), among: [other]
@@ -6563,6 +6638,7 @@ group("declared write claims are reserved across dispatch trees") {
                                      created: Date(timeIntervalSince1970: created),
                                      rootSessionId: root, rootLabel: rootLabel,
                                      serialize: serialize, claims: claims,
+                                     claimsDeclared: true,
                                      secretHash: String(repeating: "0", count: 64))
         made.claimKeys = Orchestrator.freezeClaims(claims, projectDir: dir)
         return made
@@ -6676,14 +6752,40 @@ group("declared write claims are reserved across dispatch trees") {
                for: task(taskID, root: firstRoot, claims: ["Sources"], serialize: ["build"]),
                among: [queuedHolder]
            ).count, 1)
-    expect("a task that declares no claims has exactly the old behavior",
+    let readOnly = task(taskID, root: firstRoot, claims: [])
+    expect("a read-only task cannot conflict with a live lease",
            Orchestrator.claimsOverlaps(
-               for: task(taskID, root: firstRoot, claims: []), among: [holder]
+               for: readOnly, among: [holder]
            ).count, 0)
+    expect("a live lease cannot conflict with a read-only task either",
+           Orchestrator.claimsOverlaps(for: exact, among: [readOnly]).count, 0)
+    check("a read-only task holds no lease keys while retaining its declaration",
+          readOnly.claimsDeclared && readOnly.claimKeys.isEmpty)
 
     let roundTrip = Orchestrator.task(from: Orchestrator.stored(exact))
     check("claims and their frozen comparison keys survive the registry",
           roundTrip?.claims == ["Sources"] && roundTrip?.claimKeys == ["/repo/Sources"])
+    let readOnlyRoundTrip = Orchestrator.task(from: Orchestrator.stored(readOnly))
+    var absent = Orchestrator.Task(id: "abababab-cdcd-efef-0101-232323232323",
+                                   state: .briefed, kind: "custom", title: "unknown scope",
+                                   assistant: .claude, projectDir: "/repo", timeoutMinutes: 30,
+                                   created: Date(timeIntervalSince1970: 2),
+                                   rootSessionId: firstRoot,
+                                   secretHash: String(repeating: "0", count: 64))
+    absent.claims = []
+    let absentRoundTrip = Orchestrator.task(from: Orchestrator.stored(absent))
+    check("the registry round-trip preserves empty versus absent claims",
+          readOnlyRoundTrip?.claimsDeclared == true && readOnlyRoundTrip?.claims == []
+              && absentRoundTrip?.claimsDeclared == false && absentRoundTrip?.claims == [])
+    var damagedRecord = Orchestrator.stored(exact)
+    damagedRecord["claims"] = ["/invalid-absolute-claim"]
+    let damagedRoundTrip = Orchestrator.task(from: damagedRecord)
+    check("a stored declaration filtered down to nothing becomes unknown, not read-only",
+          damagedRoundTrip?.claims == [] && damagedRoundTrip?.claimsDeclared == false)
+    let readOnlyRecord = Orchestrator.recordForTesting(readOnly)
+    let absentRecord = Orchestrator.recordForTesting(absent)
+    check("GET records show an empty array while omitting an absent declaration",
+          readOnlyRecord["claims"] as? [String] == [] && absentRecord["claims"] == nil)
 
     let fm = FileManager.default
     let physicalRoot = "/private/tmp/clawdline-claim-freeze-\(UUID().uuidString)"

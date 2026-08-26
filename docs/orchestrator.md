@@ -305,7 +305,7 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `model` | optional. `[a-z0-9._-]`, at most 64 characters, not starting with `-`. Absent means that assistant's own default |
 | `permission_mode` | optional. `ask` · `edits` · `full`. Absent takes `orchestrator_permission`, which is also the ceiling — asking for more than it gives you it instead |
 | `plan` | optional, ≤ 4 KiB. The whole graph this task is one node of |
-| `claims` | optional array of 1…32 unique POSIX paths relative to `project_dir`; each is 1…1024 characters, may not start with `/`, and may not contain a `..` component. A directory claim covers its whole subtree |
+| `claims` | optional array of 0…32 unique POSIX paths relative to `project_dir`; each is 1…1024 characters, may not start with `/`, and may not contain a `..` component. A directory claim covers its whole subtree; `[]` explicitly declares read-only work |
 | `serialize` | optional array of 0…4 unique operation names. Each uses the `model` token rule: 1…64 characters from `[a-z0-9._-]`, not starting with `-` |
 | `project_dir` | absolute, exists, and is a directory — checked at dispatch, not at planning time |
 | `title` | ≤ 200 characters |
@@ -363,6 +363,18 @@ ancestors and descendants: `Sources` covers
 when two tasks use nested project directories — `project_dir=/repo` plus `packages/app/Sources`
 is the same reservation as `project_dir=/repo/packages/app` plus `Sources`.
 
+The field has three states, and the registry and every GET record preserve the distinction:
+
+| `claims` in `task.json` | Meaning | Lease and L1 behavior |
+|---|---|---|
+| one or more paths | the task declares exactly these write scopes | reserves their frozen keys; disjoint declarations can silence L1 |
+| `[]` | the task positively declares that it is read-only | reserves no lease, never conflicts or receives `409 workspace_busy`, and can silence L1 |
+| absent | the task's write set is unknown | reserves no lease; L1 keeps its directory warning |
+
+An empty array gives a read-only task an active, harmless declaration. Silence therefore has only
+one meaning: both tasks supplied enough scope information to prove their frozen claim sets do not
+intersect. Merely omitting the field never makes that assertion.
+
 The check and registration happen atomically as soon as the dispatch has validated. A serialized
 task reserves its claims for its entire time in `queued`; promotion is not a second gap where
 another root can enter. A live claim from a different root refuses the new dispatch immediately
@@ -389,8 +401,8 @@ Cleanup work is work too: a separately dispatched cancel, revert, rollback, or r
 declare every path it may change just as an entering task does. That is what lets it collect only
 the state its own declared scope covers instead of quietly damaging another root during exit.
 
-Claims have an intentionally honest boundary. They protect only tasks that declare claims from
-one another. A task with no `claims` keeps the old behavior and receives only L1's directory-level
+Claims have an intentionally honest boundary. Non-empty declarations protect declaring tasks from
+one another. An absent `claims` field keeps the old behavior and receives L1's directory-level
 visibility; the broker does not infer a write set from instructions. Claims are a dispatch gate,
 not filesystem enforcement, so a child can still write outside what it declared. Dispatch-time
 refusal is valuable precisely because it removes the human negotiation window in which both
@@ -459,6 +471,12 @@ the shared writable descendant: if an active task uses `/Users/you/code` and the
 `/Users/you/code/clawdline`, both say `/Users/you/code/clawdline`. Tree identity follows
 `parent_task` links back to the same root, so a depth-two task does not warn about its parent or
 siblings. Without such a link, a null root session id is unknown and the overlap is reported.
+
+There is one deliberate silence rule for a directory-overlapping pair: when both tasks have a
+`claims` field (including `[]`) and their frozen claim scopes do not intersect, neither the
+dispatch response nor either root's typed line reports that pair. If either field is absent, L1
+warns as before. Intersecting non-empty declarations still go through claims arbitration first,
+including `409 workspace_busy` across two definitely identified roots.
 
 The new task's root also gets one aggregate `[clawdline]` line for all overlaps, while every other
 root that can be found gets the line concerning its task. A root with a null session id cannot be
