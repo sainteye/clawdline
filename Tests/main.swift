@@ -6879,6 +6879,67 @@ group("a numbered list somebody typed is not a menu") {
     check("a bare prompt is not a menu", !SessionState.isChoosing("\u{276F} "))
 }
 
+group("rows with the session's own output under them are scrollback, not a dialog") {
+    // **This reader did it to itself, 2026-08-26.** It pasted a picture of a picker into a message
+    // so somebody could see the shape being discussed; the terminal drew the message; and every
+    // guard in here passed on the drawing. An indented caret, a rule above it, numbered rows with
+    // checkboxes and a `Submit` under them — so a session that was busy working was reported as
+    // waiting, and a question nobody had asked went to a phone with buttons under it. Two of its
+    // "options" were columns of unrelated prose that happened to line up.
+    //
+    // A dialog is a thing the session has stopped in front of. Nothing can be printed below it
+    // until it is answered, so a turn marker underneath settles it.
+    let quoted = """
+    \u{23FA} 這一按把 bug 抓出來了。畫面現在是：
+
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+      \u{276F} 1. [ ] Tests
+        2. [\u{2714}] Docs
+        3. [ ] Refactor
+           Submit
+
+    \u{23FA} 確認了。j 不在輸入列放行的鍵裡，但 Tab 在。
+
+    · Finagling… (2m 59s · \u{2193} 10.3k tokens)
+    """
+    check("a quoted picker with a turn under it is not a question",
+          SessionState.menu(quoted, hookWaiting: true) == nil)
+    expect("and the session reads as what it is actually doing",
+           SessionState.read(quoted, hookWaiting: true),
+           .working("Finagling… (2m 59s · \u{2193} 10.3k tokens)"))
+
+    // The same rows with nothing under them are the dialog they look like. This is the half that
+    // keeps the rule honest: it must reject what is quoted without rejecting what is drawn.
+    let drawn = """
+    \u{23FA} 這一按把 bug 抓出來了。畫面現在是：
+
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+      \u{276F} 1. [ ] Tests
+        2. [\u{2714}] Docs
+        3. [ ] Refactor
+           Submit
+
+    Enter to select · ↑/↓ to navigate · Esc to cancel
+    """
+    guard let live = SessionState.menu(drawn, hookWaiting: true) else {
+        check("rows with only a hint under them are still a dialog", false); return
+    }
+    expect("with every row", live.options.count, 3)
+    expect("and its button", live.submit?.label, "Submit")
+
+    // A stale spinner **above** a dialog is an ordinary sight — Claude Code does not always erase
+    // the line it was drawing when the question arrives — and the ordering in `read` exists for
+    // exactly that. Only what sits below the rows is asked about.
+    let staleAbove = """
+    ✻ Generating… (9s)
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+      \u{276F} 1. Yes
+        2. No
+    """
+    check("a spinner above the rows does not disqualify them",
+          SessionState.isChoosing(staleAbove, hookWaiting: true))
+}
+
 group("a menu read as options a finger can hit") {
     // The shape a permission request actually arrives in: inside its box, one row carrying the
     // caret, the far wall of the dialog jammed against the longest label.
@@ -7006,6 +7067,23 @@ group("an unnumbered picker is answered by walking the highlight, not by typing 
     check("a phone still cannot send j",
           Targets.answer(0x6a, to: session) == "That is not a key this can send.")
     check("nor k", Targets.answer(0x6b, to: session) == "That is not a key this can send.")
+}
+
+group("a multi-select's button is walked to with Tab, because its last row eats anything else") {
+    // Measured against a real dialog on 2026-08-26, and it is the reason this constant exists
+    // rather than being written inline. `j` is bound to "next row" and was the obvious step; it
+    // walked four rows and then typed `jjjj` into the question's own text box, because the last
+    // row of an AskUserQuestion is `Type something` — an input — and a focused input passes only
+    // `up`, `down`, `escape`, `tab` and `return` through, swallowing everything else as typing.
+    expect("the step is Tab", Targets.submitStep, UInt8(0x09))
+    check("and not the row-navigation key it looks like it should be",
+          Targets.submitStep != 0x6a)
+
+    // Tab was already the one non-digit key a phone may send, so walking with it widens nothing.
+    let session = TargetSession(backend: .tmux, id: "%nope%", name: "x", tty: "/dev/ttys99",
+                                windowIndex: 0, tabIndex: 0, assistant: .claude)
+    check("so the allowlist did not have to change",
+          Targets.answer(Targets.submitStep, to: session) != "That is not a key this can send.")
 }
 
 group("the Submit a multi-select puts under its rows is a row of its own") {

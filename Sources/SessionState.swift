@@ -174,6 +174,7 @@ enum SessionState: Equatable {
         var options: [Menu.Option] = []
         var carets = 0
         var firstOptionLine: Int? = nil
+        var lastOptionLine: Int? = nil
         for (index, captured) in tail.enumerated() where index >= dialogStart {
             let line = captured.element
             guard let row = option(line) else { continue }
@@ -186,6 +187,7 @@ enum SessionState: Equatable {
             let selected = row.caret && (row.indented || index == flushLeftSelection)
             if selected { carets += 1 }
             if firstOptionLine == nil { firstOptionLine = captured.offset }
+            lastOptionLine = index
             options.append(Menu.Option(number: row.number, label: withoutSidePanel(row.label),
                                        detail: detail(under: captured.offset, in: lines,
                                                       stoppingAt: submit?.line)
@@ -195,6 +197,21 @@ enum SessionState: Equatable {
         // The caret has to be *somewhere* in the dialog, and the button counts: see above.
         guard carets >= 1 || submit?.selected == true, options.count >= 2 else {
             return plainMenu(tail, in: lines, hookWaiting: hookWaiting)
+        }
+
+        // **Rows with the session's own output under them are scrollback.** A dialog is a thing
+        // the session has stopped in front of, so nothing can be printed below it until it is
+        // answered. Quoted rows are not: on 2026-08-26 this reader pasted a picture of a picker
+        // into its own message, the terminal drew it, and every guard here passed — an indented
+        // caret, a rule above it, numbered rows with checkboxes and a `Submit` — so a session that
+        // was busy working reported `waiting`, and a question nobody had asked, assembled out of
+        // two columns of prose, went to somebody's phone with buttons under it.
+        //
+        // Below the rows a real dialog draws its hint, its frame, and the composer if anybody has
+        // typed into it. It never draws another turn.
+        if let lastOption = lastOptionLine,
+           tail.dropFirst(lastOption + 1).contains(where: { isTurnMarker($0.element) }) {
+            return nil
         }
 
         let menuQuestion: String? = firstOptionLine.flatMap {
@@ -405,6 +422,23 @@ enum SessionState: Equatable {
         guard !label.isEmpty else { return nil }
         return (indent, i, label, caret)
     }
+
+    /// Whether this line is one Claude Code marks a turn of its own with: an answer it has begun
+    /// writing, or the clock on one it is still writing. Both mean the session went on doing
+    /// something, which a session stopped in front of a picker cannot have done.
+    ///
+    /// The glyphs are ``Activity``'s spinner set plus the bullet Claude Code heads an answer with.
+    /// Only what sits *below* the rows is asked about: a stale spinner **above** a dialog is an
+    /// ordinary sight and is what the ordering in ``read(_:assistant:hookWaiting:)`` exists for.
+    private static func isTurnMarker(_ raw: String) -> Bool {
+        guard let glyph = raw.trimmingCharacters(in: .whitespaces).first else { return false }
+        return turnMarkers.contains(glyph)
+    }
+
+    private static let turnMarkers: Set<Character> = [
+        "⏺",  // an answer, or a tool call
+        "✳", "✻", "✽", "✢", "✶", "✱", "✴", "◐", "◑", "◒", "◓", "◴", "◵", "◶", "◷",
+    ]
 
     /// Drawn in the pointer's cell when a list runs past the window. Not a selection.
     private static let scrollArrows: Set<Character> = ["↓", "↑"]

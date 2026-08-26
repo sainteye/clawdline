@@ -217,12 +217,18 @@ enum Targets {
     /// button below the list. So this is not a keystroke the phone can name — it is a short walk
     /// this end has to make, one row at a time, reading the screen after each step.
     ///
-    /// Stepping is `j`, the same key ``highlight(row:of:on:)`` uses; from the last row it moves on
-    /// to the button rather than wrapping. **The check comes before each step, not after**, because
-    /// one `j` too many walks off the button again and out of the dialog entirely.
+    /// **The step is Tab, and `j` was wrong.** `j` is bound to "next row" and looked like the
+    /// obvious choice; measured on 2026-08-26 against a real dialog, it walked four rows and then
+    /// typed `jjjj` into the question's own text box. The last row of an `AskUserQuestion` is
+    /// `Type something`, an input, and a focused input passes only a named few keys through —
+    /// `up`, `down`, `escape`, `tab`, `return` — and swallows everything else as typing. Tab is on
+    /// that list, moves to the next row, lands on the button from the last one, **and does nothing
+    /// once it is there**, so overshooting is not a failure mode it has. It was already the one
+    /// non-digit key this app was allowed to send.
     ///
-    /// The loop is bounded by the rows it can see plus two, so a dialog that stops responding
-    /// costs a few captures and then gives up with the screen as it was.
+    /// The check still comes before each step rather than after, and the loop is bounded by the
+    /// rows it can see plus two, so a dialog that stops responding costs a few captures and then
+    /// gives up with the screen as it was.
     static func submitMenu(on session: TargetSession) -> String? {
         var steps = 0
         while true {
@@ -238,11 +244,15 @@ enum Targets {
             guard steps <= menu.options.count + 1 else {
                 return "The highlight would not move onto Submit."
             }
-            if let failure = keystroke([0x6a], to: session) { return failure }   // j
+            if let failure = keystroke([submitStep], to: session) { return failure }
             steps += 1
             Thread.sleep(forTimeInterval: 0.12)
         }
     }
+
+    /// The key that walks a multi-select's focus toward its button — see ``submitMenu(on:)`` for
+    /// why it is this one and not the row-navigation key it looks like it should be.
+    static let submitStep: UInt8 = 0x09   // Tab
 
     /// Press Return, but only once the screen shows the digit landed where it was meant to.
     ///
