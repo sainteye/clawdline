@@ -553,6 +553,31 @@ handoff 路由）。
 
 ---
 
+## 8. Schedule——讓 task 模板到點派工
+
+只有使用者要 Clawdline 自己週期派工時才用。把一份嚴格 JSON 寫到
+`~/.config/clawdline/schedules/<小寫-uuid>.json`；從
+[`docs/schedules.md`](../../docs/schedules.md) 的完整 schema 開始，不要自創欄位。
+`when.at` 是這台 Mac 的本地 `HH:MM`，`days` 是 `daily` 或 weekday 名稱。
+`close_tab` 要明講選擇：`on_success` 會把失敗 tab 留給人接手，`always` 任何結果都收，
+`never` 不做排程專屬的立即關閉，沿用現有 orchestrator linger。
+
+寫完先用 read route 驗格式：要找到它的 `id`；若看到 `state` 是 `invalid`，先停下來回報該列的
+`error`。只有格式有效才手動跑一次：
+
+```bash
+curl -s "http://127.0.0.1:$PORT/v1/orchestrator/schedules" \
+  -H "X-Clawdline-Orchestrator: $TOKEN"
+curl -s -X POST \
+  "http://127.0.0.1:$PORT/v1/orchestrator/schedules/<schedule-id>/run" \
+  -H "X-Clawdline-Orchestrator: $TOKEN"
+```
+
+要讀 dispatch 回應與 task record；不能只因為檔案存在就說安裝驗過。也要把誠實界線告訴使用者：
+app 沒開就不會觸發，重開後也只在 `catch_up_hours` 內補課。
+
+---
+
 ## 一個完整的例子——叫 codex 畫一張這個專案的肖像
 
 使用者說：「幫我叫 codex 畫一張這個 project 的樣子，中世紀手繪風格。」

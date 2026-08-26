@@ -87,6 +87,362 @@ let minimalPack = """
 
 print("Clawdline tests")
 
+// MARK: - Scheduled dispatches
+
+group("schedule files are strict and carry an ordinary task template") {
+    let id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    let base: [String: Any] = [
+        "clawdline_schedule": 1,
+        "schedule_id": id,
+        "title": "publish the blog",
+        "when": ["at": "23:45", "days": ["mon", "wed", "fri"]],
+        "task": [
+            "assistant": "codex", "model": "gpt-5.6-sol", "project_dir": "/tmp",
+            "title": "publish", "instructions": "publish the next post",
+            "claims": ["posts"], "timeout_minutes": 45,
+        ],
+        "enabled": true,
+    ]
+    switch Orchestrator.schedule(from: base, filename: "\(id).json", isDirectory: { $0 == "/tmp" }) {
+    case .bad(let why):
+        check("a valid schedule parses", false, why)
+    case .ok(let schedule):
+        expect("the default close policy is on-success", schedule.closeTab, .onSuccess)
+        expect("the default catch-up window is six hours", schedule.catchUpHours, 6)
+        expect("the default failure notification is on", schedule.notifyOnFailure, true)
+        expect("weekday names become Calendar weekday numbers", schedule.weekdays, Set([2, 4, 6]))
+    }
+    for (name, mutate) in [
+        ("wrong schema version", { (value: inout [String: Any]) in value["clawdline_schedule"] = 2 }),
+        ("unknown top-level field", { (value: inout [String: Any]) in value["surprise"] = true }),
+        ("wrong filename", { (value: inout [String: Any]) in value["schedule_id"] = UUID().uuidString.lowercased() }),
+        ("empty title", { (value: inout [String: Any]) in value["title"] = "" }),
+        ("oversized title", { (value: inout [String: Any]) in value["title"] = String(repeating: "x", count: 121) }),
+        ("unknown when field", { (value: inout [String: Any]) in value["when"] = ["at": "23:45", "days": "daily", "zone": "UTC"] }),
+        ("missing days", { (value: inout [String: Any]) in value["when"] = ["at": "23:45"] }),
+        ("empty days", { (value: inout [String: Any]) in value["when"] = ["at": "23:45", "days": []] }),
+        ("unknown task field", { (value: inout [String: Any]) in
+            var task = value["task"] as! [String: Any]; task["shell"] = "oops"; value["task"] = task
+        }),
+        ("bad minute", { (value: inout [String: Any]) in value["when"] = ["at": "23:60", "days": "daily"] }),
+        ("unknown weekday", { (value: inout [String: Any]) in value["when"] = ["at": "23:45", "days": ["monday"]] }),
+        ("duplicate day", { (value: inout [String: Any]) in value["when"] = ["at": "23:45", "days": ["mon", "mon"]] }),
+        ("numeric enabled", { (value: inout [String: Any]) in value["enabled"] = 1 }),
+        ("missing enabled", { (value: inout [String: Any]) in value.removeValue(forKey: "enabled") }),
+        ("unknown close policy", { (value: inout [String: Any]) in value["close_tab"] = "later" }),
+        ("boolean catch-up", { (value: inout [String: Any]) in value["catch_up_hours"] = true }),
+        ("oversized catch-up", { (value: inout [String: Any]) in value["catch_up_hours"] = 169 }),
+        ("negative catch-up", { (value: inout [String: Any]) in value["catch_up_hours"] = -1 }),
+        ("numeric notification", { (value: inout [String: Any]) in value["notify_on_failure"] = 1 }),
+        ("non-string optional task field", { (value: inout [String: Any]) in
+            var task = value["task"] as! [String: Any]; task["model"] = 7; value["task"] = task
+        }),
+        ("bad assistant", { (value: inout [String: Any]) in
+            var task = value["task"] as! [String: Any]; task["assistant"] = "shell"; value["task"] = task
+        }),
+        ("missing instructions", { (value: inout [String: Any]) in
+            var task = value["task"] as! [String: Any]; task.removeValue(forKey: "instructions"); value["task"] = task
+        }),
+        ("absolute claim", { (value: inout [String: Any]) in
+            var task = value["task"] as! [String: Any]; task["claims"] = ["/tmp"]; value["task"] = task
+        }),
+        ("duplicate serialization token", { (value: inout [String: Any]) in
+            var task = value["task"] as! [String: Any]; task["serialize"] = ["deploy", "deploy"]; value["task"] = task
+        }),
+        ("bad permission", { (value: inout [String: Any]) in
+            var task = value["task"] as! [String: Any]; task["permission_mode"] = "sudo"; value["task"] = task
+        }),
+        ("zero timeout", { (value: inout [String: Any]) in
+            var task = value["task"] as! [String: Any]; task["timeout_minutes"] = 0; value["task"] = task
+        }),
+        ("malformed deliverables", { (value: inout [String: Any]) in
+            var task = value["task"] as! [String: Any]; task["deliverables"] = [7]; value["task"] = task
+        }),
+    ] {
+        var broken = base
+        mutate(&broken)
+        if case .ok = Orchestrator.schedule(from: broken, filename: "\(id).json",
+                                            isDirectory: { $0 == "/tmp" }) {
+            check("rejects \(name)", false)
+        } else {
+            check("rejects \(name)", true)
+        }
+    }
+}
+
+group("schedule fire arithmetic crosses midnight and filters days") {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let formatter = ISO8601DateFormatter()
+    func date(_ value: String) -> Date { formatter.date(from: value)! }
+    let daily = Orchestrator.Schedule(id: "a", title: "a", hour: 23, minute: 45,
+        weekdays: nil, taskTemplate: [:], enabled: true, closeTab: .onSuccess,
+        catchUpHours: 6, notifyOnFailure: true)
+    expect("after midnight sees yesterday's fire",
+           Orchestrator.latestFire(of: daily, at: date("2026-08-26T00:15:00Z"), calendar: calendar),
+           date("2026-08-25T23:45:00Z"))
+    let monday = Orchestrator.Schedule(id: "b", title: "b", hour: 9, minute: 0,
+        weekdays: Set([2]), taskTemplate: [:], enabled: true, closeTab: .onSuccess,
+        catchUpHours: 6, notifyOnFailure: true)
+    expect("Tuesday looks back to the selected Monday",
+           Orchestrator.latestFire(of: monday, at: date("2026-08-25T10:00:00Z"), calendar: calendar),
+           date("2026-08-24T09:00:00Z"))
+}
+
+group("catch-up, active-task and close-tab policies are explicit") {
+    let fire = Date(timeIntervalSince1970: 1_000_000)
+    expect("a fire inside the catch-up window runs",
+           Orchestrator.scheduleAction(now: fire.addingTimeInterval(5 * 3600), fire: fire,
+                                       catchUpHours: 6, lastRunCreated: nil,
+                                       lastRunTerminal: nil), .run)
+    expect("a fire outside the window is missed",
+           Orchestrator.scheduleAction(now: fire.addingTimeInterval(7 * 3600), fire: fire,
+                                       catchUpHours: 6, lastRunCreated: nil,
+                                       lastRunTerminal: nil), .missed)
+    expect("the same occurrence does not run twice",
+           Orchestrator.scheduleAction(now: fire, fire: fire, catchUpHours: 6,
+                                       lastRunCreated: fire, lastRunTerminal: true),
+           .alreadyHandled)
+    expect("an older still-running occurrence blocks overlap",
+           Orchestrator.scheduleAction(now: fire, fire: fire, catchUpHours: 6,
+                                       lastRunCreated: fire.addingTimeInterval(-86400),
+                                       lastRunTerminal: false), .active)
+    let now = Date()
+    check("on-success closes a successful child immediately",
+          Orchestrator.scheduledCloseAt(policy: .onSuccess, outcome: .success,
+                                        now: now, hasChild: true) == now)
+    check("on-success leaves a failed child for takeover",
+          Orchestrator.scheduledCloseAt(policy: .onSuccess, outcome: .failure,
+                                        now: now, hasChild: true) == nil)
+    check("always closes every terminal outcome",
+          Orchestrator.scheduledCloseAt(policy: .always, outcome: .timeout,
+                                        now: now, hasChild: true) == now)
+    expect("never uses the existing linger instead of closing immediately",
+           Orchestrator.scheduledCloseAt(policy: .never, outcome: .success,
+                                         now: now, hasChild: true, linger: 180),
+           now.addingTimeInterval(180))
+    check("a schedule never closes a tab that was never opened",
+          Orchestrator.scheduledCloseAt(policy: .always, outcome: .success,
+                                        now: now, hasChild: false) == nil)
+    check("never honours the global keep-tabs setting",
+          Orchestrator.scheduledCloseAt(policy: .never, outcome: .success,
+                                        now: now, hasChild: true, linger: -1) == nil)
+    check("never still closes an unbriefed failed spawn when linger is enabled",
+          Orchestrator.scheduledCloseAt(policy: .never, outcome: .spawnFailed,
+                                        now: now, hasChild: true, linger: 180,
+                                        briefed: false) == now)
+    expect("zero-hour catch-up still has its one-minute floor",
+           Orchestrator.scheduleAction(now: fire.addingTimeInterval(60), fire: fire,
+                                       catchUpHours: 0, lastRunCreated: nil,
+                                       lastRunTerminal: nil), .run)
+    expect("and expires immediately after that minute",
+           Orchestrator.scheduleAction(now: fire.addingTimeInterval(61), fire: fire,
+                                       catchUpHours: 0, lastRunCreated: nil,
+                                       lastRunTerminal: nil), .missed)
+
+    let scheduleID = "dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbb"
+    let row: [String: Any] = [
+        "id": "cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa", "state": "success",
+        "kind": "custom", "title": "scheduled", "assistant": "codex",
+        "project_dir": "/tmp", "timeout_minutes": 30,
+        "created": now.timeIntervalSince1970, "secret_hash": Orchestrator.hash(ofSecret: "x"),
+        "artifacts": [], "schedule_id": scheduleID, "schedule_close_tab": "always",
+        "schedule_notify_failure": false,
+    ]
+    let restored = Orchestrator.task(from: row)!
+    expect("the optional schedule id survives registry loading", restored.scheduleID, scheduleID)
+    expect("and appears in the public task record",
+           Orchestrator.recordForTesting(restored)["schedule_id"] as? String, scheduleID)
+    expect("the originating close policy survives registry storage",
+           Orchestrator.stored(restored)["schedule_close_tab"] as? String, "always")
+}
+
+group("bad schedule files are isolated and the routes use orchestrator envelopes") {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-schedules-\(UUID().uuidString)")
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+        Orchestrator.scheduleDirectoryOverrideForTesting = nil
+    }
+    let id = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff"
+    let valid: [String: Any] = [
+        "clawdline_schedule": 1, "schedule_id": id, "title": "nightly",
+        "when": ["at": "01:30", "days": "daily"],
+        "task": ["assistant": "codex", "project_dir": "/tmp",
+                 "instructions": "do the nightly work"],
+        "enabled": true,
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: valid)
+    try! data.write(to: directory.appendingPathComponent("\(id).json"))
+    try! Data("not json".utf8).write(to: directory.appendingPathComponent("broken.json"))
+    Orchestrator.scheduleDirectoryOverrideForTesting = directory
+    expect("one bad file does not hide its valid neighbor", Orchestrator.schedules().count, 1)
+
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let listed = RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/schedules", headers: auth))
+    expect("the schedule list route answers", listed.status, 200)
+    let listedBody = (try? JSONSerialization.jsonObject(with: listed.body)) as? [String: Any]
+    let listedRows = listedBody?["schedules"] as? [[String: Any]] ?? []
+    let validRow = listedRows.first { $0["id"] as? String == id }
+    check("the GET body carries every documented schedule field",
+          validRow?["title"] as? String == "nightly"
+            && validRow?["enabled"] as? Bool == true
+            && validRow?["next_fire"] is Int)
+    let invalidRow = listedRows.first { $0["file"] as? String == "broken.json" }
+    check("an invalid file remains visible with a useful error",
+          invalidRow?["state"] as? String == "invalid"
+            && !(invalidRow?["error"] as? String ?? "").isEmpty)
+    Orchestrator.scheduleRunnerForTesting = { schedule in
+        .ok(["ok": true, "task": ["id": "generated", "schedule_id": schedule.id]])
+    }
+    let manual = RemoteServer.shared.route(
+        remoteRequest("POST", "/v1/orchestrator/schedules/\(id)/run", headers: auth))
+    expect("manual run returns the ordinary dispatch envelope", manual.status, 200)
+    let manualBody = (try? JSONSerialization.jsonObject(with: manual.body)) as? [String: Any]
+    expect("and dispatches the named source file",
+           (manualBody?["task"] as? [String: Any])?["schedule_id"] as? String, id)
+    Orchestrator.scheduleRunnerForTesting = nil
+    let missing = RemoteServer.shared.route(
+        remoteRequest("POST", "/v1/orchestrator/schedules/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/run",
+                      headers: auth))
+    expect("manual run uses the ordinary not-found envelope", missing.status, 404)
+    expect("and its typed code", remoteErrorCode(missing), "not_found")
+
+    let wasEnabled = Config.shared.orchestratorEnabled
+    Config.shared.orchestratorEnabled = false
+    let disabled = RemoteServer.shared.route(
+        remoteRequest("POST", "/v1/orchestrator/schedules/\(id)/run", headers: auth))
+    Config.shared.orchestratorEnabled = wasEnabled
+    expect("manual run reports the disabled orchestrator", disabled.status, 403)
+    expect("and keeps the typed disabled code", remoteErrorCode(disabled), "orchestrator_disabled")
+
+    let calendar = Calendar.autoupdatingCurrent
+    let timerNow = calendar.date(bySettingHour: 2, minute: 0, second: 0, of: Date())!
+    let timerFire = calendar.date(bySettingHour: 1, minute: 30, second: 0, of: timerNow)!
+    func scheduledTask(_ taskID: String, state: Orchestrator.State,
+                       created: Date) -> Orchestrator.Task {
+        var task = Orchestrator.Task(id: taskID, state: state, kind: "custom", title: "nightly",
+            assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: created,
+            secretHash: Orchestrator.hash(ofSecret: "test"))
+        task.scheduleID = id
+        return task
+    }
+
+    var disabledSource = valid
+    disabledSource["enabled"] = false
+    try! JSONSerialization.data(withJSONObject: disabledSource)
+        .write(to: directory.appendingPathComponent("\(id).json"))
+    Orchestrator.forget()
+    var disabledRuns = 0
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { $0() }
+    Orchestrator.scheduleRunnerForTesting = { _ in disabledRuns += 1; return .ok(["ok": true]) }
+    Orchestrator.scheduleBeat(now: timerNow)
+    expect("a disabled schedule never reaches the dispatch queue", disabledRuns, 0)
+
+    var impatientSource = valid
+    impatientSource["catch_up_hours"] = 0
+    try! JSONSerialization.data(withJSONObject: impatientSource)
+        .write(to: directory.appendingPathComponent("\(id).json"))
+    Orchestrator.forget()
+    var missedRuns = 0
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { $0() }
+    Orchestrator.scheduleRunnerForTesting = { _ in missedRuns += 1; return .ok(["ok": true]) }
+    func missedAuditCount() -> Int {
+        RemoteAuth.recentAudit(limit: 2_000).filter {
+            $0["event"] as? String == "orchestrator.schedule.skipped"
+                && $0["schedule"] as? String == id && $0["why"] as? String == "missed"
+        }.count
+    }
+    let auditsBeforeMiss = missedAuditCount()
+    let late = timerFire.addingTimeInterval(61)
+    Orchestrator.scheduleBeat(now: late)
+    Orchestrator.scheduleBeat(now: late)
+    check("a missed occurrence is audited once and never dispatched",
+          missedRuns == 0 && missedAuditCount() == auditsBeforeMiss + 1)
+
+    try! data.write(to: directory.appendingPathComponent("\(id).json"))
+
+    Orchestrator.forget()
+    var queued: [() -> Void] = []
+    var timerRuns = 0
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { queued.append($0) }
+    Orchestrator.scheduleRunnerForTesting = { _ in
+        timerRuns += 1
+        return .ok(["ok": true])
+    }
+    Orchestrator.scheduleBeat(now: timerNow)
+    check("the timer only decides off the server queue",
+          timerRuns == 0 && queued.count == 1)
+    let pendingManual = Orchestrator.runSchedule(id: id)
+    expect("a queued timer fire blocks a racing manual run", { () -> Int? in
+        guard case .refused(let status, _, _, _) = pendingManual else { return nil }
+        return status
+    }(), 409)
+    queued.removeFirst()()
+    expect("the dispatch transaction runs after entering the serial gate", timerRuns, 1)
+    Orchestrator.scheduleBeat(now: timerNow)
+    check("the same timer occurrence is handled once", queued.isEmpty && timerRuns == 1)
+
+    Orchestrator.forget()
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { $0() }
+    var retries = 0
+    Orchestrator.scheduleRunnerForTesting = { _ in
+        retries += 1
+        return retries == 1
+            ? .refused(status: 429, code: "over_capacity", message: "busy",
+                       extra: ["retry_after": 60])
+            : .ok(["ok": true])
+    }
+    Orchestrator.scheduleBeat(now: timerNow)
+    check("over-capacity leaves the occurrence available for retry",
+          retries == 1 && Orchestrator.handledScheduleFireForTesting(id) == nil)
+    Orchestrator.scheduleBeat(now: timerNow)
+    check("the next beat retries and then consumes the occurrence",
+          retries == 2 && Orchestrator.handledScheduleFireForTesting(id) == timerFire)
+
+    Orchestrator.forget()
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { $0() }
+    var blockedRuns = 0
+    Orchestrator.scheduleRunnerForTesting = { _ in blockedRuns += 1; return .ok(["ok": true]) }
+    let active = scheduledTask("11111111-2222-4333-8444-555555555555", state: .briefed,
+                               created: timerFire.addingTimeInterval(-120))
+    let newerTerminal = scheduledTask("22222222-3333-4444-8555-666666666666", state: .success,
+                                      created: timerFire.addingTimeInterval(-60))
+    Orchestrator.holdScheduleTaskForTesting(active)
+    Orchestrator.holdScheduleTaskForTesting(newerTerminal)
+    Orchestrator.scheduleBeat(now: timerNow)
+    check("any non-terminal task blocks overlap even when a newer task is terminal",
+          blockedRuns == 0 && Orchestrator.handledScheduleFireForTesting(id) == timerFire)
+    let conflict = RemoteServer.shared.route(
+        remoteRequest("POST", "/v1/orchestrator/schedules/\(id)/run", headers: auth))
+    expect("manual run uses the same any-active rule", conflict.status, 409)
+    expect("and returns the typed active envelope", remoteErrorCode(conflict), "schedule_active")
+    let recordsResponse = RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/schedules", headers: auth))
+    let recordsBody = (try? JSONSerialization.jsonObject(with: recordsResponse.body))
+        as? [String: Any]
+    let recordRows = recordsBody?["schedules"] as? [[String: Any]] ?? []
+    let record = recordRows.first { $0["id"] as? String == id }
+    let lastRun = record?["last_run"] as? [String: Any]
+    check("GET reports the newest task and timestamp one field at a time",
+          recordsBody?["at"] is Int
+            && record?["title"] as? String == "nightly"
+            && record?["enabled"] as? Bool == true
+            && record?["next_fire"] is Int
+            && lastRun?["task_id"] as? String == newerTerminal.id
+            && lastRun?["state"] as? String == "success"
+            && lastRun?["at"] is Int)
+
+    Orchestrator.forget()
+    Orchestrator.scheduleRunnerForTesting = { _ in .ok(["ok": true]) }
+    _ = Orchestrator.runSchedule(id: id)
+    check("a successful manual run records the current occurrence",
+          Orchestrator.handledScheduleFireForTesting(id) != nil)
+    Orchestrator.forget()
+}
+
 // MARK: - Mascot packs that ship
 
 group("shipped packs decode and validate") {
@@ -8504,6 +8860,20 @@ group("a linger survives the restart that lands in the middle of it") {
     Orchestrator.resumeAfterRestart()
     check("and none of it happens where the linger has been turned off",
           Orchestrator.closeAtForTesting(id) == nil)
+
+    // A schedule's explicit close policy is not a default. If it created the deadline before the
+    // restart, the global keep-tabs preference cannot silently reverse that per-schedule choice.
+    var scheduledRow = staleRow
+    scheduledRow["schedule_id"] = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    scheduledRow["schedule_close_tab"] = "always"
+    scheduledRow["schedule_notify_failure"] = true
+    let scheduledData = try! JSONSerialization.data(
+        withJSONObject: ["version": 1, "tasks": [scheduledRow]])
+    try! scheduledData.write(to: store, options: .atomic)
+    Orchestrator.forget()
+    Orchestrator.resumeAfterRestart()
+    check("an explicit schedule deadline survives the opposite global preference",
+          Orchestrator.closeAtForTesting(id) != nil)
     Config.shared.orchestratorChildLinger = keep
 
     // And the tab is still only closed on what *this* process can see: the record carries the

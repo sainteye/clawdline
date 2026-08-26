@@ -619,6 +619,32 @@ session owes, the route's validation and refusals — is [`docs/handoff.md`](../
 
 ---
 
+## 8. Schedule — dispatching a task template on a clock
+
+Use this only when the user wants Clawdline itself to dispatch recurring work. Write one strict
+JSON file at `~/.config/clawdline/schedules/<lower-case-uuid>.json`; start from the complete schema
+in [`docs/schedules.md`](../../docs/schedules.md), and do not invent fields. `when.at` is the Mac's
+local `HH:MM`; `days` is `daily` or weekday names. Choose `close_tab` deliberately: `on_success`
+keeps a failed tab for takeover, `always` closes every outcome, and `never` keeps the existing
+orchestrator linger behavior.
+
+After writing the file, validate it through the read route: find its `id`, or stop and report the
+row whose `state` is `invalid` and read its `error`. Then manually run a valid schedule once:
+
+```bash
+curl -s "http://127.0.0.1:$PORT/v1/orchestrator/schedules" \
+  -H "X-Clawdline-Orchestrator: $TOKEN"
+curl -s -X POST \
+  "http://127.0.0.1:$PORT/v1/orchestrator/schedules/<schedule-id>/run" \
+  -H "X-Clawdline-Orchestrator: $TOKEN"
+```
+
+Read the dispatch response and then the task record; do not call installation verified merely
+because the file exists. Tell the user the honest boundary: if the app is closed it cannot fire,
+and restart catches up only inside `catch_up_hours`.
+
+---
+
 ## A worked example — asking codex to draw this project
 
 The user says: "get codex to draw me a picture of this project, medieval manuscript style."

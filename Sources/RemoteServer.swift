@@ -48,6 +48,12 @@ final class RemoteServer {
     private var streams: [ObjectIdentifier: Stream] = [:]
     private var nextEventID = 0
 
+    /// Put non-HTTP orchestrator work behind the same serial gate as requests. Schedule timing
+    /// is calculated off this queue; only the ordinary dispatch transaction enters here.
+    func serialized(_ work: @escaping () -> Void) {
+        queue.async(execute: work)
+    }
+
     // MARK: - Lifecycle
 
     var isRunning: Bool { listener != nil }
@@ -723,6 +729,19 @@ final class RemoteServer {
                 return .error(400, "bad_request", "task_id and secret are required.")
             }
             return answer(Orchestrator.dispatch(taskID: taskID, secret: secret))
+
+        case ("GET", "/v1/orchestrator/schedules"):
+            return .json(["schedules": Orchestrator.scheduleRecords(),
+                          "at": Int(Date().timeIntervalSince1970)])
+
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/schedules/")
+            && path.hasSuffix("/run"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden", "Running a schedule needs the orchestrator token.")
+            }
+            let id = String(path.dropFirst("/v1/orchestrator/schedules/".count)
+                .dropLast("/run".count))
+            return answer(Orchestrator.runSchedule(id: id.removingPercentEncoding ?? id))
 
         case ("GET", "/v1/orchestrator/tasks"):
             return .json(["tasks": Orchestrator.records(),

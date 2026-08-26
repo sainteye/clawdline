@@ -1,5 +1,8 @@
 # Handing work to another session
 
+For task templates that dispatch on a clock, including catch-up and tab-close policy, see
+[`schedules.md`](schedules.md). Scheduled work enters the ordinary lifecycle described here.
+
 A session you are talking to is a session you are waiting on. Some of what people ask for does not
 need the conversation it was asked in — generate the image, run the suite, read this diff and tell
 me what is wrong with it — and doing it in-line costs the one thing the conversation is for, which
@@ -871,6 +874,12 @@ sessions are Codex and Codex has no skills.
 ---
 
 ## Later: the same protocol, somebody else's machines
+
+The local implementation of the cloud blueprint's Phase 6 is [scheduled tasks](schedules.md): its
+clock calculation runs separately, but every actual scheduled dispatch returns to the same serial
+server queue, capacity buckets and lifecycle described above. A paired read-only device can inspect
+the schedule list through the same orchestrator GET route; only manual run needs the orchestrator
+token. Its clock is on this Mac today, while its generated task uses this protocol unchanged.
 
 Everything above is one Mac talking to itself. The shapes were chosen so that it does not have to
 stay that way.

@@ -1148,6 +1148,47 @@ When a serialized task is promoted to `spawning`, the pump runs the scan against
 at that moment. Its dispatch response is already gone, so a newly found overlap is sent only as the
 same best-effort typed line to identifiable roots; it is not added retroactively to the response.
 
+### `GET /v1/orchestrator/schedules`
+
+Lists every JSON source under `~/.config/clawdline/schedules/`. A paired device, including a
+read-only device, uses this same GET route; the orchestrator token works too. Local-time
+calculations are returned as epoch seconds:
+
+```json
+{
+  "schedules": [{
+    "id": "4d2f54ce-b4b5-4f60-8623-34011f35aa43",
+    "title": "Publish the next post",
+    "enabled": true,
+    "next_fire": 1787880600,
+    "last_run": { "task_id": "...", "state": "success", "at": 1787794200 }
+  }, {
+    "file": "broken.json",
+    "state": "invalid",
+    "error": "when must contain exactly at and days",
+    "error_kind": "schema"
+  }],
+  "at": 1787797800
+}
+```
+
+`last_run` is absent before the first dispatched task and may become absent again after the
+200-record registry retention limit removes it. Invalid rows never expose the task template;
+`error_kind` is `project_unavailable` for a temporarily missing `project_dir`, `schema` for a
+validation error, or `unreadable_json`. Invalid content is audited at most once per file revision
+and sends one push on first discovery when `notify_on_failure` is true (or absent, whose default is
+true). The file format, shared capacity bucket and retry boundary are in
+[`schedules.md`](schedules.md).
+
+### `POST /v1/orchestrator/schedules/:id/run`
+
+Runs one valid schedule immediately, ignoring `enabled` and the wall clock. This needs
+`X-Clawdline-Orchestrator`; a successful response is the ordinary dispatch response. It returns
+`404 not_found` for an unknown or invalid schedule, `403 orchestrator_disabled` when dispatch is
+off, and `409 schedule_active` while any task from the schedule is non-terminal or its dispatch is
+already queued. A successful manual run records the current occurrence as handled when it is at or
+after that occurrence; running before the next scheduled time does not consume that future fire.
+
 ### `GET /v1/orchestrator/tasks`, `GET /v1/orchestrator/tasks/:id`
 
 Every task this Mac knows about, newest first, capped at the most recent 200 records — or one of

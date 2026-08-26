@@ -1,6 +1,7 @@
 import AppKit
 import CryptoKit
 import Foundation
+import Security
 
 /// Root sessions dispatching child sessions — the broker side. See docs/orchestrator.md.
 ///
@@ -19,6 +20,497 @@ import Foundation
 /// secret, typed into its first message and good for exactly one thing: finishing its own task.
 /// Only the secret's SHA-256 is kept once the child has been briefed.
 enum Orchestrator {
+
+    // MARK: - Scheduled dispatches
+
+    enum ScheduleCloseTab: String {
+        case onSuccess = "on_success", always, never
+    }
+
+    struct Schedule {
+        let id: String
+        let title: String
+        let hour: Int
+        let minute: Int
+        /// Calendar weekday numbers (1 = Sunday ... 7 = Saturday), or nil for every day.
+        let weekdays: Set<Int>?
+        let taskTemplate: [String: Any]
+        let enabled: Bool
+        let closeTab: ScheduleCloseTab
+        let catchUpHours: Int
+        let notifyOnFailure: Bool
+    }
+
+    enum ScheduleDraftOutcome {
+        case ok(Schedule)
+        case bad(String)
+    }
+
+    private struct InvalidSchedule {
+        let file: String
+        let error: String
+        let kind: String
+        let fingerprint: String
+        let title: String
+        let projectDir: String?
+        let notifyOnFailure: Bool
+
+        var record: [String: Any] {
+            ["file": file, "state": "invalid", "error": error, "error_kind": kind]
+        }
+    }
+
+    private struct ScheduleInventory {
+        var valid: [Schedule]
+        var invalid: [InvalidSchedule]
+    }
+
+    enum ScheduleAction: Equatable {
+        case run, alreadyHandled, active, missed
+    }
+
+    private static func scheduleBool(_ raw: Any?) -> Bool? {
+        guard let raw else { return nil }
+        if let number = raw as? NSNumber {
+            guard CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+            return number.boolValue
+        }
+        return raw as? Bool
+    }
+
+    private static func scheduleInt(_ raw: Any?) -> Int? {
+        guard let raw else { return nil }
+        if let number = raw as? NSNumber {
+            guard CFGetTypeID(number) != CFBooleanGetTypeID(),
+                  !["f", "d"].contains(String(cString: number.objCType)) else { return nil }
+            return Int(exactly: number.int64Value)
+        }
+        return raw as? Int
+    }
+
+    static func schedule(from obj: [String: Any], filename: String,
+                         isDirectory: (String) -> Bool = StartPoints.isDirectory)
+        -> ScheduleDraftOutcome {
+        let allowed = Set(["clawdline_schedule", "schedule_id", "title", "when", "task",
+                           "enabled", "close_tab", "catch_up_hours", "notify_on_failure"])
+        let unknown = Set(obj.keys).subtracting(allowed).sorted()
+        guard unknown.isEmpty else { return .bad("unknown field: \(unknown.joined(separator: ", "))") }
+        guard scheduleInt(obj["clawdline_schedule"]) == 1 else {
+            return .bad("clawdline_schedule must be 1")
+        }
+        guard let id = obj["schedule_id"] as? String, UUID(uuidString: id) != nil,
+              id == id.lowercased(), filename == "\(id).json" else {
+            return .bad("schedule_id must be a lowercase UUID matching the filename")
+        }
+        guard let title = obj["title"] as? String, !title.isEmpty, title.count <= 120 else {
+            return .bad("title must be a non-empty string of at most 120 characters")
+        }
+        guard let when = obj["when"] as? [String: Any],
+              Set(when.keys).isSubset(of: Set(["at", "days"])), when.count == 2,
+              let at = when["at"] as? String else {
+            return .bad("when must contain exactly at and days")
+        }
+        let parts = at.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts[0].count == 2, parts[1].count == 2,
+              let hour = Int(parts[0]), let minute = Int(parts[1]),
+              (0...23).contains(hour), (0...59).contains(minute) else {
+            return .bad("when.at must be HH:MM in local time")
+        }
+        let weekdayNumbers = ["sun": 1, "mon": 2, "tue": 3, "wed": 4,
+                              "thu": 5, "fri": 6, "sat": 7]
+        let weekdays: Set<Int>?
+        if let days = when["days"] as? String, days == "daily" {
+            weekdays = nil
+        } else if let days = when["days"] as? [Any], !days.isEmpty {
+            var found: Set<Int> = []
+            for (index, raw) in days.enumerated() {
+                guard let name = raw as? String, let number = weekdayNumbers[name] else {
+                    return .bad("when.days[\(index)] must be sun, mon, tue, wed, thu, fri or sat")
+                }
+                guard found.insert(number).inserted else {
+                    return .bad("when.days must not contain duplicates")
+                }
+            }
+            weekdays = found
+        } else {
+            return .bad("when.days must be daily or a non-empty weekday array")
+        }
+        guard let task = obj["task"] as? [String: Any] else {
+            return .bad("task must be an object")
+        }
+        let taskAllowed = Set(["assistant", "model", "project_dir", "title", "instructions",
+                               "claims", "serialize", "isolation", "isolation_base",
+                               "permission_mode", "timeout_minutes", "deliverables", "kind", "plan"])
+        let taskUnknown = Set(task.keys).subtracting(taskAllowed).sorted()
+        guard taskUnknown.isEmpty else {
+            return .bad("unknown task field: \(taskUnknown.joined(separator: ", "))")
+        }
+        if let deliverables = task["deliverables"] {
+            guard let values = deliverables as? [Any], values.count <= 32,
+                  values.allSatisfy({ ($0 as? String).map { !$0.isEmpty && $0.count <= 300 } == true })
+            else { return .bad("task.deliverables must be an array of at most 32 non-empty strings") }
+        }
+        for key in ["model", "title", "permission_mode", "kind", "plan"]
+            where task[key] != nil && !(task[key] is String) {
+            return .bad("task.\(key) must be a string")
+        }
+        if task["timeout_minutes"] != nil,
+           scheduleInt(task["timeout_minutes"]) == nil {
+            return .bad("task.timeout_minutes must be an integer")
+        }
+        var validation = task
+        validation["clawdline_protocol"] = 1
+        validation["task_id"] = id
+        validation["root"] = ["session_id": NSNull(), "label": title]
+        if case .bad(let why) = draft(from: validation, expecting: id,
+                                      isDirectory: isDirectory) {
+            return .bad("task.\(why)")
+        }
+        guard let enabled = scheduleBool(obj["enabled"]) else {
+            return .bad("enabled must be a boolean")
+        }
+        let closeTab: ScheduleCloseTab
+        if let raw = obj["close_tab"] {
+            guard let name = raw as? String, let value = ScheduleCloseTab(rawValue: name) else {
+                return .bad("close_tab must be on_success, always or never")
+            }
+            closeTab = value
+        } else {
+            closeTab = .onSuccess
+        }
+        let catchUpHours: Int
+        if let raw = obj["catch_up_hours"] {
+            guard let value = scheduleInt(raw), (0...168).contains(value) else {
+                return .bad("catch_up_hours must be an integer from 0 through 168")
+            }
+            catchUpHours = value
+        } else {
+            catchUpHours = 6
+        }
+        let notify: Bool
+        if let raw = obj["notify_on_failure"] {
+            guard let value = scheduleBool(raw) else {
+                return .bad("notify_on_failure must be a boolean")
+            }
+            notify = value
+        } else {
+            notify = true
+        }
+        return .ok(Schedule(id: id, title: title, hour: hour, minute: minute,
+                            weekdays: weekdays, taskTemplate: task, enabled: enabled,
+                            closeTab: closeTab, catchUpHours: catchUpHours,
+                            notifyOnFailure: notify))
+    }
+
+    static func latestFire(of schedule: Schedule, at now: Date,
+                           calendar: Calendar = .autoupdatingCurrent) -> Date? {
+        let start = calendar.startOfDay(for: now)
+        for daysAgo in 0...7 {
+            guard let day = calendar.date(byAdding: .day, value: -daysAgo, to: start),
+                  let candidate = calendar.date(bySettingHour: schedule.hour,
+                                                minute: schedule.minute, second: 0, of: day),
+                  candidate <= now else { continue }
+            if let weekdays = schedule.weekdays,
+               !weekdays.contains(calendar.component(.weekday, from: candidate)) { continue }
+            return candidate
+        }
+        return nil
+    }
+
+    static func scheduleAction(now: Date, fire: Date, catchUpHours: Int,
+                               lastRunCreated: Date?, lastRunTerminal: Bool?) -> ScheduleAction {
+        if let created = lastRunCreated, created >= fire { return .alreadyHandled }
+        if lastRunTerminal == false { return .active }
+        let window = TimeInterval(max(60, catchUpHours * 3600))
+        return now.timeIntervalSince(fire) <= window ? .run : .missed
+    }
+
+    static func scheduledCloseAt(policy: ScheduleCloseTab, outcome: State,
+                                 now: Date, hasChild: Bool, linger: TimeInterval = 180,
+                                 briefed: Bool = true) -> Date? {
+        guard hasChild else { return nil }
+        switch policy {
+        case .always: return now
+        case .onSuccess: return outcome == .success ? now : nil
+        case .never:
+            guard linger >= 0 else { return nil }
+            if outcome == .success || outcome == .failure {
+                return now.addingTimeInterval(linger)
+            }
+            return outcome == .spawnFailed && !briefed ? now : nil
+        }
+    }
+
+    static func nextFire(of schedule: Schedule, after now: Date,
+                         calendar: Calendar = .autoupdatingCurrent) -> Date? {
+        let start = calendar.startOfDay(for: now)
+        for daysAhead in 0...7 {
+            guard let day = calendar.date(byAdding: .day, value: daysAhead, to: start),
+                  let candidate = calendar.date(bySettingHour: schedule.hour,
+                                                minute: schedule.minute, second: 0, of: day),
+                  candidate > now else { continue }
+            if let weekdays = schedule.weekdays,
+               !weekdays.contains(calendar.component(.weekday, from: candidate)) { continue }
+            return candidate
+        }
+        return nil
+    }
+
+    /// Read every source file independently. A malformed neighbor cannot hide a valid schedule.
+    /// Invalid content is fingerprinted so the minute timer and polling GETs do not turn one bad
+    /// file into an append-only audit flood; changing or reintroducing it reports it once again.
+    private static func scheduleInventory() -> ScheduleInventory {
+        let manager = FileManager.default
+        guard let files = try? manager.contentsOfDirectory(at: scheduleDirectory,
+            includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else {
+            lock.lock(); invalidScheduleFingerprints = [:]; lock.unlock()
+            return ScheduleInventory(valid: [], invalid: [])
+        }
+        var found: [Schedule] = []
+        var invalid: [InvalidSchedule] = []
+        for file in files where file.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: file) else {
+                let stamp = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
+                    .contentModificationDate?.timeIntervalSince1970 ?? 0
+                invalid.append(InvalidSchedule(file: file.lastPathComponent,
+                    error: "The file could not be read as JSON.", kind: "unreadable_json",
+                    fingerprint: "unreadable:\(stamp)", title: file.deletingPathExtension().lastPathComponent,
+                    projectDir: nil, notifyOnFailure: true))
+                continue
+            }
+            let digest = RemoteAuth.hex(SHA256.hash(data: data))
+            guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                invalid.append(InvalidSchedule(file: file.lastPathComponent,
+                    error: "The file does not contain a JSON object.", kind: "unreadable_json",
+                    fingerprint: digest, title: file.deletingPathExtension().lastPathComponent,
+                    projectDir: nil, notifyOnFailure: true))
+                continue
+            }
+            switch schedule(from: obj, filename: file.lastPathComponent) {
+            case .ok(let value): found.append(value)
+            case .bad(let why):
+                let transient = why.contains("project_dir must be an absolute path to a directory")
+                invalid.append(InvalidSchedule(file: file.lastPathComponent,
+                    error: String(why.prefix(500)),
+                    kind: transient ? "project_unavailable" : "schema",
+                    fingerprint: digest, title: (obj["title"] as? String).map {
+                        String($0.prefix(120))
+                    } ?? file.deletingPathExtension().lastPathComponent,
+                    projectDir: (obj["task"] as? [String: Any])?["project_dir"] as? String,
+                    notifyOnFailure: scheduleBool(obj["notify_on_failure"]) ?? true))
+            }
+        }
+        let fingerprints = Dictionary(uniqueKeysWithValues: invalid.map { ($0.file, $0.fingerprint) })
+        lock.lock()
+        let newlyInvalid = invalid.filter { invalidScheduleFingerprints[$0.file] != $0.fingerprint }
+        invalidScheduleFingerprints = fingerprints
+        lock.unlock()
+        for item in newlyInvalid {
+            RemoteAuth.audit("orchestrator.schedule.invalid",
+                             ["file": item.file, "why": item.error, "kind": item.kind])
+            guard item.notifyOnFailure else { continue }
+            WebPush.send(title: item.title,
+                         body: "Schedule file \(item.file) is invalid: \(item.error)",
+                         url: "/", tag: "schedule-invalid-\(item.file)",
+                         icon: RemoteIcon.projectPath(
+                            for: item.projectDir.flatMap { ProjectIcon.grid(forCwd: $0) }))
+        }
+        return ScheduleInventory(valid: found.sorted { $0.id < $1.id },
+                                 invalid: invalid.sorted { $0.file < $1.file })
+    }
+
+    static func schedules() -> [Schedule] {
+        scheduleInventory().valid
+    }
+
+    static func scheduleRecords(now: Date = Date()) -> [[String: Any]] {
+        let inventory = scheduleInventory()
+        lock.lock()
+        let snapshots = Array(tasks.values)
+        lock.unlock()
+        let valid = inventory.valid.map { schedule -> [String: Any] in
+            var out: [String: Any] = ["id": schedule.id, "title": schedule.title,
+                                      "enabled": schedule.enabled]
+            if let next = nextFire(of: schedule, after: now) {
+                out["next_fire"] = Int(next.timeIntervalSince1970)
+            }
+            if let last = snapshots.filter({ $0.scheduleID == schedule.id })
+                .max(by: { $0.created < $1.created }) {
+                out["last_run"] = ["task_id": last.id, "state": last.state.rawValue,
+                                   "at": Int(last.created.timeIntervalSince1970)]
+            }
+            return out
+        }
+        return valid + inventory.invalid.map(\.record)
+    }
+
+    private static func scheduleNamed(_ id: String) -> Schedule? {
+        guard isTaskID(id) else { return nil }
+        return schedules().first { $0.id == id }
+    }
+
+    private static func hasActiveScheduleTaskLocked(_ id: String) -> Bool {
+        tasks.values.contains { $0.scheduleID == id && !$0.state.isTerminal }
+    }
+
+    private static func scheduleSecret() -> String? {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            return nil
+        }
+        return RemoteAuth.hex(bytes)
+    }
+
+    /// Materialise the template as an ordinary task file, then enter through the same dispatch
+    /// gate as every root request. No claims, capacity, trust or serialization rule is duplicated.
+    private static func dispatch(_ schedule: Schedule) -> Reply {
+        let id = UUID().uuidString.lowercased()
+        guard let secret = scheduleSecret() else {
+            return .refused(500, "internal", "Could not create the scheduled task secret.")
+        }
+        var obj = schedule.taskTemplate
+        obj["clawdline_protocol"] = 1
+        obj["task_id"] = id
+        obj["root"] = ["session_id": NSNull(), "label": schedule.title]
+        let directory = root.appendingPathComponent(id, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o700])
+            try FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                                  ofItemAtPath: directory.path)
+            let data = try JSONSerialization.data(withJSONObject: obj,
+                                                   options: [.prettyPrinted, .sortedKeys,
+                                                             .withoutEscapingSlashes])
+            let file = directory.appendingPathComponent("task.json")
+            try data.write(to: file, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                  ofItemAtPath: file.path)
+        } catch {
+            return .refused(500, "internal", "Could not create the scheduled task file.")
+        }
+        return dispatch(taskID: id, secret: secret, schedule: schedule)
+    }
+
+    static func runSchedule(id: String) -> Reply {
+        guard Config.shared.orchestratorEnabled else {
+            return .refused(403, "orchestrator_disabled",
+                            "Task dispatch is switched off in Settings.")
+        }
+        guard let schedule = scheduleNamed(id) else {
+            return .refused(404, "not_found", "No schedule named that")
+        }
+        lock.lock()
+        if hasActiveScheduleTaskLocked(id) || dispatchingSchedules.contains(id)
+            || pendingScheduleFires[id] != nil {
+            lock.unlock()
+            return .refused(409, "schedule_active",
+                            "The previous task from this schedule is still active.")
+        }
+        dispatchingSchedules.insert(id)
+        lock.unlock()
+        RemoteAuth.audit("orchestrator.schedule.run", ["schedule": id, "how": "manual"])
+        let reply = scheduleRunnerForTesting?(schedule) ?? dispatch(schedule)
+        lock.lock()
+        dispatchingSchedules.remove(id)
+        if case .ok = reply, let fire = latestFire(of: schedule, at: Date()) {
+            handledScheduleFires[id] = fire
+        }
+        lock.unlock()
+        return reply
+    }
+
+    static func scheduleBeat(now: Date = Date()) {
+        guard Config.shared.orchestratorEnabled else { return }
+        for schedule in schedules() where schedule.enabled {
+            guard let fire = latestFire(of: schedule, at: now) else { continue }
+            lock.lock()
+            if handledScheduleFires[schedule.id] == fire || pendingScheduleFires[schedule.id] == fire {
+                lock.unlock()
+                continue
+            }
+            let matching = tasks.values.filter { $0.scheduleID == schedule.id }
+            let latest = matching.max(by: { $0.created < $1.created })
+            let active = matching.contains { !$0.state.isTerminal }
+                || dispatchingSchedules.contains(schedule.id)
+            let action = scheduleAction(now: now, fire: fire,
+                                        catchUpHours: schedule.catchUpHours,
+                                        lastRunCreated: latest?.created,
+                                        lastRunTerminal: active ? false : latest.map { _ in true })
+            if action == .run {
+                pendingScheduleFires[schedule.id] = fire
+            } else if action != .alreadyHandled {
+                handledScheduleFires[schedule.id] = fire
+            }
+            lock.unlock()
+            switch action {
+            case .run:
+                let work = { runScheduledFire(schedule, fire: fire) }
+                if let enqueue = scheduleDispatchEnqueuerForTesting { enqueue(work) }
+                else { RemoteServer.shared.serialized(work) }
+            case .active:
+                RemoteAuth.audit("orchestrator.schedule.skipped",
+                                 ["schedule": schedule.id, "why": "active"])
+            case .missed:
+                RemoteAuth.audit("orchestrator.schedule.skipped",
+                                 ["schedule": schedule.id, "why": "missed"])
+                if schedule.notifyOnFailure {
+                    sendSchedulePush(schedule, body: "Scheduled run missed its catch-up window.",
+                                     tag: "schedule-\(schedule.id)-missed")
+                }
+            case .alreadyHandled: break
+            }
+        }
+    }
+
+    /// Runs only on the remote server's serial queue in production. The second active check is
+    /// the handoff between the timer's decision and the dispatch transaction: a manual run that
+    /// reached the queue first wins, and this occurrence becomes an audited active skip.
+    private static func runScheduledFire(_ schedule: Schedule, fire: Date) {
+        lock.lock()
+        pendingScheduleFires.removeValue(forKey: schedule.id)
+        if hasActiveScheduleTaskLocked(schedule.id) || dispatchingSchedules.contains(schedule.id) {
+            handledScheduleFires[schedule.id] = fire
+            lock.unlock()
+            RemoteAuth.audit("orchestrator.schedule.skipped",
+                             ["schedule": schedule.id, "why": "active"])
+            return
+        }
+        dispatchingSchedules.insert(schedule.id)
+        lock.unlock()
+
+        RemoteAuth.audit("orchestrator.schedule.run",
+                         ["schedule": schedule.id, "how": "timer",
+                          "fire": String(Int(fire.timeIntervalSince1970))])
+        let reply = scheduleRunnerForTesting?(schedule) ?? dispatch(schedule)
+        let overCapacity: Bool
+        if case .refused(_, let code, _, _) = reply { overCapacity = code == "over_capacity" }
+        else { overCapacity = false }
+
+        lock.lock()
+        dispatchingSchedules.remove(schedule.id)
+        if !overCapacity { handledScheduleFires[schedule.id] = fire }
+        lock.unlock()
+
+        guard case .refused(_, let code, let message, _) = reply else { return }
+        if overCapacity {
+            RemoteAuth.audit("orchestrator.schedule.retry",
+                             ["schedule": schedule.id, "why": code])
+            return
+        }
+        RemoteAuth.audit("orchestrator.schedule.failed",
+                         ["schedule": schedule.id, "why": code])
+        if schedule.notifyOnFailure {
+            sendSchedulePush(schedule, body: "Dispatch failed: \(message)",
+                             tag: "schedule-\(schedule.id)-failed")
+        }
+    }
+
+    private static func sendSchedulePush(_ schedule: Schedule, body: String, tag: String) {
+        WebPush.send(title: schedule.title, body: body, url: "/", tag: tag,
+                     icon: RemoteIcon.projectPath(
+                        for: (schedule.taskTemplate["project_dir"] as? String)
+                            .flatMap { ProjectIcon.grid(forCwd: $0) }))
+    }
 
     // MARK: - A task
 
@@ -124,6 +616,12 @@ enum Orchestrator {
         /// the briefing so a leaf knows what its output feeds — which is the difference between
         /// a usable answer and an essay.
         var plan: String?
+        /// Present only for work created from a schedule file. The public registry exposes the
+        /// id; the two policy values stay internal so an edit to the source file cannot rewrite
+        /// what should happen to a task already in flight.
+        var scheduleID: String?
+        var scheduleCloseTab = ScheduleCloseTab.onSuccess
+        var scheduleNotifyFailure = true
         /// Machine-global operation names acquired together when this task leaves `queued`.
         /// A queued task holds none; a spawning or briefed task holds every name in this list.
         var serialize: [String] = []
@@ -561,6 +1059,11 @@ enum Orchestrator {
     // MARK: - Where everything lives
 
     static let root = URL(fileURLWithPath: "/tmp/.clawdline", isDirectory: true)
+    static var scheduleDirectoryOverrideForTesting: URL?
+    static var scheduleDirectory: URL {
+        scheduleDirectoryOverrideForTesting
+            ?? RemoteAuth.directory.appendingPathComponent("schedules", isDirectory: true)
+    }
     static var handoffRootOverrideForTesting: URL?
     static var handoffRoot: URL {
         handoffRootOverrideForTesting
@@ -598,6 +1101,16 @@ enum Orchestrator {
     /// Plaintext secrets, held only between dispatch and briefing. Never on disk.
     private static var secrets: [String: String] = [:]
     private static var dispatchTimes: [Date] = []
+    /// A skipped or missed occurrence has no task row to remember it. This prevents one audit and
+    /// push per minute while the process stays up; a restart deliberately re-evaluates catch-up.
+    private static var handledScheduleFires: [String: Date] = [:]
+    private static var pendingScheduleFires: [String: Date] = [:]
+    private static var dispatchingSchedules: Set<String> = []
+    private static var invalidScheduleFingerprints: [String: String] = [:]
+    private static let scheduleQueue = DispatchQueue(
+        label: "dev.sainteye.clawdline.orchestrator.schedules", qos: .utility)
+    static var scheduleRunnerForTesting: ((Schedule) -> Reply)?
+    static var scheduleDispatchEnqueuerForTesting: ((@escaping () -> Void) -> Void)?
     /// Test seam: observes the warning decision before optional terminal delivery.
     static var workspaceOverlapObserverForTesting: ((Task, [WorkspaceOverlap]) -> Void)?
     /// Child terminal id → task title, rebuilt whenever the tasks change. Read on every redraw
@@ -1773,7 +2286,7 @@ enum Orchestrator {
 
     /// Runs on the server queue. Everything filesystem- and process-shaped is safe there — the
     /// `/start` route has always called `StartPoints.start` from it.
-    static func dispatch(taskID: String, secret: String) -> Reply {
+    static func dispatch(taskID: String, secret: String, schedule: Schedule? = nil) -> Reply {
         guard Config.shared.orchestratorEnabled else {
             return .refused(403, "orchestrator_disabled", "Task dispatch is switched off in Settings.")
         }
@@ -1861,11 +2374,15 @@ enum Orchestrator {
                         assistant: made.assistant, model: made.model,
                         permission: permission, projectDir: made.projectDir,
                         timeoutMinutes: made.timeoutMinutes, created: Date(),
-                        rootSessionId: made.rootSessionId, rootLabel: made.rootLabel,
+                        rootSessionId: made.rootSessionId,
+                        rootLabel: schedule?.title ?? made.rootLabel,
                         depth: depth, parentTaskId: made.parentTaskId, plan: made.plan,
                         serialize: made.serialize, claims: made.claims,
                         claimsDeclared: made.claimsDeclared,
                         secretHash: hash(ofSecret: secret))
+        task.scheduleID = schedule?.id
+        task.scheduleCloseTab = schedule?.closeTab ?? .onSuccess
+        task.scheduleNotifyFailure = schedule?.notifyOnFailure ?? true
         task.isolation = made.isolation
         task.worktree = preparedWorktree
         worktreeWarnings += prepareClaimsForIsolation(&task)
@@ -2109,8 +2626,9 @@ enum Orchestrator {
         return now
     }
 
-    /// A claims refusal registered no work, so its provisional rate entry is returned. Dispatch
-    /// is served on one serial queue; matching the exact timestamp also keeps this safe in tests.
+    /// A claims refusal registered no work, so its provisional rate entry is returned. Every real
+    /// dispatch, including a scheduled one, is served on the remote serial queue; matching the
+    /// exact timestamp also keeps direct unit-test calls safe.
     static func refundDispatchRate(_ ticket: Date) {
         lock.lock(); defer { lock.unlock() }
         if let index = dispatchTimes.lastIndex(of: ticket) {
@@ -2460,6 +2978,7 @@ enum Orchestrator {
 
     private static var timer: Timer?
     private static var cleanupTimer: Timer?
+    private static var scheduleTimer: Timer?
 
     /// Wired once at launch, alongside the other observers.
     static func start() {
@@ -2470,6 +2989,7 @@ enum Orchestrator {
         _ = dispatchToken()
         resumeAfterRestart()
         cleanup()
+        scheduleQueue.async { scheduleBeat() }
         SessionWatch.shared.observers["orchestrator"] = { beat(fromTimer: false) }
         let t = Timer(timeInterval: 5, repeats: true) { _ in beat(fromTimer: true) }
         RunLoop.main.add(t, forMode: .common)
@@ -2477,6 +2997,11 @@ enum Orchestrator {
         let c = Timer(timeInterval: 6 * 3600, repeats: true) { _ in cleanup() }
         RunLoop.main.add(c, forMode: .common)
         cleanupTimer = c
+        let s = Timer(timeInterval: 60, repeats: true) { _ in
+            scheduleQueue.async { scheduleBeat() }
+        }
+        RunLoop.main.add(s, forMode: .common)
+        scheduleTimer = s
     }
 
     /// Recover waiters and fail tasks whose pre-briefing secret died with the previous process.
@@ -2554,9 +3079,10 @@ enum Orchestrator {
         lock.lock()
         for (id, task) in tasks where task.closeAt != nil {
             var carried = task
-            // A tab with nothing named to close it, or a Mac that has since said tabs are never
-            // to be closed for a child: the deadline is not this process's to keep.
-            if task.childTerminalId == nil || linger < 0 {
+            // An explicit per-schedule close policy wins over the global default after restart in
+            // exactly the same way it did when finalize created this deadline. Ordinary tasks
+            // still honour a Mac that has since said child tabs are never to be closed.
+            if task.childTerminalId == nil || (task.scheduleID == nil && linger < 0) {
                 carried.closeAt = nil
             } else if let at = task.closeAt, at < floor {
                 carried.closeAt = floor
@@ -3262,25 +3788,33 @@ enum Orchestrator {
         if let summary { task.summary = summary }
         if !artifacts.isEmpty { task.artifacts = artifacts }
         secrets.removeValue(forKey: taskID)
-        // Only a child that reported gets its tab held open and then closed for it. One that
-        // timed out has something on its screen worth reading, and stays.
         let linger = Config.shared.orchestratorChildLinger
-        if outcome == .success || outcome == .failure, linger >= 0, task.childTerminalId != nil {
-            task.closeAt = Date().addingTimeInterval(TimeInterval(linger))
-        }
-        // A spawn that never reached briefing is the exception, and it goes now rather than
-        // staying. There is nothing of this task on that screen — the session was opened and
-        // never spoken to, so what is on it is a fresh prompt, which explains nothing that the
-        // summary does not say better.
-        //
-        // **And leaving it is not free.** Each one is a live assistant holding a slot, and the
-        // usual cause of failing to reach a prompt is that too many sessions were starting at
-        // once. Keep them and the next spawn is slower for exactly the reason the last one
-        // failed, which is a failure that feeds itself: four dead tabs were still running when
-        // this was written, and the two spawns after them timed out too.
-        if outcome == .spawnFailed, task.briefedAt == nil, linger >= 0,
-           task.childTerminalId != nil {
-            task.closeAt = Date()
+        if task.scheduleID != nil {
+            task.closeAt = scheduledCloseAt(policy: task.scheduleCloseTab, outcome: outcome,
+                                             now: Date(), hasChild: task.childTerminalId != nil,
+                                             linger: TimeInterval(linger),
+                                             briefed: task.briefedAt != nil)
+        } else {
+            // Only a child that reported gets its tab held open and then closed for it. One that
+            // timed out has something on its screen worth reading, and stays.
+            if outcome == .success || outcome == .failure, linger >= 0,
+               task.childTerminalId != nil {
+                task.closeAt = Date().addingTimeInterval(TimeInterval(linger))
+            }
+            // A spawn that never reached briefing is the exception, and it goes now rather than
+            // staying. There is nothing of this task on that screen — the session was opened and
+            // never spoken to, so what is on it is a fresh prompt, which explains nothing that the
+            // summary does not say better.
+            //
+            // **And leaving it is not free.** Each one is a live assistant holding a slot, and the
+            // usual cause of failing to reach a prompt is that too many sessions were starting at
+            // once. Keep them and the next spawn is slower for exactly the reason the last one
+            // failed, which is a failure that feeds itself: four dead tabs were still running when
+            // this was written, and the two spawns after them timed out too.
+            if outcome == .spawnFailed, task.briefedAt == nil, linger >= 0,
+               task.childTerminalId != nil {
+                task.closeAt = Date()
+            }
         }
         tasks[taskID] = task
         lock.unlock()
@@ -3346,7 +3880,19 @@ enum Orchestrator {
         RemoteAuth.audit("orchestrator.finish", ["task": task.id, "state": outcome.rawValue])
         RemoteServer.shared.broadcastOrchestrator()
         notifyRoot(task)
-        noteEnded(task)
+        let scheduleFailure = task.scheduleID != nil && task.scheduleNotifyFailure
+            && (outcome == .failure || outcome == .timeout || outcome == .spawnFailed)
+        // A schedule failure has its own immediate, policy-controlled notification. Do not also
+        // register the one-task anonymous batch that would announce the same ending next beat.
+        if !scheduleFailure { noteEnded(task) }
+        if scheduleFailure {
+            let title = task.rootLabel ?? task.title
+            WebPush.send(title: title,
+                         body: "Scheduled task finished \(outcome.rawValue).",
+                         url: "/", tag: "schedule-\(task.scheduleID ?? task.id)-failed",
+                         icon: RemoteIcon.projectPath(
+                            for: ProjectIcon.grid(forCwd: task.projectDir)))
+        }
         endWorkHandedOnBy(task)
         if pumpQueue { scheduleSerializePump() }
     }
@@ -4216,6 +4762,17 @@ enum Orchestrator {
     /// describes the work rather than the housekeeping waiting on it.
     static func closeAtForTesting(_ id: String) -> Date? { held(id)?.closeAt }
 
+    /// Test seams for the scheduler's in-memory arbitration. Production reaches the same state
+    /// only through ordinary dispatch registration on the remote serial queue.
+    static func holdScheduleTaskForTesting(_ task: Task) {
+        lock.lock(); tasks[task.id] = task; loaded = true; lock.unlock()
+    }
+
+    static func handledScheduleFireForTesting(_ id: String) -> Date? {
+        lock.lock(); defer { lock.unlock() }
+        return handledScheduleFires[id]
+    }
+
     private static func record(of task: Task) -> [String: Any] {
         var rootTerminal: String?
         // The parent task first, when there is one. A dispatcher one level down is sitting in a
@@ -4245,6 +4802,7 @@ enum Orchestrator {
             "dir": "/tmp/.clawdline/\(task.id)",
         ]
         if let model = task.model { out["model"] = model }
+        if let scheduleID = task.scheduleID { out["schedule_id"] = scheduleID }
         out["permission"] = task.permission.rawValue
         if task.state == .queued, !task.serialize.isEmpty {
             lock.lock()
@@ -4369,6 +4927,11 @@ enum Orchestrator {
         if let v = task.model { out["model"] = v }
         out["permission"] = task.permission.rawValue
         if let v = task.plan { out["plan"] = v }
+        if let v = task.scheduleID {
+            out["schedule_id"] = v
+            out["schedule_close_tab"] = task.scheduleCloseTab.rawValue
+            out["schedule_notify_failure"] = task.scheduleNotifyFailure
+        }
         if !task.serialize.isEmpty { out["serialize"] = task.serialize }
         if task.claimsDeclared { out["claims"] = task.claims }
         if !task.claimKeys.isEmpty { out["claim_keys"] = task.claimKeys }
@@ -4454,6 +5017,10 @@ enum Orchestrator {
         task.model = StartPoints.modelName(obj["model"] as? String)
         task.permission = (obj["permission"] as? String).flatMap(Permission.init(rawValue:)) ?? .ask
         task.plan = obj["plan"] as? String
+        task.scheduleID = (obj["schedule_id"] as? String).flatMap { isTaskID($0) ? $0 : nil }
+        task.scheduleCloseTab = (obj["schedule_close_tab"] as? String)
+            .flatMap(ScheduleCloseTab.init(rawValue:)) ?? .onSuccess
+        task.scheduleNotifyFailure = obj["schedule_notify_failure"] as? Bool ?? true
         task.serialize = (obj["serialize"] as? [String] ?? []).filter {
             StartPoints.modelName($0) == $0
         }
@@ -4670,6 +5237,12 @@ enum Orchestrator {
         handoffTitlesByTerminal = [:]
         secrets = [:]
         dispatchTimes = []
+        handledScheduleFires = [:]
+        pendingScheduleFires = [:]
+        dispatchingSchedules = []
+        invalidScheduleFingerprints = [:]
+        scheduleRunnerForTesting = nil
+        scheduleDispatchEnqueuerForTesting = nil
         workspaceOverlapObserverForTesting = nil
         titlesByTerminal = [:]
         loaded = false

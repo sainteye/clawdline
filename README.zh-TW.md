@@ -530,6 +530,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 | --- | --- |
 | [輸入條的細節](docs/interface.md) | session 清單、<kbd>⌘</kbd><kbd>J</kbd> 那塊、語音、檔案、瀏海 |
 | [把工作派出去](docs/orchestrator.md) | 一個 session 派工給另一個：協定、憑證、生命週期 |
+| [排程的任務](docs/schedules.md) | 按本地時間派出的 task 模板、睡眠補課與收 tab 政策 |
 | [交給新 session 接著做](docs/handoff.md) | 把整條工作的現況交給下一個 session 繼續 |
 | [被派出去的 session 會在哪停](docs/dispatch-permissions.md) | 四道門依序是什麼，以及那個在最便宜的模型上意思相反的 flag |
 | [把專案接上來](docs/connect.md) | 寫給 agent 看的：要建哪些檔、怎麼驗自己有沒有做對 |
