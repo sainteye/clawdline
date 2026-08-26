@@ -274,3 +274,87 @@ items:
       A path that calls it in a loop, or a directory holding many headerless rollouts.
     opened: 2026-08-26
 
+  - id: B-IDENTITY-CONTROL-RETIREMENT
+    title: The identity transition control cannot prove agreement or define when it retires
+    problem: >-
+      The registry and fallback identity ladders write only when they disagree, so zero audit rows
+      cannot distinguish continuous agreement from a control that never ran. Without countable
+      clean comparisons there is also no defensible threshold for removing the duplicate ladder;
+      the temporary control can become permanent code and I/O or be removed by intuition.
+    evidence: >-
+      `Sources/Orchestrator.swift` samples each distinct registry answer once but writes only
+      `orchestrator.identity.mismatch`; the Stage 4b review on 2026-08-26 found zero identity
+      events in 1,596 prior audit rows.
+    severity: invisible
+    cost: hours
+    who_hurts: us
+    trigger: Clean comparison receipts exist and enough accumulate to define a removal threshold.
+    opened: 2026-08-26
+
+  - id: B-HOOK-NOTE-NO-PROCESS-LINK
+    title: A tty hook note cannot identify the process that emitted it
+    problem: >-
+      A note can be current in time and still has no field tying it to the Claude process recorded
+      for the task. The pid guard proves which process occupies the tab, while the spawn-time gate
+      only rejects older notes; treating those facts as a process-to-note link would reopen the
+      same identity assumption this refactor removed.
+    evidence: >-
+      `Sources/Orchestrator.swift` reads `HookBridge.note(for:)` by tty and accepts it only when
+      `note.at >= spawnedAt`; the Stage 4b review traced no pid or process-start field between the
+      note and `adoptHookIdentity`.
+    severity: invisible
+    cost: days
+    who_hurts: us
+    trigger: A hook protocol gains process identity, or a current note is observed naming another process.
+    opened: 2026-08-26
+
+  - id: B-RESTART-PAIR-SPAWN-FAILURE
+    title: A malformed provisional identity can exhaust briefing after restart
+    problem: >-
+      A spawning task restored with a malformed path and session pair loses its proof but retains
+      both values. If the registry then misses, ownership correctly refuses to clear that
+      pre-delivery pair and briefing eventually fails closed at the attempt ceiling instead of
+      rediscovering the child. No wrong identity is accepted, but useful work never starts.
+    evidence: >-
+      The Stage 4b review on 2026-08-26 traced the stored malformed pair, registry miss, `.other`
+      ownership and `.exhausted` decision as one chain; `Sources/Orchestrator.swift` maps that
+      ceiling to `spawn_failed`.
+    severity: degrades
+    cost: hours
+    who_hurts: user
+    trigger: A real `spawn_failed` record contains a retained, unproven Claude transcript pair.
+    opened: 2026-08-26
+
+  - id: B-IDENTITY-CALLER-UNTESTABLE
+    title: The live Claude identity caller cannot be exercised as one unit
+    problem: >-
+      Tests can verify the pure identity policies but cannot prove that the polling caller sampled
+      the right external facts, applied them in the right order and handed the resulting task to
+      briefing. A wiring regression can therefore leave every policy test green while production
+      takes a different path.
+    evidence: >-
+      `noteClaudeIdentityFromLegacySources` in `Sources/Orchestrator.swift` is private and directly
+      reads hook notes, transcript files, process state and the registry; the Stage 1+2 and Stage
+      4b reviews both identified the missing caller-level seam.
+    severity: invisible
+    cost: days
+    who_hurts: contributor
+    trigger: The next identity-source change, or another regression that pure policy tests miss.
+    opened: 2026-08-26
+
+  - id: B-CODEX-IDENTITY-NO-PID-GUARD
+    title: Codex identity has no persisted process guard
+    problem: >-
+      Codex locates a rollout through lsof and proves delivery with the task marker, but unlike
+      Claude it does not persist and recheck the process occupying the reused tty. Adding a guard
+      without evidence would enlarge a working path merely for symmetry, so the asymmetry remains
+      deliberate until it causes a symptom.
+    evidence: >-
+      The Codex branch of `noteChildIdentity` in `Sources/Orchestrator.swift` calls
+      `Codex.locate(...pid:)` without storing pid and process start; the Stage 4b review found a
+      live Codex task proven by its marker and zero identity-related audit failures.
+    severity: invisible
+    cost: days
+    who_hurts: user
+    trigger: A Codex task binds to a rollout from a replaced process or reused tty.
+    opened: 2026-08-26
