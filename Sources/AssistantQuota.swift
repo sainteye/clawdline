@@ -32,8 +32,8 @@ enum QuotaSource: String {
 struct AssistantQuota {
     let assistant: Assistant
     var installed: Bool
-    /// `nil` until the identity probe (`refreshIdentityIfDue`) has run at least once for this
-    /// assistant.
+    /// `nil` until an identity probe has run at least once for this assistant — which nothing in
+    /// this build does yet; see `claude()`/`codex()`'s own note on why.
     var loggedIn: Bool?
     /// `nil` until the identity probe has run; never inferred from anywhere else.
     var plan: String?
@@ -42,7 +42,13 @@ struct AssistantQuota {
     /// The signal's own time — Unix seconds — not when it was read. `nil` exactly when
     /// `availability == .unknown` and nothing usable has been seen.
     var observedAt: Int?
-    /// The tightest live window's reset, when one is known.
+    /// The tightest live window's reset, when one is known — `windows`' own highest
+    /// `usedPercent`, not the earliest `resetsAt` among them. A window that has already reset
+    /// says nothing about the window now open, so `decayed(_:now:)` uses this value to decide
+    /// when `exhausted` itself has aged out; pointing it at some other, unrelated window's own
+    /// reset — one that already passed while the tight one is still five days out — is exactly
+    /// how an account that is still exhausted gets read as merely `unknown` and dispatched to
+    /// anyway. See `AssistantQuota.tightestWindowResetsAt(_:)`.
     var resetsAt: Int?
     /// One sentence a person, or an API client with no UI of its own, can print as-is.
     var detail: String
@@ -83,6 +89,14 @@ extension AssistantQuota {
         return .ok
     }
 
+    /// `AssistantQuota.resetsAt`'s own value: the highest-`usedPercent` window's `resetsAt`, the
+    /// same notion of "tightest" `availability(from:)` uses above. Callers pass only windows
+    /// already known to be live — a window whose own reset has passed is not a candidate, exactly
+    /// as `availability(from:)` would not count it toward the answer either.
+    static func tightestWindowResetsAt(_ windows: [SessionInfo.Window]) -> Int? {
+        windows.max(by: { ($0.usedPercent ?? 0) < ($1.usedPercent ?? 0) })?.resetsAt
+    }
+
     /// The Q1 design's §A.1 Codex-only rule. A `rate_limits` record with no named window at all
     /// does not by itself mean the account is out — a rollout with no usage yet looks exactly the
     /// same. It only means that once paired with the last window that *did* have a name, and that
@@ -90,7 +104,11 @@ extension AssistantQuota {
     /// from instead, and the last real reading at 95% or more.
     static func codexCreditsDepleted(_ depleted: SessionInfo.Limits.Depleted?,
                                      lastNamedUsedPercent: Double?) -> Bool {
-        guard let depleted, depleted.limitID != "codex", !depleted.hasCredits,
+        // `limitID`/`hasCredits` missing entirely (an older Codex, or a renamed field) is "the
+        // condition is not established", not "it is established and unfavourable" — see
+        // `SessionInfo.Limits.Depleted`'s own doc comment on why both are optional.
+        guard let depleted, let limitID = depleted.limitID, let hasCredits = depleted.hasCredits,
+              limitID != "codex", !hasCredits,
               let lastNamedUsedPercent, lastNamedUsedPercent >= 95 else { return false }
         return true
     }
@@ -232,79 +250,19 @@ extension AssistantQuota {
         return Identity(loggedIn: plain.lowercased().hasPrefix("logged in"), plan: nil)
     }
 
-    private static let identityLock = NSLock()
-    private static var identityCache: [Assistant: Identity] = [:]
-    private static var identityCheckedAt: Date?
-    private static let identityInterval: TimeInterval = 3_600
-
-    /// Runs the identity probe — the Q1 design's §B.3 — at most once an hour if it is called
-    /// repeatedly; the interval guard is in this function, not in a caller.
-    ///
-    /// **Nothing in this task's declared scope calls this yet.** It shells out (`claude auth
-    /// status` / `codex login status`, each up to a 5-second timeout — see
-    /// `probeIdentity(_:)`), so it deliberately is *not* wired into `current(for:now:)`: the Q1
-    /// design's own requirement is that a dispatch gate stay a synchronous, file-only read, and
-    /// "the first call after launch" would have meant the first `dispatch()` after every restart,
-    /// and after every quiet hour, blocking on a live subprocess right at the gate the whole
-    /// point of this task was to make cheap. Wiring "once at startup, then hourly" for real needs
-    /// one call to this from `Controller.swift` or `main.swift`, both outside this task's claimed
-    /// paths — until then, `loggedIn`/`plan` stay `nil` and every `unknown` reads as `unknown`
-    /// rather than being split into "not logged in" / "no signal yet". See `CHANGES.md`.
-    static func refreshIdentityIfDue(now: Date = Date()) {
-        identityLock.lock()
-        let due = identityCheckedAt.map { now.timeIntervalSince($0) >= identityInterval } ?? true
-        guard due else { identityLock.unlock(); return }
-        identityCheckedAt = now
-        identityLock.unlock()
-        for assistant in Assistant.allCases where assistant.isInstalled {
-            guard let identity = probeIdentity(assistant) else { continue }
-            identityLock.lock()
-            identityCache[assistant] = identity
-            identityLock.unlock()
-        }
-    }
-
-    static func identity(for assistant: Assistant) -> Identity? {
-        identityLock.lock()
-        defer { identityLock.unlock() }
-        return identityCache[assistant]
-    }
-
-    /// Test-only: put the clock back so the next `refreshIdentityIfDue` runs unconditionally.
-    static func forgetIdentityScheduleForTesting() {
-        identityLock.lock()
-        identityCheckedAt = nil
-        identityCache = [:]
-        identityLock.unlock()
-    }
-
-    private static func probeIdentity(_ assistant: Assistant) -> Identity? {
-        let command = assistant == .claude ? "claude auth status" : "codex login status"
-        guard let output = runViaLoginShell(command, timeout: 5) else { return nil }
-        return assistant == .claude ? parseClaudeAuthStatus(output) : parseCodexLoginStatus(output)
-    }
-
-    /// The user's own login shell, because `claude`/`codex` are typically found the same way
-    /// `npm` is (Q1 design's own citation of `DevStack.swift`'s `shell(_:cwd:timeout:)`): an app
-    /// launched from Finder inherits no terminal `PATH` at all.
-    private static func runViaLoginShell(_ command: String, timeout: TimeInterval) -> String? {
-        let task = Process()
-        let shellPath = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        task.executableURL = URL(fileURLWithPath:
-            FileManager.default.isExecutableFile(atPath: shellPath) ? shellPath : "/bin/zsh")
-        task.arguments = ["-i", "-l", "-c", command]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe()
-        do { try task.run() } catch { return nil }
-        let killer = DispatchWorkItem { if task.isRunning { task.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitQuietly()
-        killer.cancel()
-        guard task.terminationStatus == 0 else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
+    // The identity probe itself — what would call `parseClaudeAuthStatus`/`parseCodexLoginStatus`
+    // above, cache the answer, and feed `loggedIn`/`plan` — is not wired into this version. It
+    // used to live here as `refreshIdentityIfDue`/`identity(for:)`/`probeIdentity`/
+    // `runViaLoginShell`, none of which anything in `Sources/` or `Tests/` ever called: `claude()`
+    // and `codex()` below hard-code `loggedIn`/`plan` to `nil` instead of reading a cache nothing
+    // ever filled. It is removed rather than left connected-to-nothing because `runViaLoginShell`
+    // had a live deadlock waiting in it — an unread `standardError` pipe a chatty command could
+    // fill past its buffer, and an interactive `zsh -i -l` that runs a full rc and can write
+    // prompt escapes into the very output being parsed as JSON — and dead code with a bug in it is
+    // a worse place to leave that bug than no code at all. Wiring the probe for real needs a
+    // caller outside this file (`Controller.swift` or `main.swift`) and a login-shell runner that
+    // reads `standardError` as it goes; see `docs/api.md`'s note on `logged_in`/`plan` staying
+    // `null` until then.
 
     // MARK: - §C.2: the wire shape
 
@@ -357,9 +315,8 @@ extension AssistantQuota {
     }
 
     /// A file-only read: no subprocess, nothing that can block on a slow shell. `loggedIn`/`plan`
-    /// come from whatever `refreshIdentityIfDue` last cached, which is `nil` on both until
-    /// something calls it — see that function's own note on why this deliberately does not call
-    /// it for you.
+    /// are always `nil` — no identity probe is wired into this build; see `claude()`/`codex()`'s
+    /// own note on why.
     static func current(for assistant: Assistant, now: Date = Date()) -> AssistantQuota {
         cacheLock.lock()
         if let forced = overridesForTesting[assistant] {
@@ -413,14 +370,15 @@ extension AssistantQuota {
     static func claude(cacheDirectory: URL = ProjectStatus.cacheDirectory,
                        now: Date = Date()) -> AssistantQuota {
         let limits = SessionInfo.claudeLimits(cacheDirectory: cacheDirectory, now: now)
-        let ident = identity(for: .claude)
         let threshold = Config.shared.assistantQuotaLowThreshold
         let availability = availability(from: limits.windows, now: now, lowThreshold: threshold)
+        // `loggedIn`/`plan` stay `nil`: the identity probe that would fill them in is not wired
+        // into this version — see `docs/api.md`'s note on those two fields.
         var quota = AssistantQuota(
             assistant: .claude, installed: Assistant.claude.isInstalled,
-            loggedIn: ident?.loggedIn, plan: ident?.plan,
+            loggedIn: nil, plan: nil,
             availability: availability, source: .observed,
-            observedAt: limits.at, resetsAt: limits.windows.compactMap(\.resetsAt).min(),
+            observedAt: limits.at, resetsAt: tightestWindowResetsAt(limits.windows),
             detail: "", windows: limits.windows)
         quota = decayed(quota, now: now)
         if !quota.detail.isEmpty { return quota }   // decay already wrote a final sentence
@@ -433,29 +391,42 @@ extension AssistantQuota {
     /// with the same fixed `SessionInfo.codexLimits(rollout:)` a single session's `/info` uses —
     /// see the Q1 design's §B.1 steps 1–4, and §2.4 for why the fix has to come first.
     static func codex(sessionsRoot: URL = Codex.sessionsRoot, now: Date = Date()) -> AssistantQuota {
-        let files = recentRolloutFiles(sessionsRoot: sessionsRoot)
-        let results: [SessionInfo.Limits] = files.compactMap { url in
-            guard let tail = Transcript.tail(of: url, bytes: 256 * 1_024) else { return nil }
-            return SessionInfo.codexLimits(rollout: Data(tail.utf8))
-        }
+        let results = recentRolloutResults(sessionsRoot: sessionsRoot)
         let newestNamed = results.filter { !$0.windows.isEmpty }
             .max { ($0.at ?? 0) < ($1.at ?? 0) }
         let newestDepleted = results.compactMap(\.depleted).max { ($0.at ?? 0) < ($1.at ?? 0) }
-        let windows = newestNamed?.windows ?? []
+        // A window whose own reset has passed is over — `SessionInfo.claudeLimits` already
+        // drops those before anything downstream sees them; the Codex rollout read has no
+        // equivalent step of its own, so it happens here instead. Without it, a record naming
+        // both an expired 5h window and a live, spent 7d one carries the expired window's own
+        // resetsAt into `tightestWindowResetsAt` below by the older code path, and `decayed(_:)`
+        // reads that already-past reset as "the exhausted window has since reset" — silently
+        // turning `exhausted` into `unknown` for an account that is still, in fact, exhausted.
+        let windows = (newestNamed?.windows ?? []).filter { window in
+            guard let resets = window.resetsAt else { return true }
+            return Double(resets) > now.timeIntervalSince1970
+        }
         let tightest = windows.compactMap(\.usedPercent).max()
-        let creditsExhausted = codexCreditsDepleted(newestDepleted, lastNamedUsedPercent: tightest)
+        // The design's credits rule is about *the previous named window* — a relationship this
+        // file can only see by timestamp once the two readings come from different rollout
+        // files. Without this guard, a depleted record left over from a prior, already-reset
+        // cycle can pair with an unrelated later reading that merely happens to still be in the
+        // last 5 rollouts, and get read as "still depleted" for a window that in fact recovered.
+        let depletedIsCurrent = (newestDepleted?.at ?? 0) >= (newestNamed?.at ?? 0)
+        let creditsExhausted = depletedIsCurrent
+            && codexCreditsDepleted(newestDepleted, lastNamedUsedPercent: tightest)
         let threshold = Config.shared.assistantQuotaLowThreshold
         var availability = availability(from: windows, now: now, lowThreshold: threshold)
         if creditsExhausted { availability = .exhausted }
         let observedAt: Int? = creditsExhausted
             ? max(newestDepleted?.at ?? 0, newestNamed?.at ?? 0)
             : newestNamed?.at
-        let ident = identity(for: .codex)
+        // `loggedIn`/`plan` stay `nil` — same note as `claude()` above.
         var quota = AssistantQuota(
             assistant: .codex, installed: Assistant.codex.isInstalled,
-            loggedIn: ident?.loggedIn, plan: ident?.plan,
+            loggedIn: nil, plan: nil,
             availability: availability, source: .observed,
-            observedAt: observedAt, resetsAt: windows.compactMap(\.resetsAt).min(),
+            observedAt: observedAt, resetsAt: tightestWindowResetsAt(windows),
             detail: "", windows: windows)
         quota = decayed(quota, now: now)
         if !quota.detail.isEmpty { return quota }
@@ -464,16 +435,39 @@ extension AssistantQuota {
         return quota
     }
 
-    /// Up to 5 rollouts, newest modification time first — the Q1 design's §B.1: cheap enough for
-    /// the dispatch gate to read synchronously, and, unlike `Codex.rollouts(days:root:)`'s
-    /// day-folder order, sorted by the stamp that actually says which one was touched last.
-    private static func recentRolloutFiles(sessionsRoot: URL) -> [URL] {
+    /// Bounds how far down the newest-first list `recentRolloutResults(sessionsRoot:)` will look
+    /// before giving up — a fixed ceiling rather than an unbounded scan, so a night with dozens
+    /// of tabs opening and dying still costs one bounded pass rather than growing with them.
+    private static let maxRolloutFilesScanned = 40
+
+    /// Up to 5 rollouts that actually named a window or a depleted bucket — newest modification
+    /// time first, but **skipping past** any that did not, up to `maxRolloutFilesScanned`. The
+    /// night this mattered: quota running out opens a burst of tabs that die within seconds, each
+    /// leaving behind a rollout with a newer mtime than everything real but not one `rate_limits`
+    /// record in it. Taking literally "the 5 most recently modified files" — the Q1 design's own
+    /// words — let five dead tabs push the one file that actually said anything out of the
+    /// window, answering `unknown` and dispatching right into the same failure. Sorting on mtime
+    /// stays right (unlike `Codex.rollouts(days:root:)`'s day-folder order, it is the stamp that
+    /// actually says which file was touched last); what changed is that a file with nothing to
+    /// say no longer counts as one of the 5.
+    private static func recentRolloutResults(sessionsRoot: URL) -> [SessionInfo.Limits] {
         let fm = FileManager.default
         let candidates = Codex.rollouts(days: 2, root: sessionsRoot)
-        let dated = candidates.map { url -> (URL, Date) in
-            let mtime = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
-            return (url, mtime ?? .distantPast)
+        let byRecency = candidates
+            .map { url -> (URL, Date) in
+                let mtime = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+                return (url, mtime ?? .distantPast)
+            }
+            .sorted { $0.1 > $1.1 }
+            .map(\.0)
+        var picked: [SessionInfo.Limits] = []
+        for url in byRecency.prefix(maxRolloutFilesScanned) {
+            guard let tail = Transcript.tail(of: url, bytes: 256 * 1_024) else { continue }
+            let limits = SessionInfo.codexLimits(rollout: Data(tail.utf8))
+            guard !limits.windows.isEmpty || limits.depleted != nil else { continue }
+            picked.append(limits)
+            if picked.count == 5 { break }
         }
-        return dated.sorted { $0.1 > $1.1 }.prefix(5).map(\.0)
+        return picked
     }
 }

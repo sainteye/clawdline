@@ -444,7 +444,7 @@ $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/orchestrator/assistants
 | `resets_at` | the tightest live window's reset, when known |
 | `detail` | one sentence a client with no UI of its own can print as-is |
 | `windows` | the exact shape `/v1/sessions/:id/info`'s `limits.windows` already uses — `name`, `usedPercent`, `resetsAt`, `hit`. **An empty array means nobody said**, drawn as unknown rather than 0%, same rule as there |
-| `logged_in`, `plan` | `null` until the identity probe has run for that assistant at least once — which nothing in this build does automatically yet; see `Sources/AssistantQuota.swift`'s note on `refreshIdentityIfDue`. Once it has, `logged_in` is a bool and `plan` is a string such as `"max"` or `"prolite"`, or still `null` if the provider did not say |
+| `logged_in`, `plan` | reserved fields. Always `null` in this version — the identity probe that would run `claude auth status`/`codex login status` and fill them in is not implemented in this build, only the pure parsers for their output (`AssistantQuota.parseClaudeAuthStatus`/`parseCodexLoginStatus`) with nothing left to call them. Once a probe exists, `logged_in` would be a bool and `plan` a string such as `"max"` or `"prolite"`, or still `null` if the provider did not say |
 
 **Aging is not one TTL.** Because a provider's own `used_percent` only rises within one window, an
 old reading is a floor rather than an estimate, so each `availability` ages differently:
@@ -1198,10 +1198,12 @@ refusing — see [`GET /v1/orchestrator/assistants`](#get-v1orchestratorassistan
               "resets_at":1788272000}]}
 ```
 
-An `exhausted` assistant dispatched anyway with `"ignore_quota": true` warns under
-`assistant_exhausted` instead of the `409` above, with the same fields plus a message that says the
-override was honored — and, when the account's own reset falls after this task's own
-`timeout_minutes`, says that too.
+An optional boolean `ignore_quota` in `task.json` is the override named in the `409
+assistant_exhausted` row above and in that reply's own `message`: an `exhausted` assistant
+dispatched anyway with `"ignore_quota": true` warns under `assistant_exhausted` instead of
+refusing with the `409`, with the same fields plus a message that says the override was honored —
+and, when the account's own reset falls after this task's own `timeout_minutes`, says that too.
+Absent or `false` changes nothing; only `low` and `unknown` ever dispatched quietly anyway.
 
 The wire field has three distinct states, preserved through the registry and all GET responses:
 

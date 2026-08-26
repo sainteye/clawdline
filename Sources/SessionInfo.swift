@@ -92,8 +92,15 @@ enum SessionInfo {
         var depleted: Depleted?
 
         struct Depleted: Equatable {
-            var limitID: String
-            var hasCredits: Bool
+            /// `nil` when the record carried no `limit_id` at all — an absent field, not a
+            /// value that happens to differ from `"codex"`. `AssistantQuota.codexCreditsDepleted`
+            /// reads that absence as "condition not established" rather than as the more
+            /// alarming of the two readings a present-but-different string would allow.
+            var limitID: String?
+            /// `nil` when the record carried no `credits` object at all, for the same reason
+            /// `limitID` is optional: an unknown field must not default to whichever value makes
+            /// the account look more exhausted than it may be.
+            var hasCredits: Bool?
             /// Unix seconds, of the depleted record itself — not of the named window that
             /// answers `windows` above.
             var at: Int?
@@ -348,8 +355,11 @@ enum SessionInfo {
                 // same story again or no longer today's answer either way.
                 if depleted == nil {
                     let credits = rates["credits"] as? [String: Any]
-                    depleted = Limits.Depleted(limitID: rates["limit_id"] as? String ?? "",
-                                               hasCredits: credits?["has_credits"] as? Bool ?? false,
+                    // Absent stays absent — see `Depleted`'s own doc comment. A defaulted `""`/
+                    // `false` here used to read as "present and saying something", which is how
+                    // an account with neither field ended up judged exhausted by accident.
+                    depleted = Limits.Depleted(limitID: rates["limit_id"] as? String,
+                                               hasCredits: credits?["has_credits"] as? Bool,
                                                at: out.at)
                 }
                 continue

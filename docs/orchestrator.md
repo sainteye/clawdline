@@ -939,9 +939,19 @@ identifies itself in `task.json` with whatever id its own assistant gave it — 
 `sessionId`, or a Codex thread id — and that is *not* the terminal-neutral session `id` this app
 assigns and `GET /v1/sessions` lists as `id`. Comparing a root's self-reported id against that `id`
 column is comparing two different namespaces; a miss there proves nothing about whether the other
-session is still alive, only that the two ids do not name the same thing. To find whether a
-particular root is still around, compare against `sessions[].sessionId` instead — the field this
-app fills in from its own hook identification, in the same namespace the root named itself in.
+session is still alive, only that the two ids do not name the same thing.
+
+**`sessions[].sessionId` is not a reliable second column either — it exists for one assistant and
+not the other.** [`docs/api.md`](api.md#the-session-object) says so plainly: `sessionId` appears
+only when Claude Code's hooks are installed. A Codex root's own id is a thread id this app never
+reads back into that field at all, hooks or not — so for a Codex root, `sessions[].sessionId` is
+`null` on every row, and a miss there proves nothing about whether it is alive, exactly like the
+`id` column above. Comparing against it works only for a Claude root, and only once hooks are
+installed. **Querying for a session by an id and getting nothing back is never proof that session
+is gone** — it may only mean this app never learned the id to compare against. To judge whether a
+particular root is still around, use what `GET /v1/sessions` can actually promise instead: its
+`cwd`, `label` and `state` for a session sitting where the root said it would be, or sending the
+root a message and reading whether anything answers.
 
 The owner uses `POST /v1/orchestrator/waits/:id/release` only after committing or explicitly
 releasing the paths, naming its own Clawdline session id and the commit when one exists. Clawdline

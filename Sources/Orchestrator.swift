@@ -2750,15 +2750,21 @@ enum Orchestrator {
         let ageSeconds = assistantAgeSeconds(quota, now: now)
         let secondsToReset = quota.resetsAt.map { $0 - Int(now.timeIntervalSince1970) } ?? 3_600
         let retryAfter = max(0, min(secondsToReset, 3_600))
-        let alternatives = AssistantQuota.all(now: now)
-            .filter { $0.assistant != quota.assistant }
-            .map { alt -> [String: Any] in
-                ["id": alt.assistant.rawValue, "availability": alt.availability.rawValue,
-                 "detail": alt.detail]
-            }
-        let message = "\(quota.assistant.label) has no quota left (\(quota.detail)). Dispatch to "
-            + "another assistant instead, wait for the reset, or set \"ignore_quota\": true in "
-            + "task.json to send it anyway."
+        let others = AssistantQuota.all(now: now).filter { $0.assistant != quota.assistant }
+        let alternatives = others.map { alt -> [String: Any] in
+            ["id": alt.assistant.rawValue, "availability": alt.availability.rawValue,
+             "detail": alt.detail]
+        }
+        // Naming who to send it to instead costs nothing with only two assistants on this Mac —
+        // "another assistant" makes a root re-read `alternatives` to learn what this sentence
+        // already knows. Only when nobody else has anything left does the message fall back to
+        // waiting: naming an assistant that is itself exhausted would just move the same 409
+        // one hop later.
+        let redirect = others.first(where: { $0.availability != .exhausted })
+            .map { "Dispatch to \($0.assistant.rawValue) instead, wait for the reset" }
+            ?? "Wait for the reset"
+        let message = "\(quota.assistant.label) has no quota left (\(quota.detail)). \(redirect), "
+            + "or set \"ignore_quota\": true in task.json to send it anyway."
         let extra: [String: Any] = [
             "assistant": quota.assistant.rawValue,
             "availability": quota.availability.rawValue,
@@ -3387,6 +3393,13 @@ enum Orchestrator {
         if let index = dispatchTimes.lastIndex(of: ticket) {
             dispatchTimes.remove(at: index)
         }
+    }
+
+    /// Test-only: how many dispatch-rate tickets are currently held, so a test can confirm a
+    /// refusal actually gave its ticket back rather than trusting the code path ran unobserved.
+    static func dispatchRateCountForTesting() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return dispatchTimes.count
     }
 
     private static func activeCount() -> Int {
@@ -5814,7 +5827,9 @@ enum Orchestrator {
         - A dispatch can also come back `409 assistant_exhausted`: the assistant you named is out,
           and its `alternatives` array names who to send instead — read that rather than retrying
           the same one. `assistant_low` inside `warnings` is not a refusal; it means a long task
-          there may not finish before the quota runs out.
+          there may not finish before the quota runs out. If you have a real reason to send it
+          anyway — the account resets before your timeout, or nobody else is free — set
+          `"ignore_quota": true` in `task.json` and it dispatches with a warning instead of a 409.
         - The orchestrator token is this Mac's credential, not yours to pass on. Do not write it
           into a file, do not put it in /tmp, do not hand it to anything you dispatch.
         - Its answer arrives as `/tmp/.clawdline/$sub/result.json`. The file appearing is the

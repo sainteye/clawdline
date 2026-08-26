@@ -12490,6 +12490,15 @@ group("the Session info card is read off the files, and says unknown rather than
     expect("so is whether it still had credits to fall back on",
            afterDepletion.depleted?.hasCredits, false)
 
+    // A record with no named window *and* no `limit_id`/`credits` at all — an older Codex, or a
+    // renamed field — reads as nil on both, not the empty-string/false a default used to produce.
+    let bareRates = line(["timestamp": "2026-08-26T12:00:00.000Z", "type": "event_msg",
+                          "payload": ["type": "token_count", "info": [:],
+                                      "rate_limits": ["primary": NSNull(), "secondary": NSNull()]]])
+    let bareDepletion = SessionInfo.codexLimits(rollout: Data((bareRates + "\n").utf8))
+    expect("no limit_id at all is nil, not \"\"", bareDepletion.depleted?.limitID, nil)
+    expect("no credits object at all is nil, not false", bareDepletion.depleted?.hasCredits, nil)
+
     expect("five hours", SessionInfo.windowName(minutes: 300), "5h")
     expect("seven days", SessionInfo.windowName(minutes: 10080), "7d")
     expect("a day", SessionInfo.windowName(minutes: 1440), "1d")
@@ -12602,6 +12611,21 @@ group("an assistant's quota reads as one of four values, and ages by its own rul
           AssistantQuota.codexCreditsDepleted(depleted(), lastNamedUsedPercent: 95) == true)
     check("and comfortably so at 100%",
           AssistantQuota.codexCreditsDepleted(depleted(), lastNamedUsedPercent: 100) == true)
+    // A missing `limit_id` or `credits` is "the condition is not established", not "it is
+    // established and unfavourable" — the field being absent must not read as the more alarming
+    // of the two readings a present-but-different value would allow.
+    check("no limit_id at all is not exhausted, whatever credits says",
+          AssistantQuota.codexCreditsDepleted(
+            SessionInfo.Limits.Depleted(limitID: nil, hasCredits: false, at: 1_787_745_000),
+            lastNamedUsedPercent: 100) == false)
+    check("no has_credits at all is the same, whatever limit_id says",
+          AssistantQuota.codexCreditsDepleted(
+            SessionInfo.Limits.Depleted(limitID: "premium", hasCredits: nil, at: 1_787_745_000),
+            lastNamedUsedPercent: 100) == false)
+    check("neither field present at all is not exhausted",
+          AssistantQuota.codexCreditsDepleted(
+            SessionInfo.Limits.Depleted(limitID: nil, hasCredits: nil, at: 1_787_745_000),
+            lastNamedUsedPercent: 100) == false)
 
     // §A.2: 5% of a window's own length, clamped 15 minutes–6 hours.
     expect("a five-hour window clamps to the 15-minute floor",
@@ -12792,6 +12816,255 @@ group("the machine-level providers read the same file shapes /info already reads
     let placeAssistants = places?["assistants"] as? [[String: Any]]
     check("/v1/places carries the same availability word, with no window detail alongside it",
           placeAssistants?.allSatisfy { $0["availability"] is String && $0["windows"] == nil } ?? false)
+}
+
+group("resetsAt names the tightest live window rather than the earliest of any of them, and "
+    + "Codex's credits rule only trusts a depleted record that is actually the newer one") {
+    let now = Date(timeIntervalSince1970: 1_787_745_138)
+    let tmp = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-resetsat-test-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+    func line(_ obj: [String: Any]) -> String {
+        (try? JSONSerialization.data(withJSONObject: obj)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    }
+
+    // §1: the Claude-side shape — nothing has expired, but two live windows disagree on which
+    // reset matters. The account is exhausted on the 7-day window; the 5-hour one merely resets
+    // sooner. `resetsAt` picking the earliest of the two rather than the spent one's own points
+    // `retry_after` and the 409's "resets in …" at the wrong window entirely — the account is
+    // still out long after a root that trusted that number would have retried.
+    let cacheDir = tmp.appendingPathComponent("claude-cache", isDirectory: true)
+    try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+    let fiveHourReset = Int(now.timeIntervalSince1970) + 1_800       // 30 minutes — soonest, not tight
+    let sevenDayReset = Int(now.timeIntervalSince1970) + 345_600     // 4 days — the one actually spent
+    let claudeJSON = """
+    {"at": \(Int(now.timeIntervalSince1970) - 30), "session_id": "s", "rate_limits": {
+      "five_hour": {"used_percentage": 20, "resets_at": \(fiveHourReset)},
+      "seven_day": {"used_percentage": 100, "resets_at": \(sevenDayReset)}}}
+    """
+    try? claudeJSON.write(to: cacheDir.appendingPathComponent("rate-limits.json"),
+                          atomically: true, encoding: .utf8)
+    let claudeQuota = AssistantQuota.claude(cacheDirectory: cacheDir, now: now)
+    expect("the account is exhausted on its tightest window", claudeQuota.availability, .exhausted)
+    expect("resets_at names the spent 7-day window, not the soonest-to-reset 5-hour one",
+           claudeQuota.resetsAt, sevenDayReset)
+
+    // §2: the Codex incident this design was written for — one record naming both an *already
+    // expired* 5-hour window and a still-live, fully spent 7-day one (the real shape: a sampled
+    // rollout with `primary.resets_at` hours in the past and `secondary.resets_at` five days out).
+    // Before the fix this must be RED: `resetsAt` took the expired window's own past reset, and
+    // `decayed(_:)` read that as "the exhausted window has since reset" and silently downgraded
+    // the account to `unknown` — the dispatch gate's `case .ok, .unknown: break` then let a task
+    // through to an account that was, in fact, still completely out.
+    let windowsRoot = tmp.appendingPathComponent("codex-sessions-windows", isDirectory: true)
+    let windowsDay = windowsRoot.appendingPathComponent("2026/08/26", isDirectory: true)
+    try? FileManager.default.createDirectory(at: windowsDay, withIntermediateDirectories: true)
+    let expiredPrimaryResetsAt = Int(now.timeIntervalSince1970) - 45_138   // already passed
+    let liveSecondaryResetsAt = 1_788_264_238                              // five days out
+    let bothWindows = line(["timestamp": "2026-08-26T05:00:00.000Z", "type": "event_msg",
+                            "payload": ["type": "token_count", "info": [:],
+                                        "rate_limits": ["primary": ["used_percent": 20.0,
+                                                                    "window_minutes": 300,
+                                                                    "resets_at": expiredPrimaryResetsAt],
+                                                        "secondary": ["used_percent": 100.0,
+                                                                     "window_minutes": 10_080,
+                                                                     "resets_at": liveSecondaryResetsAt]]]])
+    try? (bothWindows + "\n").write(to: windowsDay.appendingPathComponent("rollout-both-windows.jsonl"),
+                                    atomically: true, encoding: .utf8)
+    let codexQuota = AssistantQuota.codex(sessionsRoot: windowsRoot, now: now)
+    expect("the weekly window is spent, so the account is exhausted — an expired sibling window "
+         + "must not demote this to unknown", codexQuota.availability, .exhausted)
+    expect("resets_at names the still-live 7-day window that is actually spent",
+           codexQuota.resetsAt, liveSecondaryResetsAt)
+    expect("the expired 5-hour window is dropped from the windows list too, the same way "
+         + "SessionInfo.claudeLimits already drops one of its own",
+           codexQuota.windows.map(\.name), ["7d"])
+
+    // §3: the design's credits rule is keyed to *the previous named window*, and within-file that
+    // ordering is guaranteed — but `AssistantQuota.codex()` takes the newest depleted record and
+    // the newest named window from up to 5 *different* files, and their `at`s were never compared.
+    // An old depleted record from an already-reset cycle, paired across files with a later, fresh
+    // 96% reading that merely happens to still be within the last 5 rollouts, must not be read as
+    // "still depleted" for a window that in fact recovered.
+    let orderRoot = tmp.appendingPathComponent("codex-sessions-order", isDirectory: true)
+    let orderDay = orderRoot.appendingPathComponent("2026/08/26", isDirectory: true)
+    try? FileManager.default.createDirectory(at: orderDay, withIntermediateDirectories: true)
+    let oldDepletedLine = line(["timestamp": "2026-08-20T00:00:00.000Z", "type": "event_msg",
+                                "payload": ["type": "token_count", "info": [:],
+                                            "rate_limits": ["limit_id": "premium",
+                                                            "primary": NSNull(), "secondary": NSNull(),
+                                                            "credits": ["has_credits": false,
+                                                                       "unlimited": false,
+                                                                       "balance": "0"]]]])
+    try? (oldDepletedLine + "\n").write(to: orderDay.appendingPathComponent("rollout-old-depleted.jsonl"),
+                                        atomically: true, encoding: .utf8)
+    let newNamedLine = line(["timestamp": "2026-08-26T11:13:50.177Z", "type": "event_msg",
+                             "payload": ["type": "token_count", "info": [:],
+                                         "rate_limits": ["primary": ["used_percent": 96.0,
+                                                                     "window_minutes": 300,
+                                                                     "resets_at": 1_788_000_000],
+                                                         "secondary": NSNull()]]])
+    try? (newNamedLine + "\n").write(to: orderDay.appendingPathComponent("rollout-new-named.jsonl"),
+                                     atomically: true, encoding: .utf8)
+    let orderedQuota = AssistantQuota.codex(sessionsRoot: orderRoot, now: now)
+    expect("an old depleted record does not reach across files to condemn a fresh, unrelated "
+         + "96% window", orderedQuota.availability, .low)
+    check("and the detail names the percentage, not stale credits language",
+          !orderedQuota.detail.contains("premium credits exhausted"))
+
+    // §4: the same cross-file ordering problem, but with the fields-missing shape from §3 of the
+    // codexCreditsDepleted tests above — a depleted record with neither `limit_id` nor `credits`
+    // at all, newer than a 96% named window in a different file. Before the `SessionInfo.swift`
+    // fix, the missing fields defaulted to `""`/`false`, which satisfied every condition
+    // `codexCreditsDepleted` checks just as fully as a genuine `"premium"`/`false` pair would.
+    let bareRoot = tmp.appendingPathComponent("codex-sessions-bare-fields", isDirectory: true)
+    let bareDay = bareRoot.appendingPathComponent("2026/08/26", isDirectory: true)
+    try? FileManager.default.createDirectory(at: bareDay, withIntermediateDirectories: true)
+    let namedThenBare = line(["timestamp": "2026-08-26T11:13:50.177Z", "type": "event_msg",
+                              "payload": ["type": "token_count", "info": [:],
+                                          "rate_limits": ["primary": ["used_percent": 96.0,
+                                                                      "window_minutes": 300,
+                                                                      "resets_at": 1_788_000_000],
+                                                          "secondary": NSNull()]]])
+    try? (namedThenBare + "\n").write(to: bareDay.appendingPathComponent("rollout-named.jsonl"),
+                                      atomically: true, encoding: .utf8)
+    let bareAfter = line(["timestamp": "2026-08-26T11:51:28.524Z", "type": "event_msg",
+                          "payload": ["type": "token_count", "info": [:],
+                                      "rate_limits": ["primary": NSNull(), "secondary": NSNull()]]])
+    try? (bareAfter + "\n").write(to: bareDay.appendingPathComponent("rollout-bare.jsonl"),
+                                  atomically: true, encoding: .utf8)
+    let bareQuota = AssistantQuota.codex(sessionsRoot: bareRoot, now: now)
+    expect("a newer record with neither field at all does not condemn the last real window either",
+           bareQuota.availability, .low)
+}
+
+group("the dispatch gate actually reads the quota it computed, rather than only its helpers") {
+    // §4 of the review: `grep -n "Orchestrator\.dispatch(" Tests/main.swift` found nothing —
+    // `assistantExhaustedReply`/`assistantOverrideWarning`/`assistantLowWarning` were tested in
+    // isolation, but never whether `dispatch()` itself reads `made.assistant`, stays quiet on
+    // `unknown`, folds `quotaWarnings` into the reply it actually returns, or refunds the rate
+    // ticket on the refusal path. `setOverrideForTesting` exists for exactly this and had no
+    // caller at all. This calls the real gate rather than re-testing the helpers a second time.
+    //
+    // Only case (a) below is safe to run all the way through `Orchestrator.dispatch()`: it
+    // returns before `spawn(task)` is ever reached, so nothing opens a real terminal or spends
+    // real quota. Cases (b) and (c) pass the gate and register a task that *would* spawn — so
+    // each is given its own `serialize` name already held forever by a "briefed" holder task
+    // written straight into the store (the same technique
+    // "a queued serialized task reports its blockers and cancels immediately" uses above): the
+    // probe stays `queued` and the pump can never promote it, while the reply `dispatch()` already
+    // returned — built before spawn would ever run — carries the real warnings under test.
+    Orchestrator.forget()
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    defer {
+        Orchestrator.drainSerializePumpForTesting()
+        if let storeBefore {
+            try? storeBefore.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        AssistantQuota.clearOverridesForTesting()
+        Orchestrator.forget()
+    }
+
+    func writeTaskFile(id: String, assistant: String, ignoreQuota: Bool, serialize: [String]) {
+        var obj: [String: Any] = [
+            "clawdline_protocol": 1, "task_id": id, "kind": "custom",
+            "assistant": assistant, "project_dir": "/tmp",
+            "title": "quota gate probe", "instructions": "quota gate probe",
+            "timeout_minutes": 5,
+        ]
+        if ignoreQuota { obj["ignore_quota"] = true }
+        if !serialize.isEmpty { obj["serialize"] = serialize }
+        let dir = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let data = try! JSONSerialization.data(withJSONObject: obj)
+        try! data.write(to: dir.appendingPathComponent("task.json"), options: .atomic)
+    }
+    func exhaustedQuota(_ assistant: Assistant) -> AssistantQuota {
+        AssistantQuota(assistant: assistant, installed: true, loggedIn: nil, plan: nil,
+                       availability: .exhausted, source: .observed,
+                       observedAt: Int(Date().timeIntervalSince1970) - 60,
+                       resetsAt: Int(Date().timeIntervalSince1970) + 3_600,
+                       detail: "7d 100%", windows: [])
+    }
+    func holderRow(_ id: String, serializeName: String) -> [String: Any] {
+        ["id": id, "state": "briefed", "kind": "custom", "title": "holder that never finishes",
+         "assistant": "claude", "project_dir": "/tmp", "timeout_minutes": 30,
+         "created": Date().timeIntervalSince1970,
+         "secret_hash": String(repeating: "0", count: 64),
+         "serialize": [serializeName], "artifacts": []]
+    }
+
+    let holderB = "b0000000-0000-0000-0000-000000000001"
+    let holderC = "c0000000-0000-0000-0000-000000000001"
+    let holderRows = [holderRow(holderB, serializeName: "quota-gate-test-b"),
+                      holderRow(holderC, serializeName: "quota-gate-test-c")]
+    try! JSONSerialization.data(withJSONObject: ["version": 1, "tasks": holderRows])
+        .write(to: store, options: .atomic)
+    Orchestrator.load()
+
+    // (a) exhausted, no override: refuses before the task is ever registered, and gives back the
+    // dispatch-rate ticket it provisionally took.
+    let idA = UUID().uuidString.lowercased()
+    let dirA = Orchestrator.root.appendingPathComponent(idA, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: dirA) }
+    writeTaskFile(id: idA, assistant: "claude", ignoreQuota: false, serialize: [])
+    AssistantQuota.setOverrideForTesting(exhaustedQuota(.claude), for: .claude)
+    let rateBefore = Orchestrator.dispatchRateCountForTesting()
+    let replyA = Orchestrator.dispatch(taskID: idA, secret: String(repeating: "a1", count: 32))
+    if case .refused(let status, let code, _, _) = replyA {
+        expect("exhausted with no override refuses the dispatch", status, 409)
+        expect("with the assistant_exhausted code", code, "assistant_exhausted")
+    } else {
+        check("exhausted with no override refuses the dispatch", false)
+    }
+    expect("and its provisional dispatch-rate ticket is given back, not spent",
+           Orchestrator.dispatchRateCountForTesting(), rateBefore)
+    AssistantQuota.clearOverridesForTesting()
+
+    // (b) exhausted + ignore_quota:true: dispatches anyway, warning under assistant_exhausted with
+    // a message that names the override honored.
+    let idB = UUID().uuidString.lowercased()
+    let dirB = Orchestrator.root.appendingPathComponent(idB, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: dirB) }
+    writeTaskFile(id: idB, assistant: "codex", ignoreQuota: true, serialize: ["quota-gate-test-b"])
+    AssistantQuota.setOverrideForTesting(exhaustedQuota(.codex), for: .codex)
+    let replyB = Orchestrator.dispatch(taskID: idB, secret: String(repeating: "b2", count: 32))
+    if case .ok(let payload) = replyB {
+        let task = payload["task"] as? [String: Any]
+        let warnings = payload["warnings"] as? [[String: Any]] ?? []
+        expect("ignore_quota dispatches rather than refusing", task?["state"] as? String, "queued")
+        check("and warns under assistant_exhausted, naming the override honored",
+              warnings.contains { ($0["code"] as? String) == "assistant_exhausted"
+                  && (($0["message"] as? String)?.contains("ignore_quota") ?? false) })
+    } else {
+        check("ignore_quota dispatches rather than refusing", false)
+    }
+    AssistantQuota.clearOverridesForTesting()
+
+    // (c) unknown: dispatches quietly — no quota warning of either kind.
+    let idC = UUID().uuidString.lowercased()
+    let dirC = Orchestrator.root.appendingPathComponent(idC, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: dirC) }
+    writeTaskFile(id: idC, assistant: "claude", ignoreQuota: false, serialize: ["quota-gate-test-c"])
+    let unknownQuota = AssistantQuota(assistant: .claude, installed: true, loggedIn: nil, plan: nil,
+                                      availability: .unknown, source: .observed, observedAt: nil,
+                                      resetsAt: nil, detail: "no signal yet", windows: [])
+    AssistantQuota.setOverrideForTesting(unknownQuota, for: .claude)
+    let replyC = Orchestrator.dispatch(taskID: idC, secret: String(repeating: "c3", count: 32))
+    if case .ok(let payload) = replyC {
+        let task = payload["task"] as? [String: Any]
+        let warnings = payload["warnings"] as? [[String: Any]] ?? []
+        expect("unknown dispatches rather than refusing", task?["state"] as? String, "queued")
+        check("and carries no assistant_exhausted or assistant_low warning",
+              !warnings.contains { let code = $0["code"] as? String
+                  return code == "assistant_exhausted" || code == "assistant_low" })
+    } else {
+        check("unknown dispatches rather than refusing", false)
+    }
 }
 
 group("the models a session can be moved to, and the word that moves each") {
