@@ -449,6 +449,7 @@ struct Russian: Copy {
     let webScheduleCloseAlways = "Всегда"
     let webScheduleCloseNever = "Никогда"
     let webScheduleEnabled = "Включено"
+    let webScheduleDisabled = "Отключено"
     let webScheduleNotify = "Уведомить при сбое"
     let webScheduleCatchUp = "Окно наверстывания (часы)"
     let webScheduleTimeout = "Лимит времени (минуты)"

@@ -449,6 +449,7 @@ struct Turkish: Copy {
     let webScheduleCloseAlways = "Her zaman"
     let webScheduleCloseNever = "Hiçbir zaman"
     let webScheduleEnabled = "Etkin"
+    let webScheduleDisabled = "Etkin değil"
     let webScheduleNotify = "Başarısız olursa bildir"
     let webScheduleCatchUp = "Telafi süresi (saat)"
     let webScheduleTimeout = "Zaman aşımı süresi (dakika)"

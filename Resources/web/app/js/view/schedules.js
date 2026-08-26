@@ -39,9 +39,9 @@ function validRow(schedule, at) {
     var next = schedule.next_fire ? relativeTime(schedule.next_fire, at) : "";
     var nextTitle = schedule.next_fire
         ? new Date(schedule.next_fire * 1000).toLocaleString() : "";
-    var enabled = schedule.enabled ? T.webScheduleEnabled : "Disabled";
+    var enabled = schedule.enabled ? T.webScheduleEnabled : T.webScheduleDisabled;
     var nextLine = schedule.next_fire
-        ? (schedule.enabled ? "Next " : "Disabled · next ") + next
+        ? (schedule.enabled ? "Next " : T.webScheduleDisabled + " · next ") + next
         : T.webScheduleNoNext;
     var missed = schedule.last_missed_at
         ? '<time class="schedule-missed" title="' +

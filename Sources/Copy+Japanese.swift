@@ -447,6 +447,7 @@ struct Japanese: Copy {
     let webScheduleCloseAlways = "常に"
     let webScheduleCloseNever = "なし"
     let webScheduleEnabled = "有効"
+    let webScheduleDisabled = "無効"
     let webScheduleNotify = "失敗時に通知"
     let webScheduleCatchUp = "巻き返せる猶予（時間）"
     let webScheduleTimeout = "タイムアウト（分）"

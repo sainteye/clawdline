@@ -449,6 +449,7 @@ struct Indonesian: Copy {
     let webScheduleCloseAlways = "Selalu"
     let webScheduleCloseNever = "Tidak pernah"
     let webScheduleEnabled = "Aktif"
+    let webScheduleDisabled = "Nonaktif"
     let webScheduleNotify = "Beri tahu jika gagal"
     let webScheduleCatchUp = "Batas susulan (jam)"
     let webScheduleTimeout = "Batas waktu (menit)"

@@ -449,6 +449,7 @@ struct Spanish: Copy {
     let webScheduleCloseAlways = "Siempre"
     let webScheduleCloseNever = "Nunca"
     let webScheduleEnabled = "Activado"
+    let webScheduleDisabled = "Desactivado"
     let webScheduleNotify = "Avisar si falla"
     let webScheduleCatchUp = "Margen para recuperar (horas)"
     let webScheduleTimeout = "Tiempo límite (minutos)"

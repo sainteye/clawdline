@@ -2874,6 +2874,7 @@ final class RemoteServer {
             "webScheduleCloseAlways": t.webScheduleCloseAlways,
             "webScheduleCloseNever": t.webScheduleCloseNever,
             "webScheduleEnabled": t.webScheduleEnabled,
+            "webScheduleDisabled": t.webScheduleDisabled,
             "webScheduleNotify": t.webScheduleNotify,
             "webScheduleCatchUp": t.webScheduleCatchUp,
             "webScheduleTimeout": t.webScheduleTimeout,

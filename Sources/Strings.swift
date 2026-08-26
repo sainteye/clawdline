@@ -819,6 +819,9 @@ protocol Copy {
     var webScheduleCloseAlways: String { get }
     var webScheduleCloseNever: String { get }
     var webScheduleEnabled: String { get }
+    /// Its opposite, on the same row. The list drew this one in English until the form
+    /// arrived and made the row a thing somebody could act on.
+    var webScheduleDisabled: String { get }
     var webScheduleNotify: String { get }
     /// Labels a number of hours — the box itself holds a bare number, so the unit lives here.
     var webScheduleCatchUp: String { get }

@@ -447,6 +447,7 @@ struct Korean: Copy {
     let webScheduleCloseAlways = "항상"
     let webScheduleCloseNever = "안 함"
     let webScheduleEnabled = "사용"
+    let webScheduleDisabled = "사용 안 함"
     let webScheduleNotify = "실패하면 알림"
     let webScheduleCatchUp = "만회 기한 (시간)"
     let webScheduleTimeout = "제한 시간 (분)"

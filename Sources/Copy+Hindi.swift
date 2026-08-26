@@ -453,6 +453,7 @@ struct Hindi: Copy {
     let webScheduleCloseAlways = "हमेशा"
     let webScheduleCloseNever = "कभी नहीं"
     let webScheduleEnabled = "चालू"
+    let webScheduleDisabled = "बंद"
     let webScheduleNotify = "विफल होने पर सूचित करें"
     let webScheduleCatchUp = "देर से चलाने की मोहलत (घंटे)"
     let webScheduleTimeout = "समय सीमा (मिनट)"

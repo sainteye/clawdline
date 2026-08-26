@@ -312,6 +312,7 @@ export var T = {
     webScheduleCloseAlways: "Always",
     webScheduleCloseNever: "Never",
     webScheduleEnabled: "Enabled",
+    webScheduleDisabled: "Disabled",
     webScheduleNotify: "Notify if it fails",
     webScheduleCatchUp: "Catch up within (hours)",
     webScheduleTimeout: "Give up after (minutes)",

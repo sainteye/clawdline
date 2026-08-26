@@ -449,6 +449,7 @@ struct Italian: Copy {
     let webScheduleCloseAlways = "Sempre"
     let webScheduleCloseNever = "Mai"
     let webScheduleEnabled = "Attivo"
+    let webScheduleDisabled = "Inattivo"
     let webScheduleNotify = "Avvisa se fallisce"
     let webScheduleCatchUp = "Margine di recupero (ore)"
     let webScheduleTimeout = "Tempo massimo (minuti)"
