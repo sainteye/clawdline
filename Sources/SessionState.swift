@@ -95,9 +95,11 @@ enum SessionState: Equatable {
         // AskUserQuestion is the exception to Claude Code's usual drawing: its selected row is
         // flush left, just like the composer. That row is trusted only after a hook has stated
         // that the session is waiting, and only when it is the last caret on screen; otherwise
-        // an echoed numbered message would become a menu again. The transcript cannot supply
-        // the missing gate or labels: measured while the picker is open, its call is not written
-        // there until the answer and result arrive together.
+        // an echoed numbered message would become a menu again. The transcript cannot supply the
+        // missing gate — it says what was asked, never where the caret is. It *can* supply the
+        // labels, and does: see ``Transcript/openQuestion(of:)``, which corrects what this comment
+        // used to claim. Measured on 2026-08-26, the call sat on disk in full for twenty-seven
+        // seconds before the answer landed.
         var flushLeftSelection: Int? = nil
         if hookWaiting {
             let hasIndentedSelection = tailText.contains { line in
@@ -478,7 +480,9 @@ enum SessionState: Equatable {
         struct Option: Equatable {
             /// The number as printed. This is the keystroke.
             let number: Int
-            let label: String
+            /// Mutable because the screen is not the last word on it: an `AskUserQuestion` row is
+            /// refilled from the transcript, which has the words the terminal had no room for.
+            var label: String
             /// The rows drawn under the label, joined. `AskUserQuestion` puts the consequence of
             /// each answer there — which models get dropped, what it costs, what breaks — and a
             /// label without it is often not enough to choose on: "cut the slow five" does not

@@ -7109,6 +7109,47 @@ group("a checkbox inside a description is text, not the header above the questio
            "把每列的 \u{2610}／\u{2611} 解析成一個真正的欄位。")
 }
 
+group("the words under an option come from the transcript, which has all of them") {
+    // A terminal lays the dialog out to fit the window and squeezes the paragraph under each
+    // option into whatever height is left, so a capture carries the first line with the middle
+    // cut out of it. Measured on 2026-08-26: `…as little of the existing ` ran straight into
+    // `scoped session.` on screen while the transcript held all 254 characters.
+    //
+    // These two rows are the shape that file has. The call is the last thing in it while the
+    // picker waits; the result lands behind it the moment somebody answers.
+    let call = """
+    {"type":"assistant","timestamp":"2026-08-26T13:55:54.405Z","message":{"role":"assistant",\
+    "content":[{"type":"tool_use","id":"toolu_x","name":"AskUserQuestion","input":{"questions":\
+    [{"question":"Which way out?","header":"scope","options":\
+    [{"label":"Swap the feed","description":"Three of the eleven bindings are primary."},\
+    {"label":"Pay for the tier","description":"Nothing in the code changes."}]}]}}]}}
+    """
+    let answer = """
+    {"type":"user","timestamp":"2026-08-26T13:56:21.893Z","message":{"role":"user",\
+    "content":[{"type":"tool_result","tool_use_id":"toolu_x","content":"answered"}]}}
+    """
+
+    guard let open = Transcript.openQuestion(inTail: call) else {
+        check("an unanswered call is an open question", false); return
+    }
+    expect("with the question it asked", open.text, "Which way out?")
+    expect("and both rows", open.options.count, 2)
+    expect("carrying the words the screen had no room for",
+           open.options[0].note, "Three of the eleven bindings are primary.")
+
+    check("once the answer lands it is not open any more",
+          Transcript.openQuestion(inTail: call + "\n" + answer) == nil)
+    check("and an ordinary transcript has no open question",
+          Transcript.openQuestion(inTail: answer) == nil)
+
+    // The rows reach the phone as a menu, and the note has to travel with them — dropping it was
+    // the whole bug: the buttons arrived with their headlines and none of the reasoning.
+    let menu = open.menu
+    expect("the note becomes the row's detail", menu?.options[0].detail,
+           "Three of the eleven bindings are primary.")
+    expect("for every row", menu?.options[1].detail, "Nothing in the code changes.")
+}
+
 group("the question above a visual menu") {
     // AskUserQuestion's descriptions belong to their options, not to the prose above the first
     // one. The short checkbox line is only a header, so the phone gets the two wrapped question

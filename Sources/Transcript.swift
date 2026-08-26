@@ -874,6 +874,7 @@ enum Transcript {
             guard options.count >= 2 else { return nil }
             let rows = options.enumerated().map { index, option in
                 SessionState.Menu.Option(number: index + 1, label: option.label,
+                                         detail: option.note.isEmpty ? nil : option.note,
                                          selected: index == 0)
             }
             return SessionState.Menu(question: text.isEmpty ? nil : text,
@@ -916,6 +917,37 @@ enum Transcript {
                                                      options: [.withoutEscapingSlashes]),
               let json = String(data: data, encoding: .utf8) else { return nil }
         return askMarker + json
+    }
+
+    /// The question a session is showing **right now**, whole, out of its own transcript.
+    ///
+    /// **The screen is a lossy copy of this.** Claude Code lays a dialog out to fit the window and
+    /// squeezes the paragraph under each option to whatever height is left, so what a capture
+    /// carries is the first line or two of an explanation with the middle gone — measured on
+    /// 2026-08-26, where `…as little of the existing ` was followed directly by `scoped session.`
+    /// A phone reading that is being asked to choose on a sentence nobody wrote.
+    ///
+    /// The transcript has the tool call in full, and — measured the same day, because the comment
+    /// this replaces said otherwise — **it has it while the picker is still open**: the call was
+    /// on disk with its 254-character descriptions twenty-seven seconds before the answer landed.
+    /// No hook can supply this; `PreToolUse` on the tool does not fire and `PostToolUse` arrives
+    /// with the answer, which is too late to help anybody decide.
+    ///
+    /// **Open is "nothing came after it".** While a picker waits, its call is the last thing in
+    /// the file; the moment it is answered a `toolResult` lands behind it. So the newest entry
+    /// decides, and anything else — a result, an assistant turn, a file that cannot be read —
+    /// returns nil and leaves the screen as the source it has always been.
+    static func openQuestion(of session: TargetSession) -> Question? {
+        guard let record = record(of: session), record.assistant == .claude,
+              let jsonl = tail(of: record.url, bytes: 64_000) else { return nil }
+        return openQuestion(inTail: jsonl)
+    }
+
+    /// The rule on its own, so it can be checked against a transcript rather than a terminal.
+    static func openQuestion(inTail jsonl: String) -> Question? {
+        guard let last = parse(jsonl, limit: 12).last, last.kind == .tool,
+              last.tool == askTool else { return nil }
+        return askQuestions(in: last.text)?.first
     }
 
     /// The other end of ``askPayload(input:)``. `nil` when this is an ordinary tool call.

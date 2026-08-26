@@ -221,6 +221,31 @@ final class SessionWatch {
                 }
             }
 
+            // **The words under each option are only complete in the transcript.** Claude Code
+            // fits its dialog to the window and squeezes the explanations to whatever height is
+            // left, so a capture carries the first line of a paragraph with the middle cut out of
+            // it — and that is what a phone was being asked to choose on. The call is on disk in
+            // full while the picker is still open (see ``Transcript/openQuestion(of:)``), so the
+            // rows are refilled from it here.
+            //
+            // **Positional, and only as far as the transcript reaches.** The dialog draws rows the
+            // question does not contain — `Type something.`, `Chat about this` — and those keep
+            // the words the screen gave them. Everything else about the menu stays the screen's:
+            // which row the caret is on, the numbers, whether there is a Submit under it. The
+            // transcript knows what was asked; only the terminal knows where the caret is.
+            for session in sessions where states[session.id] == .waiting {
+                guard var menu = menus[session.id], !menu.options.isEmpty,
+                      let asked = Transcript.openQuestion(of: session),
+                      asked.options.count >= 2 else { continue }
+                for index in 0..<min(menu.options.count, asked.options.count) {
+                    menu.options[index].label = asked.options[index].label
+                    let note = asked.options[index].note
+                    menu.options[index].detail = note.isEmpty ? nil : note
+                }
+                if !asked.text.isEmpty { menu.question = asked.text }
+                menus[session.id] = menu
+            }
+
             // Every background agent these sessions have going, which is a question the screen
             // cannot answer at all — a subagent leaves no mark on the terminal. Files only, so
             // it adds no round trip to the reading it rides along with.
