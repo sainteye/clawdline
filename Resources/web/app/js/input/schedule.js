@@ -34,6 +34,10 @@ export var Schedule = (function () {
     // person who never opens "More" still gets the values the Mac would have picked anyway.
     var CATCH_DEFAULT = 6;
     var TIMEOUT_DEFAULT = 30;
+    // Mirrors `SURE` in input/command.js, which mirrors `Planner.sure` in Planner.swift — 0.5 is
+    // where a drafted answer is offered rather than asked about. Repeated here rather than
+    // imported: command.js already imports this file, and this round does not touch command.js.
+    var SURE = 0.5;
 
     var places = null;          // GET /v1/places, fetched once and reused for this sheet's life
     var assistants = [];
@@ -41,6 +45,10 @@ export var Schedule = (function () {
     var chosenAssistant = null;
     // "daily" or a non-empty array of DAY_CODES — never an empty array. See `toggleDay`.
     var days = "daily";
+    // True only when `days` above is "daily" because nothing was heard, not because "daily" was
+    // actually the answer — see `openFrom`. Cleared the moment a person touches a day chip, so it
+    // never outlives the one draft it was about.
+    var daysGuessed = false;
     var closeTab = "on_success";
     var enabled = true;
     var notify = true;
@@ -105,10 +113,13 @@ export var Schedule = (function () {
         row.innerHTML = "";
         var daily = document.createElement("button");
         daily.type = "button";
-        daily.className = "chip" + (days === "daily" ? " on" : "");
+        // Lit up only when "daily" is a real answer, not the placeholder `openFrom` leaves in the
+        // variable while nothing has been heard — otherwise a guess looks exactly like a choice.
+        var dailyOn = days === "daily" && !daysGuessed;
+        daily.className = "chip" + (dailyOn ? " on" : "");
         daily.textContent = T.webScheduleDaily;
-        daily.setAttribute("aria-pressed", days === "daily" ? "true" : "false");
-        daily.onclick = function () { days = "daily"; drawDays(); };
+        daily.setAttribute("aria-pressed", dailyOn ? "true" : "false");
+        daily.onclick = function () { days = "daily"; daysGuessed = false; drawDays(); };
         row.appendChild(daily);
         DAY_CODES.forEach(function (code, i) {
             var on = Array.isArray(days) && days.indexOf(code) >= 0;
@@ -132,6 +143,7 @@ export var Schedule = (function () {
         // "Daily" was on replaces it rather than adding to it, which is what a chip that says
         // "every day" stops meaning the moment one day is chosen instead.
         days = picked.length ? DAY_CODES.filter(function (c) { return picked.indexOf(c) >= 0; }) : "daily";
+        daysGuessed = false;
         drawDays();
     }
 
@@ -245,7 +257,7 @@ export var Schedule = (function () {
         creating = false;
         places = null; assistants = [];
         chosenPlace = null; chosenAssistant = null;
-        days = "daily"; closeTab = "on_success"; enabled = true; notify = true;
+        days = "daily"; daysGuessed = false; closeTab = "on_success"; enabled = true; notify = true;
         els["schedule-title"].value = "";
         els["schedule-at"].value = "";
         els["schedule-instructions"].value = "";
@@ -283,11 +295,19 @@ export var Schedule = (function () {
         var heard = Array.isArray(draft.days)
             ? DAY_CODES.filter(function (c) { return draft.days.indexOf(c) >= 0; })
             : null;
+        // Below the bar, an empty `days` is not "every day" — it is the planner never having
+        // heard one at all, most often the one-off request this Mac cannot express (see the file
+        // header and Planner.swift's own paragraph on it). `daysGuessed` keeps the Daily chip dark
+        // in `drawDays` so that guess never reads as a decision already made.
+        daysGuessed = !(draft.confidence >= SURE) && !(heard && heard.length);
         days = (heard && heard.length) ? heard : "daily";
         chosenPlace = draft.place_id || null;
         els["schedule-instructions"].value = instructions || "";
         drawDays(); drawPlaces();
-        said(hint());
+        // The planner's own `question` is usually the more specific sentence — "only a repeating
+        // time can be set here" beats either built-in hint — so it goes first; `hint()` is what
+        // is left for a draft that came back unsure without one.
+        said(draft.question || hint());
         els["schedule-title"].focus({ preventScroll: true });
         ensurePlaces().then(function () {
             defaultAssistant(draft.assistant);
@@ -311,6 +331,11 @@ export var Schedule = (function () {
         var code = e && e.code;
         if (code === "offline") return e.message;          // already this page's own sentence
         if (code === "write_disabled") return T.webStartOff;
+        // `takeScheduleWriteRate()`'s ten-in-ten-minutes refusal — `rate_limited` is the current
+        // code, `busy` is what an older Mac still says for the same wait. Either way the server
+        // already wrote the sentence a person can act on ("Try again shortly."), so it is shown
+        // as it arrived, the same reasoning as `bad_request` just below.
+        if (code === "rate_limited" || code === "busy") return e.message;
         // The parser's own sentence, about the one field it did not like. Shown as it arrived —
         // not translated, not replaced — because it is the only thing that says which field.
         if (code === "bad_request") return e.message;

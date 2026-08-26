@@ -111,6 +111,19 @@ group("schedule files are strict and carry an ordinary task template") {
         expect("the default catch-up window is six hours", schedule.catchUpHours, 6)
         expect("the default failure notification is on", schedule.notifyOnFailure, true)
         expect("weekday names become Calendar weekday numbers", schedule.weekdays, Set([2, 4, 6]))
+        // Every schedule file written before this field existed, and every one somebody typed in
+        // an editor, is this case. It has to keep meaning "as far back as anyone knows".
+        check("a file that never said when it was made parses and says so",
+              schedule.createdAt == nil)
+    }
+    var stamped = base
+    stamped["created_at"] = 1_787_000_000
+    if case .ok(let schedule) = Orchestrator.schedule(from: stamped, filename: "\(id).json",
+                                                      isDirectory: { $0 == "/tmp" }) {
+        expect("and a file that did carries the instant back off disk",
+               schedule.createdAt, Date(timeIntervalSince1970: 1_787_000_000))
+    } else {
+        check("and a file that did carries the instant back off disk", false)
     }
     for (name, mutate) in [
         ("wrong schema version", { (value: inout [String: Any]) in value["clawdline_schedule"] = 2 }),
@@ -134,6 +147,13 @@ group("schedule files are strict and carry an ordinary task template") {
         ("oversized catch-up", { (value: inout [String: Any]) in value["catch_up_hours"] = 169 }),
         ("negative catch-up", { (value: inout [String: Any]) in value["catch_up_hours"] = -1 }),
         ("numeric notification", { (value: inout [String: Any]) in value["notify_on_failure"] = 1 }),
+        // `created_at` decides whether an occurrence is dispatched, so it gets the same treatment
+        // as every other field on the list rather than being read for whatever it happens to be.
+        ("a written date where the made-at goes",
+         { (value: inout [String: Any]) in value["created_at"] = "2026-08-26T09:00:00Z" }),
+        ("a fractional made-at", { (value: inout [String: Any]) in value["created_at"] = 1.5 }),
+        ("a boolean made-at", { (value: inout [String: Any]) in value["created_at"] = true }),
+        ("a made-at before 1970", { (value: inout [String: Any]) in value["created_at"] = -1 }),
         ("non-string optional task field", { (value: inout [String: Any]) in
             var task = value["task"] as! [String: Any]; task["model"] = 7; value["task"] = task
         }),
@@ -177,13 +197,13 @@ group("schedule fire arithmetic crosses midnight and filters days") {
     func date(_ value: String) -> Date { formatter.date(from: value)! }
     let daily = Orchestrator.Schedule(id: "a", title: "a", hour: 23, minute: 45,
         weekdays: nil, taskTemplate: [:], enabled: true, closeTab: .onSuccess,
-        catchUpHours: 6, notifyOnFailure: true)
+        catchUpHours: 6, notifyOnFailure: true, createdAt: nil)
     expect("after midnight sees yesterday's fire",
            Orchestrator.latestFire(of: daily, at: date("2026-08-26T00:15:00Z"), calendar: calendar),
            date("2026-08-25T23:45:00Z"))
     let monday = Orchestrator.Schedule(id: "b", title: "b", hour: 9, minute: 0,
         weekdays: Set([2]), taskTemplate: [:], enabled: true, closeTab: .onSuccess,
-        catchUpHours: 6, notifyOnFailure: true)
+        catchUpHours: 6, notifyOnFailure: true, createdAt: nil)
     expect("Tuesday looks back to the selected Monday",
            Orchestrator.latestFire(of: monday, at: date("2026-08-25T10:00:00Z"), calendar: calendar),
            date("2026-08-24T09:00:00Z"))
@@ -194,19 +214,19 @@ group("catch-up, active-task and close-tab policies are explicit") {
     expect("a fire inside the catch-up window runs",
            Orchestrator.scheduleAction(now: fire.addingTimeInterval(5 * 3600), fire: fire,
                                        catchUpHours: 6, lastRunCreated: nil,
-                                       lastRunTerminal: nil), .run)
+                                       lastRunTerminal: nil, createdAt: nil), .run)
     expect("a fire outside the window is missed",
            Orchestrator.scheduleAction(now: fire.addingTimeInterval(7 * 3600), fire: fire,
                                        catchUpHours: 6, lastRunCreated: nil,
-                                       lastRunTerminal: nil), .missed)
+                                       lastRunTerminal: nil, createdAt: nil), .missed)
     expect("the same occurrence does not run twice",
            Orchestrator.scheduleAction(now: fire, fire: fire, catchUpHours: 6,
-                                       lastRunCreated: fire, lastRunTerminal: true),
-           .alreadyHandled)
+                                       lastRunCreated: fire, lastRunTerminal: true,
+                                       createdAt: nil), .alreadyHandled)
     expect("an older still-running occurrence blocks overlap",
            Orchestrator.scheduleAction(now: fire, fire: fire, catchUpHours: 6,
                                        lastRunCreated: fire.addingTimeInterval(-86400),
-                                       lastRunTerminal: false), .active)
+                                       lastRunTerminal: false, createdAt: nil), .active)
     let now = Date()
     check("on-success closes a successful child immediately",
           Orchestrator.scheduledCloseAt(policy: .onSuccess, outcome: .success,
@@ -234,11 +254,11 @@ group("catch-up, active-task and close-tab policies are explicit") {
     expect("zero-hour catch-up still has its one-minute floor",
            Orchestrator.scheduleAction(now: fire.addingTimeInterval(60), fire: fire,
                                        catchUpHours: 0, lastRunCreated: nil,
-                                       lastRunTerminal: nil), .run)
+                                       lastRunTerminal: nil, createdAt: nil), .run)
     expect("and expires immediately after that minute",
            Orchestrator.scheduleAction(now: fire.addingTimeInterval(61), fire: fire,
                                        catchUpHours: 0, lastRunCreated: nil,
-                                       lastRunTerminal: nil), .missed)
+                                       lastRunTerminal: nil, createdAt: nil), .missed)
 
     let scheduleID = "dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbb"
     let row: [String: Any] = [
@@ -255,6 +275,70 @@ group("catch-up, active-task and close-tab policies are explicit") {
            Orchestrator.recordForTesting(restored)["schedule_id"] as? String, scheduleID)
     expect("the originating close policy survives registry storage",
            Orchestrator.stored(restored)["schedule_close_tab"] as? String, "always")
+}
+
+group("no occurrence from before a schedule was made is an occurrence it missed") {
+    // The table a reviewer produced by lifting these functions out and running them: "09:00
+    // daily", never run, made from a phone at six times of day. Every row used to be wrong, and
+    // wrong within sixty seconds of pressing Create — inside the six-hour catch-up window the
+    // minute timer really opened a session for a morning nobody had asked it to catch up on, and
+    // outside it the timer pushed "Scheduled run missed its catch-up window" and left "last missed
+    // 1 day ago" on the row. Both while the `200` that made the schedule said the next run was
+    // tomorrow. Most people arrange tomorrow morning in the afternoon, so this was the first ten
+    // minutes of the feature.
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let formatter = ISO8601DateFormatter()
+    func date(_ value: String) -> Date { formatter.date(from: value)! }
+    func nine(madeAt: Date?) -> Orchestrator.Schedule {
+        Orchestrator.Schedule(id: "c", title: "c", hour: 9, minute: 0, weekdays: nil,
+                              taskTemplate: [:], enabled: true, closeTab: .onSuccess,
+                              catchUpHours: 6, notifyOnFailure: true, createdAt: madeAt)
+    }
+    // The beat's own two steps: the newest occurrence at or before `now`, and what to do about it.
+    func beatWould(_ schedule: Orchestrator.Schedule, at now: Date) -> Orchestrator.ScheduleAction? {
+        guard let fire = Orchestrator.latestFire(of: schedule, at: now, calendar: calendar)
+        else { return nil }
+        return Orchestrator.scheduleAction(now: now, fire: fire,
+                                           catchUpHours: schedule.catchUpHours,
+                                           lastRunCreated: nil, lastRunTerminal: nil,
+                                           createdAt: schedule.createdAt)
+    }
+    let madeAtTimes = ["08:00", "09:30", "13:00", "14:59", "15:01", "20:00"]
+    for time in madeAtTimes {
+        let made = date("2026-08-26T\(time):00Z")
+        let schedule = nine(madeAt: made)
+        expect("made at \(time), the next minute's beat leaves this morning alone",
+               beatWould(schedule, at: made.addingTimeInterval(60)), .beforeCreation)
+        // And the schedule is not thereby dead: the first occurrence it was actually there for is
+        // the one the `200` named, and that one runs.
+        guard let next = Orchestrator.nextFire(of: schedule, after: made, calendar: calendar) else {
+            check("made at \(time), there is a next occurrence at all", false)
+            continue
+        }
+        expect("made at \(time), the first occurrence it existed for runs",
+               beatWould(schedule, at: next.addingTimeInterval(60)), .run)
+    }
+    // The same six, from a file that never said when it was made — a schedule somebody wrote in an
+    // editor, and every file written before this field existed. These are the answers the timer
+    // has always given, and nothing here is allowed to change them.
+    let unstamped: [String: Orchestrator.ScheduleAction] = [
+        "08:00": .missed, "09:30": .run, "13:00": .run,
+        "14:59": .run, "15:01": .missed, "20:00": .missed,
+    ]
+    for time in madeAtTimes {
+        let now = date("2026-08-26T\(time):00Z").addingTimeInterval(60)
+        expect("a hand-written file decides \(time) exactly as it always has",
+               beatWould(nine(madeAt: nil), at: now), unstamped[time])
+    }
+    // The boundary itself, stated once rather than inferred from the table: the occurrence at the
+    // very instant of creation belongs to the schedule, and the second before it does not.
+    let made = date("2026-08-26T09:00:00Z")
+    expect("an occurrence exactly at the made-at is one this schedule was there for",
+           beatWould(nine(madeAt: made), at: made.addingTimeInterval(60)), .run)
+    expect("and one second earlier is not",
+           beatWould(nine(madeAt: made.addingTimeInterval(1)), at: made.addingTimeInterval(60)),
+           .beforeCreation)
 }
 
 group("bad schedule files are isolated and the routes use orchestrator envelopes") {
@@ -757,16 +841,154 @@ group("a schedule made over HTTP is one the parser above would have accepted") {
 
     // The brake. Ten in ten minutes, and it exists for the client that retries in a loop with a
     // fresh key each time rather than for anybody filling in a form.
+    //
+    // The window is emptied first so the loop below counts what its name says. Five writes have
+    // already gone through this group — including the two that ended in a `write_failed`, which
+    // still spend a ticket — and the assertion used to be "the sixth attempt is refused", which
+    // was only true if you counted those five. Anybody adding a create above would have turned it
+    // red for a reason that has nothing to do with the brake.
+    Orchestrator.forget()
     var refusedAt = 0
     for attempt in 1...12 {
         if case .refused(let status, let code, _, _) = create(good) {
             if refusedAt == 0 { refusedAt = attempt }
+            // A sliding window of counted attempts, not a queue with something already in it:
+            // `busy` in this app means depth that drains in seconds, and this does not.
             check("the brake refuses with the code the page knows",
-                  status == 429 && code == "busy")
+                  status == 429 && code == "rate_limited")
         }
     }
-    expect("ten writes get through a ten-minute window and the eleventh does not", refusedAt, 6)
+    expect("ten writes get through a ten-minute window and the eleventh does not", refusedAt, 11)
     Orchestrator.forget()
+}
+
+group("the minute timer and the answer the write route gave agree with each other") {
+    // The whole round trip of the fix, with its own control group in the same directory: two
+    // "09:00 daily" schedules, one made through the route at one in the afternoon and one
+    // hand-written with no made-at at all. A minute later the timer runs the hand-written one —
+    // that is the behaviour a file without the field has always had and still has — and leaves
+    // the new one alone, because nine this morning is not an occurrence it slept through.
+    // Made here rather than left to the first write — the group above is the one that proves the
+    // route creates it. Here it means a create that comes back refused shows up as a red check
+    // rather than as a `try!` blowing the suite up on the hand-written file next to it.
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-schedule-fresh-\(UUID().uuidString)")
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let wasEnabled = Config.shared.orchestratorEnabled
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+        Orchestrator.scheduleDirectoryOverrideForTesting = nil
+        Config.shared.orchestratorEnabled = wasEnabled
+        Orchestrator.scheduleDispatchEnqueuerForTesting = nil
+        Orchestrator.scheduleRunnerForTesting = nil
+        Orchestrator.forget()
+    }
+    Orchestrator.scheduleDirectoryOverrideForTesting = directory
+    Config.shared.orchestratorEnabled = true
+    Orchestrator.forget()
+
+    let calendar = Calendar.autoupdatingCurrent
+    // One in the afternoon, arranging tomorrow morning: the sentence the whole feature is for,
+    // and the one the timer used to answer by opening a session on the spot.
+    let madeAt = calendar.date(bySettingHour: 13, minute: 0, second: 0, of: Date())!
+    let place = StartPoints.Place(id: StartPoints.id(for: "/tmp"), path: "/tmp",
+                                  label: "tmp", at: Date(timeIntervalSince1970: 1))
+    let reply = Orchestrator.createSchedule(
+        from: ["title": "publish the blog", "at": "09:00", "days": "daily",
+               "place_id": place.id, "assistant": "codex",
+               "instructions": "publish the next ready post"],
+        places: [place], now: madeAt, isDirectory: { $0 == "/tmp" })
+    var madeID = ""
+    var announcedNext = 0
+    if case .ok(let payload) = reply, let row = payload["schedule"] as? [String: Any] {
+        madeID = row["id"] as? String ?? ""
+        announcedNext = row["next_fire"] as? Int ?? 0
+    }
+    check("the afternoon request is written", !madeID.isEmpty, String(describing: reply))
+    let onDisk = (try? Data(contentsOf: directory.appendingPathComponent("\(madeID).json")))
+        .flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
+    expect("and the file says when it was made", onDisk["created_at"] as? Int,
+           Int(madeAt.timeIntervalSince1970))
+
+    let unstampedID = "eeeeeeee-ffff-4aaa-8bbb-cccccccccccc"
+    let unstamped: [String: Any] = [
+        "clawdline_schedule": 1, "schedule_id": unstampedID, "title": "the one in the editor",
+        "when": ["at": "09:00", "days": "daily"],
+        "task": ["assistant": "codex", "project_dir": "/tmp", "instructions": "do the work"],
+        "enabled": true,
+    ]
+    try! JSONSerialization.data(withJSONObject: unstamped)
+        .write(to: directory.appendingPathComponent("\(unstampedID).json"))
+    Orchestrator.forget()
+
+    var ran: [String] = []
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { $0() }
+    Orchestrator.scheduleRunnerForTesting = { schedule in
+        ran.append(schedule.id)
+        return .ok(["ok": true])
+    }
+    func missedAudits(_ id: String) -> Int {
+        RemoteAuth.recentAudit(limit: 2_000).filter {
+            $0["event"] as? String == "orchestrator.schedule.skipped"
+                && $0["schedule"] as? String == id && $0["why"] as? String == "missed"
+        }.count
+    }
+    let missedBefore = missedAudits(madeID)
+    let aMinuteLater = madeAt.addingTimeInterval(60)
+    Orchestrator.scheduleBeat(now: aMinuteLater)
+    check("the timer runs the file that never said when it was made, and only that one",
+          ran == [unstampedID], ran.joined(separator: ", "))
+    // The other half of the bug, and the one a phone would actually have seen: no push, and no
+    // "last missed 1 day ago" under a schedule made ten seconds ago.
+    expect("nothing is audited as missed for a morning it was not there for",
+           missedAudits(madeID), missedBefore)
+    let row = Orchestrator.scheduleRecords(now: aMinuteLater).first { $0["id"] as? String == madeID }
+    check("and the row carries no missed occurrence", row?["last_missed_at"] == nil)
+    expect("while the next fire is still the one the 200 announced",
+           row?["next_fire"] as? Int, announcedNext)
+
+    // And it is not switched off, which is the failure this fix could have introduced instead.
+    ran.removeAll()
+    let firstMorning = Date(timeIntervalSince1970: TimeInterval(announcedNext))
+    Orchestrator.scheduleBeat(now: firstMorning.addingTimeInterval(60))
+    check("the first morning it was there for is dispatched like any other",
+          ran.contains(madeID), ran.joined(separator: ", "))
+
+    // The other half of the same bug. Made in the evening rather than the afternoon, this
+    // morning's nine o'clock is outside the six-hour window, and the timer used to audit a
+    // skipped/missed occurrence, push "Scheduled run missed its catch-up window", and leave
+    // `last_missed_at` on a row somebody had made a minute earlier — "last missed 1 day ago".
+    // The hand-written file in the same directory is the control: at this hour it *is* a missed
+    // occurrence, it is audited as one, and it keeps its `last_missed_at`.
+    let evening = calendar.date(bySettingHour: 20, minute: 0, second: 0, of: Date())!
+    var eveningID = ""
+    if case .ok(let payload) = Orchestrator.createSchedule(
+        from: ["title": "read the overnight mail", "at": "09:00", "days": "daily",
+               "place_id": place.id, "assistant": "codex",
+               "instructions": "read what came in overnight"],
+        places: [place], now: evening, isDirectory: { $0 == "/tmp" }) {
+        eveningID = (payload["schedule"] as? [String: Any])?["id"] as? String ?? ""
+    }
+    check("an evening request is written too", !eveningID.isEmpty)
+    Orchestrator.forget()
+    ran.removeAll()
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { $0() }
+    Orchestrator.scheduleRunnerForTesting = { schedule in
+        ran.append(schedule.id)
+        return .ok(["ok": true])
+    }
+    let eveningMissedBefore = missedAudits(eveningID)
+    let eveningBeat = evening.addingTimeInterval(60)
+    Orchestrator.scheduleBeat(now: eveningBeat)
+    check("nothing is dispatched for a morning nobody arranged", ran.isEmpty,
+          ran.joined(separator: ", "))
+    expect("and nothing is audited as missed, so nothing is pushed about it",
+           missedAudits(eveningID), eveningMissedBefore)
+    let rows = Orchestrator.scheduleRecords(now: eveningBeat)
+    check("the row of a schedule made a minute ago says nothing about a missed run",
+          rows.first { $0["id"] as? String == eveningID }?["last_missed_at"] == nil)
+    check("while the file that never said when it was made is missed, as it always was",
+          rows.first { $0["id"] as? String == unstampedID }?["last_missed_at"] != nil)
 }
 
 group("one schedule can be read in full, and the write route is behind the write gate") {
@@ -5403,6 +5625,19 @@ group("the page is given the words it draws the start sheet with") {
     let missing = scheduleForm.filter { (english[$0] as? String ?? "").isEmpty }
     check("every word the schedule form draws is published", missing.isEmpty,
           "not on /v1/strings: " + missing.joined(separator: ", "))
+
+    // The rows above the form draw three words of their own. `webScheduleNext` is
+    // `settingsScheduleNext` under a name of its own — the same "Next" the Mac's Settings list
+    // puts above the same number, already translated into fourteen languages — and it was the one
+    // word on that row the page was drawing in English no matter who was reading.
+    let scheduleRows = ["webScheduleNext", "webScheduleMissed", "webScheduleNoNext"]
+    let rowsMissing = scheduleRows.filter { (english[$0] as? String ?? "").isEmpty }
+    check("every word a schedule row draws is published too", rowsMissing.isEmpty,
+          "not on /v1/strings: " + rowsMissing.joined(separator: ", "))
+    check("and Next is translated rather than sent in English to everybody",
+          (french["webScheduleNext"] as? String)
+            .map { !$0.isEmpty && $0 != (english["webScheduleNext"] as? String) } == true,
+          "fr said \((french["webScheduleNext"] as? String) ?? "nothing")")
 }
 
 // MARK: - One sentence, turned into a draft of a session
@@ -6066,9 +6301,12 @@ group("every word the page can draw is a word the page is sent") {
     // "the page does not use it yet" is not a reason — an unused string should not be in `Copy`.
     let notSent: Set<String> = []
 
-    // Keys that are sent without being members, which is legitimate only when a *function* on
-    // `Copy` supplies them: a question with two answers does not cross a JSON boundary as one.
-    let derived: Set<String> = ["webOrderNewest", "webOrderOldest"]  // t.outputOrder(newestFirst:)
+    // Keys that are sent without being members. Legitimate when a *function* on `Copy` supplies
+    // them — a question with two answers does not cross a JSON boundary as one — or when a member
+    // the Mac's own screen already draws is the same word here, which is a translation not made a
+    // second time rather than a string nobody can change.
+    let derived: Set<String> = ["webOrderNewest", "webOrderOldest",  // t.outputOrder(newestFirst:)
+                                "webScheduleNext"]                  // t.settingsScheduleNext
 
     var missing: [String] = []
     for child in Mirror(reflecting: English()).children {

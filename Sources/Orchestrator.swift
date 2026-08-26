@@ -40,6 +40,13 @@ enum Orchestrator {
         let closeTab: ScheduleCloseTab
         let catchUpHours: Int
         let notifyOnFailure: Bool
+        /// When the schedule itself was made, or nil for a file that never said.
+        ///
+        /// Without it nothing can tell "the Mac was asleep and missed this" from "this did not
+        /// exist yet", and a schedule made at lunchtime for nine in the morning either dispatches
+        /// a minute later or pushes that it missed a morning it was not there for. Nil is what
+        /// every hand-written file has always meant: as far back as anyone knows.
+        let createdAt: Date?
     }
 
     enum ScheduleDraftOutcome {
@@ -67,7 +74,7 @@ enum Orchestrator {
     }
 
     enum ScheduleAction: Equatable {
-        case run, alreadyHandled, active, missed
+        case run, alreadyHandled, active, missed, beforeCreation
     }
 
     private static func scheduleBool(_ raw: Any?) -> Bool? {
@@ -93,7 +100,8 @@ enum Orchestrator {
                          isDirectory: (String) -> Bool = StartPoints.isDirectory)
         -> ScheduleDraftOutcome {
         let allowed = Set(["clawdline_schedule", "schedule_id", "title", "when", "task",
-                           "enabled", "close_tab", "catch_up_hours", "notify_on_failure"])
+                           "enabled", "close_tab", "catch_up_hours", "notify_on_failure",
+                           "created_at"])
         let unknown = Set(obj.keys).subtracting(allowed).sorted()
         guard unknown.isEmpty else { return .bad("unknown field: \(unknown.joined(separator: ", "))") }
         guard scheduleInt(obj["clawdline_schedule"]) == 1 else {
@@ -197,10 +205,23 @@ enum Orchestrator {
         } else {
             notify = true
         }
+        // Unix seconds, like every other instant this app writes into JSON, and **optional on
+        // purpose**. Files written before this field existed do not have it and neither does one
+        // somebody typed in an editor; both keep working exactly as they did, because a missing
+        // stamp means "as far back as anyone knows" rather than "made just now".
+        let createdAt: Date?
+        if let raw = obj["created_at"] {
+            guard let value = scheduleInt(raw), value >= 0 else {
+                return .bad("created_at must be a whole number of seconds since 1970")
+            }
+            createdAt = Date(timeIntervalSince1970: TimeInterval(value))
+        } else {
+            createdAt = nil
+        }
         return .ok(Schedule(id: id, title: title, hour: hour, minute: minute,
                             weekdays: weekdays, taskTemplate: task, enabled: enabled,
                             closeTab: closeTab, catchUpHours: catchUpHours,
-                            notifyOnFailure: notify))
+                            notifyOnFailure: notify, createdAt: createdAt))
     }
 
     /// The one way anything other than a text editor makes a schedule file.
@@ -222,6 +243,7 @@ enum Orchestrator {
     /// test can describe a Mac rather than being run on one.
     static func createSchedule(from body: [String: Any],
                                places: [StartPoints.Place] = StartPoints.places(),
+                               now: Date = Date(),
                                isDirectory: (String) -> Bool = StartPoints.isDirectory) -> Reply {
         let allowed = Set(["title", "at", "days", "place_id", "assistant", "instructions",
                            "enabled", "close_tab", "catch_up_hours", "notify_on_failure",
@@ -262,6 +284,11 @@ enum Orchestrator {
             "when": ["at": body["at"] ?? "", "days": body["days"] ?? ""],
             "task": task,
             "enabled": body["enabled"] ?? true,
+            // Written by this route and by nothing else, and the request cannot name it — it is
+            // on the parser's list, not on the list above. It is what stops the minute timer from
+            // treating this morning's nine o'clock as an occurrence this schedule slept through:
+            // the 200 below says the next fire is tomorrow, and now the beat agrees.
+            "created_at": Int(now.timeIntervalSince1970),
         ]
         // Written only when they were asked for, so the parser's defaults stay the one place
         // those three numbers are decided.
@@ -273,8 +300,12 @@ enum Orchestrator {
                                          isDirectory: isDirectory) {
             return .refused(400, "bad_request", why)
         }
+        // `rate_limited` rather than `busy`: everywhere else in this app `busy` is queue depth —
+        // something already in hand that drains in seconds — and `rate_limited` is a sliding
+        // window of counted attempts. This brake is the second kind, the same shape as
+        // `takeDispatchRate()`, and the two codes tell a client different things about waiting.
         guard takeScheduleWriteRate() else {
-            return .refused(429, "busy",
+            return .refused(429, "rate_limited",
                             "This Mac has been asked for several schedules in the last few "
                             + "minutes. Try again shortly.")
         }
@@ -324,7 +355,7 @@ enum Orchestrator {
         RemoteAuth.audit("orchestrator.schedule.created",
                          ["schedule": id, "place": place.id, "cwd": place.path, "ok": "1"])
         var record: [String: Any] = ["id": made.id, "title": made.title, "enabled": made.enabled]
-        if let next = nextFire(of: made, after: Date()) {
+        if let next = nextFire(of: made, after: now) {
             record["next_fire"] = Int(next.timeIntervalSince1970)
         }
         return .ok(["ok": true, "schedule": record])
@@ -406,8 +437,19 @@ enum Orchestrator {
         return nil
     }
 
+    /// What the minute timer should do about one occurrence of one schedule.
+    ///
+    /// `createdAt` is the schedule's own age, and it is read first: an occurrence from before the
+    /// file existed is not a run this Mac slept through, because there was nothing there to sleep.
+    /// Without it, "09:00 daily" made at lunchtime is inside the six-hour catch-up window and
+    /// dispatches within the minute — while the 200 that created it said the next run was tomorrow
+    /// — and made in the evening it instead pushes that a run was missed and shows "last missed 1
+    /// day ago". A nil `createdAt` is a file that never said when it was made, and keeps the
+    /// behaviour every hand-written schedule has always had.
     static func scheduleAction(now: Date, fire: Date, catchUpHours: Int,
-                               lastRunCreated: Date?, lastRunTerminal: Bool?) -> ScheduleAction {
+                               lastRunCreated: Date?, lastRunTerminal: Bool?,
+                               createdAt: Date?) -> ScheduleAction {
+        if let createdAt, fire < createdAt { return .beforeCreation }
         if let created = lastRunCreated, created >= fire { return .alreadyHandled }
         if lastRunTerminal == false { return .active }
         let window = TimeInterval(max(60, catchUpHours * 3600))
@@ -628,10 +670,14 @@ enum Orchestrator {
             let action = scheduleAction(now: now, fire: fire,
                                         catchUpHours: schedule.catchUpHours,
                                         lastRunCreated: latest?.created,
-                                        lastRunTerminal: active ? false : latest.map { _ in true })
+                                        lastRunTerminal: active ? false : latest.map { _ in true },
+                                        createdAt: schedule.createdAt)
+            // Only the two outcomes that *consume* an occurrence write it down. An occurrence
+            // from before the schedule was made is not one of them: nothing missed it, so it
+            // leaves no `last_missed_at` behind for the list to draw and nothing to audit.
             if action == .run {
                 pendingScheduleFires[schedule.id] = fire
-            } else if action != .alreadyHandled {
+            } else if action == .active || action == .missed {
                 handledScheduleFires[schedule.id] = fire
                 if action == .missed { lastMissedScheduleFires[schedule.id] = fire }
             }
@@ -651,7 +697,7 @@ enum Orchestrator {
                     sendSchedulePush(schedule, body: "Scheduled run missed its catch-up window.",
                                      tag: "schedule-\(schedule.id)-missed")
                 }
-            case .alreadyHandled: break
+            case .alreadyHandled, .beforeCreation: break
             }
         }
     }

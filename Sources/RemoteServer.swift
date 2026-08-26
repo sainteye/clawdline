@@ -2852,6 +2852,9 @@ final class RemoteServer {
             "webTaskRunning": t.webTaskRunning,
             "webScheduleMissed": t.webScheduleMissed,
             "webScheduleNoNext": t.webScheduleNoNext,
+            // The same word the Settings list draws above the same number, sent under a name of
+            // its own rather than translated a second time into fourteen languages.
+            "webScheduleNext": t.settingsScheduleNext,
         ])
 
         // The form that makes one — see `POST /v1/orchestrator/schedules`, which is the only

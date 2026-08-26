@@ -21,6 +21,7 @@
 /* The way to make one, on the same line as the count. Pushed to the end with `auto` rather than
    given a place in the flow, so the count keeps sitting against the word it counts. */
 .schedules > summary .add {
+    position: relative;     /* anchors the touch target below, without adding to this box */
     margin-left: auto; flex: 0 0 auto;
     display: flex; align-items: center; justify-content: center;
     width: 22px; height: 22px;
@@ -29,6 +30,18 @@
 }
 .schedules > summary .add:hover { background: var(--card-hi); color: var(--ink); }
 .schedules > summary .add svg { display: block; width: 11px; height: 11px; }
+/* The visible button stays 22px — any taller and `summary` (`min-height: 32px`) would grow past
+   it, moving the word and count it shares this one line with. A phone still needs a real target,
+   so the other 22px is added as an invisible hit area instead: absolutely positioned, so it costs
+   the row no layout space of its own. 44px is the same thumb's worth `.sheet .place` in
+   sheets.css already gives a row. */
+.schedules > summary .add::before {
+    content: "";
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 44px; height: 44px;
+    transform: translate(-50%, -50%);
+}
 .schedules > summary::before {
     content: "›";
     color: var(--faint);

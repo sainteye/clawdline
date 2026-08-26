@@ -1248,7 +1248,7 @@ that runs later with nobody watching.
 | `400 bad_request` | no `Idempotency-Key`; an unknown field; a `place_id` that is not on the list; or any field the [schedule parser](schedules.md#the-file) refuses — the refusal carries that parser's own sentence |
 | `401 unauthorized` | no token, or one this Mac does not know |
 | `403 write_disabled`, `403 forbidden` | the write switch is off; or this device may read and not send |
-| `429 busy` | ten schedules have been made in the last ten minutes |
+| `429 rate_limited` | ten schedules have been made in the last ten minutes. A sliding window of counted writes, like the dispatch brake and unlike `busy`, which is a queue with something already in it |
 | `500 write_failed` | the file could not be written, or could not be read back through the parser afterwards — in which case it has been removed |
 
 The answer is filed under the `Idempotency-Key` like every other write, **except `429` and the
@@ -1259,6 +1259,15 @@ it let go. The audit line is `orchestrator.schedule.created`, written whichever 
 Every schedule is validated by being assembled into a source file, parsed, written, and then
 **read back off disk through the same parser** before the request is answered. A file this app
 cannot itself parse never survives the request that made it.
+
+**`next_fire` in the answer is the next run, and nothing sooner.** The file this route writes
+carries a `created_at` of its own — Unix seconds, written by this route and nameable by nobody —
+and the minute timer ignores every occurrence older than it. Without that, "09:00 daily" arranged
+at one in the afternoon is inside its own six-hour catch-up window: a session would open within the
+minute for a morning nobody had asked it to catch up on, and arranged after three it would instead
+push that a run had been missed and show `last_missed_at` on a schedule made a minute earlier. A
+file written by hand has no `created_at` and still means *as far back as anyone knows*, which is
+the behaviour every schedule file has always had.
 
 ### `POST /v1/orchestrator/schedules/:id/run`
 
@@ -1670,8 +1679,8 @@ it draws them, and that is a drawing decision which does not travel over the wir
 | `depth_exceeded` | 409 | a session already at the bottom of the tree tried to dispatch a task of its own |
 | `already_done` | 409 | that task has already reported; the first report wins |
 | `bad_task` | 422 | a `task.json` that is missing, unparseable, or out of range. `message` names the field |
-| `rate_limited` | 429 | too many pairing attempts |
-| `busy` | 429 | a queue or a brake on this Mac is full. On `/v1/voice`, one recording is being read and one is waiting. On `/v1/sessions/:id/info` and `/v1/places`, eight slow reads are already in hand — `/v1/sessions/:id/transcript` stands in that same queue but is never refused by this number. On `/v1/orchestrator/schedules`, ten schedules have been made in the last ten minutes. All of them drain on their own, and none is filed under an `Idempotency-Key` |
+| `rate_limited` | 429 | a sliding window of counted attempts is full — pairing attempts, dispatches per ten minutes, schedules written per ten minutes, agent notifications per hour. What was counted ages out of the window on its own; nothing is draining, which is what separates this from `busy` |
+| `busy` | 429 | a queue on this Mac is full — something is already in hand and will drain in seconds. On `/v1/voice`, one recording is being read and one is waiting. On `/v1/sessions/:id/info` and `/v1/places`, eight slow reads are already in hand — `/v1/sessions/:id/transcript` stands in that same queue but is never refused by this number. All of them drain on their own, and none is filed under an `Idempotency-Key` |
 | `over_capacity` | 429 | the dispatcher's child slots are full — `orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child — or the whole Mac's are. `retry_after` is seconds. (`rate_limited` covers the other orchestrator limit: dispatches per ten minutes) |
 | `internal` | 500, 502 | a tab that would not open; a terminal that would not take the text |
 | `no_whisper` | 503 | `/v1/voice` only: this Mac has nothing to transcribe with. `reason` is `no_binary` or `no_model` |

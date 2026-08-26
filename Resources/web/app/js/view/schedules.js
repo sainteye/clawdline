@@ -41,7 +41,7 @@ function validRow(schedule, at) {
         ? new Date(schedule.next_fire * 1000).toLocaleString() : "";
     var enabled = schedule.enabled ? T.webScheduleEnabled : T.webScheduleDisabled;
     var nextLine = schedule.next_fire
-        ? (schedule.enabled ? "Next " : T.webScheduleDisabled + " · next ") + next
+        ? (schedule.enabled ? T.webScheduleNext + " " : T.webScheduleDisabled + " · next ") + next
         : T.webScheduleNoNext;
     var missed = schedule.last_missed_at
         ? '<time class="schedule-missed" title="' +
