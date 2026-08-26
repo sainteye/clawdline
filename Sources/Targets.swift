@@ -172,12 +172,19 @@ enum Targets {
         // A capture that fails, or a screen that no longer parses, takes the numbered path: that
         // is what this did before this branch existed, and a dialog the reader is looking at right
         // now is far more likely to be the common shape than a shape nothing could read.
-        if let screen = capture(session),
-           let menu = SessionState.menu(screen, assistant: session.assistant ?? .claude,
-                                        hookWaiting: true), !menu.numbered {
-            return highlight(row: want, of: menu, on: session)
+        let seen = capture(session).flatMap {
+            SessionState.menu($0, assistant: session.assistant ?? .claude, hookWaiting: true)
         }
+        if let menu = seen, !menu.numbered { return highlight(row: want, of: menu, on: session) }
         if let failure = keystroke(bytes, to: session) { return failure }
+
+        // **A multi-select has nothing to confirm, and confirming it undoes the tap.** Its digits
+        // toggle a row where a single-select's move the highlight, so the Return that commits one
+        // is, on the other, a second press of the same row. Measured the hard way: the caret starts
+        // on the first option, so tapping the first option was the one tap that reliably did
+        // nothing — toggled by the digit and toggled straight back by the confirmation. Its rows
+        // are sent by the button under them, and that is ``submitMenu(on:)``'s job.
+        if seen?.submit != nil { return nil }
         return confirmSelection(want, on: session)
     }
 
