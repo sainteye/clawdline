@@ -175,6 +175,8 @@ struct German: Copy {
     let settingsPushFinishHint = "Nur ab zwei Minuten."
     let settingsPushDeploy = "Bescheid sagen, wenn ein Deploy endet"
     let settingsPushDeployHint = "Erfolg wie Fehlschlag."
+    let settingsAgentNotify = "Agenten eigene Mitteilungen senden lassen"
+    let settingsAgentNotifyNote = "Gilt nur für Inhalte, die ein Agent von sich aus sendet; Abschluss-, Deploy- und andere Mitteilungen bleiben unverändert."
     let settingsOrchestrator = "Arbeit weitergeben"
     let settingsOrchestratorEnabled = "Eine Sitzung darf Arbeit an eine andere abgeben"
     let settingsOrchestratorEnabledHint = "Eine Sitzung mit der clawdline-Skill kann einen Tab öffnen, die Anweisungen hineintippen und erfahren, wann die Arbeit fertig ist. Aus, und jede Anfrage wird abgelehnt; was schon läuft, wird nicht gestoppt."

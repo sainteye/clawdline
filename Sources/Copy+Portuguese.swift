@@ -178,6 +178,8 @@ struct Portuguese: Copy {
     let settingsPushFinishHint = "Só as que passam de dois minutos."
     let settingsPushDeploy = "Avisar quando um deploy terminar"
     let settingsPushDeployHint = "Tanto quando dá certo quanto quando falha."
+    let settingsAgentNotify = "Permitir que agentes enviem as próprias notificações"
+    let settingsAgentNotifyNote = "Controla apenas conteúdo enviado por iniciativa de um agente; notificações de conclusão, deploy e outras não mudam."
     let settingsOrchestrator = "Tarefas entre sessões"
     let settingsOrchestratorEnabled = "Deixar uma sessão passar trabalho a outra"
     let settingsOrchestratorEnabledHint = "Uma sessão com a skill clawdline pode abrir um separador, escrever-lhe as instruções e saber quando o trabalho acabou. Desligado, todos os pedidos são recusados; nada do que já está a correr é interrompido."

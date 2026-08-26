@@ -173,6 +173,8 @@ struct Korean: Copy {
     let settingsPushFinishHint = "2분이 넘는 작업만입니다."
     let settingsPushDeploy = "배포가 끝나면 알리기"
     let settingsPushDeployHint = "성공도 실패도 알립니다."
+    let settingsAgentNotify = "에이전트가 직접 알림을 보내도록 허용"
+    let settingsAgentNotifyNote = "에이전트가 먼저 보내는 내용만 제어합니다. 작업 완료, 배포 및 다른 알림에는 영향을 주지 않습니다."
     let settingsOrchestrator = "다른 세션에 일 맡기기"
     let settingsOrchestratorEnabled = "세션이 다른 세션에 일을 넘길 수 있게"
     let settingsOrchestratorEnabledHint = "clawdline 스킬을 가진 세션이 새 탭을 열고 지시를 입력한 뒤, 끝나면 알림을 받습니다. 꺼두면 모든 요청을 거절합니다. 이미 돌고 있는 것은 멈추지 않습니다."

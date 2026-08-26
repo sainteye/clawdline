@@ -175,6 +175,8 @@ struct Indonesian: Copy {
     let settingsPushFinishHint = "Hanya yang lebih dari dua menit."
     let settingsPushDeploy = "Beri tahu kalau deploy selesai"
     let settingsPushDeployHint = "Baik berhasil maupun gagal."
+    let settingsAgentNotify = "Izinkan agen mengirim notifikasinya sendiri"
+    let settingsAgentNotifyNote = "Hanya mengatur isi yang dikirim agen atas inisiatifnya sendiri; notifikasi selesai, deploy, dan lainnya tidak berubah."
     let settingsOrchestrator = "Menitipkan pekerjaan"
     let settingsOrchestratorEnabled = "Biarkan satu sesi menitipkan pekerjaan ke sesi lain"
     let settingsOrchestratorEnabledHint = "Sesi yang punya skill clawdline bisa membuka tab baru, mengetikkan instruksinya, lalu diberi tahu setelah pekerjaannya selesai. Kalau mati, setiap permintaan ditolak; yang sudah berjalan tidak dihentikan."

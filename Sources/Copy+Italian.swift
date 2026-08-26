@@ -175,6 +175,8 @@ struct Italian: Copy {
     let settingsPushFinishHint = "Solo oltre i due minuti."
     let settingsPushDeploy = "Avvisa quando finisce un deploy"
     let settingsPushDeployHint = "Sia se va bene sia se fallisce."
+    let settingsAgentNotify = "Consenti agli agent di inviare notifiche proprie"
+    let settingsAgentNotifyNote = "Controlla solo i contenuti inviati spontaneamente da un agent; le notifiche di fine, deploy e tutte le altre non cambiano."
     let settingsOrchestrator = "Affidare lavoro"
     let settingsOrchestratorEnabled = "Lascia che una sessione affidi lavoro a un'altra"
     let settingsOrchestratorEnabledHint = "Una sessione con la skill clawdline può aprire una scheda, scriverci dentro le istruzioni e sapere quando il lavoro è finito. Spento, ogni richiesta viene rifiutata; nulla di ciò che sta già girando viene fermato."

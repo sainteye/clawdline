@@ -174,6 +174,8 @@ struct English: Copy {
     let settingsPushFinishHint = "Only for turns over two minutes."
     let settingsPushDeploy = "Notify when a deploy ends"
     let settingsPushDeployHint = "Both success and failure."
+    let settingsAgentNotify = "Let agents send their own notifications"
+    let settingsAgentNotifyNote = "Controls only content an agent proactively sends; finish, deploy and other notifications are unchanged."
     let settingsOrchestrator = "Agent tasks"
     let settingsOrchestratorEnabled = "Let a session hand work to another"
     let settingsOrchestratorEnabledHint = "A session holding the clawdline skill can open a tab, brief the assistant in it and be told when the work is done. Off, and every dispatch is refused — nothing already running is stopped."

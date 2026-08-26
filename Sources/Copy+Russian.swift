@@ -175,6 +175,8 @@ struct Russian: Copy {
     let settingsPushFinishHint = "Только дольше двух минут."
     let settingsPushDeploy = "Сообщать, когда закончится деплой"
     let settingsPushDeployHint = "И об успехе, и об ошибке."
+    let settingsAgentNotify = "Разрешить агентам отправлять свои уведомления"
+    let settingsAgentNotifyNote = "Управляет только содержимым, которое агент отправляет сам; уведомления о завершении, деплое и остальные не меняются."
     let settingsOrchestrator = "Работа для другой сессии"
     let settingsOrchestratorEnabled = "Разрешить сессии передавать работу другой"
     let settingsOrchestratorEnabledHint = "Сессия со скиллом clawdline может открыть вкладку, впечатать в неё задание и узнать, когда работа сделана. Выключено — каждая заявка отклоняется; то, что уже работает, не останавливается."

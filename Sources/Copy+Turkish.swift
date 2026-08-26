@@ -175,6 +175,8 @@ struct Turkish: Copy {
     let settingsPushFinishHint = "Yalnızca iki dakikayı geçenler."
     let settingsPushDeploy = "Deploy bitince haber ver"
     let settingsPushDeployHint = "Başarı da hata da."
+    let settingsAgentNotify = "Ajanların kendi bildirimlerini göndermesine izin ver"
+    let settingsAgentNotifyNote = "Yalnızca bir ajanın kendiliğinden gönderdiği içeriği denetler; bitiş, deploy ve diğer bildirimler değişmez."
     let settingsOrchestrator = "İşi başka oturuma verme"
     let settingsOrchestratorEnabled = "Bir oturum işi başka bir oturuma verebilsin"
     let settingsOrchestratorEnabledHint = "clawdline becerisi olan bir oturum yeni bir sekme açıp yönergeleri yazabilir ve iş bitince haber alır. Kapalıyken her istek geri çevrilir; hâlihazırda çalışan hiçbir şey durdurulmaz."

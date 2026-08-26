@@ -179,6 +179,8 @@ struct Hindi: Copy {
     let settingsPushFinishHint = "सिर्फ़ दो मिनट से लंबे कामों के लिए।"
     let settingsPushDeploy = "deploy ख़त्म होने पर बताएँ"
     let settingsPushDeployHint = "सफल हो या फ़ेल, दोनों पर।"
+    let settingsAgentNotify = "agents को अपनी सूचनाएँ भेजने दें"
+    let settingsAgentNotifyNote = "यह सिर्फ़ agent की ओर से खुद भेजी गई सामग्री को नियंत्रित करता है; काम पूरा होने, deploy और दूसरी सूचनाओं पर इसका असर नहीं पड़ता।"
     let settingsOrchestrator = "काम दूसरे session को देना"
     let settingsOrchestratorEnabled = "एक session दूसरे को काम सौंप सके"
     let settingsOrchestratorEnabledHint = "clawdline स्किल वाला session एक नया टैब खोलकर उसमें निर्देश टाइप कर सकता है, और काम पूरा होने पर उसे ख़बर मिल जाती है। बंद रहने पर हर अनुरोध ठुकरा दिया जाता है; जो पहले से चल रहा है वह नहीं रुकता।"

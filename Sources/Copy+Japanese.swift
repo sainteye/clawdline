@@ -173,6 +173,8 @@ struct Japanese: Copy {
     let settingsPushFinishHint = "2 分を超えたものだけです。"
     let settingsPushDeploy = "デプロイが終わったら知らせる"
     let settingsPushDeployHint = "成功も失敗も知らせます。"
+    let settingsAgentNotify = "エージェントからの通知を許可する"
+    let settingsAgentNotifyNote = "エージェントが自分から送る内容だけを管理します。作業完了、デプロイ、その他の通知には影響しません。"
     let settingsOrchestrator = "別のセッションに任せる"
     let settingsOrchestratorEnabled = "セッションが別のセッションに仕事を出せるようにする"
     let settingsOrchestratorEnabledHint = "clawdline スキルを持つセッションが、新しいタブを開いて指示を打ち込み、終わったら知らせを受け取れます。オフのあいだは依頼をすべて断ります。すでに動いているものは止めません。"
