@@ -118,6 +118,8 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/orchestrator/schedules` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/schedules/:id` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/schedules` | token + key | `send` **and** the write switch |
+| `PATCH` | `/v1/orchestrator/schedules/:id` | token + key | `send` **and** the write switch |
+| `DELETE` | `/v1/orchestrator/schedules/:id` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/orchestrator/schedules/:id/run` | orchestrator token | — |
 | `GET` | `/`, `/index.html`, `/manifest.webmanifest` | — | — |
 | `GET` | `/favicon.ico`, `/icon-<size>.png` | — | — |
@@ -1250,9 +1252,14 @@ and sends one push on first discovery when `notify_on_failure` is true (or absen
 true). The file format, shared capacity bucket and retry boundary are in
 [`schedules.md`](schedules.md).
 
-[`POST /v1/orchestrator/schedules`](#post-v1orchestratorschedules) below creates one; nothing over
-HTTP edits or deletes one. The Settings app can change an existing source file's top-level
-`enabled` boolean with one switch; every other field remains user-owned.
+[`POST /v1/orchestrator/schedules`](#post-v1orchestratorschedules) below creates one,
+[`PATCH /v1/orchestrator/schedules/:id`](#patch-v1orchestratorschedulesid) rewrites one, and
+[`DELETE /v1/orchestrator/schedules/:id`](#delete-v1orchestratorschedulesid) removes it — all
+three behind the write gate, which is worth saying plainly: **a paired phone can now change and
+remove work that runs later, unattended**, where before a wrong time could only be fixed at the
+Mac in a text editor. The Settings app can also change an existing source file's top-level
+`enabled` boolean with one switch; every other field remains user-owned, editable by hand, and
+rewritten wholesale by `PATCH` rather than key by key.
 
 ### `GET /v1/orchestrator/schedules/:id`
 
@@ -1274,7 +1281,8 @@ works too. `404 not_found` for an id that is unknown, invalid, or not an id at a
 
 ### `POST /v1/orchestrator/schedules`
 
-Makes a schedule file. The only route that writes one, and it never edits or deletes one.
+Makes a schedule file. `PATCH` and `DELETE` below are the other two ways a file gets written; this
+is the only one that brings a schedule into existence.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/schedules \
@@ -1330,6 +1338,94 @@ minute for a morning nobody had asked it to catch up on, and arranged after thre
 push that a run had been missed and show `last_missed_at` on a schedule made a minute earlier. A
 file written by hand has no `created_at` and still means *as far back as anyone knows*, which is
 the behaviour every schedule file has always had.
+
+### `PATCH /v1/orchestrator/schedules/:id`
+
+Rewrites one schedule that already exists, from the body `POST` takes.
+
+```console
+$ curl -s -X PATCH http://127.0.0.1:7717/v1/orchestrator/schedules/4d2f54ce-… \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: 8c1b7e30-44a9' \
+    -d '{"title":"Publish the next post","at":"07:05","days":"daily",
+         "place_id":"3f2a91c47e0b5d68","assistant":"codex",
+         "instructions":"Read the checklist and publish the next ready post."}'
+{"ok":true,"schedule":{"id":"4d2f54ce-…","title":"Publish the next post","enabled":true,"next_fire":1787905500}}
+```
+
+**A save, not a patch of individual keys.** The whole file is rewritten, so a field left out of
+the body goes back to the parser's default rather than staying as it was — read the current one
+with [`GET /v1/orchestrator/schedules/:id`](#get-v1orchestratorschedulesid), which exists for
+exactly this, and send it back with the changes in it. Required and optional fields, the
+`place_id`, the gates and every refusal are the create route's, because both assemble the same
+object and hand it to the same parser: an edit is not a way to write a file a create would not
+write.
+
+**`schedule_id` and `created_at` are read off the file being replaced and are not fields this
+request may carry** — naming either is a `400` for an unknown field, like `project_dir`. The
+second matters beyond tidiness: `created_at` is what makes the minute timer ignore an occurrence
+older than the schedule, so a save that restamped it would make editing a `09:00` schedule at
+lunchtime open a session for this morning. A hand-written file with no `created_at` does not
+acquire one by being edited.
+
+| | when |
+|---|---|
+| `400 bad_request` | no `Idempotency-Key`; an unknown field, `schedule_id` and `created_at` among them; a `place_id` that is not on the list; or any field the [schedule parser](schedules.md#the-file) refuses, carrying that parser's own sentence |
+| `401 unauthorized` | no token, or one this Mac does not know |
+| `403 write_disabled`, `403 forbidden` | the write switch is off; or this device may read and not send |
+| `404 not_found` | no schedule with that id, an id that is not an id, or a source file this app cannot itself parse — see below |
+| `429 rate_limited` | a save spends the same ten-in-ten-minutes ticket a create does |
+| `500 write_failed` | the change could not be written, or could not be read back through the parser afterwards — in which case **the previous file has been put back** |
+
+That last row is the one difference from `POST` worth knowing: a create that cannot be read back
+deletes what it wrote, while a save that cannot be read back restores what was there. The schedule
+somebody already had is not a failed save's to lose.
+
+The `404` for a file this app cannot parse is deliberate. An edit replaces the whole file, an
+invalid one has no `created_at` worth carrying, and the list gives an invalid row a `file` and no
+`id` to address it by — so removing it and creating a new one is the repair. `DELETE` needs no
+such understanding.
+
+Answers are filed under the `Idempotency-Key` except `429` and the `500`s, for the same reason as
+on `POST`. The audit line is `orchestrator.schedule.updated`.
+
+### `DELETE /v1/orchestrator/schedules/:id`
+
+Removes one schedule file.
+
+```console
+$ curl -s -X DELETE http://127.0.0.1:7717/v1/orchestrator/schedules/4d2f54ce-… \
+    -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 5d0e2a91-6b17'
+{"ok":true,"deleted":"4d2f54ce-b4b5-4f60-8623-34011f35aa43"}
+```
+
+| | when |
+|---|---|
+| `400 bad_request` | no `Idempotency-Key` |
+| `401 unauthorized` | no token, or one this Mac does not know |
+| `403 write_disabled`, `403 forbidden` | the write switch is off; or this device may read and not send |
+| `404 not_found` | there was no such schedule — including an id that is not an id at all |
+| `500 delete_failed` | the file is there and would not go |
+
+**Those last two are different answers on purpose.** Reporting a file that will not go as a `404`
+would tell a caller the schedule is gone while it is still on disk and still firing.
+
+The contents are never read: a file named after a UUID that this app cannot parse is exactly the
+one somebody most wants removed. A file whose *name* is not a UUID — `broken.json` — has no id to
+address it by and goes from the Finder instead.
+
+Unlike `PATCH`, this is not braked; it leaves nothing behind to sweep up and it is what somebody
+reaches for when they want work to stop. Every answer but the `500` is filed under the
+`Idempotency-Key`, so the retry a phone makes after changing networks replays the `200` rather
+than being told there is nothing there. The audit line is `orchestrator.schedule.deleted`.
+
+**Removing a schedule is not cancelling its task.** A task already dispatched keeps its own id,
+tab and record; [`POST /v1/orchestrator/tasks/:id/cancel`](#post-v1orchestratortasksidcancel)
+stops it. Neither `PATCH` nor `DELETE` is refused while a task from the schedule is live — that is
+the one place they part company with `…/run` and its `409 schedule_active`, which is about
+stacking a second session on a first. An occurrence the minute timer has already chosen is
+re-checked against the file before it opens anything, so a schedule removed in that second opens
+nothing and is audited as `orchestrator.schedule.skipped` with `why=removed`.
 
 ### `POST /v1/orchestrator/schedules/:id/run`
 

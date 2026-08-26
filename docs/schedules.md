@@ -15,15 +15,25 @@ The filename and `schedule_id` must be the same lower-case UUID. Files are the s
 Clawdline rereads them, rejects unknown fields, exposes each bad file as an `invalid` row, audits
 and notifies once per invalid content revision, and continues loading the valid neighbors.
 
-One route writes one: [`POST /v1/orchestrator/schedules`](#making-one-without-a-text-editor). It
-creates a file and never edits or deletes one, and it is the only thing in the app besides a text
-editor that can. Changing an existing schedule is still done in the file, with the one exception
-below.
+Three routes write one, and between them a schedule now has a whole life outside a text editor:
+[`POST /v1/orchestrator/schedules`](#making-one-without-a-text-editor) creates a file,
+[`PATCH /v1/orchestrator/schedules/:id`](#changing-one-and-taking-one-away) rewrites one, and
+[`DELETE /v1/orchestrator/schedules/:id`](#changing-one-and-taking-one-away) removes it. All three
+sit behind the write gate a paired device passes, which is the plain statement worth reading
+twice: **a paired phone can now change and remove work that runs later, unattended.** Until they
+existed a wrong time could only be fixed at this Mac, in this file, by hand — so every mistaken
+creation had to be cleaned up back at the desk.
+
+Files are still the source of truth and hand-editing is still a first-class way to work. What the
+routes do not do is guess: an edit replaces the whole file from the same fields a create takes,
+and `schedule_id` and `created_at` are carried across from the file being replaced rather than
+taken from the request.
 
 The Settings app owns one convenience edit: its switch changes only the top-level `enabled`
 boolean in place. Every other byte and every other field is always yours; edit those in the JSON
-file itself. If an unusual but valid JSON representation cannot be edited in place, Clawdline
-falls back to a full JSON rewrite and records that fallback in the audit log.
+file itself, through `PATCH`, or through whatever Settings offers. If an unusual but valid JSON
+representation cannot be edited in place, Clawdline falls back to a full JSON rewrite and records
+that fallback in the audit log.
 
 ## The file
 
@@ -154,6 +164,81 @@ New files are `0600`, and the schedules directory is created `0700` when it is n
 the same as task files, because a schedule carries the same first message and the same absolute
 path. An existing directory's mode is left exactly as it is.
 
+## Changing one, and taking one away
+
+```sh
+curl -s -X PATCH "http://127.0.0.1:$port/v1/orchestrator/schedules/4d2f54ce-…" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"title":"Publish the next post","at":"07:05","days":"daily",
+       "place_id":"3f2a91c47e0b5d68","assistant":"codex",
+       "instructions":"Read the publishing checklist and publish the next ready post."}'
+{"ok":true,"schedule":{"id":"4d2f54ce-…","title":"Publish the next post","enabled":true,
+                       "next_fire":1787905500}}
+
+curl -s -X DELETE "http://127.0.0.1:$port/v1/orchestrator/schedules/4d2f54ce-…" \
+  -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: $(uuidgen)"
+{"ok":true,"deleted":"4d2f54ce-…"}
+```
+
+`PATCH` takes the body `POST` takes, every field of it, and **rewrites the whole file** — it is a
+save, not a patch of individual keys, and a field left out of the body goes back to the parser's
+default rather than staying as it was. Both routes are behind the same three gates as the create
+route, for the same reason: they are for the phone, and the orchestrator token is a local
+credential a phone cannot hold.
+
+**`schedule_id` and `created_at` are read off the file being replaced and are not fields a
+request may carry** — naming either is refused as an unknown field, alongside `project_dir`. The
+second one is not bookkeeping. `created_at` is what keeps a schedule from running for an
+occurrence that predates it, so a save that restamped it would make editing a `09:00` schedule at
+lunchtime open a session for this morning: the same bug that field was added to stop, handed back
+through a different door. A hand-written file that never had a `created_at` does not get one from
+being edited either — it goes on meaning *as far back as anyone knows*.
+
+Everything the create route refuses, an edit refuses, because both assemble the same object and
+hand it to the same parser: the refusal carries that parser's own sentence, and an edit is not a
+way to write a file a create would not write. The written file is then read back off disk through
+the parser before the request is answered — and where a failed create deletes what it wrote, a
+failed edit **puts the previous file back**. The schedule somebody already had is not a failed
+save's to lose.
+
+`PATCH` is a save and spends the same ten-in-ten-minutes ticket a create does, since a client
+retrying a save in a loop writes a file per attempt. `DELETE` is deliberately not braked: it
+leaves nothing behind to sweep up, and it is what somebody reaches for when they want work to
+stop.
+
+**Two different failures, and a caller can tell them apart.** `404 not_found` is *there was no
+such schedule*, and it is also the answer for an id that is not an id — the file is addressed as
+`<id>.json` and nothing else, which is the whole of the path handling. `500 delete_failed` is
+*the file would not go*, which is a fact about this Mac that somebody has to go and look at, and
+reporting it as a `404` would say the schedule is gone while it is still on disk and still firing.
+
+`DELETE` does not read the file it removes. A file named after a UUID whose contents this app
+cannot parse is exactly the file somebody most wants gone, and needing to understand it first
+would be a rule with no purpose. `PATCH` is the other way round and refuses one with `404`: an
+edit replaces the whole file, an invalid one has no `created_at` worth carrying, and the list does
+not give an invalid row an id to address in the first place — so removing it and making a new one
+is the repair. A file whose *name* is not a UUID, like `broken.json`, has no id at all and still
+goes from the Finder.
+
+**Neither route is blocked by a task that is running right now**, which is the one place they part
+company with [`POST …/run`](#inspect-and-verify) and its `409 schedule_active`. That refusal is
+about stacking a second session on top of a first. An edit changes a file nothing in flight will
+read again — a task is materialised from the template when it is dispatched — so the occurrence a
+save lands in the middle of keeps the terms it was dispatched under and the next one uses the new
+file. And refusing to remove a schedule while its work is running would be refusing precisely when
+somebody most wants it gone.
+
+**Removing one is not cancelling its task.** The task keeps its own id, its own tab and its own
+record; [`POST /v1/orchestrator/tasks/:id/cancel`](api.md#post-v1orchestratortasksidcancel) is
+what stops it. What removal does reach is an occurrence the minute timer has already chosen and
+handed to the serial queue: that dispatch looks the file up again before it opens anything, so a
+schedule deleted in the second between the decision and the session opens nothing and is audited
+as `orchestrator.schedule.skipped` with `why=removed`.
+
+The audit lines are `orchestrator.schedule.updated` and `orchestrator.schedule.deleted`, written
+whichever way each goes.
+
 ## The minute that actually fires
 
 Clawdline checks once a minute. The first check after wake naturally sees the most recent scheduled
@@ -179,8 +264,9 @@ launch daemon and does not wake a powered-off Mac.
 
 The examples use the orchestrator token. It authenticates every route here; a paired device with
 read access may also use both `GET`s, while a manual run requires the orchestrator token just like
-dispatch. Creating one is the exception and goes the other way — see
-[Making one without a text editor](#making-one-without-a-text-editor):
+dispatch. The three routes that write a file go the other way and take a device token instead —
+see [Making one without a text editor](#making-one-without-a-text-editor) and
+[Changing one, and taking one away](#changing-one-and-taking-one-away):
 
 ```sh
 port=$(jq -r '.remote_port // 7717' ~/.config/clawdline/config.json 2>/dev/null || echo 7717)
@@ -216,7 +302,9 @@ Manual run ignores `enabled` and the clock but refuses while any task from that 
 active; a successful answer has the same task and warning payload as ordinary dispatch.
 
 A paired device (read-only is sufficient) sees the schedule list and any single schedule through
-these same GET routes; a manual run remains restricted to the orchestrator token.
+these same GET routes; a manual run remains restricted to the orchestrator token. Making, changing
+and removing one need `send` and the write switch instead — `GET /v1/orchestrator/schedules/:id`
+is the read half of that form, and it was built for it.
 
 The local scheduler is the on-Mac form of the cloud blueprint's Phase 6: the trigger and worker
 may move to another machine later, while the task protocol and lifecycle stay the same.

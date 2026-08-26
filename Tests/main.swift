@@ -1089,6 +1089,403 @@ group("one schedule can be read in full, and the write route is behind the write
     Orchestrator.forget()
 }
 
+group("a schedule can be changed and taken away, and an edit is not a way past the parser") {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-schedule-edits-\(UUID().uuidString)")
+    let wasEnabled = Config.shared.orchestratorEnabled
+    defer {
+        // Put the mode back first: one check below takes the directory's write bit away to make
+        // a removal fail, and a 0500 directory is one nothing can clean up afterwards.
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                               ofItemAtPath: directory.path)
+        try? FileManager.default.removeItem(at: directory)
+        Orchestrator.scheduleDirectoryOverrideForTesting = nil
+        Orchestrator.scheduleDispatchEnqueuerForTesting = nil
+        Orchestrator.scheduleRunnerForTesting = nil
+        Config.shared.orchestratorEnabled = wasEnabled
+        Orchestrator.forget()
+    }
+    Orchestrator.scheduleDirectoryOverrideForTesting = directory
+    Orchestrator.forget()
+
+    let place = StartPoints.Place(id: StartPoints.id(for: "/tmp"), path: "/tmp",
+                                  label: "tmp", at: Date(timeIntervalSince1970: 1))
+    let elsewhere = StartPoints.Place(id: StartPoints.id(for: "/usr"), path: "/usr",
+                                      label: "usr", at: Date(timeIntervalSince1970: 1))
+    let known: (String) -> Bool = { $0 == "/tmp" || $0 == "/usr" }
+    let madeAt = Date(timeIntervalSince1970: 1_787_000_000)
+    let made: [String: Any] = [
+        "title": "publish the blog", "at": "09:30", "days": ["wed", "mon"],
+        "place_id": place.id, "assistant": "codex",
+        "instructions": "publish the next ready post", "enabled": true,
+    ]
+    func create(_ body: [String: Any], at when: Date = madeAt) -> String {
+        guard case .ok(let payload) = Orchestrator.createSchedule(
+            from: body, places: [place, elsewhere], now: when, isDirectory: known),
+              let id = (payload["schedule"] as? [String: Any])?["id"] as? String else { return "" }
+        return id
+    }
+    // **An hour after the file was made, and that hour is the whole test.** With both instants
+    // equal, a route that restamped `created_at` on every save would write the same number back
+    // and the check below would pass while the bug was there — it was born green exactly that
+    // way, and only the deliberate break found it.
+    let savedAt = madeAt.addingTimeInterval(3_600)
+    func update(_ id: String, _ body: [String: Any]) -> Orchestrator.Reply {
+        Orchestrator.updateSchedule(id: id, from: body, places: [place, elsewhere],
+                                    now: savedAt, isDirectory: known)
+    }
+    func bytes(_ id: String) -> Data? {
+        try? Data(contentsOf: directory.appendingPathComponent("\(id).json"))
+    }
+    func source(_ id: String) -> [String: Any] {
+        bytes(id).flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
+    }
+    func refusal(_ reply: Orchestrator.Reply) -> (status: Int, code: String, message: String)? {
+        guard case .refused(let status, let code, let message, _) = reply else { return nil }
+        return (status, code, message)
+    }
+
+    let id = create(made)
+    check("a schedule to change is made first", !id.isEmpty)
+    expect("and it carries the instant it was made", source(id)["created_at"] as? Int,
+           Int(madeAt.timeIntervalSince1970))
+
+    var changed = made
+    changed["title"] = "publish the newsletter"
+    changed["at"] = "07:05"
+    changed["days"] = "daily"
+    changed["place_id"] = elsewhere.id
+    changed["close_tab"] = "always"
+    changed["enabled"] = false
+    switch update(id, changed) {
+    case .refused(_, _, let why, _): check("an ordinary edit is written", false, why)
+    case .ok(let payload):
+        let row = payload["schedule"] as? [String: Any]
+        expect("and the answer names the schedule it changed", row?["id"] as? String, id)
+        expect("with the new title", row?["title"] as? String, "publish the newsletter")
+        expect("and says it is now off", row?["enabled"] as? Bool, false)
+    }
+    // The two fields the request may not name, read off the bytes rather than off the answer.
+    // `created_at` is the one that matters: a save that restamped it would make a schedule
+    // arranged at lunchtime run for this morning, which is the bug that field exists to stop.
+    expect("the id survives an edit", source(id)["schedule_id"] as? String, id)
+    expect("and so does the instant it was made",
+           source(id)["created_at"] as? Int, Int(madeAt.timeIntervalSince1970))
+    let reloaded = Orchestrator.schedules().first { $0.id == id }
+    check("the rewritten file is one the ordinary inventory reads back", reloaded != nil)
+    expect("the new hour is on disk", reloaded?.hour, 7)
+    expect("and the new minute", reloaded?.minute, 5)
+    check("daily replaced the two weekdays", reloaded?.weekdays == nil)
+    expect("the new place became the project directory, and never came from the request",
+           reloaded?.taskTemplate["project_dir"] as? String, "/usr")
+    expect("and the close policy came through", reloaded?.closeTab, .always)
+    expect("a saved file is still private", (try? FileManager.default.attributesOfItem(
+            atPath: directory.appendingPathComponent("\(id).json").path))?[.posixPermissions]
+            as? Int, 0o600)
+
+    // Every rejection the create route is held to, aimed at an edit. Letting one through here
+    // would make saving a schedule the way to write a file that creating one refuses to write.
+    let untouched = bytes(id)
+    for (name, mutate) in [
+        ("empty title", { (value: inout [String: Any]) in value["title"] = "" }),
+        ("oversized title", { (value: inout [String: Any]) in
+            value["title"] = String(repeating: "x", count: 121) }),
+        ("numeric title", { (value: inout [String: Any]) in value["title"] = 7 }),
+        ("missing title", { (value: inout [String: Any]) in value.removeValue(forKey: "title") }),
+        ("missing time", { (value: inout [String: Any]) in value.removeValue(forKey: "at") }),
+        ("bad minute", { (value: inout [String: Any]) in value["at"] = "23:60" }),
+        ("bad hour", { (value: inout [String: Any]) in value["at"] = "24:00" }),
+        ("unpadded time", { (value: inout [String: Any]) in value["at"] = "9:30" }),
+        ("missing days", { (value: inout [String: Any]) in value.removeValue(forKey: "days") }),
+        ("empty days", { (value: inout [String: Any]) in value["days"] = [] }),
+        ("unknown weekday", { (value: inout [String: Any]) in value["days"] = ["monday"] }),
+        ("duplicate day", { (value: inout [String: Any]) in value["days"] = ["mon", "mon"] }),
+        ("numeric enabled", { (value: inout [String: Any]) in value["enabled"] = 1 }),
+        ("unknown close policy", { (value: inout [String: Any]) in value["close_tab"] = "later" }),
+        ("boolean catch-up", { (value: inout [String: Any]) in value["catch_up_hours"] = true }),
+        ("oversized catch-up", { (value: inout [String: Any]) in value["catch_up_hours"] = 169 }),
+        ("negative catch-up", { (value: inout [String: Any]) in value["catch_up_hours"] = -1 }),
+        ("numeric notification", { (value: inout [String: Any]) in
+            value["notify_on_failure"] = 1 }),
+        ("numeric model", { (value: inout [String: Any]) in value["model"] = 7 }),
+        ("bad model name", { (value: inout [String: Any]) in value["model"] = "GPT 5!" }),
+        ("bad assistant", { (value: inout [String: Any]) in value["assistant"] = "shell" }),
+        ("missing assistant", { (value: inout [String: Any]) in
+            value.removeValue(forKey: "assistant") }),
+        ("missing instructions", { (value: inout [String: Any]) in
+            value.removeValue(forKey: "instructions") }),
+        ("empty instructions", { (value: inout [String: Any]) in value["instructions"] = "" }),
+        ("zero timeout", { (value: inout [String: Any]) in value["timeout_minutes"] = 0 }),
+        ("boolean timeout", { (value: inout [String: Any]) in value["timeout_minutes"] = true }),
+        ("a schema version of its own", { (value: inout [String: Any]) in
+            value["clawdline_schedule"] = 2 }),
+        ("a when object of its own", { (value: inout [String: Any]) in
+            value["when"] = ["at": "23:45", "days": "daily", "zone": "UTC"] }),
+        ("a task template of its own", { (value: inout [String: Any]) in
+            value["task"] = ["assistant": "codex", "project_dir": "/etc",
+                             "instructions": "print the hosts file"] }),
+        ("a project directory", { (value: inout [String: Any]) in value["project_dir"] = "/etc" }),
+        ("claims", { (value: inout [String: Any]) in value["claims"] = ["posts"] }),
+        ("a permission mode", { (value: inout [String: Any]) in value["permission_mode"] = "full" }),
+        // The two an edit adds to that list, and the reason this route takes an `id` in its path
+        // rather than in its body: a save that could name either of them would be a save that
+        // renames somebody else's schedule, or asks for the pre-`created_at` behaviour on purpose.
+        ("an id of its own", { (value: inout [String: Any]) in
+            value["schedule_id"] = UUID().uuidString.lowercased() }),
+        ("a made-at of its own", { (value: inout [String: Any]) in value["created_at"] = 0 }),
+    ] {
+        var broken = changed
+        mutate(&broken)
+        let reply = refusal(update(id, broken))
+        check("an edit rejects \(name)", reply?.status == 400 && reply?.code == "bad_request",
+              String(describing: reply))
+        check("and leaves the schedule exactly as it was after \(name)", bytes(id) == untouched)
+    }
+
+    expect("an id nobody has is a not-found rather than a new file",
+           refusal(update("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", changed))?.code, "not_found")
+    expect("and so is something that is not an id at all",
+           refusal(update("../../etc/passwd", changed))?.code, "not_found")
+
+    // A file somebody typed in an editor has no `created_at` and means "as far back as anyone
+    // knows". An edit must not quietly give it one: that would change what the beat decides
+    // about every occurrence before today, on a file whose owner only renamed it.
+    let plainID = "eeeeeeee-1111-4222-8333-444444444444"
+    let plain: [String: Any] = [
+        "clawdline_schedule": 1, "schedule_id": plainID, "title": "the one in the editor",
+        "when": ["at": "09:00", "days": "daily"],
+        "task": ["assistant": "codex", "project_dir": "/tmp", "instructions": "do the work"],
+        "enabled": true,
+    ]
+    try! JSONSerialization.data(withJSONObject: plain)
+        .write(to: directory.appendingPathComponent("\(plainID).json"))
+    var plainEdit = made
+    plainEdit["title"] = "renamed in the app"
+    if case .refused(_, _, let why, _) = update(plainID, plainEdit) {
+        check("a hand-written schedule can be edited too", false, why)
+    }
+    check("and an edit does not stamp a made-at onto a file that never had one",
+          source(plainID)["created_at"] == nil)
+    expect("while the change itself landed", source(plainID)["title"] as? String,
+           "renamed in the app")
+
+    // The same shape as "one bad file does not hide its valid neighbor": a removal is about one
+    // file, and the proof is that the one beside it is still there byte for byte.
+    let neighbour = bytes(plainID)
+    if case .refused(let status, let code, _, _) = Orchestrator.deleteSchedule(id: id) {
+        check("an ordinary removal succeeds", false, "\(status) \(code)")
+    }
+    check("the file it named is gone", bytes(id) == nil)
+    check("and the schedule beside it is untouched", bytes(plainID) == neighbour)
+    expect("only the neighbour is left in the inventory",
+           Orchestrator.schedules().map { $0.id }, [plainID])
+    // "There was no such schedule" and "the file would not go" are different answers, and a
+    // caller that cannot tell them apart is told a schedule is gone while it is still firing.
+    expect("removing it again is a not-found",
+           refusal(Orchestrator.deleteSchedule(id: id))?.code, "not_found")
+    expect("and so is removing one nobody ever made", refusal(
+        Orchestrator.deleteSchedule(id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))?.code,
+        "not_found")
+    expect("and something that is not an id at all",
+           refusal(Orchestrator.deleteSchedule(id: "../../etc/passwd"))?.code, "not_found")
+    try! FileManager.default.setAttributes([.posixPermissions: 0o500],
+                                           ofItemAtPath: directory.path)
+    let stuck = refusal(Orchestrator.deleteSchedule(id: plainID))
+    check("a file that will not go is not reported as one that was never there",
+          stuck?.status == 500 && stuck?.code == "delete_failed", String(describing: stuck))
+    check("and it is still on disk", bytes(plainID) != nil)
+    try! FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                           ofItemAtPath: directory.path)
+
+    // The read-back, aimed at an edit rather than at a create. The directory going away between
+    // the parse and the read is the honest way to produce a file this app cannot load, and what
+    // must not happen here is worse than a stray file: the schedule somebody already had is not
+    // a failed save's to lose.
+    let survivor = bytes(plainID)
+    var vanished = false
+    let rolledBack = Orchestrator.updateSchedule(
+        id: plainID, from: plainEdit, places: [place, elsewhere], now: savedAt,
+        isDirectory: { _ in defer { vanished = true }; return !vanished })
+    if case .refused(let status, let code, _, _) = rolledBack {
+        check("an edit that cannot be read back is a write failure",
+              status == 500 && code == "write_failed")
+    } else {
+        check("an edit that cannot be read back is a write failure", false, "it answered 200")
+    }
+    check("and the schedule that was already there is put back", bytes(plainID) == survivor)
+
+    // The brake counts an edit, because a client retrying a save in a loop writes a file per
+    // attempt exactly as a client retrying a create does.
+    Orchestrator.forget()
+    let braked = create(made)
+    check("there is something to save repeatedly", !braked.isEmpty)
+    var refusedAt = 0
+    for attempt in 1...12 {
+        if case .refused(let status, let code, _, _) = update(braked, changed) {
+            if refusedAt == 0 { refusedAt = attempt }
+            check("a braked edit is refused with the code the page already knows",
+                  status == 429 && code == "rate_limited")
+        }
+    }
+    expect("the create spent one ticket of the ten and nine edits spent the rest", refusedAt, 10)
+
+    // What a task that is running right now does and does not stop. A manual run refuses with
+    // `409 schedule_active` because a second session from one schedule would stack on the first.
+    // An edit changes a file nothing in flight reads again — a task is materialised from the
+    // template when it is dispatched — and a removal is what somebody reaches for precisely
+    // when work is running and should not be.
+    Orchestrator.forget()
+    let busy = create(made)
+    var running = Orchestrator.Task(id: "33333333-4444-4555-8666-777777777777", state: .briefed,
+        kind: "custom", title: "nightly", assistant: .codex, projectDir: "/tmp",
+        timeoutMinutes: 30, created: madeAt, secretHash: Orchestrator.hash(ofSecret: "test"))
+    running.scheduleID = busy
+    Orchestrator.holdScheduleTaskForTesting(running)
+    Config.shared.orchestratorEnabled = true
+    expect("a manual run still refuses while a task from it is live",
+           refusal(Orchestrator.runSchedule(id: busy))?.code, "schedule_active")
+    var whileBusy = made
+    whileBusy["title"] = "changed while it runs"
+    if case .refused(_, _, let why, _) = update(busy, whileBusy) {
+        check("an edit is not refused for the same reason", false, why)
+    }
+    expect("and the change is on disk", source(busy)["title"] as? String, "changed while it runs")
+    if case .refused(let status, let code, _, _) = Orchestrator.deleteSchedule(id: busy) {
+        check("nor is a removal", false, "\(status) \(code)")
+    }
+    check("the file is gone while its task keeps running", bytes(busy) == nil)
+    expect("and removing the schedule is not cancelling the task it already dispatched",
+           Orchestrator.record(id: running.id)?["state"] as? String, "briefed")
+
+    // A removal that lands after the beat has already chosen an occurrence. The dispatch is
+    // waiting on the serial queue holding a copy of the schedule, so without a second look it
+    // opens a session out of a file that is no longer there — which is the one way pressing
+    // delete is not enough.
+    Orchestrator.forget()
+    for file in (try? FileManager.default.contentsOfDirectory(
+        at: directory, includingPropertiesForKeys: nil)) ?? [] {
+        try? FileManager.default.removeItem(at: file)
+    }
+    let calendar = Calendar.autoupdatingCurrent
+    let beatNow = calendar.date(bySettingHour: 2, minute: 0, second: 0, of: Date())!
+    let doomed = create(["title": "nightly", "at": "01:30", "days": "daily",
+                         "place_id": place.id, "assistant": "codex",
+                         "instructions": "do the nightly work"],
+                        at: beatNow.addingTimeInterval(-86_400))
+    check("a schedule the timer will pick up is made", !doomed.isEmpty)
+    var queuedWork: [() -> Void] = []
+    var opened: [String] = []
+    Orchestrator.scheduleDispatchEnqueuerForTesting = { queuedWork.append($0) }
+    Orchestrator.scheduleRunnerForTesting = { opened.append($0.id); return .ok(["ok": true]) }
+    Orchestrator.scheduleBeat(now: beatNow)
+    check("the beat queued that occurrence and opened nothing itself",
+          queuedWork.count == 1 && opened.isEmpty)
+    _ = Orchestrator.deleteSchedule(id: doomed)
+    queuedWork.removeFirst()()
+    check("a fire already decided opens nothing for a schedule that has been removed",
+          opened.isEmpty, opened.joined(separator: ", "))
+    Orchestrator.forget()
+}
+
+group("changing and removing a schedule pass the same three gates as making one") {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-schedule-edit-routes-\(UUID().uuidString)")
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let wasWriting = Config.shared.remoteWrite
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+        Orchestrator.scheduleDirectoryOverrideForTesting = nil
+        Config.shared.remoteWrite = wasWriting
+        Orchestrator.forget()
+    }
+    Orchestrator.scheduleDirectoryOverrideForTesting = directory
+    let id = "cccccccc-dddd-4eee-8fff-bbbbbbbbbbbb"
+    let source: [String: Any] = [
+        "clawdline_schedule": 1, "schedule_id": id, "title": "nightly",
+        "when": ["at": "01:30", "days": ["mon", "fri"]],
+        "task": ["assistant": "codex", "project_dir": "/tmp",
+                 "instructions": "do the nightly work"],
+        "enabled": true,
+    ]
+    func restore() {
+        try! JSONSerialization.data(withJSONObject: source)
+            .write(to: directory.appendingPathComponent("\(id).json"))
+    }
+    restore()
+
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let reader = RemoteAuth.addDevice(name: "a phone that may read", caps: [.read])
+    let writer = RemoteAuth.addDevice(name: "a phone that may send", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: reader.id); RemoteAuth.revoke(id: writer.id) }
+    let body = "{\"title\":\"x\",\"at\":\"09:00\",\"days\":\"daily\",\"place_id\":\"nope\","
+        + "\"assistant\":\"claude\",\"instructions\":\"do a thing\"}"
+    func call(_ method: String, _ token: String?, key: String?, target: String = id,
+              header: [String: String] = [:]) -> RemoteServer.Response {
+        var headers = header
+        if let token { headers["Authorization"] = "Bearer \(token)" }
+        if let key { headers["Idempotency-Key"] = key }
+        headers["Content-Type"] = "application/json"
+        return RemoteServer.shared.route(remoteRequest(
+            method, "/v1/orchestrator/schedules/\(target)", headers: headers,
+            body: method == "PATCH" ? body : nil))
+    }
+    func exists() -> Bool {
+        FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("\(id).json").path)
+    }
+
+    Config.shared.remoteWrite = true
+    for method in ["PATCH", "DELETE"] {
+        expect("\(method) with no token at all is refused",
+               call(method, nil, key: UUID().uuidString).status, 401)
+        // The one that would quietly undo the argument these routes are built on: they are for
+        // the phone, so the local credential is not a way past the gate the phone has to pass.
+        let orchestratorOnly = call(method, nil, key: UUID().uuidString, header: auth)
+        expect("\(method) with the orchestrator token is not a way around the write gate",
+               orchestratorOnly.status, 403)
+        expect("and it is refused as a device that may not send",
+               remoteErrorCode(orchestratorOnly), "forbidden")
+        expect("\(method) from a device that may read and not send is refused",
+               remoteErrorCode(call(method, reader.token, key: UUID().uuidString)), "forbidden")
+        Config.shared.remoteWrite = false
+        expect("\(method) checks the write switch first",
+               remoteErrorCode(call(method, writer.token, key: UUID().uuidString)),
+               "write_disabled")
+        Config.shared.remoteWrite = true
+        // Checked by its sentence and not only by its status: both routes have `400`s of their
+        // own, so a check that counted to 400 would stay green with the gate gone.
+        let noKey = call(method, writer.token, key: nil)
+        expect("\(method) with no idempotency key is refused", noKey.status, 400)
+        check("and it is refused for the header rather than for the body",
+              remoteErrorMessage(noKey).contains("Idempotency-Key"), remoteErrorMessage(noKey))
+        check("nothing reached the file through any of those", exists())
+    }
+
+    // Past all three gates. PATCH still answers to the parser, and a `place_id` nobody was
+    // handed is the same bad request it is on the route that makes one.
+    let unknownPlace = call("PATCH", writer.token, key: UUID().uuidString)
+    expect("past the gates, an id nobody was handed is a bad request", unknownPlace.status, 400)
+    expect("and it is the typed one", remoteErrorCode(unknownPlace), "bad_request")
+    expect("PATCH on an id nobody has is a not-found",
+           call("PATCH", writer.token, key: UUID().uuidString,
+                target: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").status, 404)
+    check("and the schedule is still there", exists())
+
+    let removalKey = UUID().uuidString
+    let removed = call("DELETE", writer.token, key: removalKey)
+    expect("DELETE past the gates answers 200", removed.status, 200)
+    expect("and names what it removed", ((try? JSONSerialization.jsonObject(with: removed.body))
+            as? [String: Any])?["deleted"] as? String, id)
+    check("the file is gone", !exists())
+    // The whole point of requiring a key: a phone that changed networks mid-request retries,
+    // and the retry must be the same answer rather than a second 404.
+    expect("a retry under the same key replays that answer rather than looking again",
+           call("DELETE", writer.token, key: removalKey).status, 200)
+    expect("while a fresh key is told there is nothing there",
+           call("DELETE", writer.token, key: UUID().uuidString).status, 404)
+    Orchestrator.forget()
+}
+
 // MARK: - Mascot packs that ship
 
 group("shipped packs decode and validate") {

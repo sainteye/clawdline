@@ -224,44 +224,54 @@ enum Orchestrator {
                             notifyOnFailure: notify, createdAt: createdAt))
     }
 
-    /// The one way anything other than a text editor makes a schedule file.
+    /// What ``Orchestrator/scheduleObject(from:id:createdAt:places:isDirectory:)`` decided.
+    private enum ScheduleObject {
+        case built([String: Any], place: StartPoints.Place)
+        case refused(Reply)
+    }
+
+    /// The flat body a form sends, assembled into the nested object the parser above expects.
     ///
-    /// **The parser above is still the authority.** This assembles the object it expects and
-    /// hands it straight back to it, so every rule it enforces is enforced here once rather than
-    /// twice, and a refusal carries the parser's own sentence — those sentences were written for
-    /// somebody to read, and a second wording of them is a second thing to keep in step.
+    /// **The parser is still the authority.** This only arranges fields and hands the result
+    /// straight back to it, so every rule it enforces is enforced once rather than twice, and a
+    /// refusal carries the parser's own sentence — those sentences were written for somebody to
+    /// read, and a second wording of them is a second thing to keep in step.
     ///
-    /// Then the file is read back **off disk, through the same parser**, before the caller is
-    /// told it worked. A file this app cannot itself parse must not survive the request that made
-    /// it: it would come back as an `invalid` row, audit itself and send a push, and nobody would
-    /// know which request had left it there.
+    /// Shared by create and edit for the same reason, one step up: an edit that assembled its
+    /// object a second way would be a second place those rules drift, and every rejection the
+    /// create path is held to would need holding again somewhere else to stop an edit being the
+    /// way past them.
+    ///
+    /// `id` and `createdAt` are parameters precisely because they are the two fields a request
+    /// may not name. On a create they are a fresh UUID and this instant. On an edit they are
+    /// read off the file being replaced — carrying `created_at` over is what stops an edit from
+    /// handing back the bug that field exists to prevent, and a `nil` writes no stamp at all,
+    /// which is the meaning a hand-written file has always had rather than one invented for it.
     ///
     /// **A place id, never a path.** The directory comes from ``StartPoints/places()`` on this
     /// side, which is the argument `POST /v1/places/:id/start` makes and it is worth making
     /// twice: a device can only name a project this Mac has already shown it. `places` is a
     /// parameter for the reason ``Planner/draft(for:places:assistants:timeout:)`` has one — a
     /// test can describe a Mac rather than being run on one.
-    static func createSchedule(from body: [String: Any],
-                               places: [StartPoints.Place] = StartPoints.places(),
-                               now: Date = Date(),
-                               isDirectory: (String) -> Bool = StartPoints.isDirectory) -> Reply {
+    private static func scheduleObject(from body: [String: Any], id: String, createdAt: Int?,
+                                       places: [StartPoints.Place],
+                                       isDirectory: (String) -> Bool) -> ScheduleObject {
         let allowed = Set(["title", "at", "days", "place_id", "assistant", "instructions",
                            "enabled", "close_tab", "catch_up_hours", "notify_on_failure",
                            "timeout_minutes", "model"])
         let unknown = Set(body.keys).subtracting(allowed).sorted()
         guard unknown.isEmpty else {
-            return .refused(400, "bad_request",
-                            "unknown field: \(unknown.joined(separator: ", "))")
+            return .refused(.refused(400, "bad_request",
+                                     "unknown field: \(unknown.joined(separator: ", "))"))
         }
         // Refused rather than guessed at, and it is the same road as an id nobody was handed: a
         // `project_dir` is not on the list of things a request may carry, so there is nowhere
         // else for the directory to come from.
         guard let placeID = body["place_id"] as? String,
               let place = places.first(where: { $0.id == placeID }) else {
-            return .refused(400, "bad_request",
-                            "place_id must be one of the ids GET /v1/places lists.")
+            return .refused(.refused(400, "bad_request",
+                                     "place_id must be one of the ids GET /v1/places lists."))
         }
-        let id = UUID().uuidString.lowercased()
         var task: [String: Any] = [
             "assistant": body["assistant"] ?? "",
             "project_dir": place.path,
@@ -284,31 +294,42 @@ enum Orchestrator {
             "when": ["at": body["at"] ?? "", "days": body["days"] ?? ""],
             "task": task,
             "enabled": body["enabled"] ?? true,
-            // Written by this route and by nothing else, and the request cannot name it — it is
-            // on the parser's list, not on the list above. It is what stops the minute timer from
-            // treating this morning's nine o'clock as an occurrence this schedule slept through:
-            // the 200 below says the next fire is tomorrow, and now the beat agrees.
-            "created_at": Int(now.timeIntervalSince1970),
         ]
+        // Written by the Mac and by nothing else, and the request cannot name it — it is on the
+        // parser's list, not on the list above. It is what stops the minute timer from treating
+        // this morning's nine o'clock as an occurrence this schedule slept through: the 200 says
+        // the next fire is tomorrow, and the beat agrees. An edit hands back the instant it read
+        // off the file it is replacing, so saving a schedule at lunchtime cannot resurrect that
+        // bug on a file that has been right about its own age since the day it was made.
+        if let createdAt { obj["created_at"] = createdAt }
         // Written only when they were asked for, so the parser's defaults stay the one place
         // those three numbers are decided.
         for key in ["close_tab", "catch_up_hours", "notify_on_failure"] {
             if let value = body[key] { obj[key] = value }
         }
-        let filename = "\(id).json"
-        if case .bad(let why) = schedule(from: obj, filename: filename,
+        if case .bad(let why) = schedule(from: obj, filename: "\(id).json",
                                          isDirectory: isDirectory) {
-            return .refused(400, "bad_request", why)
+            return .refused(.refused(400, "bad_request", why))
         }
-        // `rate_limited` rather than `busy`: everywhere else in this app `busy` is queue depth —
-        // something already in hand that drains in seconds — and `rate_limited` is a sliding
-        // window of counted attempts. This brake is the second kind, the same shape as
-        // `takeDispatchRate()`, and the two codes tell a client different things about waiting.
-        guard takeScheduleWriteRate() else {
-            return .refused(429, "rate_limited",
-                            "This Mac has been asked for several schedules in the last few "
-                            + "minutes. Try again shortly.")
-        }
+        return .built(obj, place: place)
+    }
+
+    /// Put one assembled schedule object on disk under `<id>.json`, and read it back **off disk,
+    /// through the same parser**, before the caller is told it worked.
+    ///
+    /// A file this app cannot itself parse must not survive the request that made it: it would
+    /// come back as an `invalid` row, audit itself and send a push, and nobody would know which
+    /// request had left it there.
+    ///
+    /// `previous` is the bytes that were under this name a moment ago, or nil for a file being
+    /// made. It is the only thing the two callers do differently at the end, and the reason they
+    /// can still share this: a create that cannot be read back deletes what it wrote, while an
+    /// edit that cannot be read back puts the old file back — the schedule somebody already had
+    /// is not a failed save's to take away.
+    private static func writeSchedule(_ obj: [String: Any], id: String, previous: Data?,
+                                      event: String, extra: [String: String], now: Date,
+                                      isDirectory: (String) -> Bool) -> Reply {
+        let filename = "\(id).json"
         let file = scheduleDirectory.appendingPathComponent(filename)
         // Named out here so the failure path can take it away again. A `.new` left behind is
         // hidden and does not end in `.json`, so the inventory never sees it — which is exactly
@@ -334,31 +355,183 @@ enum Orchestrator {
             // still in flight. Task files are 0o600; a schedule carries the same first message.
             try data.write(to: staging, options: .atomic)
             try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: staging.path)
-            try manager.moveItem(at: staging, to: file)
+            if previous == nil {
+                try manager.moveItem(at: staging, to: file)
+            } else {
+                // The name is already taken, and `moveItem` refuses rather than replaces. This
+                // swaps the two in one step so the minute timer, which reads this directory on
+                // its own beat, never finds the schedule briefly absent — removing and then
+                // renaming would open exactly that window. The mode is set again on the far side
+                // because a replace carries the *replaced* file's metadata forward, and 0600 is
+                // this app's promise about a schedule rather than a fact about what was there.
+                _ = try manager.replaceItemAt(file, withItemAt: staging)
+                try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+            }
         } catch {
             try? FileManager.default.removeItem(at: staging)
-            RemoteAuth.audit("orchestrator.schedule.created",
-                             ["schedule": id, "ok": "0", "why": "write_failed"])
+            RemoteAuth.audit(event, ["schedule": id, "ok": "0", "why": "write_failed"])
             return .refused(500, "write_failed", "The schedule file could not be written.")
         }
         guard let written = try? Data(contentsOf: file),
               let readBack = (try? JSONSerialization.jsonObject(with: written)) as? [String: Any],
               case .ok(let made) = schedule(from: readBack, filename: filename,
                                             isDirectory: isDirectory) else {
-            try? FileManager.default.removeItem(at: file)
-            RemoteAuth.audit("orchestrator.schedule.created",
-                             ["schedule": id, "ok": "0", "why": "unreadable"])
+            if let previous {
+                try? previous.write(to: file, options: .atomic)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                       ofItemAtPath: file.path)
+            } else {
+                try? FileManager.default.removeItem(at: file)
+            }
+            RemoteAuth.audit(event, ["schedule": id, "ok": "0", "why": "unreadable"])
             return .refused(500, "write_failed",
-                            "The schedule was written and could not be read back, so it has been "
-                            + "removed.")
+                            previous == nil
+                                ? "The schedule was written and could not be read back, so it "
+                                    + "has been removed."
+                                : "The change was written and could not be read back, so the "
+                                    + "schedule you already had has been put back.")
         }
-        RemoteAuth.audit("orchestrator.schedule.created",
-                         ["schedule": id, "place": place.id, "cwd": place.path, "ok": "1"])
+        var line = ["schedule": id, "ok": "1"]
+        for (key, value) in extra { line[key] = value }
+        RemoteAuth.audit(event, line)
         var record: [String: Any] = ["id": made.id, "title": made.title, "enabled": made.enabled]
         if let next = nextFire(of: made, after: now) {
             record["next_fire"] = Int(next.timeIntervalSince1970)
         }
         return .ok(["ok": true, "schedule": record])
+    }
+
+    /// The one way anything other than a text editor makes a schedule file.
+    static func createSchedule(from body: [String: Any],
+                               places: [StartPoints.Place] = StartPoints.places(),
+                               now: Date = Date(),
+                               isDirectory: (String) -> Bool = StartPoints.isDirectory) -> Reply {
+        let id = UUID().uuidString.lowercased()
+        let obj: [String: Any]
+        let place: StartPoints.Place
+        switch scheduleObject(from: body, id: id, createdAt: Int(now.timeIntervalSince1970),
+                              places: places, isDirectory: isDirectory) {
+        case .refused(let reply): return reply
+        case .built(let built, let chosen): obj = built; place = chosen
+        }
+        // `rate_limited` rather than `busy`: everywhere else in this app `busy` is queue depth —
+        // something already in hand that drains in seconds — and `rate_limited` is a sliding
+        // window of counted attempts. This brake is the second kind, the same shape as
+        // `takeDispatchRate()`, and the two codes tell a client different things about waiting.
+        guard takeScheduleWriteRate() else {
+            return .refused(429, "rate_limited",
+                            "This Mac has been asked for several schedules in the last few "
+                            + "minutes. Try again shortly.")
+        }
+        return writeSchedule(obj, id: id, previous: nil, event: "orchestrator.schedule.created",
+                             extra: ["place": place.id, "cwd": place.path], now: now,
+                             isDirectory: isDirectory)
+    }
+
+    /// Change one schedule that already exists, from the same body a create takes.
+    ///
+    /// The Mac's Settings calls this directly rather than over HTTP, which is why it takes a
+    /// `places` list and an `id` instead of a request — there is one implementation of what an
+    /// edit means, and the route in `RemoteServer` is a door onto it rather than a second one.
+    ///
+    /// **`schedule_id` and `created_at` come off the file being replaced and never off the
+    /// request.** Neither is a field the body may carry — they are refused as unknown fields
+    /// like `project_dir` is — and carrying `created_at` over is not bookkeeping. It is what
+    /// keeps a schedule from running for an occurrence that predates it: a route that stamped
+    /// the current instant on every save would make saving a `09:00` schedule at lunchtime open
+    /// a session for this morning, which is the bug that field was added to stop, handed back
+    /// through a different door.
+    ///
+    /// **A schedule this app cannot read is not one it will edit.** The `404` is the same
+    /// sentence a manual run gives, and the reason is that an edit replaces the whole file: an
+    /// invalid one has no id and no `created_at` worth carrying, and the list does not give an
+    /// invalid row an id to address in the first place. Removing it and making a new one is the
+    /// repair, and ``Orchestrator/deleteSchedule(id:)`` does not need to understand a file to
+    /// take it away.
+    ///
+    /// **A running task does not block an edit**, unlike a manual run's `409 schedule_active`.
+    /// That refusal is about stacking a second session on top of a first; this changes a file
+    /// nothing in flight will read again, because a task is materialised from the template when
+    /// it is dispatched. The occurrence a change lands in the middle of keeps the terms it was
+    /// dispatched under; the next one uses the new file.
+    static func updateSchedule(id: String, from body: [String: Any],
+                               places: [StartPoints.Place] = StartPoints.places(),
+                               now: Date = Date(),
+                               isDirectory: (String) -> Bool = StartPoints.isDirectory) -> Reply {
+        guard let existing = scheduleNamed(id),
+              let previous = try? Data(contentsOf: scheduleDirectory
+                  .appendingPathComponent("\(id).json")) else {
+            return .refused(404, "not_found", "No schedule named that")
+        }
+        let obj: [String: Any]
+        switch scheduleObject(from: body, id: existing.id,
+                              createdAt: existing.createdAt.map { Int($0.timeIntervalSince1970) },
+                              places: places, isDirectory: isDirectory) {
+        case .refused(let reply): return reply
+        case .built(let built, _): obj = built
+        }
+        // The same brake as a create, and for the same reason: what it bounds is a client
+        // retrying in a loop with a fresh key each time, and a loop of saves writes a file per
+        // attempt exactly as a loop of creates does. Deleting is deliberately not braked — it
+        // leaves nothing behind to sweep up, and it is the one thing somebody reaches for when
+        // they want work to stop.
+        guard takeScheduleWriteRate() else {
+            return .refused(429, "rate_limited",
+                            "This Mac has been asked for several schedules in the last few "
+                            + "minutes. Try again shortly.")
+        }
+        return writeSchedule(obj, id: id, previous: previous,
+                             event: "orchestrator.schedule.updated", extra: [:], now: now,
+                             isDirectory: isDirectory)
+    }
+
+    /// Take one schedule away.
+    ///
+    /// **Two different failures, and a caller can tell them apart.** `404 not_found` is "there
+    /// was no such schedule", and it is also the answer for an id that is not an id — the file
+    /// is addressed as `<id>.json` and nothing else, which is the whole of the path handling
+    /// here. `500 delete_failed` is "the file would not go", which is a fact about this Mac and
+    /// a thing somebody has to go and look at, and answering it as a `404` would tell them the
+    /// schedule is gone while it is still on disk and still firing.
+    ///
+    /// Content is not read. A file named after a UUID whose contents this app cannot parse is
+    /// exactly the file somebody most wants to remove, and needing to understand it first would
+    /// be a rule with no purpose. A file whose *name* is not a UUID — `broken.json` — has no id
+    /// to address it by and still goes from the Finder.
+    ///
+    /// **A running task does not block this either.** It is not a cancel: the task keeps its own
+    /// id, its own tab and its own record, and `POST /v1/orchestrator/tasks/:id/cancel` is what
+    /// stops it. Refusing while something is running would be refusing precisely when somebody
+    /// most wants the schedule gone, and would send them back to the Mac and a text editor —
+    /// which is the thing this route exists to end.
+    static func deleteSchedule(id: String) -> Reply {
+        guard isTaskID(id) else {
+            return .refused(404, "not_found", "No schedule named that")
+        }
+        let filename = "\(id).json"
+        let file = scheduleDirectory.appendingPathComponent(filename)
+        guard FileManager.default.fileExists(atPath: file.path) else {
+            return .refused(404, "not_found", "No schedule named that")
+        }
+        do {
+            try FileManager.default.removeItem(at: file)
+        } catch {
+            RemoteAuth.audit("orchestrator.schedule.deleted",
+                             ["schedule": id, "ok": "0", "why": "remove_failed"])
+            return .refused(500, "delete_failed", "The schedule file could not be removed.")
+        }
+        // The three tables the beat keeps are keyed by schedule id, and nothing else ever takes
+        // an entry out of them — the id was a filename, and filenames used to only appear. An id
+        // that comes back later, from a file somebody restores, would otherwise inherit a
+        // handled occurrence and a "last missed" from a schedule that is not this one.
+        lock.lock()
+        handledScheduleFires.removeValue(forKey: id)
+        pendingScheduleFires.removeValue(forKey: id)
+        lastMissedScheduleFires.removeValue(forKey: id)
+        invalidScheduleFingerprints.removeValue(forKey: filename)
+        lock.unlock()
+        RemoteAuth.audit("orchestrator.schedule.deleted", ["schedule": id, "ok": "1"])
+        return .ok(["ok": true, "deleted": id])
     }
 
     /// Ten new schedules in ten minutes, and the eleventh is told to come back.
@@ -706,6 +879,19 @@ enum Orchestrator {
     /// the handoff between the timer's decision and the dispatch transaction: a manual run that
     /// reached the queue first wins, and this occurrence becomes an audited active skip.
     private static func runScheduledFire(_ schedule: Schedule, fire: Date) {
+        // Read off disk again rather than trusted, because the occurrence was decided on the
+        // timer and is only reaching this queue now. `DELETE /v1/orchestrator/schedules/:id` is
+        // a route somebody presses when they want work to stop, and a session opening out of a
+        // schedule that was removed a second earlier would be the one way pressing it is not
+        // enough. Asked outside the lock: the inventory takes it for itself.
+        guard scheduleNamed(schedule.id) != nil else {
+            lock.lock()
+            pendingScheduleFires.removeValue(forKey: schedule.id)
+            lock.unlock()
+            RemoteAuth.audit("orchestrator.schedule.skipped",
+                             ["schedule": schedule.id, "why": "removed"])
+            return
+        }
         lock.lock()
         pendingScheduleFires.removeValue(forKey: schedule.id)
         if hasActiveScheduleTaskLocked(schedule.id) || dispatchingSchedules.contains(schedule.id) {

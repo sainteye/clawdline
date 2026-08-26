@@ -834,6 +834,34 @@ final class RemoteServer {
             else { return .error(404, "not_found", "No schedule named that") }
             return .json(["schedule": record])
 
+        // **Changing one, and taking one away.** Behind the same three gates as the route that
+        // makes one and deliberately not behind the orchestrator token, for the same reason: a
+        // phone cannot hold a `0600` file, and these are for the phone. Until these existed the
+        // only way to fix a wrong time was a text editor on this Mac, so every mistaken creation
+        // had to be cleaned up back at the desk.
+        //
+        // PATCH takes the body POST takes. `schedule_id` and `created_at` are not fields it may
+        // carry — they are read off the file being replaced, and `Orchestrator.updateSchedule`
+        // says why the second of those matters.
+        //
+        // The same answers are kept out of the ten-minute idempotency table as on the create
+        // route: `429` and the fives are facts about this machine at this moment rather than
+        // about the request, and a cached one would tell the retry that was supposed to work
+        // that the brake is still on long after it let go.
+        case ("PATCH", let path) where path.hasPrefix("/v1/orchestrator/schedules/"):
+            let id = String(path.dropFirst("/v1/orchestrator/schedules/".count))
+            let cleaned = id.removingPercentEncoding ?? id
+            return writing(request, keeping: { $0.status != 429 && $0.status < 500 }) { body in
+                self.answer(Orchestrator.updateSchedule(id: cleaned, from: body))
+            }
+
+        case ("DELETE", let path) where path.hasPrefix("/v1/orchestrator/schedules/"):
+            let id = String(path.dropFirst("/v1/orchestrator/schedules/".count))
+            let cleaned = id.removingPercentEncoding ?? id
+            return writing(request, keeping: { $0.status < 500 }) { _ in
+                self.answer(Orchestrator.deleteSchedule(id: cleaned))
+            }
+
         case ("POST", let path) where path.hasPrefix("/v1/orchestrator/schedules/")
             && path.hasSuffix("/run"):
             guard orchestratorAuthed else {
@@ -2997,6 +3025,20 @@ final class RemoteServer {
             "webScheduleThu": t.webScheduleThu,
             "webScheduleFri": t.webScheduleFri,
             "webScheduleSat": t.webScheduleSat,
+        ])
+
+        // The same form, opened on a schedule that already exists — see
+        // `PATCH`/`DELETE /v1/orchestrator/schedules/:id`. Sent as their own block rather than
+        // folded into the one above because they are the words for changing something that is
+        // already running unattended, and "Delete" is the only word on this page that asks a
+        // question before it does anything.
+        add([
+            "webScheduleEdit": t.webScheduleEdit,
+            "webScheduleSave": t.webScheduleSave,
+            "webScheduleSaved": t.webScheduleSaved,
+            "webScheduleDelete": t.webScheduleDelete,
+            "webScheduleDeleteAsk": t.webScheduleDeleteAsk,
+            "webScheduleDeleted": t.webScheduleDeleted,
         ])
 
         // The Links sheet.

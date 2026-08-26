@@ -335,6 +335,14 @@ protocol Copy {
     var settingsOrchestratorPolicyOff: String { get }
     var settingsSchedules: String { get }
     var settingsSchedulesEmpty: String { get }
+    /// The button that opens an empty form — the Mac's own version of ``webScheduleNew``.
+    var settingsScheduleNew: String { get }
+    /// The one on each row that opens a filled-in form.
+    var settingsScheduleEdit: String { get }
+    /// The confirming button in the Mac's own form.
+    var settingsScheduleSave: String { get }
+    /// The one that removes it there.
+    var settingsScheduleDelete: String { get }
     var settingsScheduleRun: String { get }
     var settingsScheduleReveal: String { get }
     var settingsSchedulesFolder: String { get }
@@ -803,6 +811,8 @@ protocol Copy {
     // **The same rule as `webCommand*` above: nothing here may say or imply that a schedule
     // exists before the Create button at the bottom is pressed.**
     var webScheduleNew: String { get }
+    /// The same sheet's heading when it is changing a schedule rather than making one.
+    var webScheduleEdit: String { get }
     /// The line under the title, said before anyone has touched a field.
     var webScheduleNewSay: String { get }
     var webScheduleTitle: String { get }
@@ -832,6 +842,20 @@ protocol Copy {
     /// allowed to say a schedule now exists.
     var webScheduleCreated: String { get }
     var webScheduleFailed: String { get }
+    /// The confirming button when the sheet is editing a schedule rather than making one — the
+    /// create state's own button is ``webScheduleCreate``.
+    var webScheduleSave: String { get }
+    /// Shown once `PATCH /v1/orchestrator/schedules/:id` answers 200 — the edit sheet's version
+    /// of ``webScheduleCreated``.
+    var webScheduleSaved: String { get }
+    /// The button that removes the schedule, sitting beside Cancel and ``webScheduleSave``.
+    var webScheduleDelete: String { get }
+    /// The question asked before that happens. There is no undo and no route that could add
+    /// one, so this has to be honest rather than ceremonial — and it names the schedule's own
+    /// title where the layout allows. `{title}` is a hole the page fills in.
+    var webScheduleDeleteAsk: String { get }
+    /// Shown once `DELETE /v1/orchestrator/schedules/:id` answers 200.
+    var webScheduleDeleted: String { get }
     /// What the sentence that opened this form did not say. A prompt to fill something in, not
     /// an error — the planner left it blank on purpose rather than guess.
     var webScheduleNeedsTime: String { get }

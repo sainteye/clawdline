@@ -300,6 +300,7 @@ export var T = {
     // `Sources/Strings.swift` for what each key is for. Same rule as `webCommand*` above: nothing
     // here may say or imply that a schedule exists before the Create button is pressed.
     webScheduleNew: "New schedule",
+    webScheduleEdit: "Edit schedule",
     webScheduleNewSay: "Nothing is scheduled until you press Create below.",
     webScheduleTitle: "Title",
     webScheduleAt: "At",
@@ -320,6 +321,11 @@ export var T = {
     webScheduleCreate: "Create",
     webScheduleCreated: "Schedule created.",
     webScheduleFailed: "Could not create the schedule.",
+    webScheduleSave: "Save",
+    webScheduleSaved: "Schedule saved.",
+    webScheduleDelete: "Delete",
+    webScheduleDeleteAsk: "Delete {title}? There is no undo.",
+    webScheduleDeleted: "Schedule deleted.",
     webScheduleNeedsTime: "Didn't catch a time — set one.",
     webScheduleNeedsPlace: "Didn't catch which project — pick one.",
     webScheduleDaily: "Daily",
