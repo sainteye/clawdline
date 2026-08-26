@@ -170,6 +170,14 @@ flag，為什麼在最便宜的模型上意思正好相反。
 都已經在改，然後兩邊的人要為一件做到一半的事情喬出個結果。而且它仲裁的是**任務**：
 你自己在分頁裡開的那個 session 從來沒有被派工過，上面這些完全看不到它——那就是下一節在講的事。
 
+**另外，不同的工作線請放在並排的 checkout，不要把一個 repo 巢狀塞進另一個裡面。** 想把私有的
+那一半放進公開 checkout 裡——外層 repo gitignore 掉的一個資料夾、自己帶一份 git 歷史——很誘人。
+我們試過；上面這整套機制都看不見它。worktree 隔離複製的是被追蹤的檔案，被外層 ignore 的目錄
+不在其中——所以一個被隔離進 worktree 的任務，抵達時身上偏偏沒有它要改的那個資料夾；外層 repo
+的 branch 也永遠載不動巢狀裡的工作。claims 還是守得住路徑，但那是拿粗的工具做細的活。兩個並排
+的 checkout 讓每個 repo 都有自己完整的 worktree、claims 跟 session，代價只是不能在同一個資料夾
+裡同時改兩邊。
+
 [claims 怎麼算、什麼時候放掉、佇列怎麼排 →](docs/orchestrator.md#reserving-declared-write-paths-at-dispatch)
 
 ## agent 一進門就讀到的規矩

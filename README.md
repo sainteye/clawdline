@@ -196,6 +196,16 @@ editing, and the two people behind them have to negotiate about work that is hal
 arbitrates *tasks*. The session you opened in a tab yourself was never dispatched, so nothing above
 sees it at all — which is what the next section is for.
 
+**And keep separate lines of work in sibling checkouts, not a repository nested inside another.**
+It is tempting to keep a private half inside a public checkout — a folder the outer repository
+gitignores, carrying its own git history. We tried it; the machinery above cannot see it. Worktree
+isolation copies tracked files, and a directory the outer repository ignores is not tracked — so a
+task isolated into a worktree arrives without the very folder it was sent to change, and a branch
+of the outer repository can never deliver the nested work either. Claims still stand guard, but
+that is the coarse tool doing the sharp one's job. Two sibling checkouts give each repository its
+own worktrees, claims and sessions, and cost only the convenience of editing both halves in one
+folder.
+
 [Claims, leases, and the queue in full →](docs/orchestrator.md#reserving-declared-write-paths-at-dispatch)
 
 ## Rules an agent reads on the way in
