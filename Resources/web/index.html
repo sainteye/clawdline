@@ -218,7 +218,19 @@ document.documentElement.className = "booting";
                  no schedule write route is represented anywhere on this page. Hidden until a
                  non-empty answer lands so an empty inventory costs the session list no space. -->
             <details class="schedules" id="schedules" open hidden>
-                <summary><span>Schedules</span><span class="count" id="schedules-count"></span></summary>
+                <summary><span>Schedules</span><span class="count" id="schedules-count"></span>
+                    <!-- Inside the summary, so it sits on the one line this section has, and
+                         therefore it must stop its own click from reaching the disclosure —
+                         opening a sheet and folding the list underneath it in the same press is
+                         two answers to one tap. -->
+                    <button class="add" id="schedule-new" type="button"
+                            title="New schedule" aria-label="Make a new schedule">
+                        <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+                            <path d="M7 2.6v8.8M2.6 7h8.8" fill="none" stroke="currentColor"
+                                  stroke-width="1.6" stroke-linecap="round"></path>
+                        </svg>
+                    </button>
+                </summary>
                 <ul class="schedule-rows" id="schedule-rows" aria-label="Scheduled tasks"></ul>
             </details>
         </div>
@@ -592,6 +604,81 @@ document.documentElement.className = "booting";
         <div class="buttons">
             <button class="chip" id="command-cancel" type="button">Cancel</button>
             <button class="chip confirm-go" id="command-go" type="button">Start</button>
+        </div>
+    </div>
+</div>
+
+<!-- Making a schedule, which until now meant writing a JSON file by hand. Every field here is
+     one the file has, named the same way, so that what somebody fills in and what the parser
+     reads back are the same list — see `Orchestrator.schedule(from:)`, which is the authority on
+     all of it and rejects anything this form should not have sent.
+
+     The same sheet is what a spoken schedule lands in: the planner fills what it heard, and
+     whatever it could not work out is left for a person, which is the whole reason the form
+     exists before the voice does. -->
+<div class="overlay" id="schedule-form" hidden>
+    <div class="sheet schedule-sheet" id="schedule-sheet" role="dialog" aria-modal="true"
+         aria-labelledby="schedule-form-title">
+        <h2 id="schedule-form-title">New schedule</h2>
+        <p class="say" id="schedule-form-say"></p>
+
+        <div class="block">
+            <span class="field-label" id="schedule-title-label">Title</span>
+            <input class="find" id="schedule-title" type="text" maxlength="120"
+                   autocomplete="off" autocapitalize="sentences" spellcheck="false"
+                   data-1p-ignore data-lpignore="true" data-bwignore>
+        </div>
+
+        <div class="block">
+            <span class="field-label" id="schedule-at-label">At</span>
+            <input class="find time" id="schedule-at" type="time" required>
+        </div>
+
+        <div class="block">
+            <span class="field-label" id="schedule-days-label">On</span>
+            <div class="row" id="schedule-days"></div>
+        </div>
+
+        <div class="block">
+            <span class="field-label" id="schedule-where-label">Where</span>
+            <div class="row" id="schedule-with"></div>
+            <ul class="places" id="schedule-places"></ul>
+        </div>
+
+        <div class="block">
+            <span class="field-label" id="schedule-first-label">First message</span>
+            <textarea class="find" id="schedule-instructions" rows="4"
+                      spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore></textarea>
+        </div>
+
+        <!-- Folded, because every one of these has a working default and a first schedule should
+             not have to read six of them to be made. -->
+        <details class="more" id="schedule-more">
+            <summary id="schedule-more-label">More</summary>
+            <div class="block">
+                <span class="field-label" id="schedule-close-label">When it finishes</span>
+                <div class="row" id="schedule-close"></div>
+            </div>
+            <div class="block">
+                <div class="row" id="schedule-flags"></div>
+            </div>
+            <div class="block nums">
+                <label class="num" id="schedule-catch-label">
+                    <span class="field-label">Catch up within</span>
+                    <input class="find" id="schedule-catch" type="number" min="0" max="168" step="1">
+                </label>
+                <label class="num" id="schedule-timeout-label">
+                    <span class="field-label">Give up after</span>
+                    <input class="find" id="schedule-timeout" type="number" min="1" max="240" step="1">
+                </label>
+            </div>
+        </details>
+
+        <p class="said" id="schedule-said" role="status" aria-live="polite"></p>
+
+        <div class="buttons">
+            <button class="chip" id="schedule-cancel" type="button">Cancel</button>
+            <button class="chip confirm-go" id="schedule-go" type="button">Create</button>
         </div>
     </div>
 </div>

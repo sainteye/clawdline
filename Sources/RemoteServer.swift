@@ -334,13 +334,14 @@ final class RemoteServer {
         // process running as the user can read — because through a tunnel every request arrives
         // from 127.0.0.1, and a paired phone must never be able to start sessions. Reads without
         // that token fall through to ordinary device auth, so the page can show the tasks; the
-        // complete route is gated inside its handler by the per-task secret instead, which is
-        // the only credential a child was ever handed.
+        // complete and notify routes are gated inside their handlers by the per-task secret
+        // instead, which is the only credential a child was ever handed.
         let orchestrated = request.path.hasPrefix("/v1/orchestrator/")
         let orchestratorAuthed = orchestrated
             && Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"])
         let taskSecretRoute = orchestrated && request.method == "POST"
-            && request.path.hasSuffix("/complete")
+            && request.path.hasPrefix("/v1/orchestrator/tasks/")
+            && (request.path.hasSuffix("/complete") || request.path.hasSuffix("/notify"))
         if !open.contains(request.path), !pairing, !shell, !icon, !orchestratorAuthed, !taskSecretRoute {
             if case .denied = permission(for: request) {
                 return .error(401, "unauthorized", "This needs a paired device.")
@@ -730,6 +731,15 @@ final class RemoteServer {
             }
             return answer(Orchestrator.dispatch(taskID: taskID, secret: secret))
 
+        case ("POST", "/v1/orchestrator/notify"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden", "Agent notification needs the orchestrator token.")
+            }
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            return answer(Orchestrator.agentNotify(title: body["title"] as? String ?? "",
+                                                   body: body["body"] as? String ?? ""))
+
         case ("GET", "/v1/orchestrator/schedules"):
             return .json(["schedules": Orchestrator.scheduleRecords(),
                           "at": Int(Date().timeIntervalSince1970)])
@@ -758,6 +768,19 @@ final class RemoteServer {
                                                 secret: secret,
                                                 status: body["status"] as? String ?? "",
                                                 summary: body["summary"] as? String ?? ""))
+
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
+            && path.hasSuffix("/notify"):
+            let id = String(path.dropFirst("/v1/orchestrator/tasks/".count)
+                .dropLast("/notify".count))
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            let secret = request.headers["x-clawdline-task-secret"]
+                ?? (body["secret"] as? String) ?? ""
+            return answer(Orchestrator.agentNotify(taskID: id.removingPercentEncoding ?? id,
+                                                   secret: secret,
+                                                   title: body["title"] as? String ?? "",
+                                                   body: body["body"] as? String ?? ""))
 
         case ("POST", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
             && path.hasSuffix("/cancel"):

@@ -17,8 +17,9 @@ import Security
 /// arrives from 127.0.0.1, so "local" is a thing only the filesystem can prove, and a paired
 /// phone must never be able to start sessions. A child allowed to dispatch can read that token;
 /// it still cannot exchange it for another task's secret. Every child gets its own per-task
-/// secret, typed into its first message and good for exactly one thing: finishing its own task.
-/// Only the secret's SHA-256 is kept once the child has been briefed.
+/// secret, typed into its first message and good for finishing its own task or sending one of its
+/// tightly limited timely notifications. Only the secret's SHA-256 is kept once the child has
+/// been briefed.
 enum Orchestrator {
 
     // MARK: - Scheduled dispatches
@@ -652,6 +653,10 @@ enum Orchestrator {
         /// expire when Claude rotates the file or the file is temporarily unavailable.
         var transcriptProven = false
         var secretHash: String
+        /// Agent-authored pushes already accepted for this task. Unlike the process-wide hourly
+        /// brake, this survives a restart: a task gets five messages for its whole lifetime, not
+        /// five every time the app is rebuilt.
+        var notifyCount = 0
         /// The task secret encrypted with a key local to this installation. It exists only while
         /// a serialized task waits, so a restart can resume the queue without storing plaintext.
         var queuedSecret: String?
@@ -1106,6 +1111,12 @@ enum Orchestrator {
     /// Plaintext secrets, held only between dispatch and briefing. Never on disk.
     private static var secrets: [String: String] = [:]
     private static var dispatchTimes: [Date] = []
+    /// Accepted agent-authored notifications in the last hour. Deliberately separate from the
+    /// dispatch brake: telling somebody what a child found must not consume a child slot ticket.
+    private static var notifyTimes: [Date] = []
+    /// Failed task-secret attempts share the public pairing route's three-in-ten-minutes shape.
+    /// Successful notifications never enter this window.
+    private static var notifyCredentialFailureTimes: [Date] = []
     /// A skipped or missed occurrence has no task row to remember it. This prevents one audit and
     /// push per minute while the process stays up; a restart deliberately re-evaluates catch-up.
     private static var handledScheduleFires: [String: Date] = [:]
@@ -1119,6 +1130,9 @@ enum Orchestrator {
     static var scheduleDispatchEnqueuerForTesting: ((@escaping () -> Void) -> Void)?
     /// Test seam: observes the warning decision before optional terminal delivery.
     static var workspaceOverlapObserverForTesting: ((Task, [WorkspaceOverlap]) -> Void)?
+    /// Test seam for the final display sentence; production always enters WebPush below.
+    static var agentPushForTesting:
+        ((String, String, String, String?, String?) -> WebPush.Delivery)?
     /// Child terminal id → task title, rebuilt whenever the tasks change. Read on every redraw
     /// of every session row, which is why it is a dictionary and not a walk over the tasks.
     private static var titlesByTerminal: [String: String] = [:]
@@ -2701,6 +2715,221 @@ enum Orchestrator {
         return .ok(["ok": true])
     }
 
+    // MARK: - Agent-authored push notifications
+
+    private static let notifyTaskLimit = 5
+    private static let notifyHourlyLimit = 30
+    private static let notifyWindow: TimeInterval = 60 * 60
+    private static let notifyTerminalGrace: TimeInterval = 60
+    private static let notifyCredentialFailureLimit = 3
+    private static let notifyCredentialFailureWindow: TimeInterval = 10 * 60
+
+    /// One audit row per attempted agent notification. `task_id` and `root` are deliberately
+    /// mutually exclusive so a reader can distinguish a child's narrow credential from a local
+    /// script holding the machine credential without parsing the event name.
+    private static func auditAgentNotify(taskID: String?, title: String, result: String,
+                                         delivery: WebPush.Delivery? = nil) {
+        var fields = ["title": String(title.prefix(80)), "result": result]
+        if let taskID { fields["task_id"] = taskID } else { fields["root"] = "1" }
+        if let delivery {
+            fields["sent"] = String(delivery.sent)
+            fields["failed"] = String(delivery.failed)
+        }
+        RemoteAuth.audit("orchestrator.notify", fields)
+    }
+
+    /// Before the task secret is proved, no caller-controlled prose reaches the append-only log.
+    /// The short digest groups a repeated attempt without preserving its task id or credential.
+    private static func unverifiedAgentNotify(taskID: String, secret: String, result: String,
+                                              now: Date, status: Int, code: String,
+                                              message: String) -> Reply {
+        lock.lock()
+        notifyCredentialFailureTimes = notifyCredentialFailureTimes.filter {
+            now.timeIntervalSince($0) < notifyCredentialFailureWindow
+        }
+        let allowed = notifyCredentialFailureTimes.count < notifyCredentialFailureLimit
+        if allowed { notifyCredentialFailureTimes.append(now) }
+        lock.unlock()
+
+        let finalResult = allowed ? result : "rate_limited"
+        RemoteAuth.audit("orchestrator.notify", [
+            "source": "task_secret",
+            "attempt": String(hash(ofSecret: "\(taskID)\u{0}\(secret)").prefix(12)),
+            "result": finalResult,
+        ])
+        guard allowed else {
+            return .refused(429, "rate_limited",
+                            "Too many task-secret notification attempts. Try again later.")
+        }
+        return .refused(status, code, message)
+    }
+
+    private static func notificationFields(title: String, body: String) -> Reply? {
+        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              title.count <= 80 else {
+            return .refused(400, "bad_request",
+                            "title must be non-empty and at most 80 characters.")
+        }
+        guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              body.count <= 500 else {
+            return .refused(400, "bad_request",
+                            "body must be non-empty and at most 500 characters.")
+        }
+        return nil
+    }
+
+    private static func sendAgentPush(source: String, title: String, body: String,
+                                      projectDir: String?, tag: String) -> WebPush.Delivery {
+        let displayedTitle = "\(source): \(title)"
+        let icon = projectDir.flatMap { RemoteIcon.projectPath(for: ProjectIcon.grid(forCwd: $0)) }
+        if let observer = agentPushForTesting {
+            return observer(displayedTitle, body, "/", tag, icon)
+        }
+        // This deliberately bypasses pushOnFinish: it is content the user explicitly asked an
+        // agent or schedule to deliver, not Clawdline's automatic finished-state notification.
+        return WebPush.sendAndWait(title: displayedTitle, body: body, url: "/", tag: tag,
+                                   icon: icon)
+    }
+
+    private static func refundAgentNotify(taskID: String?, ticket: Date) {
+        lock.lock()
+        if let index = notifyTimes.lastIndex(of: ticket) { notifyTimes.remove(at: index) }
+        if let taskID, var task = tasks[taskID] {
+            task.notifyCount = max(0, task.notifyCount - 1)
+            tasks[taskID] = task
+        }
+        lock.unlock()
+        if taskID != nil { save() }
+    }
+
+    private static func agentDeliveryReply(taskID: String?, title: String,
+                                           delivery: WebPush.Delivery,
+                                           ticket: Date) -> Reply {
+        guard delivery.total > 0 else {
+            refundAgentNotify(taskID: taskID, ticket: ticket)
+            auditAgentNotify(taskID: taskID, title: title, result: "not_subscribed",
+                             delivery: delivery)
+            return .refused(409, "not_subscribed",
+                            "No device has asked for notifications yet.")
+        }
+        let result = delivery.failed == 0 ? "sent" : (delivery.sent == 0 ? "failed" : "partial")
+        auditAgentNotify(taskID: taskID, title: title, result: result, delivery: delivery)
+        guard delivery.failed == 0 else {
+            return .refused(status: 502, code: "push_failed",
+                            message: "One or more push services did not accept the notification.",
+                            extra: ["sent": delivery.sent, "failed": delivery.failed])
+        }
+        return .ok(["ok": true, "sent": delivery.sent, "failed": delivery.failed])
+    }
+
+    /// A child may speak while it is working and for one short grace period after it reports.
+    /// Secret checking intentionally matches `/complete`: both sides are SHA-256 digests and the
+    /// equal-length comparison is constant-time.
+    static func agentNotify(taskID: String, secret: String, title: String, body: String,
+                            now: Date = Date()) -> Reply {
+        guard let snapshot = held(taskID) else {
+            return unverifiedAgentNotify(taskID: taskID, secret: secret, result: "not_found",
+                                         now: now, status: 404, code: "not_found",
+                                         message: "No task named that")
+        }
+        guard !secret.isEmpty,
+              RemoteAuth.constantTimeEquals(snapshot.secretHash, hash(ofSecret: secret)) else {
+            return unverifiedAgentNotify(taskID: taskID, secret: secret, result: "bad_secret",
+                                         now: now, status: 403, code: "forbidden",
+                                         message: "That is not this task's secret.")
+        }
+        if snapshot.state.isTerminal {
+            guard let finished = snapshot.finishedAt,
+                  now.timeIntervalSince(finished) <= notifyTerminalGrace else {
+                auditAgentNotify(taskID: taskID, title: title, result: "expired")
+                return .refused(409, "notify_expired",
+                                "That task's notification window has expired.")
+            }
+        }
+        if let refusal = notificationFields(title: title, body: body) {
+            auditAgentNotify(taskID: taskID, title: title, result: "invalid")
+            return refusal
+        }
+        if agentPushForTesting == nil, WebPush.subscriptions.isEmpty {
+            let delivery = WebPush.Delivery(sent: 0, failed: 0)
+            auditAgentNotify(taskID: taskID, title: title, result: "not_subscribed",
+                             delivery: delivery)
+            return .refused(409, "not_subscribed",
+                            "No device has asked for notifications yet.")
+        }
+
+        lock.lock()
+        guard var current = tasks[taskID] else {
+            lock.unlock()
+            auditAgentNotify(taskID: taskID, title: title, result: "not_found")
+            return .refused(404, "not_found", "No task named that")
+        }
+        if current.state.isTerminal,
+           current.finishedAt == nil
+                || now.timeIntervalSince(current.finishedAt ?? .distantPast) > notifyTerminalGrace {
+            lock.unlock()
+            auditAgentNotify(taskID: taskID, title: title, result: "expired")
+            return .refused(409, "notify_expired",
+                            "That task's notification window has expired.")
+        }
+        notifyTimes = notifyTimes.filter { now.timeIntervalSince($0) < notifyWindow }
+        if current.notifyCount >= notifyTaskLimit {
+            lock.unlock()
+            auditAgentNotify(taskID: taskID, title: title, result: "notify_limit")
+            return .refused(429, "notify_limit", "That task has sent its five notifications.")
+        }
+        if notifyTimes.count >= notifyHourlyLimit {
+            lock.unlock()
+            auditAgentNotify(taskID: taskID, title: title, result: "rate_limited")
+            return .refused(429, "rate_limited",
+                            "Too many agent notifications; wait for the hourly window.")
+        }
+        current.notifyCount += 1
+        tasks[taskID] = current
+        let ticket = now
+        notifyTimes.append(ticket)
+        lock.unlock()
+        save()
+
+        let source = current.scheduleID == nil ? current.title : (current.rootLabel ?? current.title)
+        let delivery = sendAgentPush(source: source, title: title, body: body,
+                                     projectDir: current.projectDir,
+                                     tag: "agent-task-\(taskID)")
+        return agentDeliveryReply(taskID: taskID, title: title, delivery: delivery,
+                                  ticket: ticket)
+    }
+
+    /// Local roots and scripts already proved they are this Mac's user at RemoteServer's token
+    /// gate. They share the hourly brake but do not consume any task's five-message allowance.
+    static func agentNotify(title: String, body: String, now: Date = Date()) -> Reply {
+        if let refusal = notificationFields(title: title, body: body) {
+            auditAgentNotify(taskID: nil, title: title, result: "invalid")
+            return refusal
+        }
+        if agentPushForTesting == nil, WebPush.subscriptions.isEmpty {
+            let delivery = WebPush.Delivery(sent: 0, failed: 0)
+            auditAgentNotify(taskID: nil, title: title, result: "not_subscribed",
+                             delivery: delivery)
+            return .refused(409, "not_subscribed",
+                            "No device has asked for notifications yet.")
+        }
+        lock.lock()
+        notifyTimes = notifyTimes.filter { now.timeIntervalSince($0) < notifyWindow }
+        guard notifyTimes.count < notifyHourlyLimit else {
+            lock.unlock()
+            auditAgentNotify(taskID: nil, title: title, result: "rate_limited")
+            return .refused(429, "rate_limited",
+                            "Too many agent notifications; wait for the hourly window.")
+        }
+        let ticket = now
+        notifyTimes.append(ticket)
+        lock.unlock()
+        let delivery = sendAgentPush(source: "Clawdline", title: title, body: body,
+                                     projectDir: nil, tag: "agent-root")
+        return agentDeliveryReply(taskID: nil, title: title, delivery: delivery,
+                                  ticket: ticket)
+    }
+
     // MARK: - Cancel
 
     static func cancel(taskID: String) -> Reply {
@@ -4251,6 +4480,23 @@ enum Orchestrator {
           it is sent to read what other nodes produced, so its instructions list those paths.
         - Do not do work the task did not ask for.
         - You have \(task.timeoutMinutes) minutes before the task is marked timed out.\(isolationSection)
+
+        ## Up to 5 timely notifications, when the user is waiting
+
+        You may use your own TASK_SECRET to push one sentence the user needs to know now, before
+        completion or for 60 seconds afterwards:
+
+        ```bash
+        curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/notify \\
+          -H "X-Clawdline-Task-Secret: <TASK_SECRET>" \\
+          -H 'Content-Type: application/json' \\
+          -d '{"title":"<at most 80 characters>","body":"<at most 500 characters>"}'
+        ```
+
+        The value of push is rarity. Routine results belong in `result.json`; notify only when
+        the user is waiting for the answer, including a scheduled task such as today's weather
+        whose useful output is the notification itself. Empty title/body values are refused.
+        Each task may send at most 5 notifications, and this Mac accepts at most 30 per hour.
         \(handOnSection(for: task, allowance: allowance))\(policySection(allowance: allowance))
         ## Reporting — this is the completion signal, do it exactly
 
@@ -4922,6 +5168,7 @@ enum Orchestrator {
             "created": task.created.timeIntervalSince1970,
             "depth": task.depth,
             "secret_hash": task.secretHash,
+            "notify_count": task.notifyCount,
             "artifacts": task.artifacts,
         ]
         if let at = task.spawnedAt { out["spawned_at"] = at.timeIntervalSince1970 }
@@ -5084,6 +5331,7 @@ enum Orchestrator {
         task.transcriptPath = obj["transcript"] as? String
         task.transcriptProven = obj["transcript_proven"] as? Bool == true
             && task.childSessionId != nil && task.transcriptPath != nil
+        task.notifyCount = min(max(obj["notify_count"] as? Int ?? 0, 0), notifyTaskLimit)
         if task.transcriptProven, task.assistant == .claude,
            let path = task.transcriptPath, let sessionID = task.childSessionId,
            URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent != sessionID {
@@ -5243,6 +5491,8 @@ enum Orchestrator {
         handoffTitlesByTerminal = [:]
         secrets = [:]
         dispatchTimes = []
+        notifyTimes = []
+        notifyCredentialFailureTimes = []
         handledScheduleFires = [:]
         pendingScheduleFires = [:]
         lastMissedScheduleFires = [:]
@@ -5251,6 +5501,7 @@ enum Orchestrator {
         scheduleRunnerForTesting = nil
         scheduleDispatchEnqueuerForTesting = nil
         workspaceOverlapObserverForTesting = nil
+        agentPushForTesting = nil
         titlesByTerminal = [:]
         loaded = false
         lock.unlock()

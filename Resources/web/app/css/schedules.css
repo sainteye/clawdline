@@ -18,6 +18,17 @@
     list-style: none;
 }
 .schedules > summary::-webkit-details-marker { display: none; }
+/* The way to make one, on the same line as the count. Pushed to the end with `auto` rather than
+   given a place in the flow, so the count keeps sitting against the word it counts. */
+.schedules > summary .add {
+    margin-left: auto; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--card); color: var(--dim);
+}
+.schedules > summary .add:hover { background: var(--card-hi); color: var(--ink); }
+.schedules > summary .add svg { display: block; width: 11px; height: 11px; }
 .schedules > summary::before {
     content: "›";
     color: var(--faint);

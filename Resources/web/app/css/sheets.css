@@ -418,3 +418,50 @@ a.dep:hover .host { color: var(--accent); }
    `display: block`. The second selector is for `.sheet .block .row`, which is (0,3,0). */
 .command-sheet [hidden] { display: none; }
 .command-sheet .block .row[hidden] { display: none; }
+
+/* Making a schedule. A form rather than a question, so it is taller than every other sheet and
+   scrolls inside itself — `--vvh` again, because a form with the keyboard up is precisely the
+   case a viewport unit gets wrong. The fields are in the order somebody thinks of them: what to
+   call it, when, where, and what to say when it gets there. */
+.schedule-sheet {
+    width: min(520px, 100%);
+    max-height: calc(var(--vvh) - 48px);
+    overflow-y: auto;
+}
+.schedule-sheet .block { display: block; margin-bottom: 13px; }
+.schedule-sheet .field-label {
+    display: block; margin-bottom: 6px;
+    color: var(--faint); font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase;
+}
+.schedule-sheet .find { margin-bottom: 0; }
+.schedule-sheet textarea {
+    min-height: 84px; resize: vertical;
+    font-family: inherit; font-size: 13px; line-height: 1.55;
+}
+/* A time is as wide as the time in it. Stretched across the sheet it reads as a text field
+   somebody forgot to fill in. */
+.schedule-sheet .time { width: auto; min-width: 118px; }
+.schedule-sheet .places { margin-top: 8px; }
+.schedule-sheet .more { margin-bottom: 4px; }
+.schedule-sheet .more > summary {
+    cursor: pointer; list-style: none;
+    padding: 7px 0; color: var(--dim); font-size: 12px;
+}
+.schedule-sheet .more > summary::-webkit-details-marker { display: none; }
+.schedule-sheet .more > summary::before { content: "\203A\00a0"; color: var(--faint); }
+.schedule-sheet .more[open] > summary::before { content: "\2304\00a0"; }
+.schedule-sheet .nums { display: flex; gap: 10px; }
+.schedule-sheet .nums .num { flex: 1 1 0; min-width: 0; }
+.schedule-sheet .nums .find { width: 100%; }
+.schedule-sheet .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.schedule-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
+.schedule-sheet .confirm-go { border-color: var(--accent-ed); color: var(--accent); }
+.schedule-sheet .confirm-go[disabled] { opacity: 0.5; }
+/* A direct child, for the reason the command sheet learned the hard way: `.said` is also the
+   class on the dictation clock, and a descendant selector reached it and pushed it off centre. */
+.schedule-sheet > .said { margin-top: 10px; display: flex; align-items: center; gap: 7px; }
+.schedule-sheet > .said canvas { flex: 0 0 auto; display: block; }
+/* Last, and spelled out, so `hidden` beats every rule above it. */
+.schedule-sheet [hidden] { display: none; }
+.schedule-sheet .block .row[hidden] { display: none; }

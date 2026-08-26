@@ -105,8 +105,10 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/auth/logout` | — | — |
 | `POST` | `/v1/orchestrator/handoffs` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/tasks` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/notify` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/tasks` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/tasks/:id` | orchestrator token, **or** token | `read` |
+| `POST` | `/v1/orchestrator/tasks/:id/notify` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/complete` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/cancel` | orchestrator token, **or** token + key | `send` **and** the write switch |
 | `GET` | `/`, `/index.html`, `/manifest.webmanifest` | — | — |
@@ -124,8 +126,8 @@ minted alongside the one above and **never served over HTTP** — it proves "a p
 this user on this Mac", which is a different claim from "a device somebody paired", and it is the
 only thing that may dispatch or hand a line of work to a new tab. No device token does either: not
 with `send`, not with `admin`, not over a tunnel. The *task secret* is narrower still — one task,
-made by whoever dispatched it, and
-the only thing it can do is report that task finished. What each one can and cannot do is
+made by whoever dispatched it. It can report that task finished and, within the narrow limits
+below, send that task's timely content notification. What each one can and cannot do is
 [`docs/orchestrator.md`](orchestrator.md#what-it-costs-before-anything-else); this page is the
 wire.
 
@@ -1279,6 +1281,70 @@ SHA is presented as the receipt for what the child actually started from.
 
 The same payload goes out on [the event stream](#the-event-stream) as an `orchestrator` frame
 whenever any record changes, and once when a stream opens, right after `hello` and `sessions`.
+
+### `POST /v1/orchestrator/tasks/:id/notify`, `POST /v1/orchestrator/notify`
+
+These routes let an agent send **content** the user is waiting for, through the same per-subscription
+RFC 8291 WebPush path as Clawdline's state notifications. The task form is for a child: its secret
+is accepted in `X-Clawdline-Task-Secret` or the JSON body, exactly like `/complete`, and is compared
+in constant time with the task's stored hash. The header is the canonical form shown to children.
+It is valid while the task is live and for 60 seconds after `finished_at`:
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/notify \
+    -H "X-Clawdline-Task-Secret: $SECRET" -H 'Content-Type: application/json' \
+    -d "{\"title\":\"Today's forecast\",\"body\":\"Sunny, high 27°C.\"}"
+{"failed":0,"ok":true,"sent":1}
+```
+
+The root form is for a local root session or script and takes the orchestrator token:
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/notify \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d '{"title":"Deploy","body":"Production is healthy."}'
+{"failed":0,"ok":true,"sent":1}
+```
+
+`title` and `body` are required, non-blank strings of at most 80 and 500 Swift characters.
+On the phone the title is `<task title>: <title>` for a task and `Clawdline: <title>` for a root.
+The payload keeps its beginning if the WebPush `maxPayload` ceiling requires shortening: the icon
+is dropped first and then only the tail of `body` is discarded. Task notifications use the stable
+WebPush topic `agent-task-<task-id>` and root notifications use `agent-root`, so a push service can
+replace an older undelivered content notification from the same source.
+
+One task may have five accepted notifications over its lifetime; that count survives an app
+restart. Separately, the Mac accepts 30 agent notifications in a sliding hour. That hourly window is
+process memory and starts empty after an app restart; it is deliberately separate from the dispatch
+limiter. A request with no subscriptions returns `409 not_subscribed` and consumes neither
+allowance. Once at least one subscription is attempted, the allowance is consumed even if a push
+service refuses it; the response and audit say how many subscriptions accepted and failed.
+
+Authenticated attempts append an `orchestrator.notify` audit row with `task_id` or `root`, `title`,
+`result`, and delivery counts when delivery was attempted. Before a task secret is verified,
+caller-supplied `title` and `body` are never logged: the row has only `source=task_secret`, a
+12-character attempt hash, and `result`. Three failed task-secret attempts are allowed in ten
+minutes; further attempts return 429 until the sliding window clears.
+
+Agent content deliberately bypasses the automatic push preference switches: it is an explicit
+delivery requested by the user through a root, task, or schedule, not a state/finish notice.
+Integrating agent-content delivery into a separate user preference remains backlog work.
+
+| `code` | status | |
+|---|---|---|
+| `unauthorized` | 401 | the root request has no recognized credential and stops at the device-auth door |
+| `forbidden` | 403 | the task secret is absent or wrong, or a paired device tries to replace the root orchestrator token |
+| `not_found` | 404 | no task with that id |
+| `not_subscribed` | 409 | no device has asked for push notifications; no allowance is consumed |
+| `notify_expired` | 409 | the task finished more than 60 seconds ago |
+| `bad_request` | 400 | `title` or `body` is missing, blank, or beyond its character limit |
+| `notify_limit` | 429 | this task already sent five notifications |
+| `rate_limited` | 429 | the Mac accepted 30 agent notifications in the hour, or task-secret failures exceeded three in ten minutes |
+| `push_failed` | 502 | one or more push services refused or failed; the error includes `sent` and `failed` counts |
+
+As with `/complete`, an unknown task is 404 while a known task with the wrong secret is 403. That
+reveals the existing route-shape distinction; consistency with `/complete` is intentionally kept,
+and task ids are unguessable UUIDs.
 
 ### `POST /v1/orchestrator/tasks/:id/complete`
 

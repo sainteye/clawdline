@@ -1,6 +1,6 @@
 ---
 name: clawdline
-version: 2.1.0
+version: 2.1.1
 description: |
   Hand a piece of work to another session: open a child session (Claude Code or Codex) through the
   Clawdline app, type the first message into it, wait for it to write result.json, and report back
@@ -642,6 +642,15 @@ curl -s -X POST \
 Read the dispatch response and then the task record; do not call installation verified merely
 because the file exists. Tell the user the honest boundary: if the app is closed it cannot fire,
 and restart catches up only inside `catch_up_hours`.
+
+For a task whose useful output **is one timely sentence** — for example, a daily weather
+forecast — say explicitly in its instructions to use the task-secret `/notify` route that
+`CHILD.md` provides. Routine results still belong in `result.json`; push is for the rare answer
+the user is waiting for. A local root script may instead `POST /v1/orchestrator/notify` with the
+orchestrator token and `{"title":"…","body":"…"}`. Titles are at most 80 characters, bodies
+500; one task gets 5 messages and the whole Mac gets 30 per hour. A task secret may notify while
+the task is live and for only 60 seconds after it finishes, so notification-shaped work sends the
+content before writing its final `result.json` whenever practical.
 
 ---
 

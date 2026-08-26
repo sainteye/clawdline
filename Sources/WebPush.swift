@@ -85,6 +85,16 @@ enum WebPush {
         }
     }
 
+    /// What the push services actually accepted. A route that promised content to a person must
+    /// not confuse "the send was started" with "a service accepted it"; partial fan-out is kept
+    /// explicit so its caller can report both halves without inviting a blind retry.
+    struct Delivery: Equatable {
+        let sent: Int
+        let failed: Int
+
+        var total: Int { sent + failed }
+    }
+
     // MARK: - The numbers the RFCs fix
 
     /// `salt(16) || rs(4) || idlen(1) || keyid(65)` — RFC 8188 §2.1, with the keyid length that
@@ -474,6 +484,45 @@ enum WebPush {
         return String(base64url(Data(digest)).prefix(32))
     }
 
+    /// Build the bytes every subscription receives. Decorations are expendable first; if the
+    /// sentence still does not fit, keep its beginning and discard only its tail. The binary
+    /// search is over Swift Characters, so it never splits an emoji or a composed character.
+    static func notificationPayload(title: String, body: String, url: String?, tag: String?,
+                                    icon: String?, at: Date = Date()) -> Data? {
+        var payload: [String: Any] = ["title": title, "body": body,
+                                      "at": Int(at.timeIntervalSince1970)]
+        if let url, !url.isEmpty { payload["url"] = url }
+        if let tag, !tag.isEmpty { payload["tag"] = topic(for: tag) }
+        if let icon, !icon.isEmpty { payload["icon"] = icon }
+        func encoded() -> Data? {
+            try? JSONSerialization.data(withJSONObject: payload,
+                                        options: [.withoutEscapingSlashes])
+        }
+
+        var made = encoded()
+        if let over = made, over.count > maxPayload, payload["icon"] != nil {
+            Log.write("push: the mark did not fit in \(maxPayload) octets — sending without it")
+            payload.removeValue(forKey: "icon")
+            made = encoded()
+        }
+        if let over = made, over.count > maxPayload {
+            let characters = Array(body)
+            var low = 0
+            var high = characters.count
+            while low < high {
+                let middle = (low + high + 1) / 2
+                payload["body"] = String(characters.prefix(middle))
+                if (encoded()?.count ?? Int.max) <= maxPayload { low = middle }
+                else { high = middle - 1 }
+            }
+            payload["body"] = String(characters.prefix(low))
+            made = encoded()
+            Log.write("push: the body was shortened from \(characters.count) to \(low) characters")
+        }
+        guard let made, made.count <= maxPayload else { return nil }
+        return made
+    }
+
     /// Send to everything subscribed, or — with `device` — only to what that one device
     /// subscribed with.
     ///
@@ -486,39 +535,22 @@ enum WebPush {
     /// then the message would be a notification competing with its own decoration for the 3993
     /// octets a push service is obliged to accept. A 169-character path costs nothing and the
     /// phone fetches the mark once a year.
+    @discardableResult
     static func send(title: String, body: String, url: String?, tag: String? = nil,
-                     icon: String? = nil,
-                     device: String? = nil, completion: (() -> Void)? = nil) {
+                     icon: String? = nil, device: String? = nil,
+                     completion: ((Delivery) -> Void)? = nil) -> Int {
         let targets = device.map { id in subscriptions.filter { $0.device == id } } ?? subscriptions
         guard !targets.isEmpty else {
             // Nothing to do, and in particular no VAPID key minted: a machine that has never had a
             // browser subscribe should not be growing key material because a session changed state.
-            if let completion { DispatchQueue.main.async(execute: completion) }
-            return
+            completion?(Delivery(sent: 0, failed: 0))
+            return 0
         }
-        var payload: [String: Any] = ["title": title, "body": body,
-                                      "at": Int(Date().timeIntervalSince1970)]
-        if let url, !url.isEmpty { payload["url"] = url }
-        if let tag, !tag.isEmpty { payload["tag"] = topic(for: tag) }
-        if let icon, !icon.isEmpty { payload["icon"] = icon }
-
         DispatchQueue.global(qos: .utility).async {
-            var payload = payload
-            var made = try? JSONSerialization.data(
-                withJSONObject: payload, options: [.withoutEscapingSlashes])
-            // **The decoration goes before the message does.** A title is a task name and a
-            // body is a project name, and both come from outside; between them they can crowd
-            // out the octets a push service is obliged to accept. Losing the mark costs a
-            // picture on one platform; losing the message costs the thing the file exists for.
-            if let over = made, over.count > maxPayload, payload["icon"] != nil {
-                Log.write("push: the mark did not fit in \(maxPayload) octets — sending without it")
-                payload.removeValue(forKey: "icon")
-                made = try? JSONSerialization.data(
-                    withJSONObject: payload, options: [.withoutEscapingSlashes])
-            }
-            guard let plaintext = made else {
+            guard let plaintext = notificationPayload(title: title, body: body, url: url,
+                                                        tag: tag, icon: icon) else {
                 Log.write("push: could not serialise the payload — nothing sent")
-                if let completion { DispatchQueue.main.async(execute: completion) }
+                completion?(Delivery(sent: 0, failed: targets.count))
                 return
             }
             let key = vapidKey()
@@ -527,19 +559,60 @@ enum WebPush {
             // first request cannot leave the last one with a token that has already lapsed.
             let expires = Date().addingTimeInterval(tokenLifetime)
             let group = DispatchGroup()
+            let resultLock = NSLock()
+            var sent = 0
+            var failed = 0
             for subscription in targets {
                 group.enter()
                 post(plaintext, to: subscription, key: key, expires: expires,
-                     topic: tag.map(topic(for:))) { group.leave() }
+                     topic: tag.map(topic(for:))) { accepted in
+                    resultLock.lock()
+                    if accepted { sent += 1 } else { failed += 1 }
+                    resultLock.unlock()
+                    group.leave()
+                }
             }
-            Log.write("push: \(title) → \(targets.count) subscription(s)")
-            if let completion { group.notify(queue: .main, execute: completion) }
+            group.notify(queue: DispatchQueue.global(qos: .utility)) {
+                resultLock.lock()
+                let result = Delivery(sent: sent, failed: failed)
+                resultLock.unlock()
+                Log.write("push: \(title) → \(result.sent) sent, \(result.failed) failed")
+                completion?(result)
+            }
         }
+        return targets.count
     }
+
+    /// The agent notification HTTP route owes its caller a delivery result, so this one path
+    /// waits for the parallel fan-out. Every individual request already has a fifteen-second
+    /// timeout; the extra five seconds cover payload construction and callback scheduling.
+    static func sendAndWait(title: String, body: String, url: String?, tag: String?,
+                            icon: String?) -> Delivery {
+        let gate = DispatchSemaphore(value: 0)
+        let resultLock = NSLock()
+        var result: Delivery?
+        let targets = send(title: title, body: body, url: url, tag: tag, icon: icon) { made in
+            resultLock.lock()
+            result = made
+            resultLock.unlock()
+            gate.signal()
+        }
+        guard targets > 0 else { return Delivery(sent: 0, failed: 0) }
+        guard gate.wait(timeout: .now() + 20) == .success else {
+            Log.write("push: timed out waiting for \(targets) agent notification receipt(s)")
+            return Delivery(sent: 0, failed: targets)
+        }
+        resultLock.lock(); defer { resultLock.unlock() }
+        return result ?? Delivery(sent: 0, failed: targets)
+    }
+
+    /// The push service's receipt boundary, kept pure so 4xx and 5xx cannot quietly drift back
+    /// into the successful count while the network half remains hard to exercise in unit tests.
+    static func serviceAccepted(status: Int) -> Bool { (200..<300).contains(status) }
 
     private static func post(_ plaintext: Data, to subscription: Subscription,
                              key: P256.Signing.PrivateKey, expires: Date, topic: String? = nil,
-                             done: @escaping () -> Void) {
+                             done: @escaping (Bool) -> Void) {
         let sealed: Data
         let credential: String
         do {
@@ -554,7 +627,7 @@ enum WebPush {
                                            subject: subject, key: key)
         } catch {
             Log.write("push: \(subscription.device) — \(error)")
-            done()
+            done(false)
             return
         }
 
@@ -575,17 +648,17 @@ enum WebPush {
         request.timeoutInterval = 15
 
         URLSession.shared.dataTask(with: request) { _, response, error in
-            defer { done() }
             if let error {
                 // The network being down is not the subscription being dead, so nothing is
                 // removed here — a phone on a train would otherwise unsubscribe itself.
                 Log.write("push: \(subscription.device) — \(error.localizedDescription)")
+                done(false)
                 return
             }
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             switch status {
-            case 200..<300:
-                break
+            case let value where serviceAccepted(status: value):
+                done(true)
             case 404, 410:
                 // RFC 8030 §7.3: the subscription resource is gone. The browser was uninstalled,
                 // the permission was revoked, or the service expired it — and none of those come
@@ -593,12 +666,14 @@ enum WebPush {
                 // app, to a URL that will answer 410 every time.
                 Log.write("push: \(subscription.device) is gone (\(status)) — dropping it")
                 remove(id: subscription.id)
+                done(false)
             default:
                 // Everything else is left exactly where it is. A 429, a 502 or a 403 from a
                 // service having a bad afternoon is not evidence about the subscription, and the
                 // one thing worse than a missed notification is quietly unsubscribing somebody
                 // because of it.
                 Log.write("push: \(subscription.device) refused with \(status) — left alone")
+                done(false)
             }
         }.resume()
     }

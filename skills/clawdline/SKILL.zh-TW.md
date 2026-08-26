@@ -1,6 +1,6 @@
 ---
 name: clawdline
-version: 2.1.0
+version: 2.1.1
 description: |
   把工作派給另一個 session 做：透過 Clawdline app 開一個 child session（Claude 或 Codex），
   注入第一句話、等它寫回 result.json，完成時回報給你。適合「這件事我不想在這條對話裡做」
@@ -575,6 +575,13 @@ curl -s -X POST \
 
 要讀 dispatch 回應與 task record；不能只因為檔案存在就說安裝驗過。也要把誠實界線告訴使用者：
 app 沒開就不會觸發，重開後也只在 `catch_up_hours` 內補課。
+
+如果一件任務有用的產出**就是一則及時訊息**——例如每日天氣預報——要在 instructions 裡明講：
+照 `CHILD.md` 提供的 task-secret `/notify` 路由推播。例行結果仍寫進 `result.json`；推播只留給
+使用者正在等的罕見答案。本機 root 腳本則可帶 orchestrator token，`POST
+/v1/orchestrator/notify`，body 是 `{"title":"…","body":"…"}`。title 最多 80 字元、body
+最多 500；每個 task 5 則，整台 Mac 每小時 30 則。task secret 可在任務存活期間，以及完成後僅
+60 秒內推播；通知型任務在可行時要先送出內容，再寫最後的 `result.json`。
 
 ---
 

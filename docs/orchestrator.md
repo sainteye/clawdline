@@ -50,8 +50,8 @@ So there are three credentials in this feature and they are not interchangeable.
 
 | credential | where it lives | what it can do | what it cannot |
 |---|---|---|---|
-| **Orchestrator token** | `~/.config/clawdline/orchestrator-token`, mode `0600`, minted when the server starts | dispatch, cancel, read every task | it is never served over HTTP, never written under `/tmp`, cannot recover a task secret, and is never accepted from a device that merely holds a device token |
-| **Task secret** | 64 hex characters, made by the root, handed to the child inside the injected first message | say "this one task is finished" | nothing else. It names one task and dies with it. Its durable identity is a SHA-256; only a serialized waiter has a temporary encrypted copy for restart recovery |
+| **Orchestrator token** | `~/.config/clawdline/orchestrator-token`, mode `0600`, minted when the server starts | dispatch, cancel, read every task, send a root content notification | it is never served over HTTP, never written under `/tmp`, cannot recover a task secret, and is never accepted from a device that merely holds a device token |
+| **Task secret** | 64 hex characters, made by the root, handed to the child inside the injected first message | say "this one task is finished"; send up to five content notifications while live or within 60 seconds afterwards | nothing for another task or after its short notification grace. Its durable identity is a SHA-256; only a serialized waiter has a temporary encrypted copy for restart recovery |
 | **Device token** | `~/.config/clawdline/remote.json` — the paired phones and browsers from [`docs/remote.md`](remote.md) | read task state; cancel a task, if it has `send` and the write switch is on | **dispatch.** Not with `send`, not with `admin`, not over a tunnel, not ever |
 
 Everything below follows from that table.
@@ -542,6 +542,29 @@ design. `CHILD.md` sits in a directory; the message goes into a terminal's input
 thing that can be read later, by something else, after the task is over. The plaintext secret stays
 in app memory until the child's own transcript proves the line landed. A serialized waiter also
 has the temporary encrypted registry copy described above; it is deleted before spawning.
+
+### Agent notifications — content, not state
+
+Clawdline's ordinary push notifications describe **state**: a session needs an answer, a schedule
+failed, a batch ended. An agent notification describes **content**: today's forecast, the URL the
+user was waiting for, the one result whose value is arriving on time rather than merely saying
+that work stopped. The second kind is opt-in and scarce. Routine work still reports through
+`result.json`; a dispatcher asks for notification-shaped output explicitly, and every generated
+`CHILD.md` teaches the child the task-secret route without requiring a skill to be installed.
+
+A live child, or one that finished no more than 60 seconds ago, may call
+[`POST /v1/orchestrator/tasks/:id/notify`](api.md#post-v1orchestratortasksidnotify-post-v1orchestratornotify).
+A local root or script may call `POST /v1/orchestrator/notify` with the orchestrator token. The
+first prefixes the visible title with the task title (a scheduled task therefore uses the schedule
+name); the second prefixes it with `Clawdline`. Both enter the existing RFC 8291 fan-out. The opt-in
+has hard bounds — 80 title characters, 500 body characters, five messages per task and 30 per Mac
+in a sliding hour — and every attempt leaves an `orchestrator.notify` audit row. The per-task count
+survives restarts; the process-memory hourly window restarts empty. With no subscription the route
+returns `409 not_subscribed` without consuming either allowance. Push-service failures return
+`502 push_failed` with sent/failed subscription counts instead of reporting a silent success.
+Task and root content use stable WebPush topics. They deliberately bypass the automatic finish,
+deploy and schedule-failure push preferences because the user explicitly requested this content;
+a separate preference for agent-authored content remains backlog work.
 
 ### `result.json` — written by the child, and it *is* the signal
 

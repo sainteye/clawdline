@@ -4429,6 +4429,29 @@ group("a fan-out is one sentence, whatever it cost") {
            StateHook.projectName(forDirectory: "/", fallback: "Clawdline"), "Clawdline")
 }
 
+group("a push payload keeps the beginning of a sentence that does not fit") {
+    let beginning = "KEEP THE FORECAST: "
+    let ending = " THROW THIS TAIL AWAY"
+    let body = beginning + String(repeating: "天", count: 2_000) + ending
+    let made = WebPush.notificationPayload(title: "weather", body: body, url: "/",
+                                           tag: nil,
+                                           icon: "/project-64-a-very-long-decoration.png")
+    check("the final plaintext stays inside the RFC 8291 ceiling",
+          (made?.count ?? Int.max) <= WebPush.maxPayload)
+    let obj = made.flatMap {
+        try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+    }
+    let shortened = obj?["body"] as? String ?? ""
+    check("truncation keeps the head", shortened.hasPrefix(beginning))
+    check("and discards the tail", !shortened.hasSuffix(ending))
+}
+
+group("push-service receipts distinguish acceptance from refusal") {
+    check("a 201 is an accepted push receipt", WebPush.serviceAccepted(status: 201))
+    check("a service-side 4xx is a failed push receipt", !WebPush.serviceAccepted(status: 403))
+    check("a service-side 5xx is a failed push receipt", !WebPush.serviceAccepted(status: 503))
+}
+
 group("a project mark small enough to be a URL") {
     let cells: [[NSColor?]] = [
         [nil, ProjectIcon.color(hex: "#D97757"), nil],
@@ -8337,6 +8360,12 @@ group("a child is told whether it may hand work on, and never has to find out by
           allowed.contains("not with `jq -n` and a quoted filter"))
     check("and reporting says to use the file tool rather than a shell line",
           allowed.contains("Write it with your file-writing tool, not with a shell command"))
+    check("and it learns the narrow push opening without needing a skill",
+          allowed.contains("/v1/orchestrator/tasks/\(taskID)/notify")
+              && allowed.contains("The value of push is rarity")
+              && allowed.contains("Routine results belong in `result.json`")
+              && allowed.contains("at most 5 notifications")
+              && allowed.contains("at most 30 per hour"))
     check("and it is told where the answer will appear",
           allowed.contains("result.json"))
     check("the token stays this Mac's, not something to pass down",
@@ -8781,6 +8810,301 @@ group("finishing a task takes that task's secret and nothing else") {
     let unknown = finish("11111111-2222-3333-4444-555555555555", secret: secret)
     expect("a task nobody registered is a 404", unknown.status, 404)
     expect("and says nothing else about it", remoteErrorCode(unknown), "not_found")
+}
+
+group("an agent notification is narrow, scarce and audited") {
+    Orchestrator.forget()
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before {
+            try? before.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Orchestrator.forget()
+    }
+    let secret = String(repeating: "d4", count: 32)
+    func row(_ id: String, state: String = "briefed", finishedAgo: TimeInterval? = nil)
+        -> [String: Any] {
+        var value: [String: Any] = [
+            "id": id, "state": state, "kind": "custom", "title": "daily weather",
+            "assistant": "codex", "project_dir": "/tmp", "timeout_minutes": 30,
+            "created": Date().addingTimeInterval(-120).timeIntervalSince1970,
+            "secret_hash": Orchestrator.hash(ofSecret: secret), "artifacts": [],
+        ]
+        if let finishedAgo {
+            value["finished_at"] = Date().addingTimeInterval(-finishedAgo).timeIntervalSince1970
+        }
+        return value
+    }
+    func install(_ rows: [[String: Any]]) {
+        let data = (try? JSONSerialization.data(withJSONObject: ["version": 1, "tasks": rows]))
+            ?? Data()
+        try? FileManager.default.createDirectory(at: store.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        try? data.write(to: store, options: .atomic)
+        Orchestrator.forget()
+    }
+    func taskNotify(_ id: String, secret presented: String = secret,
+                    secretInHeader: Bool = false,
+                    title: String = "forecast", body: String = "sunny")
+        -> RemoteServer.Response {
+        var obj = ["title": title, "body": body]
+        var headers: [String: String] = [:]
+        if secretInHeader {
+            headers["X-Clawdline-Task-Secret"] = presented
+        } else {
+            obj["secret"] = presented
+        }
+        let data = try! JSONSerialization.data(withJSONObject: obj)
+        return RemoteServer.shared.route(remoteRequest(
+            "POST", "/v1/orchestrator/tasks/\(id)/notify",
+            headers: headers,
+            body: String(decoding: data, as: UTF8.self)))
+    }
+
+    install([row(taskID)])
+    var displayedTitle = ""
+    var displayedTag: String?
+    var displayedIcon: String?
+    let delivered = WebPush.Delivery(sent: 1, failed: 0)
+    Orchestrator.agentPushForTesting = { title, _, _, tag, icon in
+        displayedTitle = title
+        displayedTag = tag
+        displayedIcon = icon
+        return delivered
+    }
+    let wrong = taskNotify(taskID, secret: String(repeating: "e5", count: 32))
+    expect("the task route rejects a different task's secret", wrong.status, 403)
+    expect("with the complete route's error semantics", remoteErrorCode(wrong), "forbidden")
+    let rejectedAudit = RemoteAuth.recentAudit(limit: 5).first {
+        $0["event"] as? String == "orchestrator.notify"
+            && $0["result"] as? String == "bad_secret"
+    }
+    check("an unverified notification never writes caller-controlled content",
+          rejectedAudit?["title"] == nil && rejectedAudit?["body"] == nil)
+    check("an unverified notification records only a source and short attempt hash",
+          rejectedAudit?["source"] as? String == "task_secret"
+              && (rejectedAudit?["attempt"] as? String)?.count == 12)
+    _ = taskNotify(taskID, secret: String(repeating: "e5", count: 32))
+    _ = taskNotify(taskID, secret: String(repeating: "e5", count: 32))
+    let flooded = taskNotify(taskID, secret: String(repeating: "e5", count: 32))
+    expect("the fourth unverified notification attempt is throttled", flooded.status, 429)
+    expect("with the ordinary rate-limited code", remoteErrorCode(flooded), "rate_limited")
+
+    Orchestrator.forget()
+    let unknownID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    for index in 1...3 {
+        expect("an unknown task gets the complete route's 404 before throttling — \(index)",
+               taskNotify(unknownID).status, 404)
+    }
+    expect("unknown-task probes share the unverified-attempt throttle",
+           taskNotify(unknownID).status, 429)
+
+    Orchestrator.forget()
+    install([row(taskID)])
+    Orchestrator.agentPushForTesting = { title, _, _, tag, icon in
+        displayedTitle = title
+        displayedTag = tag
+        displayedIcon = icon
+        return delivered
+    }
+    expect("the task secret is accepted in the same header as complete",
+           taskNotify(taskID, secretInHeader: true).status, 200)
+
+    Orchestrator.forget()
+    install([row(taskID)])
+    let unsubscribed = taskNotify(taskID)
+    expect("a task with no push subscription is told synchronously", unsubscribed.status, 409)
+    expect("with the push test route's existing code", remoteErrorCode(unsubscribed),
+           "not_subscribed")
+    let noSubscriptionAudit = RemoteAuth.recentAudit(limit: 5).first {
+        $0["event"] as? String == "orchestrator.notify"
+            && $0["result"] as? String == "not_subscribed"
+    }
+    expect("the no-subscription audit records no false success",
+           noSubscriptionAudit?["sent"] as? String, "0")
+    Orchestrator.agentPushForTesting = { title, _, _, tag, icon in
+        displayedTitle = title
+        displayedTag = tag
+        displayedIcon = icon
+        return delivered
+    }
+    for index in 1...5 {
+        expect("each of the task's five notifications is accepted — \(index)",
+               taskNotify(taskID).status, 200)
+    }
+    expect("the task name prefixes the agent's notification title", displayedTitle,
+           "daily weather: forecast")
+    expect("task content notifications have one stable push topic", displayedTag,
+           "agent-task-\(taskID)")
+    check("task content notifications carry their project icon", displayedIcon != nil)
+    Orchestrator.forget()
+    Orchestrator.agentPushForTesting = { _, _, _, _, _ in delivered }
+    let sixth = taskNotify(taskID)
+    expect("a sixth notification from one task is refused", sixth.status, 429)
+    expect("with a limit distinct from the machine brake", remoteErrorCode(sixth), "notify_limit")
+    let acceptedAudit = RemoteAuth.recentAudit(limit: 20).first {
+        $0["event"] as? String == "orchestrator.notify"
+            && $0["task_id"] as? String == taskID
+            && $0["title"] as? String == "forecast"
+            && $0["result"] as? String == "sent"
+    }
+    expect("the audit names the delivered result", acceptedAudit?["result"] as? String, "sent")
+    expect("and records the accepted subscriptions", acceptedAudit?["sent"] as? String, "1")
+    expect("and records failed subscriptions", acceptedAudit?["failed"] as? String, "0")
+
+    let recent = "11111111-2222-3333-4444-555555555555"
+    let expired = "22222222-3333-4444-5555-666666666666"
+    install([row(recent, state: "success", finishedAgo: 59),
+             row(expired, state: "success", finishedAgo: 61)])
+    Orchestrator.agentPushForTesting = { _, _, _, _, _ in delivered }
+    expect("a child may still speak just after reporting", taskNotify(recent).status, 200)
+    let late = taskNotify(expired)
+    expect("the task secret's notification opening closes after sixty seconds", late.status, 409)
+    expect("and says that the opening expired", remoteErrorCode(late), "notify_expired")
+
+    let scheduled = "33333333-4444-5555-6666-777777777777"
+    var scheduledRow = row(scheduled)
+    scheduledRow["title"] = "weather worker"
+    scheduledRow["schedule_id"] = "44444444-5555-6666-7777-888888888888"
+    scheduledRow["root_label"] = "morning weather"
+    install([scheduledRow])
+    Orchestrator.agentPushForTesting = { title, _, _, tag, icon in
+        displayedTitle = title
+        displayedTag = tag
+        displayedIcon = icon
+        return delivered
+    }
+    expect("a scheduled task may notify", taskNotify(scheduled).status, 200)
+    expect("and its schedule name is the visible source", displayedTitle,
+           "morning weather: forecast")
+
+    let failing = "55555555-6666-7777-8888-999999999999"
+    install([row(failing)])
+    Orchestrator.agentPushForTesting = { _, _, _, _, _ in
+        WebPush.Delivery(sent: 0, failed: 2)
+    }
+    let upstreamFailure = taskNotify(failing)
+    expect("push-service refusals are not reported as success", upstreamFailure.status, 502)
+    expect("push-service refusals use a distinct code", remoteErrorCode(upstreamFailure),
+           "push_failed")
+    let upstreamObject = (try? JSONSerialization.jsonObject(with: upstreamFailure.body))
+        as? [String: Any]
+    let upstreamError = upstreamObject?["error"] as? [String: Any]
+    expect("the failed response reports accepted subscriptions", upstreamError?["sent"] as? Int, 0)
+    expect("the failed response reports refused subscriptions", upstreamError?["failed"] as? Int, 2)
+    let failedAudit = RemoteAuth.recentAudit(limit: 10).first {
+        $0["event"] as? String == "orchestrator.notify"
+            && $0["result"] as? String == "failed"
+    }
+    expect("a failed delivery audit records zero successes", failedAudit?["sent"] as? String, "0")
+    expect("a failed delivery audit records every refusal", failedAudit?["failed"] as? String, "2")
+
+    Orchestrator.forget()
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    func rootNotify(title: String, body: String) -> RemoteServer.Response {
+        let data = try! JSONSerialization.data(withJSONObject: ["title": title, "body": body])
+        return RemoteServer.shared.route(remoteRequest(
+            "POST", "/v1/orchestrator/notify", headers: auth,
+            body: String(decoding: data, as: UTF8.self)))
+    }
+    let anonymousRoot = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/notify", body: "{\"title\":\"x\",\"body\":\"y\"}"))
+    expect("a root notification without any credential stops at the door",
+           anonymousRoot.status, 401)
+    let phone = RemoteAuth.addDevice(name: "a phone", caps: [.read, .send])
+    let pairedRoot = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/notify",
+        headers: ["Authorization": "Bearer \(phone.token)"],
+        body: "{\"title\":\"x\",\"body\":\"y\"}"))
+    expect("a paired device cannot substitute for the orchestrator token", pairedRoot.status, 403)
+    RemoteAuth.revoke(id: phone.id)
+    Orchestrator.agentPushForTesting = { title, _, _, tag, icon in
+        displayedTitle = title
+        displayedTag = tag
+        displayedIcon = icon
+        return delivered
+    }
+    expect("the root route accepts the exact title and body boundaries",
+           rootNotify(title: String(repeating: "t", count: 80),
+                      body: String(repeating: "b", count: 500)).status, 200)
+    expect("the root source prefixes its notification title", displayedTitle,
+           "Clawdline: " + String(repeating: "t", count: 80))
+    expect("root content notifications have one stable push topic", displayedTag, "agent-root")
+    check("root content notifications do not invent a project icon", displayedIcon == nil)
+    let rootAudit = RemoteAuth.recentAudit(limit: 10).first {
+        $0["event"] as? String == "orchestrator.notify"
+            && $0["root"] as? String == "1"
+            && $0["result"] as? String == "sent"
+    }
+    expect("a root audit names its source", rootAudit?["root"] as? String, "1")
+    expect("an 81-character title is rejected",
+           rootNotify(title: String(repeating: "t", count: 81), body: "body").status, 400)
+    expect("a 501-character body is rejected",
+           rootNotify(title: "title", body: String(repeating: "b", count: 501)).status, 400)
+    expect("a blank title is rejected", rootNotify(title: "   ", body: "body").status, 400)
+    expect("a blank body is rejected", rootNotify(title: "title", body: "\n").status, 400)
+
+    Orchestrator.forget()
+    Orchestrator.agentPushForTesting = { _, _, _, _, _ in delivered }
+    for index in 1...30 {
+        expect("the machine accepts notification \(index) in the hour",
+               rootNotify(title: "message \(index)", body: "body").status, 200)
+    }
+    let crowded = rootNotify(title: "message 31", body: "body")
+    expect("the thirty-first notification in an hour is refused", crowded.status, 429)
+    expect("by the agent-notification brake", remoteErrorCode(crowded), "rate_limited")
+
+    Orchestrator.forget()
+    Orchestrator.agentPushForTesting = { _, _, _, _, _ in delivered }
+    let start = Date(timeIntervalSince1970: 1_800_000_000)
+    for index in 0..<30 {
+        if case .refused = Orchestrator.agentNotify(title: "window \(index)", body: "body",
+                                                     now: start) {
+            check("the sliding-window setup accepts thirty messages", false)
+        }
+    }
+    if case .ok = Orchestrator.agentNotify(title: "after one hour", body: "body",
+                                           now: start.addingTimeInterval(3600)) {
+        check("the sliding hour expires records at its boundary", true)
+    } else {
+        check("the sliding hour expires records at its boundary", false)
+    }
+
+    Orchestrator.forget()
+    let dispatchBudget = max(10, Config.shared.orchestratorMaxDescendants)
+    for _ in 0..<dispatchBudget { _ = Orchestrator.takeDispatchRate() }
+    Orchestrator.agentPushForTesting = { _, _, _, _, _ in delivered }
+    if case .ok = Orchestrator.agentNotify(title: "separate", body: "body") {
+        check("dispatch saturation does not consume notification capacity", true)
+    } else {
+        check("dispatch saturation does not consume notification capacity", false)
+    }
+
+    Orchestrator.forget()
+    Orchestrator.agentPushForTesting = { _, _, _, _, _ in delivered }
+    for index in 0..<30 {
+        _ = Orchestrator.agentNotify(title: "notify \(index)", body: "body")
+    }
+    check("notification saturation does not consume dispatch capacity",
+          Orchestrator.takeDispatchRate() != nil)
+
+    Orchestrator.forget()
+    install([row(taskID)])
+    Orchestrator.agentPushForTesting = { _, _, _, _, _ in delivered }
+    expect("a task-route delivery enters the shared hourly window", taskNotify(taskID).status, 200)
+    for index in 1..<30 {
+        _ = Orchestrator.agentNotify(title: "root after task \(index)", body: "body")
+    }
+    if case .refused(let status, let code, _, _) =
+        Orchestrator.agentNotify(title: "shared thirty-one", body: "body") {
+        check("the task route consumes one hourly notification slot",
+              status == 429 && code == "rate_limited")
+    } else {
+        check("the task route consumes one hourly notification slot", false)
+    }
 }
 
 group("loading an unavailable stored transcript preserves an unrefuted identity") {

@@ -70,6 +70,12 @@ falls back to a full JSON rewrite and records that fallback in the audit log.
 - `notify_on_failure` is a boolean, default `true`. It covers missed catch-up windows, dispatch
   refusals, failures, timeouts and spawn failures.
 
+A scheduled task may also use the task-secret `/notify` route to push that day's **successful
+content** to the user — a daily forecast is the canonical shape. Say so in `task.instructions`;
+`notify_on_failure` is only Clawdline's separate state/failure notification policy. This explicit
+content delivery deliberately bypasses the automatic push preference switches; a separate
+agent-content preference remains backlog work.
+
 ## The minute that actually fires
 
 Clawdline checks once a minute. The first check after wake naturally sees the most recent scheduled

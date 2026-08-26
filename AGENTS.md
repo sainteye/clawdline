@@ -73,6 +73,8 @@ Branch on the orchestrator's typed error `code`:
 
 The complete task schema, claim and serialization semantics, lifecycle, credentials, and result
 protocol are in [`docs/orchestrator.md`](docs/orchestrator.md).
+Children may use their task secret to push rare, time-sensitive content with `POST /v1/orchestrator/tasks/:id/notify`.
+Routine output stays in `result.json`; notification-shaped work such as a daily forecast should say explicitly to notify.
 HTTP request and response shapes are in [`docs/api.md`](docs/api.md#post-v1orchestratortasks).
 
 ## When Clawdline dispatched you
