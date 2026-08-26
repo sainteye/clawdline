@@ -188,11 +188,12 @@ enum SessionState: Equatable {
             if selected { carets += 1 }
             if firstOptionLine == nil { firstOptionLine = captured.offset }
             lastOptionLine = index
-            options.append(Menu.Option(number: row.number, label: withoutSidePanel(row.label),
+            let box = checkbox(of: withoutSidePanel(row.label))
+            options.append(Menu.Option(number: row.number, label: box.label,
                                        detail: detail(under: captured.offset, in: lines,
                                                       stoppingAt: submit?.line)
                                            .map(withoutSidePanel),
-                                       selected: selected))
+                                       selected: selected, checked: box.checked))
         }
         // The caret has to be *somewhere* in the dialog, and the button counts: see above.
         guard carets >= 1 || submit?.selected == true, options.count >= 2 else {
@@ -355,6 +356,22 @@ enum SessionState: Equatable {
             return (index, captured.offset, row.label, row.caret)
         }
         return nil
+    }
+
+    /// A row's label with its box taken off, and what the box said.
+    ///
+    /// The glyph is part of the drawing, not part of the answer — the same argument that takes the
+    /// wall of a dialog off a label. Left on, it reaches a phone as the literal characters
+    /// `[\u{2714}] Docs`, which cannot be drawn as a tick, coloured, or read aloud as one.
+    private static func checkbox(of label: String) -> (label: String, checked: Bool?) {
+        guard isCheckbox(label) else { return (label, nil) }
+        let chars = Array(label)
+        if "\u{2610}\u{2611}\u{2612}".contains(chars[0]) {
+            let rest = String(chars.dropFirst()).trimmingCharacters(in: .whitespaces)
+            return (rest.isEmpty ? label : rest, chars[0] != "\u{2610}")
+        }
+        let rest = String(chars.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+        return (rest.isEmpty ? label : rest, chars[1] != " ")
     }
 
     /// Whether this label begins with the box a multi-select puts in front of every row. Claude
@@ -525,6 +542,13 @@ enum SessionState: Equatable {
             var detail: String? = nil
             /// The caret is parked on this one, so it is what a bare Return would confirm.
             let selected: Bool
+            /// Ticked, unticked, or not a thing that ticks.
+            ///
+            /// A multi-select draws `[ ]` and `[\u{2714}]` in front of every row, and the
+            /// words arrived on the phone with the box still glued to the front of them — legible,
+            /// but only just, and impossible to draw as anything better than the text it came in.
+            /// Read out here so the far end can draw a real one, and so the label is the label.
+            var checked: Bool? = nil
             /// Whether a keystroke can carry it — see ``Targets/answer(_:to:)``, which is 1…9.
             var answerable: Bool { (1...9).contains(number) }
         }

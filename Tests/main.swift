@@ -7605,6 +7605,32 @@ group("the Submit a multi-select puts under its rows is a row of its own") {
            plain.options[0].detail, "跟先前那批一樣，先整理工作區。")
 }
 
+group("a multi-select's box is a fact about the row, not two characters in front of it") {
+    let multi = """
+    \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}
+     \u{2610} scope
+
+    │ 哪些要拔掉？
+
+    \u{276F} 1. [ ] the rate limit
+      2. [\u{2714}] the licence
+      3. [ ] Type something
+         Submit
+    """
+    guard let menu = SessionState.menu(multi, hookWaiting: true) else {
+        check("that is a menu", false); return
+    }
+    expect("the box comes off the label", menu.options.map(\.label),
+           ["the rate limit", "the licence", "Type something"])
+    expect("and becomes what it always was", menu.options.map(\.checked), [false, true, false])
+
+    // A dialog without boxes has rows that answer rather than tick, and saying `false` about them
+    // would draw an empty box beside every option of every permission prompt.
+    let plain = SessionState.menu("\u{2502} \u{276F} 1. Yes \u{2502}\n\u{2502}   2. No \u{2502}")
+    expect("a row that does not tick says nothing about ticking",
+           plain?.options.map(\.checked), [nil, nil])
+}
+
 group("a checkbox inside a description is text, not the header above the question") {
     // The tab bar `\u{2190}  \u{2610} scope  \u{2714} Submit  \u{2192}` is drawn above the
     // question, so a line carrying a checkbox glyph is a boundary when the prose above a menu is

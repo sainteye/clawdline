@@ -424,6 +424,19 @@
 }
 .composer .menu .opt[data-can="0"] .n { color: var(--faint); }
 .composer .menu .opt .what { flex: 1 1 auto; min-width: 0; }
+/* A multi-select's box. Green when it is ticked, because that is the one thing on this card you
+   have to be able to read at a glance and in a hurry — the label says what the answer is, the
+   colour says whether it is in. Unticked is an empty outline rather than a grey tick: an absence
+   somebody has to look for is worse than one they cannot mistake. */
+.composer .menu .opt .tick {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 15px; height: 15px; margin: 0 7px 0 0; vertical-align: -2px;
+    border: 1.5px solid var(--dim); border-radius: 4px;
+    color: transparent; font-size: 11px; font-weight: 700; line-height: 1;
+}
+.composer .menu .opt .tick[data-on="1"] {
+    border-color: var(--ok); background: var(--ok); color: #0d0d11;
+}
 /* What the answer costs you. The dialog draws a line or two under each label — which models get
    dropped, what it spends, what it leaves behind — and "cut the slow five" does not say which
    five. Quieter than the label, so a row still reads as one choice at a glance. */

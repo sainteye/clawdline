@@ -2437,6 +2437,9 @@ final class RemoteServer {
                 var row: [String: Any] = ["n": option.number, "label": option.label,
                                           "selected": option.selected, "can": option.answerable]
                 if let detail = option.detail { row["detail"] = detail }
+                // Only on a multi-select, where a row is a thing that ticks rather than a thing
+                // that answers. Absent everywhere else, so a client can tell the two apart.
+                if let checked = option.checked { row["checked"] = checked }
                 return row
             },
         ]

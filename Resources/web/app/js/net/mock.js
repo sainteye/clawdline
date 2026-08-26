@@ -92,11 +92,11 @@ export var Mock = (function () {
           isClaude: true, assistant: "claude", sessionId: null, icon: atrium,
           menu: { selected: 1, question: "Which of these should the report drop?",
                   submit: { label: "Submit", selected: false }, options: [
-              { n: 1, label: "[ ] the rate limit", selected: true, can: true,
+              { n: 1, label: "the rate limit", checked: false, selected: true, can: true,
                 detail: "Measured at about 200 requests an hour per token." },
-              { n: 2, label: "[\u2714] the licence", selected: false, can: true },
-              { n: 3, label: "[ ] the cost", selected: false, can: true },
-              { n: 4, label: "[ ] Type something", selected: false, can: true }
+              { n: 2, label: "the licence", checked: true, selected: false, can: true },
+              { n: 3, label: "the cost", checked: false, selected: false, can: true },
+              { n: 4, label: "Type something", checked: false, selected: false, can: true }
           ] } },
         // Idle, **and not finished** — the turn ended an hour ago and the build it started is
         // still going. This is the row that said nothing at all before `Shells`: the terminal

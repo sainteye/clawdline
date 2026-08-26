@@ -295,11 +295,18 @@ export function renderWaiting() {
 function menuHTML(rows, spent, submit) {
     var out = rows.map(function (o) {
         var can = !spent && o.can !== false && S.write;
+        // A multi-select's rows tick rather than answer, so they are drawn as what they are:
+        // a real box, ticked in green, rather than the characters `[\u2714]` glued to the label.
+        var box = typeof o.checked === "boolean"
+            ? '<span class="tick" data-on="' + (o.checked ? "1" : "0") + '" aria-hidden="true">'
+              + (o.checked ? "\u2713" : "") + "</span>"
+            : "";
         return '<button type="button" class="opt" data-key="' + esc(String(o.n)) + '"' +
             ' data-can="' + (o.can === false ? "0" : "1") + '"' +
+            (typeof o.checked === "boolean" ? ' aria-pressed="' + (o.checked ? "true" : "false") + '"' : "") +
             (o.selected ? ' data-here="1"' : "") + (can ? "" : " disabled") + ">" +
             '<span class="n">' + esc(String(o.n)) + "</span>" +
-            '<span class="what">' + esc(o.label || "") +
+            '<span class="what">' + box + esc(o.label || "") +
             (o.selected ? '<span class="here">' + esc(T.webMenuHighlighted) + "</span>" : "") +
             (o.detail ? '<span class="note">' + esc(o.detail) + "</span>" : "") +
             "</span></button>";
