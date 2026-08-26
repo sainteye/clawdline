@@ -7742,9 +7742,20 @@ group("health and hello carry the same fields their shared handler reads") {
     // consumer but not to hello; a hand-maintained expected list would recreate that exact bug.
     let frontendPaths = ["Resources/web/app/js/net/build.js",
                          "Resources/web/app/js/net/handlers.js"]
-    let frontend = frontendPaths.compactMap {
-        try? String(contentsOfFile: $0, encoding: .utf8)
-    }.joined(separator: "\n")
+    // Reading these with `try?` and dropping whatever failed is how a contract that grows by
+    // itself also shrinks by itself: rename net/build.js and `build` and `protocol` — the two
+    // keys ece9e74 turned on — leave `consumed` without a word, and this stays green with the
+    // original defect back in the tree. Reading none of them is the history from before the
+    // JS split, where index.html is the whole consumer; reading some of them is a rename this
+    // list has not been told about, and that has to be louder than a smaller answer.
+    let frontendSources = frontendPaths.map {
+        (path: $0, text: try? String(contentsOfFile: $0, encoding: .utf8))
+    }
+    let unreadable = frontendSources.filter { $0.text == nil }.map { $0.path }
+    check("every file the consumed set is read from is there",
+          unreadable.isEmpty || unreadable.count == frontendPaths.count,
+          "could not read: " + unreadable.joined(separator: ", "))
+    let frontend = frontendSources.compactMap { $0.text }.joined(separator: "\n")
     let legacy = (try? String(contentsOfFile: "Resources/web/index.html", encoding: .utf8)) ?? ""
     let consumer = frontend.isEmpty ? legacy : frontend
     let pattern = try! NSRegularExpression(pattern: #"\binfo\.([A-Za-z_$][A-Za-z0-9_$]*)"#)
