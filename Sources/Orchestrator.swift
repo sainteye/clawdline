@@ -6093,7 +6093,7 @@ enum Orchestrator {
 
     /// The route that ends a wait, as the payload carries it. One string, so the field a reader
     /// parses and the call the prose spells out cannot drift apart.
-    static func coordinationReleaseRoute(id: String) -> String {
+    private static func coordinationReleaseRoute(id: String) -> String {
         "POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/waits/\(id)/release"
     }
 
@@ -6110,9 +6110,10 @@ enum Orchestrator {
 
     /// What the owner is told, and what a transcript reader can recognise it by. The prose is for
     /// whoever reads the terminal; the payload is so the same facts survive being read by the app.
-    static func coordinationRequestNotice(id: String, repository: String, paths: [String],
-                                          owner: String, waiter: String, reason: String,
-                                          condition: String) -> ClawdlineMessage.Notice {
+    private static func coordinationRequestNotice(
+        id: String, repository: String, paths: [String], owner: String, waiter: String,
+        reason: String, condition: String
+    ) -> ClawdlineMessage.Notice {
         let body = "[Clawdline file-wait] Repo: \(repository). "
             + "Exact paths: \(paths.joined(separator: ", ")). "
             + "Waiter Clawdline session id: \(waiter). Reason: \(reason). "
@@ -6129,9 +6130,9 @@ enum Orchestrator {
 
     /// What every waiter on the group is told. A notice is a wake-up, never a proof: the closing
     /// sentence is the protocol's own rule that the waiter re-reads the tree for itself.
-    static func coordinationReleaseNotice(id: String, repository: String, paths: [String],
-                                          commit: String?, note: String?)
-        -> ClawdlineMessage.Notice {
+    private static func coordinationReleaseNotice(
+        id: String, repository: String, paths: [String], commit: String?, note: String?
+    ) -> ClawdlineMessage.Notice {
         var body = "[Clawdline file-wait release] Wait id: \(id). Repo: \(repository). "
             + "Exact paths: \(paths.joined(separator: ", ")). "
         if let commit { body += "Landed/released in commit \(commit). " }
