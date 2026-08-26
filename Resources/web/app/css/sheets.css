@@ -492,7 +492,9 @@ a.dep:hover .host { color: var(--accent); }
 .schedule-sheet .more > summary::-webkit-details-marker { display: none; }
 .schedule-sheet .more > summary::before { content: "\203A\00a0"; color: var(--faint); }
 .schedule-sheet .more[open] > summary::before { content: "\2304\00a0"; }
-.schedule-sheet .nums { display: flex; gap: 10px; }
+/* Stacked, not side by side. These labels are sentences now — "if it was missed, catch up
+   within (hours)" — and two of them across a phone wrap into an unreadable pair of columns. */
+.schedule-sheet .nums { display: flex; flex-direction: column; gap: 10px; }
 .schedule-sheet .nums .num { flex: 1 1 0; min-width: 0; }
 .schedule-sheet .nums .find { width: 100%; }
 .schedule-sheet .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
