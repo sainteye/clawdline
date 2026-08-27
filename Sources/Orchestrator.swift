@@ -644,7 +644,8 @@ enum Orchestrator {
         return true
     }
 
-    /// Everything one schedule is, including the task template the list route leaves out.
+    /// Everything one schedule is, including the task template and retained run history the list
+    /// route leaves out.
     ///
     /// The list is a list — it says what exists, when it next fires and how the last run went,
     /// and it says nothing about what any of them actually *does*. That is the right amount for
@@ -677,13 +678,74 @@ enum Orchestrator {
         let snapshots = Array(tasks.values)
         let missed = lastMissedScheduleFires[schedule.id]
         lock.unlock()
-        if let last = snapshots.filter({ $0.scheduleID == schedule.id })
-            .max(by: { $0.created < $1.created }) {
+        let runs = snapshots.filter { $0.scheduleID == schedule.id }
+            .sorted { $0.created > $1.created }
+        if let last = runs.first {
             out["last_run"] = ["task_id": last.id, "state": last.state.rawValue,
                                "at": Int(last.created.timeIntervalSince1970)]
         }
+        // A schedule run is an ordinary orchestrator task, but this is the one screen where its
+        // child conversation is product data rather than broker plumbing. Only an identity already
+        // proved against that task's own briefing is returned. A guessed or stale session id never
+        // becomes a resume flag merely because it survived in the registry.
+        out["runs"] = runs.map(scheduleRunRecord)
+        // Cleanup keeps two hundred task records for the whole Mac. At that boundary this schedule
+        // may have older runs the registry can no longer associate with it, and the client must say
+        // so rather than drawing the bottom of the list as the beginning of history.
+        if snapshots.count >= 200 { out["runs_may_be_truncated"] = true }
         if let missed { out["last_missed_at"] = Int(missed.timeIntervalSince1970) }
         return out
+    }
+
+    /// The compact occurrence shape used only inside one schedule detail response.
+    ///
+    /// `terminal_id` is useful while the tab is still visible; `session_id` is useful after it has
+    /// gone. The latter is emitted only for terminal work with a transcript/rollout that still
+    /// exists and is proven to belong to this exact task. That is the authorization fact the
+    /// existing place-resume route rechecks below before turning the id into a CLI flag.
+    private static func scheduleRunRecord(_ task: Task) -> [String: Any] {
+        var out: [String: Any] = [
+            "task_id": task.id,
+            "state": task.state.rawValue,
+            "assistant": task.assistant.rawValue,
+            "project_dir": task.projectDir,
+            "created": Int(task.created.timeIntervalSince1970),
+        ]
+        if let finished = task.finishedAt {
+            out["finished_at"] = Int(finished.timeIntervalSince1970)
+        }
+        if let terminal = task.childTerminalId { out["terminal_id"] = terminal }
+        if task.state.isTerminal, let session = availableScheduledSessionID(of: task) {
+            out["session_id"] = session
+        }
+        if let summary = task.summary { out["summary"] = summary }
+        return out
+    }
+
+    /// Whether the existing place-resume route may accept one conversation that the ordinary
+    /// project history deliberately hides because it began as Clawdline plumbing.
+    ///
+    /// The exception is schedule-only, terminal-only, project- and assistant-exact, and backed by
+    /// the same task/transcript ownership proof used for usage accounting. This keeps dispatched
+    /// children out of the general history picker while allowing the schedule detail that disclosed
+    /// the run to pick that exact conversation back up.
+    static func scheduledResumeAllowed(sessionID: String, assistant: Assistant,
+                                       projectDir: String) -> Bool {
+        load()
+        lock.lock()
+        let candidates = tasks.values.filter {
+            $0.scheduleID != nil && $0.state.isTerminal && $0.assistant == assistant
+                && $0.projectDir == projectDir && $0.childSessionId == sessionID
+        }
+        lock.unlock()
+        return candidates.contains { availableScheduledSessionID(of: $0) == sessionID }
+    }
+
+    private static func availableScheduledSessionID(of task: Task) -> String? {
+        guard task.scheduleID != nil, let path = task.transcriptPath,
+              FileManager.default.fileExists(atPath: path) else { return nil }
+        guard let session = provenChildSessionID(of: task), isTaskID(session) else { return nil }
+        return session
     }
 
     static func latestFire(of schedule: Schedule, at now: Date,

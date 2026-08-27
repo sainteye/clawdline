@@ -752,8 +752,12 @@ $ curl -s -X POST \
 **There is no request body here either**, and the conversation is a path segment for exactly the
 reason the assistant is one above. It is checked twice before it becomes part of a command line:
 once for shape — a lowercase UUID as Claude Code writes them, and nothing else — and once against
-the selected assistant's listing for that directory at that moment. An id nobody was handed is
-`404 not_found`, never a string on a command line.
+one of two exact Mac-owned records. The ordinary case is the selected assistant's project listing
+at that moment. A terminal schedule run is the narrow exception: its id must be the proven
+child-conversation id returned by that schedule's detail response, and the retained task must also
+match the selected project and assistant. This does not put dispatched children back into the
+general project-history picker. An id neither source handed out is `404 not_found`, never a string
+on a command line.
 
 The shape check is exact rather than merely shell-safe. This is especially important for Claude:
 `--resume` takes an **optional** value, so a value the CLI cannot read as an id becomes a search
@@ -1697,11 +1701,12 @@ rewritten wholesale by `PATCH` rather than key by key.
 ### `GET /v1/orchestrator/schedules/:id`
 
 One schedule in full, under `schedule`. Everything the list row carries, plus `file`, `when` in the
-file's own spelling, `close_tab`, `catch_up_hours`, `notify_on_failure`, and the whole `task`
-template — `project_dir`, `instructions` and all. The list deliberately exposes none of that, which
-is the right amount for a row and the wrong amount for the only screen where somebody can check
-what a schedule actually does. Same door as the list: `read` is enough, and the orchestrator token
-works too. `404 not_found` for an id that is unknown, invalid, or not an id at all.
+file's own spelling, `close_tab`, `catch_up_hours`, `notify_on_failure`, the whole `task` template —
+`project_dir`, `instructions` and all — and retained `runs`, newest first. The list deliberately
+exposes none of that, which is the right amount for a row and the wrong amount for the only screen
+where somebody can check what a schedule actually does. Same door as the list: `read` is enough,
+and the orchestrator token works too. `404 not_found` for an id that is unknown, invalid, or not an
+id at all.
 
 ```json
 {"schedule":{"id":"4d2f54ce-…","title":"Publish the next post","enabled":true,
@@ -1709,8 +1714,20 @@ works too. `404 not_found` for an id that is unknown, invalid, or not an id at a
              "when":{"at":"09:30","days":["mon","wed","fri"]},
              "close_tab":"on_success","catch_up_hours":6,"notify_on_failure":true,
              "task":{"assistant":"codex","project_dir":"/Users/me/code/blog",
-                     "instructions":"Publish the next ready post."}}}
+                     "instructions":"Publish the next ready post."},
+             "runs":[{"task_id":"8ef0…","state":"success","assistant":"codex",
+                      "project_dir":"/Users/me/code/blog","created":1787794200,
+                      "finished_at":1787794322,"summary":"Published post 42.",
+                      "terminal_id":"9A1F…","session_id":"105344fb-c769-4b37-b766-403b410897eb"}]}}
 ```
+
+Every run remains visible while its task record is retained. `terminal_id` names the tab Clawdline
+opened and lets a client go to it if it is still on `/v1/sessions`. `session_id` is stricter: it is
+present only for terminal work whose transcript or rollout still exists and is proved to belong to
+that exact task. It may be sent to the place resume route above; a run without it is readable but
+not resumable. `runs_may_be_truncated: true` appears when the machine-wide registry has reached its
+200-record retention boundary, because older occurrences may already have lost their schedule
+association.
 
 ### `POST /v1/orchestrator/schedules`
 

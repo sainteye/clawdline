@@ -1228,8 +1228,9 @@ final class RemoteServer: @unchecked Sendable {
                     dispatchEnabled: Config.shared.orchestratorEnabled))
             }
 
-        // One schedule, in full, including the task template the list leaves out — see
-        // `Orchestrator.scheduleRecord(id:now:)`. Read-level, like the list it came from.
+        // One schedule, in full, including the task template and retained run history the list
+        // leaves out — see `Orchestrator.scheduleRecord(id:now:)`. Read-level, like the list it
+        // came from.
         case ("GET", let path) where path.hasPrefix("/v1/orchestrator/schedules/"):
             let id = String(path.dropFirst("/v1/orchestrator/schedules/".count))
             guard let record = Orchestrator.scheduleRecord(id: id.removingPercentEncoding ?? id)
