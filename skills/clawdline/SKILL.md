@@ -18,8 +18,8 @@ description: |
   Does not trigger on: anything this conversation can simply do (a child costs far more than doing
   it), search and analysis a Task/subagent already covers (that is a subagent, not a Clawdline
   child), or wanting to know which sessions are running (that is the Clawdline panel, or
-  GET /v1/sessions). **When this session is itself a child, CHILD.md governs and this file does
-  not** — see §0.
+  GET /v1/orchestrator/sessions). **When this session is itself a child, CHILD.md governs and this
+  file does not** — see §0.
 user-invocable: true
 last-updated: 2026-08-26
 ---
@@ -656,8 +656,14 @@ function, a case without its enum. Each of them passes in the tree and fails in 
 Do not coordinate a shared-tree wait with Claude Code's native messages, a Codex-specific channel,
 or an assistant conversation id. The broker boundary is Clawdline:
 
-1. Use `GET /v1/sessions` and the relevant `/git` readings to find the owning root. Address sessions
-   by Clawdline's terminal-neutral `id`, not provider-specific `sessionId`.
+1. Find the owning root with `GET /v1/orchestrator/sessions`, using the local orchestrator
+   credential. It lists each session's terminal-neutral `id`, `assistant`, `cwd`, `label`, `state`
+   and — for tabs Clawdline opened — `taskId`. Address sessions by that `id`, never a
+   provider-specific `sessionId`. **`GET /v1/sessions` and `GET /v1/sessions/:id/git` are the
+   paired-device API and answer the orchestrator credential with `401 unauthorized`**, so read the
+   repository's own state by running `git` in the checkout instead. Your *own* id is the UUID after
+   the colon in `$ITERM_SESSION_ID`, and `GET /v1/orchestrator/waits` names the ids already inside
+   a wait — neither reaches a session nobody is waiting on yet, which is why the index exists.
 2. Register the relationship with `POST /v1/orchestrator/waits`, using the local orchestrator
    credential. Name `repository`, exact `paths`, `owner_session_id`, `waiter_session_id`, `reason`
    and `release_condition`. Clawdline canonicalizes paths, deduplicates the waiter, persists the
@@ -670,9 +676,11 @@ or an assistant conversation id. The broker boundary is Clawdline:
    diff before staging or integrating. The broker never infers release from a clean status sample.
 
 An unresolved wait survives app restart and remains visible when its owner disappears.
-`GET /v1/sessions` publishes it as a `coordination` overlay: `waiting_on_session`/`waitingOn` for the
-blocked session and `waitedOnBy` for its owner. This does **not** set the terminal state to `waiting`;
-that word still means a person must answer and alone triggers the loud row and push notification.
+`GET /v1/sessions` publishes it to the app's own UI as a `coordination` overlay:
+`waiting_on_session`/`waitingOn` for the blocked session and `waitedOnBy` for its owner — an agent
+holding the orchestrator credential reads the same relationships from `GET /v1/orchestrator/waits`.
+This does **not** set the terminal state to `waiting`; that word still means a person must answer
+and alone triggers the loud row and push notification.
 Native and web rows quietly show `⏳ owner · release condition`. Use a final-line
 `[Clawdline waiting]` marker only as fallback when that UI is unavailable.
 

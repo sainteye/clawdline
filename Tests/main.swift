@@ -2423,16 +2423,16 @@ group("versioned Clawdline notices") {
         }
     }
 
-    let unknown = wire.replacingOccurrences(of: #""version":1"#,
-                                             with: #""version":2"#)
+    let unknown = wire.replacingOccurrences(of: #""version":2"#,
+                                             with: #""version":99"#)
     check("an unknown version is not interpreted", ClawdlineMessage.decode(unknown) == nil)
     check("a quoted lookalike is not interpreted", ClawdlineMessage.decode("> " + wire) == nil)
     check("a partial wrapper is not interpreted",
           ClawdlineMessage.decode(String(wire.dropLast())) == nil)
     check("prose around a valid envelope is not interpreted",
           ClawdlineMessage.decode("quote:\n" + wire + "\nend quote") == nil)
-    let extra = wire.replacingOccurrences(of: #""version":1"#,
-                                          with: #""version":1,"action":"javascript:bad()""#)
+    let extra = wire.replacingOccurrences(of: #""version":2"#,
+                                          with: #""version":2,"action":"javascript:bad()""#)
     check("unknown or executable fields make the closed schema invalid",
           ClawdlineMessage.decode(extra) == nil)
 
@@ -2490,6 +2490,101 @@ group("versioned Clawdline notices") {
               && (payload?["task"] as? [String: Any])?["title"] as? String == hostileTitle)
     check("the HTTP card payload carries no fallback markup or protocol machinery",
           payload?["body"] == nil && payload?["protocol"] == nil && payload?["action"] == nil)
+
+    // This is deliberately literal rather than produced by today's encoder: version 1 rows are
+    // already stored in real transcripts and version 2 must not strand them.
+    let literalV1 = #"<clawdline-notice>{"audience":"root","body":"[clawdline] old task finished","child_may_still_write":false,"claims_released":false,"kind":"task_finished","outstanding":0,"protocol":"clawdline.notice","result_path":"/tmp/old/result.json","state":"success","task":{"id":"old-task","title":"Old task"},"version":1}</clawdline-notice>"#
+    check("a literal version 1 wire still decodes after version 2 ships",
+          ClawdlineMessage.decode(literalV1)?.body == "[clawdline] old task finished")
+    let literalV1Overlap = #"<clawdline-notice>{"audience":"root","body":"[clawdline] old workspace overlap","kind":"workspace_overlap","overlaps":[{"path":"Sources/Old.swift","task":{"id":"other-old-task","title":"Other old task"}}],"protocol":"clawdline.notice","task":{"id":"old-task","title":"Old task"},"version":1}</clawdline-notice>"#
+    check("a literal version 1 workspace-overlap wire still decodes after version 2 ships",
+          ClawdlineMessage.decode(literalV1Overlap).map {
+              guard $0.body == "[clawdline] old workspace overlap",
+                    case let .workspaceOverlap(task, audience, overlaps) = $0.event
+              else { return false }
+              return task.id == "old-task" && audience == .root && overlaps.count == 1
+                && overlaps[0].task.id == "other-old-task"
+                && overlaps[0].path == "Sources/Old.swift"
+          } == true)
+}
+
+group("version 2 file-wait and handoff notices") {
+    let hostileRepository = #"/repo/<unsafe>&\"quoted\""#
+    let hostilePaths = [#"Sources/<script>.swift"#, #"docs/a, b & `c`.md"#]
+    let request = ClawdlineMessage.Notice(
+        event: .fileWaitRequest(
+            waitID: "wait-<one>", repository: hostileRepository, paths: hostilePaths,
+            waiterSessionID: #"waiter-\"one\""#, reason: "Need <review> & `merge`\nnow",
+            releaseCondition: "Commit \"safe\" & release\nafter review"),
+        body: "[Clawdline file-wait] Repo: \(hostileRepository). Exact paths: "
+            + hostilePaths.joined(separator: ", ") + ".\nKeep every operational detail.")
+    let release = ClawdlineMessage.Notice(
+        event: .fileWaitRelease(
+            waitID: "wait-<one>", repository: hostileRepository, paths: hostilePaths,
+            commit: #"abc123<&\""#, note: "Owner says <done> & `safe`\nwith care"),
+        body: "[Clawdline file-wait release] Repo: \(hostileRepository). Exact paths: "
+            + hostilePaths.joined(separator: ", ")
+            + ". Landed/released in commit abc123. Note: keep care. "
+            + "Re-check HEAD, status and diff before editing or integrating.")
+    let pickedUp = ClawdlineMessage.Notice(
+        event: .handoffReceipt(
+            handoffID: "7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431",
+            title: #"Cloud <plan> & \"ship\""#, assistant: .codex,
+            projectDir: #"/tmp/<repo>&\"quoted\""#, state: .pickedUp),
+        body: "[clawdline] handoff 7c1e9b02 picked up by codex")
+    let firstLineFailed = ClawdlineMessage.Notice(
+        event: .handoffReceipt(
+            handoffID: "7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431", title: nil,
+            assistant: .claude, projectDir: "/tmp/repo", state: .firstLineFailed),
+        body: "[clawdline] handoff 7c1e9b02 opened a tab but the first line never landed "
+            + "— type it in by hand")
+    let notices = [request, release, pickedUp, firstLineFailed]
+
+    for (index, notice) in notices.enumerated() {
+        let wire = ClawdlineMessage.encode(notice)
+        check("v2 notice \(index) stays one physical terminal line",
+              !wire.contains("\n") && !wire.contains("\r"))
+        expect("v2 notice \(index) round-trips hostile typed fields exactly",
+               ClawdlineMessage.decode(wire), notice)
+
+        let claude = Transcript.parse(noticeUserRow(wire, at: "2026-08-26T10:00:00.000Z"))
+        check("Claude normalizes v2 notice \(index) to notice without losing the payload",
+              claude.count == 1 && claude[0].kind == .notice && claude[0].notice == notice)
+        let codex = Codex.entries(ofItem: [
+            "type": "UserMessage", "content": [["type": "text", "text": wire]],
+        ], at: nil)
+        check("Codex normalizes v2 notice \(index) to notice without losing the payload",
+              codex.count == 1 && codex[0].kind == .notice && codex[0].notice == notice)
+
+        let row = RemoteServer.transcriptRows(claude).first
+        check("HTTP serializes v2 notice \(index) as a controlled notice row",
+              row?["role"] as? String == "notice"
+                && (row?["notice"] as? [String: Any])?["kind"] as? String != nil
+                && (row?["notice"] as? [String: Any])?["body"] == nil)
+    }
+
+    let requestWire = ClawdlineMessage.encode(request)
+    let unknownKind = requestWire.replacingOccurrences(
+        of: #""kind":"file_wait_request""#, with: #""kind":"future_wait""#)
+    check("a v2 unknown kind falls back instead of being partly interpreted",
+          unknownKind != requestWire && ClawdlineMessage.decode(unknownKind) == nil)
+    let malformed = String(requestWire.dropLast())
+    check("a malformed v2 wrapper falls back", ClawdlineMessage.decode(malformed) == nil)
+    check("a quoted v2 lookalike falls back", ClawdlineMessage.decode("> " + requestWire) == nil)
+    let quoted = Transcript.parse(noticeUserRow("> " + requestWire,
+                                                at: "2026-08-26T10:00:00.000Z"))
+    check("a failed v2 recognition keeps every visible byte as an ordinary user row",
+          quoted.first?.kind == .user && quoted.first?.text.contains(requestWire) == true)
+
+    let peerAndNotices = ([queuedPeer("owner speaking", at: "2026-08-26T10:00:00.000Z")]
+        + notices.enumerated().map { index, notice in
+            noticeUserRow(ClawdlineMessage.encode(notice),
+                          at: "2026-08-26T10:00:0\(index + 1).000Z")
+        }).joined(separator: "\n")
+    let coexist = Transcript.parse(peerAndNotices, assistant: .claude)
+    check("a peer and every v2 notice kind coexist without changing one another's roles",
+          coexist.count == notices.count + 1 && coexist.first?.kind == .peer
+            && coexist.dropFirst().allSatisfy { $0.kind == .notice })
 }
 
 group("orchestrator notices preserve the model-readable completion contract") {
@@ -2603,6 +2698,62 @@ group("both completion notices still carry the untouched-claims reminder") {
               && notifyRootBody.components(separatedBy: "Targets.send(line,").count - 1 == 2)
 }
 
+group("file-wait and handoff deliveries type only the versioned envelope") {
+    let source = (try? String(contentsOfFile: "Sources/Orchestrator.swift",
+                              encoding: .utf8)) ?? ""
+    let settle = source.components(separatedBy: "static func settleHandoff(")
+        .dropFirst().first?.components(separatedBy: "/// Watch a briefed child").first ?? ""
+    check("the handoff settlement source was located",
+          settle.contains("handoffReceipt(") && settle.contains("Targets.send("))
+    check("handoff settlement sends only the encoded semantic receipt",
+          settle.contains("Targets.send(ClawdlineMessage.encode(receipt), to: sender)")
+              && !settle.contains("Targets.send(receipt, to: sender)"))
+
+    let receiptComposer = source.components(separatedBy: "static func handoffReceipt(")
+        .dropFirst().first?.components(separatedBy: "private static func successfulHandoffReply")
+        .first ?? ""
+    let messageSource = (try? String(contentsOfFile: "Sources/ClawdlineMessage.swift",
+                                     encoding: .utf8)) ?? ""
+    check("handoff assistant mapping is compiler-exhaustive instead of force-unwrapped",
+          receiptComposer.contains("HandoffAssistant(assistant)")
+            && !receiptComposer.contains("rawValue: assistant.rawValue")
+            && messageSource.contains("init(_ assistant: Assistant)")
+            && messageSource.contains("switch assistant"))
+
+    let waits = source.components(separatedBy: "// MARK: - Cross-session coordination waits")
+        .dropFirst().first?.components(separatedBy: "// MARK:").first ?? ""
+    check("the coordination delivery source was located",
+          waits.contains("registerCoordinationWait(") && waits.contains("releaseCoordinationWait("))
+    check("both coordination call sites send only what the notice encoder returned",
+          waits.components(separatedBy: "let message = ClawdlineMessage.encode(notice)").count - 1 == 2
+              && waits.components(separatedBy: "deliver(owner, message)").count - 1 == 1
+              && waits.components(separatedBy: "deliver(waiter.sessionID, message)").count - 1 == 1)
+    check("the old plain-text delivery prefixes live only inside typed notice composers",
+          source.components(separatedBy: "[Clawdline file-wait] Repo:").count - 1 == 1
+              && source.components(separatedBy: "[Clawdline file-wait release] Repo:").count - 1 == 1)
+
+    let serverSource = (try? String(contentsOfFile: "Sources/RemoteServer.swift",
+                                    encoding: .utf8)) ?? ""
+    let registerRoute = serverSource
+        .components(separatedBy: #"case ("POST", "/v1/orchestrator/waits"):"#)
+        .dropFirst().first?.components(separatedBy: "\n        case (").first ?? ""
+    let releaseRoute = serverSource
+        .components(separatedBy: #"&& path.hasSuffix("/release"):"#)
+        .dropFirst().first?.components(separatedBy: "\n        case (").first ?? ""
+    check("the real wait routes and picker-readiness implementation were located",
+          registerRoute.contains("Orchestrator.registerCoordinationWait(")
+              && releaseRoute.contains("Orchestrator.releaseCoordinationWait(")
+              && serverSource.contains("private func coordinationReadiness("))
+    check("both wait routes hand the broker the real picker check",
+          serverSource.components(separatedBy:
+              "readiness: self.coordinationReadiness").count - 1 == 2)
+    check("registration and release each wire that check at their production route",
+          registerRoute.components(separatedBy:
+              "readiness: self.coordinationReadiness").count - 1 == 1
+              && releaseRoute.components(separatedBy:
+                  "readiness: self.coordinationReadiness").count - 1 == 1)
+}
+
 group("the Web transcript has an inert Clawdline card") {
     let js = (try? String(contentsOfFile: "Resources/web/app/js/view/transcript.js",
                           encoding: .utf8)) ?? ""
@@ -2610,6 +2761,10 @@ group("the Web transcript has an inert Clawdline card") {
                            encoding: .utf8)) ?? ""
     let mock = (try? String(contentsOfFile: "Resources/web/app/js/net/mock.js",
                             encoding: .utf8)) ?? ""
+    let fallback = (try? String(contentsOfFile: "Resources/web/app/js/core/i18n.js",
+                                encoding: .utf8)) ?? ""
+    let server = (try? String(contentsOfFile: "Sources/RemoteServer.swift",
+                              encoding: .utf8)) ?? ""
     check("the notice role is routed to a dedicated renderer",
           js.contains(#"e.role === "notice""#) && js.contains("function noticeHTML"))
     let noticeRenderer = js.components(separatedBy: "function noticeHTML(e) {").dropFirst().first?
@@ -2620,6 +2775,68 @@ group("the Web transcript has an inert Clawdline card") {
               && noticeRenderer.contains("T.webNoticeWorkspaceOverlap")
               && noticeRenderer.contains("T.webNoticeOneSibling")
               && noticeRenderer.contains("fill("))
+    check("the three new kinds and both handoff outcomes use fixed translation keys",
+          noticeRenderer.contains("T.webNoticeFileWaitRequested")
+              && noticeRenderer.contains("T.webNoticeFileWaitReleased")
+              && noticeRenderer.contains("T.webNoticeHandoffPickedUp")
+              && noticeRenderer.contains("T.webNoticeHandoffNeedsDelivery")
+              && noticeRenderer.contains("T.webNoticeRecheckGit"))
+    func renderNotice(_ entry: [String: Any]) -> (html: String, status: Int32) {
+        guard let rendererStart = js.range(of: "function whoHTML(role, at) {") else {
+            return ("", -1)
+        }
+        let renderer = String(js[rendererStart.lowerBound...]).replacingOccurrences(
+            of: "export function entryHTML(", with: "function entryHTML(")
+        func javascriptLiteral(_ value: Any) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: value,
+                                                   options: [.fragmentsAllowed])
+            return String(decoding: data, as: UTF8.self)
+        }
+        let script = """
+        var WHO = { user: "you", assistant: "claude", peer: "Claude ↔", notice: "Clawdline", tool: "tool" };
+        var S = { assistantIcons: false };
+        var T = new Proxy({}, { get: function (_, key) { return String(key); } });
+        function byId() { return null; }
+        function assistantLogo() { return ""; }
+        function clockOf(value) { return String(value || ""); }
+        function fill(value) { return String(value || ""); }
+        function esc(value) {
+            return String(value == null ? "" : value)
+                .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;");
+        }
+        function richText(value) { return "BODY:" + esc(value); }
+        eval(\(javascriptLiteral(renderer)));
+        process.stdout.write(noticeHTML(\(javascriptLiteral(entry))));
+        """
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["node"]
+        let input = Pipe(), output = Pipe()
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            input.fileHandleForWriting.write(Data(script.utf8))
+            try? input.fileHandleForWriting.close()
+            let html = String(decoding: output.fileHandleForReading.readDataToEndOfFile(),
+                              as: UTF8.self)
+            process.waitUntilExit()
+            return (html, process.terminationStatus)
+        } catch {
+            return ("", -1)
+        }
+    }
+    let mismatched = renderNotice([
+        "role": "notice", "text": "visible row text from the older server",
+        "notice": ["kind": "task_finished", "state": "success"],
+    ])
+    check("a task-kind notice without a task falls back without hiding its visible text",
+          mismatched.status == 0
+            && mismatched.html.contains("BODY:visible row text from the older server")
+            && mismatched.html.contains(#"data-role="assistant""#)
+            && !mismatched.html.contains("clawdline-notice"))
     check("task state lookup rejects inherited object properties and keeps a generic title",
           noticeRenderer.contains("Object.prototype.hasOwnProperty.call(states, n.state)")
               && noticeRenderer.contains("var title = T.webNoticeFinished"))
@@ -2628,6 +2845,12 @@ group("the Web transcript has an inert Clawdline card") {
               && noticeRenderer.contains("esc(title)")
               && noticeRenderer.contains("esc(siblings)")
               && noticeRenderer.contains("esc(T.webNoticeClaimsReleased)"))
+    check("every payload field printed by a new card is escaped as plain text",
+          noticeRenderer.contains("esc(n.reason)")
+              && noticeRenderer.contains("esc(n.release_condition)")
+              && noticeRenderer.contains("esc(n.commit)")
+              && noticeRenderer.contains("esc(n.note)")
+              && noticeRenderer.contains("esc(n.project_dir)"))
     check("the renderer has no payload-controlled rich text, link, action, style or copy key",
           !noticeRenderer.contains("richText(") && !noticeRenderer.contains("inlineMd(")
               && !noticeRenderer.contains("<a") && !noticeRenderer.contains("<button")
@@ -2651,6 +2874,27 @@ group("the Web transcript has an inert Clawdline card") {
     check("the mock covers both notice kinds, so the overlap card is reachable too",
           mockTranscript.contains(#"kind: "task_finished""#)
               && mockTranscript.contains(#"kind: "workspace_overlap""#))
+    check("the mock reaches every new card and both handoff outcomes",
+          mockTranscript.contains(#"kind: "file_wait_request""#)
+              && mockTranscript.contains(#"kind: "file_wait_release""#)
+              && mockTranscript.components(separatedBy: #"kind: "handoff_receipt""#).count - 1 == 2
+              && mockTranscript.contains(#"state: "picked_up""#)
+              && mockTranscript.contains(#"state: "first_line_failed""#))
+    let newCopyKeys = [
+        "webNoticeFileWaitRequested", "webNoticeFileWaitReleased",
+        "webNoticeHandoffPickedUp", "webNoticeHandoffNeedsDelivery", "webNoticeRecheckGit",
+    ]
+    for key in newCopyKeys {
+        check("the browser fallback and /v1/strings both carry \(key)",
+              fallback.contains("\(key):") && server.contains("\"\(key)\":"))
+    }
+    for (tag, copy) in L.catalog {
+        let values = [copy.webNoticeFileWaitRequested, copy.webNoticeFileWaitReleased,
+                      copy.webNoticeHandoffPickedUp, copy.webNoticeHandoffNeedsDelivery,
+                      copy.webNoticeRecheckGit]
+        check("every new notice string is present in \(tag)",
+              values.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+    }
 }
 
 group("transcript tool summaries") {
@@ -12190,12 +12434,24 @@ group("a handoff envelope is validated without reading its letter") {
           Orchestrator.handoffRetryAllowed(attempts: 0, transcriptKnown: false))
     expect("a titled receipt names the line and receiver",
            Orchestrator.handoffReceipt(id: id, title: "Cloud planning line",
-                                       assistant: .codex, projectDir: "/tmp", delivered: true),
+                                       assistant: .codex, projectDir: "/tmp", delivered: true).body,
            "[clawdline] handoff 7c1e9b02 (Cloud planning line) picked up by codex in /tmp")
     expect("an untitled failure receipt does not grow empty brackets",
            Orchestrator.handoffReceipt(id: id, title: nil, assistant: .claude,
-                                       projectDir: "/tmp", delivered: false),
+                                       projectDir: "/tmp", delivered: false).body,
            "[clawdline] handoff 7c1e9b02 opened a tab but the first line never landed — type it in by hand")
+    let semanticReceipt = Orchestrator.handoffReceipt(
+        id: id, title: "Cloud planning line", assistant: .codex,
+        projectDir: #"/tmp/<repo>&\"quoted\""#, delivered: true)
+    let semanticReceiptIsTyped: Bool
+    if case .handoffReceipt(_, _, .codex, _, .pickedUp) = semanticReceipt.event {
+        semanticReceiptIsTyped = true
+    } else {
+        semanticReceiptIsTyped = false
+    }
+    check("a handoff receipt carries one typed kind with an outcome state",
+          ClawdlineMessage.decode(ClawdlineMessage.encode(semanticReceipt)) == semanticReceipt
+            && semanticReceiptIsTyped)
 }
 
 group("handoff envelopes survive restart and terminal ones are swept as one unit") {
@@ -12375,9 +12631,21 @@ group("coordination waits are durable broker relationships") {
         check("a valid coordination wait registers", false); return
     }
     expect("the broker delivers the request to the owner", requests.first?.0, owner)
-    check("the delivered request identifies the waiter and release condition",
-          requests.first?.1.contains(firstWaiter) == true
-              && requests.first?.1.contains("committed or explicitly released") == true)
+    let deliveredRequestBody = requests.first.flatMap { ClawdlineMessage.decode($0.1)?.body }
+    check("the delivered request body identifies the waiter and release condition",
+          deliveredRequestBody?.contains(firstWaiter) == true
+              && deliveredRequestBody?.contains("committed or explicitly released") == true)
+    check("the owner receives a strict semantic file-wait request envelope",
+          requests.first.flatMap { ClawdlineMessage.decode($0.1) }.map {
+              if case let .fileWaitRequest(id, repository, paths, waiter, reason, condition)
+                    = $0.event {
+                  return id == waitID && repository == "/Users/me/code/clawdline"
+                    && paths == ["Sources/Foo.swift"] && waiter == firstWaiter
+                    && reason == "the owner is editing the same file"
+                    && condition == "the path is committed or explicitly released"
+              }
+              return false
+          } == true)
     expect("canonical duplicate paths are stored once",
            wait["paths"] as? [String], ["Sources/Foo.swift"])
 
@@ -12407,11 +12675,14 @@ group("coordination waits are durable broker relationships") {
            Orchestrator.coordination(forTerminal: firstWaiter).waitingOn.count, 1)
 
     var releases: [String] = []
+    var releaseWires: [String] = []
     let partial = Orchestrator.releaseCoordinationWait(
         id: waitID, ownerSessionID: owner, commit: "abc123", note: nil,
         deliver: { target, text in
             releases.append(target)
-            check("a release notice names the commit", text.contains("abc123"))
+            releaseWires.append(text)
+            check("a release notice body names the commit",
+                  ClawdlineMessage.decode(text)?.body.contains("abc123") == true)
             return target == secondWaiter ? "terminal closed" : nil
         })
     guard case .refused(let status, let code, _, let extra) = partial else {
@@ -12424,16 +12695,32 @@ group("coordination waits are durable broker relationships") {
            Orchestrator.coordination(forTerminal: firstWaiter).waitingOn.count, 0)
     expect("the failed waiter remains visibly blocked",
            Orchestrator.coordination(forTerminal: secondWaiter).waitingOn.count, 1)
+    check("a waiter receives a strict semantic release with the Git safety instruction",
+          releaseWires.first.flatMap(ClawdlineMessage.decode).map {
+              guard $0.body.hasSuffix(
+                "Re-check HEAD, status and diff before editing or integrating."),
+                    case let .fileWaitRelease(id, repository, paths, commit, note) = $0.event
+              else { return false }
+              return id == waitID && repository == "/Users/me/code/clawdline"
+                && paths == ["Sources/Foo.swift"] && commit == "abc123" && note == nil
+          } == true)
 
     let retry = Orchestrator.releaseCoordinationWait(
         id: waitID, ownerSessionID: owner, commit: "abc123", note: "tree rechecked",
-        deliver: { target, _ in releases.append(target); return nil })
+        deliver: { target, text in releases.append(target); releaseWires.append(text); return nil })
     guard case .ok(let releasedPayload) = retry else {
         check("the pending release can be retried", false); return
     }
     expect("retry sends only to the waiter that missed the first notice",
            releases, [firstWaiter, secondWaiter, secondWaiter])
     expect("the completed release reports both waiters", releasedPayload["released"] as? Int, 2)
+    check("a retry keeps its note as typed data",
+          releaseWires.last.flatMap(ClawdlineMessage.decode).map {
+              if case let .fileWaitRelease(_, _, _, _, note) = $0.event {
+                  return note == "tree rechecked"
+              }
+              return false
+          } == true)
     check("a fully released relationship leaves no active registry row",
           Orchestrator.coordinationWaitRecords().isEmpty)
 }
@@ -12490,6 +12777,238 @@ group("coordination wait routes keep their credential and ownership boundaries")
         body: "{\"waiter_session_id\":\"\(waiter)\"}"))
     expect("the registered waiter may cancel only its membership", cancelled.status, 200)
     check("cancelling the sole waiter removes the group",
+          Orchestrator.coordinationWaitRecords().isEmpty)
+}
+
+group("the session index a wait needs is the dispatch credential's own door") {
+    // `POST /v1/orchestrator/waits` takes two terminal-neutral session ids, and the credential
+    // that may call it is refused by `GET /v1/sessions` — so before this route the one way in
+    // was open and the ids it takes were not readable. This is that door, and it is not the
+    // paired-device one: a phone already reads the whole session list next door.
+    Orchestrator.forget()
+    defer { Orchestrator.forget() }
+    let phone = RemoteAuth.addDevice(name: "a phone that may read sessions", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: phone.id) }
+
+    let anonymous = RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/sessions"))
+    expect("no credential is stopped at the door", anonymous.status, 401)
+    expect("by the ordinary unauthorised word", remoteErrorCode(anonymous), "unauthorized")
+
+    let paired = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/sessions",
+        headers: ["Authorization": "Bearer \(phone.token)"]))
+    expect("a paired device gets in the door and no further", paired.status, 403)
+    expect("and it is a refusal about the credential", remoteErrorCode(paired), "forbidden")
+
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let listed = RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/sessions", headers: auth))
+    expect("the credential that registers a wait may read the ids it takes", listed.status, 200)
+    let body = (try? JSONSerialization.jsonObject(with: listed.body)) as? [String: Any]
+    check("the answer carries a session list", body?["sessions"] is [[String: Any]])
+    check("stamped like every other orchestrator read", body?["at"] is Int)
+    // Nothing has read a terminal in this process, so the list is empty — and an empty list is
+    // an answer, not a refusal and not an absent key. A root that gets `[]` knows to look again.
+    expect("no reading yet is an empty list rather than a missing one",
+           (body?["sessions"] as? [[String: Any]])?.count, 0)
+
+    // The other half of the same sentence: the wait route resolves its waiter against the same
+    // population this route publishes, so an id that is not in the index is refused there.
+    let unknown = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/orchestrator/waits", headers: auth,
+        body: "{\"waiter_session_id\":\"NOT-IN-THE-INDEX\"}"))
+    expect("a waiter the index does not list cannot register a wait", unknown.status, 404)
+    expect("and says which half was not found", remoteErrorCode(unknown), "waiter_not_found")
+}
+
+group("the wait session index says what a wait must name, and nothing off the screen") {
+    // The exposure line, asserted field by field. Everything here is something a caller has to
+    // know before it can write a wait down; everything a session says or shows stays out.
+    Orchestrator.forget()
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before {
+            try? before.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Orchestrator.forget()
+    }
+
+    let claude = TargetSession(backend: .iterm, id: "SESSION-A", name: "✳ fix the webhook",
+                               tty: "/dev/ttys004", windowIndex: 0, tabIndex: 0,
+                               assistant: .claude, cwd: "/Users/me/code/clawdline")
+    let codex = TargetSession(backend: .tmux, id: "%codex", name: "envelope work",
+                              tty: "/dev/ttys005", windowIndex: 0, tabIndex: 1,
+                              assistant: .codex, cwd: "/Users/me/code/clawdline")
+    let shell = TargetSession(backend: .iterm, id: "JUST-A-SHELL", name: "-zsh",
+                              tty: "/dev/ttys006", windowIndex: 1, tabIndex: 0,
+                              assistant: nil, cwd: "/Users/me")
+    let homeless = TargetSession(backend: .iterm, id: "NO-CWD", name: "somewhere",
+                                 tty: "/dev/ttys999", windowIndex: 2, tabIndex: 0,
+                                 assistant: .claude, cwd: nil)
+    let states: [String: SessionState] = ["SESSION-A": .working("editing RemoteServer.swift"),
+                                          "%codex": .waiting]
+
+    let rows = RemoteServer.coordinationSessionRows([claude, codex, shell, homeless],
+                                                    states: states)
+    expect("a shell prompt is not an address a wait can be delivered to", rows.count, 3)
+    check("and it is the one without an assistant in it",
+          !rows.contains { $0["id"] as? String == "JUST-A-SHELL" })
+
+    guard let first = rows.first else { check("the assistant sessions are listed", false); return }
+    expect("the row is keyed by the terminal-neutral id", first["id"] as? String, "SESSION-A")
+    expect("it names which assistant is in there", first["assistant"] as? String, "claude")
+    expect("and the checkout the wait is about", first["cwd"] as? String,
+           "/Users/me/code/clawdline")
+    expect("the label is the tab's own, without the spinner frame in front of it",
+           first["label"] as? String, "fix the webhook")
+    expect("and the terminal state, so a caller knows whether anybody is home",
+           first["state"] as? String, "working")
+    expect("a session showing a question reads as waiting", rows[1]["state"] as? String, "waiting")
+    check("a session nothing has read yet is unknown rather than idle",
+          rows[2]["state"] as? String == "unknown")
+    check("a session with no known checkout omits cwd rather than sending an empty one",
+          rows[2]["cwd"] == nil)
+
+    // What must never appear. Each of these is either the screen or the transcript: `line` is
+    // what the assistant is doing, `menu` is the question it is asking, `agents` and `shells`
+    // are what it has out, and `sessionId` is the name of its transcript file.
+    for row in rows {
+        for leaked in ["line", "menu", "agents", "shells", "sessionId", "icon", "coordination"] {
+            check("the index does not carry \(leaked)", row[leaked] == nil,
+                  "\(leaked) reached the dispatch credential")
+        }
+    }
+    check("the working line does not arrive under another name",
+          !rows.contains { row in
+              row.values.contains { ($0 as? String) == "editing RemoteServer.swift" }
+          })
+
+    // Every id the index publishes is one the wait routes can find, because both go through the
+    // same lookup. A rename on either side stops here rather than in somebody's dispatch.
+    for row in rows {
+        let id = row["id"] as? String ?? ""
+        check("the index's id is one a wait route resolves",
+              RemoteServer.session(withID: id, among: [claude, codex, shell, homeless]) != nil,
+              "\(id) is published and cannot be found")
+    }
+
+    // A tab this app opened for a task carries the task id, which is the one address that needs
+    // no label matching. The same credential already reads the whole record next door.
+    let openedFor = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    let row: [String: Any] = [
+        "id": openedFor, "state": "briefed", "kind": "custom", "title": "the envelope work",
+        "assistant": "claude", "project_dir": "/Users/me/code/clawdline",
+        "timeout_minutes": 30, "created": Date().timeIntervalSince1970,
+        "secret_hash": Orchestrator.hash(ofSecret: "x"), "artifacts": [],
+        "child_terminal": "SESSION-A", "child_tty": "/dev/ttys004",
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: ["version": 1, "tasks": [row]])
+    try! data.write(to: store, options: .atomic)
+    Orchestrator.forget()
+    Orchestrator.load(force: true)
+    let named = RemoteServer.coordinationSessionRows([claude, codex], states: states)
+    expect("a tab Clawdline opened for a task says which task", named.first?["taskId"] as? String,
+           openedFor)
+    expect("and is called by the title the dispatcher gave it",
+           named.first?["label"] as? String, "the envelope work")
+    check("a tab a person opened themselves carries no task id", named[1]["taskId"] == nil)
+}
+
+// Words sent into Claude Code's permission picker are discarded, and the Return that follows
+// answers whichever row is highlighted. Every other typing path in this app already refuses that;
+// these two were the ones still sending into it — and worse, recording the loss as a delivery.
+group("a file-wait notice is not typed into a session that is showing a picker") {
+    Orchestrator.forget()
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before {
+            try? before.write(to: store, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: store)
+        }
+        Orchestrator.forget()
+    }
+
+    let owner = "BUSY-OWNER", waiter = "BUSY-WAITER"
+    let body: [String: Any] = [
+        "repository": "/Users/me/code/clawdline", "paths": ["Sources/Foo.swift"],
+        "owner_session_id": owner, "waiter_session_id": waiter,
+        "reason": "the owner is mid-edit", "release_condition": "committed",
+    ]
+    var attempts: [String] = []
+    let blocked = Orchestrator.registerCoordinationWait(
+        body, readiness: { _ in "that session is showing a menu" },
+        deliver: { target, _ in attempts.append(target); return nil })
+    guard case .refused(let status, let code, _, _) = blocked else {
+        check("registering against a session showing a picker is refused", false); return
+    }
+    expect("a session that cannot be typed into has not failed to receive anything", status, 409)
+    expect("with a code that says the owner is busy rather than unreachable", code, "owner_busy")
+    check("nothing was typed into the picker", attempts.isEmpty)
+
+    func waiterRow() -> [String: Any] {
+        (Orchestrator.coordinationWaitRecords().first?["waiters"] as? [[String: Any]])?
+            .first(where: { $0["sessionId"] as? String == waiter }) ?? [:]
+    }
+    check("the wait is still durable so the waiter is not silently unblocked",
+          Orchestrator.coordinationWaitRecords().count == 1
+              && waiterRow()["sessionId"] as? String == waiter)
+    check("and the request is recorded as still owed, not as delivered",
+          waiterRow()["requestDeliveredAt"] == nil)
+    expect("the waiter's own overlay still names the wait",
+           Orchestrator.coordination(forTerminal: waiter).waitingOn.count, 1)
+
+    // The bug this pins: a blocked send that had been receipted as delivered would be deduplicated
+    // away here, and the owner would never hear about this waiter again.
+    let retry = Orchestrator.registerCoordinationWait(
+        body, readiness: { _ in nil },
+        deliver: { target, _ in attempts.append(target); return nil })
+    guard case .ok(let retried) = retry else {
+        check("the same registration can be retried once the picker is gone", false); return
+    }
+    expect("the retry reuses the relationship rather than making a second one",
+           retried["deduplicated"] as? Bool, true)
+    expect("and this time the owner is told", attempts, [owner])
+    check("and the delivery is receipted", waiterRow()["requestDeliveredAt"] != nil)
+
+    // Release takes the same guard, but keeps the existing partial-fan-out code: from the owner's
+    // side "one waiter did not get it, retry" is the same situation whether the message failed to
+    // send or was never sent at all.
+    guard let waitID = Orchestrator.coordinationWaitRecords().first?["id"] as? String else {
+        check("the group has an id to release", false); return
+    }
+    var releases: [String] = []
+    let held = Orchestrator.releaseCoordinationWait(
+        id: waitID, ownerSessionID: owner, commit: "beef123", note: nil,
+        readiness: { _ in "that session is showing a menu" },
+        deliver: { target, _ in releases.append(target); return nil })
+    guard case .refused(let heldStatus, let heldCode, _, let extra) = held else {
+        check("a release nobody could be told about is not a completed release", false); return
+    }
+    expect("an undeliverable release is the existing incomplete answer", heldStatus, 502)
+    expect("with the existing code", heldCode, "release_incomplete")
+    expect("and it counts the waiter still owed a notice", extra["pending"] as? Int, 1)
+    check("nothing was typed into the waiter's picker", releases.isEmpty)
+    check("and no release receipt was written",
+          waiterRow()["sessionId"] as? String == waiter
+              && waiterRow()["releaseDeliveredAt"] == nil)
+    expect("so the waiter is still shown as blocked",
+           Orchestrator.coordination(forTerminal: waiter).waitingOn.count, 1)
+
+    let completed = Orchestrator.releaseCoordinationWait(
+        id: waitID, ownerSessionID: owner, commit: "beef123", note: nil,
+        readiness: { _ in nil },
+        deliver: { target, _ in releases.append(target); return nil })
+    guard case .ok = completed else {
+        check("the release completes once the waiter can be typed into", false); return
+    }
+    expect("the retry reaches the waiter that was skipped", releases, [waiter])
+    check("and the fully released group leaves the registry",
           Orchestrator.coordinationWaitRecords().isEmpty)
 }
 

@@ -1062,9 +1062,21 @@ registers the relationship with `POST /v1/orchestrator/waits`. The request names
 exact paths, owner and waiter terminal-neutral Clawdline session ids, reason and release condition.
 Clawdline canonicalizes the paths, deduplicates the same waiter, persists the group in its
 orchestrator store, and delivers the file-wait message to the owner through Clawdline's terminal
-transport.
+transport as a version-2 `file_wait_request` notice. Its typed payload carries the wait id,
+repository, canonical paths, waiter session id, reason and release condition; its `body` keeps the
+complete operational sentence the owner acts on.
 
-**Two different namespaces, and only one of them is what `GET /v1/sessions` lists.** A root
+**Where a root reads those two ids.**
+[`GET /v1/orchestrator/sessions`](api.md#get-v1orchestratorsessions) is the one session listing the
+orchestrator credential can open: `GET /v1/sessions` lists the
+same ids and is the paired-device route, so it answers that credential with `401 unauthorized`. The
+index gives an `id`, `assistant`, `cwd`, `label`, `state`, and a `taskId` for tabs this app opened —
+enough to pick an owner, and nothing off the session's screen. Two older ways still work and neither
+is complete: a session's *own* id is the UUID after the colon in `$ITERM_SESSION_ID`, and
+`GET /v1/orchestrator/waits` names the ids already inside a wait, which is no help to the first
+session that needs to wait on somebody.
+
+**Two different namespaces, and only one of them is what these routes list.** A root
 identifies itself in `task.json` with whatever id its own assistant gave it — Claude Code's own
 `sessionId`, or a Codex thread id — and that is *not* the terminal-neutral session `id` this app
 assigns and `GET /v1/sessions` lists as `id`. Comparing a root's self-reported id against that `id`
@@ -1079,17 +1091,20 @@ reads back into that field at all, hooks or not — so for a Codex root, `sessio
 `id` column above. Comparing against it works only for a Claude root, and only once hooks are
 installed. **Querying for a session by an id and getting nothing back is never proof that session
 is gone** — it may only mean this app never learned the id to compare against. To judge whether a
-particular root is still around, use what `GET /v1/sessions` can actually promise instead: its
-`cwd`, `label` and `state` for a session sitting where the root said it would be, or sending the
-root a message and reading whether anything answers.
+particular root is still around, use what a session listing can actually promise instead: the `cwd`,
+`label` and `state` of a session sitting where the root said it would be — from
+`GET /v1/orchestrator/sessions` with the orchestrator credential, or `GET /v1/sessions` with a
+device token — or sending the root a message and reading whether anything answers.
 
 The owner uses `POST /v1/orchestrator/waits/:id/release` only after committing or explicitly
 releasing the paths, naming its own Clawdline session id and the commit when one exists. Clawdline
-fans the release notice out to every waiter. Each successful delivery is receipted before the route
-answers; if another waiter cannot be reached, the group stays registered and a retry addresses only
-the recipients still pending. A waiter abandoning the work may remove only itself with
-`POST /v1/orchestrator/waits/:id/cancel`. Release is always explicit: the broker never guesses from
-one transient clean `git status`.
+fans a version-2 `file_wait_release` notice out to every waiter. Its typed payload carries the wait
+id, repository, canonical paths and optional commit/note, while its `body` still ends with the
+safety instruction to re-check HEAD, status and diff. Each successful delivery is receipted before
+the route answers; if another waiter cannot be reached, the group stays registered and a retry
+addresses only the recipients still pending. A waiter abandoning the work may remove only itself
+with `POST /v1/orchestrator/waits/:id/cancel`. Release is always explicit: the broker never guesses
+from one transient clean `git status`.
 
 This composes the assistant-neutral session surface: a Claude root may wait on a Codex owner or the
 other way round. The unresolved relationship survives an app restart and remains visible if the
@@ -1150,13 +1165,20 @@ wire that message is one exact line: a wrapper around one JSON object with no LF
 both iTerm and tmux preserve it byte-for-byte:
 
 ```
-<clawdline-notice>{"audience":"root","body":"[clawdline] task 3f9a21bc (Project portrait) finished: success — read /tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234/result.json","child_may_still_write":false,"claims_released":false,"kind":"task_finished","outstanding":0,"protocol":"clawdline.notice","result_path":"/tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234/result.json","state":"success","task":{"id":"3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","title":"Project portrait"},"version":1}</clawdline-notice>
+<clawdline-notice>{"audience":"root","body":"[clawdline] task 3f9a21bc (Project portrait) finished: success — read /tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234/result.json","child_may_still_write":false,"claims_released":false,"kind":"task_finished","outstanding":0,"protocol":"clawdline.notice","result_path":"/tmp/.clawdline/3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234/result.json","state":"success","task":{"id":"3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234","title":"Project portrait"},"version":2}</clawdline-notice>
 ```
 
-`protocol` and `version` identify the envelope. Version 1 has two closed `kind` values:
-`task_finished` and `workspace_overlap`. A completion has a closed terminal `state`, its task,
-audience, result path, outstanding-child count and the two timeout/claim flags. An overlap has the
-new task plus one or more `{task,path}` rows. `body` is the concise fallback the assistant can read;
+`protocol` and `version` identify the envelope. Version 1 remains a closed legacy schema with two
+`kind` values, `task_finished` and `workspace_overlap`; readers continue to accept literal version-1
+rows already stored in transcripts. New writers emit version 2, whose closed set is those two plus
+`file_wait_request`, `file_wait_release`, and `handoff_receipt`. A completion has a closed terminal
+`state`, its task, audience, result path, outstanding-child count and the two timeout/claim flags. An
+overlap has the new task plus one or more `{task,path}` rows. A file-wait request carries `wait_id`,
+`repository`, non-empty `paths`, `waiter_session_id`, `reason`, and `release_condition`; a release
+carries the same wait/repository/paths identity plus optional `commit` and `note`. Both handoff
+outcomes are one `handoff_receipt` kind because they report the result of the same delivery attempt:
+its closed `state` is `picked_up` or `first_line_failed`, beside `handoff_id`, optional `title`,
+`assistant`, and `project_dir`. `body` is the concise fallback the assistant can read;
 it still says what finished, where `result.json` is, whether sibling work remains, whether a
 timed-out tab may still write, and — as prose, with no field of its own — any declared claims the
 child never touched. It is not the child's summary.

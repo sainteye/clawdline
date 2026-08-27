@@ -792,6 +792,32 @@ final class RemoteServer {
                                                                    branches: branches),
                           "at": Int(Date().timeIntervalSince1970)])
 
+        // **Which sessions a coordination wait may name.** `POST /v1/orchestrator/waits` takes two
+        // terminal-neutral session ids and, until this existed, there was nowhere for the caller
+        // holding its credential to read one: `GET /v1/sessions` is the paired-device API and
+        // answers the orchestrator token with a 401. So the one route that registers a wait was
+        // reachable and the ids it takes were not.
+        //
+        // The two fallbacks that were left cover everything except the case waits exist for. A
+        // session's own id is the UUID after the colon in `$ITERM_SESSION_ID`, which answers
+        // "who am I" and nothing else; `GET /v1/orchestrator/waits` names the sessions already
+        // inside a wait, which is no help to the first session to wait on somebody.
+        //
+        // A route of its own rather than a wider door on `/v1/sessions`: that one carries the
+        // screen — the line a session is working on, the question a waiting one is showing, the
+        // agents and shells it has out, its transcript id — and this credential exists to
+        // dispatch work, not to read somebody's terminal. What comes back here is an address
+        // book. See `coordinationSessionRows` for where the line falls and why.
+        case ("GET", "/v1/orchestrator/sessions"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Reading the sessions a wait can name needs the orchestrator token.")
+            }
+            let watch = SessionWatch.shared
+            return .json(["sessions": Self.coordinationSessionRows(watch.targets,
+                                                                   states: watch.states),
+                          "at": Int(Date().timeIntervalSince1970)])
+
         // What this Mac can say about each assistant's own account-level quota — one read of two
         // small local files, 5-second cached, and deliberately *not* behind `readingDepth`: it
         // has to be cheap enough for `Orchestrator.dispatch()` itself to call synchronously at
@@ -812,12 +838,14 @@ final class RemoteServer {
                self.session(withID: waiterID) == nil {
                 return .error(404, "waiter_not_found", "No waiter session named \(waiterID).")
             }
-            let reply = Orchestrator.registerCoordinationWait(body) { targetID, text in
-                guard let target = self.session(withID: targetID) else {
-                    return "No session named \(targetID)."
-                }
-                return Targets.send(text, to: target)
-            }
+            let reply = Orchestrator.registerCoordinationWait(
+                body, readiness: self.coordinationReadiness,
+                deliver: { targetID, text in
+                    guard let target = self.session(withID: targetID) else {
+                        return "No session named \(targetID)."
+                    }
+                    return Targets.send(text, to: target)
+                })
             DispatchQueue.main.async { SessionWatch.shared.nudge() }
             return answer(reply)
 
@@ -835,6 +863,7 @@ final class RemoteServer {
                 id: id.removingPercentEncoding ?? id,
                 ownerSessionID: body["owner_session_id"] as? String ?? "",
                 commit: body["commit"] as? String, note: body["note"] as? String,
+                readiness: self.coordinationReadiness,
                 deliver: { targetID, text in
                     guard let target = self.session(withID: targetID) else {
                         return "No session named \(targetID)."
@@ -2452,12 +2481,79 @@ final class RemoteServer {
         ]
     }
 
+    /// The sessions a coordination wait can address, as the facts needed to address one and
+    /// nothing else.
+    ///
+    /// Internal, and static, for direct serialization tests: what a row contains is a pure
+    /// function of the sessions and their states, in the way `transcriptRows` is of its entries.
+    ///
+    /// **Where the line falls.** Everything here is something the caller has to know before it
+    /// can write a wait down — which session, running what, in which checkout, and whether
+    /// anybody is home. `label` is the only field that is not purely structural: it is the
+    /// Clawdline task title when this app opened the tab, and otherwise the tab's own title,
+    /// which an assistant sets to what it is working on. That is a phrase; it is already drawn on
+    /// the window, in the Dock's window menu and in every switcher on this Mac; and without it
+    /// two sessions in one checkout cannot be told apart, which is exactly the case waits exist
+    /// for. Everything past a phrase stays out — no `line`, no `menu`, no `agents`, no `shells`,
+    /// and in particular no `sessionId`, which is the name of the assistant's own transcript
+    /// file and would turn a dispatch credential into a reading one.
+    ///
+    /// Sessions with no assistant in them are left out. A wait is delivered by typing a line into
+    /// the owner's session, and a shell prompt has nobody to read it — listing one would offer an
+    /// address that cannot answer, and would make this a list of every terminal window open.
+    static func coordinationSessionRows(_ sessions: [TargetSession],
+                                        states: [String: SessionState]) -> [[String: Any]] {
+        sessions.filter { $0.isAssistant }.map { session -> [String: Any] in
+            var row: [String: Any] = [
+                "id": session.id,
+                "label": session.displayLabel,
+                "state": name(of: states[session.id] ?? .unknown),
+            ]
+            if let assistant = session.assistant { row["assistant"] = assistant.rawValue }
+            if let cwd = Targets.workingDirectory(of: session) { row["cwd"] = cwd }
+            // The task this tab was opened for, when Clawdline opened it. The same credential
+            // already reads the whole record at `GET /v1/orchestrator/tasks`, so this discloses
+            // nothing new — and it is the one address that needs no label matching at all.
+            if let role = Orchestrator.role(forTerminal: session.id) { row["taskId"] = role.taskID }
+            return row
+        }
+    }
+
+    /// The session an id names, in one list and one comparison.
+    ///
+    /// `POST /v1/orchestrator/waits` finds its waiter through here and
+    /// `GET /v1/orchestrator/sessions` publishes ids from the same field, so the index cannot
+    /// come to name sessions the wait routes then refuse to find.
+    static func session(withID id: String, among sessions: [TargetSession]) -> TargetSession? {
+        sessions.first { $0.id == id }
+    }
+
     /// The reading lives on the main thread and this runs on the server's queue, so the crossing
     /// is here and nowhere else — one hop for a dictionary lookup, rather than a copy of the
     /// session list kept in two places and drifting.
     private func session(withID id: String) -> TargetSession? {
-        if Thread.isMainThread { return SessionWatch.shared.targets.first { $0.id == id } }
-        return DispatchQueue.main.sync { SessionWatch.shared.targets.first { $0.id == id } }
+        if Thread.isMainThread { return Self.session(withID: id, among: SessionWatch.shared.targets) }
+        return DispatchQueue.main.sync {
+            Self.session(withID: id, among: SessionWatch.shared.targets)
+        }
+    }
+
+    /// Whether Clawdline may type a coordination-wait notice into that session right now, in the
+    /// same terms `POST /v1/sessions/<id>/send` already uses: a picker discards the words and acts
+    /// on the Return that follows them, so a message sent into one is lost *and* answers somebody
+    /// else's permission question. Nothing stricter — a session that is merely busy, or holding a
+    /// half-typed line, still reads what arrives, and refusing those would park every wait behind
+    /// whatever the owner happens to be running.
+    ///
+    /// A session this Mac cannot see at all is not a readiness answer: that is the delivery
+    /// failure the caller already reports, and answering it here would file "the owner is gone"
+    /// under "the owner is busy".
+    private func coordinationReadiness(_ targetID: String) -> String? {
+        guard let target = session(withID: targetID),
+              SessionWatch.shared.states[target.id] == .waiting,
+              Targets.isChoosing(target) else { return nil }
+        return "That session is showing a menu, so typing into it would confirm whichever "
+            + "option is highlighted rather than deliver this notice."
     }
 
     private func json(of session: TargetSession) -> [String: Any] {
@@ -2474,7 +2570,7 @@ final class RemoteServer {
             // Codex one is show it as an ordinary terminal, which is wrong but not broken —
             // and the alternative was every existing client losing its session list at once.
             "isClaude": session.isClaude,
-            "state": name(of: state),
+            "state": Self.name(of: state),
         ]
         if let assistant = session.assistant { out["assistant"] = assistant.rawValue }
         let coordination = Orchestrator.coordination(forTerminal: session.id)
@@ -2526,7 +2622,7 @@ final class RemoteServer {
         return out
     }
 
-    private func name(of state: SessionState) -> String {
+    private static func name(of state: SessionState) -> String {
         switch state {
         case .working: return "working"
         case .waiting: return "waiting"
@@ -2877,6 +2973,11 @@ final class RemoteServer {
             "webNoticeOneSibling": t.webNoticeOneSibling,
             "webNoticeManySiblings": t.webNoticeManySiblings,
             "webNoticeClaimsReleased": t.webNoticeClaimsReleased,
+            "webNoticeFileWaitRequested": t.webNoticeFileWaitRequested,
+            "webNoticeFileWaitReleased": t.webNoticeFileWaitReleased,
+            "webNoticeHandoffPickedUp": t.webNoticeHandoffPickedUp,
+            "webNoticeHandoffNeedsDelivery": t.webNoticeHandoffNeedsDelivery,
+            "webNoticeRecheckGit": t.webNoticeRecheckGit,
             "webPending": t.webPending,
             "webAttachedImage": t.webAttachedImage,
             "webAttachedImages": t.webAttachedImages,

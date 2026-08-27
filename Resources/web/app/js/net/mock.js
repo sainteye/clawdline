@@ -294,7 +294,23 @@ export var Mock = (function () {
           notice: { kind: "workspace_overlap", audience: "root",
                     task: { id: "7d40aa19-6f2b-4e88-a1c3-0d5e91b7fa42", title: "Release notes" },
                     overlaps: [{ task: { id: "2ef96bc1-13ac-41c9-9cdb-b709b3b56d09", title: "Review <unsafe> & finish" },
-                                 path: "/Users/you/code/clawdline/docs" }] } }
+                                 path: "/Users/you/code/clawdline/docs" }] } },
+        { role: "notice", text: "[Clawdline file-wait] Repo: /Users/you/code/clawdline.", at: now - 3530,
+          notice: { kind: "file_wait_request", audience: "owner", wait_id: "wait-1",
+                    repository: "/Users/you/code/clawdline", paths: ["Sources/<unsafe>.swift"],
+                    waiter_session_id: "WAIT-A", reason: "Review & land", release_condition: "commit or release" } },
+        { role: "notice", text: "[Clawdline file-wait release] Repo: /Users/you/code/clawdline.", at: now - 3520,
+          notice: { kind: "file_wait_release", audience: "waiter", wait_id: "wait-1",
+                    repository: "/Users/you/code/clawdline", paths: ["Sources/<unsafe>.swift"],
+                    commit: "abc<123>", note: "Rechecked & safe" } },
+        { role: "notice", text: "[clawdline] handoff 7c1e9b02 picked up by codex", at: now - 3510,
+          notice: { kind: "handoff_receipt", audience: "source", state: "picked_up",
+                    handoff_id: "7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431", title: "Cloud <plan>",
+                    assistant: "codex", project_dir: "/tmp/<repo>" } },
+        { role: "notice", text: "[clawdline] handoff 7c1e9b02 needs manual delivery", at: now - 3500,
+          notice: { kind: "handoff_receipt", audience: "source", state: "first_line_failed",
+                    handoff_id: "7c1e9b02-4d55-4a80-9c3e-1f6b2a09d431",
+                    assistant: "claude", project_dir: "/tmp/repo" } }
     ];
 
     // Where a session may be started — the Mac's own list, which is not the session list and is

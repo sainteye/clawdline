@@ -14,8 +14,8 @@ description: |
   "pick this up in Codex"、"continue this tomorrow in a new session"。
   不要觸發：這條對話自己動手就好的小事（開 child 的成本遠大於直接做）、Task/subagent 就能解決
   的檢索與分析（那是 subagent，不是 Clawdline child）、單純想知道現在有哪些 session 在跑
-  （那是看 Clawdline 面板或 GET /v1/sessions）。**這個 session 自己就是 child 時，依據是 CHILD.md 不是這裡**——
-  見 §0。
+  （那是看 Clawdline 面板或 GET /v1/orchestrator/sessions）。
+  **這個 session 自己就是 child 時，依據是 CHILD.md 不是這裡**——見 §0。
 user-invocable: true
 last-updated: 2026-08-26
 ---
@@ -583,8 +583,13 @@ child 必然持有自己的 task secret；
 共享樹等待不能用 Claude Code 原生 message、Codex 專屬 channel，或任何 assistant conversation id
 協調。broker 邊界是 Clawdline：
 
-1. 用 `GET /v1/sessions` 與相關 `/git` reading 找 owning root。地址用 Clawdline assistant-neutral
-   的 terminal session `id`，不用 provider-specific `sessionId`。
+1. 用本機 orchestrator credential 呼叫 `GET /v1/orchestrator/sessions` 找 owning root：它會列出
+   每個 session 的 terminal-neutral `id`、`assistant`、`cwd`、`label`、`state`，Clawdline 自己開的
+   分頁還會有 `taskId`。地址用那個 `id`，不用 provider-specific `sessionId`。
+   **`GET /v1/sessions` 與 `GET /v1/sessions/:id/git` 是配對裝置的 API，對 orchestrator credential
+   一律回 `401 unauthorized`**，所以 repository 的狀態改成在該 checkout 裡自己跑 `git` 讀。自己的 id
+   是 `$ITERM_SESSION_ID` 冒號後面那段 UUID；`GET /v1/orchestrator/waits` 只認得已經在某個 wait 裡的
+   id——兩者都構不到「還沒有人等過的 session」，那正是這條 index 存在的理由。
 2. 用本機 orchestrator credential 呼叫 `POST /v1/orchestrator/waits` 登記 relationship，寫出
    `repository`、精確 `paths`、`owner_session_id`、`waiter_session_id`、`reason` 與
    `release_condition`。Clawdline 會 canonicalize paths、deduplicate waiter、持久保存 group，並把
@@ -595,10 +600,10 @@ child 必然持有自己的 task secret；
 4. release notice 只是喚醒，不是證明。每個 waiter 在 stage 或 integrate 前都要重讀 target HEAD、
    status 與 diff。broker 永遠不能從某一次乾淨 status 推測 release。
 
-未解 wait 會跨 app restart 保存，owner 消失時也仍看得到。`GET /v1/sessions` 把它公布成獨立的
-`coordination` overlay：被擋住的 session 是 `waiting_on_session`／`waitingOn`，owner 是
-`waitedOnBy`。這**不會**把 terminal `state` 設成 `waiting`；後者仍只代表需要人回答，也只有它會
-觸發醒目的 row 與 push。原生與 web session row 會安靜顯示 `⏳ owner · release condition`；只有 UI
+未解 wait 會跨 app restart 保存，owner 消失時也仍看得到。`GET /v1/sessions` 把它公布給 app 自己的
+UI，成為獨立的 `coordination` overlay：被擋住的 session 是 `waiting_on_session`／`waitingOn`，owner
+是 `waitedOnBy`；拿 orchestrator credential 的 agent 讀 `GET /v1/orchestrator/waits` 得到同一組關係。
+這**不會**把 terminal `state` 設成 `waiting`；後者仍只代表需要人回答，也只有它會觸發醒目的 row 與 push。原生與 web session row 會安靜顯示 `⏳ owner · release condition`；只有 UI
 不可用時，才用最後一行 `[Clawdline waiting]` marker 當 fallback。
 
 ### 維持 communication-protocol Artifact 等於現在

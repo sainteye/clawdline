@@ -9,17 +9,38 @@ import Foundation
 /// visible ordinary user message.
 enum ClawdlineMessage {
     static let protocolName = "clawdline.notice"
-    static let version = 1
+    /// New writers use version 2. The decoder keeps the closed version-1 schema below because
+    /// those envelopes already live in transcript files and remain part of the wire contract.
+    static let version = 2
     static let opening = "<clawdline-notice>"
     static let closing = "</clawdline-notice>"
 
     enum Audience: String, Equatable {
-        case root, parent
+        case root, parent, owner, waiter, source
     }
 
     enum TaskState: String, Equatable {
         case success, failure, timeout, cancelled
         case spawnFailed = "spawn_failed"
+    }
+
+    enum HandoffState: String, Equatable {
+        case pickedUp = "picked_up"
+        case firstLineFailed = "first_line_failed"
+    }
+
+    enum HandoffAssistant: String, Equatable {
+        case claude, codex
+
+        /// Keep the wire's closed assistant vocabulary explicit. When `Assistant` grows, this
+        /// exhaustive switch makes the compiler require a protocol decision instead of leaving
+        /// a force unwrap to trap while settling a handoff.
+        init(_ assistant: Assistant) {
+            switch assistant {
+            case .claude: self = .claude
+            case .codex: self = .codex
+            }
+        }
     }
 
     struct Task: Equatable {
@@ -37,6 +58,14 @@ enum ClawdlineMessage {
                           resultPath: String, outstanding: Int,
                           claimsReleased: Bool, childMayStillWrite: Bool)
         case workspaceOverlap(task: Task, audience: Audience, overlaps: [Overlap])
+        case fileWaitRequest(waitID: String, repository: String, paths: [String],
+                             waiterSessionID: String, reason: String,
+                             releaseCondition: String)
+        case fileWaitRelease(waitID: String, repository: String, paths: [String],
+                             commit: String?, note: String?)
+        case handoffReceipt(handoffID: String, title: String?,
+                            assistant: HandoffAssistant, projectDir: String,
+                            state: HandoffState)
     }
 
     struct Notice: Equatable {
@@ -67,17 +96,17 @@ enum ClawdlineMessage {
               let raw = try? JSONSerialization.jsonObject(with: data),
               let obj = raw as? [String: Any],
               string(obj["protocol"]) == protocolName,
-              integer(obj["version"]) == version,
+              let wireVersion = integer(obj["version"]), [1, version].contains(wireVersion),
               let kind = string(obj["kind"]),
-              let body = string(obj["body"]), !body.isEmpty,
-              let audienceRaw = string(obj["audience"]),
-              let audience = Audience(rawValue: audienceRaw),
-              let task = task(obj["task"])
+              let body = string(obj["body"]), !body.isEmpty
         else { return nil }
 
         switch kind {
         case "task_finished":
-            guard keys(obj) == Set(["protocol", "version", "kind", "audience", "task",
+            guard let audience = taskAudience(obj),
+                  let task = task(obj["task"]),
+                  wireVersion == 1 || wireVersion == version,
+                  keys(obj) == Set(["protocol", "version", "kind", "audience", "task",
                                     "state", "result_path", "outstanding",
                                     "claims_released", "child_may_still_write", "body"]),
                   let rawState = string(obj["state"]),
@@ -95,13 +124,70 @@ enum ClawdlineMessage {
                           body: body)
 
         case "workspace_overlap":
-            guard keys(obj) == Set(["protocol", "version", "kind", "audience", "task",
+            guard let audience = taskAudience(obj),
+                  let task = task(obj["task"]),
+                  wireVersion == 1 || wireVersion == version,
+                  keys(obj) == Set(["protocol", "version", "kind", "audience", "task",
                                     "overlaps", "body"]),
                   let rows = obj["overlaps"] as? [Any], !rows.isEmpty else { return nil }
             let overlaps = rows.compactMap(overlap)
             guard overlaps.count == rows.count else { return nil }
             return Notice(event: .workspaceOverlap(task: task, audience: audience,
                                                     overlaps: overlaps), body: body)
+
+        case "file_wait_request":
+            guard wireVersion == version,
+                  keys(obj) == Set(["protocol", "version", "kind", "audience", "wait_id",
+                                    "repository", "paths", "waiter_session_id", "reason",
+                                    "release_condition", "body"]),
+                  string(obj["audience"]) == Audience.owner.rawValue,
+                  let waitID = nonemptyString(obj["wait_id"]),
+                  let repository = nonemptyString(obj["repository"]),
+                  let paths = nonemptyStrings(obj["paths"]),
+                  let waiterSessionID = nonemptyString(obj["waiter_session_id"]),
+                  let reason = nonemptyString(obj["reason"]),
+                  let releaseCondition = nonemptyString(obj["release_condition"])
+            else { return nil }
+            return Notice(event: .fileWaitRequest(
+                waitID: waitID, repository: repository, paths: paths,
+                waiterSessionID: waiterSessionID, reason: reason,
+                releaseCondition: releaseCondition), body: body)
+
+        case "file_wait_release":
+            let required = Set(["protocol", "version", "kind", "audience", "wait_id",
+                                "repository", "paths", "body"])
+            let allowed = required.union(["commit", "note"])
+            guard wireVersion == version, required.isSubset(of: keys(obj)),
+                  keys(obj).isSubset(of: allowed),
+                  string(obj["audience"]) == Audience.waiter.rawValue,
+                  let waitID = nonemptyString(obj["wait_id"]),
+                  let repository = nonemptyString(obj["repository"]),
+                  let paths = nonemptyStrings(obj["paths"]),
+                  let commit = optionalNonemptyString(obj, key: "commit"),
+                  let note = optionalNonemptyString(obj, key: "note")
+            else { return nil }
+            return Notice(event: .fileWaitRelease(
+                waitID: waitID, repository: repository, paths: paths,
+                commit: commit, note: note), body: body)
+
+        case "handoff_receipt":
+            let required = Set(["protocol", "version", "kind", "audience", "handoff_id",
+                                "assistant", "project_dir", "state", "body"])
+            let allowed = required.union(["title"])
+            guard wireVersion == version, required.isSubset(of: keys(obj)),
+                  keys(obj).isSubset(of: allowed),
+                  string(obj["audience"]) == Audience.source.rawValue,
+                  let handoffID = nonemptyString(obj["handoff_id"]),
+                  let assistantRaw = string(obj["assistant"]),
+                  let assistant = HandoffAssistant(rawValue: assistantRaw),
+                  let projectDir = nonemptyString(obj["project_dir"]),
+                  let stateRaw = string(obj["state"]),
+                  let state = HandoffState(rawValue: stateRaw),
+                  let title = optionalString(obj, key: "title")
+            else { return nil }
+            return Notice(event: .handoffReceipt(
+                handoffID: handoffID, title: title, assistant: assistant,
+                projectDir: projectDir, state: state), body: body)
 
         default:
             return nil
@@ -146,6 +232,38 @@ enum ClawdlineMessage {
                     ["task": taskObject($0.task), "path": $0.path]
                 },
             ]) { _, new in new }
+        case let .fileWaitRequest(waitID, repository, paths, waiterSessionID, reason,
+                                  releaseCondition):
+            out.merge([
+                "kind": "file_wait_request",
+                "audience": Audience.owner.rawValue,
+                "wait_id": waitID,
+                "repository": repository,
+                "paths": paths,
+                "waiter_session_id": waiterSessionID,
+                "reason": reason,
+                "release_condition": releaseCondition,
+            ]) { _, new in new }
+        case let .fileWaitRelease(waitID, repository, paths, commit, note):
+            out.merge([
+                "kind": "file_wait_release",
+                "audience": Audience.waiter.rawValue,
+                "wait_id": waitID,
+                "repository": repository,
+                "paths": paths,
+            ]) { _, new in new }
+            if let commit { out["commit"] = commit }
+            if let note { out["note"] = note }
+        case let .handoffReceipt(handoffID, title, assistant, projectDir, state):
+            out.merge([
+                "kind": "handoff_receipt",
+                "audience": Audience.source.rawValue,
+                "handoff_id": handoffID,
+                "assistant": assistant.rawValue,
+                "project_dir": projectDir,
+                "state": state.rawValue,
+            ]) { _, new in new }
+            if let title { out["title"] = title }
         }
         return out
     }
@@ -166,6 +284,37 @@ enum ClawdlineMessage {
               let task = task(obj["task"]),
               let path = string(obj["path"]), !path.isEmpty else { return nil }
         return Overlap(task: task, path: path)
+    }
+
+    private static func taskAudience(_ obj: [String: Any]) -> Audience? {
+        guard let raw = string(obj["audience"]), let audience = Audience(rawValue: raw),
+              audience == .root || audience == .parent else { return nil }
+        return audience
+    }
+
+    private static func nonemptyString(_ raw: Any?) -> String? {
+        guard let value = string(raw), !value.isEmpty else { return nil }
+        return value
+    }
+
+    private static func nonemptyStrings(_ raw: Any?) -> [String]? {
+        guard let rows = raw as? [Any], !rows.isEmpty else { return nil }
+        let values = rows.compactMap(nonemptyString)
+        return values.count == rows.count ? values : nil
+    }
+
+    /// A double optional distinguishes a missing field (`.some(nil)`) from a present field with
+    /// the wrong shape (`nil`), preserving whole-envelope recognition for optional keys.
+    private static func optionalString(_ obj: [String: Any], key: String) -> String?? {
+        guard let raw = obj[key] else { return .some(nil) }
+        guard let value = string(raw) else { return nil }
+        return .some(.some(value))
+    }
+
+    private static func optionalNonemptyString(_ obj: [String: Any], key: String) -> String?? {
+        guard let raw = obj[key] else { return .some(nil) }
+        guard let value = nonemptyString(raw) else { return nil }
+        return .some(.some(value))
     }
 
     private static func keys(_ obj: [String: Any]) -> Set<String> { Set(obj.keys) }

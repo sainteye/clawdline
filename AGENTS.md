@@ -58,8 +58,11 @@ Do not infer ownership from a filename, a recent timestamp, or a new commit; ins
   integration to an unnamed future session. The original root remains owner until Clawdline's
   handoff receipt confirms that the first line reached the named receiving root.
 - File-release coordination goes through Clawdline, never an assistant provider's native message
-  mechanism. Address the terminal-neutral session `id` returned by `GET /v1/sessions`; the durable
-  wait routes deliver request and release messages so Claude and Codex participate equally.
+  mechanism. Address the terminal-neutral session `id`, which an agent reads from
+  `GET /v1/orchestrator/sessions` with the local orchestrator credential — `GET /v1/sessions` lists
+  the same ids and is the paired-device route, so it answers that credential with `401
+  unauthorized`. The durable wait routes deliver request and release messages so Claude and Codex
+  participate equally.
 - Register a wait with Clawdline's durable coordination-wait route, naming the repository, exact
   paths, owner and waiter Clawdline session ids, reason, and release condition. Clawdline persists
   and deduplicates the relationship, delivers the request, and exposes it on both Session records.

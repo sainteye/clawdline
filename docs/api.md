@@ -119,6 +119,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/orchestrator/landings` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/storage` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/inflight` | orchestrator token, **or** token | `read` |
+| `GET` | `/v1/orchestrator/sessions` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/waits` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/waits` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/waits/:id/release` | orchestrator token | — |
@@ -203,6 +204,11 @@ $ curl -s http://127.0.0.1:7717/v1/sessions -H "Authorization: Bearer $TOKEN" \
 
 Four fields per session are picked out there so the reply fits on this page; the whole object is
 [below](#the-session-object). `at` is when the reply was built, not when the reading was taken.
+
+**This route is the paired-device API and it does not accept the orchestrator token.** A caller
+holding `~/.config/clawdline/orchestrator-token` and nothing else gets `401 unauthorized` here, so
+an agent looking for the session ids a coordination wait names wants
+[`GET /v1/orchestrator/sessions`](#get-v1orchestratorsessions) instead.
 
 ### `GET /v1/sessions/:id`
 
@@ -1057,9 +1063,11 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/handoffs \
 (the default) or `codex`; optional `model` is 1…64 lower-case letters, digits, `.`, `_`, or `-`,
 and cannot begin with `-`. Optional `title` and free-form `from_session` are each at most 200
 characters. `title` labels the tab; `from_session`, when it identifies a watched session, receives
-one best-effort typed delivery receipt. This is intentionally the loose resolver: a conversation
-id or the watched terminal's own id may identify the sender. Task `root.session_id` does not have
-that terminal-id shortcut.
+one best-effort version-2 `handoff_receipt` notice. Its state is `picked_up` when the first line was
+confirmed or `first_line_failed` when the tab opened but the line did not land; both are one kind
+because they are outcomes of the same delivery attempt. This is intentionally the loose resolver:
+a conversation id or the watched terminal's own id may identify the sender. Task `root.session_id`
+does not have that terminal-id shortcut.
 
 Opening the terminal is synchronous and is named in `opened`; composer waiting, trust confirmation,
 typing, and transcript confirmation happen after this response. The durable registry stores only
@@ -1304,6 +1312,58 @@ When a serialized task is promoted to `spawning`, the pump runs the scan against
 at that moment. Its dispatch response is already gone, so a newly found overlap is sent only as the
 same best-effort typed line to identifiable roots; it is not added retroactively to the response.
 
+### `GET /v1/orchestrator/sessions`
+
+The sessions a coordination wait can name, for the credential that registers one. It requires
+`X-Clawdline-Orchestrator` and takes nothing else: a paired device gets `403 forbidden`, because it
+already reads the whole session list at [`GET /v1/sessions`](#get-v1sessions).
+
+```console
+$ curl -s http://127.0.0.1:7717/v1/orchestrator/sessions \
+    -H "X-Clawdline-Orchestrator: $ORCH"
+{"at":1787758793,
+ "sessions":[
+   {"id":"35D87610-E7F4-4A9A-95A0-11947CF5115C","assistant":"claude",
+    "cwd":"/Users/you/code/clawdline","label":"Clawdline structured messages","state":"working"},
+   {"id":"B3ACDE0D-DE72-4E58-A99A-AB845A539C90","assistant":"claude",
+    "cwd":"/Users/you/code/clawdline","label":"the envelope work","state":"idle",
+    "taskId":"54ee36cb-7d69-4def-b4d2-fd2a5eb157ad"}]}
+```
+
+**This route exists because the wait route was reachable and its arguments were not.**
+`POST /v1/orchestrator/waits` takes two terminal-neutral session ids and is behind the orchestrator
+token; `GET /v1/sessions`, which lists those ids, is behind a device token and answers the
+orchestrator token with a 401. So a root holding the dispatch credential could register a wait and
+had nowhere to read the ids it takes.
+
+| field | what it is |
+|---|---|
+| `id` | the terminal-neutral session id — the same value `GET /v1/sessions` calls `id`, and exactly what `owner_session_id` and `waiter_session_id` take |
+| `assistant` | `claude` or `codex` |
+| `cwd` | the checkout the session is working in. **Absent** when this Mac could not resolve one, rather than empty |
+| `label` | one short line naming the session: the Clawdline task title when this app opened the tab, and otherwise the tab's own title, which an assistant sets to what it is working on |
+| `state` | `working`, `waiting`, `idle` or `unknown` — the terminal state, so a caller knows whether anybody is home |
+| `taskId` | the Clawdline task this tab was opened for. **Absent** for a session a person opened themselves |
+
+**What a caller may not learn from it.** Nothing a session said, showed or is running: no `line`
+(what it is working on), no `menu` (the question a waiting session is asking), no `agents`, no
+`shells`, no transcript, and in particular no `sessionId` — the assistant's own conversation id,
+which is the *name of its transcript file*. This credential exists to dispatch work, not to read a
+terminal, and the exposure line is deliberately one short label short of that. `label` is the one
+field that is not purely structural; it is a phrase already drawn on the window title, in the
+Dock's window menu and in every switcher on this Mac, and without it two sessions in one checkout
+cannot be told apart — which is the case waits exist for.
+
+**Sessions with no assistant in them are not listed.** A wait is delivered by typing a line into
+the owner's session, so a plain shell prompt is an address that cannot answer. An empty
+`sessions` array is an answer, not a refusal: it means nothing has been read yet, or nothing is
+open. `at` is when the reply was built.
+
+Two older ways of finding an id still work and are worth knowing, because neither is complete. A
+session's *own* terminal-neutral id is the UUID after the colon in `$ITERM_SESSION_ID` — that
+answers "who am I" and nothing else. [`GET /v1/orchestrator/waits`](#coordination-waits) names the
+ids already inside a wait — which is no help to the first session that needs to wait on somebody.
+
 ### Coordination waits
 
 `POST /v1/orchestrator/waits` registers one durable cross-session file wait and delivers its
@@ -1320,12 +1380,29 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/waits \
  "releaseCondition":"commit or explicit release","createdAt":1787740810,"waiters":[…]}}
 ```
 
-Both session ids are the terminal-neutral `id` values from `GET /v1/sessions`. `repository` must be
-an absolute path other than `/`; every path must resolve below it. Clawdline stores canonical
+Both session ids are terminal-neutral session ids, and
+[`GET /v1/orchestrator/sessions`](#get-v1orchestratorsessions) is where a caller holding this
+credential reads them. `GET /v1/sessions` lists the same `id` values and will not answer the
+orchestrator token — it is the paired-device route and returns `401 unauthorized`.
+`repository` must be an absolute path other than `/`; every path must resolve below it. Clawdline stores canonical
 repository-relative paths, sorts them and removes duplicates. The same owner, repository, path set,
 release condition and waiter is idempotent even without an HTTP idempotency key: it returns the
 existing group with `deduplicated: true` and does not type the request again after its delivery
-receipt. Another waiter joins that release group and receives its own request delivery.
+receipt. Another waiter joins that release group and receives its own request delivery. The typed
+terminal line is a version-2 `file_wait_request` notice carrying `wait_id`, `repository`, `paths`,
+`waiter_session_id`, `reason`, and `release_condition`; its body keeps the full operational request.
+
+A `waiter_session_id` this Mac cannot find is `404 waiter_not_found` — it is resolved against the
+same session list `GET /v1/orchestrator/sessions` publishes, so an id that route did not name is an
+id this one will not take.
+
+Before typing a request, Clawdline checks whether the owner's cached state is `waiting` **and**
+`Targets.isChoosing` confirms that a menu is on screen. If both are true, it returns
+`409 owner_busy`: nothing was sent, the durable request remains undelivered, and retrying the same
+registration is safe. This is narrower than the name suggests. A session that is merely working,
+holds a half-typed line, or is invisible to this Mac reads as ready; invisibility deliberately
+continues to delivery so an absent owner becomes `502 request_delivery_failed`, meaning a send was
+attempted and did not arrive, rather than being misreported as busy.
 
 The registry row is written before terminal delivery. If the owner cannot be reached, the route
 returns `502 request_delivery_failed` with the durable `wait` in the error; retrying the same body
@@ -1344,7 +1421,9 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/waits/$WAIT/release \
 
 `commit` and `note` are optional; the owner id is not. Clawdline sends every active waiter a release
 notice naming repository, paths, commit/note when present, and the requirement to re-check HEAD,
-status and diff. Each successful delivery is persisted. If any delivery fails, the route returns
+status and diff. On the wire it is a version-2 `file_wait_release` notice with typed `wait_id`,
+`repository`, `paths`, optional `commit` and optional `note`; the body retains that Git safety
+instruction. Each successful delivery is persisted. If any delivery fails, the route returns
 `502 release_incomplete` with `sent` and `pending`; the group stays registered and retry sends only
 to the pending recipients. It is removed only after all receive the notice. `403 wrong_owner`
 means the supplied owner differs from the persisted one.
@@ -2287,7 +2366,7 @@ closed `kind` and `state` fields instead of parsing `text`:
   "role": "notice",
   "text": "[clawdline] task 3f9a21bc (…) finished: timeout — read …",
   "notice": {
-    "kind": "task_finished",       // or "workspace_overlap"
+    "kind": "task_finished",       // see the five-value version-2 set below
     "audience": "root",            // or "parent"
     "task": {"id": "3f9a21bc-…", "title": "Project portrait"},
     "state": "timeout",            // success | failure | timeout | cancelled | spawn_failed
@@ -2299,11 +2378,29 @@ closed `kind` and `state` fields instead of parsing `text`:
 }
 ```
 
-For `workspace_overlap`, `notice` has `kind`, `audience`, `task`, and a non-empty `overlaps`
-array of `{"task":{"id":…,"title":…},"path":…}`. It has no payload-defined HTML, CSS,
-actions, or executable links. The bundled Web client escapes every title and path, chooses the
-card wording and state styling itself, and keeps version 1 non-clickable. Malformed, partial,
-unknown-version, extra-field, and quoted lookalikes are never dropped and never partly
+Version 1 is a closed legacy schema containing only `task_finished` and `workspace_overlap`, and
+literal version-1 transcript rows continue to decode. Version 2 is the current writer schema and
+has exactly five kinds: those two plus `file_wait_request`, `file_wait_release`, and
+`handoff_receipt`. For `workspace_overlap`, `notice` has `kind`, `audience`, `task`, and a non-empty
+`overlaps` array of `{"task":{"id":…,"title":…},"path":…}`. The file-wait shapes are:
+
+```jsonc
+{"kind":"file_wait_request","audience":"owner","wait_id":"0d9579fb-…",
+ "repository":"/Users/you/code/clawdline","paths":["Sources/Foo.swift"],
+ "waiter_session_id":"WAITER-TERMINAL-ID","reason":"unfinished diff",
+ "release_condition":"commit or explicit release"}
+{"kind":"file_wait_release","audience":"waiter","wait_id":"0d9579fb-…",
+ "repository":"/Users/you/code/clawdline","paths":["Sources/Foo.swift"],
+ "commit":"abc123","note":"tree rechecked"} // commit and note are independently optional
+{"kind":"handoff_receipt","audience":"source","handoff_id":"7c1e9b02-…",
+ "title":"Cloud planning line","assistant":"codex","project_dir":"/tmp/repo",
+ "state":"picked_up"} // or first_line_failed; title is optional
+```
+
+No notice has payload-defined HTML, CSS, actions, or executable links. The bundled Web client
+escapes every displayed payload field, chooses the card wording and state styling itself, and keeps
+both versions non-clickable. Malformed, partial, unknown-version, extra-field, and quoted lookalikes
+are never dropped and never partly
 interpreted: they keep their full visible text and stay whatever the row they arrived in already
 was. In an ordinary turn that is `role: "user"`; quoted inside a cross-session envelope it is
 `role: "peer"`, because who sent a message is a stronger fact than what its text looks like.

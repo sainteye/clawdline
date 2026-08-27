@@ -505,8 +505,10 @@ export function entryHTML(e) {
  */
 function noticeHTML(e) {
     var n = e && e.notice;
-    if (!n || !n.task || typeof n.kind !== "string") {
-        // A mismatched old/new server remains visible, but cannot acquire notice presentation.
+    if (!n || typeof n.kind !== "string" ||
+        ((n.kind === "task_finished" || n.kind === "workspace_overlap") && !n.task)) {
+        // A mismatched old/new server, including a task-scoped notice missing its task, remains
+        // visible as its original text but cannot acquire notice presentation.
         return entryHTML(Object.assign({}, e, { role: "assistant", notice: null }));
     }
     var task = n.task || {};
@@ -550,6 +552,45 @@ function noticeHTML(e) {
             return "<li><span>" + esc(name) + "</span>" +
                 (path ? '<code class="notice-path">' + esc(path) + "</code>" : "") + "</li>";
         }).join("") + "</ul>";
+    } else if (n.kind === "file_wait_request") {
+        title = T.webNoticeFileWaitRequested; tone = "overlap";
+        detail = '<code class="notice-path">' + esc(String(n.repository || "")) + "</code>";
+        var waitPaths = Array.isArray(n.paths) ? n.paths : [];
+        detail += '<ul class="notice-overlaps">' + waitPaths.map(function (path) {
+            return '<li><code class="notice-path">' + esc(String(path)) + "</code></li>";
+        }).join("") + "</ul>";
+        if (typeof n.reason === "string" && n.reason) {
+            detail += '<div class="notice-meta">' + esc(n.reason) + "</div>";
+        }
+        if (typeof n.release_condition === "string" && n.release_condition) {
+            detail += '<div class="notice-warning">' + esc(n.release_condition) + "</div>";
+        }
+    } else if (n.kind === "file_wait_release") {
+        title = T.webNoticeFileWaitReleased; tone = "success";
+        detail = '<code class="notice-path">' + esc(String(n.repository || "")) + "</code>";
+        var releasedPaths = Array.isArray(n.paths) ? n.paths : [];
+        detail += '<ul class="notice-overlaps">' + releasedPaths.map(function (path) {
+            return '<li><code class="notice-path">' + esc(String(path)) + "</code></li>";
+        }).join("") + "</ul>";
+        if (typeof n.commit === "string" && n.commit) {
+            detail += '<code class="notice-path">' + esc(n.commit) + "</code>";
+        }
+        if (typeof n.note === "string" && n.note) {
+            detail += '<div class="notice-meta">' + esc(n.note) + "</div>";
+        }
+        detail += '<div class="notice-warning">' + esc(T.webNoticeRecheckGit) + "</div>";
+    } else if (n.kind === "handoff_receipt") {
+        var pickedUp = n.state === "picked_up";
+        title = pickedUp ? T.webNoticeHandoffPickedUp : T.webNoticeHandoffNeedsDelivery;
+        tone = pickedUp ? "success" : "failure";
+        var handoffIdentity = n.title || n.handoff_id || T.webNoticeTask;
+        detail = '<div class="notice-task">' + esc(String(handoffIdentity)) + "</div>";
+        if (typeof n.assistant === "string" && n.assistant) {
+            detail += '<div class="notice-meta">' + esc(n.assistant) + "</div>";
+        }
+        if (typeof n.project_dir === "string" && n.project_dir) {
+            detail += '<code class="notice-path">' + esc(n.project_dir) + "</code>";
+        }
     } else {
         // Unknown kinds cannot arrive from this protocol version, but visible fallback is safer
         // than an empty card if client and server code ever get out of step.

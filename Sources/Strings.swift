@@ -495,6 +495,11 @@ protocol Copy {
     var webNoticeOneSibling: String { get }
     var webNoticeManySiblings: String { get }
     var webNoticeClaimsReleased: String { get }
+    var webNoticeFileWaitRequested: String { get }
+    var webNoticeFileWaitReleased: String { get }
+    var webNoticeHandoffPickedUp: String { get }
+    var webNoticeHandoffNeedsDelivery: String { get }
+    var webNoticeRecheckGit: String { get }
     /// A sent message that the Mac has not picked up yet.
     var webPending: String { get }
     /// Attached-image counts for pending messages. `{n}` is replaced by the web client.
