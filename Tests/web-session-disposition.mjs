@@ -114,6 +114,23 @@ assert.match(listSource,
     /session-work-copy[^\n]+data-work-state[^\n]+work\.state/,
     "the visible completion explanation identifies which closed state it describes");
 
+const infoSource = await readFile(
+    new URL("../Resources/web/app/js/input/info.js", import.meta.url), "utf8");
+assert.match(infoSource, /s\.title\s*\|\|\s*model/,
+    "Session info uses the full Session title as its headline and only falls back to the model");
+assert.match(infoSource, /class="session-title"/,
+    "the Session title has its own non-truncating presentation hook");
+
+const sessionInfoSource = await readFile(
+    new URL("../Sources/SessionInfo.swift", import.meta.url), "utf8");
+assert.match(sessionInfoSource,
+    /if let title, !title\.isEmpty \{ session\["title"\] = title \}/,
+    "the info payload preserves the complete supplied Session title");
+const remoteServerSource = await readFile(
+    new URL("../Sources/RemoteServer.swift", import.meta.url), "utf8");
+assert.match(remoteServerSource, /id: session\.id, title: session\.displayLabel/,
+    "the Session info route supplies the same complete title as the Session list");
+
 const css = await readFile(
     new URL("../Resources/web/app/css/list.css", import.meta.url), "utf8");
 assert.match(css, /\.row \.state \{[^}]*min-width:\s*0[^}]*overflow:\s*hidden/s,
@@ -126,6 +143,13 @@ assert.match(css, /\.session-work-copy\s*\{[^}]*min-width:\s*0[^}]*text-overflow
     "readable ready and triage copy yields to the phone width");
 assert.doesNotMatch(css, /session-work[^}]*animation:/s,
     "the disposition marker adds no motion, reduced or otherwise");
+
+const sheetCSS = await readFile(
+    new URL("../Resources/web/app/css/sheets.css", import.meta.url), "utf8");
+assert.match(sheetCSS, /\.info-sheet \.hero \.session-title\s*\{[^}]*overflow-wrap:\s*anywhere/s,
+    "a long Session title wraps in full instead of being ellipsized or clipped");
+assert.doesNotMatch(sheetCSS, /\.info-sheet \.hero \.session-title\s*\{[^}]*line-clamp/s,
+    "the Session info headline has no line clamp");
 
 const i18n = await readFile(
     new URL("../Resources/web/app/js/core/i18n.js", import.meta.url), "utf8");

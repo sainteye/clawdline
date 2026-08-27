@@ -122,6 +122,13 @@ export var Info = (function () {
 
     function hero(s, u) {
         var model = s.model || (u && u.model) || "";
+        // The model used to be the headline, which meant the one identity the Session list was
+        // built around disappeared as soon as this card opened. Keep old servers readable by
+        // falling back to their model, but a current payload gives the complete, unabridged
+        // Session title this prominent place and keeps the model beside the assistant.
+        var title = s.title || model || T.webInfoUnknown;
+        var modelMeta = s.title && model
+            ? '<span class="dot">·</span><span class="model-name">' + esc(model) + "</span>" : "";
         var meta = [];
         if (s.cwd) meta.push('<span title="' + esc(T.webInfoDirectory) + '">' + esc(shortPath(s.cwd)) + "</span>");
         if (s.sessionId) {
@@ -132,8 +139,9 @@ export var Info = (function () {
             meta.push('<span title="' + esc(T.webInfoRunningFor) + '">' + esc(span(s.seconds)) + "</span>");
         }
         return '<div class="hero">' +
-            '<div class="who">' + assistantLogo(s.assistant) + "<span>" + esc(s.assistant || T.webInfoUnknown) + "</span></div>" +
-            '<div class="model">' + esc(model || T.webInfoUnknown) + "</div>" +
+            '<div class="who">' + assistantLogo(s.assistant) + '<span class="assistant-name">' +
+                esc(s.assistant || T.webInfoUnknown) + "</span>" + modelMeta + "</div>" +
+            '<div class="session-title">' + esc(title) + "</div>" +
             '<div class="meta">' + meta.join('<span class="dot">·</span>') + "</div>" +
             "</div>";
     }

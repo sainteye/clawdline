@@ -2787,7 +2787,7 @@ final class RemoteServer: @unchecked Sendable {
         let permission = session.assistant == .claude
             ? SessionInfo.permissionMode(screen: Targets.visibleScreen(of: session)) : nil
         var payload = SessionInfo.payload(
-            id: session.id, assistant: session.assistant,
+            id: session.id, title: session.displayLabel, assistant: session.assistant,
             sessionId: Self.sessionIdentity(assistant: session.assistant,
                                             processBound: Transcript.sessionID(of: session)),
             model: model,

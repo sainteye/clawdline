@@ -460,7 +460,8 @@ export var Mock = (function () {
         "8F3A-1C": {
             models: CLAUDE_MODELS,
             permission: { current: "auto", options: PERMISSION_MODES },
-            session: { id: "8F3A-1C", assistant: "claude", sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38",
+            session: { id: "8F3A-1C", title: "fix the webhook signature and ship the receiver",
+                       assistant: "claude", sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38",
                        model: "claude-fable-5", cwd: "/Users/x/code/clawdline",
                        startedAt: now - 5580, seconds: 5580 },
             usage: { input: 4821, output: 38210, cacheRead: 2984120, cacheWrite: 214880, total: 3242031,
@@ -475,7 +476,8 @@ export var Mock = (function () {
         "2C71-90": {
             models: CLAUDE_MODELS,
             permission: { current: "unknown", options: PERMISSION_MODES },
-            session: { id: "2C71-90", assistant: "claude", model: "claude-opus-5", cwd: "/Users/x/code/atrium",
+            session: { id: "2C71-90", title: "trace the signup 500 from the browser to the database",
+                       assistant: "claude", model: "claude-opus-5", cwd: "/Users/x/code/atrium",
                        startedAt: now - 24300, seconds: 24300 },
             usage: { input: 19340, output: 61022, cacheRead: 7120400, cacheWrite: 380210, total: 7580972,
                      model: "claude-opus-5", costUsd: 5.61 },
@@ -486,7 +488,8 @@ export var Mock = (function () {
         },
         "44D2-05": {
             models: CODEX_MODELS,
-            session: { id: "44D2-05", assistant: "codex", model: "gpt-5.3-codex", cwd: "/Users/x/tmp/notes",
+            session: { id: "44D2-05", title: "turn the field notes into a publishable technical brief",
+                       assistant: "codex", model: "gpt-5.3-codex", cwd: "/Users/x/tmp/notes",
                        startedAt: now - 840, seconds: 840 },
             usage: { input: 8190546, output: 16956, cacheRead: 7978752, cacheWrite: 0, total: 8207502,
                      model: "gpt-5.3-codex" },
@@ -972,7 +975,7 @@ export var Mock = (function () {
                     if (info[id]) { done({ info: info[id] }); return; }
                     var session = sessions.filter(function (s) { return s.id === id; })[0] || {};
                     done({ info: {
-                        session: { id: id, assistant: session.assistant, cwd: session.cwd },
+                        session: { id: id, title: session.label, assistant: session.assistant, cwd: session.cwd },
                         limits: { windows: [] },
                         links: (links[id] || []).slice(),
                         models: session.assistant === "codex" ? CODEX_MODELS : CLAUDE_MODELS,
