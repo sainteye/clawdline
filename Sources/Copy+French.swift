@@ -254,6 +254,10 @@ struct French: Copy {
     let webEmptyWaitHint = "Rien n'est encore arrivé sur le flux"
     let webStateUnreadable = "écran illisible"
     let webStateWorking = "en cours"
+    let sessionWorkReady = "prêt"
+    let sessionWorkNeedsTriage = "état à examiner"
+    let sessionWorkMilestone = "Étape livrée ; la revue ou l’intégration peut rester à faire"
+    let sessionWorkComplete = "Intégration dans la branche cible vérifiée par le courtier"
 
     let webBack = "Sessions"
     let webBackLabel = "Retour à la liste des sessions"

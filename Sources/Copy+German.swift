@@ -254,6 +254,10 @@ struct German: Copy {
     let webEmptyWaitHint = "Auf dem Stream ist noch nichts angekommen"
     let webStateUnreadable = "Bildschirm nicht lesbar"
     let webStateWorking = "läuft"
+    let sessionWorkReady = "bereit"
+    let sessionWorkNeedsTriage = "Status muss geprüft werden"
+    let sessionWorkMilestone = "Meilenstein geliefert; Prüfung oder Integration kann ausstehen"
+    let sessionWorkComplete = "Vom Broker verifizierte Integration in den Ziel-Branch"
 
     let webBack = "Sitzungen"
     let webBackLabel = "Zurück zur Sitzungsliste"

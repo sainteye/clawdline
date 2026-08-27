@@ -255,6 +255,10 @@ struct TraditionalChinese: Copy {
     let webEmptyWaitHint = "串流上還沒有東西進來"
     let webStateUnreadable = "畫面讀不到"
     let webStateWorking = "在跑"
+    let sessionWorkReady = "可開始"
+    let sessionWorkNeedsTriage = "狀態待分流"
+    let sessionWorkMilestone = "階段成果已交付；可能仍待審查或落地"
+    let sessionWorkComplete = "Broker 已驗證目標分支落地"
 
     let webBack = "清單"
     let webBackLabel = "回到 session 清單"
@@ -879,6 +883,10 @@ struct SimplifiedChinese: Copy {
     let webEmptyWaitHint = "流上还没有东西进来"
     let webStateUnreadable = "画面读不到"
     let webStateWorking = "在跑"
+    let sessionWorkReady = "可开始"
+    let sessionWorkNeedsTriage = "状态待分流"
+    let sessionWorkMilestone = "阶段成果已交付；可能仍待审查或落地"
+    let sessionWorkComplete = "Broker 已验证目标分支落地"
 
     let webBack = "列表"
     let webBackLabel = "回到 session 列表"

@@ -252,6 +252,10 @@ struct Korean: Copy {
     let webEmptyWaitHint = "아직 아무것도 들어오지 않았습니다"
     let webStateUnreadable = "화면을 읽지 못함"
     let webStateWorking = "실행 중"
+    let sessionWorkReady = "준비됨"
+    let sessionWorkNeedsTriage = "상태 확인 필요"
+    let sessionWorkMilestone = "마일스톤 전달됨. 검토 또는 반영이 남아 있을 수 있음"
+    let sessionWorkComplete = "브로커가 검증한 대상 브랜치 반영"
 
     let webBack = "세션"
     let webBackLabel = "세션 목록으로 돌아가기"

@@ -252,6 +252,10 @@ struct Japanese: Copy {
     let webEmptyWaitHint = "まだ何も届いていません"
     let webStateUnreadable = "画面を読めませんでした"
     let webStateWorking = "実行中"
+    let sessionWorkReady = "準備完了"
+    let sessionWorkNeedsTriage = "状態の確認が必要です"
+    let sessionWorkMilestone = "マイルストーン納品済み。レビューまたは反映が残っている可能性があります"
+    let sessionWorkComplete = "ブローカー検証済みの対象ブランチ反映"
 
     let webBack = "セッション"
     let webBackLabel = "セッション一覧に戻る"

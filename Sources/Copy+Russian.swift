@@ -254,6 +254,10 @@ struct Russian: Copy {
     let webEmptyWaitHint = "В потоке пока ничего не появилось"
     let webStateUnreadable = "экран не прочитать"
     let webStateWorking = "в работе"
+    let sessionWorkReady = "готово к работе"
+    let sessionWorkNeedsTriage = "статус требует проверки"
+    let sessionWorkMilestone = "Этап сдан; проверка или вливание могут оставаться"
+    let sessionWorkComplete = "Подтверждённое брокером вливание в целевую ветку"
 
     let webBack = "Сессии"
     let webBackLabel = "Назад к списку сессий"

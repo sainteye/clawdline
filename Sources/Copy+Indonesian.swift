@@ -254,6 +254,10 @@ struct Indonesian: Copy {
     let webEmptyWaitHint = "Belum ada apa pun yang datang lewat sambungan"
     let webStateUnreadable = "layarnya tidak terbaca"
     let webStateWorking = "berjalan"
+    let sessionWorkReady = "siap"
+    let sessionWorkNeedsTriage = "status perlu diperiksa"
+    let sessionWorkMilestone = "Tonggak telah dikirim; tinjauan atau pendaratan mungkin tersisa"
+    let sessionWorkComplete = "Pendaratan cabang target terverifikasi broker"
 
     let webBack = "Sesi"
     let webBackLabel = "Kembali ke daftar sesi"

@@ -253,6 +253,10 @@ struct English: Copy {
     let webEmptyWaitHint = "Nothing has arrived on the stream yet"
     let webStateUnreadable = "screen could not be read"
     let webStateWorking = "working"
+    let sessionWorkReady = "ready"
+    let sessionWorkNeedsTriage = "status needs triage"
+    let sessionWorkMilestone = "Milestone delivered; review or landing may remain"
+    let sessionWorkComplete = "Broker-verified target landing"
 
     let webBack = "Sessions"
     let webBackLabel = "Back to the session list"

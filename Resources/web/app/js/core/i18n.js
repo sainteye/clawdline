@@ -435,6 +435,10 @@ export var T = {
     noSession: "No Claude Code session found",
     noOutput: "Nothing to read from this session yet.",
     sessionWaiting: "waiting for you",
+    sessionWorkReady: "ready",
+    sessionWorkNeedsTriage: "status needs triage",
+    sessionWorkMilestone: "Milestone delivered; review or landing may remain",
+    sessionWorkComplete: "Broker-verified target landing",
     // Two of them, because English counts. See `sessionShellOne` in `Sources/Strings.swift`.
     sessionShellOne: "1 shell running",
     sessionShellMany: "{n} shells running",

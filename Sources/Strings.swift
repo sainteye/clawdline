@@ -461,6 +461,12 @@ protocol Copy {
     /// is not a session doing nothing, and drawing it as one is a confident wrong answer.
     var webStateUnreadable: String { get }
     var webStateWorking: String { get }
+    /// Quiet Session work-state labels and the accessible descriptions behind one/two checks.
+    /// They are server copy, even though the fallback bundle repeats English for old/offline pages.
+    var sessionWorkReady: String { get }
+    var sessionWorkNeedsTriage: String { get }
+    var sessionWorkMilestone: String { get }
+    var sessionWorkComplete: String { get }
 
     /// The way back to the list on a phone. A chevron is drawn in front of it, so this is the
     /// word alone.

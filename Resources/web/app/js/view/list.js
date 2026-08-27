@@ -5,7 +5,7 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { shortPath, tint } from "../core/util.js";
 import { ASSISTANT_LOGOS, assistantLogo, assistantName, drawIcon, drawSpinner, setSpinners, spinPhase, spinners } from "../core/pixels.js";
-import { byId, ordered, revisionOf, rowDepth, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
+import { byId, ordered, projectSessionWorkState, revisionOf, rowDepth, sessionWorkStateHTML, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
 import { renderDetailHead } from "./transcript.js";
 import { renderAgents, renderComposer, renderWaiting } from "./composer.js";
 import { Optimistic, Waits, drawListSkeleton, listUnknown } from "./waits.js";
@@ -597,6 +597,10 @@ function fillRow(node, s) {
     }
     var peerSaid = peerText ? '<span class="coordination-wait" title="' +
         esc(peerTitle) + '">' + esc(peerText) + "</span>" : "";
+    // The server sends exactly one closed work_state. Re-project the safety precedence here so
+    // a partial/old frame fails closed to readable triage rather than leaving an ambiguous gap.
+    var work = projectSessionWorkState(s);
+    var workSaid = sessionWorkStateHTML(s);
     var waitShape = waitingOn.map(function (wait) {
         return [wait.id || "wait", wait.ownerLabel || wait.ownerSessionId || "",
             wait.releaseCondition || ""].join(":");
@@ -607,7 +611,7 @@ function fillRow(node, s) {
         return ["owed", wait.id || "wait", wait.waiterLabel || wait.waiterSessionId || "",
             wait.releaseCondition || ""].join(":");
     })).join("+");
-    var shape = kind + "-" + s.state + (shells ? "+sh" + shells : "") +
+    var shape = kind + "-" + s.state + "+ws" + work.state + (shells ? "+sh" + shells : "") +
         (waitShape ? "+cw" + waitShape : "");
     if (state.dataset.shape !== shape) {
         state.dataset.shape = shape;
@@ -619,27 +623,27 @@ function fillRow(node, s) {
                 ? '<span class="wants">' + esc(T.sessionWaiting) + "</span>"
                 : "") + '<canvas class="spin"></canvas><span class="line">' +
                 esc(T.webPending) + "</span>";
-        } else if (s.state === "waiting") {
+        } else if (work.state === "waiting_human") {
             state.innerHTML = '<span class="wants">' + esc(T.sessionWaiting) + "</span>" +
                 peerSaid + shellsSaid;
-        } else if (s.state === "working") {
+        } else if (work.state === "working") {
             // The shells go after the live line rather than instead of it. A session can be
             // working on one thing and still have a build it started three turns ago going.
             state.innerHTML = '<canvas class="spin"></canvas><span class="line"></span>' +
-                peerSaid + shellsSaid;
-        } else if (s.state === "unknown") {
+                peerSaid + workSaid + shellsSaid;
+        } else if (work.state === "needs_triage" && s.state === "unknown") {
             // Not silence — a screen that could not be read is a different fact from "idle",
             // and drawing it as idle would be a confident wrong answer about someone's work.
             state.innerHTML = '<span class="unread">' + esc(T.webStateUnreadable) + "</span>" +
-                peerSaid + shellsSaid;
+                peerSaid + workSaid + shellsSaid;
         } else {
             // **Idle is the case this line exists for.** The turn ended, the terminal is showing
             // a prompt, and a command it started is still going — which is exactly the row that
             // used to say nothing at all and therefore read as finished.
-            state.innerHTML = peerSaid + shellsSaid;
+            state.innerHTML = peerSaid + workSaid + shellsSaid;
         }
     }
-    if (kind === "pending" || kind === "working" || kind === "closing") {
+    if (kind === "pending" || work.state === "working" || kind === "closing") {
         state.querySelector(".line").textContent = pending ? T.webPending :
             (kind === "closing" ? T.webClosing : (s.line || ""));
         var canvas = state.querySelector(".spin");

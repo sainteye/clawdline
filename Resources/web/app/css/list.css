@@ -101,7 +101,7 @@
 
 /* The state line. Three states get three weights, and that is the design:
    waiting shouts, working murmurs, idle and unknown keep quiet. */
-.row .state { grid-column: 2; display: flex; align-items: center; gap: 7px; min-width: 0; margin-top: 2px; }
+.row .state { grid-column: 2; display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; margin-top: 2px; }
 .row .state:empty { display: none; }
 .row .line {
     font-family: var(--mono); font-size: 11.5px; color: var(--dim);
@@ -138,6 +138,23 @@
     font-family: var(--mono); font-size: 11.5px; color: var(--dim);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* Session disposition is a fixed-width receipt mark or ellipsised quiet copy. The check is two
+   CSS strokes so its weight is identical on every platform; no emoji font participates. */
+.session-work-mark {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 1px;
+    height: 12px; color: var(--dim);
+}
+.session-work-check {
+    display: block; width: 8px; height: 5px;
+    border-left: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg) translateY(-1px); transform-origin: center;
+}
+.session-work-copy {
+    flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; font: 11.5px/1 var(--mono); color: var(--faint);
+}
+.session-work-copy[data-work-state="needs_triage"] { font-style: italic; }
 
 /* waiting — the loud one. It is the only state that costs you something for every second it
    goes unnoticed, so it is the only one allowed a colour, a bar and a heartbeat. */

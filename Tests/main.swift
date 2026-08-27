@@ -28,6 +28,37 @@ func expectClose(_ name: String, _ got: CGFloat, _ want: CGFloat, _ tolerance: C
     check(name, abs(got - want) < tolerance, "got \(got), want \(want)")
 }
 
+@discardableResult
+func testGit(_ arguments: [String], cwd: URL) -> (status: Int32, output: String) {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = arguments
+    process.currentDirectoryURL = cwd
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+    do { try process.run() } catch { return (-1, "\(error)") }
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitQuietly()
+    return (process.terminationStatus,
+            String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+}
+
+func makeLandingRepository() -> (url: URL, commit: String) {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-landing-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    expect("the landing fixture repository initializes", testGit(["init", "-q", "-b", "main"], cwd: url).status, 0)
+    try! Data("verified\n".utf8).write(to: url.appendingPathComponent("receipt.txt"))
+    expect("the landing fixture stages its commit", testGit(["add", "receipt.txt"], cwd: url).status, 0)
+    expect("the landing fixture commits", testGit([
+        "-c", "user.name=Clawdline Tests", "-c", "user.email=tests@clawdline.invalid",
+        "commit", "-qm", "verified target",
+    ], cwd: url).status, 0)
+    let commit = testGit(["rev-parse", "HEAD"], cwd: url).output
+    return (url, commit)
+}
+
 func group(_ title: String, _ body: () -> Void) {
     let before = failures.count
     body()
@@ -4437,6 +4468,23 @@ group("the languages the interface speaks") {
     for (tag, c) in L.catalog {
         check("\(tag) does not assume which terminal you use",
               !c.nothingToSend.contains("iTerm") && !c.noSession.contains("iTerm"))
+    }
+}
+
+group("every Session work-state string crosses the typed localization contract") {
+    let keys = ["sessionWorkReady", "sessionWorkNeedsTriage",
+                "sessionWorkMilestone", "sessionWorkComplete"]
+    let fallback = try! String(contentsOfFile: "Resources/web/app/js/core/i18n.js")
+    let server = try! String(contentsOfFile: "Sources/RemoteServer.swift")
+    for key in keys {
+        check("the browser fallback and /v1/strings payload both name \(key)",
+              fallback.contains("\(key):") && server.contains("\"\(key)\":"))
+    }
+    for (tag, copy) in L.catalog {
+        let values = [copy.sessionWorkReady, copy.sessionWorkNeedsTriage,
+                      copy.sessionWorkMilestone, copy.sessionWorkComplete]
+        check("\(tag) supplies all four Session work-state strings",
+              values.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
     }
 }
 
@@ -10889,6 +10937,19 @@ group("the claims/release HTTP route is orchestrator-token gated") {
 }
 
 group("landing records enforce the root-owned state machine and keep idempotent receipts") {
+    let repository = makeLandingRepository()
+    defer { try? FileManager.default.removeItem(at: repository.url) }
+    expect("the fixture has a second named local target",
+           testGit(["branch", "release/main"], cwd: repository.url).status, 0)
+    expect("the fixture opens an unrelated history",
+           testGit(["switch", "-q", "--orphan", "unrelated"], cwd: repository.url).status, 0)
+    expect("the unrelated history commits",
+           testGit(["-c", "user.name=Clawdline Tests", "-c",
+                    "user.email=tests@clawdline.invalid", "commit", "--allow-empty", "-qm",
+                    "unrelated"], cwd: repository.url).status, 0)
+    let unrelatedCommit = testGit(["rev-parse", "HEAD"], cwd: repository.url).output
+    expect("the fixture returns to main",
+           testGit(["switch", "-q", "main"], cwd: repository.url).status, 0)
     let store = Orchestrator.storeURL
     let before = try? Data(contentsOf: store)
     defer {
@@ -10902,7 +10963,7 @@ group("landing records enforce the root-owned state machine and keep idempotent 
     let root = "landing-root-session"
     var made = Orchestrator.Task(
         id: id, state: .briefed, kind: "custom", title: "landing state machine",
-        assistant: .codex, projectDir: "/repo", timeoutMinutes: 30,
+        assistant: .codex, projectDir: repository.url.path, timeoutMinutes: 30,
         created: Date(timeIntervalSince1970: 1), rootSessionId: root,
         claims: ["Sources/Landing.swift"], claimsDeclared: true,
         secretHash: Orchestrator.hash(ofSecret: secret))
@@ -10947,8 +11008,8 @@ group("landing records enforce the root-owned state machine and keep idempotent 
               && landing(supplemented)?["note"] as? String == "review says safe to land")
 
     if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
-        taskID: id, secret: secret,
-        raw: ["state": "landed", "commit": "abc123"],
+        taskID: id, secret: "", orchestratorToken: Orchestrator.dispatchToken(),
+        raw: ["state": "landed", "commit": repository.commit],
         now: Date(timeIntervalSince1970: 20)) {
         check("a live child cannot be declared landed", status == 409 && code == "not_terminal")
     } else {
@@ -10956,23 +11017,54 @@ group("landing records enforce the root-owned state machine and keep idempotent 
     }
 
     Orchestrator.finalize(id, as: .success, summary: "delivered")
-    let landedReply = Orchestrator.updateLanding(
+    if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
         taskID: id, secret: secret,
-        raw: ["state": "landed", "commit": "abc123"],
+        raw: ["state": "landed", "commit": repository.commit],
+        now: Date(timeIntervalSince1970: 25)) {
+        check("the child task secret cannot assert a landed target",
+              status == 403 && code == "forbidden")
+    } else {
+        check("the child task secret cannot assert a landed target", false, "it answered ok")
+    }
+    if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
+        taskID: id, secret: "", orchestratorToken: Orchestrator.dispatchToken(),
+        raw: ["state": "landed", "commit": "not-a-commit"],
+        now: Date(timeIntervalSince1970: 26)) {
+        check("arbitrary non-empty commit text is not landing evidence",
+              status == 409 && code == "unverified_landing")
+    } else {
+        check("arbitrary non-empty commit text is not landing evidence", false, "it answered ok")
+    }
+    if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
+        taskID: id, secret: "", orchestratorToken: Orchestrator.dispatchToken(),
+        raw: ["state": "landed", "commit": unrelatedCommit],
+        now: Date(timeIntervalSince1970: 27)) {
+        check("a real commit outside the named target is not landing evidence",
+              status == 409 && code == "unverified_landing")
+    } else {
+        check("a real commit outside the named target is not landing evidence", false,
+              "it answered ok")
+    }
+    let landedReply = Orchestrator.updateLanding(
+        taskID: id, secret: "", orchestratorToken: Orchestrator.dispatchToken(),
+        raw: ["state": "landed", "commit": repository.commit],
         now: Date(timeIntervalSince1970: 30))
     let landed = landing(landedReply)
     check("pending advances to landed only after the task is terminal and records its commit",
           landed?["state"] as? String == "landed"
-              && landed?["commit"] as? String == "abc123"
+              && landed?["commit"] as? String == repository.commit
               && landed?["since"] as? Int == 10
-              && landed?["landed_at"] as? Int == 30)
+              && landed?["landed_at"] as? Int == 30
+              && landed?["verification_origin"] as? String == "local_target_branch"
+              && landed?["verified_commit"] as? String == repository.commit
+              && landed?["verified_target_commit"] as? String == repository.commit)
 
     let landedAgain = Orchestrator.updateLanding(
-        taskID: id, secret: secret,
+        taskID: id, secret: "", orchestratorToken: Orchestrator.dispatchToken(),
         raw: ["state": "landed", "commit": "changed"],
         now: Date(timeIntervalSince1970: 40))
     check("repeating landed cannot rewrite its commit receipt",
-          landing(landedAgain)?["commit"] as? String == "abc123")
+          landing(landedAgain)?["commit"] as? String == repository.commit)
     if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
         taskID: id, secret: secret, raw: ["state": "pending"]) {
         check("landed cannot move back to pending", status == 409 && code == "invalid_transition")
@@ -10984,7 +11076,7 @@ group("landing records enforce the root-owned state machine and keep idempotent 
     let abandonedSecret = String(repeating: "f6", count: 32)
     var abandonedTask = Orchestrator.Task(
         id: abandonedID, state: .briefed, kind: "custom", title: "abandoned delivery",
-        assistant: .codex, projectDir: "/repo", timeoutMinutes: 30,
+        assistant: .codex, projectDir: repository.url.path, timeoutMinutes: 30,
         created: Date(timeIntervalSince1970: 1), rootSessionId: root,
         claims: ["Sources/Abandoned.swift"], claimsDeclared: true,
         secretHash: Orchestrator.hash(ofSecret: abandonedSecret))
@@ -11009,9 +11101,12 @@ group("landing records enforce the root-owned state machine and keep idempotent 
           landing(abandonedReply)?["state"] as? String == "abandoned")
     for state in ["pending", "landed"] {
         var raw: [String: Any] = ["state": state]
-        if state == "landed" { raw["commit"] = "def456" }
+        if state == "landed" { raw["commit"] = repository.commit }
         if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
-            taskID: abandonedID, secret: abandonedSecret, raw: raw) {
+            taskID: abandonedID,
+            secret: state == "landed" ? "" : abandonedSecret,
+            orchestratorToken: state == "landed" ? Orchestrator.dispatchToken() : nil,
+            raw: raw) {
             check("abandoned cannot move to \(state)",
                   status == 409 && code == "invalid_transition")
         } else {
@@ -11021,6 +11116,8 @@ group("landing records enforce the root-owned state machine and keep idempotent 
 }
 
 group("landing routes accept a matching task or machine credential and list pending obligations") {
+    let repository = makeLandingRepository()
+    defer { try? FileManager.default.removeItem(at: repository.url) }
     let store = Orchestrator.storeURL
     let before = try? Data(contentsOf: store)
     defer {
@@ -11038,7 +11135,7 @@ group("landing routes accept a matching task or machine credential and list pend
     func fixture(_ id: String, secret: String, title: String) -> Orchestrator.Task {
         var task = Orchestrator.Task(
             id: id, state: .success, kind: "custom", title: title, assistant: .claude,
-            projectDir: "/repo", timeoutMinutes: 30,
+            projectDir: repository.url.path, timeoutMinutes: 30,
             created: Date(timeIntervalSince1970: 1), rootSessionId: "root-\(id)",
             rootLabel: "owner \(title)", claims: ["Sources/\(title).swift"],
             claimsDeclared: true, secretHash: Orchestrator.hash(ofSecret: secret))
@@ -11071,6 +11168,11 @@ group("landing routes accept a matching task or machine credential and list pend
         body: "{\"state\":\"pending\",\"note\":\"accepted after handoff\"}"))
     expect("the orchestrator token may update a landing after handoff", machine.status, 200)
 
+    let childCannotLand = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: ["X-Clawdline-Task-Secret": firstSecret],
+        body: "{\"state\":\"landed\",\"target\":\"main\",\"commit\":\"\(repository.commit)\"}"))
+    expect("a task secret cannot assert landed over HTTP", childCannotLand.status, 403)
+
     let unknown = RemoteServer.shared.route(remoteRequest(
         "POST", path, headers: ["X-Clawdline-Task-Secret": firstSecret],
         body: "{\"state\":\"pending\",\"surprise\":true}"))
@@ -11092,7 +11194,8 @@ group("landing routes accept a matching task or machine credential and list pend
                            ("commit", 200), ("note", 500)] {
         let state = field == "commit" ? "landed" : "pending"
         if case .refused(let status, let code, _, _) = Orchestrator.updateLanding(
-            taskID: firstID, secret: firstSecret,
+            taskID: firstID, secret: field == "commit" ? "" : firstSecret,
+            orchestratorToken: field == "commit" ? Orchestrator.dispatchToken() : nil,
             raw: ["state": state, field: String(repeating: "x", count: limit + 1)]) {
             check("\(field) enforces its documented length limit",
                   status == 400 && code == "bad_request")
@@ -11117,8 +11220,8 @@ group("landing routes accept a matching task or machine credential and list pend
         raw: ["state": "pending", "target": "main", "note": "waiting"],
         now: Date(timeIntervalSince1970: 1))
     _ = Orchestrator.updateLanding(
-        taskID: secondID, secret: secondSecret,
-        raw: ["state": "landed", "target": "main", "commit": "def456"],
+        taskID: secondID, secret: "", orchestratorToken: Orchestrator.dispatchToken(),
+        raw: ["state": "landed", "target": "main", "commit": repository.commit],
         now: Date(timeIntervalSince1970: 20))
     _ = Orchestrator.updateLanding(
         taskID: thirdID, secret: thirdSecret,
@@ -11151,8 +11254,11 @@ group("landing routes accept a matching task or machine credential and list pend
           reloaded?["state"] as? String == "pending"
               && reloaded?["owner_root_key"] as? String == Orchestrator.rootKeyDigest("root-\(firstID)"))
     let reloadedLanded = Orchestrator.record(id: secondID)?["landing"] as? [String: Any]
-    check("landed_at survives a registry save/load round trip",
-          reloadedLanded?["landed_at"] as? Int == 20)
+    check("verified landing evidence survives a registry save/load round trip",
+          reloadedLanded?["landed_at"] as? Int == 20
+              && reloadedLanded?["verification_origin"] as? String == "local_target_branch"
+              && reloadedLanded?["verified_commit"] as? String == repository.commit
+              && reloadedLanded?["verified_target_commit"] as? String == repository.commit)
 
     let anonymous = RemoteServer.shared.route(remoteRequest("GET", "/v1/orchestrator/landings"))
     expect("an anonymous landing-registry read stops at the door", anonymous.status, 401)
@@ -11250,6 +11356,152 @@ group("work visibility decides from git, not from anybody's memory") {
            visible(.success, isolated: false, exists: nil, merged: nil), V.settled)
     expect("a live non-isolated task is still live",
            visible(.spawning, isolated: false, exists: nil, merged: nil), V.live)
+}
+
+group("session work state is a closed broker projection, never an idle guess") {
+    typealias W = Orchestrator.SessionWorkState
+    expect("the public work-state vocabulary is closed",
+           W.allCases.map(\.rawValue), [
+            "ready", "working", "waiting_human", "waiting_session", "needs_triage",
+            "milestone_complete", "work_complete",
+           ])
+    func landing(_ state: Orchestrator.LandingState) -> Orchestrator.Landing {
+        let commit = String(repeating: "a", count: 40)
+        return Orchestrator.Landing(
+            state: state, target: "main", delivery: "delivery-branch",
+            ownerRootKey: "00000000", since: Date(timeIntervalSince1970: 10),
+            commit: state == .landed ? commit : nil, note: nil,
+            landedAt: state == .landed ? Date(timeIntervalSince1970: 20) : nil,
+            verificationOrigin: state == .landed ? "local_target_branch" : nil,
+            verifiedCommit: state == .landed ? commit : nil,
+            verifiedTargetCommit: state == .landed ? String(repeating: "b", count: 40) : nil)
+    }
+    func task(_ state: Orchestrator.State, landing: Orchestrator.Landing? = nil,
+              finished: Bool = true) -> Orchestrator.Task {
+        var task = Orchestrator.Task(
+            id: "12345678-1234-4234-8234-123456789abc", state: state,
+            kind: "custom", title: "delivery <phase>", assistant: .codex,
+            projectDir: "/repo", timeoutMinutes: 30,
+            created: Date(timeIntervalSince1970: 1), secretHash: String(repeating: "0", count: 64))
+        task.finishedAt = finished ? Date(timeIntervalSince1970: 15) : nil
+        task.landing = landing
+        return task
+    }
+    func project(_ terminal: SessionState, task: Orchestrator.Task? = nil,
+                 waiting: Bool = false, handoff: Bool = false,
+                 knownReady: Bool = false) -> W {
+        Orchestrator.projectSessionWorkState(
+            terminalState: terminal, task: task, hasCoordinationWait: waiting,
+            hasOpenHandoff: handoff, assignmentKnownAbsent: knownReady)
+    }
+
+    expect("an explicitly assignment-free prompt is ready",
+           project(.idle, knownReady: true), .ready)
+    expect("idle without an assignment-free receipt fails closed",
+           project(.idle), .needsTriage)
+    expect("current terminal activity is working", project(.working("building")), .working)
+    expect("a human question is the only waiting-human state",
+           project(.waiting, waiting: true), .waitingHuman)
+    expect("a peer or owed wait is waiting-session without asking the human",
+           project(.idle, waiting: true), .waitingSession)
+    expect("an unreadable terminal outranks a delivered milestone",
+           project(.unknown, task: task(.success)), .needsTriage)
+    expect("renewed activity outranks an older delivery receipt",
+           project(.working("follow-up"), task: task(.success, landing: landing(.landed))),
+           .working)
+    expect("authenticated task success is exactly a milestone",
+           project(.idle, task: task(.success)), .milestoneComplete)
+    expect("a pending landing cannot produce the double check",
+           project(.idle, task: task(.success, landing: landing(.pending))),
+           .milestoneComplete)
+    expect("a malformed success without its finished receipt fails closed",
+           project(.idle, task: task(.success, finished: false)), .needsTriage)
+    expect("a broker-verified target landing closes exactly that task scope",
+           project(.idle, task: task(.success, landing: landing(.landed))), .workComplete)
+    expect("an open handoff keeps landed delivery at a milestone",
+           project(.idle, task: task(.success, landing: landing(.landed)), handoff: true),
+           .milestoneComplete)
+    expect("a durable peer wait outranks broker closure",
+           project(.idle, task: task(.success, landing: landing(.landed)), waiting: true),
+           .waitingSession)
+    expect("failure is a triage receipt, not completion",
+           project(.idle, task: task(.failure)), .needsTriage)
+}
+
+group("session completion receipts are bound to the current process, not a reusable terminal") {
+    let started = Date(timeIntervalSince1970: 100)
+    let identity = Orchestrator.SessionWorkIdentity(
+        terminalID: "TAB", assistant: .codex, tty: "/dev/ttys7", pid: 700,
+        processStart: started, conversationID: "conversation-current")
+    var task = Orchestrator.Task(
+        id: "abababab-1234-4234-8234-abcdefabcdef", state: .success,
+        kind: "custom", title: "bound child", assistant: .codex,
+        projectDir: "/repo", timeoutMinutes: 30, created: Date(timeIntervalSince1970: 1),
+        finishedAt: Date(timeIntervalSince1970: 200),
+        secretHash: String(repeating: "0", count: 64))
+    task.childTerminalId = "TAB"
+    task.childTTY = "/dev/ttys7"
+    task.childPID = 700
+    task.childProcStart = started
+    task.childSessionId = "conversation-current"
+    task.transcriptProven = true
+
+    check("the exact assistant, process, conversation and child marker bind the receipt",
+          Orchestrator.taskMatchesCurrentSession(task, identity: identity))
+    var stale = identity
+    stale.pid = 701
+    check("a reused terminal with a later process cannot borrow the old check",
+          !Orchestrator.taskMatchesCurrentSession(task, identity: stale))
+    stale = identity
+    stale.processStart = started.addingTimeInterval(30)
+    check("a recycled pid with another start time also fails closed",
+          !Orchestrator.taskMatchesCurrentSession(task, identity: stale))
+    stale = identity
+    stale.conversationID = "conversation-later"
+    check("another rollout or conversation in the same terminal cannot borrow it",
+          !Orchestrator.taskMatchesCurrentSession(task, identity: stale))
+    stale = identity
+    stale.assistant = .claude
+    check("another assistant in the same terminal cannot borrow it",
+          !Orchestrator.taskMatchesCurrentSession(task, identity: stale))
+    var unproved = task
+    unproved.transcriptProven = false
+    check("legacy child identity without task-marker proof fails closed",
+          !Orchestrator.taskMatchesCurrentSession(unproved, identity: identity))
+    expect("the projection selector returns the one exact process-bound task",
+           Orchestrator.taskForCurrentSession([task, unproved], identity: identity)?.id, task.id)
+    check("duplicate exact receipts are contradictory and fail closed",
+          Orchestrator.taskForCurrentSession([task, task], identity: identity) == nil)
+    check("a stale process has no selectable completion receipt",
+          Orchestrator.taskForCurrentSession([task], identity: stale) == nil)
+
+    check("handoff source may be the exact terminal namespace",
+          Orchestrator.handoffSource("TAB", matches: identity))
+    check("handoff source may separately be the process-bound conversation namespace",
+          Orchestrator.handoffSource("conversation-current", matches: identity))
+    check("a stale terminal-like prefix is not guessed",
+          !Orchestrator.handoffSource("TAB-old", matches: identity))
+    check("a stale conversation is not guessed",
+          !Orchestrator.handoffSource("conversation-later", matches: identity))
+}
+
+group("only broker-verified target landing evidence can produce the double check") {
+    let legacy = Orchestrator.Landing(
+        state: .landed, target: "main", delivery: "delivery",
+        ownerRootKey: "00000000", since: Date(timeIntervalSince1970: 10),
+        commit: "abc123", note: nil, landedAt: Date(timeIntervalSince1970: 20))
+    check("a legacy landed row with only arbitrary commit text fails closed",
+          !Orchestrator.isBrokerVerifiedTargetLanding(legacy))
+    let verified = Orchestrator.Landing(
+        state: .landed, target: "main", delivery: "delivery",
+        ownerRootKey: "00000000", since: Date(timeIntervalSince1970: 10),
+        commit: String(repeating: "a", count: 40), note: nil,
+        landedAt: Date(timeIntervalSince1970: 20),
+        verificationOrigin: "local_target_branch",
+        verifiedCommit: String(repeating: "a", count: 40),
+        verifiedTargetCommit: String(repeating: "b", count: 40))
+    check("the explicit broker-verified local target receipt is accepted",
+          Orchestrator.isBrokerVerifiedTargetLanding(verified))
 }
 
 group("the in-flight list answers what a worktree hides") {
@@ -13041,6 +13293,9 @@ group("the wait session index says what a wait must name, and nothing off the sc
            first["label"] as? String, "fix the webhook")
     expect("and the terminal state, so a caller knows whether anybody is home",
            first["state"] as? String, "working")
+    expect("and every row has exactly one closed work-state projection",
+           rows.compactMap { $0["work_state"] as? String },
+           ["working", "waiting_human", "needs_triage"])
     expect("a session showing a question reads as waiting", rows[1]["state"] as? String, "waiting")
     check("a session nothing has read yet is unknown rather than idle",
           rows[2]["state"] as? String == "unknown")

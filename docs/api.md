@@ -113,7 +113,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/orchestrator/tasks/:id` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/tasks/:id/notify` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/complete` | that task's secret | — |
-| `POST` | `/v1/orchestrator/tasks/:id/landing` | that task's secret, **or** orchestrator token | — |
+| `POST` | `/v1/orchestrator/tasks/:id/landing` | task secret for pending/abandoned; **orchestrator token only for landed** | — |
 | `POST` | `/v1/orchestrator/tasks/:id/progress` | that task's secret | — |
 | `GET` | `/v1/orchestrator/tasks/:id/inflight` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/cancel` | orchestrator token, **or** token + key | `send` **and** the write switch |
@@ -178,7 +178,7 @@ Everything the bar knows, as of one reading.
 
 ```console
 $ curl -s http://127.0.0.1:7717/v1/sessions -H "Authorization: Bearer $TOKEN" \
-    | jq '{at, scan, sessions: [.sessions[] | {id, label, state, cwd}]}'
+    | jq '{at, scan, sessions: [.sessions[] | {id, label, state, work_state, cwd}]}'
 {
   "at": 1787049596,
   "scan": {"generation":42,"complete":true,"emptyAuthoritative":false},
@@ -187,25 +187,28 @@ $ curl -s http://127.0.0.1:7717/v1/sessions -H "Authorization: Bearer $TOKEN" \
       "id": "35D87610-E7F4-4A9A-95A0-11947CF5115C",
       "label": "設計基本問題和股票相關聊天內容",
       "state": "idle",
+      "work_state": "needs_triage",
       "cwd": "/Users/you/code/cairn"
     },
     {
       "id": "B3ACDE0D-DE72-4E58-A99A-AB845A539C90",
       "label": "評估動態島實現機制",
       "state": "working",
+      "work_state": "working",
       "cwd": "/Users/you/code/clawdline"
     },
     {
       "id": "27439AEE-3736-4AC3-BF80-CE63280B5CCD",
       "label": "IG 設定指引改進",
       "state": "idle",
+      "work_state": "milestone_complete",
       "cwd": "/Users/you/code/atrium"
     }
   ]
 }
 ```
 
-Four fields per session are picked out there so the reply fits on this page; the whole object is
+Five fields per session are picked out there so the reply fits on this page; the whole object is
 [below](#the-session-object). `at` is when the reply was built, not when the reading was taken.
 `scan.generation` changes only after another terminal/process scan has been reconciled;
 `scan.complete` says every terminal source was readable. `scan.emptyAuthoritative` is narrower:
@@ -227,7 +230,7 @@ kept after the tab is gone.
 ```console
 $ curl -s http://127.0.0.1:7717/v1/sessions/27439AEE-3736-4AC3-BF80-CE63280B5CCD \
     -H "Authorization: Bearer $TOKEN"
-{"session":{"id":"27439AEE-3736-4AC3-BF80-CE63280B5CCD","isClaude":true,"state":"idle","icon":{"accent":"#5CBBA1","cells":[["#2F6B5E","#EEF6F4","#EEF6F4","#EEF6F4","#EEF6F4","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#2F6B5E","#2F6B5E","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#EEF6F4","#2F6B5E","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#2F6B5E","#2F6B5E","#EEF6F4","#2F6B5E"]]},"tty":"ttys006","backend":"iterm","label":"IG 設定指引改進","sessionId":"841cbb8d-58b1-4765-9a71-bcdba19bcfef","cwd":"/Users/you/code/atrium"}}
+{"session":{"id":"27439AEE-3736-4AC3-BF80-CE63280B5CCD","isClaude":true,"state":"idle","work_state":"needs_triage","icon":{"accent":"#5CBBA1","cells":[["#2F6B5E","#EEF6F4","#EEF6F4","#EEF6F4","#EEF6F4","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#2F6B5E","#2F6B5E","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#EEF6F4","#2F6B5E","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#2F6B5E","#2F6B5E","#EEF6F4","#2F6B5E"]]},"tty":"ttys006","backend":"iterm","label":"IG 設定指引改進","sessionId":"841cbb8d-58b1-4765-9a71-bcdba19bcfef","cwd":"/Users/you/code/atrium"}}
 ```
 
 Key order is not stable between replies — it comes out of a dictionary. Read by name.
@@ -1334,9 +1337,11 @@ $ curl -s http://127.0.0.1:7717/v1/orchestrator/sessions \
 {"at":1787758793,
  "sessions":[
    {"id":"35D87610-E7F4-4A9A-95A0-11947CF5115C","assistant":"claude",
-    "cwd":"/Users/you/code/clawdline","label":"Clawdline structured messages","state":"working"},
+    "cwd":"/Users/you/code/clawdline","label":"Clawdline structured messages","state":"working",
+    "work_state":"working"},
    {"id":"B3ACDE0D-DE72-4E58-A99A-AB845A539C90","assistant":"claude",
     "cwd":"/Users/you/code/clawdline","label":"the envelope work","state":"idle",
+    "work_state":"milestone_complete",
     "taskId":"54ee36cb-7d69-4def-b4d2-fd2a5eb157ad"}]}
 ```
 
@@ -1353,6 +1358,7 @@ had nowhere to read the ids it takes.
 | `cwd` | the checkout the session is working in. **Absent** when this Mac could not resolve one, rather than empty |
 | `label` | one short line naming the session: the Clawdline task title when this app opened the tab, and otherwise the tab's own title, which an assistant sets to what it is working on |
 | `state` | `working`, `waiting`, `idle` or `unknown` — the terminal state, so a caller knows whether anybody is home |
+| `work_state` | the closed, fail-closed broker projection documented on [the Session object](#the-session-object); always present |
 | `taskId` | the Clawdline task this tab was opened for. **Absent** for a session a person opened themselves |
 
 **What a caller may not learn from it.** Nothing a session said, showed or is running: no `line`
@@ -1827,17 +1833,22 @@ time. Both survive a restart like every other task field.
 
 `landing` is the root's durable post-delivery receipt. Its `owner_root_key` is derived from the
 same canonical root identity and `rootKeyDigest` used by claims conflicts; clients do not supply a
-label in its place. Optional values are omitted when unknown. The field is informational only: it
-does not retain claims, refuse a dispatch, or otherwise turn the task record into a lock.
+label in its place. A newly written `landed` receipt also carries
+`verification_origin: "local_target_branch"`, canonical `verified_commit`, and the local target
+head observed as `verified_target_commit`; legacy landed rows omit them and cannot produce
+`work_complete`.
+Optional values are omitted when unknown. The field is informational only: it does not retain
+claims, refuse a dispatch, or otherwise turn the task record into a lock.
 
 ### `POST /v1/orchestrator/tasks/:id/landing`
 
-Updates the root-owned obligation attached to one task. It accepts either that task's durable
-secret hash (even after terminal state) in `X-Clawdline-Task-Secret`, or the machine-level
-`X-Clawdline-Orchestrator` token. The latter is the same credential family used by dispatch,
-cancel, and claims release, and lets a named root that accepted a handoff close an obligation
-without receiving the child's secret. By convention this route belongs to the root after delivery;
-the protocol tells children not to call it, but a child necessarily holds its own task secret.
+Updates the root-owned obligation attached to one task. `pending` (and the terminal `abandoned`
+declaration) accepts either that task's durable secret in `X-Clawdline-Task-Secret` or the
+machine-level `X-Clawdline-Orchestrator` token. `landed` accepts **only** the machine token: the
+child necessarily knows its own secret, so letting that credential assert target landing would
+make the second check self-reported. The machine credential is the same family used by dispatch,
+cancel, and claims release, and lets the dispatching root—or a named root that accepted a
+handoff—close the obligation.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/landing \
@@ -1850,22 +1861,29 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/landing \
 ```
 
 The body accepts only `state`, `target`, `delivery`, `commit`, and `note`. `state` is required and
-is `pending`, `landed`, or `abandoned`. `target` and `commit` are optional non-empty strings up to
-200 characters; `delivery` and `note` are optional non-empty strings up to 500 characters. A
-repeated request for `pending` or `abandoned` preserves the original `since` and `commit` while
+is `pending`, `landed`, or `abandoned`. `target` and `commit` are non-empty strings up to 200
+characters and are both required for `landed` (a target already present on `pending` may be
+reused); `delivery` and `note` are optional non-empty strings up to 500 characters. A
+repeated request for `pending` or `abandoned` preserves the original `since` while
 updating any supplied `target`, `delivery`, or `note`. A repeated `landed` request is an immutable
 no-op. Moving to either `landed` or `abandoned` requires a terminal task; `landed` also requires a
-non-empty `commit`. Both are final states and cannot move to any other state; reopening work
-requires a new task. `since` is when this obligation was first recorded and remains unchanged,
-while `landed_at` records when the verified commit made it `landed`.
+machine credential. Before writing it, the broker resolves `commit` as a commit object inside the
+task's `project_dir`, resolves `refs/heads/<target>` as a local branch, and proves the former is an
+ancestor of or equal to the latter. Caller revision expressions are replaced by canonical object
+ids in the receipt. Both terminal states are final and cannot move to another state; reopening
+work requires a new task. `since` remains when the obligation began, while `landed_at` records
+when the target proof was captured. Verification runs outside the registry lock and a CAS refuses
+the write if its pending record changed meanwhile.
 
 | `code` | status | |
 |---|---|---|
-| `bad_request` | 400 | missing/unknown state, unknown field, invalid optional text, a commit on a non-landed state, or no commit for landed |
-| `forbidden` | 403 | neither a matching task secret nor the machine's orchestrator token was supplied |
+| `bad_request` | 400 | missing/unknown state, unknown field, invalid optional text, a commit on a non-landed state, or no target/commit for landed |
+| `forbidden` | 403 | no accepted credential was supplied; in particular a task secret is never accepted for `landed` |
 | `not_found` | 404 | no retained task with that id |
 | `not_terminal` | 409 | `landed` or `abandoned` was requested while the child task is still live |
 | `invalid_transition` | 409 | a `landed` or `abandoned` receipt was asked to move to another state |
+| `unverified_landing` | 409 | commit or local target did not resolve in the task repository, or commit was not contained by target |
+| `stale_write` | 409 | the landing changed while git verification ran; retry against the new receipt |
 
 ### `GET /v1/orchestrator/landings`
 
@@ -2209,11 +2227,17 @@ app, and an open-ended size is an open-ended cache.
   "isClaude": true,                              // is this a Claude Code session or just a shell
   "assistant": "claude",                         // "claude" or "codex"; absent for a plain shell
   "state": "working",                            // "working" | "waiting" | "idle" | "unknown"
+  "work_state": "working",                       // exactly one closed user-facing projection
   "line": "Crafting… (2m 45s · ↓ 6.0k tokens)",  // only when state is "working"
   "menu": { "selected": 2, "options": [ … ] },   // only when state is "waiting", and readable
   "coordination": {                                // absent without active peer waits
     "state": "waiting_on_session",                 // or "has_waiters"
     "waitingOn": [ … ], "waitedOnBy": [ … ]
+  },
+  "disposition": {                                 // only with either completion work_state
+    "scope": "task", "taskId": "…",
+    "evidence": "authenticated_task_delivery",   // or broker_verified_target_landing
+    "receiptAt": 1787049596, "title": "review the delivery"
   },
   "agents": [ … ],                               // only when this session has agents out
   "shells": [ … ],                               // only when it left a command running
@@ -2226,6 +2250,32 @@ app, and an open-ended size is an open-ended cache.
 `state` is decided by looking at the screen, and `waiting` is the one worth acting on: it means a
 question is on screen. `unknown` means the terminal did not answer, which is not the same as idle
 and is deliberately not flattened into it.
+
+`work_state` is present exactly once and is one of `ready`, `working`, `waiting_human`,
+`waiting_session`, `needs_triage`, `milestone_complete`, or `work_complete`. It is a broker
+projection over separate terminal, task, landing, handoff, and coordination axes; clients must
+not infer it from `idle`. Precedence is: a human question, a durable peer/owed wait, unreadable or
+missing evidence, current activity, authenticated delivery, then verified target landing. Current
+activity outranks an older receipt. `ready` requires positive proof that no assistant assignment
+exists; an idle assistant without that proof is `needs_triage`. Only `waiting_human` asks the
+person to act.
+
+`milestone_complete` is one check: the task bound to this exact current assistant process has an
+authenticated success result and finish receipt. The binding requires the exact assistant,
+terminal and tty, pid plus process start, process-bound rollout/conversation id, and the child's
+task-marker proof. A terminal id reused by a later process, or a legacy row missing any proof,
+therefore gets no check. An unresolved handoff may name its source in either of two strict
+namespaces—exact terminal id or exact process-bound conversation id—and each is compared only in
+its own namespace; no prefix/title/tty guessing occurs.
+
+`work_complete` is two checks and means only **broker-verified target landing for that task**. The
+same task must carry a new-format `landed` receipt whose machine-authenticated git verification
+proved its canonical commit is contained by the named local target branch. Legacy landed data,
+arbitrary commit text, the task secret alone, or missing verification fields stay at one check.
+This does not claim that a whole multi-task graph or its tests are complete. `disposition` names
+the task scope and typed evidence; for the double check it also carries canonical `commit`,
+`target`, `targetCommit`, and `landedAt`. It is output only: agent prose and coordinator advice
+cannot write either check.
 
 `coordination` is an independent broker overlay, not another terminal state. `waitingOn` lists
 durable file-wait groups that block this session; `waitedOnBy` lists each active waiter for groups

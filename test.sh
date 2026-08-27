@@ -31,6 +31,7 @@ tools/build-compatibility.py --check
 node Tests/web-schedules.mjs
 node Tests/web-coordinator.mjs
 node Tests/web-session-resilience.mjs
+node Tests/web-session-disposition.mjs
 
 BIN="${TMPDIR:-/tmp}/clawdline-tests"
 

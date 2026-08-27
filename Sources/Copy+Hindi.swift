@@ -258,6 +258,10 @@ struct Hindi: Copy {
     let webEmptyWaitHint = "stream पर अभी कुछ नहीं आया"
     let webStateUnreadable = "स्क्रीन पढ़ी नहीं जा सकी"
     let webStateWorking = "चल रहा है"
+    let sessionWorkReady = "तैयार"
+    let sessionWorkNeedsTriage = "स्थिति की जाँच ज़रूरी है"
+    let sessionWorkMilestone = "चरण सौंप दिया गया; समीक्षा या लैंडिंग बाकी हो सकती है"
+    let sessionWorkComplete = "ब्रोकर द्वारा सत्यापित लक्ष्य ब्रांच लैंडिंग"
 
     let webBack = "सूची"
     let webBackLabel = "session की सूची पर लौटें"

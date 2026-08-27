@@ -254,6 +254,10 @@ struct Turkish: Copy {
     let webEmptyWaitHint = "Akıştan henüz bir şey gelmedi"
     let webStateUnreadable = "ekran okunamadı"
     let webStateWorking = "çalışıyor"
+    let sessionWorkReady = "hazır"
+    let sessionWorkNeedsTriage = "durum incelenmeli"
+    let sessionWorkMilestone = "Kilometre taşı teslim edildi; inceleme veya birleştirme kalabilir"
+    let sessionWorkComplete = "Aracı tarafından doğrulanan hedef dal birleştirmesi"
 
     let webBack = "Oturumlar"
     let webBackLabel = "Oturum listesine dön"

@@ -257,6 +257,10 @@ struct Portuguese: Copy {
     let webEmptyWaitHint = "Nada chegou pela conexão ainda"
     let webStateUnreadable = "não deu para ler a tela"
     let webStateWorking = "rodando"
+    let sessionWorkReady = "pronto"
+    let sessionWorkNeedsTriage = "estado precisa de triagem"
+    let sessionWorkMilestone = "Marco entregue; revisão ou integração pode estar pendente"
+    let sessionWorkComplete = "Integração no ramo de destino verificada pelo broker"
 
     let webBack = "Sessões"
     let webBackLabel = "Voltar para a lista de sessões"

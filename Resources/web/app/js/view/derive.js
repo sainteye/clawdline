@@ -10,6 +10,76 @@ var RANK = { waiting: 0, working: 1, idle: 2, unknown: 3 };
 
 function rankOf(s) { return RANK[s.state] == null ? 9 : RANK[s.state]; }
 
+var SESSION_WORK_STATES = {
+    ready: true, working: true, waiting_human: true, waiting_session: true,
+    needs_triage: true, milestone_complete: true, work_complete: true
+};
+
+function attr(value) {
+    return String(value == null ? "" : value).replace(/[&<>\"]/g, function (ch) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '\"': "&quot;" }[ch];
+    });
+}
+
+/**
+ * The browser repeats the safety precedence so an old or partial server frame cannot turn a
+ * question, peer wait, or unreadable screen into a check. Every other missing/unknown value is
+ * one explicit state too: needs_triage, never an empty line.
+ */
+export function projectSessionWorkState(s) {
+    s = s || {};
+    if (s.state === "waiting") return { state: "waiting_human", failedClosed: false };
+    var coordination = s.coordination || {};
+    if ((coordination.waitingOn || []).length || (coordination.waitedOnBy || []).length) {
+        return { state: "waiting_session", failedClosed: false };
+    }
+    if (s.state === "unknown") return { state: "needs_triage", failedClosed: false };
+    if (!SESSION_WORK_STATES[s.work_state]) return { state: "needs_triage", failedClosed: true };
+    // These three claims must agree with their source axes. The server always projects them
+    // consistently; checking again turns a partial or mixed-version frame into triage rather
+    // than two mutually exclusive messages on one row.
+    if (s.work_state === "waiting_human" || s.work_state === "waiting_session") {
+        return { state: "needs_triage", failedClosed: true };
+    }
+    if ((s.state === "working") !== (s.work_state === "working")) {
+        return { state: "needs_triage", failedClosed: true };
+    }
+    if (s.work_state === "milestone_complete" || s.work_state === "work_complete") {
+        var disposition = s.disposition || {};
+        var expected = s.work_state === "work_complete"
+            ? "broker_verified_target_landing" : "authenticated_task_delivery";
+        if (disposition.scope !== "task" || !disposition.taskId ||
+            disposition.evidence !== expected) {
+            return { state: "needs_triage", failedClosed: true };
+        }
+    }
+    return { state: s.work_state, failedClosed: false };
+}
+
+/** Check glyphs are CSS strokes, not a platform emoji. Non-check quiet states remain readable. */
+export function sessionWorkStateHTML(s) {
+    var projected = projectSessionWorkState(s);
+    if (projected.state === "milestone_complete" || projected.state === "work_complete") {
+        var label = projected.state === "work_complete"
+            ? T.sessionWorkComplete : T.sessionWorkMilestone;
+        var detail = s && s.disposition && s.disposition.title;
+        var title = detail ? label + " · " + detail : label;
+        var count = projected.state === "work_complete" ? 2 : 1;
+        var checks = "";
+        for (var i = 0; i < count; i++) {
+            checks += '<span class="session-work-check" aria-hidden="true"></span>';
+        }
+        return '<span class="session-work-mark" role="img" aria-label="' + attr(label) +
+            '" title="' + attr(title) + '">' + checks + "</span>";
+    }
+    if (projected.state === "ready" || projected.state === "needs_triage") {
+        var copy = projected.state === "ready" ? T.sessionWorkReady : T.sessionWorkNeedsTriage;
+        return '<span class="session-work-copy" data-work-state="' + projected.state +
+            '" title="' + attr(copy) + '">' + attr(copy) + "</span>";
+    }
+    return "";
+}
+
 /**
  * The order is held still while the pointer is inside the list.
  *

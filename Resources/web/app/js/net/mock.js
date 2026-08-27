@@ -41,7 +41,8 @@ export var Mock = (function () {
         // Working, with three agents out — the case the terminal cannot show at all, and the
         // reason `Subagents` exists. One of them has just landed and is saying what it found.
         { id: "8F3A-1C", backend: "iterm", tty: "ttys004", label: "investigate the webhook",
-          cwd: "/Users/x/code/clawdline", state: "working", line: "Gallivanting… (2m 4s · ↓ 6.4k tokens)",
+          cwd: "/Users/x/code/clawdline", state: "working", work_state: "working",
+          line: "Gallivanting… (2m 4s · ↓ 6.4k tokens)",
           isClaude: true, assistant: "claude", sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38", icon: clawdline,
           agents: [
               { id: "a1", what: "Search the delivery logs", type: "general-purpose",
@@ -57,7 +58,7 @@ export var Mock = (function () {
         // options were parsed on the Mac and thrown away, so the box could only say "go and
         // find the Mac". The caret is on the second row, which is what a bare Return confirms.
         { id: "2C71-90", backend: "iterm", tty: "ttys011", label: "the signup flow keeps 500ing",
-          cwd: "/Users/x/code/atrium", state: "waiting", line: null,
+          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_human", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: atrium,
           menu: { selected: 2, options: [
               { n: 1, label: "Yes", selected: false, can: true },
@@ -71,7 +72,7 @@ export var Mock = (function () {
         // were both pushed out of reach. The card is capped and scrolls inside itself now, and it
         // folds; this fixture is what proves both, because a short menu never could.
         { id: "9C1D-42", backend: "iterm", tty: "ttys044", label: "which source to drop",
-          cwd: "/Users/x/code/atrium", state: "waiting", line: null,
+          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_human", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: atrium,
           menu: { selected: 1, question: "The rate limit bites on every backfill. Which way out?", options: [
               { n: 1, label: "Swap to the official feed", selected: true, can: true,
@@ -88,7 +89,7 @@ export var Mock = (function () {
         // pressed. Kept as a fixture because that button was once read as the last row's
         // description, and there was nothing on this page to press.
         { id: "5B0E-11", backend: "iterm", tty: "ttys012", label: "which sources to drop",
-          cwd: "/Users/x/code/atrium", state: "waiting", line: null,
+          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_human", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: atrium,
           menu: { selected: 1, question: "Which of these should the report drop?",
                   submit: { label: "Submit", selected: false }, options: [
@@ -102,7 +103,7 @@ export var Mock = (function () {
         // still going. This is the row that said nothing at all before `Shells`: the terminal
         // mentions it once, where the turn ended, and every list after that drew it as done.
         { id: "9B04-2D", backend: "iterm", tty: "ttys002", label: "rewrite the CSV importer",
-          cwd: "/Users/x/code/notebook", state: "idle", line: null,
+          cwd: "/Users/x/code/notebook", state: "idle", work_state: "needs_triage", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: creature,
           shells: [
               { id: "bvlp3xmku", at: now - 6, command: "cargo build --release 2>&1 | tail -40",
@@ -114,7 +115,7 @@ export var Mock = (function () {
         // all, so the one person who can end the wait was the one person not told about it.
         // Idle, quiet, and still not safe to close.
         { id: "A15E-77", backend: "tmux", tty: "tmux:%12", label: "docs pass before the release",
-          cwd: "/Users/x/code/clawdline/docs", state: "idle", line: null,
+          cwd: "/Users/x/code/clawdline/docs", state: "idle", work_state: "waiting_session", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: clawdline,
           coordination: { state: "has_waiters", waitingOn: [], waitedOnBy: [{
               id: "0ae8b6e7-83b5-4bcd-a61c-776f56924e15",
@@ -130,7 +131,7 @@ export var Mock = (function () {
         // from `state: "waiting"`, whose orange row means a person has to answer.
         { id: "7A19-42", backend: "iterm", tty: "ttys015",
           label: "update the communication Artifact",
-          cwd: "/Users/x/code/clawdline", state: "idle", line: null,
+          cwd: "/Users/x/code/clawdline", state: "idle", work_state: "waiting_session", line: null,
           isClaude: false, assistant: "codex", sessionId: null, icon: clawdline,
           coordination: { state: "waiting_on_session", waitedOnBy: [], waitingOn: [{
               id: "0ae8b6e7-83b5-4bcd-a61c-776f56924e15",
@@ -140,14 +141,29 @@ export var Mock = (function () {
               releaseCondition: "the protocol docs are committed and released"
           }] } },
         { id: "44D2-05", backend: "iterm", tty: "ttys017", label: "scratch",
-          cwd: "/Users/x/tmp/notes", state: "idle", line: null,
+          cwd: "/Users/x/tmp/notes", state: "idle", work_state: "needs_triage", line: null,
           isClaude: false, assistant: "codex", sessionId: null, icon: null },
         { id: "C0FF-3E", backend: "iterm", tty: "ttys021", label: "build box over ssh",
-          cwd: "/Users/x", state: "unknown", line: null,
+          cwd: "/Users/x", state: "unknown", work_state: "needs_triage", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: null },
         { id: "5E20-8B", backend: "tmux", tty: "tmux:%14", label: "check the German strings",
-          cwd: "/Users/x/code/clawdline", state: "working", line: "Reading Copy+German.swift",
-          isClaude: true, assistant: "claude", sessionId: null, icon: clawdline }
+          cwd: "/Users/x/code/clawdline", state: "working", work_state: "working",
+          line: "Reading Copy+German.swift",
+          isClaude: true, assistant: "claude", sessionId: null, icon: clawdline },
+        // The two receipt glyphs side by side in the mock: task delivery is not graph closure;
+        // the double check is the narrower broker-verified target landing for that task scope.
+        { id: "D311-01", backend: "iterm", tty: "ttys023", label: "review delivered",
+          cwd: "/Users/x/code/clawdline", state: "idle", work_state: "milestone_complete",
+          disposition: { scope: "task", taskId: "mock-milestone", title: "review delivered",
+                         evidence: "authenticated_task_delivery", receiptAt: now - 30 },
+          isClaude: true, assistant: "claude", sessionId: null, icon: clawdline },
+        { id: "D322-02", backend: "iterm", tty: "ttys024", label: "landed delivery",
+          cwd: "/Users/x/code/clawdline", state: "idle", work_state: "work_complete",
+          disposition: { scope: "task", taskId: "mock-closure", title: "landed delivery",
+                         evidence: "broker_verified_target_landing", receiptAt: now - 90,
+                         landedAt: now - 10, commit: "abc123", target: "main",
+                         targetCommit: "def456" },
+          isClaude: false, assistant: "codex", sessionId: null, icon: clawdline }
     ];
 
     // What the top session sent away. The first two hang off `8F3A-1C`, and their children are
@@ -527,18 +543,38 @@ export var Mock = (function () {
         if (changed) emit();
     }
 
+    // The real server projects these two axes atomically in one payload. Keep transitions going
+    // through one helper or a mock frame can manufacture the exact missing/mismatched state the
+    // production client is required to fail closed as needs_triage.
+    function setSessionState(id, state) {
+        var session = find(id);
+        if (!session) return;
+        session.state = state;
+        if (state === "waiting") session.work_state = "waiting_human";
+        else if (state === "working") session.work_state = "working";
+        else if (state === "unknown") session.work_state = "needs_triage";
+        else if ((session.coordination && ((session.coordination.waitingOn || []).length ||
+                 (session.coordination.waitedOnBy || []).length))) {
+            session.work_state = "waiting_session";
+        } else if (session.assistant) {
+            session.work_state = "needs_triage";
+        } else {
+            session.work_state = "ready";
+        }
+    }
+
     /** The interesting part: states that move, so the transitions can be watched. */
     function step() {
         beat += 1;
         var order = [
-            function () { find("9B04-2D").state = "working"; },
-            function () { find("8F3A-1C").state = "idle"; find("8F3A-1C").line = null;
+            function () { setSessionState("9B04-2D", "working"); },
+            function () { setSessionState("8F3A-1C", "idle"); find("8F3A-1C").line = null;
                           transcripts["8F3A-1C"].push({ role: "assistant", text: "Pushed to `fix/webhook-idempotency`. Nothing else is outstanding.", tool: null, at: Math.floor(Date.now() / 1000) }); },
-            function () { find("44D2-05").state = "waiting"; },
-            function () { find("2C71-90").state = "working"; find("C0FF-3E").state = "idle"; },
-            function () { find("9B04-2D").state = "waiting"; find("44D2-05").state = "idle"; },
-            function () { find("2C71-90").state = "waiting"; find("8F3A-1C").state = "working"; },
-            function () { find("9B04-2D").state = "idle"; find("C0FF-3E").state = "unknown"; }
+            function () { setSessionState("44D2-05", "waiting"); },
+            function () { setSessionState("2C71-90", "working"); setSessionState("C0FF-3E", "idle"); },
+            function () { setSessionState("9B04-2D", "waiting"); setSessionState("44D2-05", "idle"); },
+            function () { setSessionState("2C71-90", "waiting"); setSessionState("8F3A-1C", "working"); },
+            function () { setSessionState("9B04-2D", "idle"); setSessionState("C0FF-3E", "unknown"); }
         ];
         order[beat % order.length]();
         emit();
@@ -707,7 +743,7 @@ export var Mock = (function () {
                     var carried = (images || []).map(function (_, i) { return "[Image #" + (i + 1) + "]"; }).join(" ");
                     var s = find(id);
                     var alreadyWorking = s && s.state === "working";
-                    if (s) { s.state = "working"; s.line = "Accepting your message…"; }
+                    if (s) { setSessionState(id, "working"); s.line = "Accepting your message…"; }
                     emit();
                     done({ ok: true, at: Math.floor(Date.now() / 1000), audit_id: uuid() });
                     // The HTTP answer means the keystrokes reached the Mac, not that the
@@ -736,7 +772,7 @@ export var Mock = (function () {
                         return;
                     }
                     var s = find(id);
-                    if (s) { s.state = "working"; s.line = "Deciding\u2026 (1s)"; s.menu = null; }
+                    if (s) { setSessionState(id, "working"); s.line = "Deciding\u2026 (1s)"; s.menu = null; }
                     emit();
                     done({ ok: true });
                 }, 200);
@@ -1033,7 +1069,7 @@ export var Mock = (function () {
                     if (MOCK_START === "slow") return;
                     setTimeout(function () {
                         sessions.push({ id: made, backend: "iterm", tty: "ttys0" + Math.floor(Math.random() * 90 + 10),
-                                        label: place.label, cwd: place.path, state: "idle", line: null,
+                                        label: place.label, cwd: place.path, state: "idle", work_state: "ready", line: null,
                                         // Absent for a moment on the real thing too — a shell has
                                         // to start before the assistant is a process anything
                                         // can see, whichever one was asked for.
@@ -1095,7 +1131,7 @@ export var Mock = (function () {
                                         // A resumed session comes back under the name it already
                                         // had, which is the whole reason somebody picked it off
                                         // the list rather than starting a new one.
-                                        label: known.title, cwd: place.path, state: "idle", line: null,
+                                        label: known.title, cwd: place.path, state: "idle", work_state: "ready", line: null,
                                         isClaude: false, assistant: null,
                                         sessionId: null, icon: place.icon });
                         emit();

@@ -381,8 +381,8 @@ final class RemoteServer {
         // from 127.0.0.1, and a paired phone must never be able to start sessions. Reads without
         // that token fall through to ordinary device auth, so the page can show the tasks; the
         // complete, notify and landing routes are gated inside their handlers. Complete and
-        // notify accept only the per-task secret; landing also accepts the machine token so a
-        // named root that received a handoff can close the obligation without the child's secret.
+        // notify accepts only the per-task secret. Landing accepts that secret for pending or
+        // abandoned, while its landed transition requires the machine token inside the handler.
         let orchestrated = request.path.hasPrefix("/v1/orchestrator/")
         let orchestratorAuthed = orchestrated
             && Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"])
@@ -2549,6 +2549,18 @@ final class RemoteServer {
         return processBound
     }
 
+    /// The process facts used by both the public conversation id and the broker work-state
+    /// projection. A replacement between reads can only produce a mixed tuple that fails the
+    /// all-fields task comparison; it can never promote a stale receipt.
+    static func sessionWorkIdentity(_ session: TargetSession) -> Orchestrator.SessionWorkIdentity {
+        let pid = Targets.pid(of: session)
+        return Orchestrator.SessionWorkIdentity(
+            terminalID: session.id, assistant: session.assistant, tty: session.tty, pid: pid,
+            processStart: pid.flatMap { Targets.processStart(ofPID: $0) },
+            conversationID: sessionIdentity(
+                assistant: session.assistant, processBound: Transcript.sessionID(of: session)))
+    }
+
     /// The sessions a coordination wait can address, as the facts needed to address one and
     /// nothing else.
     ///
@@ -2572,10 +2584,14 @@ final class RemoteServer {
     static func coordinationSessionRows(_ sessions: [TargetSession],
                                         states: [String: SessionState]) -> [[String: Any]] {
         sessions.filter { $0.isAssistant }.map { session -> [String: Any] in
+            let terminalState = states[session.id] ?? .unknown
+            let work = Orchestrator.sessionWorkProjection(
+                identity: sessionWorkIdentity(session), terminalState: terminalState)
             var row: [String: Any] = [
                 "id": session.id,
                 "label": session.displayLabel,
-                "state": name(of: states[session.id] ?? .unknown),
+                "state": name(of: terminalState),
+                "work_state": work.state.rawValue,
             ]
             if let assistant = session.assistant { row["assistant"] = assistant.rawValue }
             if let cwd = Targets.workingDirectory(of: session) { row["cwd"] = cwd }
@@ -2640,6 +2656,11 @@ final class RemoteServer {
             "isClaude": session.isClaude,
             "state": Self.name(of: state),
         ]
+        let identity = Self.sessionWorkIdentity(session)
+        let work = Orchestrator.sessionWorkProjection(
+            identity: identity, terminalState: state)
+        out["work_state"] = work.state.rawValue
+        if let disposition = work.disposition { out["disposition"] = disposition }
         if let assistant = session.assistant { out["assistant"] = assistant.rawValue }
         let coordination = Orchestrator.coordination(forTerminal: session.id)
         if !coordination.waitingOn.isEmpty || !coordination.waitedOnBy.isEmpty {
@@ -2685,9 +2706,7 @@ final class RemoteServer {
         let shells = watch.shells(of: session.id)
         if !shells.isEmpty { out["shells"] = shells.map { json(of: $0) } }
         if let cwd = Targets.workingDirectory(of: session) { out["cwd"] = cwd }
-        if let sessionID = Self.sessionIdentity(
-                assistant: session.assistant,
-                processBound: Transcript.sessionID(of: session)) {
+        if let sessionID = identity.conversationID {
             out["sessionId"] = sessionID
         }
         if let grid = watch.grid(of: session.id) { out["icon"] = json(of: grid) }
@@ -2995,6 +3014,10 @@ final class RemoteServer {
             "webEmptyWaitHint": t.webEmptyWaitHint,
             "webStateUnreadable": t.webStateUnreadable,
             "webStateWorking": t.webStateWorking,
+            "sessionWorkReady": t.sessionWorkReady,
+            "sessionWorkNeedsTriage": t.sessionWorkNeedsTriage,
+            "sessionWorkMilestone": t.sessionWorkMilestone,
+            "sessionWorkComplete": t.sessionWorkComplete,
         ])
 
         // The transcript pane.

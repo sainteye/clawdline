@@ -254,6 +254,10 @@ struct Italian: Copy {
     let webEmptyWaitHint = "Sullo stream non è ancora arrivato nulla"
     let webStateUnreadable = "schermo illeggibile"
     let webStateWorking = "in corso"
+    let sessionWorkReady = "pronto"
+    let sessionWorkNeedsTriage = "stato da verificare"
+    let sessionWorkMilestone = "Traguardo consegnato; revisione o integrazione possono restare"
+    let sessionWorkComplete = "Integrazione nel ramo di destinazione verificata dal broker"
 
     let webBack = "Sessioni"
     let webBackLabel = "Torna all'elenco delle sessioni"

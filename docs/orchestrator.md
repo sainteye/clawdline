@@ -952,13 +952,19 @@ That obligation is now part of the task registry rather than prose alone. After 
 back, root uses the task secret with `POST /v1/orchestrator/tasks/:id/landing` to record
 `{"state":"pending","target":"main"}` (plus an optional delivery, review conclusion, or note).
 A named root that later accepts a handoff can use the machine-level orchestrator token instead;
-this is the same credential family as cancel and claims release. Children do not call this route by
-protocol convention, not because the mechanism can distinguish them: each child holds its own
-secret throughout the task. The broker derives `owner_root_key` from its existing root identity,
+this is the same credential family as cancel and claims release. A task secret can maintain
+`pending`, but **cannot write `landed`**: each child holds its own secret, so that would make target
+landing self-reported. Only the machine/root orchestrator credential reaches the landed transition.
+The broker derives `owner_root_key` from its existing root identity,
 preserves the original `since`, and exposes the object on the task record. Repeating `pending` may
 fill in `target`, `delivery`, or `note` without restarting `since`. After the target contains the
-verified delivery, root posts `{"state":"landed","commit":"<sha>"}`; `landed_at` records when that
-commit was verified. Both `landed` and `abandoned` require a terminal task and are final: neither
+verified delivery, root posts `{"state":"landed","target":"main","commit":"<sha>"}` with the
+machine credential. The broker resolves both commit and `refs/heads/main` inside the task's project
+repository, proves the former is an ancestor of or equal to the latter, and persists canonical
+`verified_commit`, `verified_target_commit`, and `verification_origin = local_target_branch`.
+Arbitrary text, a remote-only ref, or an unrelated commit is refused; a pending edit racing the git
+checks is rejected by CAS. `landed_at` records when that proof was captured. Both `landed` and
+`abandoned` require a terminal task and are final: neither
 can return to another state, and genuinely reopened work gets a new task. `abandoned` is an
 explicit decision not to land the delivery, not a temporary pause.
 
@@ -1119,6 +1125,57 @@ not change the session's terminal `state`: `waiting` still means a person must a
 drives the loud row and push notification. Native and web rows draw peer waits quietly as
 `⏳ owner · release condition`, making an idle-looking but parked session safe for a person to leave
 open. A final-line `[Clawdline waiting]` sentence is only a fallback when that UI is unavailable.
+
+### Session work-state projection: one answer, separate evidence axes
+
+Every live Session row carries exactly one closed `work_state`: `ready`, `working`,
+`waiting_human`, `waiting_session`, `needs_triage`, `milestone_complete`, or `work_complete`.
+This is not another truth store. The broker deterministically projects it from the terminal
+presence reading, the task registry's authenticated result, the matching landing record, durable
+handoff state, and coordination waits. Those sources remain separate, and top-level terminal
+`state` is unchanged. A missing or unknown projected value fails closed in the web client as
+`needs_triage`, never as blank idle and never as a check.
+
+The precedence is `waiting_human` (terminal question) > `waiting_session` (waiting-on or owed wait)
+> unreadable or missing evidence (`needs_triage`) > current `working` > delivered milestone >
+broker-verified target landing. Current work intentionally outranks an older receipt: during the
+child's linger somebody can resume using the terminal, and the earlier assignment's success cannot claim
+that new activity is finished. `waiting_human` remains the only state that requests a person's
+attention or drives the loud row/push. `waiting_session` stays the quiet `⏳` relationship.
+
+A successful task with `finishedAt` is `milestone_complete` (one check) only when the task receipt
+is bound to the process occupying the Session now: exact assistant, terminal and tty, pid plus
+process start, process-bound rollout/conversation id, and the transcript's task-marker proof must
+all agree. A terminal id reused by a later ordinary or assistant process cannot borrow the settled
+task. Missing legacy identity fields fail closed. An open handoff's `from_session` is compared in
+two strict namespaces—exact terminal id and exact process-bound conversation id—with no prefix,
+title, tty, or fallback guessing.
+
+That one check is authenticated, durable reported evidence that the current assignment/phase
+delivered; review, landing, handoff, waits, or later graph nodes may remain. It becomes
+`work_complete` (two checks) only when the same task also has the new machine-authenticated,
+git-verified target landing fields above and the terminal has no unresolved coordination wait or
+handoff. Legacy landed rows without those fields remain a milestone. Neither child prose nor
+progress notes nor Clawdfather advisory can write either check. Clawdfather explains which receipt
+is missing, coordinates its owner, and prioritizes `needs_triage`; it is not a status-truth writer.
+
+The existing task result is the typed, durable Session report: `success` maps to delivered
+milestone evidence, while `failure`, `timeout`, cancellation, or a missing finish receipt map to
+triage rather than completion. Natural-language `/progress` notes remain display-only context.
+This deliberately reuses the authenticated, versioned task/result registry instead of adding a
+second session-status API that could drift. A child may intend that all work is complete, but that
+intent is still only its `success` receipt; it cannot directly produce `work_complete`.
+
+The completion scope is deliberately `task`, recorded in the Session's optional `disposition`
+metadata. The registry does not yet model one authoritative set of every descendant, review,
+landing, and handoff obligation belonging to a human root's whole graph. Claiming that broader
+completion would be invented global truth, so the projection fails closed and never calls a root
+graph complete. The typed evidence name is `broker_verified_target_landing`, not “task closure”:
+the broker verified local git containment, not the root's complete test/review graph. `ready` is
+likewise not inferred for an idle assistant: without positive evidence
+that no assignment exists, its stopped state is `needs_triage` (the health target for this queue is
+zero). Plain non-assistant prompts can be `ready` because their absence of an assistant assignment
+is directly observable.
 
 ### The protocol has a living Claude Code Artifact
 

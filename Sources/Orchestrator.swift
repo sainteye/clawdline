@@ -1064,7 +1064,7 @@ enum Orchestrator {
 
     /// The root-owned obligation after a child has delivered. This is deliberately observational:
     /// it never extends a claim or participates in dispatch arbitration.
-    struct Landing {
+    struct Landing: Equatable {
         let state: LandingState
         let target: String?
         let delivery: String?
@@ -1075,8 +1075,17 @@ enum Orchestrator {
         /// When the target commit was verified. `since` remains when the obligation first opened.
         let landedAt: Date?
 
+        /// Durable broker evidence captured only after resolving both objects in the task's
+        /// project repository and proving the commit is contained by the named local target.
+        /// Their absence on legacy rows is intentional fail-closed compatibility.
+        let verificationOrigin: String?
+        let verifiedCommit: String?
+        let verifiedTargetCommit: String?
+
         init(state: LandingState, target: String?, delivery: String?, ownerRootKey: String,
-             since: Date, commit: String?, note: String?, landedAt: Date? = nil) {
+             since: Date, commit: String?, note: String?, landedAt: Date? = nil,
+             verificationOrigin: String? = nil, verifiedCommit: String? = nil,
+             verifiedTargetCommit: String? = nil) {
             self.state = state
             self.target = target
             self.delivery = delivery
@@ -1085,6 +1094,28 @@ enum Orchestrator {
             self.commit = commit
             self.note = note
             self.landedAt = landedAt
+            self.verificationOrigin = verificationOrigin
+            self.verifiedCommit = verifiedCommit
+            self.verifiedTargetCommit = verifiedTargetCommit
+        }
+    }
+
+    struct LandingVerification: Equatable {
+        let origin: String
+        let commit: String
+        let targetCommit: String
+    }
+
+    static func isBrokerVerifiedTargetLanding(_ landing: Landing) -> Bool {
+        guard landing.state == .landed, landing.landedAt != nil,
+              landing.verificationOrigin == "local_target_branch",
+              let commit = landing.commit, !commit.isEmpty,
+              landing.verifiedCommit == commit,
+              let targetCommit = landing.verifiedTargetCommit, !targetCommit.isEmpty,
+              landing.target?.isEmpty == false else { return false }
+        return [commit, targetCommit].allSatisfy { id in
+            (id.count == 40 || id.count == 64)
+                && id.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
         }
     }
 
@@ -1782,6 +1813,158 @@ enum Orchestrator {
         let waitedOnBy: [[String: Any]]
     }
 
+    /// The one user-facing answer every live Session row carries.
+    ///
+    /// This is a projection, not a replacement for any source axis. `SessionState` still says
+    /// what the terminal shows; task results, landings, handoffs, and coordination waits remain
+    /// separate durable receipts. Keeping the enum closed makes a missing or future value a
+    /// visible `needs_triage` at the client instead of another kind of blank idle row.
+    enum SessionWorkState: String, CaseIterable {
+        case ready, working
+        case waitingHuman = "waiting_human"
+        case waitingSession = "waiting_session"
+        case needsTriage = "needs_triage"
+        case milestoneComplete = "milestone_complete"
+        case workComplete = "work_complete"
+    }
+
+    struct SessionWorkProjection {
+        let state: SessionWorkState
+        /// Only check states carry this. It describes the receipt and its deliberately narrow
+        /// task scope; it is never accepted back as a source of truth.
+        let disposition: [String: Any]?
+    }
+
+    /// Facts proved for the process occupying one terminal *now*. A terminal id alone is not
+    /// identity: iTerm and tmux both reuse it after the old process has gone. The conversation
+    /// is likewise accepted only from the process-bound Transcript seam used by the public
+    /// Session row, never from a tty hook left by an earlier assistant.
+    struct SessionWorkIdentity: Equatable {
+        var terminalID: String
+        var assistant: Assistant?
+        var tty: String
+        var pid: Int32?
+        var processStart: Date?
+        var conversationID: String?
+    }
+
+    /// A terminal task receipt belongs to the current Session only when every durable child
+    /// identity agrees with every process-bound fact. Missing legacy fields fail closed: they
+    /// remain useful task history, but cannot put a check on an unrelated later process.
+    static func taskMatchesCurrentSession(_ task: Task, identity: SessionWorkIdentity) -> Bool {
+        guard let assistant = identity.assistant,
+              task.assistant == assistant,
+              task.childTerminalId == identity.terminalID,
+              task.childTTY == identity.tty,
+              let recordedPID = task.childPID, recordedPID == identity.pid,
+              let recordedStart = task.childProcStart,
+              let currentStart = identity.processStart,
+              abs(recordedStart.timeIntervalSince(currentStart))
+                <= SessionRegistry.startTolerance,
+              task.transcriptProven,
+              let recordedConversation = task.childSessionId,
+              recordedConversation == identity.conversationID else { return false }
+        return true
+    }
+
+    /// Select the receipt the projection may use. Contradictory duplicate matches are no more
+    /// trustworthy than a missing one, so exact-count-one is part of the fail-closed contract.
+    static func taskForCurrentSession(_ candidates: [Task], identity: SessionWorkIdentity) -> Task? {
+        let matches = candidates.filter { taskMatchesCurrentSession($0, identity: identity) }
+        return matches.count == 1 ? matches[0] : nil
+    }
+
+    /// `from_session` has two historical namespaces. Compare each one exactly and independently:
+    /// a watched terminal id, or the conversation id proved for the process currently in it.
+    /// There is deliberately no prefix, title, tty, or fallback matching here.
+    static func handoffSource(_ source: String?, matches identity: SessionWorkIdentity) -> Bool {
+        guard let source else { return false }
+        let terminalNamespaceMatch = source == identity.terminalID
+        let conversationNamespaceMatch = identity.conversationID.map { source == $0 } ?? false
+        return terminalNamespaceMatch || conversationNamespaceMatch
+    }
+
+    /// Pure precedence shared by production and tests.
+    ///
+    /// A newly active terminal outranks an older completion receipt. That conflict is possible
+    /// during the child's linger (or if somebody keeps using its tab), and continuing to draw a
+    /// check would claim the *current* work is over on evidence from the previous phase.
+    static func projectSessionWorkState(
+        terminalState: SessionState,
+        task: Task?,
+        hasCoordinationWait: Bool,
+        hasOpenHandoff: Bool,
+        assignmentKnownAbsent: Bool
+    ) -> SessionWorkState {
+        if terminalState == .waiting { return .waitingHuman }
+        if hasCoordinationWait { return .waitingSession }
+        if terminalState == .unknown { return .needsTriage }
+        if case .working = terminalState { return .working }
+
+        if let task, task.state == .success, task.finishedAt != nil {
+            if task.landing.map(isBrokerVerifiedTargetLanding) == true,
+               !hasOpenHandoff {
+                return .workComplete
+            }
+            return .milestoneComplete
+        }
+        if assignmentKnownAbsent { return .ready }
+        // Idle is intentionally absent from the success rules. A prompt proves that activity
+        // stopped; without a matching receipt it proves neither completion nor readiness.
+        return .needsTriage
+    }
+
+    /// Broker projection for the process currently occupying a terminal. The role/title index is
+    /// presentation-only; terminal reuse means it is never sufficient completion evidence.
+    static func sessionWorkProjection(identity: SessionWorkIdentity,
+                                      terminalState: SessionState) -> SessionWorkProjection {
+        load()
+        lock.lock()
+        let task = taskForCurrentSession(Array(tasks.values), identity: identity)
+        let hasWait = coordinationWaits.values.contains { wait in
+            wait.waiters.contains { waiter in
+                waiter.releaseDeliveredAt == nil
+                    && (waiter.sessionID == identity.terminalID
+                        || wait.ownerSessionID == identity.terminalID)
+            }
+        }
+        let hasOpenHandoff = handoffs.values.contains {
+            $0.state != .delivered && handoffSource($0.fromSession, matches: identity)
+        }
+        lock.unlock()
+
+        // A non-assistant prompt is a terminal waiting for a command. For an assistant, absence
+        // of a broker task is not proof that its human-authored assignment ended; fail closed.
+        let state = projectSessionWorkState(
+            terminalState: terminalState, task: task,
+            hasCoordinationWait: hasWait, hasOpenHandoff: hasOpenHandoff,
+            assignmentKnownAbsent: identity.assistant == nil)
+        guard state == .milestoneComplete || state == .workComplete, let task else {
+            return SessionWorkProjection(state: state, disposition: nil)
+        }
+        var disposition: [String: Any] = [
+            "scope": "task",
+            "taskId": task.id,
+            "title": task.title,
+            "evidence": state == .workComplete
+                ? "broker_verified_target_landing" : "authenticated_task_delivery",
+        ]
+        if let finished = task.finishedAt {
+            disposition["receiptAt"] = Int(finished.timeIntervalSince1970)
+        }
+        if state == .workComplete, let landing = task.landing {
+            if let commit = landing.verifiedCommit { disposition["commit"] = commit }
+            if let target = landing.target { disposition["target"] = target }
+            if let targetCommit = landing.verifiedTargetCommit {
+                disposition["targetCommit"] = targetCommit
+            }
+            if let landedAt = landing.landedAt {
+                disposition["landedAt"] = Int(landedAt.timeIntervalSince1970)
+            }
+        }
+        return SessionWorkProjection(state: state, disposition: disposition)
+    }
+
     /// What a terminal this app opened for a task is called. Nil for every other session.
     static func title(forTerminal id: String) -> String? {
         lock.lock(); defer { lock.unlock() }
@@ -2286,6 +2469,32 @@ enum Orchestrator {
         killer.cancel()
         return GitAnswer(output: String(data: data, encoding: .utf8) ?? "",
                          status: process.terminationStatus)
+    }
+
+    /// Resolve a landing inside the task's own repository and prove that the named commit is in
+    /// the named *local* target branch. All arguments reach git without a shell; canonical object
+    /// ids are what survive into the registry, not caller-supplied revision expressions.
+    static func verifyTargetLanding(projectDir: String, target: String,
+                                    commit: String) -> LandingVerification? {
+        guard let branchCheck = git(["check-ref-format", "--branch", target], cwd: projectDir),
+              branchCheck.status == 0 else { return nil }
+        let targetRef = "refs/heads/\(target)"
+        guard let resolvedCommit = git(
+                ["rev-parse", "--verify", "--end-of-options", "\(commit)^{commit}"],
+                cwd: projectDir), resolvedCommit.status == 0,
+              let resolvedTarget = git(
+                ["rev-parse", "--verify", "--end-of-options", "\(targetRef)^{commit}"],
+                cwd: projectDir), resolvedTarget.status == 0 else { return nil }
+        let commitID = resolvedCommit.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetID = resolvedTarget.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard [commitID, targetID].allSatisfy({ id in
+            (id.count == 40 || id.count == 64)
+                && id.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
+        }) else { return nil }
+        guard let contained = git(["merge-base", "--is-ancestor", commitID, targetID],
+                                  cwd: projectDir), contained.status == 0 else { return nil }
+        return LandingVerification(origin: "local_target_branch", commit: commitID,
+                                   targetCommit: targetID)
     }
 
     private enum WorktreePreparation {
@@ -3876,8 +4085,8 @@ enum Orchestrator {
     // MARK: - Root-owned landing record
 
     /// Record the obligation that begins after a child delivers and ends only when root lands or
-    /// abandons it. The task secret remains verifiable after finalize; the machine credential is
-    /// the recovery path when a named root accepts ownership through a handoff without that secret.
+    /// abandons it. A child secret may open/update `pending`; only the machine/root credential may
+    /// assert `landed`, and even it must pass repository verification below.
     static func updateLanding(taskID: String, secret: String, orchestratorToken: String? = nil,
                               raw: [String: Any],
                               now: Date = Date()) -> Reply {
@@ -3886,11 +4095,15 @@ enum Orchestrator {
         }
         let taskSecretMatches = !secret.isEmpty
             && RemoteAuth.constantTimeEquals(snapshot.secretHash, hash(ofSecret: secret))
-        guard taskSecretMatches || verifyDispatch(token: orchestratorToken) else {
+        let machineMatches = verifyDispatch(token: orchestratorToken)
+        let requestsLanded = raw["state"] as? String == LandingState.landed.rawValue
+        guard requestsLanded ? machineMatches : (taskSecretMatches || machineMatches) else {
             RemoteAuth.audit("orchestrator.landing", ["task": taskID, "ok": "0",
                                                        "why": "bad_credential"])
-            return .refused(403, "forbidden",
-                            "Use this task's secret or the orchestrator token.")
+            let required = requestsLanded
+                ? "Only the orchestrator token may record a landed target."
+                : "Use this task's secret or the orchestrator token."
+            return .refused(403, "forbidden", required)
         }
 
         let allowed: Set<String> = ["state", "target", "delivery", "commit", "note"]
@@ -3948,23 +4161,97 @@ enum Orchestrator {
             return .refused(400, "bad_request", "commit is required when state is landed.")
         }
 
-        current.landing = Landing(
-            state: requestedState,
-            target: fields["target"] ?? existing?.target,
+        let target = fields["target"] ?? existing?.target
+        if requestedState == .landed, target == nil {
+            lock.unlock()
+            return .refused(400, "bad_request",
+                            "target is required when state is landed.")
+        }
+
+        // Pending and abandoned are declarations, not verification claims; they retain the
+        // existing state-machine behaviour and never persist verification-shaped fields.
+        if requestedState != .landed {
+            current.landing = Landing(
+                state: requestedState,
+                target: target,
+                delivery: fields["delivery"] ?? existing?.delivery,
+                ownerRootKey: existing?.ownerRootKey ?? rootKeyDigest(rootKeyLocked(of: current)),
+                since: existing?.since ?? now,
+                commit: nil,
+                note: fields["note"] ?? existing?.note,
+                landedAt: nil)
+            tasks[taskID] = current
+            lock.unlock()
+
+            save()
+            RemoteServer.shared.broadcastOrchestrator()
+            RemoteAuth.audit("orchestrator.landing", [
+                "task": taskID, "ok": "1", "state": requestedState.rawValue,
+                "target": current.landing?.target ?? "",
+            ])
+            return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+        }
+
+        // Git subprocesses must not hold the registry lock. Remember exactly the landing state
+        // they verify; the equality check after the subprocesses is the CAS preventing a
+        // concurrent pending edit from being overwritten with evidence for its old target.
+        let expectedState = current.state
+        let expectedLanding = existing
+        let projectDir = current.projectDir
+        let requestedCommit = fields["commit"]!
+        let requestedTarget = target!
+        lock.unlock()
+
+        guard let verification = verifyTargetLanding(
+                projectDir: projectDir, target: requestedTarget, commit: requestedCommit) else {
+            RemoteAuth.audit("orchestrator.landing", [
+                "task": taskID, "ok": "0", "why": "target_not_verified",
+                "target": requestedTarget,
+            ])
+            return .refused(409, "unverified_landing",
+                            "The commit must resolve in the task repository and be contained "
+                            + "by the named local target branch.")
+        }
+
+        lock.lock()
+        guard var verifiedCurrent = tasks[taskID] else {
+            lock.unlock()
+            return .refused(404, "not_found", "No task named that")
+        }
+        if verifiedCurrent.landing?.state == .landed {
+            lock.unlock()
+            return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+        }
+        guard verifiedCurrent.state == expectedState,
+              verifiedCurrent.landing == expectedLanding else {
+            lock.unlock()
+            return .refused(409, "stale_write",
+                            "The landing changed while its target was being verified; retry.")
+        }
+
+        verifiedCurrent.landing = Landing(
+            state: .landed,
+            target: requestedTarget,
             delivery: fields["delivery"] ?? existing?.delivery,
-            ownerRootKey: existing?.ownerRootKey ?? rootKeyDigest(rootKeyLocked(of: current)),
+            ownerRootKey: existing?.ownerRootKey
+                ?? rootKeyDigest(rootKeyLocked(of: verifiedCurrent)),
             since: existing?.since ?? now,
-            commit: requestedState == .landed ? fields["commit"] : nil,
+            commit: verification.commit,
             note: fields["note"] ?? existing?.note,
-            landedAt: requestedState == .landed ? (existing?.landedAt ?? now) : nil)
-        tasks[taskID] = current
+            landedAt: now,
+            verificationOrigin: verification.origin,
+            verifiedCommit: verification.commit,
+            verifiedTargetCommit: verification.targetCommit)
+        tasks[taskID] = verifiedCurrent
         lock.unlock()
 
         save()
         RemoteServer.shared.broadcastOrchestrator()
         RemoteAuth.audit("orchestrator.landing", [
             "task": taskID, "ok": "1", "state": requestedState.rawValue,
-            "target": current.landing?.target ?? "",
+            "target": verifiedCurrent.landing?.target ?? "",
+            "verified_commit": verification.commit,
+            "verified_target_commit": verification.targetCommit,
         ])
         return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
     }
@@ -5193,9 +5480,24 @@ enum Orchestrator {
                 break
             }
         case .codex:
+            let observedPID = Targets.pid(of: child)
+            let observedStart = observedPID.flatMap { Targets.processStart(ofPID: $0) }
+            let observation = ChildObservation(pid: observedPID, procStart: observedStart)
+            changed = recordProcessIdentity(from: observation, in: &task) || changed
+            guard let recordedPID = task.childPID, recordedPID == observedPID,
+                  let recordedStart = task.childProcStart, let observedStart,
+                  abs(recordedStart.timeIntervalSince(observedStart))
+                    <= SessionRegistry.startTolerance else {
+                RemoteAuth.audit("orchestrator.identity.foreign", [
+                    "task": task.id,
+                    "recorded_pid": task.childPID.map(String.init) ?? "?",
+                    "seen_pid": observedPID.map(String.init) ?? "?",
+                ])
+                return false
+            }
             if task.transcriptPath == nil,
                let rollout = Codex.locate(cwd: cwd(of: task), startedAt: task.spawnedAt,
-                                           pid: Targets.pid(of: child)) {
+                                           pid: observedPID) {
                 task.transcriptPath = rollout.path
                 task.transcriptProven = false
                 changed = true
@@ -7238,6 +7540,11 @@ enum Orchestrator {
         if let landedAt = landing.landedAt {
             out["landed_at"] = Int(landedAt.timeIntervalSince1970)
         }
+        if let origin = landing.verificationOrigin { out["verification_origin"] = origin }
+        if let commit = landing.verifiedCommit { out["verified_commit"] = commit }
+        if let targetCommit = landing.verifiedTargetCommit {
+            out["verified_target_commit"] = targetCommit
+        }
         return out
     }
 
@@ -7430,16 +7737,39 @@ enum Orchestrator {
         let commit = text("commit", limit: 200)
         let note = text("note", limit: 500)
         let landedAt = (obj["landed_at"] as? Double).map(Date.init(timeIntervalSince1970:))
+        let verificationOrigin = text("verification_origin", limit: 100)
+        let verifiedCommit = text("verified_commit", limit: 200)
+        let verifiedTargetCommit = text("verified_target_commit", limit: 200)
+        let verificationValues: [String?] = [verificationOrigin, verifiedCommit,
+                                              verifiedTargetCommit]
+        let hasAnyVerification = verificationValues.contains { $0 != nil }
+        let hasCompleteVerification = verificationOrigin == "local_target_branch"
+            && verifiedCommit == commit
+            && [verifiedCommit, verifiedTargetCommit].allSatisfy { value in
+                guard let value else { return false }
+                return (value.count == 40 || value.count == 64)
+                    && value.allSatisfy {
+                        ("0"..."9").contains($0) || ("a"..."f").contains($0)
+                    }
+            }
         guard (obj["target"] == nil || target != nil),
               (obj["delivery"] == nil || delivery != nil),
               (obj["commit"] == nil || commit != nil),
               (obj["note"] == nil || note != nil),
               (obj["landed_at"] == nil || landedAt != nil),
+              (obj["verification_origin"] == nil || verificationOrigin != nil),
+              (obj["verified_commit"] == nil || verifiedCommit != nil),
+              (obj["verified_target_commit"] == nil || verifiedTargetCommit != nil),
               (landedAt == nil || state == .landed),
-              (state == .landed) == (commit != nil) else { return nil }
+              (state == .landed) == (commit != nil),
+              !hasAnyVerification || (state == .landed && target != nil
+                                      && hasCompleteVerification) else { return nil }
         return Landing(state: state, target: target, delivery: delivery,
                        ownerRootKey: owner, since: Date(timeIntervalSince1970: since),
-                       commit: commit, note: note, landedAt: landedAt)
+                       commit: commit, note: note, landedAt: landedAt,
+                       verificationOrigin: verificationOrigin,
+                       verifiedCommit: verifiedCommit,
+                       verifiedTargetCommit: verifiedTargetCommit)
     }
 
     static func handoff(from obj: [String: Any]) -> HandoffEnvelope? {
