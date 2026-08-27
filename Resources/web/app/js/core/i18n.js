@@ -438,6 +438,9 @@ export var T = {
     // Two of them, because English counts. See `sessionShellOne` in `Sources/Strings.swift`.
     sessionShellOne: "1 shell running",
     sessionShellMany: "{n} shells running",
+    // The owner's half of a file wait. See `sessionWaitedOnByOne` in `Sources/Strings.swift`.
+    sessionWaitedOnByOne: "1 waiting on you",
+    sessionWaitedOnByMany: "{n} waiting on you",
     sendFailed: "Could not send",
     hintList: "list",
     hintKeys: "keys",

@@ -71,6 +71,8 @@ struct Japanese: Copy {
     let sessionAgents = "バックグラウンドに {n} 件"
     let sessionShellOne = "シェル 1 件実行中"
     let sessionShellMany = "シェル {n} 件実行中"
+    let sessionWaitedOnByOne = "1 件があなた待ち"
+    let sessionWaitedOnByMany = "{n} 件があなた待ち"
     let islandDone = "完了"
     let islandAllSessions = "すべてのセッション…"
     func statusWaiting(_ labels: [String]) -> String {

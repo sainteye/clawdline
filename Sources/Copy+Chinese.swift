@@ -75,6 +75,8 @@ struct TraditionalChinese: Copy {
     let sessionAgents = "{n} 個在背景"
     let sessionShellOne = "1 個 shell 在跑"
     let sessionShellMany = "{n} 個 shell 在跑"
+    let sessionWaitedOnByOne = "1 個在等你放行"
+    let sessionWaitedOnByMany = "{n} 個在等你放行"
     let islandDone = "跑完了"
     let islandAllSessions = "所有 session⋯"
     func statusWaiting(_ labels: [String]) -> String {
@@ -697,6 +699,8 @@ struct SimplifiedChinese: Copy {
     let sessionAgents = "{n} 个在后台"
     let sessionShellOne = "1 个 shell 在跑"
     let sessionShellMany = "{n} 个 shell 在跑"
+    let sessionWaitedOnByOne = "1 个在等你放行"
+    let sessionWaitedOnByMany = "{n} 个在等你放行"
     let islandDone = "跑完了"
     let islandAllSessions = "所有 session……"
     func statusWaiting(_ labels: [String]) -> String {

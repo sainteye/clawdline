@@ -135,6 +135,34 @@ protocol Copy {
     /// finished", never a thing that wants somebody.
     var sessionShellOne: String { get }
     var sessionShellMany: String { get }
+
+    /// What a row says when other sessions are parked on *this* one, `{n}` for how many.
+    ///
+    /// The other half of a file wait, and the only half the app has to write itself. The waiting
+    /// side's row is built out of the words the two agents already agreed on — a session label
+    /// and the release condition somebody typed — so there is nothing there to translate. This
+    /// side has no such sentence to borrow: nobody wrote "and by the way, three of them are
+    /// stuck on you", so the app says it, and therefore has to say it in fourteen languages.
+    ///
+    /// **Second person, and a count rather than a name.** The waiting row names one peer because
+    /// that is who to go and ask; this row is read by the person who is *being* asked, and what
+    /// they need first is how many are stuck and what would free them — which is why the number
+    /// leads and the release condition follows it. It also keeps the two rows apart when the list
+    /// clips them: cut to its first few words, this one still reads as a count in the app's own
+    /// voice while the other still reads as somebody's tab title.
+    ///
+    /// Quiet, like the agent and shell lines. A peer wait is never the loud waiting state — that
+    /// one means a person must answer — and this row must not start behaving like one.
+    ///
+    /// **Two of them, for the reason `sessionShellOne` is two.** This sentence has a verb in it,
+    /// and in half these languages that verb agrees with the count: one plural form reads "1
+    /// warten auf dich", "1 te esperan", "1 t'attendent". One is not the edge case here but the
+    /// ordinary one — most of the time a single session is parked on you. Languages that do not
+    /// inflect, and the ones that take the singular after a numeral anyway, write the same
+    /// sentence twice; the singular hard-codes its 1 exactly as the shell line does.
+    var sessionWaitedOnByOne: String { get }
+    var sessionWaitedOnByMany: String { get }
+
     /// What the island says when a session that had been running stops.
     ///
     /// **One word.** It is drawn in small capitals above a task name in a strip about as wide as

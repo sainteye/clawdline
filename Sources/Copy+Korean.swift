@@ -71,6 +71,8 @@ struct Korean: Copy {
     let sessionAgents = "백그라운드에 {n}개"
     let sessionShellOne = "셸 1개 실행 중"
     let sessionShellMany = "셸 {n}개 실행 중"
+    let sessionWaitedOnByOne = "1개가 당신을 기다림"
+    let sessionWaitedOnByMany = "{n}개가 당신을 기다림"
     let islandDone = "완료"
     let islandAllSessions = "모든 세션…"
     func statusWaiting(_ labels: [String]) -> String {

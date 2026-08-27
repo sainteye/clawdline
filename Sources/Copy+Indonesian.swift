@@ -73,6 +73,8 @@ struct Indonesian: Copy {
     let sessionAgents = "{n} di latar belakang"
     let sessionShellOne = "1 shell berjalan"
     let sessionShellMany = "{n} shell berjalan"
+    let sessionWaitedOnByOne = "1 menunggumu"
+    let sessionWaitedOnByMany = "{n} menunggumu"
     let islandDone = "selesai"
     let islandAllSessions = "Semua sesi…"
     func statusWaiting(_ labels: [String]) -> String {

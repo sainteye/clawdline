@@ -1781,14 +1781,68 @@ final class PromptController: NSObject, NSWindowDelegate, NSTextViewDelegate {
     /// What the row says after its label. Split from the label so the row can put the spinner
     /// between the two and lay the three of them out itself.
     private func coordinationWaitSaid(for terminalID: String) -> String? {
-        let waits = Orchestrator.coordination(forTerminal: terminalID).waitingOn
-        guard let first = waits.first else { return nil }
-        let ownerID = first["ownerSessionId"] as? String ?? ""
-        let owner = targets.first(where: { $0.id == ownerID })?.displayLabel
-            ?? (ownerID.isEmpty ? "Clawdline" : ownerID)
-        let condition = first["releaseCondition"] as? String ?? "release"
-        let more = waits.count > 1 ? "  +\(waits.count - 1)" : ""
-        return "⏳ \(owner) · \(condition)\(more)"
+        Self.coordinationWaitSaid(Orchestrator.coordination(forTerminal: terminalID)) { id in
+            targets.first(where: { $0.id == id })?.displayLabel
+        }
+    }
+
+    /// The same sentence, out of the registry's reach so the suite can hold it.
+    ///
+    /// Pure on purpose. What a row says about a file wait is a rule with three cases in it —
+    /// blocked, blocking, and both at once — and a rule that can only be read by looking at a
+    /// running app with two real terminals parked on each other is a rule nobody checks.
+    /// `label` is how a session id becomes a name; it answers nil for a session this Mac cannot
+    /// see, which is a relationship that outlived a tab rather than an error.
+    /// `copy` is a parameter for the same reason `label` is: the sentence this rule picks
+    /// differs by language — one waiter and many waiters are two sentences wherever the verb
+    /// agrees with the count — and a rule that can only be read in English is a rule whose
+    /// German half nobody checks.
+    static func coordinationWaitSaid(_ coordination: Orchestrator.Coordination,
+                                     copy: Copy = L.t,
+                                     label: (String) -> String?) -> String? {
+        let waits = coordination.waitingOn
+        let owed = coordination.waitedOnBy
+        /// The release condition of a wait, or the word for the thing that has to happen. The
+        /// fallback is very nearly unreachable — registering rejects an empty condition — and it
+        /// is deliberately the same on both sides, because a row that fell back on one side and
+        /// not the other would read as two different features.
+        func condition(_ wait: [String: Any]) -> String {
+            wait["releaseCondition"] as? String ?? "release"
+        }
+        // What this session is holding up, in the app's own words. The count is the whole point:
+        // a name here would be the wrong question answered, because the owner does not go and
+        // ask anybody — the owner releases, and what they need to know is how many that frees.
+        let owedSaid: String?
+        if owed.isEmpty { owedSaid = nil }
+        else if owed.count == 1 { owedSaid = copy.sessionWaitedOnByOne }
+        else {
+            owedSaid = copy.sessionWaitedOnByMany
+                .replacingOccurrences(of: "{n}", with: "\(owed.count)")
+        }
+
+        if let first = waits.first {
+            let ownerID = first["ownerSessionId"] as? String ?? ""
+            let owner = label(ownerID) ?? (ownerID.isEmpty ? "Clawdline" : ownerID)
+            let more = waits.count > 1 ? "  +\(waits.count - 1)" : ""
+            // Waiting leads when a session is on both sides of the board — which is the rule the
+            // API already states, since `coordination.state` is `waiting_on_session` whenever
+            // `waitingOn` is not empty. The owed count still goes on the end rather than being
+            // dropped: a session that waits on one peer while another waits on it is exactly the
+            // row that used to say nothing about the half a person has to act on.
+            return "⏳ \(owner) · \(condition(first))\(more)"
+                + (owedSaid.map { "  ·  \($0)" } ?? "")
+        }
+        // The half nothing drew. The broker worked it out and the API sent it; both lists read
+        // past it, so an owner's row looked exactly like a row in no relationship at all — and
+        // the only other thing telling an owner is one message typed into a terminal that a
+        // permission menu can swallow whole.
+        //
+        // No `+N` to go with the count, unlike the waiting side. There the leading field names
+        // *one* peer and the suffix says how many were not named; here the leading field is
+        // already all of them, and a `+N` beside it would be the same sessions counted twice.
+        // The condition beside it belongs to the group the first row came from.
+        guard let owedSaid, let first = owed.first else { return nil }
+        return "⏳ \(owedSaid) · \(condition(first))"
     }
 
     private func sessionRowDetail(_ state: SessionState, selected: Bool,

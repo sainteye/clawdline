@@ -3187,6 +3187,11 @@ final class RemoteServer {
             // in it. The page picks between them the way the bar does.
             "sessionShellOne": t.sessionShellOne,
             "sessionShellMany": t.sessionShellMany,
+            // The owner's half of a file wait. Said here for the same reason as the two above:
+            // the page and the bar draw the same row, and an owner who reads the panel on a
+            // phone must not be the one person told about it in English.
+            "sessionWaitedOnByOne": t.sessionWaitedOnByOne,
+            "sessionWaitedOnByMany": t.sessionWaitedOnByMany,
             "sendFailed": t.sendFailed,
             "hintList": t.hintList,
             "hintKeys": t.hintKeys,

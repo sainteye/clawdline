@@ -73,6 +73,8 @@ struct French: Copy {
     let sessionAgents = "{n} en arrière-plan"
     let sessionShellOne = "1 shell en cours"
     let sessionShellMany = "{n} shells en cours"
+    let sessionWaitedOnByOne = "1 t'attend"
+    let sessionWaitedOnByMany = "{n} t'attendent"
     let islandDone = "terminé"
     let islandAllSessions = "Toutes les sessions…"
     func statusWaiting(_ labels: [String]) -> String {

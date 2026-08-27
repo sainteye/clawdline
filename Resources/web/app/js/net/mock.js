@@ -109,9 +109,22 @@ export var Mock = (function () {
                 what: "Build the importer with the new row parser",
                 doing: "[214/318] Compiling importer/rows.rs" }
           ] },
+        // The **owner** of the wait the row below is stuck on, and the reason this fixture is
+        // here: an owner's row used to be drawn exactly like a session in no relationship at
+        // all, so the one person who can end the wait was the one person not told about it.
+        // Idle, quiet, and still not safe to close.
         { id: "A15E-77", backend: "tmux", tty: "tmux:%12", label: "docs pass before the release",
           cwd: "/Users/x/code/clawdline/docs", state: "idle", line: null,
-          isClaude: true, assistant: "claude", sessionId: null, icon: clawdline },
+          isClaude: true, assistant: "claude", sessionId: null, icon: clawdline,
+          coordination: { state: "has_waiters", waitingOn: [], waitedOnBy: [{
+              id: "0ae8b6e7-83b5-4bcd-a61c-776f56924e15",
+              repository: "/Users/x/code/clawdline",
+              paths: ["artifacts/2026-08-26-clawdline-communication-protocol.html"],
+              ownerSessionId: "A15E-77",
+              waiterSessionId: "7A19-42", waiterLabel: "update the communication Artifact",
+              reason: "the same Artifact file",
+              releaseCondition: "the protocol docs are committed and released"
+          }] } },
         // Idle because its own turn ended, but not safe to close: Clawdline still owns a durable
         // relationship saying which peer must release which path. This is deliberately separate
         // from `state: "waiting"`, whose orange row means a person has to answer.

@@ -441,7 +441,12 @@ function fillRow(node, s) {
     if (pending) node.dataset.pending = "1"; else delete node.dataset.pending;
     var coordination = s.coordination || {};
     var waitingOn = coordination.waitingOn || [];
+    // The other side of the same relationship: sessions parked on this one. It is the half the
+    // owner reads, and the half both lists used to read straight past — which left the one
+    // person who has to act looking at a row indistinguishable from an unrelated session.
+    var waitedOnBy = coordination.waitedOnBy || [];
     if (waitingOn.length) node.dataset.coordination = "waiting";
+    else if (waitedOnBy.length) node.dataset.coordination = "owed";
     else delete node.dataset.coordination;
     node.classList.toggle("selected", s.id === S.selectedId);
     node.classList.toggle("open", s.id === S.openId);
@@ -549,23 +554,59 @@ function fillRow(node, s) {
     // A peer wait is an overlay, never the terminal state. It must not enter the loud waiting
     // branch above: that branch means a person has to answer and is what drives push alerts.
     var peerWait = waitingOn[0] || null;
+    var owedWait = waitedOnBy[0] || null;
+    // What this session is holding up, said the way the Mac's row says it: a count in the app's
+    // own words rather than a name. The owner is not going to go and ask anybody — the owner
+    // releases — so the useful facts are how many that would free and what would free them.
+    //
+    // No `+N` beside the count, unlike the waiting line: there the leading field names one peer
+    // and the suffix counts the ones it had no room to name, while here the leading field is
+    // already all of them and a suffix would count the same sessions twice.
+    // One and many are two sentences wherever the verb agrees with the count, so the count
+    // picks the key before it is filled in. See `sessionWaitedOnByOne` in `Sources/Strings.swift`.
+    var owedSaid = "";
+    if (owedWait) {
+        owedSaid = waitedOnBy.length === 1
+            ? T.sessionWaitedOnByOne
+            : fill(T.sessionWaitedOnByMany, { n: waitedOnBy.length });
+    }
     var peerText = "";
     var peerTitle = "";
     if (peerWait) {
         var owner = peerWait.ownerLabel || peerWait.ownerSessionId || "Clawdline";
         peerText = "⏳ " + owner + " · " + (peerWait.releaseCondition || "release");
         if (waitingOn.length > 1) peerText += "  +" + String(waitingOn.length - 1);
+        // Waiting leads when a session is on both sides of the board — the rule the API already
+        // states, since `coordination.state` is `waiting_on_session` whenever `waitingOn` is not
+        // empty. The owed count still goes on the end rather than being dropped: a session that
+        // waits on one peer while another waits on it is exactly the row this is about.
+        if (owedWait) peerText += "  ·  " + owedSaid;
         peerTitle = waitingOn.map(function (wait) {
             return [wait.repository, (wait.paths || []).join(", "), wait.releaseCondition]
                 .filter(Boolean).join(" · ");
         }).join("\n");
+    } else if (owedWait) {
+        peerText = "⏳ " + owedSaid + " · " + (owedWait.releaseCondition || "release");
+        // Who is parked on this session, one per line, because the row only has room for the
+        // number. Names where this Mac can still see the tab, ids where it cannot — an
+        // unresolved relationship is the one most worth being able to read.
+        peerTitle = waitedOnBy.map(function (wait) {
+            return [wait.waiterLabel || wait.waiterSessionId, (wait.paths || []).join(", "),
+                wait.reason].filter(Boolean).join(" · ");
+        }).join("\n");
     }
-    var peerSaid = peerWait ? '<span class="coordination-wait" title="' +
+    var peerSaid = peerText ? '<span class="coordination-wait" title="' +
         esc(peerTitle) + '">' + esc(peerText) + "</span>" : "";
     var waitShape = waitingOn.map(function (wait) {
         return [wait.id || "wait", wait.ownerLabel || wait.ownerSessionId || "",
             wait.releaseCondition || ""].join(":");
-    }).join("+");
+    }).concat(waitedOnBy.map(function (wait) {
+        // The owner's half belongs in the redraw key too. A row that gains a waiter while the
+        // page is open and keeps the shape it had is a row that never says so — which is the
+        // same bug as the one above, one layer down.
+        return ["owed", wait.id || "wait", wait.waiterLabel || wait.waiterSessionId || "",
+            wait.releaseCondition || ""].join(":");
+    })).join("+");
     var shape = kind + "-" + s.state + (shells ? "+sh" + shells : "") +
         (waitShape ? "+cw" + waitShape : "");
     if (state.dataset.shape !== shape) {

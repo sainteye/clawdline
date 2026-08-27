@@ -73,6 +73,8 @@ struct Russian: Copy {
     let sessionAgents = "{n} в фоне"
     let sessionShellOne = "1 shell работает"
     let sessionShellMany = "{n} shell работают"
+    let sessionWaitedOnByOne = "1 ждёт вас"
+    let sessionWaitedOnByMany = "{n} ждут вас"
     let islandDone = "готово"
     let islandAllSessions = "Все сессии…"
     func statusWaiting(_ labels: [String]) -> String {

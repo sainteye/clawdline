@@ -77,6 +77,8 @@ struct Hindi: Copy {
     let sessionAgents = "बैकग्राउंड में {n}"
     let sessionShellOne = "1 shell चल रहा है"
     let sessionShellMany = "{n} shell चल रहे हैं"
+    let sessionWaitedOnByOne = "1 आपका इंतज़ार कर रहा है"
+    let sessionWaitedOnByMany = "{n} आपका इंतज़ार कर रहे हैं"
     let islandDone = "हो गया"
     let islandAllSessions = "सभी सेशन…"
     func statusWaiting(_ labels: [String]) -> String {

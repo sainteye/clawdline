@@ -73,6 +73,8 @@ struct Turkish: Copy {
     let sessionAgents = "arka planda {n}"
     let sessionShellOne = "1 shell çalışıyor"
     let sessionShellMany = "{n} shell çalışıyor"
+    let sessionWaitedOnByOne = "1 seni bekliyor"
+    let sessionWaitedOnByMany = "{n} seni bekliyor"
     let islandDone = "bitti"
     let islandAllSessions = "Tüm oturumlar…"
     func statusWaiting(_ labels: [String]) -> String {

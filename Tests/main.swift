@@ -13012,6 +13012,168 @@ group("a file-wait notice is not typed into a session that is showing a picker")
           Orchestrator.coordinationWaitRecords().isEmpty)
 }
 
+// A3: the owner's half of a file wait. Two groups, both named for the side of the relationship
+// they are about, so this block can be told apart from the delivery-and-guard work landing on
+// the same file from another branch.
+group("A3 owner visibility: a session row says when peers are parked on it") {
+    // The overlay the broker hands the row, built by hand. `coordination(forTerminal:)` is
+    // already held by the broker group above; what is unheld is the *drawing* rule, and it has
+    // three cases — blocked, blocking, and both at once — that no running app makes easy to see.
+    func wait(id: String, owner: String, waiter: String?, condition: String) -> [String: Any] {
+        var row: [String: Any] = [
+            "id": id, "repository": "/Users/me/code/clawdline",
+            "paths": ["Sources/Foo.swift"], "ownerSessionId": owner,
+            "releaseCondition": condition, "createdAt": 1_800_000_000,
+            "reason": "the same file",
+        ]
+        if let waiter { row["waiterSessionId"] = waiter }
+        return row
+    }
+    let names = ["OWNER": "docs pass before the release", "WAIT-A": "update the Artifact",
+                 "WAIT-B": "rewrite the importer"]
+    func said(_ coordination: Orchestrator.Coordination) -> String? {
+        PromptController.coordinationWaitSaid(coordination) { names[$0] }
+    }
+    func owed(_ n: Int) -> String {
+        n == 1 ? L.t.sessionWaitedOnByOne
+               : L.t.sessionWaitedOnByMany.replacingOccurrences(of: "{n}", with: "\(n)")
+    }
+
+    let quiet = said(Orchestrator.Coordination(waitingOn: [], waitedOnBy: []))
+    check("a session in no relationship says nothing at all", quiet == nil)
+
+    // The side that already worked, kept exactly as it was. The owner half is an addition, not
+    // a redesign: a waiter's row still names the peer to go and ask, and still counts the rest.
+    let blocked = said(Orchestrator.Coordination(waitingOn: [
+        wait(id: "one", owner: "OWNER", waiter: nil, condition: "the docs are committed"),
+    ], waitedOnBy: []))
+    expect("a blocked session still names its owner and the release condition",
+           blocked, "⏳ docs pass before the release · the docs are committed")
+    let blockedTwice = said(Orchestrator.Coordination(waitingOn: [
+        wait(id: "one", owner: "OWNER", waiter: nil, condition: "the docs are committed"),
+        wait(id: "two", owner: "WAIT-B", waiter: nil, condition: "the importer lands"),
+    ], waitedOnBy: []))
+    expect("and still counts the owners it did not have room to name",
+           blockedTwice, "⏳ docs pass before the release · the docs are committed  +1")
+
+    // **The bug this is about.** The registry knew, the API said so, and both lists drew the
+    // owner's row exactly as they draw a session in no relationship at all.
+    let blocking = said(Orchestrator.Coordination(waitingOn: [], waitedOnBy: [
+        wait(id: "one", owner: "OWNER", waiter: "WAIT-A", condition: "the docs are committed"),
+        wait(id: "one", owner: "OWNER", waiter: "WAIT-B", condition: "the docs are committed"),
+    ]))
+    check("an owner's row is no longer identical to an unrelated one", blocking != quiet)
+    expect("it counts the sessions parked on this one and says what would free them",
+           blocking, "⏳ \(owed(2)) · the docs are committed")
+    check("the count is the app's own words, not a session label",
+          blocking?.contains(owed(2)) == true && blocking?.contains("update the Artifact") == false)
+
+    // A count and a `+N` would be the same sessions twice, so the count is the `+N`: one waiter
+    // reads as one, and the condition beside it belongs to the group that row came from.
+    let blockingOnce = said(Orchestrator.Coordination(waitingOn: [], waitedOnBy: [
+        wait(id: "one", owner: "OWNER", waiter: "WAIT-A", condition: "the docs are committed"),
+    ]))
+    expect("a single waiter is counted, not suffixed",
+           blockingOnce, "⏳ \(owed(1)) · the docs are committed")
+
+    // **One is the ordinary case, not the edge of it.** Most of the time a single session is
+    // parked on you, and this sentence has a verb in it: with one plural key the German row read
+    // "1 warten auf dich" — the count an owner sees most often, in the one shape the language
+    // does not allow. Named rather than derived, because which languages inflect here is a fact
+    // about those languages and not something the count can be asked.
+    // Read in German on purpose. In English the two sentences are the same string once the 1
+    // is in it, so an English-only check here passes whichever key the rule reaches for — the
+    // exact shape of a test that cannot fail.
+    let onceInGerman = PromptController.coordinationWaitSaid(
+        Orchestrator.Coordination(waitingOn: [], waitedOnBy: [
+            wait(id: "one", owner: "OWNER", waiter: "WAIT-A", condition: "the docs are committed"),
+        ]), copy: German()) { names[$0] }
+    expect("one waiter reads as the singular sentence in a language that inflects",
+           onceInGerman, "⏳ \(German().sessionWaitedOnByOne) · the docs are committed")
+    let twiceInGerman = PromptController.coordinationWaitSaid(
+        Orchestrator.Coordination(waitingOn: [], waitedOnBy: [
+            wait(id: "one", owner: "OWNER", waiter: "WAIT-A", condition: "the docs are committed"),
+            wait(id: "one", owner: "OWNER", waiter: "WAIT-B", condition: "the docs are committed"),
+        ]), copy: German()) { names[$0] }
+    check("and two waiters reach for the other sentence, not the same one",
+          twiceInGerman?.contains(German().sessionWaitedOnByOne) == false
+              && twiceInGerman?.contains("2") == true)
+    let inflecting = ["de", "fr", "es", "it", "ru", "hi"]
+    let uninflected = L.catalog.filter { inflecting.contains($0.tag) }.filter {
+        $0.copy.sessionWaitedOnByOne
+            == $0.copy.sessionWaitedOnByMany.replacingOccurrences(of: "{n}", with: "1")
+    }.map { $0.tag }.sorted()
+    check("a language whose verb agrees with the count says one differently from many",
+          uninflected.isEmpty, uninflected.joined(separator: ", "))
+    // The plural keeps the hole. A translation that dropped it would draw a row that says
+    // somebody is stuck without ever saying how many.
+    let holeless = L.catalog.filter { !$0.copy.sessionWaitedOnByMany.contains("{n}") }
+        .map { $0.tag }.sorted()
+    check("every language keeps the hole the count goes in", holeless.isEmpty,
+          holeless.joined(separator: ", "))
+
+    // Both at once — A waits on B while C waits on A. Waiting leads, because that is the rule
+    // the API already states (`state` is `waiting_on_session` whenever `waitingOn` is not empty)
+    // and because the peer to go and ask is the more useful half. The owed count still goes on
+    // the end: dropping it here would put this row back in the state this whole change is about.
+    let both = said(Orchestrator.Coordination(waitingOn: [
+        wait(id: "one", owner: "OWNER", waiter: nil, condition: "the docs are committed"),
+    ], waitedOnBy: [
+        wait(id: "two", owner: "ME", waiter: "WAIT-B", condition: "the importer lands"),
+    ]))
+    expect("a session on both sides leads with who it is waiting for, then what it owes",
+           both, "⏳ docs pass before the release · the docs are committed  ·  \(owed(1))")
+
+    // A relationship that outlived a tab. The label lookup answers nil, and the row falls back
+    // to the id rather than to silence — an unresolved wait is exactly the one worth seeing.
+    let gone = said(Orchestrator.Coordination(waitingOn: [
+        wait(id: "one", owner: "CLOSED-TAB", waiter: nil, condition: "the branch is pushed"),
+    ], waitedOnBy: []))
+    expect("a wait on a session this Mac cannot see still draws",
+           gone, "⏳ CLOSED-TAB · the branch is pushed")
+}
+
+group("A3 owner visibility: the page draws the same two sides as the Mac") {
+    // The page is JavaScript with no test runner in this repo, so it is held the way
+    // `transcript.js` is held one group over: by reading the source and pinning the shape of it.
+    let js = (try? String(contentsOfFile: "Resources/web/app/js/view/list.js",
+                          encoding: .utf8)) ?? ""
+    let mock = (try? String(contentsOfFile: "Resources/web/app/js/net/mock.js",
+                            encoding: .utf8)) ?? ""
+    let fallback = (try? String(contentsOfFile: "Resources/web/app/js/core/i18n.js",
+                                encoding: .utf8)) ?? ""
+    check("the list source was read", js.contains("function fillRow"))
+
+    check("the row reads the owner's half of the overlay, not only the waiter's",
+          js.contains("coordination.waitedOnBy"))
+    check("the owed count is a translated string with a number filled into it",
+          js.contains("T.sessionWaitedOnByMany") && js.contains("fill(T.sessionWaitedOnByMany")
+              && js.contains("T.sessionWaitedOnByOne"))
+    check("and it is escaped like every other value on the row",
+          js.contains("esc(peerText)") || js.contains("esc(ownedText)"))
+    // The cache key decides whether the row is redrawn at all. A row that gains a waiter while
+    // the page is open and keeps the shape it had is a row that never says so.
+    check("the redraw key changes when the owner's half changes",
+          js.contains("waitedOnBy") && js.contains("+cw"))
+
+    // The name and a value, not the name anywhere in the file: this used to pass on the comment
+    // one line above the entry, which is the exact shape of a check that cannot fail.
+    check("the page carries an English fallback for the new string",
+          fallback.contains("sessionWaitedOnByOne: \"")
+              && fallback.contains("sessionWaitedOnByMany: \""))
+    let sent = ((try? JSONSerialization.jsonObject(
+        with: RemoteServer.shared.route(remoteRequest("GET", "/v1/strings")).body))
+        as? [String: Any]) ?? [:]
+    expect("and the server sends the translated one",
+           sent["sessionWaitedOnByMany"] as? String, L.t.sessionWaitedOnByMany)
+    expect("and the singular one beside it",
+           sent["sessionWaitedOnByOne"] as? String, L.t.sessionWaitedOnByOne)
+
+    // `?mock=1` is how this row is looked at without two real terminals parked on each other.
+    check("the mock list has an owner with waiters on it",
+          mock.contains("has_waiters") && mock.contains("waiterSessionId"))
+}
+
 group("handing off is the other thing a paired device may not do") {
     Orchestrator.forget()
     defer { Orchestrator.forget() }
