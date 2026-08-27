@@ -17788,6 +17788,18 @@ group("the production route preserves scan evidence across cache reads and app g
           watchSource.contains("if scanComplete { self.scanObservedAt = Date() }"))
 }
 
+// MARK: - Schedule session resume
+
+checks += 1
+do {
+    let scheduleChecks = try runScheduleResumeTests()
+    checks += scheduleChecks
+    print("  ✓ ScheduleResume (\(scheduleChecks) checks)")
+} catch {
+    failures.append("ScheduleResume — \(error)")
+    print("  ✗ ScheduleResume")
+}
+
 // MARK: - Cloud protocol and transport
 
 let cloudVectorsURL = URL(

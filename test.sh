@@ -43,6 +43,7 @@ swiftc \
   -target arm64-apple-macos13.0 \
   -o "$BIN" \
   $(ls Sources/*.swift | grep -v 'Sources/main.swift') \
+  Tests/ScheduleResumeTests.swift \
   Tests/CloudEnvelopeTests.swift \
   Tests/CloudTransportTests.swift \
   Tests/CloudAppBridgeTests.swift \
