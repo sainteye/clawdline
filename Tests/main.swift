@@ -13387,6 +13387,23 @@ group("the Session info card is read off the files, and says unknown rather than
     check("a rollout with no token_count is unknown",
           SessionInfo.codexLimits(rollout: Data("{\"type\":\"session_meta\"}\n".utf8)).windows.isEmpty)
 
+    // Context is the current turn against the model's window, not the cumulative token total.
+    // The two can be orders of magnitude apart in a long session, which is exactly why the web
+    // status line must not substitute one for the other.
+    let contextCount = line([
+        "timestamp": "2026-08-23T16:50:00.000Z", "type": "event_msg",
+        "payload": ["type": "token_count",
+                    "info": ["total_token_usage": ["total_tokens": 47_300_000],
+                             "last_token_usage": ["total_tokens": 103_360],
+                             "model_context_window": 258_400],
+                    "rate_limits": [:]]])
+    let context = SessionInfo.codexContext(rollout: Data((tokenCount + "\n" + contextCount + "\n").utf8))
+    expect("context uses the newest turn, not cumulative tokens", context?.usedTokens, 103_360)
+    expect("it keeps the model window for an exact tooltip", context?.windowTokens, 258_400)
+    expect("and reports its percentage", context?.usedPercent, 40)
+    check("a token count without a model window is unknown context",
+          SessionInfo.codexContext(rollout: Data((tokenCount + "\n").utf8)) == nil)
+
     // §2.4: once the primary bucket is full, the *next* token_count often falls back to an
     // unnamed "premium" credits bucket with no window at all — `limit_id` turns from "codex" to
     // "premium", `primary`/`secondary` are both null, `credits.balance` is "0". The newest record
@@ -13440,7 +13457,9 @@ group("the Session info card is read off the files, and says unknown rather than
     let started = Date(timeIntervalSince1970: 1_787_390_000)
     let payload = SessionInfo.payload(
         id: "ABC", assistant: .claude, sessionId: "s-1", model: "claude-fable-5", cwd: "/tmp/x",
-        startedAt: started, now: now, usage: usage, limits: hit.limits, files: files,
+        startedAt: started, now: now, usage: usage,
+        context: SessionInfo.Context(usedPercent: 40, usedTokens: 103_360, windowTokens: 258_400),
+        limits: hit.limits, files: files,
         deploy: [["label": "ci", "url": "https://x", "kind": "deploy", "state": "ok", "local": false]])
     let session = payload["session"] as? [String: Any]
     expect("the session's id", session?["id"] as? String, "ABC")
@@ -13453,6 +13472,10 @@ group("the Session info card is read off the files, and says unknown rather than
     expect("the totals", counts?["total"] as? Int, 100)
     expect("the cache halves are separate", counts?["cacheWrite"] as? Int, 40)
     expect("and the cost", counts?["costUsd"] as? Double, 0.1234)
+    let contextPayload = payload["context"] as? [String: Any]
+    expect("the context percentage is on the wire", contextPayload?["usedPercent"] as? Double, 40)
+    expect("with its current token count", contextPayload?["usedTokens"] as? Int, 103_360)
+    expect("and model window", contextPayload?["windowTokens"] as? Int, 258_400)
     let plan = payload["limits"] as? [String: Any]
     let windows = plan?["windows"] as? [[String: Any]]
     expect("one window", windows?.count, 1)

@@ -50,13 +50,7 @@
     .status-line .item + .item::before, .status-line .files::before,
     .status-line .deploy::before { padding: 0 6px; }
     .status-line .limits { padding-left: 10px; gap: 10px; }
-    /* **`49.1M`, not `49.1M tokens`.** The unit is seven characters of a row that has to carry
-       a model, a spend, a branch and two plan windows across 390 points, and it is the only
-       thing in it that says the same word every time — the number beside `$35.58` and under a
-       label reading *tokens* on the card this row opens is not going to be read as anything
-       else. It stays on a desk, where the room is there and one less inference is one less. */
-    .status-line .usage .unit { display: none; }
-    /* And the spend goes with it. It is the one number on this row that never changes what
+    /* Cost is the one number on this row that never changes what
        happens next — a turn is not stopped by what it has cost, it is stopped by the plan window
        on the right — and it is the last thing standing between the branch and the edge of a
        390-point screen. It is the headline of the card the left half of this row opens, which is

@@ -40,11 +40,14 @@
 }
 .status-line .model .assistant-logo { flex: 0 0 auto; width: 13px; height: 13px; }
 .status-line .model .word { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.status-line .usage { color: var(--dim); font-variant-numeric: tabular-nums; }
+.status-line .context { color: var(--dim); font-variant-numeric: tabular-nums; }
+.status-line .context b { color: var(--ink); font-weight: 500; }
+.status-line .context[data-level="warn"] b { color: var(--warn); }
+.status-line .context[data-level="bad"] b { color: var(--bad); }
 .status-line .cost { color: var(--accent); }
 
 /* A deploy in flight takes the scarce middle of this row. The model and plan windows remain —
-   they still decide the next turn — while token spend and the Git branch step aside until the
+   they still decide the next turn — while context use and the Git branch step aside until the
    run finishes. The clock comes from the same status file as the Mac bar, not from an invented
    GitHub percentage. */
 .status-line .deploy {
@@ -110,4 +113,3 @@
     .status-line .files { display: none; }
     .status-line .limits { padding-left: 12px; }
 }
-

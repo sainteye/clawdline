@@ -10,6 +10,38 @@ import Foundation
 /// it a string. Nothing in this file writes anywhere.
 enum SessionInfo {
 
+    // MARK: - Context
+
+    /// The current conversation against the model's context window. This is deliberately not
+    /// `Usage`: a session can cumulatively spend millions of tokens while its current context is
+    /// only a fraction of one window after compaction. Absent means the assistant did not record
+    /// both sides of the ratio, which is more honest than showing cumulative spend in its place.
+    struct Context: Equatable {
+        var usedPercent: Double
+        var usedTokens: Int?
+        var windowTokens: Int?
+    }
+
+    /// Codex writes the exact current-turn usage and model window together on each `token_count`.
+    /// Read backward so a partially written last line cannot erase the last complete answer.
+    static func codexContext(rollout data: Data) -> Context? {
+        for line in data.split(separator: 0x0A).reversed() {
+            let text = String(decoding: line, as: UTF8.self)
+            guard text.contains("token_count"), text.contains("model_context_window"),
+                  let obj = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
+                  obj["type"] as? String == "event_msg",
+                  let payload = obj["payload"] as? [String: Any],
+                  payload["type"] as? String == "token_count",
+                  let info = payload["info"] as? [String: Any],
+                  let current = info["last_token_usage"] as? [String: Any],
+                  let used = int(current["total_tokens"]), used >= 0,
+                  let window = int(info["model_context_window"]), window > 0 else { continue }
+            return Context(usedPercent: min(100, max(0, Double(used) * 100 / Double(window))),
+                           usedTokens: used, windowTokens: window)
+        }
+        return nil
+    }
+
     // MARK: - Files
 
     /// What `git status --porcelain=v2 --branch` says, **counted rather than listed**. Counts,
@@ -479,7 +511,8 @@ enum SessionInfo {
     /// means here.
     static func payload(id: String, assistant: Assistant?, sessionId: String?, model: String?,
                         cwd: String?, startedAt: Date?, now: Date = Date(),
-                        usage: Orchestrator.Usage?, limits: Limits, files: Files?,
+                        usage: Orchestrator.Usage?, context: Context? = nil,
+                        limits: Limits, files: Files?,
                         deploy: [[String: Any]], models: [Model] = [],
                         permission: PermissionMode? = nil) -> [String: Any] {
         var session: [String: Any] = ["id": id]
@@ -514,6 +547,13 @@ enum SessionInfo {
             if let model = usage.model { counts["model"] = model }
             if let cost = usage.costUsd { counts["costUsd"] = cost }
             out["usage"] = counts
+        }
+
+        if let context {
+            var current: [String: Any] = ["usedPercent": context.usedPercent]
+            if let used = context.usedTokens { current["usedTokens"] = used }
+            if let window = context.windowTokens { current["windowTokens"] = window }
+            out["context"] = current
         }
 
         var plan: [String: Any] = [

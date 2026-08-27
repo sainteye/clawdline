@@ -42,7 +42,7 @@ export var SessionFacts = (function () {
 
 /**
  * The persistent status line under the open transcript. This is the compact reading of the
- * Session info card: model, total token usage and cost, working-tree summary, and the plan
+ * Session info card: model, current context use and cost, working-tree summary, and the plan
  * windows. The whole row opens the card, just as clicking a terminal status line asks for the
  * detail behind a number.
  *
@@ -59,12 +59,6 @@ export var StatusLine = (function () {
     var stateSeen = "";
     var deployTicker = null;
 
-    function compact(n) {
-        if (typeof n !== "number") return T.webInfoUnknown;
-        if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 1 : 2) + "M";
-        if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + "K";
-        return String(n);
-    }
     function dollars(x) { return x < 0.01 ? "<$0.01" : "$" + x.toFixed(2); }
 
     function modelName(d) {
@@ -86,19 +80,25 @@ export var StatusLine = (function () {
         }).join("");
     }
 
-    /** The left half: what this session is on and what it has spent. Opens the Session info card. */
+    /** The left half: what this session is on and how full its context is. Opens the info card. */
     function identityHTML(d, deploying) {
-        var s = d.session || {}, u = d.usage;
+        var s = d.session || {}, u = d.usage, c = d.context;
         var model = modelName(d) || assistantName(s.assistant);
         var out = '<span class="item model">' + assistantLogo(s.assistant) +
             '<span class="word">' + esc(model) + "</span></span>";
 
-        if (!deploying && u && typeof u.total === "number") {
-            // The unit is its own element so a phone can drop it and keep the number — see the
-            // rule at the phone breakpoint. The title says it in full either way.
-            out += '<span class="item usage" title="' + esc(u.total.toLocaleString()) + " " +
-                esc(T.webInfoTokens) + '">' + esc(compact(u.total)) +
-                '<span class="unit"> ' + esc(T.webInfoTokens) + "</span></span>";
+        if (!deploying && c && typeof c.usedPercent === "number") {
+            var pct = Math.max(0, Math.min(100, Math.round(c.usedPercent)));
+            var level = pct >= 85 ? "bad" : (pct >= 60 ? "warn" : "ok");
+            var exact = "ctx " + pct + "%";
+            if (typeof c.usedTokens === "number" && typeof c.windowTokens === "number") {
+                exact += " (" + c.usedTokens.toLocaleString() + " / " +
+                    c.windowTokens.toLocaleString() + " " + T.webInfoTokens + ")";
+            }
+            out += '<span class="item context" data-level="' + level + '" title="' +
+                esc(exact) + '">ctx <b>' + pct + "%</b></span>";
+        }
+        if (!deploying && u) {
             if (typeof u.costUsd === "number") {
                 out += '<span class="item cost">' + esc(dollars(u.costUsd)) + "</span>";
             }

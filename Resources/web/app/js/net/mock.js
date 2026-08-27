@@ -431,6 +431,7 @@ export var Mock = (function () {
                        startedAt: now - 840, seconds: 840 },
             usage: { input: 8190546, output: 16956, cacheRead: 7978752, cacheWrite: 0, total: 8207502,
                      model: "gpt-5.3-codex" },
+            context: { usedPercent: 42.24, usedTokens: 109138, windowTokens: 258400 },
             limits: { windows: [
                 { name: "5h", usedPercent: 24, resetsAt: now + 9000, hit: false },
                 { name: "7d", usedPercent: 71, resetsAt: now + 3 * 86400 + 4000, hit: false }

@@ -2344,7 +2344,7 @@ final class RemoteServer {
         if let deploy = status.deploy, let url = deploy.url, !url.isEmpty {
             var row: [String: Any] = ["label": deploy.label, "url": url, "kind": "deploy",
                                       "state": deploy.state, "local": false]
-            // The compact web status line replaces tokens and Git with the deploy while it is
+            // The compact web status line replaces context and Git with the deploy while it is
             // moving. Give it the same clock the Mac bar uses so the browser can keep the bar
             // moving between the deliberately infrequent `/info` reads.
             if deploy.state == "running" {
@@ -2395,6 +2395,7 @@ final class RemoteServer {
         let record = Transcript.record(of: session)
 
         var usage: Orchestrator.Usage?
+        var context: SessionInfo.Context?
         var limits = SessionInfo.Limits()
         var model: String?
         if let record, let data = try? Data(contentsOf: record.url), !data.isEmpty {
@@ -2406,6 +2407,7 @@ final class RemoteServer {
                 model = read.model
             case .codex:
                 usage = Orchestrator.codexUsage(rollout: record.url)
+                context = SessionInfo.codexContext(rollout: data)
                 limits = SessionInfo.codexLimits(rollout: data)
                 model = usage?.model
             }
@@ -2434,7 +2436,8 @@ final class RemoteServer {
             id: session.id, assistant: session.assistant,
             sessionId: HookBridge.note(for: session)?.session, model: model,
             cwd: cwd, startedAt: Targets.processStart(of: session),
-            usage: usage, limits: limits, files: cwd.flatMap { SessionInfo.files(cwd: $0) },
+            usage: usage, context: context, limits: limits,
+            files: cwd.flatMap { SessionInfo.files(cwd: $0) },
             deploy: deploy, models: SessionInfo.models(for: session.assistant),
             permission: permission)
         payload["links"] = links

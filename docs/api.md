@@ -386,6 +386,7 @@ $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/info
 | `session` | `id` and `assistant` always; `sessionId` with hooks installed; `model` when a transcript has named one — the **last** model the transcript names, so a session that switched mid-way shows what it is on now; `cwd`, `startedAt` and `seconds` (its age, as of this answer) when the process could be found |
 | `permission` | Claude Code's current permission mode and the Shift-Tab cycle order. `current` is `auto`, `manual`, `acceptEdits`, `plan`, or `unknown`; `manual` specifically means the screen was readable and showed no mode line, while `unknown` means the screen capture was absent or empty. **Absent for Codex sessions**, which do not have this mode cycle |
 | `usage` | the transcript's token totals — `input`, `output`, `cacheRead`, `cacheWrite`, `total` — with `model` and, for Claude, `costUsd` at list price. **Absent** when no transcript has been found, which is not the same as zero |
+| `context` | the current conversation against its model window: `usedPercent`, plus `usedTokens` and `windowTokens` for the exact ratio. Codex records all three together on each `token_count`; **absent** when the assistant did not record both sides of that ratio. This is per-turn context, not cumulative `usage` |
 | `limits` | `windows`: each `name` (`5h`, `7d` — the status line's names), `usedPercent`, `resetsAt`, and `hit` when the provider refused the last request on it; `at` is when the record it came from was written. **An empty `windows` means nobody said**, and a client must draw that as unknown rather than as 0% |
 | `files` | the working tree **counted**, not listed: `branch` (empty when detached), `head`, `ahead`, `behind`, `staged`, `unstaged`, `untracked`, `conflict`. A partially added file is under both `staged` and `unstaged`, as `git status` lists it. **Absent** when the directory is not a repository or `git` did not answer in time — and those are the same answer on purpose, because a card that said *clean* about a tree it could not read would be wrong in the direction that matters. The files themselves are `/git` |
 | `deploy` | the `deploy` and `ci` rows of `/links`, unchanged, so a `state` means here what it means there |
@@ -401,6 +402,14 @@ handed, with `at` — and, over that, a refusal in the transcript that has not y
 100%). A cached window whose reset has passed is dropped rather than shown. Without that status
 line installed, or with no Claude Code session open to keep it current, the file goes stale and
 the windows go back to *unknown* — which is the word for it.
+
+**Context is not token spend.** Codex's same `token_count` event carries
+`last_token_usage.total_tokens` and `model_context_window`; their ratio is the optional `context`
+object. The cumulative `total_token_usage` remains under `usage` for the expanded card, but the
+compact status line shows `context.usedPercent`, because that is what determines whether this
+conversation is about to compact. Claude's transcript records current usage but not the model
+window that its status-line input received, so its `context` stays absent rather than guessing a
+percentage from a hard-coded model limit.
 
 **A route rather than a field on the session**, for the reason `/links` gives and one more: on
 top of that route's `git`, this one reads the transcript, which can be fifty megabytes. Free when
