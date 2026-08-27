@@ -176,9 +176,10 @@ Everything the bar knows, as of one reading.
 
 ```console
 $ curl -s http://127.0.0.1:7717/v1/sessions -H "Authorization: Bearer $TOKEN" \
-    | jq '{at, sessions: [.sessions[] | {id, label, state, cwd}]}'
+    | jq '{at, scan, sessions: [.sessions[] | {id, label, state, cwd}]}'
 {
   "at": 1787049596,
+  "scan": {"generation":42,"complete":true,"emptyAuthoritative":false},
   "sessions": [
     {
       "id": "35D87610-E7F4-4A9A-95A0-11947CF5115C",
@@ -204,6 +205,11 @@ $ curl -s http://127.0.0.1:7717/v1/sessions -H "Authorization: Bearer $TOKEN" \
 
 Four fields per session are picked out there so the reply fits on this page; the whole object is
 [below](#the-session-object). `at` is when the reply was built, not when the reading was taken.
+`scan.generation` changes only after another terminal/process scan has been reconciled;
+`scan.complete` says every terminal source was readable. `scan.emptyAuthoritative` is narrower:
+it is true only when an empty list came from a complete inventory or when the complete process
+list independently proved every previously known assistant tty had exited. A second HTTP read of
+the same generation is the same observation, not confirmation that an empty list is real.
 
 **This route is the paired-device API and it does not accept the orchestrator token.** A caller
 holding `~/.config/clawdline/orchestrator-token` and nothing else gets `401 unauthorized` here, so

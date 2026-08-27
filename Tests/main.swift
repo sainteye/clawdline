@@ -2037,6 +2037,75 @@ group("ps output picks out real assistant processes") {
     expect("the pid comes back with it", found["ttys013"]?.pid, 102)
 }
 
+group("assistant process scans distinguish absence from failure") {
+    let missing = ITerm.parseAssistantProcessScan("", timedOut: false)
+    check("silence is an unreadable process list", !missing.isComplete)
+    check("and carries a diagnostic", missing.error != nil)
+
+    let timedOut = ITerm.parseAssistantProcessScan("ttys006 101 claude", timedOut: true)
+    check("a timeout is unreadable even if a partial line arrived", !timedOut.isComplete)
+
+    let nonzero = ITerm.parseAssistantProcessScan("ttys006 101 claude", timedOut: false,
+                                                  exitStatus: 1)
+    check("a nonzero ps exit cannot bless partial stdout", !nonzero.isComplete)
+
+    let noAssistant = ITerm.parseAssistantProcessScan("?? 1 0 /sbin/launchd", timedOut: false)
+    check("a non-empty ps answer is trustworthy", noAssistant.isComplete)
+    expect("and can truthfully contain no assistants", noAssistant.assistants.count, 0)
+
+    let found = ITerm.parseAssistantProcessScan("ttys006 101 1 claude", timedOut: false)
+    check("a readable assistant list is complete", found.isComplete)
+    expect("and preserves the parsed process", found.assistants["ttys006"]?.pid, 101)
+    check("iTerm reported stopped contradicts a live assistant even on the first scan",
+          ITerm.stoppedTerminalContradictsProcesses(appRunning: false, processScan: found))
+    check("an observed running iTerm does not contradict the same process list",
+          !ITerm.stoppedTerminalContradictsProcesses(appRunning: true, processScan: found))
+    check("a genuinely empty process list agrees that iTerm may be stopped",
+          !ITerm.stoppedTerminalContradictsProcesses(appRunning: false, processScan: noAssistant))
+}
+
+group("incomplete session inventories merge but complete ones replace") {
+    func session(_ id: String, _ name: String, backend: Backend = .iterm,
+                 tty: String? = nil) -> TargetSession {
+        TargetSession(backend: backend, id: id, name: name, tty: tty ?? "/dev/tty\(id)",
+                      windowIndex: 0, tabIndex: 0, assistant: .claude)
+    }
+    let oldA = session("A", "old A")
+    let oldB = session("B", "old B")
+    let newA = session("A", "new A")
+
+    let partial = Targets.reconcile(previous: [oldA, oldB], scanned: [newA], complete: false)
+    expect("a partial row replaces its older copy", partial.sessions[0].name, "new A")
+    expect("an unseen row survives an incomplete scan", partial.sessions.map(\.id), ["A", "B"])
+    expect("the reconciliation reports what it retained", partial.preserved, 1)
+
+    let failed = Targets.reconcile(previous: [oldA, oldB], scanned: [], complete: false)
+    expect("an all-failed scan retains the last known list", failed.sessions.map(\.id), ["A", "B"])
+    expect("all retained rows are counted", failed.preserved, 2)
+
+    let provedClosed = Targets.reconcile(previous: [oldA, oldB], scanned: [newA], complete: false,
+                                          confirmedAbsent: ["B"])
+    expect("process proof removes an omitted closed session despite broken JXA",
+           provedClosed.sessions.map(\.id), ["A"])
+    expect("the independent removal is counted", provedClosed.confirmedRemoved, 1)
+
+    let closed = Targets.reconcile(previous: [oldA, oldB], scanned: [], complete: true)
+    expect("a confirmed empty scan removes stale sessions", closed.sessions.count, 0)
+    expect("a complete scan retains nothing by doubt", closed.preserved, 0)
+
+    check("a live iTerm process contradicts a complete inventory that omitted its tty",
+          Targets.hasLiveProcessContradiction(previous: [oldA], scanned: [],
+                                              runningTTYs: ["ttyA"]))
+    check("the same tty observed under a fresh session id resolves the contradiction",
+          !Targets.hasLiveProcessContradiction(previous: [oldA],
+                                               scanned: [session("new", "new", tty: "/dev/ttyA")],
+                                               runningTTYs: ["ttyA"]))
+    check("a tmux process does not contradict an empty iTerm inventory",
+          !Targets.hasLiveProcessContradiction(
+              previous: [session("T", "tmux", backend: .tmux, tty: "/dev/ttys009")],
+              scanned: [], runningTTYs: ["ttys009"]))
+}
+
 group("ps output picks out Codex, shim and all") {
     // What the published CLI actually looks like: a Node shim and the native binary it spawns,
     // both on one tty. Either proves the session is there; the native one holds the working

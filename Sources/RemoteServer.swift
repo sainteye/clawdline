@@ -2478,6 +2478,11 @@ final class RemoteServer {
         return [
             "sessions": watch.targets.map { json(of: $0) },
             "at": Int(Date().timeIntervalSince1970),
+            "scan": [
+                "generation": watch.scanGeneration,
+                "complete": watch.scanComplete,
+                "emptyAuthoritative": watch.emptyInventoryAuthoritative,
+            ],
         ]
     }
 

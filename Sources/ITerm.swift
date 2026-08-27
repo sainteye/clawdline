@@ -103,14 +103,15 @@ enum ITerm {
     /// still can, and so can a dialog this app had nothing to do with. A run that overruns its
     /// deadline is killed and reported as silence, which is what the caller can act on.
     private static func shell(_ path: String, _ args: [String],
-                              timeout: TimeInterval = 15) -> (out: String, timedOut: Bool) {
+                              timeout: TimeInterval = 15)
+        -> (out: String, timedOut: Bool, status: Int32?) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = args
         let out = Pipe()
         p.standardOutput = out
         p.standardError = Pipe()
-        do { try p.run() } catch { return ("", false) }
+        do { try p.run() } catch { return ("", false, nil) }
         // Read on another thread rather than here, because the deadline must not be waiting on
         // the pipe: a child stuck in an Apple event has written nothing and is not going to
         // close its end of it either.
@@ -126,10 +127,10 @@ enum ITerm {
             // What this buys is that nothing here is still holding the queue while they decide.
             p.terminate()
             _ = done.wait(timeout: .now() + 2)
-            return ("", true)
+            return ("", true, nil)
         }
         p.waitQuietly()
-        return (String(data: sink.data, encoding: .utf8) ?? "", false)
+        return (String(data: sink.data, encoding: .utf8) ?? "", false, p.terminationStatus)
     }
 
     private static var scriptPath: String? {
@@ -157,8 +158,71 @@ enum ITerm {
 
     // MARK: - Who is running an assistant
 
+    struct AssistantProcessScan {
+        let assistants: [String: Assistant.Running]
+        let error: String?
+
+        var isComplete: Bool { error == nil }
+    }
+
     private static let pidLock = NSLock()
-    private static var pidCache: (at: CFAbsoluteTime, map: [String: Assistant.Running])?
+    private static var pidCache: (at: CFAbsoluteTime, scan: AssistantProcessScan)?
+
+    /// Turn one `ps` answer into a confidence-bearing result.
+    ///
+    /// An empty assistant map is not itself suspicious: most Macs spend most of their time with
+    /// no assistant running. An empty *process listing* is different. `ps -ax` always contains at
+    /// least its own process and launchd, so silence means the process failed to launch, timed out
+    /// or otherwise yielded no observation. Keeping those two empties separate is what prevents a
+    /// transient subprocess failure from becoming a confident "every session closed" event.
+    static func parseAssistantProcessScan(_ output: String,
+                                          timedOut: Bool,
+                                          exitStatus: Int32? = 0) -> AssistantProcessScan {
+        if timedOut {
+            return AssistantProcessScan(assistants: [:], error: "assistant process scan timed out")
+        }
+        guard exitStatus == 0 else {
+            let detail = exitStatus.map(String.init) ?? "launch failure"
+            return AssistantProcessScan(assistants: [:],
+                                        error: "assistant process scan failed (\(detail))")
+        }
+        guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return AssistantProcessScan(assistants: [:], error: "assistant process scan returned no data")
+        }
+        return AssistantProcessScan(assistants: Assistant.reading(ofPS: output), error: nil)
+    }
+
+    /// JXA saying the app is stopped is normally a trustworthy empty inventory. It stops being
+    /// one when the independent process scan still sees an assistant: on the first watch after an
+    /// app/server restart there is no previous target row to expose that contradiction for us.
+    static func stoppedTerminalContradictsProcesses(appRunning: Bool?,
+                                                     processScan: AssistantProcessScan) -> Bool {
+        appRunning == false && processScan.isComplete && !processScan.assistants.isEmpty
+    }
+
+    /// tty → what is running on it, plus whether the process list itself was readable.
+    ///
+    /// Only complete results enter the two-second cache. Caching an unreadable result would turn
+    /// a single failed `ps` into several authoritative-looking empty scans, which is the failure
+    /// mode this confidence bit exists to prevent.
+    static func assistantProcessScan() -> AssistantProcessScan {
+        pidLock.lock()
+        if let c = pidCache, CFAbsoluteTimeGetCurrent() - c.at < 2 {
+            defer { pidLock.unlock() }
+            return c.scan
+        }
+        pidLock.unlock()
+
+        let run = shell("/bin/ps", ["-ax", "-o", "tty=,pid=,ppid=,command="])
+        let scan = parseAssistantProcessScan(run.out, timedOut: run.timedOut,
+                                             exitStatus: run.status)
+        if scan.isComplete {
+            pidLock.lock()
+            pidCache = (CFAbsoluteTimeGetCurrent(), scan)
+            pidLock.unlock()
+        }
+        return scan
+    }
 
     /// tty → what is running on it. The one process listing everything else on this path shares.
     ///
@@ -171,19 +235,7 @@ enum ITerm {
     /// which put a tenth of a second of process listing behind every refresh. A session that
     /// starts or dies is picked up on the next expiry, which is what a status display needs.
     static func assistantPIDs() -> [String: Assistant.Running] {
-        pidLock.lock()
-        if let c = pidCache, CFAbsoluteTimeGetCurrent() - c.at < 2 {
-            defer { pidLock.unlock() }
-            return c.map
-        }
-        pidLock.unlock()
-
-        let map = Assistant.reading(ofPS: shell("/bin/ps", ["-ax", "-o",
-                                                            "tty=,pid=,ppid=,command="]).out)
-        pidLock.lock()
-        pidCache = (CFAbsoluteTimeGetCurrent(), map)
-        pidLock.unlock()
-        return map
+        assistantProcessScan().assistants
     }
 
     /// What assistant, if any, is still running on one tty — asked now rather than remembered.
@@ -286,12 +338,27 @@ enum ITerm {
         var snap = Targets.Snapshot()
 
         let listed = osa(["list"])
-        guard listed["ok"] as? Bool == true, let rows = listed["sessions"] as? [[String: Any]] else {
+        guard let rows = listed["sessions"] as? [[String: Any]] else {
+            snap.isComplete = false
             snap.error = listed["error"] as? String ?? L.t.cannotList
             return snap
         }
+        snap.isComplete = listed["complete"] as? Bool ?? (listed["ok"] as? Bool == true)
+        if !snap.isComplete {
+            snap.error = listed["error"] as? String ?? L.t.cannotList
+        }
 
-        let running = assistantPIDs()
+        let processScan = assistantProcessScan()
+        if !processScan.isComplete {
+            snap.isComplete = false
+            snap.error = processScan.error
+        }
+        if stoppedTerminalContradictsProcesses(appRunning: listed["appRunning"] as? Bool,
+                                               processScan: processScan) {
+            snap.isComplete = false
+            snap.error = "iTerm2 reported stopped while assistant processes are still running"
+        }
+        let running = processScan.assistants
         snap.sessions = rows.map { row in
             let tty = row["tty"] as? String ?? ""
             let bare = tty.replacingOccurrences(of: "/dev/", with: "")

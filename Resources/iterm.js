@@ -12,19 +12,40 @@ function run(argv) {
   let it;
   try {
     it = Application("iTerm2");
-    if (!it.running()) return JSON.stringify({ ok: false, error: "iTerm2 is not running" });
+    // For a list, a stopped app is an observed absence rather than an enumeration failure. The
+    // distinction matters to the watcher: this answer may remove old iTerm rows, while a broken
+    // Apple-event bridge may not.
+    if (!it.running()) return JSON.stringify(cmd === "list"
+      ? { ok: true, complete: true, appRunning: false, sessions: [] }
+      : { ok: false, error: "iTerm2 is not running" });
   } catch (e) {
-    return JSON.stringify({ ok: false, error: "Cannot reach iTerm2: " + e.message });
+    return JSON.stringify(cmd === "list"
+      ? { ok: false, complete: false, sessions: [], error: "Cannot reach iTerm2: " + e.message }
+      : { ok: false, error: "Cannot reach iTerm2: " + e.message });
   }
 
+  let lastWalk = null;
+
   function eachSession(fn) {
-    const wins = it.windows();
+    const walk = { failures: 0, examples: [] };
+    lastWalk = walk;
+    function failed(where, error) {
+      walk.failures += 1;
+      if (walk.examples.length < 3) {
+        walk.examples.push(where + ": " + String(error && error.message || error || "unreadable"));
+      }
+    }
+    let wins;
+    try { wins = it.windows(); }
+    catch (e) { failed("windows", e); return undefined; }
     for (let i = 0; i < wins.length; i++) {
       let tabs;
-      try { tabs = wins[i].tabs(); } catch (e) { continue; }
+      try { tabs = wins[i].tabs(); }
+      catch (e) { failed("window " + i + " tabs", e); continue; }
       for (let j = 0; j < tabs.length; j++) {
         let ss;
-        try { ss = tabs[j].sessions(); } catch (e) { continue; }
+        try { ss = tabs[j].sessions(); }
+        catch (e) { failed("window " + i + " tab " + j + " sessions", e); continue; }
         for (let k = 0; k < ss.length; k++) {
           const r = fn(ss[k], i, j, wins[i], tabs[j]);
           if (r !== undefined) return r;
@@ -42,16 +63,32 @@ function run(argv) {
   if (cmd === "list") {
     const out = [];
     eachSession(function (s, wi, ti) {
+      const id = safe(function () { return s.id(); }, "");
+      const tty = safe(function () { return s.tty(); }, "");
+      // A row without either identity cannot safely refresh an old row and must not count as a
+      // successfully observed session. Keep the good rows beside it and lower the confidence of
+      // the whole inventory instead.
+      if (!id || !tty) {
+        lastWalk.failures += 1;
+        if (lastWalk.examples.length < 3) lastWalk.examples.push("session identity unreadable");
+        return undefined;
+      }
       out.push({
-        id: safe(function () { return s.id(); }, ""),
+        id: id,
         name: safe(function () { return s.name(); }, ""),
-        tty: safe(function () { return s.tty(); }, ""),
+        tty: tty,
         profile: safe(function () { return s.profileName(); }, ""),
         win: wi,
         tab: ti
       });
     });
-    return JSON.stringify({ ok: true, sessions: out });
+    const complete = lastWalk.failures === 0;
+    const result = { ok: complete, complete: complete, appRunning: true, sessions: out };
+    if (!complete) {
+      result.error = "iTerm2 session enumeration incomplete (" + lastWalk.failures +
+        (lastWalk.failures === 1 ? " failure): " : " failures): ") + lastWalk.examples.join("; ");
+    }
+    return JSON.stringify(result);
   }
 
   if (cmd === "current") {

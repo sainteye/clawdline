@@ -19,15 +19,66 @@ enum Targets {
         var sessions: [TargetSession] = []
         var currentID: String?
         var error: String?
+        /// True only when every source needed to decide absence was actually enumerated.
+        /// A partial snapshot may add or refresh rows, but it has no authority to remove one.
+        var isComplete = true
 
         /// The ones with an assistant in them, whichever assistant that is.
         var assistantSessions: [TargetSession] { sessions.filter { $0.isAssistant } }
+    }
+
+    struct Reconciliation {
+        let sessions: [TargetSession]
+        /// Rows copied from the previous complete answer because this scan could not see enough
+        /// to prove that they disappeared.
+        let preserved: Int
+        /// Rows omitted by the terminal inventory whose tty was independently proved to have no
+        /// assistant process. This lets real closure converge even if JXA stays unhealthy.
+        let confirmedRemoved: Int
+    }
+
+    /// Apply the information content of a scan, not merely the array it happened to return.
+    ///
+    /// A complete inventory replaces the old one, including with an empty list. An incomplete
+    /// inventory may refresh everything it did observe but cannot use an unobserved row as proof
+    /// of closure. This is confirmation rather than a grace period: the very next complete scan
+    /// removes a genuinely closed session, however soon or late that answer arrives.
+    static func reconcile(previous: [TargetSession], scanned: [TargetSession],
+                          complete: Bool,
+                          confirmedAbsent: Set<String> = []) -> Reconciliation {
+        guard !complete else {
+            return Reconciliation(sessions: scanned, preserved: 0, confirmedRemoved: 0)
+        }
+        let observed = Set(scanned.map(\.id))
+        let omitted = previous.filter { !observed.contains($0.id) }
+        let kept = omitted.filter { !confirmedAbsent.contains($0.id) }
+        return Reconciliation(sessions: scanned + kept, preserved: kept.count,
+                              confirmedRemoved: omitted.count - kept.count)
+    }
+
+    /// A terminal inventory cannot authoritatively omit an iTerm row while `ps` still sees an
+    /// assistant on that row's tty. This catches the contradictory answer where JXA reports
+    /// `iTerm2.running() == false` (or silently drops a window) during an Apple-event wobble.
+    /// tmux rows are deliberately excluded: iTerm can genuinely be stopped while tmux hosts an
+    /// assistant, and the combined snapshot will carry that pane through its own source.
+    static func hasLiveProcessContradiction(previous: [TargetSession], scanned: [TargetSession],
+                                            runningTTYs: Set<String>) -> Bool {
+        func bare(_ tty: String) -> String {
+            tty.hasPrefix("/dev/") ? String(tty.dropFirst("/dev/".count)) : tty
+        }
+        let observed = Set(scanned.filter { $0.backend == .iterm }.map { bare($0.tty) })
+        return previous.contains { session in
+            guard session.backend == .iterm, session.isAssistant else { return false }
+            let tty = bare(session.tty)
+            return runningTTYs.contains(tty) && !observed.contains(tty)
+        }
     }
 
     static func snapshot() -> Snapshot {
         var snap = Snapshot()
         let iterm = ITerm.snapshot()
         snap.currentID = iterm.currentID
+        snap.isComplete = iterm.isComplete
 
         var seenTTYs = Set<String>()
         // Asked once. Walking it twice was two `list-panes` subprocesses per scan for one answer
@@ -48,8 +99,9 @@ enum Targets {
             snap.sessions.append(session)
         }
 
-        // Only complain about iTerm2 when it was the only possible source of targets.
-        if let e = iterm.error, snap.sessions.isEmpty { snap.error = e }
+        // A partial iTerm result remains worth reporting even when tmux supplied valid rows: the
+        // caller may publish those rows, but it must not remove older iTerm rows by omission.
+        if let e = iterm.error { snap.error = e }
         return snap
     }
 

@@ -499,7 +499,9 @@ export var Mock = (function () {
         if (!live) return;
         // A copy each time, for the same reason the server sends the whole list: nothing
         // downstream should be able to hold a reference into the source of truth.
-        handlers.sessions(JSON.parse(JSON.stringify(sessions)), Math.floor(Date.now() / 1000));
+        handlers.sessions(JSON.parse(JSON.stringify(sessions)), Math.floor(Date.now() / 1000), {
+            generation: Date.now(), complete: true, emptyAuthoritative: true
+        });
     }
 
     function find(id) {

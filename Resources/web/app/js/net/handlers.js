@@ -7,10 +7,26 @@ import { renderComposer } from "../view/composer.js";
 import { Waits } from "../view/waits.js";
 import { Start } from "../input/start.js";
 
+/**
+ * Whether accepting this frame would close the chat on the strength of one empty observation.
+ * Non-empty replacements keep their existing semantics; the special case is deliberately only
+ * the destructive transition from a currently open, previously present session to no rows.
+ */
+export function sessionListNeedsConfirmation(list, openId, previous, scan) {
+    return (!scan || scan.emptyAuthoritative !== true) && Array.isArray(list) &&
+        list.length === 0 && !!openId &&
+        (previous || []).some(function (session) { return session && session.id === openId; });
+}
+
 export var handlers = {
-    sessions: function (list, at) {
+    sessions: function (list, at, scan) {
+        list = list || [];
+        // The caller responds to `false` by asking for a newer scan. A same-generation REST echo
+        // is the same observation, not confirmation; keeping the evidence gate here gives every
+        // future transport the same last-known-good protection.
+        if (sessionListNeedsConfirmation(list, S.openId, S.sessions, scan)) return false;
         var first = !S.arrived;
-        S.sessions = list || [];
+        S.sessions = list;
         S.at = at || 0;
         S.arrived = true;
         // Anything arriving at all is proof this browser is allowed to ask, whatever an earlier
@@ -28,6 +44,7 @@ export var handlers = {
         // a session, but a first list with nothing to open opens none, and then nothing does.
         if (first && !S.openId) { render(); renderTranscript(); }
         Waits.list.settle(listWasWaiting ? renderList : null);
+        return true;
     },
     /// The whole task list, every time one of them moves. Nothing here merges, for the same
     /// reason `sessions` does not: half an update is a class of bug this page does not have.

@@ -9,6 +9,8 @@ export var Live = {
     attempt: 0,
     timer: null,
     countdown: null,
+    sessionProbe: null,
+    sessionRevision: 0,
 
     start: function () {
         var self = this;
@@ -48,7 +50,7 @@ export var Live = {
     begin: function () {
         var self = this;
         jsonFetch("/v1/sessions").then(function (d) {
-            handlers.sessions(d.sessions, d.at);
+            self.receiveSessions(d);
         }).catch(function (e) {
             if (e.code === "unauthorized") { self.stop(); Door.show(); }
         });
@@ -63,6 +65,8 @@ export var Live = {
     stop: function () {
         this.clearTimers();
         if (this.es) { this.es.close(); this.es = null; }
+        this.sessionProbe = null;
+        this.sessionRevision += 1;
         this.attempt = 0;
         handlers.conn("locked");
     },
@@ -80,12 +84,14 @@ export var Live = {
         es.addEventListener("sessions", function (ev) {
             try {
                 var d = JSON.parse(ev.data);
-                handlers.sessions(d.sessions, d.at);
+                self.receiveSessions(d);
+                // A payload that parsed is the only proof the connection actually works;
+                // onopen fires for a socket that a proxy may still be holding open with nothing
+                // behind it. A guarded empty frame still proves the feed, even though a separate
+                // reading must confirm it before it can close an open chat.
+                self.attempt = 0;
+                handlers.conn("live");
             } catch (e) { }
-            // A payload that parsed is the only proof the connection actually works; onopen
-            // fires for a socket that a proxy may still be holding open with nothing behind it.
-            self.attempt = 0;
-            handlers.conn("live");
         });
         // Dispatched work. Its own event because it moves on its own clock — a task is briefed
         // and finishes without the session list changing at all — and an app that has never
@@ -93,7 +99,6 @@ export var Live = {
         es.addEventListener("orchestrator", function (ev) {
             try { handlers.tasks(JSON.parse(ev.data).tasks); } catch (e) { }
         });
-        es.onopen = function () { handlers.conn("live"); };
         es.onerror = function () {
             // EventSource has a reconnect policy of its own, and it is not one that can be seen
             // or slowed down. Closing it and coming back on our own terms is what makes the
@@ -102,6 +107,46 @@ export var Live = {
             if (self.es === es) self.es = null;
             self.retry();
         };
+    },
+
+    /**
+     * Accept a whole session inventory, or ask once for evidence newer than a destructive empty
+     * frame. `/v1/sessions` reads the watcher's published state, so a same-generation response is
+     * explicitly not independent confirmation. A complete scan, or per-tty process proof carried
+     * as `emptyAuthoritative`, closes a real session without an arbitrary grace period.
+     */
+    receiveSessions: function (data) {
+        data = data || {};
+        var scan = data.scan || {};
+        if (handlers.sessions(data.sessions, data.at, scan) !== false) {
+            this.sessionRevision += 1;
+            this.sessionProbe = null;
+            return Promise.resolve(true);
+        }
+
+        if (this.sessionProbe) return this.sessionProbe.promise;
+        var self = this;
+        var marker = {
+            revision: this.sessionRevision,
+            generation: Number(scan.generation) || 0,
+            promise: null
+        };
+        this.sessionProbe = marker;
+        marker.promise = jsonFetch("/v1/sessions", { cache: "no-store" }).then(function (fresh) {
+            if (self.sessionProbe !== marker || self.sessionRevision !== marker.revision) return false;
+            self.sessionProbe = null;
+            var freshScan = fresh.scan || {};
+            var freshGeneration = Number(freshScan.generation) || 0;
+            if ((fresh.sessions || []).length === 0 &&
+                (freshScan.emptyAuthoritative !== true || freshGeneration <= marker.generation)) {
+                return false;
+            }
+            return self.receiveSessions(fresh);
+        }).catch(function () {
+            if (self.sessionProbe === marker) self.sessionProbe = null;
+            return false;
+        });
+        return marker.promise;
     },
 
     retry: function () {
@@ -136,7 +181,7 @@ export var Live = {
     refresh: function () {
         var self = this;
         if (!this.es) { this.clearTimers(); this.attempt = 0; return this.check(); }
-        return jsonFetch("/v1/sessions").then(function (d) { handlers.sessions(d.sessions, d.at); })
+        return jsonFetch("/v1/sessions").then(function (d) { return self.receiveSessions(d); })
             .catch(function (e) { toast(e.message, true); });
     },
 

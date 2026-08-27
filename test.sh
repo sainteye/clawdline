@@ -30,6 +30,7 @@ tools/build-compatibility.py --check
 # scoped package.json marks its shipped files as ESM, matching the browser's module entry.
 node Tests/web-schedules.mjs
 node Tests/web-coordinator.mjs
+node Tests/web-session-resilience.mjs
 
 BIN="${TMPDIR:-/tmp}/clawdline-tests"
 

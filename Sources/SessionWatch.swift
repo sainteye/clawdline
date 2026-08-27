@@ -87,6 +87,16 @@ final class SessionWatch {
     private var timer: Timer?
     private var reading = false
     private var watchingRegistry = false
+    /// The last incomplete-scan sentence written to the log. Keeping the signature makes a
+    /// persistent iTerm dialog one useful line rather than one line every 1.2 seconds.
+    private var lastScanDiagnostic: String?
+
+    /// Evidence carried beside the remote session list. A GET made immediately after an event
+    /// reads the same generation; only a later scan, or an already authoritative scan, may prove
+    /// that an empty list is real.
+    private(set) var scanGeneration = 0
+    private(set) var scanComplete = false
+    private(set) var emptyInventoryAuthoritative = false
 
     private var interval: TimeInterval { isForeground ? 1.2 : 20 }
 
@@ -164,14 +174,57 @@ final class SessionWatch {
         // Taken here, on the main thread, because that is the only thread that writes them.
         let notes = Config.shared.hooks ? HookBridge.notes : [:]
         let useRegistry = Config.shared.sessionRegistry
+        let knownTargets = targets
         DispatchQueue.global(qos: isForeground ? .userInitiated : .utility).async { [weak self] in
             guard let self else { return }
             // Cheapest possible answer to "is any of this worth doing": one `ps`, already cached
             // for a couple of seconds, and nothing at all follows it on a machine with no Claude
             // Code running. tmux panes are in here too — they are ordinary processes on a tty.
-            let anyAssistant = !ITerm.assistantPIDs().isEmpty
+            let processScan = ITerm.assistantProcessScan()
+            guard processScan.isComplete else {
+                // Silence from `ps` is not evidence that every assistant exited. Leave every
+                // published field exactly as it was; even re-reading the old sessions here would
+                // turn one failed prerequisite into a collection of secondary "gone" answers.
+                DispatchQueue.main.async {
+                    self.reading = false
+                    self.recordScan(complete: false, error: processScan.error,
+                                    preserved: knownTargets.count, observed: 0)
+                }
+                return
+            }
+            let anyAssistant = !processScan.assistants.isEmpty
             let snap = anyAssistant ? Targets.snapshot() : Targets.Snapshot()
-            let sessions = snap.assistantSessions.isEmpty ? snap.sessions : snap.assistantSessions
+            let contradiction = snap.isComplete && Targets.hasLiveProcessContradiction(
+                previous: knownTargets, scanned: snap.sessions,
+                runningTTYs: Set(processScan.assistants.keys))
+            let inventoryComplete = snap.isComplete && !contradiction
+            let scanError = contradiction
+                ? "terminal inventory omitted an iTerm tty whose assistant process is still running"
+                : snap.error
+            // Falling back to ordinary shells is useful only after a *complete* scan proved that
+            // no assistant row exists. During a partial scan it would promote whichever shells
+            // happened to be readable while retaining the actual assistant from the old list.
+            let scanned = snap.assistantSessions.isEmpty && inventoryComplete
+                ? snap.sessions : snap.assistantSessions
+            // A complete process list is an independent per-tty proof of closure. It may remove
+            // an omitted old assistant even while JXA is incomplete, so a permanently unhealthy
+            // Apple-event bridge cannot keep stale chats forever. Rows whose process still exists
+            // remain protected by the ordinary incomplete-scan merge.
+            let confirmedAbsent = Set(knownTargets.compactMap { target -> String? in
+                guard target.isAssistant else { return nil }
+                let bare = target.tty.replacingOccurrences(of: "/dev/", with: "")
+                return processScan.assistants[bare] == nil ? target.id : nil
+            })
+            let reconciled = Targets.reconcile(previous: knownTargets, scanned: scanned,
+                                               complete: inventoryComplete,
+                                               confirmedAbsent: confirmedAbsent)
+            let sessions = reconciled.sessions
+            // A partial terminal walk may still prove every old row closed through the complete
+            // process list. That proof is authoritative for an empty result even though the JXA
+            // inventory itself was incomplete; otherwise only a complete inventory may say empty.
+            let emptyAuthoritative = sessions.isEmpty && (inventoryComplete
+                || (!knownTargets.isEmpty && reconciled.preserved == 0
+                    && reconciled.confirmedRemoved == knownTargets.count))
             // The note must reach the parser before the screen is classified. AskUserQuestion's
             // flush-left caret is intentionally ambiguous without this protocol fact. The note
             // only opens that parsing gate; the screen still decides whether a menu exists.
@@ -265,14 +318,39 @@ final class SessionWatch {
 
             DispatchQueue.main.async {
                 self.reading = false
+                self.recordScan(complete: inventoryComplete, error: scanError,
+                                preserved: reconciled.preserved, observed: scanned.count,
+                                confirmedRemoved: reconciled.confirmedRemoved)
                 self.grids.merge(grids) { _, new in new }
                 self.menus = menus
                 self.agents = agents
                 self.shells = shells
                 self.registry = registry
-                self.apply(targets: sessions, states: states)
+                self.apply(targets: sessions, states: states,
+                           scanComplete: inventoryComplete,
+                           emptyInventoryAuthoritative: emptyAuthoritative)
             }
         }
+    }
+
+    /// Log confidence transitions, not polling cadence. The sentence names both what was usable
+    /// and what was retained, so a future incident can distinguish a wholly failed scan from one
+    /// bad split in an otherwise readable multi-window inventory.
+    private func recordScan(complete: Bool, error: String?, preserved: Int, observed: Int,
+                            confirmedRemoved: Int = 0) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        if complete {
+            if lastScanDiagnostic != nil {
+                Log.write("session scan recovered; complete inventory accepted")
+            }
+            lastScanDiagnostic = nil
+            return
+        }
+        let reason = error ?? "terminal inventory was incomplete"
+        let diagnostic = "session scan incomplete; observed \(observed), preserved \(preserved), removed \(confirmedRemoved) by process proof: \(reason)"
+        guard diagnostic != lastScanDiagnostic else { return }
+        lastScanDiagnostic = diagnostic
+        Log.write(diagnostic)
     }
 
     /// What the last round told the observers, so a menu opening or an agent finishing counts as
@@ -282,7 +360,8 @@ final class SessionWatch {
     private var lastAgents: [String: [Subagents.Agent]] = [:]
     private var lastShells: [String: [Shells.Shell]] = [:]
 
-    private func apply(targets: [TargetSession], states: [String: SessionState]) {
+    private func apply(targets: [TargetSession], states: [String: SessionState],
+                       scanComplete: Bool, emptyInventoryAuthoritative: Bool) {
         // Working → not working, and still there. A session that has gone away has not finished
         // anything; it has been closed, and closing a tab is not an achievement worth dancing at.
         var finished: [TargetSession] = []
@@ -293,6 +372,11 @@ final class SessionWatch {
             if case .working = was, now != nil, now != .unknown { finished.append(target) }
         }
 
+        let evidenceChanged = scanComplete != self.scanComplete
+            || emptyInventoryAuthoritative != self.emptyInventoryAuthoritative
+        scanGeneration &+= 1
+        self.scanComplete = scanComplete
+        self.emptyInventoryAuthoritative = emptyInventoryAuthoritative
         let changed = targets.map(\.id) != self.targets.map(\.id) || states != self.states
             || menus != lastMenus || agents != lastAgents || shells != lastShells
         lastMenus = menus
@@ -304,7 +388,7 @@ final class SessionWatch {
         // Off by default and a no-op for Claude Code. Kept on the reading path because this is
         // where a brand-new Codex rollout first becomes a concrete session rather than a guess.
         CodexNaming.shared.consider(targets)
-        guard changed || !finished.isEmpty else { return }
+        guard changed || evidenceChanged || !finished.isEmpty else { return }
         for observe in observers.values { observe() }
     }
 
