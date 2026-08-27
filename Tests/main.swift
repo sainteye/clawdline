@@ -16827,8 +16827,8 @@ group("a coordinator is explicitly registered, durable, singleton and process-bo
     for type in ["status_report", "duplicates_conflicts_ownership", "landing_closure",
                  "scope_permissions", "since_away", "coordinate_work", "dispatch_independent_work",
                  "ask_coordinator", "quiet_watch", "stop", "reconnect"] {
-        check("Phase A1 honestly disables \(type)", byType[type]?["enabled"] as? Bool == false
-              && (byType[type]?["why"] as? String)?.contains("Phase A1") == true)
+        check("Phase A2 honestly disables \(type)", byType[type]?["enabled"] as? Bool == false
+              && (byType[type]?["why"] as? String)?.contains("Phase A2") == true)
     }
     for type in ["status_report", "duplicates_conflicts_ownership", "landing_closure",
                  "scope_permissions"] {
@@ -16864,6 +16864,234 @@ group("a coordinator is explicitly registered, durable, singleton and process-bo
            (corrupt["store"] as? [String: Any])?["status"] as? String, "corrupt")
     expect("and no coordinator is configured",
            (corrupt["coordinator"] as? [String: Any])?["status"] as? String, "unregistered")
+}
+
+group("an offline coordinator can be rebound without changing its durable identity") {
+    let manager = FileManager.default
+    let directory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-coordinator-rebind-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    Coordinator.storeURLOverrideForTesting = directory.appendingPathComponent("coordinator.json")
+    Coordinator.forgetForTesting()
+    defer {
+        Coordinator.storeURLOverrideForTesting = nil
+        Coordinator.forgetForTesting()
+        try? manager.removeItem(at: directory)
+    }
+
+    let durableID = "11111111-2222-4333-8444-555555555555"
+    let old = coordinatorFixture("father")
+    let replacement = coordinatorFixture(
+        "father-new", assistant: .claude, tty: "/dev/ttys099", pid: 999,
+        processStart: Date(timeIntervalSince1970: 1_800_000_500),
+        conversation: "replacement-private-conversation")
+    _ = Coordinator.register(
+        old, among: [old], now: Date(timeIntervalSince1970: 1_800_000_010),
+        makeID: { UUID(uuidString: durableID)! })
+    var legacyObject = try! JSONSerialization.jsonObject(
+        with: Data(contentsOf: Coordinator.storeURL)) as! [String: Any]
+    legacyObject.removeValue(forKey: "generation")
+    legacyObject.removeValue(forKey: "reboundAt")
+    try! JSONSerialization.data(withJSONObject: legacyObject).write(
+        to: Coordinator.storeURL, options: .atomic)
+    Coordinator.forgetForTesting()
+    let legacy = Coordinator.inspection(
+        liveSessions: [old], bearings: .init(
+            sessionsFresh: true, activeTaskCount: 0, pendingLandingCount: 0, openWaitCount: 0))
+    expect("an A1 record without lifecycle fields remains generation one",
+           (legacy["coordinator"] as? [String: Any])?["generation"] as? Int, 1)
+
+    guard case .refused(let staleStatus, let staleCode, _, _) = Coordinator.rebind(
+        expectedCoordinatorID: durableID, expectedGeneration: 1,
+        to: replacement, among: [replacement],
+        sessionsFresh: false, sessionsObservedAt: Date(timeIntervalSince1970: 1_800_000_500),
+        now: Date(timeIntervalSince1970: 1_800_000_510)) else {
+        check("a stale inventory cannot prove the old binding offline", false); return
+    }
+    expect("stale offline proof is a conflict", staleStatus, 409)
+    expect("stale offline proof has a typed refusal", staleCode,
+           "coordinator_liveness_unknown")
+
+    guard case .refused(let onlineStatus, let onlineCode, _, _) = Coordinator.rebind(
+        expectedCoordinatorID: durableID, expectedGeneration: 1,
+        to: replacement, among: [old, replacement],
+        sessionsFresh: true, sessionsObservedAt: Date(timeIntervalSince1970: 1_800_000_500),
+        now: Date(timeIntervalSince1970: 1_800_000_510)) else {
+        check("a live old binding cannot be taken over", false); return
+    }
+    expect("online takeover is a conflict", onlineStatus, 409)
+    expect("online takeover has a typed refusal", onlineCode, "coordinator_online")
+
+    guard case .refused(_, let identityCode, _, _) = Coordinator.rebind(
+        expectedCoordinatorID: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        expectedGeneration: 1,
+        to: replacement, among: [replacement], sessionsFresh: true,
+        sessionsObservedAt: Date(timeIntervalSince1970: 1_800_000_500)) else {
+        check("the caller must name the durable identity it observed", false); return
+    }
+    expect("a stale expected id cannot redirect the role", identityCode,
+           "coordinator_identity_mismatch")
+
+    guard case .ok(let rebound) = Coordinator.rebind(
+        expectedCoordinatorID: durableID, expectedGeneration: 1,
+        to: replacement, among: [replacement],
+        sessionsFresh: true, sessionsObservedAt: Date(timeIntervalSince1970: 1_800_000_500),
+        now: Date(timeIntervalSince1970: 1_800_000_510)) else {
+        check("an exact live candidate replaces a provably offline binding", false); return
+    }
+    expect("the first reconnect reports a rebind", rebound["rebound"] as? Bool, true)
+    let reboundCoordinator = rebound["coordinator"] as? [String: Any]
+    expect("rebind preserves the stable coordinator id", reboundCoordinator?["id"] as? String,
+           durableID)
+    expect("rebind preserves original construction time",
+           reboundCoordinator?["registered_at"] as? Int, 1_800_000_010)
+    expect("rebind advances the durable generation", reboundCoordinator?["generation"] as? Int, 2)
+    expect("rebind records a safe reconnect time", reboundCoordinator?["rebound_at"] as? Int,
+           1_800_000_510)
+    expect("the replacement is now the safe public session",
+           (reboundCoordinator?["session"] as? [String: Any])?["id"] as? String,
+           "father-new")
+    check("the old process loses the optional role", Coordinator.sessionProjection(for: old) == nil)
+    check("the exact replacement process receives the optional role",
+          Coordinator.sessionProjection(for: replacement) != nil)
+
+    guard case .refused(_, let staleGenerationCode, _, _) = Coordinator.rebind(
+        expectedCoordinatorID: durableID, expectedGeneration: 1,
+        to: replacement, among: [replacement], sessionsFresh: true,
+        sessionsObservedAt: Date(timeIntervalSince1970: 1_800_000_520)) else {
+        check("an old lifecycle generation cannot pass as idempotent", false); return
+    }
+    expect("stale lifecycle CAS is typed", staleGenerationCode,
+           "coordinator_generation_mismatch")
+
+    let laterCandidate = coordinatorFixture(
+        "father-later", pid: 1_001,
+        processStart: Date(timeIntervalSince1970: 1_800_000_600),
+        conversation: "later-private-conversation")
+    guard case .refused(_, let oldObservationCode, _, _) = Coordinator.rebind(
+        expectedCoordinatorID: durableID, expectedGeneration: 2,
+        to: laterCandidate, among: [laterCandidate],
+        sessionsFresh: true,
+        sessionsObservedAt: Date(timeIntervalSince1970: 1_800_000_505),
+        now: Date(timeIntervalSince1970: 1_800_000_600)) else {
+        check("a scan from before the current binding cannot disprove it", false); return
+    }
+    expect("a pre-binding scan has unknown liveness", oldObservationCode,
+           "coordinator_liveness_unknown")
+
+    guard case .ok(let again) = Coordinator.rebind(
+        expectedCoordinatorID: durableID, expectedGeneration: 2,
+        to: replacement, among: [replacement],
+        sessionsFresh: true, sessionsObservedAt: Date(timeIntervalSince1970: 1_800_000_999),
+        now: Date(timeIntervalSince1970: 1_800_000_999)) else {
+        check("repeating the current exact binding is idempotent", false); return
+    }
+    expect("idempotent reconnect does not report another rebind", again["rebound"] as? Bool, false)
+    let againCoordinator = again["coordinator"] as? [String: Any]
+    expect("idempotency does not advance generation", againCoordinator?["generation"] as? Int, 2)
+    expect("idempotency does not rewrite reconnect time", againCoordinator?["rebound_at"] as? Int,
+           1_800_000_510)
+
+    Coordinator.forgetForTesting()
+    let afterReload = Coordinator.inspection(
+        liveSessions: [replacement], bearings: .init(
+            sessionsFresh: true, activeTaskCount: 0, pendingLandingCount: 0, openWaitCount: 0))
+    let encoded = String(decoding: try! JSONSerialization.data(withJSONObject: afterReload),
+                         as: UTF8.self)
+    expect("the rebound generation survives a fresh read",
+           (afterReload["coordinator"] as? [String: Any])?["generation"] as? Int, 2)
+    check("public lifecycle metadata never leaks private binding evidence",
+          !encoded.contains("replacement-private-conversation")
+            && !encoded.contains("ttys099") && !encoded.contains("\"pid\""))
+
+    let validData = try! Data(contentsOf: Coordinator.storeURL)
+    var unsupportedObject = try! JSONSerialization.jsonObject(with: validData) as! [String: Any]
+    unsupportedObject["version"] = 999
+    let unsupportedData = try! JSONSerialization.data(withJSONObject: unsupportedObject)
+    try! unsupportedData.write(to: Coordinator.storeURL, options: .atomic)
+    Coordinator.forgetForTesting()
+    guard case .refused(_, let unsupportedCode, _, _) = Coordinator.rebind(
+        expectedCoordinatorID: durableID, expectedGeneration: 2,
+        to: old, among: [old], sessionsFresh: true,
+        sessionsObservedAt: Date(timeIntervalSince1970: 1_800_001_000)) else {
+        check("an unsupported store cannot be repaired by rebind", false); return
+    }
+    expect("unknown versions fail closed", unsupportedCode, "coordinator_store_invalid")
+    expect("unknown versions are preserved byte for byte",
+           try! Data(contentsOf: Coordinator.storeURL), unsupportedData)
+
+    let corruptData = Data("{not-json".utf8)
+    try! corruptData.write(to: Coordinator.storeURL, options: .atomic)
+    Coordinator.forgetForTesting()
+    guard case .refused(_, let corruptCode, _, _) = Coordinator.rebind(
+        expectedCoordinatorID: durableID, expectedGeneration: 2,
+        to: old, among: [old], sessionsFresh: true,
+        sessionsObservedAt: Date(timeIntervalSince1970: 1_800_001_000)) else {
+        check("a corrupt store cannot be repaired by rebind", false); return
+    }
+    expect("corrupt stores fail closed", corruptCode, "coordinator_store_invalid")
+    expect("corrupt bytes are preserved", try! Data(contentsOf: Coordinator.storeURL), corruptData)
+
+    try! manager.removeItem(at: Coordinator.storeURL)
+    Coordinator.forgetForTesting()
+    guard case .refused(_, let absentCode, _, _) = Coordinator.rebind(
+        expectedCoordinatorID: durableID, expectedGeneration: 2,
+        to: old, among: [old], sessionsFresh: true,
+        sessionsObservedAt: Date(timeIntervalSince1970: 1_800_001_000)) else {
+        check("rebind never constructs an absent role", false); return
+    }
+    expect("an absent role needs explicit registration", absentCode,
+           "coordinator_not_configured")
+}
+
+group("clock rollback cannot lower a rebound binding's freshness barrier") {
+    let manager = FileManager.default
+    let directory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-coordinator-clock-\(UUID().uuidString)", isDirectory: true)
+    try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    Coordinator.storeURLOverrideForTesting = directory.appendingPathComponent("coordinator.json")
+    Coordinator.forgetForTesting()
+    defer {
+        Coordinator.storeURLOverrideForTesting = nil
+        Coordinator.forgetForTesting()
+        try? manager.removeItem(at: directory)
+    }
+    let durableID = "33333333-4444-4555-8666-777777777777"
+    let first = coordinatorFixture("clock-first")
+    let second = coordinatorFixture(
+        "clock-second", pid: 1_102,
+        processStart: Date(timeIntervalSince1970: 1_800_001_102), conversation: "clock-second")
+    let third = coordinatorFixture(
+        "clock-third", pid: 1_103,
+        processStart: Date(timeIntervalSince1970: 1_800_001_103), conversation: "clock-third")
+    _ = Coordinator.register(
+        first, among: [first], now: Date(timeIntervalSince1970: 1_800_001_000),
+        makeID: { UUID(uuidString: durableID)! })
+    guard case .ok = Coordinator.rebind(
+        expectedCoordinatorID: durableID, expectedGeneration: 1,
+        to: second, among: [second], sessionsFresh: true,
+        sessionsObservedAt: Date(timeIntervalSince1970: 1_800_001_100),
+        now: Date(timeIntervalSince1970: 1_800_001_100)) else {
+        check("the first monotonic reconnect succeeds", false); return
+    }
+    guard case .refused(_, let rollbackCode, _, _) = Coordinator.rebind(
+        expectedCoordinatorID: durableID, expectedGeneration: 2,
+        to: third, among: [third], sessionsFresh: true,
+        sessionsObservedAt: Date(timeIntervalSince1970: 1_800_001_200),
+        now: Date(timeIntervalSince1970: 1_800_001_050)) else {
+        check("a second reconnect cannot move the binding clock backward", false); return
+    }
+    expect("clock rollback fails closed", rollbackCode, "coordinator_store_invalid")
+    let after = Coordinator.inspection(
+        liveSessions: [second, third], bearings: .init(
+            sessionsFresh: true, activeTaskCount: 0, pendingLandingCount: 0, openWaitCount: 0))
+    let coordinator = after["coordinator"] as? [String: Any]
+    expect("rollback preserves the prior generation", coordinator?["generation"] as? Int, 2)
+    expect("rollback preserves the prior freshness barrier", coordinator?["rebound_at"] as? Int,
+           1_800_001_100)
+    expect("rollback preserves the prior exact binding",
+           (coordinator?["session"] as? [String: Any])?["id"] as? String, "clock-second")
 }
 
 group("coordinator cache observes another process's atomic creation") {
@@ -17041,7 +17269,7 @@ group("Bearings is a closed deterministic projection without transcript data") {
           serverSource.contains("Orchestrator.coordinatorSnapshot(")
           && !serverSource.contains("let counts = Orchestrator.coordinatorCounts()"))
     let coordinatorSource = try! String(contentsOfFile: "Sources/Coordinator.swift", encoding: .utf8)
-    check("Phase A1 production advertises no enabled web coordinator command",
+    check("Phase A2 production advertises no enabled web coordinator command",
           !coordinatorSource.contains("[\"type\": $0, \"enabled\": true]"))
 }
 
@@ -17110,6 +17338,7 @@ group("coordinator routes require the machine token and expose no implicit takeo
     RemoteServer.coordinatorSessionsForTesting = [father, other, unbound]
     defer {
         RemoteServer.coordinatorSessionsForTesting = nil
+        RemoteServer.coordinatorObservationEvidenceForTesting = nil
         RemoteServer.sessionPayloadForTesting = nil
         Coordinator.storeURLOverrideForTesting = nil
         Coordinator.forgetForTesting()
@@ -17233,6 +17462,201 @@ group("coordinator routes require the machine token and expose no implicit takeo
               && text.contains("host_listener") && text.contains("host_health")
               && text.lowercased().contains("cannot authorize restart"))
     }
+}
+
+group("the reconnect route is closed, machine-only and refuses online takeover") {
+    let manager = FileManager.default
+    let directory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-coordinator-rebind-route-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    Coordinator.storeURLOverrideForTesting = directory.appendingPathComponent("coordinator.json")
+    Coordinator.forgetForTesting()
+    let old = coordinatorFixture("route-old")
+    let replacement = coordinatorFixture(
+        "route-new", assistant: .claude, tty: "/dev/ttys091", pid: 901,
+        processStart: Date(timeIntervalSince1970: 1_800_000_901),
+        conversation: "route-private-replacement")
+    RemoteServer.coordinatorSessionsForTesting = [old, replacement]
+    defer {
+        RemoteServer.coordinatorSessionsForTesting = nil
+        Coordinator.storeURLOverrideForTesting = nil
+        Coordinator.forgetForTesting()
+        try? manager.removeItem(at: directory)
+    }
+    let durableID = "22222222-3333-4444-8555-666666666666"
+    _ = Coordinator.register(
+        old, among: [old, replacement], makeID: { UUID(uuidString: durableID)! })
+    let path = "/v1/orchestrator/coordinator/rebind"
+    let requestBody = "{\"expected_coordinator_id\":\"\(durableID)\","
+        + "\"expected_generation\":1,\"session_id\":\"route-new\"}"
+
+    expect("anonymous reconnect is refused",
+           RemoteServer.shared.route(remoteRequest("POST", path, body: requestBody)).status, 401)
+    let phone = RemoteAuth.addDevice(name: "coordinator reconnect phone", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: phone.id) }
+    expect("a paired device cannot reconnect the coordinator",
+           RemoteServer.shared.route(remoteRequest(
+            "POST", path, headers: ["Authorization": "Bearer \(phone.token)"],
+            body: requestBody)).status, 403)
+    let taskSecret = ["X-Clawdline-Task-Secret": String(repeating: "cd", count: 32)]
+    expect("a task secret cannot reconnect the coordinator",
+           RemoteServer.shared.route(remoteRequest(
+            "POST", path, headers: taskSecret, body: requestBody)).status, 401)
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    for body in ["{}", "{not-json",
+                 "{\"expected_coordinator_id\":\"\(durableID)\","
+                    + "\"expected_generation\":1,\"session_id\":\"route-new\","
+                    + "\"takeover\":true}",
+                 "{\"expected_coordinator_id\":\"not-a-uuid\","
+                    + "\"expected_generation\":1,\"session_id\":\"route-new\"}"] {
+        expect("the reconnect route rejects malformed or open schemas",
+               RemoteServer.shared.route(remoteRequest(
+                "POST", path, headers: auth, body: body)).status, 400)
+    }
+    let missing = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth,
+        body: "{\"expected_coordinator_id\":\"\(durableID)\","
+            + "\"expected_generation\":1,\"session_id\":\"missing\"}"))
+    expect("an unknown reconnect candidate is absent", missing.status, 404)
+    expect("the absence is typed", remoteErrorCode(missing), "session_not_found")
+
+    let duplicate = coordinatorFixture(
+        "route-new", assistant: .codex, tty: "/dev/ttys092", pid: 902,
+        processStart: Date(timeIntervalSince1970: 1_800_000_902), conversation: "duplicate")
+    RemoteServer.coordinatorSessionsForTesting = [old, replacement, duplicate]
+    let ambiguous = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: requestBody))
+    expect("a duplicate terminal-neutral candidate is refused", ambiguous.status, 409)
+    expect("duplicate identity has a typed refusal", remoteErrorCode(ambiguous),
+           "session_ambiguous")
+
+    RemoteServer.coordinatorSessionsForTesting = [old, replacement]
+    let online = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: requestBody))
+    expect("a live exact binding cannot be replaced", online.status, 409)
+    expect("the online refusal is typed", remoteErrorCode(online), "coordinator_online")
+    let mismatch = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth,
+        body: "{\"expected_coordinator_id\":"
+            + "\"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\","
+            + "\"expected_generation\":1,\"session_id\":\"route-new\"}"))
+    expect("a stale expected identity cannot reconnect", mismatch.status, 409)
+    expect("the compare-and-swap refusal is typed", remoteErrorCode(mismatch),
+           "coordinator_identity_mismatch")
+
+    RemoteServer.coordinatorSessionsForTesting = [replacement]
+    let rebound = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: requestBody))
+    expect("a complete scan may reconnect a provably offline role", rebound.status, 200)
+    let reboundBody = (try? JSONSerialization.jsonObject(with: rebound.body)) as? [String: Any]
+    expect("the route reports the actual reconnect", reboundBody?["rebound"] as? Bool, true)
+    expect("the route keeps the durable identity",
+           (reboundBody?["coordinator"] as? [String: Any])?["id"] as? String, durableID)
+    let encoded = String(decoding: rebound.body, as: UTF8.self)
+    check("the route leaks no private candidate binding",
+          !encoded.contains("route-private-replacement") && !encoded.contains("ttys091")
+            && !encoded.contains("\"pid\""))
+    let staleLifecycle = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: requestBody))
+    expect("the route refuses an observed generation after it advances", staleLifecycle.status,
+           409)
+    expect("the route types stale lifecycle CAS", remoteErrorCode(staleLifecycle),
+           "coordinator_generation_mismatch")
+    let currentBody = "{\"expected_coordinator_id\":\"\(durableID)\","
+        + "\"expected_generation\":2,\"session_id\":\"route-new\"}"
+    let idempotent = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: currentBody))
+    expect("repeating the current exact route binding succeeds", idempotent.status, 200)
+    let idempotentBody = (try? JSONSerialization.jsonObject(with: idempotent.body))
+        as? [String: Any]
+    expect("the repeated route call is explicitly idempotent",
+           idempotentBody?["rebound"] as? Bool, false)
+}
+
+group("the production route preserves scan evidence across cache reads and app generations") {
+    let manager = FileManager.default
+    let directory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-coordinator-scan-evidence-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    Coordinator.storeURLOverrideForTesting = directory.appendingPathComponent("coordinator.json")
+    Coordinator.forgetForTesting()
+    defer {
+        RemoteServer.coordinatorSessionsForTesting = nil
+        RemoteServer.coordinatorObservationEvidenceForTesting = nil
+        Coordinator.storeURLOverrideForTesting = nil
+        Coordinator.forgetForTesting()
+        try? manager.removeItem(at: directory)
+    }
+    let durableID = "55555555-6666-4777-8888-999999999999"
+    let old = coordinatorFixture("scan-old")
+    let replacement = coordinatorFixture(
+        "scan-new", pid: 1_201,
+        processStart: Date(timeIntervalSince1970: 1_750_000_201), conversation: "scan-new")
+    let afterRestart = coordinatorFixture(
+        "scan-restarted", pid: 1_202,
+        processStart: Date(timeIntervalSince1970: 1_750_000_202), conversation: "scan-restarted")
+    _ = Coordinator.register(
+        old, among: [old], now: Date(timeIntervalSince1970: 1_700_000_000),
+        makeID: { UUID(uuidString: durableID)! })
+    var legacy = try! JSONSerialization.jsonObject(
+        with: Data(contentsOf: Coordinator.storeURL)) as! [String: Any]
+    legacy.removeValue(forKey: "generation")
+    legacy.removeValue(forKey: "reboundAt")
+    try! JSONSerialization.data(withJSONObject: legacy).write(
+        to: Coordinator.storeURL, options: .atomic)
+    Coordinator.forgetForTesting()
+
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let path = "/v1/orchestrator/coordinator/rebind"
+    func body(_ session: String, generation: Int) -> String {
+        "{\"expected_coordinator_id\":\"\(durableID)\","
+            + "\"expected_generation\":\(generation),\"session_id\":\"\(session)\"}"
+    }
+    RemoteServer.coordinatorSessionsForTesting = [replacement]
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: nil, generation: 100, complete: true)
+    let unavailable = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: body("scan-new", generation: 1)))
+    expect("missing completed-scan time fails closed", unavailable.status, 409)
+    expect("missing scan time is unknown liveness", remoteErrorCode(unavailable),
+           "coordinator_liveness_unknown")
+
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: Date(timeIntervalSince1970: 1_600_000_000),
+        generation: 99, complete: true)
+    let cached = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: body("scan-new", generation: 1)))
+    expect("a cached pre-binding scan is not relabelled by the HTTP read time", cached.status, 409)
+    expect("pre-binding production evidence fails as unknown liveness",
+           remoteErrorCode(cached), "coordinator_liveness_unknown")
+
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: Date(timeIntervalSince1970: 1_750_000_000),
+        generation: 0, complete: true)
+    let legacyRebound = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: body("scan-new", generation: 1)))
+    expect("a real post-binding scan reconnects a legacy A1 record", legacyRebound.status, 200)
+
+    RemoteServer.coordinatorSessionsForTesting = [afterRestart]
+    RemoteServer.coordinatorObservationEvidenceForTesting = (
+        observedAt: Date(), generation: 0, complete: true)
+    let restarted = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: body("scan-restarted", generation: 2)))
+    expect("an A2 binding reconnects after process-local scan generation resets", restarted.status,
+           200)
+    let restartedBody = (try? JSONSerialization.jsonObject(with: restarted.body)) as? [String: Any]
+    expect("restart-safe reconnect advances lifecycle generation",
+           (restartedBody?["coordinator"] as? [String: Any])?["generation"] as? Int, 3)
+
+    let serverSource = try! String(contentsOfFile: "Sources/RemoteServer.swift", encoding: .utf8)
+    let watchSource = try! String(contentsOfFile: "Sources/SessionWatch.swift", encoding: .utf8)
+    check("production carries SessionWatch's accepted-scan time instead of HTTP read time",
+          serverSource.contains("watch.scanObservedAt, watch.scanGeneration")
+            && !serverSource.contains("Date(), watch.scanGeneration"))
+    check("only an accepted complete scan advances the evidence timestamp",
+          watchSource.contains("if scanComplete { self.scanObservedAt = Date() }"))
 }
 
 // MARK: - Result

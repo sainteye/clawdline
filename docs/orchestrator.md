@@ -1146,8 +1146,9 @@ A first registration creates the UUID; the same tuple is idempotent. Process sta
 `SessionRegistry.startTolerance` to absorb subsecond `Date() - etime` reconstruction drift while
 terminal, assistant, tty, pid and process-proved conversation remain exact. Any other tuple gets
 `409 coordinator_exists` and safe metadata about the existing identity. There is deliberately no
-takeover, replacement, deletion, stop or reconnect path. Corrupt and unknown-version records fail
-closed and are preserved for diagnosis rather than treated as absence.
+takeover through registration. A2 adds the separately guarded offline reconnect below; there is
+still no unconditional replacement, deletion or stop path. Corrupt and unknown-version records
+fail closed and are preserved for diagnosis rather than treated as absence.
 
 Restart continuity is identity continuity, not conversation resurrection. After the app reloads,
 the durable record projects `session.coordinator` only when all private binding facts still match
@@ -1184,10 +1185,55 @@ the evidence that writes `milestone_complete`/`work_complete`. Bearings explains
 it never authors them. The exact request, response and error schemas are in
 [`docs/api.md`](api.md#machine-coordinator-identity-and-bearings).
 
-**Proposed liveness boundary, not a current power.** A sandbox-loopback refusal is only
+**Proposed restart boundary, not a current power.** A sandbox-loopback refusal is only
 `observer_unreachable`, never `app_down`. Before any future restart, Clawdfather must corroborate it
 with host listener/process proof and a host-network health probe, and record observer domain and
 provenance such as `sandbox_loopback`, `host_listener`, and `host_health`. One failed observer cannot authorize restart. Phase A1 implements no restart or other health-driven mutation capability.
+
+### Clawdfather Phase A2: guarded offline reconnect
+
+Phase A2 preserves the A1 coordinator UUID across a dead assistant process without weakening the
+process-bound singleton. A machine-token caller first reads Bearings, then sends that observed
+opaque `expected_coordinator_id` and one terminal-neutral live `session_id` to
+`POST /v1/orchestrator/coordinator/rebind`, together with the observed positive
+`expected_generation`. The three-field request is closed. It is not accepted from a paired device
+or task secret, and registration still never implies takeover.
+
+The candidate must be exactly one current Claude or Codex row with the full terminal id, assistant,
+tty, pid/start and process-proved conversation tuple. Reconnect enters the same process gate and
+regular non-symlink `flock` as registration and force-reloads durable state before deciding. It
+fails closed for absent, corrupt and unsupported records. The expected UUID identifies the stable
+role, while the generation is the lifecycle compare-and-swap value because the UUID intentionally
+survives reconnect. Both are checked under the `flock`; either mismatch returns safe current
+coordinator metadata and requires the caller to refresh before any mutation or idempotent answer.
+
+An exact current binding is idempotent. Any different candidate is accepted only when one complete,
+current SessionWatch scan contains the candidate and does not contain the old exact tuple. If the
+old tuple is present, `coordinator_online` refuses live takeover. If the scan is incomplete,
+`coordinator_liveness_unknown` refuses to convert absence of evidence into offline proof. This is
+also the answer when the scan predates the current binding's construction or last reconnect: a
+pre-binding snapshot cannot disprove a newer tuple. This is the same observer lesson as host
+loopback: one constrained or stale observer being unable to see something is not proof that it died.
+The timestamp comes from `SessionWatch.scanObservedAt`, set when `apply` accepts the completed scan,
+and crosses RemoteServer unchanged. HTTP handling never stamps cached targets with `Date()`. A
+missing scan timestamp fails closed. Process-local `scanGeneration` remains useful provenance but
+is never sole offline proof, because it resets when the app restarts.
+
+Success atomically replaces and reads back only the private process binding. It preserves the
+stable UUID, scope, label and original `registered_at`; advances a monotonic `generation`; and sets
+`rebound_at`. An A1 record with neither lifecycle field remains valid generation 1. Bearings exposes
+the generation and reconnect timestamp, but never tty, pid, process start or conversation id. The
+old process immediately loses its optional `session.coordinator` projection and only the exact new
+process receives it. The new reconnect time must be no earlier than both the previous construction
+or reconnect barrier and the completed scan consumed by the decision. A backward wall clock fails
+closed rather than making later pre-binding evidence appear fresh.
+
+This phase is intentionally a lifecycle substrate, not autonomous operation. It does not create a
+tab, start or wake an assistant, resume a transcript, grant project transcript access, type into a
+Session, dispatch a task, mutate waits/landings/git, Build, stop/delete a process, or execute the web
+menu's `reconnect` command. The menu remains disabled; an authenticated local operator chooses an
+already-live replacement. Future start/restore or health-driven behavior must keep the separate
+observer provenance and explicit policy boundaries rather than widening this endpoint.
 
 ### Session work-state projection: one answer, separate evidence axes
 

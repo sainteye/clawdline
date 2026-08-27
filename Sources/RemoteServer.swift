@@ -51,6 +51,8 @@ final class RemoteServer {
     /// Pure route seam: tests supply complete process-bound observations without asking iTerm,
     /// tmux or assistant transcript registries. Production never sets it.
     static var coordinatorSessionsForTesting: [Coordinator.LiveSession]?
+    static var coordinatorObservationEvidenceForTesting:
+        (observedAt: Date?, generation: Int?, complete: Bool)?
     /// Route-level serializer seam. Tests still execute `sessionsPayload()` and `json(of:)`; they
     /// replace only SessionWatch's external terminal inventory with deterministic rows.
     static var sessionPayloadForTesting: ([TargetSession], [String: SessionState])?
@@ -828,7 +830,8 @@ final class RemoteServer {
                 return .error(400, "bad_request",
                               "The closed request schema requires only session_id.")
             }
-            let live = coordinatorObservation().sessions
+            let observation = coordinatorObservation()
+            let live = observation.sessions
             guard let candidate = live.first(where: {
                 $0.identity.terminalID == sessionID
             }) else {
@@ -836,6 +839,41 @@ final class RemoteServer {
                               "No live Claude or Codex session has that terminal-neutral id.")
             }
             return answer(Coordinator.register(candidate, among: live))
+
+        case ("POST", "/v1/orchestrator/coordinator/rebind"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Reconnecting the machine coordinator needs the orchestrator token.")
+            }
+            guard let body = try? JSONSerialization.jsonObject(with: request.body),
+                  let obj = body as? [String: Any],
+                  Set(obj.keys) == ["expected_coordinator_id", "expected_generation", "session_id"],
+                  let expectedID = obj["expected_coordinator_id"] as? String,
+                  UUID(uuidString: expectedID) != nil,
+                  let expectedGeneration = obj["expected_generation"] as? Int,
+                  expectedGeneration > 0,
+                  let sessionID = obj["session_id"] as? String, !sessionID.isEmpty else {
+                return .error(400, "bad_request",
+                              "The closed request schema requires expected_coordinator_id, "
+                                + "expected_generation and session_id.")
+            }
+            let observation = coordinatorObservation()
+            let candidates = observation.sessions.filter {
+                $0.identity.terminalID == sessionID
+            }
+            guard !candidates.isEmpty else {
+                return .error(404, "session_not_found",
+                              "No live Claude or Codex session has that terminal-neutral id.")
+            }
+            guard candidates.count == 1, let candidate = candidates.first else {
+                return .error(409, "session_ambiguous",
+                              "More than one live process claims that terminal-neutral id.")
+            }
+            return answer(Coordinator.rebind(
+                expectedCoordinatorID: expectedID, expectedGeneration: expectedGeneration,
+                to: candidate,
+                among: observation.sessions, sessionsFresh: observation.sessionsFresh,
+                sessionsObservedAt: observation.sessionsObservedAt))
 
         case ("GET", "/v1/orchestrator/coordinator"):
             guard orchestratorAuthed else {
@@ -853,7 +891,8 @@ final class RemoteServer {
                     pendingLandingCount: registry.pendingLandings,
                     openWaitCount: registry.openWaits,
                     sessionsObservedAt: observation.sessionsObservedAt,
-                    registryObservedAt: registry.observedAt)))
+                    registryObservedAt: registry.observedAt,
+                    sessionsGeneration: observation.sessionsGeneration)))
 
         case ("GET", "/v1/orchestrator/waits"):
             return .json(["waits": Orchestrator.coordinationWaitRecords(),
@@ -2618,7 +2657,8 @@ final class RemoteServer {
 
     private struct CoordinatorObservation {
         let sessions: [Coordinator.LiveSession]
-        let sessionsObservedAt: Date
+        let sessionsObservedAt: Date?
+        let sessionsGeneration: Int?
         let sessionsFresh: Bool
         let registry: Orchestrator.CoordinatorSnapshot
     }
@@ -2628,18 +2668,24 @@ final class RemoteServer {
     /// all three totals are one registry snapshot.
     private func coordinatorObservation() -> CoordinatorObservation {
         if let supplied = Self.coordinatorSessionsForTesting {
+            let evidence = Self.coordinatorObservationEvidenceForTesting
+            let observedAt: Date? = evidence.map(\.observedAt) ?? Date()
             return CoordinatorObservation(
-                sessions: supplied, sessionsObservedAt: Date(), sessionsFresh: true,
+                sessions: supplied, sessionsObservedAt: observedAt,
+                sessionsGeneration: evidence?.generation,
+                sessionsFresh: evidence?.complete ?? true,
                 registry: Orchestrator.coordinatorSnapshot([]))
         }
-        let observation: ([TargetSession], [String: SessionState], Bool, Date)
+        let observation: ([TargetSession], [String: SessionState], Bool, Date?, Int)
         if Thread.isMainThread {
             let watch = SessionWatch.shared
-            observation = (watch.targets, watch.states, watch.scanComplete, Date())
+            observation = (watch.targets, watch.states, watch.scanComplete,
+                           watch.scanObservedAt, watch.scanGeneration)
         } else {
             observation = DispatchQueue.main.sync {
                 let watch = SessionWatch.shared
-                return (watch.targets, watch.states, watch.scanComplete, Date())
+                return (watch.targets, watch.states, watch.scanComplete,
+                        watch.scanObservedAt, watch.scanGeneration)
             }
         }
         let bases = observation.0.filter(\.isAssistant).map { session in
@@ -2660,6 +2706,7 @@ final class RemoteServer {
         }
         return CoordinatorObservation(
             sessions: sessions, sessionsObservedAt: observation.3,
+            sessionsGeneration: observation.4,
             sessionsFresh: observation.2, registry: registry)
     }
 

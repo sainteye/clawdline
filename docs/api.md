@@ -123,6 +123,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/orchestrator/inflight` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/sessions` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/register` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/coordinator/rebind` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/coordinator` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/waits` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/waits` | orchestrator token | — |
@@ -1385,10 +1386,11 @@ ids already inside a wait — which is no help to the first session that needs t
 
 ### Machine coordinator identity and Bearings
 
-Phase A1 adds one explicit, durable machine-scope coordinator identity. Both routes require the
+Phase A1 adds one explicit, durable machine-scope coordinator identity and read-only Bearings.
+Phase A2 adds only a guarded offline reconnect for that same identity. All three routes require the
 exact `X-Clawdline-Orchestrator` credential: anonymous callers receive `401 unauthorized`, and a
-paired device that reaches the handler receives `403 forbidden`. Neither route accepts a device
-token or task secret.
+paired device that reaches the handler receives `403 forbidden`. None of these routes accepts a
+device token or task secret.
 
 #### `POST /v1/orchestrator/coordinator/register`
 
@@ -1427,7 +1429,8 @@ slightly between observations; terminal id, assistant, tty, pid and process-prov
 must still match exactly. Drift beyond that tolerance fails closed.
 
 A different live identity returns `409 coordinator_exists` with the current safe `coordinator`
-metadata and does not take over. There is no replace, delete, stop or reconnect operation in A1.
+metadata and does not take over. Registration never doubles as reconnect. There remains no
+unconditional replace, delete or stop operation.
 `400 bad_request` means malformed JSON, an extra/missing field, or a non-string `session_id`;
 `404 session_not_found` means no current assistant row has that terminal-neutral id;
 `409 session_unbound` means the row exists but its complete process identity cannot be proved;
@@ -1437,6 +1440,59 @@ rather than overwritten; and `500 coordinator_store_failed` means the atomic wri
 Registration changes no task parent, depth, cap, root key, owner, wait, landing, terminal `state`,
 `work_state`, milestone or completion receipt. Labels, cwd, task ancestry, title words such as
 “father”, and most-recent-session order are never identity inputs.
+
+#### `POST /v1/orchestrator/coordinator/rebind`
+
+Reconnect moves the existing stable role to one exact current Claude or Codex process; it does not
+construct a coordinator. The request is a closed three-field compare-and-swap shape:
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/coordinator/rebind \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d '{"expected_coordinator_id":"e76f1e87-6de4-4f39-8cc7-c62eef96712f",\
+         "expected_generation":1,\
+         "session_id":"8EC30E21-B00F-4806-90C1-D290FD67A87E"}'
+{"ok":true,"rebound":true,"coordinator":{"configured":true,
+ "id":"e76f1e87-6de4-4f39-8cc7-c62eef96712f","scope":"machine",
+ "label":"Clawdfather","registered_at":1787832000,"generation":2,
+ "rebound_at":1787832600,"status":"online","lifecycle":"standby",
+ "session":{"id":"8EC30E21-B00F-4806-90C1-D290FD67A87E","assistant":"codex",
+            "label":"coordinate Phase A2","cwd":"/Users/you/code/clawdline",
+            "work_state":"ready"}}}
+```
+
+`expected_coordinator_id` and positive integer `expected_generation` must both come from the most
+recent Bearings. The UUID identifies the stable role; because it deliberately survives reconnect,
+only the generation is the lifecycle compare-and-swap guard. Under the `flock`, either mismatch
+returns safe current metadata and refuses mutation.
+`session_id` is again the terminal-neutral id, and it must resolve to exactly one live row with the
+complete process-bound tuple described under registration. Duplicate rows fail with
+`409 session_ambiguous`; no label, recency or partial identity is guessed.
+
+The operation takes the same in-process gate and regular non-symlink `flock`, then force-reloads the
+record. A corrupt or unsupported record is preserved. If the expected generation is current and
+the candidate already is the exact binding, the call is idempotent (`rebound:false`) even if a
+broader scan is stale. A stale generation is never treated as idempotent. Otherwise the
+existing process-bound tuple must be absent from a complete current SessionWatch scan. A live exact
+old tuple returns `409 coordinator_online`; an incomplete scan returns
+`409 coordinator_liveness_unknown`. `sessionsObservedAt` is the unchanged timestamp taken when
+SessionWatch accepted that completed scan—not the later HTTP read time. If no completed-scan time
+exists, or it predates the current binding's construction/last reconnect, it cannot disprove the
+binding. The process-local scan generation is exposed only as auxiliary provenance and is never the
+sole proof, so an app restart resetting it cannot strand a legacy or current record.
+
+A successful reconnect atomically writes and reads back the new private binding while preserving
+the coordinator UUID and original `registered_at`. It increments `generation`, records
+`rebound_at`, removes the optional role from the old process, and projects it only on the exact new
+process. Version-1 A1 records without lifecycle fields decode as generation 1. The response and
+Bearings expose only safe lifecycle metadata; tty, pid, process start and conversation id remain
+private. A reconnect timestamp must be at least both the prior binding-change timestamp and the
+completed scan it consumed. Clock rollback therefore fails closed instead of lowering the freshness
+barrier. `409 coordinator_identity_mismatch` or `409 coordinator_generation_mismatch` asks the
+caller to refresh Bearings;
+`409 coordinator_not_configured` requires explicit registration; and store/unbound errors retain
+the meanings above. Reconnect does not start a tab, wake a model, resume a transcript, grant
+transcript access, dispatch work, mutate git, stop a process or delete anything.
 
 #### `GET /v1/orchestrator/coordinator`
 
@@ -1452,6 +1508,7 @@ This returns durable presence and deterministic read-only Bearings:
     "id": "e76f1e87-6de4-4f39-8cc7-c62eef96712f",
     "scope": "machine", "label": "Clawdfather",
     "registered_at": 1787832000,
+    "generation": 2, "rebound_at": 1787832600,
     "status": "online",         // online | offline
     "lifecycle": "standby",    // standby | offline
     "session": {
@@ -1475,7 +1532,8 @@ This returns durable presence and deterministic read-only Bearings:
     "blocking": [{"id":"…","assistant":"claude","label":"…","cwd":"…",
                    "work_state":"working"}],
     "sources": {
-      "sessions": {"observed_at":1787832060,"provenance":"session_watch","freshness":"current"},
+      "sessions": {"observed_at":1787832060,"generation":42,
+                   "provenance":"session_watch","freshness":"current"},
       "tasks": {"observed_at":1787832060,"provenance":"orchestrator_task_registry","freshness":"current"},
       "landings": {"observed_at":1787832060,"provenance":"orchestrator_landing_registry","freshness":"current"},
       "waits": {"observed_at":1787832060,"provenance":"orchestrator_coordination_wait_registry","freshness":"current"}
@@ -1510,9 +1568,9 @@ The optional `session.coordinator` record is projected on both `GET /v1/sessions
 all four have `enabled:false`: Bearings exists at the authenticated
 `GET /v1/orchestrator/coordinator` route, while these web actions are preview-only and not connected
 to that route. `since_away`, coordination/judgement commands, dispatch, quiet watch, stop and
-reconnect are likewise disabled with a specific Phase A1 reason. The renderer therefore says
-Disabled/Preview, never Available. The record is absent from every ordinary row, preserving their
-old JSON behavior.
+reconnect are likewise disabled. A2's reconnect is deliberately machine-token-only; it is not the
+web menu command. The renderer therefore says Disabled/Preview, never Available. The record is
+absent from every ordinary row, preserving their old JSON behavior.
 
 #### Proposed observer provenance for any future liveness action
 
@@ -1520,8 +1578,9 @@ A refusal seen from a sandbox's loopback domain is only `observer_unreachable`, 
 Any future restart proposal must first corroborate it with both host listener/process proof and a
 host-network health probe, recording each observer domain and provenance—for example
 `sandbox_loopback`, `host_listener`, and `host_health`. One failed observer cannot authorize restart.
-This is a proposed liveness policy, not a current mutation capability: Phase A1 has no restart,
-reconnect, stop, health-to-action, or command-execution route.
+This is a proposed restart policy, not a current restart capability. Phase A2's narrow reconnect
+only rebinds a provably offline role to an already live exact process; it does not restart, start,
+stop, health-to-action, or execute a web command.
 
 ### Coordination waits
 

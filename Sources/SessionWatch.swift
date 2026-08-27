@@ -96,6 +96,9 @@ final class SessionWatch {
     /// that an empty list is real.
     private(set) var scanGeneration = 0
     private(set) var scanComplete = false
+    /// Wall-clock instant when the most recent complete terminal inventory was accepted. Unlike
+    /// an HTTP read time or process-local generation, this is the evidence's own observation time.
+    private(set) var scanObservedAt: Date?
     private(set) var emptyInventoryAuthoritative = false
 
     private var interval: TimeInterval { isForeground ? 1.2 : 20 }
@@ -376,6 +379,7 @@ final class SessionWatch {
             || emptyInventoryAuthoritative != self.emptyInventoryAuthoritative
         scanGeneration &+= 1
         self.scanComplete = scanComplete
+        if scanComplete { self.scanObservedAt = Date() }
         self.emptyInventoryAuthoritative = emptyInventoryAuthoritative
         let changed = targets.map(\.id) != self.targets.map(\.id) || states != self.states
             || menus != lastMenus || agents != lastAgents || shells != lastShells
