@@ -203,7 +203,7 @@ def top_level_ids(text, depths):
     pattern = re.compile(
         r"document\s*\.\s*getElementById\s*\(\s*(['\"])([^'\"]+)\1\s*\)"
     )
-    return [(match.group(2), text.count("\n", 0, match.start()) + 1)
+    return [(match.group(2), text.count("\n", 0, match.start()) + 1, match.start())
             for match in pattern.finditer(text) if depths[match.start()] == 0]
 
 
@@ -216,6 +216,17 @@ def main():
     defined = set(MARKUP_ID.findall(html))
     required = defaultdict(list)
     registry = set()
+    # Where each module first writes a given `id="…"`, by character offset. Two limits, and the
+    # check is only honest with both. **Same file**: pooling these was the first version of this
+    # fix, and a stale comment in one module naming `id="toast"` then vouched for a lookup of
+    # `toast` in a different module whose element had genuinely been deleted from the page.
+    # **Before the lookup**: markup written after the line that reads it answers nothing, because
+    # `getElementById` runs when the module is evaluated, top to bottom.
+    #
+    # It is a heuristic and stays one: this cannot tell markup a module inserts on load from
+    # markup it only inserts when something is pressed, and a same-file lookup placed after a
+    # deferred `appendChild` still passes. That limit is written down rather than papered over.
+    authored = {}
 
     modules = sorted(JS_ROOT.rglob("*.js")) if JS_ROOT.exists() else []
     for path in modules:
@@ -224,14 +235,18 @@ def main():
         except OSError as error:
             fail(str(error))
         label = str(path.relative_to(ROOT))
-        # The markup this module authors, before its own lookups are read below.
-        defined |= set(MARKUP_ID.findall(text))
+        first = {}
+        for match in MARKUP_ID.finditer(text):
+            first.setdefault(match.group(1), match.start())
+        authored[label] = first
         depths = scan(label, text)
         for element_id in registry_ids(text):
-            required[element_id].append(label)
+            # The els registry is the index.html element table by definition; nothing a module
+            # writes for itself answers it.
+            required[element_id].append((label, None, None))
             registry.add(element_id)
-        for element_id, line in top_level_ids(text, depths):
-            required[element_id].append(f"{label}:{line}")
+        for element_id, line, start in top_level_ids(text, depths):
+            required[element_id].append((f"{label}:{line}", label, start))
 
     # index.html still contains small inline boot scripts.  More importantly, this makes the
     # same check runnable against the pre-module history where all JavaScript lived in the page;
@@ -241,10 +256,11 @@ def main():
     inline = "\n".join(parser.parts)
     inline_depths = scan("Resources/web/index.html (inline scripts)", inline)
     for element_id in registry_ids(inline):
-        required[element_id].append("Resources/web/index.html (inline registry)")
+        required[element_id].append(("Resources/web/index.html (inline registry)", None, None))
         registry.add(element_id)
-    for element_id, line in top_level_ids(inline, inline_depths):
-        required[element_id].append(f"Resources/web/index.html (inline script line {line})")
+    for element_id, line, _ in top_level_ids(inline, inline_depths):
+        required[element_id].append(
+            (f"Resources/web/index.html (inline script line {line})", None, None))
 
     # Before comparing, say whether there was anything to compare.  Everything above can come
     # back empty — a renamed directory, a rewritten callback — and an empty answer here would
@@ -255,15 +271,26 @@ def main():
              f"{JS_ROOT.relative_to(ROOT)} or in the inline scripts of "
              f"{INDEX.relative_to(ROOT)} in the shape registry_ids() looks for")
 
-    missing = sorted(set(required) - defined)
+    # A lookup is answered by the page, or by the very file that makes it — never by a third one.
+    missing = []
+    for element_id in sorted(required):
+        if element_id in defined:
+            continue
+        unresolved = []
+        for site, owner, start in required[element_id]:
+            written = authored.get(owner, {}).get(element_id) if owner else None
+            if written is None or start is None or written >= start:
+                unresolved.append(site)
+        if unresolved:
+            missing.append((element_id, unresolved))
     if missing:
         print("web element id contract does not agree:")
-        for element_id in missing:
-            print(f"  looked up but not defined: {element_id} ({', '.join(required[element_id])})")
+        for element_id, sites in missing:
+            print(f"  looked up but not defined: {element_id} ({', '.join(sites)})")
         return 1
 
     print(f"web ids agree: {len(required)} looked up at load time, "
-          f"{len(defined)} defined in index.html and the modules")
+          f"{len(defined)} defined in index.html")
     return 0
 
 
