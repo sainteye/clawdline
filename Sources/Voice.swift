@@ -191,7 +191,9 @@ final class Voice {
     ///
     /// "Clawdline" is not a word in any language model's vocabulary, and it is the single most
     /// likely thing to be said to a bar called Clawdline. The rest are what you are talking to.
-    static let alwaysExpected = ["Clawdline", "Claude", "Claude Code", "Clawd"]
+    static let alwaysExpected = [
+        "Clawdline", "Claude", "Claude Code", "Clawd", "Commit", "Session", "Agent",
+    ]
 
     /// Words to tip the scales with, out of what you have already typed.
     ///

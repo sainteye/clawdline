@@ -97,24 +97,31 @@ through it. Snapshot it *without touching the shared index*:
 
 ```sh
 snapshot_dir=$(mktemp -d); test_tmp=$(mktemp -d)
-git archive "$(git stash create)" | tar -x -C "$snapshot_dir"
-# stash create holds tracked files only. Untracked ones the suite needs — a new test file another
-# session has written but not committed — are absent, and the run fails on something nobody broke.
+git archive HEAD | tar -x -C "$snapshot_dir"
+# Rebuild the tracked working tree without writing a stash object under the sandbox-protected
+# .git directory. This carries staged and unstaged edits, deletions, modes and binary changes.
+git diff --binary --full-index --no-ext-diff HEAD \
+  | (cd "$snapshot_dir" && git apply --allow-empty --whitespace=nowarn)
+# The diff still cannot carry untracked files. A new test another session has written but not
+# committed may be one the suite needs, and leaving it out makes the run fail on something nobody
+# broke.
 git ls-files --others --exclude-standard -z \
   | tar --null -T - -cf - | tar -xf - -C "$snapshot_dir"
 (cd "$snapshot_dir" && TMPDIR="$test_tmp" ./test.sh)
 ```
 
-That second line is not optional and was found the hard way: the first child told to follow this
-recipe hit `test.sh` requiring `Tests/web-schedules.mjs`, which existed only as an untracked file
-from another session. It reported the gap instead of quietly working around it, which is the right
-thing to do with a rule that does not fit — the rule was wrong, not the situation.
+That untracked-file overlay is not optional and was found the hard way: the first child told to
+follow this recipe hit `test.sh` requiring `Tests/web-schedules.mjs`, which existed only as an
+untracked file from another session. It reported the gap instead of quietly working around it,
+which is the right thing to do with a rule that does not fit — the rule was wrong, not the
+situation.
 
-`git stash create` writes a commit object holding the working tree and leaves the index exactly as
-it found it; it prints nothing when the tree is clean, so fall back to `HEAD`. **A child must not
-use `git write-tree` for this.** That reads the *index*, so it requires staging first — and the
-index is shared. A child staging its own files sweeps up whatever another session left in there,
-and then a root commits it. That has happened here.
+The archive starts from `HEAD`; `git diff HEAD` then describes the shared tracked worktree without
+creating an object in `.git`, and `git apply` reconstructs that state in the private snapshot. It
+reads the shared index but does not change it. **A child must not use `git write-tree` for this.**
+That reads the *index*, so it requires staging first — and the index is shared. A child staging its
+own files sweeps up whatever another session left in there, and then a root commits it. That has
+happened here.
 
 **A root asks "will HEAD still build after this commit?"** The working tree cannot answer that, and
 neither can a green suite run inside it. Root is staging anyway, so the index is the right subject:
