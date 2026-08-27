@@ -162,6 +162,8 @@ enum Transcript {
         var text: String
         var tool: String?
         var time: Date?
+        /// Canonical attachment metadata used by the Web optimistic-message contract.
+        var imageCount = 0
         /// The human-facing session name on a cross-session message. Socket paths stay out of
         /// the UI: they identify a transport endpoint, not somebody a reader can recognise.
         var source: String? = nil
@@ -175,6 +177,55 @@ enum Transcript {
         /// said about a task. Both are defaulted, so the synthesised memberwise initialiser
         /// serves every call site and neither feature has to know about the other's fields.
         var notice: ClawdlineMessage.Notice? = nil
+    }
+
+    /// Remove only paths created by Clawdline's own bounded drop cache. The fixed directory is
+    /// the left boundary: starting at an arbitrary slash would let a greedy expression consume
+    /// authored text such as `Resources/web/app.js` before the transport path begins.
+    static func canonicalDropPaths(in raw: String,
+                                   directory: String = Drop.directory.path)
+        -> (text: String, imageCount: Int) {
+        var value = raw
+        let prefix = NSRegularExpression.escapedPattern(for: directory + "/")
+        let file = prefix
+            + #"clawdline-[A-Za-z0-9-]+\.(?:png|tiff|jpg|jpeg|heic|gif|webp)"#
+        let pattern = "(?:'" + file + "'|" + file + ")"
+        guard let expression = try? NSRegularExpression(pattern: pattern) else {
+            return (value.trimmingCharacters(in: .whitespacesAndNewlines), 0)
+        }
+        let matches = expression.matches(in: value,
+            range: NSRange(value.startIndex..<value.endIndex, in: value))
+        for match in matches.reversed() {
+            guard let range = Range(match.range, in: value) else { continue }
+            value.removeSubrange(range)
+        }
+        return (value.trimmingCharacters(in: .whitespacesAndNewlines), matches.count)
+    }
+
+    /// Canonical text and attachment count shared by Claude's structured blocks and either
+    /// assistant's path fallback. A truly image-only turn keeps a visible marker for the pane;
+    /// the browser canonicalizes that marker only for exact optimistic bookkeeping.
+    static func canonicalImageContent(_ raw: String, structuredImages: Int = 0,
+                                      inferMarkers: Bool = false,
+                                      dropDirectory: String = Drop.directory.path)
+        -> (text: String, imageCount: Int) {
+        var value = raw
+        var markerImages = 0
+        if (structuredImages > 0 || inferMarkers),
+           let markers = try? NSRegularExpression(pattern: #"\[Image #\d+\]\s*"#) {
+            if inferMarkers {
+                markerImages = markers.numberOfMatches(in: value,
+                    range: NSRange(value.startIndex..<value.endIndex, in: value))
+            }
+            value = markers.stringByReplacingMatches(in: value,
+                range: NSRange(value.startIndex..<value.endIndex, in: value), withTemplate: "")
+        }
+        let dropped = canonicalDropPaths(in: value, directory: dropDirectory)
+        let count = structuredImages + markerImages + dropped.imageCount
+        if dropped.text.isEmpty, count > 0 {
+            return ((1...count).map { "[Image #\($0)]" }.joined(separator: " "), count)
+        }
+        return (dropped.text, count)
     }
 
     // MARK: - Finding the file
@@ -658,8 +709,10 @@ enum Transcript {
             }
             let text = withoutMachineBlocks(raw)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return [] }
-            return [Entry(kind: .user, text: text, tool: nil, time: time)]
+            let canonical = canonicalImageContent(text, inferMarkers: true)
+            guard !canonical.text.isEmpty else { return [] }
+            return [Entry(kind: .user, text: canonical.text, tool: nil, time: time,
+                          imageCount: canonical.imageCount)]
         }
 
         guard let message = row["message"] as? [String: Any] else { return [] }
@@ -680,6 +733,37 @@ enum Transcript {
            let notice = ClawdlineMessage.decode(raw) {
             return [Entry(kind: .notice, text: notice.body, tool: nil, time: time,
                           notice: notice)]
+        }
+
+        // Claude stores pasted images as structured blocks and repeats each attachment as
+        // `[Image #N]` display prose in its text block. The blocks own the count; the marker is
+        // transport presentation, not authored text.
+        if type == "user" {
+            let images = blocks.filter { $0["type"] as? String == "image" }.count
+            if images > 0 {
+                let rawText = blocks.compactMap { block -> String? in
+                    guard block["type"] as? String == "text" else { return nil }
+                    let raw = block["text"] as? String ?? ""
+                    return withoutMachineBlocks(raw)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                }.filter { !$0.isEmpty }.joined(separator: "\n")
+                let canonical = canonicalImageContent(rawText, structuredImages: images)
+                return [Entry(kind: .user, text: canonical.text, tool: nil, time: time,
+                              imageCount: canonical.imageCount)]
+            }
+
+            // `send_images_as_paste = false` deliberately hands Claude the same cache path
+            // Codex receives. Canonicalize that real setting too, without teaching arbitrary
+            // paths to disappear from somebody's conversation.
+            let rawText = blocks.compactMap { block -> String? in
+                guard block["type"] as? String == "text" else { return nil }
+                return withoutMachineBlocks(block["text"] as? String ?? "")
+            }.filter { !$0.isEmpty }.joined(separator: "\n")
+            let canonical = canonicalImageContent(rawText)
+            if canonical.imageCount > 0 {
+                return [Entry(kind: .user, text: canonical.text, tool: nil, time: time,
+                              imageCount: canonical.imageCount)]
+            }
         }
 
         var out: [Entry] = []

@@ -9,7 +9,9 @@ import { byId, ordered, projectSessionWorkState, revisionOf, rowDepth, sessionWo
 import { renderDetailHead } from "./transcript.js";
 import { renderAgents, renderComposer, renderWaiting } from "./composer.js";
 import { Optimistic, Waits, drawListSkeleton, listUnknown } from "./waits.js";
-import { closeDetail, loadTranscript, openSession } from "../session/open.js";
+import {
+    closeDetail, observeTranscriptRevision, openSession, rearmTranscriptRevision
+} from "../session/open.js";
 import { agentRow, agentsRev, loadAgent, renderAgentHead } from "../session/agent.js";
 import { SwipeRows } from "../input/swipe.js";
 import { SessionActions } from "../input/detail-actions.js";
@@ -60,8 +62,13 @@ export function onSessions() {
                 setTimeout(function () { node.classList.remove("finished"); }, 1600);
             }
         }
-        if (open && s.id === open.id && (!was || was.rev !== revisionOf(s))) {
-            loadTranscript(s.id, true);
+        if (open && s.id === open.id) {
+            // `handlers.sessions` runs before the first accepted frame marks the connection live.
+            // That one frame is a real reconnect boundary and may open a new bounded failure
+            // burst. Ordinary live frames only observe, so replaying one snapshot cannot loop.
+            var revision = revisionOf(s);
+            if (S.conn === "live") observeTranscriptRevision(s.id, revision, true);
+            else rearmTranscriptRevision(s.id, revision, true);
         }
         // An agent being read has its own reason to refetch, and the session's revision cannot
         // give it: a session sitting between turns with three agents out looks unchanged the

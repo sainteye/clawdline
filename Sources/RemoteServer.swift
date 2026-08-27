@@ -1517,6 +1517,10 @@ final class RemoteServer: @unchecked Sendable {
                                   + "Answer it with POST /v1/sessions/<id>/key.")
                 }
 
+                // This timestamp shares the transcript row's Mac clock and is captured before the
+                // terminal handoff. The row may be visible while a slow osascript round trip is
+                // still running; a completion-only timestamp would put it outside reconciliation.
+                let acceptedAt = Int(Date().timeIntervalSince1970)
                 // Off the main thread on purpose: this is an osascript round trip of a hundred
                 // milliseconds or so, and the only thing it touches is a terminal.
                 var problem: String?
@@ -1546,7 +1550,8 @@ final class RemoteServer: @unchecked Sendable {
                                                   "images": "\(images.count)",
                                                   "ok": problem == nil ? "1" : "0"])
                 if let problem { return .error(502, "internal", problem) }
-                return .json(["ok": true, "at": Int(Date().timeIntervalSince1970)])
+                return .json(["ok": true, "accepted_at": acceptedAt,
+                              "at": Int(Date().timeIntervalSince1970)])
             }
 
         case ("POST", let path) where path.hasSuffix("/focus") && path.hasPrefix("/v1/sessions/"):
@@ -3299,6 +3304,9 @@ final class RemoteServer: @unchecked Sendable {
             var row: [String: Any] = ["role": name(of: entry.kind), "text": entry.text]
             if let tool = entry.tool { row["tool"] = tool }
             if let time = entry.time { row["at"] = Int(time.timeIntervalSince1970) }
+            // Current user rows are a closed image contract: zero means an authored literal
+            // marker, while omission remains the legacy shape whose marker had to imply images.
+            if entry.kind == .user { row["imageCount"] = entry.imageCount }
             if let source = entry.source, !source.isEmpty { row["source"] = source }
             if let mode = entry.sourceMode, !mode.isEmpty { row["sourceMode"] = mode }
             if let notice = entry.notice {

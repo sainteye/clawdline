@@ -3,6 +3,100 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { createTranscriptRevisionObserver } from
+    "../Resources/web/app/js/session/transcript-requests.js";
+
+function revisionHarness(maxAttempts = 3) {
+    const loads = [];
+    const timers = [];
+    const observer = createTranscriptRevisionObserver(function (id, revision, quiet) {
+        loads.push({ id, revision, quiet });
+    }, {
+        maxAttempts,
+        retryDelay: 25,
+        schedule: function (fn, delay) {
+            const timer = { fn, delay, cancelled: false };
+            timers.push(timer);
+            return timer;
+        },
+        cancel: function (timer) { timer.cancelled = true; }
+    });
+    return { observer, loads, timers };
+}
+
+const recoveredRevision = revisionHarness();
+recoveredRevision.observer.observe("A", "rev2", true);
+assert.deepEqual(recoveredRevision.loads, [{ id: "A", revision: "rev2", quiet: true }],
+    "a new session revision starts one transcript GET");
+recoveredRevision.observer.settle("A", "rev2", false);
+assert.equal(recoveredRevision.timers.length, 1,
+    "a failed latest-revision GET schedules one bounded recovery read");
+recoveredRevision.observer.observe("A", "rev2", true);
+assert.equal(recoveredRevision.loads.length, 1,
+    "a reconnect carrying the same revision does not create a parallel read");
+recoveredRevision.timers[0].fn();
+assert.equal(recoveredRevision.loads.length, 2,
+    "the bounded recovery read still runs when reconnect repeats the same revision");
+recoveredRevision.observer.settle("A", "rev2", true);
+recoveredRevision.observer.observe("A", "rev2", true);
+assert.equal(recoveredRevision.loads.length, 2,
+    "a successfully observed revision is distinct from, and catches up to, the seen snapshot");
+
+const revertedWhileActive = revisionHarness();
+revertedWhileActive.observer.observe("ABA-active", "A", true);
+revertedWhileActive.observer.settle("ABA-active", "A", true);
+revertedWhileActive.observer.observe("ABA-active", "B", true);
+revertedWhileActive.observer.observe("ABA-active", "A", true);
+assert.deepEqual(revertedWhileActive.loads.map(function (load) { return load.revision; }),
+    ["A", "B", "A"],
+    "A to B to A while B is active keeps the final A as trailing transcript demand");
+
+const revertedWhileRetrying = revisionHarness();
+revertedWhileRetrying.observer.observe("ABA-retry", "A", true);
+revertedWhileRetrying.observer.settle("ABA-retry", "A", true);
+revertedWhileRetrying.observer.observe("ABA-retry", "B", true);
+revertedWhileRetrying.observer.settle("ABA-retry", "B", false);
+revertedWhileRetrying.observer.observe("ABA-retry", "A", true);
+assert.equal(revertedWhileRetrying.timers[0].cancelled, true,
+    "returning to A cancels B's pending recovery timer");
+assert.deepEqual(revertedWhileRetrying.loads.map(function (load) { return load.revision; }),
+    ["A", "B", "A"],
+    "A to B to A while B is retry-pending still fetches the final A");
+
+const boundedRevision = revisionHarness(3);
+boundedRevision.observer.observe("B", "rev9", true);
+for (let attempt = 0; attempt < 3; attempt += 1) {
+    boundedRevision.observer.settle("B", "rev9", false);
+    const timer = boundedRevision.timers[attempt];
+    if (timer) timer.fn();
+}
+assert.equal(boundedRevision.loads.length, 3,
+    "a permanently failing revision is attempted only up to the configured bound");
+assert.equal(boundedRevision.timers.length, 2,
+    "the final failed attempt does not leave an unbounded retry timer");
+for (let replay = 0; replay < 5; replay += 1) {
+    boundedRevision.observer.observe("B", "rev9", true);
+}
+assert.equal(boundedRevision.loads.length, 3,
+    "ordinary repeated snapshots cannot restart an exhausted failure burst");
+boundedRevision.observer.rearm("B", "rev9", true);
+assert.equal(boundedRevision.loads.length, 4,
+    "a real reconnect rearms one unobserved exhausted revision without a parallel GET");
+boundedRevision.observer.settle("B", "rev9", true);
+boundedRevision.observer.observe("B", "rev9", true);
+boundedRevision.observer.rearm("B", "rev9", true);
+assert.equal(boundedRevision.loads.length, 4,
+    "snapshots and reconnects do not refetch a revision after recovery observed it");
+
+const stoppedRevision = revisionHarness();
+stoppedRevision.observer.observe("C", "rev3", true);
+stoppedRevision.observer.settle("C", "rev3", false);
+stoppedRevision.observer.stop("C");
+assert.equal(stoppedRevision.timers[0].cancelled, true,
+    "closing a session cancels its pending recovery read");
+stoppedRevision.timers[0].fn();
+assert.equal(stoppedRevision.loads.length, 1,
+    "a cancelled recovery callback cannot restart transcript reads");
 
 const script = fs.readFileSync(new URL("../Resources/iterm.js", import.meta.url), "utf8");
 

@@ -6,6 +6,7 @@ import { api } from "../net/api.js";
 import { closingID, render, renderList, setClosingID } from "../view/list.js";
 import { renderTranscript } from "../view/transcript.js";
 import { Optimistic, Waits } from "../view/waits.js";
+import { authoritativeSendTime, optimisticSendSnapshot } from "../view/optimistic-data.js";
 import { closeDetail, loadTranscript } from "../session/open.js";
 import { closeAgent, openAgent } from "../session/agent.js";
 import { ActionConfirm } from "./action-confirm.js";
@@ -154,10 +155,12 @@ export var SessionActions = {
         if (!id || !S.write) return;
         // The reader can switch sessions during the HTTP trip. Remember the target's transcript
         // before that happens, so an older identical command cannot claim this new local turn.
-        var known = Optimistic.known(S.tx.id === id ? S.tx.entries : []);
+        var snapshot = optimisticSendSnapshot(
+            S.tx.id === id ? S.tx.entries : [], Date.now() / 1000);
         this.close();
-        api.send(id, action, []).then(function () {
-            Optimistic.add(id, action, 0, known);
+        api.send(id, action, []).then(function (answer) {
+            Optimistic.add(id, action, 0, snapshot.known,
+                authoritativeSendTime(answer, snapshot.startedAt));
             if (S.openId === id && !S.agent) {
                 renderTranscript();
                 loadTranscript(id, true);

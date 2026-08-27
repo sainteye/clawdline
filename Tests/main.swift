@@ -2443,6 +2443,30 @@ group("transcript parsing") {
            Transcript.parse("\n\n" + unterminated + "\n\n").count, 1)
     expect("nothing at all is nothing", Transcript.parse("").count, 0)
 
+    let imageTurns = [
+        #"{"type":"user","timestamp":"2026-08-16T04:00:08.000Z","message":{"role":"user","content":[{"type":"text","text":"describe this[Image #1]"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}}"#,
+        #"{"type":"user","timestamp":"2026-08-16T04:00:09.000Z","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}}"#,
+    ].joined(separator: "\n")
+    let imageEntries = Transcript.parse(imageTurns)
+    expect("Claude text and image remain one user turn", imageEntries.count, 2)
+    expect("Claude text and image preserve the text", imageEntries.first?.text, "describe this")
+    expect("Claude text and image expose one image", imageEntries.first?.imageCount, 1)
+    expect("Claude image-only input remains a user turn", imageEntries.last?.kind,
+           Transcript.Entry.Kind.user)
+    expect("Claude image-only input has a visible attachment marker",
+           imageEntries.last?.text, "[Image #1]")
+    expect("Claude image-only input exposes one image", imageEntries.last?.imageCount, 1)
+
+    let drop = Drop.directory.appendingPathComponent(
+        "clawdline-20260827-120000-000-AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE.png").path
+    let pathTurn = #"{"type":"user","timestamp":"2026-08-16T04:00:10.000Z","message":{"role":"user","content":"see docs/notes"}}"#
+        .replacingOccurrences(of: "see docs/notes", with: "see docs/notes" + drop)
+    let pathEntries = Transcript.parse(pathTurn)
+    expect("Claude path fallback remains one user turn", pathEntries.count, 1)
+    expect("Claude path fallback preserves authored slashes", pathEntries.first?.text,
+           "see docs/notes")
+    expect("Claude path fallback exposes one image", pathEntries.first?.imageCount, 1)
+
     let queued = #"{"type":"queue-operation","operation":"enqueue","timestamp":"2026-08-24T10:28:54.573Z","content":"但我按下去瞬間，會出現等待畫面"}"#
     let queuedEntries = Transcript.parse(queued)
     expect("queued input becomes one transcript entry", queuedEntries.count, 1)
@@ -2452,6 +2476,49 @@ group("transcript parsing") {
            "但我按下去瞬間，會出現等待畫面")
     expect("queued input keeps its timestamp",
            queuedEntries.first?.time?.timeIntervalSince1970, 1787567334.573)
+
+    func queuedImageTurn(_ content: String) -> String {
+        let object: [String: Any] = [
+            "type": "queue-operation", "operation": "enqueue",
+            "timestamp": "2026-08-16T04:00:11.000Z", "content": content,
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: object)
+        return String(data: data, encoding: .utf8)!
+    }
+    let queuedMarker = Transcript.parse(queuedImageTurn("busy [Image #1]"))
+    expect("queued Claude marker remains one user turn", queuedMarker.count, 1)
+    expect("queued Claude marker is canonical text", queuedMarker.first?.text, "busy")
+    expect("queued Claude marker exposes one image", queuedMarker.first?.imageCount, 1)
+
+    let queuedImageOnly = Transcript.parse(queuedImageTurn("[Image #1]"))
+    expect("queued Claude image-only input remains a user turn", queuedImageOnly.first?.kind,
+           Transcript.Entry.Kind.user)
+    expect("queued Claude image-only input keeps a visible marker",
+           queuedImageOnly.first?.text, "[Image #1]")
+    expect("queued Claude image-only input exposes one image",
+           queuedImageOnly.first?.imageCount, 1)
+
+    let queueAuthored = "fix Resources/web/app/js/view/waits.js; see docs/notes; "
+        + "check https://example.com/x; keep 'quotes'"
+    let queuedPath = Transcript.parse(queuedImageTurn(queueAuthored + drop))
+    expect("queued Claude drop path preserves authored slashes, URL, and quotes",
+           queuedPath.first?.text, queueAuthored)
+    expect("queued Claude drop path exposes one image", queuedPath.first?.imageCount, 1)
+    let queuedAdjacent = Transcript.parse(queuedImageTurn("two" + drop + drop))
+    expect("queued Claude adjacent paths preserve preceding text",
+           queuedAdjacent.first?.text, "two")
+    expect("queued Claude adjacent paths expose both images",
+           queuedAdjacent.first?.imageCount, 2)
+
+    let literalMarker = Transcript.Entry(kind: .user, text: "literal [Image #1]", tool: nil,
+                                         time: Date(timeIntervalSince1970: 100))
+    let literalRow = RemoteServer.transcriptRows([literalMarker]).first!
+    let literalWireData = try! JSONSerialization.data(withJSONObject: literalRow)
+    let literalWire = try! JSONSerialization.jsonObject(with: literalWireData) as! [String: Any]
+    expect("a current user wire row explicitly carries zero images",
+           literalWire["imageCount"] as? Int, 0)
+    expect("a current zero-image wire row preserves an authored marker",
+           literalWire["text"] as? String, "literal [Image #1]")
 
     let malformedQueueRows = [
         #"{"type":"queue-operation","operation":"enqueue"}"#,
@@ -9260,6 +9327,61 @@ group("a rollout reads as the same entries a transcript does") {
     expect("a truncated line is skipped rather than fatal", Codex.parse("{\"type\":").count, 0)
     expect("and so is an item nobody has taught this about",
            Codex.parse(line("{\"type\":\"SomethingNew\",\"content\":\"…\"}")).count, 0)
+
+    let drop = Drop.directory.appendingPathComponent(
+        "clawdline-20260827-120000-000-AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE.png").path
+    let imageTurn = Codex.entries(ofItem: [
+        "type": "UserMessage", "content": [["type": "text", "text": "look" + drop]],
+    ], at: Date(timeIntervalSince1970: 200))
+    expect("a Codex drop-cache path remains one user turn", imageTurn.count, 1)
+    expect("the Codex transport path is removed from authored text", imageTurn.first?.text, "look")
+    expect("the Codex transport path becomes canonical image metadata",
+           imageTurn.first?.imageCount, 1)
+    let codexImageOnly = Codex.entries(ofItem: [
+        "type": "UserMessage", "content": [["type": "text", "text": drop]],
+    ], at: Date(timeIntervalSince1970: 201))
+    expect("a Codex image-only turn is retained", codexImageOnly.count, 1)
+    expect("a Codex image-only turn has a visible attachment marker",
+           codexImageOnly.first?.text, "[Image #1]")
+    expect("a Codex image-only turn exposes one image", codexImageOnly.first?.imageCount, 1)
+    let authoredCases = [
+        "改一下 Resources/web/app/js/view/waits.js",
+        "see docs/notes",
+        "keep spaces and 'quotes'",
+        "check https://example.com/x",
+    ]
+    for authored in authoredCases {
+        let entries = Codex.entries(ofItem: [
+            "type": "UserMessage", "content": authored + drop,
+        ], at: Date(timeIntervalSince1970: 202))
+        expect("Codex drop removal preserves authored text: \(authored)",
+               entries.first?.text, authored)
+        expect("Codex drop removal counts its image: \(authored)",
+               entries.first?.imageCount, 1)
+    }
+    let adjacent = Codex.entries(ofItem: [
+        "type": "UserMessage", "content": "two" + drop + drop,
+    ], at: Date(timeIntervalSince1970: 203))
+    expect("adjacent Codex drop paths preserve preceding text", adjacent.first?.text, "two")
+    expect("adjacent Codex drop paths are counted separately", adjacent.first?.imageCount, 2)
+    let spacedDirectory = "/Users/Test Person/Library/Caches/dev.sainteye.clawdline/drops"
+    let spacedDrop = spacedDirectory + "/clawdline-20260827-120000-000-"
+        + "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE.png"
+    let quoted = Transcript.canonicalDropPaths(
+        in: "keep 'quotes' and docs/notes'" + spacedDrop + "'",
+        directory: spacedDirectory)
+    expect("the real regex preserves spaces, quotes, and authored paths", quoted.text,
+           "keep 'quotes' and docs/notes")
+    expect("the real regex recognizes a shell-quoted drop path", quoted.imageCount, 1)
+    let quotedAdjacent = Transcript.canonicalDropPaths(
+        in: "two'" + spacedDrop + "''" + spacedDrop + "'",
+        directory: spacedDirectory)
+    expect("the real regex preserves text before adjacent quoted paths", quotedAdjacent.text,
+           "two")
+    expect("the real regex counts adjacent quoted paths", quotedAdjacent.imageCount, 2)
+    let webRow = RemoteServer.transcriptRows(imageTurn).first
+    expect("the Web transcript row carries canonical image metadata",
+           webRow?["imageCount"] as? Int, 1)
 }
 
 group("a Codex session can be named from its first request") {
