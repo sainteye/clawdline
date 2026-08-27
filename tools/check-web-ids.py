@@ -11,12 +11,22 @@ WEB = ROOT / "Resources" / "web"
 INDEX = WEB / "index.html"
 JS_ROOT = WEB / "app" / "js"
 
-# An `id="…"` written in markup, wherever that markup is authored. `index.html` is not
-# the only place the page defines an id: a module that builds its own sheet, writes it
-# into `innerHTML` and appends it defines those ids as surely as the document does —
-# `input/user-messages.js` and `view/transcript.js` both do exactly that. Reading only
-# `index.html` called that a broken contract and went red on correct code, which is the
-# tax that gets a check deleted rather than fixed.
+# An `id="…"` written in markup, wherever that markup is authored. `index.html` is not the only
+# place the page defines an id: a module that builds its own sheet, writes it into `innerHTML` and
+# appends it defines those ids as surely as the document does — `input/user-messages.js` and
+# `view/transcript.js` both do exactly that.
+#
+# **What this can and cannot see.** It matches the text `id="…"`, and the caller drops the matches
+# that fall inside a `//` or `/* */` comment, because a comment describing markup that was deleted
+# years ago was vouching for an element that is null at runtime — and, worse, was supplying an
+# earlier position than the lookup and so switching off the ordering rule below. What is left is
+# still only a position in a file: it is **not** proof the markup is inserted, nor that it is
+# inserted before the lookup runs. A builder function defined above and called below is markup this
+# reads as early and the browser sees as late; that case is a known false negative rather than
+# something this pretends to solve, and closing it needs a control-flow model this deliberately
+# does not have.
+COMMENT = -2
+
 MARKUP_ID = re.compile(r"\bid\s*=\s*['\"]([^'\"]+)['\"]")
 
 # Nearly every id this check knows about comes out of one literal array, matched by one regular
@@ -113,13 +123,17 @@ def code_depths(text):
         if state == "line":
             if char == "\n":
                 state = "code"
+            else:
+                depths[i] = COMMENT
             i += 1
             continue
         if state == "block":
             if char == "*" and nxt == "/":
+                depths[i] = depths[i + 1] = COMMENT
                 state = "code"
                 i += 2
             else:
+                depths[i] = COMMENT
                 i += 1
             continue
         if state == "string":
@@ -153,10 +167,12 @@ def code_depths(text):
             i += 1
             continue
         if char == "/" and nxt == "/":
+            depths[i] = depths[i + 1] = COMMENT
             state = "line"
             i += 2
             continue
         if char == "/" and nxt == "*":
+            depths[i] = depths[i + 1] = COMMENT
             state = "block"
             i += 2
             continue
@@ -216,16 +232,19 @@ def main():
     defined = set(MARKUP_ID.findall(html))
     required = defaultdict(list)
     registry = set()
-    # Where each module first writes a given `id="…"`, by character offset. Two limits, and the
-    # check is only honest with both. **Same file**: pooling these was the first version of this
-    # fix, and a stale comment in one module naming `id="toast"` then vouched for a lookup of
-    # `toast` in a different module whose element had genuinely been deleted from the page.
-    # **Before the lookup**: markup written after the line that reads it answers nothing, because
-    # `getElementById` runs when the module is evaluated, top to bottom.
+    # Where each module first writes a given `id="…"` outside a comment, as a character offset.
+    # Two limits, and the check is only honest with both. **Same file**: pooling these was the
+    # first version of this fix, and a stale comment in one module naming `id="toast"` then
+    # vouched for a lookup of `toast` in a different module whose element had genuinely been
+    # deleted from the page. **Earlier in the file than the lookup**: markup written below the
+    # line that reads it cannot answer it, because a module is evaluated top to bottom.
     #
-    # It is a heuristic and stays one: this cannot tell markup a module inserts on load from
-    # markup it only inserts when something is pressed, and a same-file lookup placed after a
-    # deferred `appendChild` still passes. That limit is written down rather than papered over.
+    # Read that second limit literally, because that is how it is implemented: what is compared
+    # is the position of two pieces of *text*, not the moment a node reaches the document. It
+    # catches the ordering mistake somebody actually makes — write the lookup, append the markup
+    # underneath — and it does not model insertion or control flow at all. Markup a builder
+    # function defines above and inserts when a button is pressed reads as early here and is late
+    # in the browser; that is a known false negative, named in the commit that added this.
     authored = {}
 
     modules = sorted(JS_ROOT.rglob("*.js")) if JS_ROOT.exists() else []
@@ -235,11 +254,13 @@ def main():
         except OSError as error:
             fail(str(error))
         label = str(path.relative_to(ROOT))
+        depths = scan(label, text)
         first = {}
         for match in MARKUP_ID.finditer(text):
+            if depths[match.start()] == COMMENT:
+                continue
             first.setdefault(match.group(1), match.start())
         authored[label] = first
-        depths = scan(label, text)
         for element_id in registry_ids(text):
             # The els registry is the index.html element table by definition; nothing a module
             # writes for itself answers it.
