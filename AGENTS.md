@@ -20,6 +20,11 @@ Do not infer ownership from a filename, a recent timestamp, or a new commit; ins
   when the entire worktree diff of every named path belongs to that commit.
 - A child or worker session does not commit. It hands its changes back to the root session for
   review and commit.
+- Once a root session has completed the task it was originally assigned, reviewed its own diff,
+  and verified the exact commit in isolation, it should commit its completed work without waiting
+  for a separate user request to commit. This permission applies only when the root can isolate its
+  own changes from every pre-existing or unrelated worktree change; otherwise it must keep the work
+  uncommitted and coordinate with the owner of the overlapping paths.
 
 ### Root-owned landing closure
 
@@ -208,6 +213,9 @@ Write the requested artifacts and write `result.json` last, exactly as the brief
 
 - Never run `git commit`, `git reset`, `git checkout`, or `git stash` from a child or worker
   session; integration belongs to the root.
-- Never run `./build.sh`; it replaces and restarts the user's running app and can interrupt other
-  dispatched sessions.
+- A root may run `./build.sh` when the user explicitly asks to build or install. A child or worker
+  session must not run it: the script replaces and restarts the user's running app and can
+  interrupt work owned by another session. Before a root runs it, re-check `git status` and make
+  sure its wildcard source and resource inputs will not absorb another session's uncommitted work;
+  if they would, build the exact intended tree in an isolated snapshot or coordinate first.
 - Never alter, stage, discard, or claim another session's pre-existing uncommitted work.

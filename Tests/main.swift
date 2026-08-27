@@ -3690,6 +3690,7 @@ group("the words dictation is told to expect") {
     check("common version-control speech is always expected", always.contains("Commit"))
     check("common Clawdline speech is always expected", always.contains("Session"))
     check("the worker role is always expected", always.contains("Agent"))
+    check("the orchestrator persona is always expected", always.contains("Clawdfather"))
     check("a phrase survives as a phrase", always.contains { $0.contains(" ") })
     check("CJK is left out — the recogniser already has it",
           !words.contains { $0.contains("幫") })
