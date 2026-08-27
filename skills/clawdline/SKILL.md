@@ -124,6 +124,48 @@ a hundred of them is slower, dearer and unreadable), anything on a path where so
 anything needing agents to talk back and forth, output that has to be structured data a program
 will consume, and **work smaller than its own briefing**.
 
+### 2.0b How big one task is, and when small work goes out
+
+**One task is one coherent, independently reviewable feature slice** — its production change, its
+red-before-green tests, its docs, and its own verification, carried through one sustained session.
+Keep the implementer there until the slice is mature: a discovery or a correction that belongs to
+the same feature goes back into the same session, not into a new tab.
+
+**A slice big enough to dispatch is big enough to lose.** `timeout_minutes` stops at 240, an
+assistant can exhaust its quota mid-task, and a context window can fill. So a long or multi-file
+slice goes out with `isolation: "worktree"`, is told to commit each milestone on its delivery branch
+rather than at the end, and to use `/progress` when the work stops matching its title. Then a child
+that dies in its third hour costs one hour, not four, because the branch still holds the rest.
+
+**Never open a session for one small change.** Small items accumulate in a pool, and the pool goes
+out as one task when any of these is true:
+
+- five items are waiting, or
+- they are together worth more than about thirty minutes, or
+- one of them blocks a landing, or somebody is waiting on it.
+
+With a ceiling so that "accumulate" does not become "never": **no item sits in the pool for more
+than 24 hours.** One task carries the whole batch, `claims` is the union of what the batch writes,
+and the instructions list the items separately so the result can report on each one.
+
+**Standing sessions.** A session may stay open between jobs — an **odd-jobs** session for those
+batches, a **review** session for each finished feature or batch — holding its tab with
+`orchestrator_child_linger: -1` and naming the role in `kind`. But **work reaches a standing session
+only as an attached follow-up task**: a full task record with its own id, secret, `claims`,
+`timeout_minutes` and `result.json`. `POST /v1/sessions/:id/send` is not that. It is the
+paired-device route, it makes no task record, and anything fed through it holds no claims, signals
+no completion, shows up in no `inflight` answer and is counted in no usage. So **without a follow-up
+task carrying `claims`, a standing session must not write to the shared tree at all** — which a
+review session satisfies by construction and an odd-jobs session does not. Until that mechanism has
+landed, the honest approximation is one ordinary task per emptied pool and one per review round; a
+tab you keep alive by typing into it is not a standing session, and do not call it one.
+
+**And when the reviewer comes back with findings:** it writes the complete finding set down and
+reports it *before* it repairs anything, then repairs only what does not change the design. Once it
+has edited production bytes its verdict is spent — that repair is a delivery, and the focused diff,
+the mutation and the exact-tree acceptance are yours, not its. A design-changing correction goes
+back to the implementer's session instead. Never one task per finding.
+
 ### 2.0a Decide whether the task needs a private worktree
 
 Use `"isolation":"worktree"` for code changes that can be reviewed and landed as a Git branch.

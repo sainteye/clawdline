@@ -108,6 +108,41 @@ context 留給別的事、或單純想在一個分頁裡看著它跑。**他說�
 終端機，開一百個既慢又貴又沒人看得完）、有人在等的即時路徑、需要 agent 之間來回討論的、
 產出必須是程式直接吃的結構化資料、以及**寫指令比自己做還久的小事**。
 
+### 2.0b 一件任務該多大，小事什麼時候出去
+
+**一件任務就是一片完整、能獨立審查的 feature slice**——production 改動、先紅後綠的測試、文件、
+以及它自己的驗證，由同一個 session 一路做完。實作者留在那片上：同一個 feature 冒出來的新發現或
+修正回到同一個 session，不要為每一件開一個新分頁。
+
+**大到值得派的一片，也大到輸得起整片。** `timeout_minutes` 上限 240，助理額度可能中途耗盡，
+context 也會滿。所以會跑很久、或會動到好幾個檔的一片，要用 `isolation: "worktree"` 派出去，並且
+在指令裡要求它**每完成一個階段就在 delivery branch 上 commit**（不是最後才 commit），工作內容偏離
+標題時用 `/progress` 講一句。這樣 child 死在第三個小時只損失一小時——branch 上還留著其餘的。
+
+**絕對不要為了一個小改動開一個 session。** 小事累積成一個池子，符合任一條件就整批派出去：
+
+- 池子裡有 5 件，或
+- 這些事加起來超過大約 30 分鐘的工，或
+- 其中一件擋住 landing，或有人在等它。
+
+再加一個上限，免得「累積」變成「永遠不做」：**任何一件都不能在池子裡超過 24 小時。** 一件 task
+帶整批，`claims` 是整批會寫到的檔案的聯集，指令要把每一件分開列出來，這樣 result 才能逐件回報。
+
+**常駐 session。** session 可以在兩件工作之間不關：一個 **odd-jobs** session 接上面那些批次，
+一個 **review** session 接每一片完成的 feature 或每一批。兩者都用 `orchestrator_child_linger: -1`
+留住分頁，並在 `kind` 裡寫明角色。但是**工作只能以 attached follow-up task 的形式進到常駐 session**
+——那是一筆完整的 task 記錄：自己的 id、secret、`claims`、`timeout_minutes` 和 `result.json`。
+`POST /v1/sessions/:id/send` 不算：那是配對裝置的路由，不會產生任何 task 記錄，用它餵進去的工作
+沒有 claims、沒有完成訊號、不會出現在 `inflight`、也不算進任何用量。所以**沒有帶 `claims` 的
+follow-up task，常駐 session 就完全不能寫共享 tree**——review session 天生符合（它只產出 findings
+不產出 bytes），odd-jobs session 不符合。在那個機制進 `HEAD` 之前，誠實的近似作法是「一批出清派
+一件 task、一輪 review 派一件 task」；用手打字餵著的分頁不是常駐 session，也不要這樣講。
+
+**reviewer 帶著 findings 回來的時候：** 它要先把完整的 finding set 寫下來回報，**才可以動手修**，
+而且只修不改變設計的部分。它一旦寫了 production bytes，verdict 就用掉了——那份修正是一個
+delivery，聚焦 diff、mutation、exact-tree 驗收都是你的事，不是它的。會改變設計的修正回原
+implementer 的 session。永遠不要一個 finding 派一件 task。
+
 ### 2.0a 決定這件任務要不要獨立 worktree
 
 能以 Git branch 審查、收進來的程式修改，才用 `"isolation":"worktree"`。broker 會在任務真的

@@ -141,6 +141,31 @@ Use a new, private `TMPDIR` for every `./test.sh` run.
 The script writes its test binary to the fixed path `${TMPDIR}/clawdline-tests`; shared `TMPDIR`
 values race and overwrite it.
 
+**Verification is budgeted, and it does not leave its output behind.** A child that keeps re-running
+the suite is paying this repository's largest fixed cost over and over: `./test.sh` compiles every
+file in `Sources/` together with the test files in one `swiftc` invocation, with no cache between
+runs.
+
+- A child does not run `./build.sh` (that is a rule of its own, further down), does not use an app
+  restart or the real UI as acceptance, does not re-run a full suite after every small edit, does
+  not run a suite unrelated to the paths it claimed, and does not repeat a green run to see whether
+  it was flaky.
+- It does run one verification that actually proves its change: compile, the tests covering what it
+  touched, and one red-before-green run for each test it added. Iterating until something first
+  compiles and passes is ordinary work and is not what this rule is about. **Handing back code that
+  does not compile costs root far more than one honest run costs anybody.**
+- The budget is one third of `timeout_minutes`, or three full-suite runs, whichever comes first. On
+  reaching it the child stops verifying and says in `result.json` what state the work was in, rather
+  than spending the rest of its time trying to get to green.
+- `result.json` reports what verification cost: `"verification": {"runs": 2, "seconds": 940, "last":
+  "pass", "scope": "..."}`. Without a number, "it kept re-verifying" is an impression rather than a
+  finding.
+- Heavy temporary output — repository snapshots, build products, compiler indexes — goes in the
+  task's own `work/` directory, and the private `TMPDIR` for a verification run points at
+  `work/tmp`, so the test binary lands there too. Clawdline reclaims `work/` when the task ends;
+  until that reclaim has landed, delete it yourself before writing `result.json`. Anything worth
+  keeping is copied into `artifacts/` first.
+
 A new test must be seen red before the change that makes it green. A test born green proves
 nothing: reviews here have repeatedly found suites that stayed green after the guarded logic was
 replaced with a stub — or deleted outright. Break the thing once, watch the test catch it, then fix it.
@@ -209,6 +234,93 @@ question, let that task preserve its own reasoning chain in its own tab, and kee
 to understand the rest of the machine. Work smaller than a clear briefing remains reasonable for
 Clawdfather to do directly. Clawdfather still owns the result: compare it with live evidence,
 choose follow-up work, integrate safely, and never equate delegation with completion.
+
+### Dispatch feature-sized work, not fragments
+
+A new terminal tab has a real fixed cost: assistant startup, repository and `CHILD.md` reads,
+context reconstruction, snapshot setup, and a completion/landing lifecycle. Do not spend that cost
+on a single small finding, one mechanical file edit, one probe, or work whose useful part is smaller
+than the briefing needed to explain it. Parallelism is not a goal by itself, and Clawdfather must
+not fill every available slot merely because the slots exist.
+
+- Make the ordinary implementation node a coherent, independently reviewable feature slice. It
+  should normally carry its production change, red-before-green tests, relevant docs/Artifact,
+  mutations or failure injection, and its own verification/report through one sustained session.
+- Keep a live implementer on that feature until the whole slice is mature. Add closely related
+  discoveries and corrections to the same session instead of opening another tab for each one.
+  Tiny work that cannot justify a full briefing remains root work.
+- **A slice big enough to be worth dispatching is big enough to lose.** `timeout_minutes` stops at
+  240, an assistant can exhaust its quota mid-task, and a context window can fill; a four-hour node
+  that dies in its third hour costs everything it never committed. A slice expected to run long, or
+  to touch several files, is therefore dispatched with `isolation: "worktree"`, commits each
+  milestone on its delivery branch rather than at the end, and says through `/progress` when the
+  work stops matching its title. Root can then continue from the branch instead of starting again.
+  Cutting work larger without this turns one failure into a total one.
+- Dispatch one independent reviewer after the complete feature is delivered, not a sequence of
+  reviewers for intermediate fragments. A reviewer inspects the whole feature boundary and returns
+  the complete finding set in one pass.
+- On `CHANGES REQUIRED`, the reviewer repairs what it found and root reviews the repair. The order
+  is not negotiable: **the complete finding set is written down and reported to root before a single
+  byte is repaired.** A repair made while the findings are still only in the reviewer's head buries
+  the judgement somebody needed to see, and root is left looking at a corrected diff with no record
+  of what was wrong with it. Once the reviewer has edited production bytes its verdict is spent and
+  it cannot approve its own repair: that repair is a delivery, and root performs the independent
+  focused diff, mutation and exact-tree acceptance, opening another reviewer when the risk warrants
+  it. The reviewer repairs only findings that do not change the design; a broad or design-changing
+  correction goes back to the original implementer's session, where the reasoning behind the code
+  still is. Never create one task per finding — one correction round carries the whole set.
+- Open a different implementation tab only for a genuinely independent feature, required worktree
+  isolation, independent review, an assistant/session that died or exhausted quota, or context that
+  is demonstrably no longer safe to continue. Record which exception justified the extra session.
+
+Task planning and review reports should expose the fixed-cost side as well as useful output:
+session/tab starts, briefing and repeated-context tokens, elapsed useful work, continuations, and
+micro-task warnings.
+
+#### Small work accumulates before it is dispatched
+
+Never open a session for one small change. Small work goes into a pool and is dispatched as one
+batch, and the pool empties when any of these is true:
+
+- five items are waiting, or
+- the items together are worth more than about thirty minutes of work, or
+- one of them blocks a landing, or somebody is waiting on it.
+
+And a ceiling, so that "accumulate" does not quietly become "never": **no item sits in the pool for
+more than 24 hours.** One task carries the whole batch, its `claims` are the union of what the batch
+writes, and its briefing lists the items separately so the result can report on each one. A batch is
+a legitimate review target in its own right: a reviewer reads the whole batch boundary in one pass,
+exactly as it reads one feature.
+
+`docs/backlog.yaml` is where an item worth keeping is written down — its `severity` x `cost` lane is
+already this repository's only ranking of work, and nothing here lets anybody type a priority
+directly. The pool belongs to the root, or to Clawdfather where one is registered, and it is named
+in the report: how many items the batch carried, and what is still waiting.
+
+#### Standing sessions
+
+A session may stay open between jobs rather than being closed once it reports. Two roles are worth
+keeping alive: an **odd-jobs** session that takes the small batches above, and a **review** session
+that takes each finished feature or batch. Both hold their tab through
+`orchestrator_child_linger: -1`, and both carry the role in the task's `kind` (`odd-jobs`,
+`review`), so a reader can tell what a tab is for.
+
+**Work reaches a standing session only as an attached follow-up task** — a complete task record with
+its own id, secret, `claims`, `timeout_minutes` and `result.json`, dispatched into the existing
+session instead of into a new tab. `POST /v1/sessions/:id/send` is not that. It is the paired-device
+route, it creates no task record, and work fed through it holds no claims, produces no completion
+signal, appears in no `inflight` answer and is counted in no usage. A standing session fed that way
+is invisible to every safety mechanism in this file, which is worse than a session that costs a tab.
+
+That is also the boundary of what a standing session may touch: **with no follow-up task carrying
+`claims`, it must not write to the shared tree at all.** A review session satisfies that by
+construction, because a reviewer produces findings and not bytes. An odd-jobs session does not,
+which is the whole reason the attached-task mechanism has to exist before one is kept alive.
+
+Until that mechanism is in `HEAD`, the honest approximation is the batch above: one ordinary task
+per emptied pool, one ordinary task per review round. Do not describe a session kept alive by hand
+as a standing session, and do not claim Clawdline can reattach work to an existing session before
+the field that does it has landed.
 
 Declare every path a task may write in `claims`, relative to `project_dir`:
 
