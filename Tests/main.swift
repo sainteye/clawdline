@@ -14403,7 +14403,10 @@ group("a linger survives the restart that lands in the middle of it") {
     Orchestrator.forget()
     let store = Orchestrator.storeURL
     let before = try? Data(contentsOf: store)
+    let configuredLinger = Config.shared.orchestratorChildLinger
+    Config.shared.orchestratorChildLinger = 180
     defer {
+        Config.shared.orchestratorChildLinger = configuredLinger
         if let before {
             try? before.write(to: store, options: .atomic)
         } else {
@@ -14446,14 +14449,18 @@ group("a linger survives the restart that lands in the middle of it") {
     let staleData = try! JSONSerialization.data(withJSONObject: ["version": 1, "tasks": [staleRow]])
     try! staleData.write(to: store, options: .atomic)
     Orchestrator.forget()
+    let rearmStartedAt = Date()
     Orchestrator.resumeAfterRestart()
-    let rearmed = Orchestrator.closeAtForTesting(id)?.timeIntervalSinceNow ?? 0
+    let rearmFinishedAt = Date()
+    let rearmed = Orchestrator.closeAtForTesting(id)
     check("a deadline that ran out while the app was away gets a breath, not the axe",
-          rearmed > 5 && rearmed <= Orchestrator.restartGrace,
-          "got \(rearmed)s from now")
+          rearmed.map {
+              $0 >= rearmStartedAt.addingTimeInterval(Orchestrator.restartGrace)
+                  && $0 <= rearmFinishedAt.addingTimeInterval(Orchestrator.restartGrace)
+          } == true,
+          "got \(String(describing: rearmed))")
 
     // A Mac that has said a child's tab is never closed for it does not inherit one either.
-    let keep = Config.shared.orchestratorChildLinger
     Config.shared.orchestratorChildLinger = -1
     Orchestrator.forget()
     Orchestrator.resumeAfterRestart()
@@ -14473,7 +14480,6 @@ group("a linger survives the restart that lands in the middle of it") {
     Orchestrator.resumeAfterRestart()
     check("an explicit schedule deadline survives the opposite global preference",
           Orchestrator.closeAtForTesting(id) != nil)
-    Config.shared.orchestratorChildLinger = keep
 
     // And the tab is still only closed on what *this* process can see: the record carries the
     // deadline across, never the belief that the tab is still there.
@@ -17660,13 +17666,103 @@ group("the production route preserves scan evidence across cache reads and app g
           watchSource.contains("if scanComplete { self.scanObservedAt = Date() }"))
 }
 
-// MARK: - Result
+// MARK: - Cloud protocol and transport
 
-print("")
-if failures.isEmpty {
-    print("\(checks) checks passed")
-    exit(0)
+let cloudVectorsURL = URL(
+    fileURLWithPath: FileManager.default.currentDirectoryPath,
+    isDirectory: true
+).appendingPathComponent("Tests/protocol-vectors.json")
+var cloudEnvelopeChecks = 0
+var cloudTransportChecks = 0
+var cloudAppBridgeChecks = 0
+
+// Count the attempt itself before entering each throwing suite. A suite that throws therefore
+// still contributes one check to the final failure denominator; checks returned by a successful
+// suite are added separately below.
+checks += 1
+do {
+    let cloudChecks = try runCloudEnvelopeTests(vectorsURL: cloudVectorsURL)
+    cloudEnvelopeChecks = cloudChecks
+    checks += cloudChecks
+    print("  ✓ CloudEnvelope (\(cloudChecks) checks)")
+} catch {
+    failures.append("CloudEnvelope — \(error)")
+    print("  ✗ CloudEnvelope")
 }
-print("\(failures.count) of \(checks) checks failed:")
-for f in failures { print("  ✗ \(f)") }
-exit(1)
+
+// The transport runner is async. Entering the dispatch main loop keeps Foundation callbacks
+// available while its task runs. A process-wide watchdog prevents an await regression from
+// leaving that loop alive forever. The override is intentionally test-only, integer-valued and
+// bounded so a mutation test can prove the timeout without weakening the normal ceiling.
+let cloudRunnerTimeoutEnvironment = "CLAWDLINE_TEST_CLOUD_RUNNER_TIMEOUT_SECONDS"
+let cloudRunnerTimeoutSeconds: Int
+if let rawTimeout = ProcessInfo.processInfo.environment[cloudRunnerTimeoutEnvironment] {
+    guard let timeout = Int(rawTimeout), (1...30).contains(timeout) else {
+        FileHandle.standardError.write(Data(
+            "\(cloudRunnerTimeoutEnvironment) must be an integer from 1 through 30\n".utf8
+        ))
+        exit(2)
+    }
+    cloudRunnerTimeoutSeconds = timeout
+} else {
+    cloudRunnerTimeoutSeconds = 180
+}
+let cloudRunnerWatchdog = DispatchWorkItem {
+    FileHandle.standardError.write(Data(
+        "Cloud async runner timed out after \(cloudRunnerTimeoutSeconds) seconds\n".utf8
+    ))
+    exit(124)
+}
+// The deadline is kept on a thread of its own rather than on a global dispatch queue. The suites
+// being watched park worker threads on semaphores, and a regression that leaks enough of those
+// saturates the pool the timer would need — measured here: with the pool full, a five-second
+// `asyncAfter` watchdog had still not fired three minutes later. A dedicated thread cannot be
+// starved by the code it is watching. `perform()` does nothing once the result path cancels it.
+Thread.detachNewThread {
+    Thread.sleep(forTimeInterval: TimeInterval(cloudRunnerTimeoutSeconds))
+    cloudRunnerWatchdog.perform()
+}
+
+Task {
+    checks += 1
+    do {
+        let cloudChecks = try await runCloudTransportTests()
+        cloudTransportChecks = cloudChecks
+        checks += cloudChecks
+        print("  ✓ CloudTransport (\(cloudChecks) checks)")
+    } catch {
+        failures.append("CloudTransport — \(error)")
+        print("  ✗ CloudTransport")
+    }
+
+    checks += 1
+    do {
+        let cloudChecks = try await runCloudAppBridgeTests()
+        cloudAppBridgeChecks = cloudChecks
+        checks += cloudChecks
+        print("  ✓ CloudAppBridge (\(cloudChecks) checks)")
+    } catch {
+        failures.append("CloudAppBridge — \(error)")
+        print("  ✗ CloudAppBridge")
+    }
+
+    // MARK: - Result
+
+    cloudRunnerWatchdog.cancel()
+    print("")
+    let finalStatus: Int32
+    if failures.isEmpty {
+        print("\(checks) checks passed")
+        finalStatus = 0
+    } else {
+        print("\(failures.count) of \(checks) checks failed:")
+        for failure in failures { print("  ✗ \(failure)") }
+        finalStatus = 1
+    }
+    print("CLAWDLINE_CLOUD_TESTS_COMPLETE "
+        + "CloudEnvelope=\(cloudEnvelopeChecks) "
+        + "CloudTransport=\(cloudTransportChecks) "
+        + "CloudAppBridge=\(cloudAppBridgeChecks)")
+    exit(finalStatus)
+}
+dispatchMain()

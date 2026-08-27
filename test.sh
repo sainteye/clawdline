@@ -42,6 +42,9 @@ swiftc \
   -target arm64-apple-macos13.0 \
   -o "$BIN" \
   $(ls Sources/*.swift | grep -v 'Sources/main.swift') \
+  Tests/CloudEnvelopeTests.swift \
+  Tests/CloudTransportTests.swift \
+  Tests/CloudAppBridgeTests.swift \
   Tests/main.swift \
   -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation -framework Network
 
@@ -57,3 +60,12 @@ trap 'rm -rf "$STORE"' EXIT
 if out=$(CLAWDLINE_REMOTE_DIR="$STORE" "$BIN" Resources/mascots); then status=0; else status=$?; fi
 echo "$out"
 [ $status -eq 0 ] || exit $status
+
+# A zero process status is insufficient: removing dispatchMain() lets top-level code return before
+# either async suite or the final result path runs. Require the receipt emitted only by that path,
+# with full-suite counts so a targeted-case environment cannot make CI green either.
+expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE CloudEnvelope=64 CloudTransport=29 CloudAppBridge=49'
+if ! printf '%s\n' "$out" | grep -Fqx "$expected_cloud_receipt"; then
+  echo "missing or incomplete Cloud test completion receipt" >&2
+  exit 125
+fi
