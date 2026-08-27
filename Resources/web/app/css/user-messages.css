@@ -22,6 +22,21 @@
     padding: 10px 20px;
 }
 .user-message-list .entry[data-role="user"] .body { max-width: 100%; }
+.user-message-list .entry[data-role="user"] {
+    cursor: pointer;
+    border-radius: 10px;
+}
+.user-message-list .entry[data-role="user"]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+.tx .entry.user-message-target .body {
+    animation: user-message-target 1.8s ease-out;
+}
+@keyframes user-message-target {
+    0%, 28% { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-in); }
+    100% { border-color: var(--line); box-shadow: none; }
+}
 .user-messages-empty {
     margin: 28px 0;
     color: var(--faint);
@@ -44,4 +59,7 @@
 
 @media (max-width: 899px) {
     .user-message-list { padding: 8px 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .tx .entry.user-message-target .body { animation: none; border-color: var(--accent); }
 }

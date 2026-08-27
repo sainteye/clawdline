@@ -9,7 +9,7 @@ const source = await readFile(
     "utf8"
 );
 const data = await import("data:text/javascript;base64," + Buffer.from(source).toString("base64"));
-const { copyForUserMessages, userMessageEntries } = data;
+const { copyForUserMessages, userMessageEntries, userMessagePosition } = data;
 
 const transcript = [
     { role: "assistant", text: "long answer" },
@@ -32,6 +32,15 @@ assert.deepEqual(messages.map((entry) => entry.text), [
 assert.equal(messages[0], pending[0], "the newest pending turn is first");
 assert.equal(messages[2], transcript[1], "entries are not copied or rewritten");
 assert.deepEqual(userMessageEntries(null, undefined), []);
+
+assert.equal(userMessagePosition(transcript, pending, pending[0], false), 2,
+    "a pending message maps to its row in an oldest-first transcript");
+assert.equal(userMessagePosition(transcript, pending, transcript[4], false), 1,
+    "a saved message maps by identity, not by its text");
+assert.equal(userMessagePosition(transcript, pending, transcript[1], true), 2,
+    "the target follows the transcript's newest-first order");
+assert.equal(userMessagePosition(transcript, pending, { role: "user", text: "second question", at: 20 }, false), -1,
+    "an equal-looking copy cannot jump to the wrong turn");
 
 assert.equal(copyForUserMessages("zh-TW").title, "我傳出的訊息");
 assert.equal(copyForUserMessages("zh-Hant").empty, "你還沒有在這個 session 傳出訊息。");
