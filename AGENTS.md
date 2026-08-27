@@ -151,7 +151,64 @@ untracked files.
 
 Use Clawdline for work that can be split into self-contained tasks and joined later.
 Create `/tmp/.clawdline/<task-id>/task.json`, then register it with `POST /v1/orchestrator/tasks`.
-Put the complete instructions in `task.json`; the POST body carries only `task_id` and the task secret.
+Put the complete instructions in `task.json`; the POST body carries only `task_id` and the task
+secret under the field name `secret` (the child's terminal `result.json` uses `task_secret`).
+
+### Prove a localhost failure before calling Clawdline offline
+
+An agent execution sandbox may refuse or isolate loopback even while the installed Clawdline app
+is healthy. A failed request to `127.0.0.1:7717` from the restricted environment is therefore not
+evidence that Clawdline stopped. Retry the same minimal, read-only health request with the required
+localhost permission (and check the current configured port) before declaring the service offline,
+relaunching it, or falling back from dispatch. Report the two cases differently: an inaccessible
+loopback path is an execution-environment limitation; a permitted health request that still cannot
+connect is a Clawdline service failure. Never substitute a provider-native child session merely
+because the first sandboxed request could not reach localhost.
+
+### Repeated communication stalls require a capacity and protocol audit
+
+When request latency, a loading state, a pending message, a dropped event, or a terminal-automation
+failure recurs, do not close the incident by patching only the visible timeout or spinner. Trace the
+whole path and record its capacity and protocol contract: connection and queue ownership, bounded
+concurrency, queue limits and backpressure, synchronous external calls, retry amplification,
+idempotency and delivery receipts, revision/resume behavior, stale snapshots, and failure isolation.
+Distinguish accepted, executed, delivered, observed, and acknowledged states instead of treating one
+HTTP response as all five. Require typed errors and observable counters for overload and degraded
+dependencies, plus failure-injection tests for a blocked terminal bridge, slow transcript reader,
+lost SSE/reconnect, unreachable loopback, and duplicate retry. A recurring cross-layer symptom is
+not complete until the root has said which limit was reached (or proved no limit was reached), why
+unrelated routes did or did not remain responsive, and what prevents the same bottleneck from
+reappearing elsewhere.
+
+### "Dispatch" means a Clawdline task, not a provider-native subagent
+
+When the person says **Clawdline Agent**, **dispatch**, **open a new tab**, **independent task**, or
+uses the local shorthand **派 Agent／派下去**, satisfy that request through
+`POST /v1/orchestrator/tasks`. The accepted task must have its own task id and ordinary assistant
+session in a separate terminal tab. Codex `thread_spawn`, Claude sidechains, and any other
+assistant-provider-native child session do **not** satisfy a Clawdline dispatch request and must not
+be described as one.
+
+Use a provider-native subagent only when the person explicitly asks for that kind of subagent, or
+when no Clawdline-dispatch language was used and the task merely benefits from internal delegation.
+If a Clawdline dispatch is refused or fails to reach its prompt, report that typed failure and apply
+the retry/topology rules below; do not silently replace it with a provider-native child session.
+
+### Clawdfather coordinates before it executes
+
+The registered Clawdfather is the machine-wide context owner. Its scarce resource is attention
+across sessions, tasks, waits, landings, failures, and user decisions—not keystrokes in one
+implementation. It should personally do quick inventory reads, decomposition, synthesis,
+conflict resolution, landing review, and final verification. It should dispatch substantial
+diagnosis, implementation, research, and independent review as separate Clawdline tasks whenever
+capacity and authority allow, even when the delegated work is sequential internally.
+
+Do not apply the ordinary "diagnosis is often faster in one session" heuristic to make
+Clawdfather absorb a long investigation. Give one diagnostic task the evidence and a self-contained
+question, let that task preserve its own reasoning chain in its own tab, and keep Clawdfather free
+to understand the rest of the machine. Work smaller than a clear briefing remains reasonable for
+Clawdfather to do directly. Clawdfather still owns the result: compare it with live evidence,
+choose follow-up work, integrate safely, and never equate delegation with completion.
 
 Declare every path a task may write in `claims`, relative to `project_dir`:
 
@@ -189,11 +246,39 @@ Branch on the orchestrator's typed error `code`:
 
 - `over_capacity`: wait for `retry_after`, reduce the batch, or send it in stages.
 - `depth_exceeded`: stop dispatching; this session is at the tree's depth limit.
-- `workspace_busy`: do not start; wait, coordinate with the named root, narrow the claims honestly,
-  or ask the side that's blocking you to give up the conflicting paths early with
-  `POST .../claims/release` (see `docs/orchestrator.md#releasing-claims-early`) — the only way to
-  break a circular wait where two roots each hold what the other one needs.
+- `workspace_busy`: do not start **that shared-tree dispatch**. Treat the refusal as a choice of
+  execution topology, not as proof that the work itself must stop. Apply the decision order below;
+  when a shared-tree wait is genuinely required, coordinate with the named root or ask it to give
+  up completed paths early with `POST .../claims/release` (see
+  `docs/orchestrator.md#releasing-claims-early`) — the only way to break a circular wait where two
+  roots each hold what the other one needs.
 - `bad_task`: correct the invalid `task.json` field and resend the same task id.
+
+### A `workspace_busy` refusal is not a scheduling verdict
+
+Clawdfather and every dispatching root optimize for the fastest **safe completion**, not for the
+fewest concurrent tasks. After `409 workspace_busy`, decide in this order:
+
+1. **Narrow or split first.** If the task does not truly write every conflicting path, correct its
+   claims or split independent discovery, implementation, and review nodes. Never narrow a claim
+   while leaving instructions that still authorize the child to write the path.
+2. **Isolate work that can start from a stable commit.** If the implementation does not need the
+   blocking root's uncommitted bytes, resend it with `"isolation":"worktree"` and an explicit
+   `isolation_base`. The broker will discard repository-relative claims because the child edits a
+   separate checkout; keep the intended write set in the plan and instructions so root review
+   still has an exact scope. A dirty-base warning means the child does not see those working-tree
+   changes, not that isolation failed.
+3. **Wait only for a real data dependency.** Register a durable Clawdline file wait when correctness
+   depends on the blocking root's unfinished version, or when the eventual integration cannot be
+   reviewed without it. Name the exact path and release condition; do not infer release from a
+   transient clean status.
+4. **Keep implementation and integration separate.** Worktree isolation can finish implementation
+   while a shared path is owned, but it never authorizes an early merge. The root still waits for
+   release, reviews the blocker and isolated delta together, resolves conflicts, tests the exact
+   integrated tree, and completes the landing receipt.
+
+Do not use worktree isolation to evade `serialize` for builds or another machine-global resource.
+Isolation changes the checkout; it does not create a second Mac.
 
 The complete task schema, claim and serialization semantics, lifecycle, credentials, and result
 protocol are in [`docs/orchestrator.md`](docs/orchestrator.md).

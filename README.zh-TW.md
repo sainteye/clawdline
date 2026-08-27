@@ -198,6 +198,32 @@ session 不自己 commit，改完交回去；不要跑 build，因為它會把�
 要怎麼 stage、什麼東西絕對不能跑，以及如果它還能再往下派工，規矩在哪裡。兩個檔案都沒有的 repo
 一樣照常運作，只是對下一個打開它的人沒有話要說。
 
+### 把 Clawdline 規矩放到每個 project 都讀得到的地方
+
+一個 repo 的 `AGENTS.md` 或 `CLAUDE.md`，只會傳到在那個 repo 裡打開的 agent。如果這些 Clawdline
+操作規則應該跟著 agent 跨 project 走，就在 `~/.codex/AGENTS.md` 放一個從
+`<!-- clawdline rules: begin -->` 到 `<!-- clawdline rules: end -->` 的 block；Claude Code 則把
+對應的 block 放進 `~/.claude/CLAUDE.md`。Canonical 文字在這個 repo 的 `AGENTS.md` 裡：
+[localhost failure 規則](AGENTS.md#prove-a-localhost-failure-before-calling-clawdline-offline)與
+[recurring stall 規則](AGENTS.md#repeated-communication-stalls-require-a-capacity-and-protocol-audit)；
+下面的短版保留同一組要求。Project-local instructions 可以覆寫這些全域預設。Clawdline 與
+`install.sh` 都不會修改這兩個全域檔案；加入或更新這個 block 是一個明確的 setup step。
+
+那個 block 裡要留住這兩條：
+
+- **先證明 localhost 真的失敗，才能說 Clawdline unavailable。** Restricted sandbox 連不上
+  `http://127.0.0.1:7717`，不能證明 service down。先讀目前設定的 port，再到獲准連 loopback 的
+  execution environment，用同一個最小、唯讀的 `GET /v1/health` request 複驗；只有這個 permitted
+  request 仍然失敗，才能稱 service unavailable。這是 agent 操作規則，不是要求人類關掉 sandbox：
+  需要額外 localhost 權限時，照 provider 正常的 approval flow 取得。也不能因為一次 Clawdline
+  dispatch 失敗，就改用 provider-native child session，卻把它說成 Clawdline task。
+- **反覆發生的通訊卡頓，要從頭到尾 audit。** Slow send、loading state、pending message 或 event loss
+  一再出現時，只改 timeout 或 spinner 並不算結案。要追 connection 與 queue ownership、queue 與
+  concurrency bounds、backpressure、synchronous external calls、retry amplification、idempotency 與
+  delivery receipts、SSE revision 與 resume、stale snapshots，以及 failure isolation；並把
+  `accepted`、`executed`、`delivered`、`observed`、`acknowledged` 分清楚，不能拿一次 HTTP response
+  當成五種 state 全都成立。
+
 ## 安裝
 
 **Homebrew**

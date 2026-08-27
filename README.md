@@ -230,6 +230,35 @@ session cannot work out from the code — which changes are not its to touch, ho
 must never run, and where the house rules live if it may hand work on. A repository with neither
 still works exactly as it did; it simply has nothing to say to whoever opens it next.
 
+### Put the Clawdline rules where every project can read them
+
+A repository's `AGENTS.md` or `CLAUDE.md` reaches only the agents opened in that repository. If
+these Clawdline operating rules should follow agents across projects, put a block delimited by
+`<!-- clawdline rules: begin -->` and `<!-- clawdline rules: end -->` in `~/.codex/AGENTS.md`, and
+put the corresponding block in `~/.claude/CLAUDE.md` for Claude Code. The canonical text to copy
+is under [the localhost-failure rule](AGENTS.md#prove-a-localhost-failure-before-calling-clawdline-offline)
+and [the recurring-stall rule](AGENTS.md#repeated-communication-stalls-require-a-capacity-and-protocol-audit)
+in this repository's `AGENTS.md`; the short version below carries the same requirements.
+Project-local instructions may override those global defaults. Clawdline and `install.sh` do not
+edit either global file; adding or updating the block is an explicit setup step.
+
+Keep these two rules in that block:
+
+- **Prove a localhost failure before calling Clawdline unavailable.** A restricted sandbox's
+  connection failure to `http://127.0.0.1:7717` is not evidence that the service is down. Read the
+  currently configured port, then repeat the same minimal, read-only `GET /v1/health` request in
+  an execution environment that is allowed to reach loopback. Only that permitted request still
+  failing justifies calling the service unavailable. This is an agent operating rule, not a
+  request for a person to disable their sandbox: obtain any extra localhost permission through
+  the provider's normal approval flow. And do not replace a failed Clawdline dispatch with a
+  provider-native child session while describing it as a Clawdline task.
+- **Audit recurring communication stalls end to end.** Repeated slow sends, loading states,
+  pending messages or event loss are not closed by changing only a timeout or spinner. Trace
+  connection and queue ownership, queue and concurrency bounds, backpressure, synchronous
+  external calls, retry amplification, idempotency and delivery receipts, SSE revision and resume,
+  stale snapshots, and failure isolation. Distinguish `accepted`, `executed`, `delivered`,
+  `observed`, and `acknowledged` instead of treating one HTTP response as all five states.
+
 ## Install
 
 **Homebrew**
