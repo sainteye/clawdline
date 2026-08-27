@@ -6779,6 +6779,49 @@ group("starting a session is behind the write gate, like everything else that ru
     expect("and the route that took a path in the body is gone", old.status, 404)
 }
 
+group("place history routes preserve their assistant from path to operation") {
+    let legacyHistory = RemoteServer.placeHistoryTarget("/v1/places/place-one/sessions")
+    expect("legacy history remains Claude", legacyHistory?.assistant, .claude)
+    expect("legacy history preserves its place", legacyHistory?.placeID, "place-one")
+
+    let codexHistory = RemoteServer.placeHistoryTarget("/v1/places/place-one/sessions/codex")
+    expect("explicit Codex history reaches the history operation as Codex",
+           codexHistory?.assistant, .codex)
+    expect("explicit Codex history preserves its place", codexHistory?.placeID, "place-one")
+
+    let legacyResume = RemoteServer.placeResumeTarget(
+        "/v1/places/place-one/resume/11111111-1111-4111-8111-111111111111")
+    expect("legacy resume remains Claude", legacyResume?.assistant, .claude)
+    expect("legacy resume preserves its session", legacyResume?.sessionID,
+           "11111111-1111-4111-8111-111111111111")
+
+    let codexResume = RemoteServer.placeResumeTarget(
+        "/v1/places/place-one/resume/codex/22222222-2222-4222-8222-222222222222")
+    expect("explicit Codex resume reaches the resume operation as Codex",
+           codexResume?.assistant, .codex)
+    expect("explicit Codex resume preserves its session", codexResume?.sessionID,
+           "22222222-2222-4222-8222-222222222222")
+
+    check("unknown history assistant has no route",
+          RemoteServer.placeHistoryTarget("/v1/places/place-one/sessions/emacs") == nil)
+    check("unknown resume assistant has no route",
+          RemoteServer.placeResumeTarget("/v1/places/place-one/resume/emacs/thread-one") == nil)
+
+    let wasWriting = Config.shared.remoteWrite
+    defer { Config.shared.remoteWrite = wasWriting }
+    Config.shared.remoteWrite = true
+    let device = RemoteAuth.addDevice(name: "history route test", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: device.id) }
+    let headers = ["Authorization": "Bearer \(device.token)"]
+    let unknownHistory = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/places/place-one/sessions/emacs", headers: headers))
+    expect("unknown history assistant is a 404", unknownHistory.status, 404)
+    let unknownResume = RemoteServer.shared.route(remoteRequest(
+        "POST", "/v1/places/place-one/resume/emacs/thread-one",
+        headers: headers.merging(["Idempotency-Key": UUID().uuidString]) { _, new in new }))
+    expect("unknown resume assistant is a 404", unknownResume.status, 404)
+}
+
 group("the page is given the words it draws the start sheet with") {
     // A string in `Copy` is not a string on the page. `strings(for:)` is the only thing that
     // decides what a browser is told, and thirteen of these sat translated into fourteen
@@ -9198,8 +9241,7 @@ group("the line that picks a conversation back up") {
            StartPoints.itermLine(cwd: "/Users/me/code/thing",
                                  resume: "105344fb-c769-4b37-b766-403b410897eb"),
            "cd '/Users/me/code/thing' && claude --resume 105344fb-c769-4b37-b766-403b410897eb")
-    // Not reachable from the route, which is claude-only — but the flag is per-assistant, so
-    // the spelling is worth pinning before somebody widens the route and finds out later.
+    // The route selects this spelling from the assistant segment rather than accepting a command.
     expect("Codex spells it as a subcommand",
            StartPoints.itermLine(cwd: "/a/b", assistant: .codex,
                                  resume: "105344fb-c769-4b37-b766-403b410897eb"),
@@ -9211,6 +9253,34 @@ group("the line that picks a conversation back up") {
            StartPoints.itermLine(cwd: "/a/b"), "cd '/a/b' && claude")
     check("nothing a client sent is anywhere in it",
           !StartPoints.itermLine(cwd: "/a/b", resume: "$(id)").contains("$"))
+}
+
+group("Codex threads become conversations that can be picked back up") {
+    let named = "11111111-1111-4111-8111-111111111111"
+    let previewed = "22222222-2222-4222-8222-222222222222"
+    let dispatched = "33333333-3333-4333-8333-333333333333"
+    let response: [String: Any] = ["result": ["data": [
+        ["id": named, "cwd": "/repo", "name": " Persisted Codex title ",
+         "preview": "the opening request", "updatedAt": 3000],
+        ["id": previewed, "cwd": "/repo", "name": NSNull(),
+         "preview": "fallback opening\nand the rest", "updatedAt": 2000],
+        ["id": dispatched, "cwd": "/repo", "name": NSNull(),
+         "preview": Orchestrator.briefingOpening + " child", "updatedAt": 1000],
+        ["id": "not-a-uuid", "cwd": "/repo", "name": "not a thread",
+         "preview": "bad id", "updatedAt": 500],
+        ["id": "44444444-4444-4444-8444-444444444444", "cwd": "/elsewhere",
+         "name": "wrong project", "preview": "wrong cwd", "updatedAt": 400],
+    ]]]
+
+    let rows = CodexNaming.listedThreads(in: response, cwd: "/repo", open: [previewed])
+    expect("named and recognisable threads survive, newest first", rows.map(\.id),
+           [named, previewed])
+    expect("Codex's persisted name wins", rows.first?.title, "Persisted Codex title")
+    expect("an unnamed thread falls back to one line of its preview",
+           rows.last?.title, "fallback opening")
+    expect("a matching live thread is marked", rows.filter(\.live).map(\.id), [previewed])
+    check("a dispatched child is not offered as somebody's earlier conversation",
+          !rows.contains { $0.id == dispatched })
 }
 
 /// The list itself, against a project folder written for the occasion.

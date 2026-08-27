@@ -341,11 +341,10 @@ export var Mock = (function () {
         { id: "7a2c9e46b1d05f38", label: "website", path: "/Users/you/code/website", icon: null },
         { id: "e51b7d02c4a86f19", label: "notes", path: "/Users/you/tmp/notes", icon: null }
     ];
-    // What Claude Code has already recorded in a place. Enough of them on the first that the
+    // What the selected assistant has already recorded in a place. Enough on the first that the
     // filter is on screen and there is something to type into it, one on the second so the
-    // sheet's short case is reachable, and nothing at all on the rest — a directory somebody
-    // has only ever opened Codex in has no Claude Code conversations to offer, and that empty
-    // answer is a state the sheet has to say out loud rather than spin on.
+    // sheet's short case is reachable, and nothing at all on the rest. An empty answer is a
+    // state the sheet has to say out loud rather than spin on.
     //
     // The first row is `live`: something is writing to that transcript right now. It is the one
     // row on this screen that must not read as ordinary, because resuming it would put a second
@@ -1048,7 +1047,7 @@ export var Mock = (function () {
 
         /** Slow in the same way `places` is: the real route reads a title off the end of every
          *  transcript in a project folder, and the sheet has a line for the wait. */
-        pastSessions: function (id) {
+        pastSessions: function (id, assistant) {
             return new Promise(function (done, fail) {
                 setTimeout(function () {
                     if (MOCK_START === "gone") {
@@ -1058,7 +1057,7 @@ export var Mock = (function () {
                     var now = Math.floor(Date.now() / 1000);
                     var rows = (MOCK_START === "nopast" ? [] : (past[id] || []));
                     done({
-                        at: now, place: id, assistant: "claude",
+                        at: now, place: id, assistant: assistant || "claude",
                         // `?start=capped` is the Mac having stopped before the end of a project's
                         // history — the one thing on this screen that scrolling cannot reach.
                         more: MOCK_START === "capped",
@@ -1070,7 +1069,7 @@ export var Mock = (function () {
             });
         },
 
-        resumePlace: function (id, session) {
+        resumePlace: function (id, session, assistant) {
             return new Promise(function (done, fail) {
                 setTimeout(function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
@@ -1087,7 +1086,7 @@ export var Mock = (function () {
                         return;
                     }
                     var made = "N" + Math.floor(Math.random() * 9000 + 1000) + "-" + Math.floor(Math.random() * 90 + 10);
-                    done({ ok: true, id: made, backend: "iterm", assistant: "claude",
+                    done({ ok: true, id: made, backend: "iterm", assistant: assistant || "claude",
                            place: place.id, cwd: place.path, session: session,
                            at: Math.floor(Date.now() / 1000) });
                     if (MOCK_START === "slow") return;

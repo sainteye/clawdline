@@ -323,11 +323,13 @@ export var Live = {
         return jsonFetch(path, post({}, { "Idempotency-Key": uuid() }));
     },
 
-    /// The conversations Claude Code has already recorded in one place. Reading, not starting —
-    /// it discloses the titles of conversations held in a directory this token could already see
-    /// the name of, which is the same kind of thing `/v1/places` itself is.
-    pastSessions: function (id) {
-        return jsonFetch("/v1/places/" + encodeURIComponent(id) + "/sessions");
+    /// The conversations one assistant has already recorded in a place. Reading, not starting —
+    /// it discloses titles held in a directory this token could already see. Omitting the
+    /// assistant keeps the original Claude route for older callers.
+    pastSessions: function (id, assistant) {
+        var path = "/v1/places/" + encodeURIComponent(id) + "/sessions";
+        if (assistant) path += "/" + encodeURIComponent(assistant);
+        return jsonFetch(path);
     },
 
     /// Pick one of them back up. **Both ids are in the path** — the same shape as `startPlace`
@@ -335,9 +337,10 @@ export var Live = {
     /// page could send that would widen what gets run. The conversation is checked at the Mac
     /// for being a UUID *and* for being one it just listed for that directory; anything else is
     /// a 404 there rather than a string on a command line.
-    resumePlace: function (id, session) {
-        var path = "/v1/places/" + encodeURIComponent(id) + "/resume/"
-            + encodeURIComponent(session);
+    resumePlace: function (id, session, assistant) {
+        var path = "/v1/places/" + encodeURIComponent(id) + "/resume/";
+        if (assistant) path += encodeURIComponent(assistant) + "/";
+        path += encodeURIComponent(session);
         return jsonFetch(path, post({}, { "Idempotency-Key": uuid() }));
     },
 

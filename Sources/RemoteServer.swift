@@ -289,6 +289,52 @@ final class RemoteServer {
         return response
     }
 
+    /// Decode only the closed, data-free part of the history routes. Keeping this separate from
+    /// place lookup makes the compatibility default and the explicit assistant one testable
+    /// without teaching a test how to manufacture somebody's real transcript directory.
+    struct PlaceHistoryTarget {
+        let placeID: String
+        let assistant: Assistant
+    }
+
+    struct PlaceResumeTarget {
+        let placeID: String
+        let sessionID: String
+        let assistant: Assistant
+    }
+
+    static func placeHistoryTarget(_ path: String) -> PlaceHistoryTarget? {
+        guard path.hasPrefix("/v1/places/") else { return nil }
+        let rest = String(path.dropFirst("/v1/places/".count))
+        let parts = rest.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count == 2 || parts.count == 3, parts[1] == "sessions",
+              let assistant = parts.count == 2 ? Assistant.claude
+                : Assistant(rawValue: parts[2]) else { return nil }
+        return PlaceHistoryTarget(placeID: parts[0], assistant: assistant)
+    }
+
+    static func placeResumeTarget(_ path: String) -> PlaceResumeTarget? {
+        guard path.hasPrefix("/v1/places/") else { return nil }
+        let rest = String(path.dropFirst("/v1/places/".count))
+        let parts = rest.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        let assistant: Assistant
+        let conversationPart: String
+        if parts.count == 3, parts[1] == "resume" {
+            assistant = .claude
+            conversationPart = parts[2]
+        } else if parts.count == 4, parts[1] == "resume",
+                  let named = Assistant(rawValue: parts[2]) {
+            assistant = named
+            conversationPart = parts[3]
+        } else {
+            return nil
+        }
+        return PlaceResumeTarget(placeID: parts[0],
+                                 sessionID: conversationPart.removingPercentEncoding
+                                    ?? conversationPart,
+                                 assistant: assistant)
+    }
+
     private func dispatch(_ request: Request) -> Response {
         // Before anything else, and before authentication, because these two refusals are about
         // *who is allowed to be asking at all* rather than about who they are.
@@ -670,16 +716,17 @@ final class RemoteServer {
 
         // What has already been said in a place. Read-level, and for the same reason the place
         // list is: it discloses conversation titles for a directory whose name this token could
-        // already see. **Claude Code only** — see ``StartPoints/past(in:limit:)``.
-        case ("GET", let path) where path.hasPrefix("/v1/places/") && path.hasSuffix("/sessions"):
-            let id = String(path.dropFirst("/v1/places/".count).dropLast("/sessions".count))
-            guard !id.isEmpty, !id.contains("/") else {
+        // already see. The final assistant segment selects that assistant's own supported index;
+        // leaving it out is the original Claude-only route and stays compatible.
+        case ("GET", let path) where path.hasPrefix("/v1/places/") && path.contains("/sessions"):
+            guard let target = Self.placeHistoryTarget(path) else {
                 return .error(404, "not_found", "No such route")
             }
+            let id = target.placeID
             guard let place = StartPoints.place(withID: id.removingPercentEncoding ?? id) else {
                 return .error(404, "not_found", "No place named that")
             }
-            return .json(pastPayload(place))
+            return .json(pastPayload(place, assistant: target.assistant))
 
         case ("GET", let path) where path.hasPrefix("/v1/places/"):
             return .error(404, "not_found", "No such route")
@@ -690,13 +737,12 @@ final class RemoteServer {
         // builds for that directory. The body is still not read. There is still nowhere on this
         // route a directory or a command could be written.
         case ("POST", let path) where path.hasPrefix("/v1/places/") && path.contains("/resume/"):
-            let rest = String(path.dropFirst("/v1/places/".count))
-            let parts = rest.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-            guard parts.count == 3, parts[1] == "resume" else {
+            guard let target = Self.placeResumeTarget(path) else {
                 return .error(404, "not_found", "No such route")
             }
-            let id = parts[0]
-            let conversation = parts[2].removingPercentEncoding ?? parts[2]
+            let id = target.placeID
+            let assistant = target.assistant
+            let conversation = target.sessionID
             return writing(request) { _ in
                 guard let place = StartPoints.place(withID: id.removingPercentEncoding ?? id) else {
                     RemoteAuth.audit("place.resume", ["place": String(id.prefix(64)), "ok": "0",
@@ -706,19 +752,21 @@ final class RemoteServer {
                 // Written down whichever way it goes. An id that was never handed out is what
                 // somebody guessing looks like, and this is the route where guessing right would
                 // matter most.
-                switch StartPoints.resume(place, sessionID: conversation) {
+                switch StartPoints.resume(place, sessionID: conversation, assistant: assistant) {
                 case .refused(let status, let code, let message, let app):
                     RemoteAuth.audit("place.resume", ["place": place.id, "cwd": place.path,
+                                                      "assistant": assistant.rawValue,
                                                       "session": String(conversation.prefix(64)),
                                                       "ok": "0", "why": code])
                     return .error(status, code, message, extra: app.map { ["app": $0] } ?? [:])
                 case .started(let made, let backend):
                     RemoteAuth.audit("place.resume", ["place": place.id, "cwd": place.path,
+                                                      "assistant": assistant.rawValue,
                                                       "session": conversation,
                                                       "ok": "1", "id": made])
                     DispatchQueue.main.async { SessionWatch.shared.nudge() }
                     return .json(["ok": true, "id": made, "backend": backend.rawValue,
-                                  "assistant": Assistant.claude.rawValue,
+                                  "assistant": assistant.rawValue,
                                   "place": place.id, "cwd": place.path,
                                   "session": conversation,
                                   "at": Int(Date().timeIntervalSince1970)])
@@ -2328,16 +2376,17 @@ final class RemoteServer {
     /// `live` says something is writing to that transcript right now, which is the one thing
     /// a person needs to know before tapping a row — resuming it would put a second process on
     /// the same file.
-    private func pastPayload(_ place: StartPoints.Place) -> [String: Any] {
+    private func pastPayload(_ place: StartPoints.Place,
+                             assistant: Assistant = .claude) -> [String: Any] {
         // One more than is sent, so the reply can say whether there were any. A list that simply
         // ends at its cap is a list that lies by omission — which is the bug this whole route
         // already had once, at forty, and it is not one to leave a second copy of at two hundred.
         let cap = 200
-        let found = StartPoints.past(in: place, limit: cap + 1)
+        let found = StartPoints.past(in: place, assistant: assistant, limit: cap + 1)
         return [
             "at": Int(Date().timeIntervalSince1970),
             "place": place.id,
-            "assistant": Assistant.claude.rawValue,
+            "assistant": assistant.rawValue,
             "more": found.count > cap,
             "sessions": found.prefix(cap).map { past -> [String: Any] in
                 [

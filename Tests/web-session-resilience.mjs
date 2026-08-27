@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
 const script = fs.readFileSync(new URL("../Resources/iterm.js", import.meta.url), "utf8");
@@ -61,6 +63,147 @@ assert.equal(stopped.complete, true,
     "a stopped app is authoritative only until independent process evidence contradicts it");
 
 const noop = function () { };
+function testElement(tag = "div") {
+    const classes = new Set();
+    const children = [];
+    const descendants = new Map();
+    const attributes = new Map();
+    const target = {
+        tagName: tag.toUpperCase(), children, childNodes: children, style: {}, dataset: {},
+        hidden: false, disabled: false, value: "", textContent: "", className: "",
+        scrollHeight: 0, scrollTop: 0, clientHeight: 0, parentNode: null,
+        appendChild: function (child) { child.parentNode = proxy; children.push(child); return child; },
+        removeChild: function (child) {
+            const at = children.indexOf(child); if (at >= 0) children.splice(at, 1);
+            child.parentNode = null; return child;
+        },
+        setAttribute: function (name, value) { attributes.set(name, String(value)); },
+        getAttribute: function (name) { return attributes.get(name) ?? null; },
+        toggleAttribute: function (name, force) {
+            const on = force === undefined ? !attributes.has(name) : !!force;
+            if (on) attributes.set(name, ""); else attributes.delete(name); return on;
+        },
+        addEventListener: function (name, fn) { target["on" + name] = fn; },
+        querySelector: function (selector) {
+            if (!descendants.has(selector)) descendants.set(selector, testElement(
+                selector === "canvas" || selector.includes("spin") || selector.includes("mark")
+                    ? "canvas" : "span"));
+            return descendants.get(selector);
+        },
+        querySelectorAll: function () { return []; },
+        closest: function () { return proxy; },
+        focus: noop,
+        animate: function () { return { cancel: noop, onfinish: null }; },
+        getBoundingClientRect: function () {
+            return { top: 0, left: 0, width: 0, height: 0, bottom: 0, right: 0 };
+        },
+        getContext: function () {
+            return { clearRect: noop, fillRect: noop, beginPath: noop, moveTo: noop,
+                lineTo: noop, stroke: noop, save: noop, restore: noop,
+                imageSmoothingEnabled: false, fillStyle: "", strokeStyle: "" };
+        }
+    };
+    Object.defineProperty(target, "innerHTML", {
+        get: function () { return target._innerHTML || ""; },
+        set: function (value) { target._innerHTML = value; children.splice(0); descendants.clear(); }
+    });
+    target.classList = {
+        add: function (...names) { names.forEach(function (name) { classes.add(name); }); },
+        remove: function (...names) { names.forEach(function (name) { classes.delete(name); }); },
+        toggle: function (name, force) {
+            const on = force === undefined ? !classes.has(name) : !!force;
+            if (on) classes.add(name); else classes.delete(name); return on;
+        },
+        contains: function (name) { return classes.has(name); }
+    };
+    const proxy = new Proxy(target, {
+        get: function (object, key) {
+            if (key === Symbol.iterator) return function* () { yield* children; };
+            if (key === "content") return { cloneNode: function () { return testElement(); } };
+            if (key in object) return object[key];
+            return undefined;
+        }
+    });
+    return proxy;
+}
+
+if (process.env.CLAWDLINE_START_SHEET_BEHAVIOR === "1") {
+    const root = testElement();
+    const elements = new Map();
+    function elementWithID(id) {
+        if (!elements.has(id)) {
+            elements.set(id, testElement(id.includes("filter") ? "input" : "div"));
+        }
+        return elements.get(id);
+    }
+    globalThis.localStorage = { getItem: function () { return null; }, setItem: noop };
+    globalThis.location = { search: "", protocol: "http:", hostname: "localhost", pathname: "/" };
+    globalThis.history = { replaceState: noop };
+    globalThis.getComputedStyle = function () { return { opacity: "1", marginLeft: "0" }; };
+    Object.defineProperty(globalThis, "navigator", {
+        value: { userAgent: "node", maxTouchPoints: 0 }, configurable: true
+    });
+    globalThis.window = root;
+    window.devicePixelRatio = 1;
+    window.innerHeight = 800;
+    window.visualViewport = { height: 800, offsetTop: 0, addEventListener: noop };
+    window.matchMedia = function () { return { matches: false, addEventListener: noop }; };
+    globalThis.document = root;
+    document.documentElement = { lang: "en", style: { setProperty: noop, removeProperty: noop } };
+    document.getElementById = elementWithID;
+    document.querySelector = function () { return root; };
+    document.querySelectorAll = function () { return []; };
+    document.createElement = function (tag) { return testElement(tag); };
+    document.body = root;
+    globalThis.MutationObserver = class { observe() { } disconnect() { } };
+    globalThis.ResizeObserver = MutationObserver;
+    globalThis.IntersectionObserver = MutationObserver;
+
+    const { useApi } = await import("../Resources/web/app/js/net/api.js");
+    const { S } = await import("../Resources/web/app/js/core/state.js");
+    const { Start } = await import("../Resources/web/app/js/input/start.js");
+    const calls = [];
+    useApi({
+        places: function () { return Promise.resolve({
+            places: [{ id: "place-one", path: "/repo/one", label: "one" }],
+            assistants: [{ id: "claude", label: "Claude" }, { id: "codex", label: "Codex" }]
+        }); },
+        pastSessions: function (place, assistant) {
+            calls.push(["pastSessions", place, assistant]);
+            return Promise.resolve({ sessions: [
+                { id: "thread-one", title: "Earlier work", at: 1, live: false }
+            ] });
+        },
+        resumePlace: function (place, sessionID, assistant) {
+            calls.push(["resumePlace", place, sessionID, assistant]);
+            return new Promise(function () { });
+        },
+        startPlace: function () { throw new Error("fresh start was not expected"); }
+    });
+    S.write = true;
+    Start.open();
+    await new Promise(function (resolve) { setTimeout(resolve, 0); });
+
+    const codexChip = elementWithID("start-with").children.find(function (node) {
+        return node.textContent === "Codex";
+    });
+    assert.ok(codexChip, "the start sheet offers the Codex assistant");
+    codexChip.onclick();
+    const resumeChip = elementWithID("start-resume").children[0];
+    assert.equal(resumeChip.disabled, false,
+        "selecting Codex enables the resume control");
+    resumeChip.onclick();
+    Start.press("place-one");
+    assert.deepEqual(calls[0], ["pastSessions", "place-one", "codex"],
+        "selecting a project asks for that project's Codex history");
+    await new Promise(function (resolve) { setTimeout(resolve, 0); });
+    Start.pick("thread-one");
+    assert.deepEqual(calls[1], ["resumePlace", "place-one", "thread-one", "codex"],
+        "selecting a non-live Codex row resumes it with Codex");
+    console.log("web start sheet Codex resume behavior passed");
+    process.exit(0);
+}
+
 const element = new Proxy(function () { }, {
     get: function (_target, key) {
         if (key === Symbol.iterator) return function* () { };
@@ -113,6 +256,31 @@ const { handlers, sessionListNeedsConfirmation } =
     await import("../Resources/web/app/js/net/handlers.js");
 const { Live } = await import("../Resources/web/app/js/net/live.js");
 const { S } = await import("../Resources/web/app/js/core/state.js");
+
+const requestPaths = [];
+const resilienceFetch = globalThis.fetch;
+globalThis.fetch = function (path) {
+    requestPaths.push(path);
+    return Promise.resolve({ ok: true, text: function () {
+        return Promise.resolve(JSON.stringify({ sessions: [] }));
+    } });
+};
+await Live.pastSessions("place/one", "codex");
+await Live.resumePlace("place/one", "thread/two", "codex");
+assert.equal(requestPaths[0], "/v1/places/place%2Fone/sessions/codex",
+    "Codex history names the selected assistant in the read route");
+assert.equal(requestPaths[1], "/v1/places/place%2Fone/resume/codex/thread%2Ftwo",
+    "Codex resume names the selected assistant in the write route");
+globalThis.fetch = resilienceFetch;
+
+const startSheet = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
+    cwd: process.cwd(), encoding: "utf8",
+    env: { ...process.env, CLAWDLINE_START_SHEET_BEHAVIOR: "1" }
+});
+assert.equal(startSheet.status, 0,
+    "the isolated start-sheet behavior fixture passes: " + (startSheet.stderr || startSheet.stdout));
+assert.match(startSheet.stdout, /Codex resume behavior passed/,
+    "the behavior fixture reached all three Codex resume assertions");
 
 const incomplete = { generation: 7, complete: false, emptyAuthoritative: false };
 const authoritative = { generation: 8, complete: true, emptyAuthoritative: true };

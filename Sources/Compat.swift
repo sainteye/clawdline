@@ -249,12 +249,13 @@ enum Compat {
             since: "not known to have a floor"),
         Dependency(
             program: "Codex",
-            what: "`codex app-server`'s JSON-RPC — `initialize`, `model/list`, `thread/read` "
-                + "and `thread/name/set`. The one dependency here with a real contract: it has "
+            what: "`codex app-server`'s JSON-RPC — `initialize`, `model/list`, `thread/list`, "
+                + "`thread/read` and `thread/name/set`. The one dependency here with a real "
+                + "contract: it has "
                 + "a generator, `codex app-server generate-json-schema`",
             where_: "CodexNaming.swift",
-            symptom: "A Codex session opened to be handed work never gets the name it was "
-                   + "opened under, and the panel lists it as an untitled thread",
+            symptom: "A Codex session opened to be handed work never gets its name, or the "
+                   + "resume sheet has no Codex history to offer",
             since: "not known to have a floor"),
         Dependency(
             program: "Codex",

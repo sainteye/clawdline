@@ -101,12 +101,12 @@ directory or a command could be written into, which is the property that mattere
 anything to choose between. [The route in full →](api.md#post-v1placesidstart-post-v1placesidstartassistant)
 
 It also covers **picking a recorded conversation back up**, which is the same switch and one more
-step of the same promise. The sheet's tick box turns the project list into the conversations Claude
-Code has already written down in that project; the row that is pressed sends
-`POST /v1/places/:id/resume/:session`, and the conversation is a path segment checked twice — once
-for being a UUID, once for being one this Mac just listed for that directory. The listing itself is
-read-level, because the titles it discloses belong to a directory whose name a reading token could
-already see. [The routes in full →](api.md#get-v1placesidsessions)
+step of the same promise. The sheet's tick box turns the project list into the selected assistant's
+conversations in that project; the row that is pressed sends
+`POST /v1/places/:id/resume/:assistant/:session`, and the conversation is a path segment checked
+twice — once for being a UUID, once for being one that assistant just listed for that directory.
+The listing itself is read-level, because the titles it discloses belong to a directory whose name
+a reading token could already see. [The routes in full →](api.md#get-v1placesidsessions-get-v1placesidsessionsassistant)
 
 **Dictating from a phone is behind this switch as well**, and not because transcribing writes
 anything — it writes nothing at all. Two reasons, and neither is about the audio.

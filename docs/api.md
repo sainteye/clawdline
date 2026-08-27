@@ -88,11 +88,13 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/projects` | token | `read` |
 | `GET` | `/v1/places` | token | `read` |
 | `GET` | `/v1/places/:id/sessions` | token | `read` |
+| `GET` | `/v1/places/:id/sessions/:assistant` | token | `read` |
 | `GET` | `/v1/events` | token | `read` |
 | `POST` | `/v1/places/:id/start` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/places/:id/start/:assistant` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/places/:id/start/:assistant/:model` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/places/:id/resume/:session` | token + key | `send` **and** the write switch |
+| `POST` | `/v1/places/:id/resume/:assistant/:session` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/send` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/key` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/focus` | token + key | `send` **and** the write switch |
@@ -650,11 +652,12 @@ shape as a session's.
 It is not a filesystem browser and will not become one. There is no way to ask it about a directory
 it did not already offer.
 
-### `GET /v1/places/:id/sessions`
+### `GET /v1/places/:id/sessions`, `GET /v1/places/:id/sessions/:assistant`
 
-**What Claude Code has already recorded in one place**, so a client can offer to carry one of them
-on instead of starting something new. Reading, not starting — it discloses the titles of
+**What one assistant has already recorded in one place**, so a client can offer to carry one of
+them on instead of starting something new. Reading, not starting — it discloses the titles of
 conversations held in a directory whose name this token could already see in `/v1/places`.
+Leaving `:assistant` out is the original Claude route; name `claude` or `codex` to select one.
 
 ```console
 $ curl -s http://127.0.0.1:7717/v1/places/3b9e26c1587facfd/sessions \
@@ -706,29 +709,30 @@ all. A client's filter box can only narrow what it was sent.
 The briefing test is on the **first turn, and as a prefix**. A conversation that merely mentions
 those words — one held *about* this feature does, at length — is still a conversation.
 
-**`title` is read, never invented.** It is the name somebody renamed the conversation to, or the
-one Claude Code gave it, or — for the few transcripts that carry neither — the opening of the first
-thing a person typed into it. A transcript with none of the three is a tab that opened and closed,
-and it is left out rather than listed as an untitled row somebody has to guess at.
+**`title` is read, never invented.** For Claude it is the name somebody renamed the conversation
+to, the one Claude Code gave it, or the opening of the first thing a person typed. For Codex it is
+the persisted `name` from app-server's supported `thread/list`, falling back to that method's
+first-message `preview`. A record with neither is left out rather than listed as an untitled row
+somebody has to guess at.
 
 **`live` means something is writing to that transcript right now.** Resuming one of those would put
 a second process on the same file, so a client is told which they are rather than left to find out.
 It is a fact about the instant it was read.
 
-**It is not instant on a large project.** Naming a conversation means reading its transcript, and
-these run to tens of megabytes; the first call for a project takes on the order of a second and
-every one after it is served from memory until the files change. Show a waiting line.
+**It may not be instant on a large project.** Claude names require reading transcripts, which can
+run to tens of megabytes; Codex starts a short-lived app-server and asks its indexed `thread/list`.
+Show a waiting line.
 
-**Claude Code only**, which is what `assistant` in the reply says out loud. Codex records the same
-conversations somewhere else and keeps their names in a process this list will not start, so there
-is nothing to show rather than nothing to resume. A place with no Claude Code transcripts answers
-`{"sessions": []}`, which is ordinary — it is what a directory only Codex has ever been opened in
-looks like. An id that is not on `/v1/places` is `404 not_found`.
+`assistant` in the reply says which index was read. A place with no conversations for that
+assistant answers `{"sessions": []}`, which is ordinary. Codex listing includes interactive CLI
+threads for that exact cwd, newest first; it does not expose exec runs or subagents. An id that is
+not on `/v1/places`, or an assistant outside the closed `claude`/`codex` list, is `404 not_found`.
 
-### `POST /v1/places/:id/resume/:session`
+### `POST /v1/places/:id/resume/:session`, `POST /v1/places/:id/resume/:assistant/:session`
 
 Opens a terminal tab in that place and picks that conversation back up in it — `claude --resume
-<id>`. Everything about *where* and *whether* is
+<id>` or `codex resume <id>`. Leaving the assistant out selects Claude for compatibility.
+Everything about *where* and *whether* is
 [`…/start`](#post-v1placesidstart-post-v1placesidstartassistant) unchanged; this adds one literal
 flag and one id.
 
@@ -742,13 +746,13 @@ $ curl -s -X POST \
 **There is no request body here either**, and the conversation is a path segment for exactly the
 reason the assistant is one above. It is checked twice before it becomes part of a command line:
 once for shape — a lowercase UUID as Claude Code writes them, and nothing else — and once against
-the listing the server builds for that directory at that moment. An id nobody was handed is
+the selected assistant's listing for that directory at that moment. An id nobody was handed is
 `404 not_found`, never a string on a command line.
 
-The shape check is exact rather than merely shell-safe, and that is worth knowing if you are
-building on this: `--resume` takes an **optional** value, so a value the CLI cannot read as an id
-it treats as a search term for, and opens its own picker in a tab nobody is sitting at. The failure
-being refused is a session that never starts, not only an injection.
+The shape check is exact rather than merely shell-safe. This is especially important for Claude:
+`--resume` takes an **optional** value, so a value the CLI cannot read as an id becomes a search
+term and opens its own picker in a tab nobody is sitting at. The same closed UUID rule is applied
+to Codex before its `resume` subcommand is assembled.
 
 The refusals are `…/start`'s, plus `not_found` for a conversation that is not on the listing — a
 transcript deleted since you last looked, an id from another project, or one that was never real.
@@ -806,8 +810,8 @@ what runs is a literal picked out of a closed list, never a string that reaches 
 is the same idea one segment further along: three names, matched exactly, and the only thing either
 of them can add to the command line is `--model <one of three>`. Picking a recorded conversation
 back up is the second named action this said it would be if it were ever wanted —
-[`POST /v1/places/:id/resume/:session`](#post-v1placesidresumesession), with its own literal — and
-not a field on this one.
+[`POST /v1/places/:id/resume/:assistant/:session`](#post-v1placesidresumesession-post-v1placesidresumeassistantsession),
+with its own literal — and not a field on this one.
 
 Three refusals are specific to this route and worth branching on:
 

@@ -306,7 +306,8 @@ enum StartPoints {
     /// today they share a gate.
     static func resume(_ place: Place, sessionID: String,
                        assistant: Assistant = .claude) -> Outcome {
-        guard let id = sessionName(sessionID), past(withID: id, in: place) != nil else {
+        guard let id = sessionName(sessionID),
+              past(withID: id, in: place, assistant: assistant) != nil else {
             return .refused(status: 404, code: "not_found",
                             message: "No conversation named that", app: nil)
         }
@@ -315,7 +316,7 @@ enum StartPoints {
 
     // MARK: - Conversations already recorded here
 
-    /// One conversation Claude Code has already written down in a place.
+    /// One conversation either assistant has already written down in a place.
     struct Past: Equatable {
         /// The session's own id, which is also what its transcript is named. The only part a
         /// client ever sends back.
@@ -336,9 +337,9 @@ enum StartPoints {
 
     /// What has already been said in a place, newest first.
     ///
-    /// Only Claude Code. Codex records the same conversations somewhere else and names its
-    /// threads through its app-server rather than in the file, so listing those means starting a
-    /// process per listing — a different day's work, and not one this list should wait on.
+    /// Claude Code's half only. Codex owns a separate indexed list behind app-server and the
+    /// assistant-taking overload below reads that instead of making this file reader pretend the
+    /// two formats are alike.
     ///
     /// Only the top level of the project folder. Subagents' transcripts live in a directory
     /// beside them named for their parent, and a sidechain is not a conversation anybody had.
@@ -389,6 +390,22 @@ enum StartPoints {
         return out
     }
 
+    /// What one assistant has already recorded in a place, newest first.
+    ///
+    /// Codex owns its index and persisted thread names. Its supported app-server supplies both
+    /// through `thread/list`, including an exact cwd filter; Clawdline only turns those rows
+    /// into the same small shape the Claude transcript list already uses.
+    static func past(in place: Place, assistant: Assistant, limit: Int = 200) -> [Past] {
+        switch assistant {
+        case .claude:
+            return past(in: place, limit: limit)
+        case .codex:
+            return CodexNaming.listedThreads(cwd: place.path)
+                .prefix(limit)
+                .map { Past(id: $0.id, title: $0.title, at: $0.at, live: $0.live) }
+        }
+    }
+
     /// The conversation with that id in that place, or nothing.
     ///
     /// Resolved against a listing built now, for the same reason ``place(withID:)`` is: a
@@ -398,6 +415,11 @@ enum StartPoints {
                      dir: URL? = nil, open: Set<String>? = nil) -> Past? {
         guard sessionName(id) != nil else { return nil }
         return past(in: place, dir: dir, open: open).first { $0.id == id }
+    }
+
+    static func past(withID id: String, in place: Place, assistant: Assistant) -> Past? {
+        guard sessionName(id) != nil else { return nil }
+        return past(in: place, assistant: assistant).first { $0.id == id }
     }
 
     /// What the front of a transcript says about the session that wrote it.

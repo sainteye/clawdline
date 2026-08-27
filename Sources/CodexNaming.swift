@@ -23,6 +23,16 @@ final class CodexNaming {
     /// Keying by terminal target as well as thread prevents a reused tab from showing its old task.
     private var displayedTitles: [String: (threadID: String, title: String)] = [:]
 
+    /// One interactive Codex thread as `thread/list` describes it, pared down to what the
+    /// start sheet needs. App-server remains the owner of both the persisted name and the
+    /// rollout index; Clawdline does not read or edit Codex's SQLite store.
+    struct ListedThread: Equatable {
+        let id: String
+        let title: String
+        let at: Date
+        let live: Bool
+    }
+
     private init() {
         work.name = "dev.sainteye.clawdline.codex-naming"
         // A new tab can appear while another title is in flight. Serial is intentional: a burst
@@ -309,18 +319,32 @@ final class CodexNaming {
 
     // MARK: - Inputs and protocol shapes
 
-    private static func executable(for target: TargetSession) -> URL? {
+    private static func executable(for target: TargetSession?) -> URL? {
         let fm = FileManager.default
         if let configured = Paths.resolve(Config.shared.codexPath),
            fm.isExecutableFile(atPath: configured.path) { return configured }
-        if let pid = Targets.pid(of: target), let path = executablePath(ofPID: pid),
-           fm.isExecutableFile(atPath: path) { return URL(fileURLWithPath: path) }
+        let targets = target.map { [$0] }
+            ?? SessionWatch.shared.targets.filter { $0.assistant == .codex }
+        for candidate in targets {
+            if let pid = Targets.pid(of: candidate), let path = executablePath(ofPID: pid),
+               fm.isExecutableFile(atPath: path) { return URL(fileURLWithPath: path) }
+        }
 
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let candidates = [
+        var candidates = [
             "/opt/homebrew/bin/codex", "/usr/local/bin/codex",
             home.appendingPathComponent(".local/bin/codex").path,
+            home.appendingPathComponent(".volta/bin/codex").path,
         ]
+        // npm installations managed by nvm do not put a stable shim anywhere outside the
+        // selected Node version. A Finder-launched app has no interactive shell to source nvm,
+        // so walk the small version directory and prefer the newest executable it contains.
+        let nvm = home.appendingPathComponent(".nvm/versions/node", isDirectory: true)
+        let versions = ((try? fm.contentsOfDirectory(atPath: nvm.path)) ?? []).sorted(by: >)
+        candidates += versions.map {
+            nvm.appendingPathComponent($0, isDirectory: true)
+                .appendingPathComponent("bin/codex").path
+        }
         return candidates.first(where: fm.isExecutableFile(atPath:)).map(URL.init(fileURLWithPath:))
     }
 
@@ -340,6 +364,51 @@ final class CodexNaming {
               let name = thread["name"] as? String else { return nil }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Turn the supported `thread/list` reply into rows for one exact working directory.
+    ///
+    /// The request already carries the cwd and `sourceKinds: ["cli"]`; both are checked again
+    /// here because this is the last boundary before an id is offered back to a remote client.
+    /// A persisted name wins, with app-server's preview (normally the first user message) as
+    /// the fallback. Clawdline-dispatched children are plumbing rather than conversations a
+    /// person had, and use the same exact briefing prefix the Claude transcript list excludes.
+    static func listedThreads(in response: [String: Any], cwd: String,
+                              open: Set<String> = []) -> [ListedThread] {
+        guard let result = response["result"] as? [String: Any],
+              let data = result["data"] as? [[String: Any]] else { return [] }
+        return data.compactMap { row -> ListedThread? in
+            guard row["cwd"] as? String == cwd,
+                  let rawID = row["id"] as? String,
+                  let id = StartPoints.sessionName(rawID),
+                  let number = row["updatedAt"] as? NSNumber else { return nil }
+            let preview = (row["preview"] as? String) ?? ""
+            guard !preview.hasPrefix(Orchestrator.briefingOpening) else { return nil }
+            let named = (row["name"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let opening = preview.split(whereSeparator: \.isNewline).first.map(String.init)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let title = [named, opening].compactMap({ $0 }).first(where: { !$0.isEmpty })
+            else { return nil }
+            return ListedThread(id: id, title: title,
+                                at: Date(timeIntervalSince1970: number.doubleValue),
+                                live: open.contains(id))
+        }.sorted { $0.at > $1.at }
+    }
+
+    /// Ask Codex for the interactive CLI threads in one place. The scan is deliberately wider
+    /// than the UI's 200-row answer because dispatched children are removed afterwards, just as
+    /// the Claude transcript reader scans farther than its answer cap.
+    static func listedThreads(cwd: String, limit: Int = 400) -> [ListedThread] {
+        guard let executable = executable(for: nil),
+              let server = CodexNameServer(executable: executable, codexHome: Codex.home)
+        else { return [] }
+        defer { server.stop() }
+        guard let response = server.threads(cwd: cwd, limit: limit) else { return [] }
+        let open = Set(SessionWatch.shared.targets.compactMap { target in
+            target.assistant == .codex ? Transcript.sessionID(of: target) : nil
+        })
+        return Array(listedThreads(in: response, cwd: cwd, open: open).prefix(limit))
     }
 }
 
@@ -398,6 +467,17 @@ private final class CodexNameServer {
 
     func thread(id: String) -> [String: Any]? {
         request(method: "thread/read", params: ["threadId": id, "includeTurns": false])
+    }
+
+    func threads(cwd: String, limit: Int) -> [String: Any]? {
+        request(method: "thread/list", params: [
+            "archived": false,
+            "cwd": cwd,
+            "limit": max(1, limit),
+            "sortDirection": "desc",
+            "sortKey": "updated_at",
+            "sourceKinds": ["cli"],
+        ])
     }
 
     func setName(_ name: String, threadID: String) -> Bool {

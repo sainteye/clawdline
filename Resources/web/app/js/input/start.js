@@ -28,8 +28,8 @@ import { openSession } from "../session/open.js";
  *
  * **Picking one back up is the same sheet, one step further in.** The switch above the list
  * decides what the next press on a project means: begin a conversation there, or show the ones
- * Claude Code has already recorded there and carry one of them on. That second screen is the
- * same list, the same filter box and the same press — which is why it is a mode of this sheet
+ * the selected assistant has already recorded there and carry one of them on. That second screen
+ * is the same list, the same filter box and the same press — which is why it is a mode of this sheet
  * rather than a sheet of its own — and it obeys the same rule as everything else here: the page
  * never names a conversation, it sends back an id off a list the Mac just built.
  *
@@ -115,14 +115,11 @@ export var Start = (function () {
         });
     }
 
-    /** Whether picking a conversation up is on the table at all.
-     *
-     *  Codex records its conversations elsewhere and keeps their names in a process this list
-     *  will not start, so there is nothing to show rather than nothing to resume — see
-     *  `StartPoints.past(in:limit:)`. The switch stays on screen and says why, because a control
-     *  that vanishes when you choose the other chip teaches nobody anything. */
+    /** Whether picking a conversation up is on the table at all. Each assistant owns its own
+     *  history and names; the Mac selects the matching source from this closed assistant id. */
     function resumable() {
-        return with_ === "claude" && typeof api.pastSessions === "function";
+        return (with_ === "claude" || with_ === "codex")
+            && typeof api.pastSessions === "function";
     }
 
     /** When a conversation was last written to.
@@ -235,7 +232,6 @@ export var Start = (function () {
             + ' stroke-linecap="round" stroke-linejoin="round"></path></svg>'
             + '<span class="label"></span>';
         chip.querySelector(".label").textContent = T.webResumeWith;
-        // Off and unpressable while Codex is chosen, and the sentence under the list says why.
         chip.disabled = !!pressing || !!wait || !resumable();
         chip.setAttribute("aria-pressed", resume && resumable() ? "true" : "false");
         chip.onclick = function () { resume = !resume; draw(); };
@@ -281,9 +277,7 @@ export var Start = (function () {
             : (loading && !places) ? T.webLoading
             : (places && !places.length) ? T.webStartEmpty
             : T.webStartPick);
-        // The one thing the switch changes about *this* screen, and only when it is shut for a
-        // reason somebody can act on.
-        said(resume && !resumable() ? T.webResumeClaudeOnly : "");
+        said("");
 
         // Forty is the most the Mac will ever offer and three fit on a phone without scrolling.
         // Under nine, a box to narrow them down is furniture in front of the answer.
@@ -438,7 +432,7 @@ export var Start = (function () {
         said("");
         reading = true;
         draw();
-        api.pastSessions(place.id).then(function (d) {
+        api.pastSessions(place.id, with_).then(function (d) {
             if (!at || at.id !== place.id) return;   // gone back while this was in flight
             pasts = (d && d.sessions) || [];
             capped = !!(d && d.more);
@@ -548,7 +542,7 @@ export var Start = (function () {
         said("");
         draw();
         Waits.startPress.start();
-        api.resumePlace(place.id, sessionID).then(function (d) {
+        api.resumePlace(place.id, sessionID, with_).then(function (d) {
             Waits.startPress.settle(function () {
                 pressing = null;
                 began(d && d.id, { label: row.title, path: place.path, icon: place.icon });

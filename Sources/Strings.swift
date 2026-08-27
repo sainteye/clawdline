@@ -782,7 +782,8 @@ protocol Copy {
     var webStartOff: String { get }
 
     // Picking a conversation back up instead of starting a new one — see
-    // `GET /v1/places/:id/sessions` and `POST /v1/places/:id/resume/:session`.
+    // `GET /v1/places/:id/sessions/:assistant` and
+    // `POST /v1/places/:id/resume/:assistant/:session`.
     //
     // Same rule as above, one step further in: the page never names a conversation either. It
     // shows the titles the Mac read off its own transcripts and sends back an id out of that
@@ -793,8 +794,8 @@ protocol Copy {
     var webResumeWith: String { get }
     var webResumePick: String { get }
     var webResumeFilter: String { get }
-    /// A project Claude Code has been run in but has written nothing down about. Ordinary, and
-    /// not a failure: it is what a directory only Codex has ever been opened in looks like.
+    /// A project the selected assistant has been run in but has written nothing down about.
+    /// Ordinary, and not a failure.
     var webResumeEmpty: String { get }
     /// On the one row that is a conversation something is writing to **right now**. Resuming it
     /// would put a second process on the same transcript, so this word is the whole warning and
@@ -802,9 +803,8 @@ protocol Copy {
     var webResumeLive: String { get }
     var webResumeBack: String { get }
     var webResumeGone: String { get }
-    /// Why the switch is shut while Codex is the chosen assistant. Codex keeps its own record
-    /// elsewhere and names its threads through a process this list will not start, so there is
-    /// nothing to offer rather than nothing to resume.
+    /// Retained for wire compatibility with older pages; current pages can resume either
+    /// assistant and do not draw it.
     var webResumeClaudeOnly: String { get }
     var webResuming: String { get }
     /// Said when the **Mac** stopped listing rather than the page — a project with more
