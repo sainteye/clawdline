@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="artifact-kind" content="state">
+  <title>Clawdline Cloud Phase 1｜部署控制室</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d0d10; --panel:#17171b; --line:#303038; --ink:#f0eee9;
+      --muted:#aaa6a0; --accent:#d97757; --ok:#69a67b; --warn:#d5a24a; --bad:#d06d6d; --blue:#7f9dcf; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { width:min(1180px,calc(100% - 32px)); margin:0 auto; padding:54px 0 80px; }
+    h1,h2,h3,p { margin-top:0; } h1 { font-size:clamp(34px,6vw,72px); line-height:1.02; letter-spacing:-.045em; max-width:900px; }
+    h2 { margin:44px 0 18px; font-size:22px; letter-spacing:-.015em; } h3 { font-size:15px; margin-bottom:7px; }
+    .eyebrow,.mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .eyebrow { color:var(--accent); text-transform:uppercase; letter-spacing:.12em; font-size:12px; }
+    .lede { max-width:820px; color:var(--muted); font-size:18px; }
+    .stamp { display:flex; flex-wrap:wrap; gap:8px; margin:24px 0 32px; }
+    .tag { border:1px solid var(--line); border-radius:999px; padding:5px 10px; color:var(--muted); font-size:12px; }
+    .tag.bad { color:#ffb4b4; border-color:#6d3535; } .tag.ok { color:#a9dbb5; border-color:#355e40; }
+    .grid { display:grid; grid-template-columns:repeat(12,1fr); gap:12px; }
+    .card { grid-column:span 4; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; min-width:0; }
+    .wide { grid-column:span 8; } .full { grid-column:1/-1; }
+    .metric { font-size:34px; line-height:1; letter-spacing:-.035em; margin:9px 0 8px; }
+    .muted { color:var(--muted); } .oktxt { color:#9dd3aa; } .warn { color:#ecc477; } .bad { color:#efa1a1; }
+    .lane { display:grid; grid-template-columns:140px 1fr auto; gap:14px; align-items:center; padding:14px 0; border-top:1px solid var(--line); }
+    .lane:first-child { border-top:0; padding-top:0; } .bar { height:7px; background:#292930; border-radius:9px; overflow:hidden; }
+    .bar i { display:block; height:100%; background:var(--accent); border-radius:inherit; } .lane small { color:var(--muted); }
+    code { color:#edd0c5; background:#222228; padding:2px 5px; border-radius:5px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap:anywhere; }
+    ul,ol { margin:8px 0 0; padding-left:20px; } li+li { margin-top:7px; }
+    table { width:100%; border-collapse:collapse; font-size:14px; } th,td { text-align:left; vertical-align:top; border-top:1px solid var(--line); padding:11px 9px; }
+    th { color:var(--muted); font-weight:500; } tr:first-child th,tr:first-child td { border-top:0; }
+    .topology { display:grid; grid-template-columns:1fr auto 1fr auto 1fr; align-items:center; gap:12px; }
+    .node { background:#121216; border:1px solid var(--line); border-radius:11px; padding:14px; min-height:100px; }
+    .arrow { color:var(--muted); font-size:22px; }
+    .callout { border-left:3px solid var(--warn); padding:12px 14px; background:#1b1914; border-radius:0 10px 10px 0; }
+    a { color:#a9c7f3; } footer { color:var(--muted); margin-top:45px; font-size:12px; }
+    @media (max-width:820px) { .card,.wide { grid-column:1/-1; } .topology { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); text-align:center; }
+      .lane { grid-template-columns:100px 1fr; } .lane small { grid-column:1/-1; } }
+    @media (max-width:620px) { table,tbody,tr,td { display:block; width:100%; } tr:first-child { display:none; }
+      tr { border-top:1px solid var(--line); padding:12px 0; } td { border:0; padding:5px 0; overflow-wrap:anywhere; }
+      td:first-child { color:var(--ink); font-weight:700; } td:nth-child(2)::before,td:nth-child(3)::before {
+        display:block; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
+      td:nth-child(2)::before { content:"建議"; } td:nth-child(3)::before { content:"需要人類的原因"; } }
+  </style>
+</head>
+<body><main>
+  <p class="eyebrow">kind=state · private deployment handoff</p>
+  <h1>不是「差一個 deploy」。<br>是三條最後一哩路。</h1>
+  <p class="lede">目標是讓這台 Mac 經由 <strong>clawdline.com</strong> 登入、配對並連到正式雲端；不再依賴 <code>cloudflared</code> tunnel。此頁只把已驗證的事標成完成，child success、測試綠或 DNS 存在都不會被寫成產品已上線。</p>
+  <div class="stamp"><span class="tag bad">Production：尚未部署</span><span class="tag ok">GitHub Connect web flow：已 commit</span><span class="tag ok">Relay deploy readiness：已 commit</span><span class="tag ok">Terraform configuration：valid</span><span class="tag">updated 2026-08-27 19:30 Asia/Taipei</span></div>
+
+  <section class="grid">
+    <article class="card"><h3>程式里程碑</h3><div class="metric">約 72%</div><p class="muted">Web GitHub Connect、API、Relay deploy readiness 已 commit；Mac lifecycle 已交付待複審與 landing，Settings UX 與 signed response implementation 仍缺。</p></article>
+    <article class="card"><h3>部署準備</h3><div class="metric">約 45%</div><p class="muted">Terraform、runbook、API、Relay、marketing 已可建置；外部 production 資源本身仍是 0%。</p></article>
+    <article class="card"><h3>可實際驗收的產品路徑</h3><div class="metric">0 / 1</div><p class="muted">尚無 real Mac → relay → paired viewer → signed response 的 production receipt。</p></article>
+  </section>
+
+  <h2>目標拓撲</h2>
+  <section class="card full topology">
+    <div class="node"><h3>Mac App</h3><p>device-code login<br>machine credential<br>outbound WSS</p></div><div class="arrow">→</div>
+    <div class="node"><h3>AWS control plane</h3><p><code>api.clawdline.com</code><br>EC2 + Caddy + Fastify<br>MongoDB on protected EBS</p></div><div class="arrow">↔</div>
+    <div class="node"><h3>Cloudflare edge</h3><p><code>relay.clawdline.com</code> Worker/DO<br><code>app.clawdline.com</code> viewer<br>apex marketing</p></div>
+  </section>
+  <p class="muted">這個拓撲<strong>沒有 cloudflared tunnel</strong>。Cloudflare 在此只做 DNS/Pages 與既定的 Worker data plane；API origin 是 AWS。若要求 Relay 也搬進 AWS，等於重開 D3 架構，不是目前 Phase 1 的部署工作。</p>
+
+  <h2>目前離 Phase 1 多遠</h2>
+  <section class="card full">
+    <div class="lane"><b>P1a</b><div class="bar"><i style="width:100%"></i></div><small class="oktxt">Keys、AES-GCM envelope、golden vectors 已在 HEAD（<span class="mono">20ebef38</span>）</small></div>
+    <div class="lane"><b>Account / P1b</b><div class="bar"><i style="width:82%"></i></div><small>device-code client、Keychain machine credential 與 lifecycle repair 已交付且 focused 75 checks 綠；仍待獨立複審與 public commit。</small></div>
+    <div class="lane"><b>P1c app bridge</b><div class="bar"><i style="width:88%"></i></div><small class="warn"><code>7107b190…</code> 已交付、25 Transport + 49 Bridge checks 綠、landing=pending；新獨立複審 <code>bd034a60…</code> 正在執行。</small></div>
+    <div class="lane"><b>signed response</b><div class="bar"><i style="width:30%"></i></div><small>wire/security decision 已修訂但 final review 尚未成功 spawn；Relay / Mac / Viewer implementation 仍未 landing。</small></div>
+    <div class="lane"><b>P1d onboarding</b><div class="bar"><i style="width:35%"></i></div><small>API OAuth redirect、credentialed CORS 與 <code>/connect</code> 已 commit；Mac Settings GitHub Connect、QR/recovery、viewer revoke 與 production attach 尚未完成。</small></div>
+    <div class="lane"><b>Deploy</b><div class="bar"><i style="width:45%"></i></div><small>Terraform validate、帳號盤點、現行 Wrangler/Vitest/SQLite migration、API OAuth 與 5-route marketing build 已完成；尚未 plan/apply、放 secrets、部署 Pages/Worker/API。</small></div>
+  </section>
+
+  <h2>已取得的硬收據</h2>
+  <section class="grid">
+    <article class="card"><h3>Control plane</h3><div class="metric oktxt">116 / 116</div><p class="muted">API typecheck + Vitest + build + audit 0，含 Mongo integration 與 fresh GitHub login 直接核准 Mac。</p></article>
+    <article class="card"><h3>Relay</h3><div class="metric oktxt">113 + 27</div><p class="muted">113 unit/config pass（4 skip）+ 27 Workers tests；Wrangler 4、Vitest plugin、SQLite DO migration dry-run 綠。</p></article>
+    <article class="card"><h3>Marketing</h3><div class="metric oktxt">5 routes</div><p class="muted">Astro build + dist assertions + audit 0；<code>/connect</code> desktop/mobile browser QA 通過。</p></article>
+    <article class="card wide"><h3>AWS / Terraform</h3><p><code>terraform init -backend=false</code> 與 <code>terraform validate</code> 成功。AWS default credential 可用；Taipei <code>ap-east-2</code> 有三個 AZ 且支援 <code>t4g.medium</code>。查無 Project=clawdline 的既有 tagged resource。</p></article>
+    <article class="card"><h3>已驗證的 cloud commits</h3><p><code>de068f2</code> Relay deploy readiness；<code>030f093</code> browser OAuth return flow；<code>d149bf5</code> GitHub Connect / Mac approval entry。三者皆在私有 repo <code>main</code>，仍沒有 remote。</p></article>
+  </section>
+
+  <h2>已確認的 blockers</h2>
+  <section class="grid">
+    <article class="card wide"><h3>1 · App landings 還沒關閉</h3><p>Mac 的 CloudAccount 與 P1c CloudTransport/CloudAppBridge 都在 shared dirty tree，已測但尚未獨立複審完成、staged-only commit 與 landing closure。<code>RemoteServer.swift</code> durable wait <code>fb235777…</code> 在 commit 或明確 release 前保持。</p></article>
+    <article class="card"><h3>2 · signed execution truth 缺一段</h3><p>Relay ack 只能證明 routing，不能證明 Mac 執行。Phase 1 必須由 Viewer Promise 收到 Mac-signed response 才算完成。</p></article>
+    <article class="card"><h3>3 · Mac onboarding UI 未完成</h3><p>Web <code>/connect</code> 與 OAuth callback 已完成，但 Settings 尚無 GitHub Connect/device-code 狀態、取消/重試/登出 UI；QR viewer pairing、recovery code 與 revoke 是後續 slice。</p></article>
+    <article class="card"><h3>4 · 外部資源尚不存在</h3><p>沒有 Pages project、Worker、Terraform state、EC2、EBS、S3 或 production DNS host records。這不是 DNS 等傳播，而是尚未建立。</p></article>
+    <article class="card"><h3>5 · secrets / provider setup</h3><p>真 GitHub OAuth App/client secret、Stripe test webhook/prices、Cloudflare narrow tokens、Caddy DNS token 與 runtime secrets 均尚未放入。</p></article>
+    <article class="card"><h3>6 · release transport</h3><p>private cloud checkout 沒有 git remote。VM release 要用私有 remote，或用 SSM/copy 的可重現 release bundle；不能覆蓋 EBS mount。</p></article>
+  </section>
+
+  <h2>需要人類授權／提供的最小包</h2>
+  <section class="card full">
+    <table>
+      <tr><th>項目</th><th>建議</th><th>為什麼不能由 Agent 猜</th></tr>
+      <tr><td>AWS region + 花費</td><td><strong>ap-east-2 Taipei</strong>；目前粗估約 US$43/月 AWS 基礎資源，加 S3/流量；Workers Paid 最低 US$5/月（若採 paid）。</td><td>會持續產生帳單；Terraform module default 其實是 us-east-1，必須明確覆寫。</td></tr>
+      <tr><td>Cloudflare</td><td>zone id；Terraform token（DNS + Worker Routes）；另一枚 Caddy DNS-only token。</td><td>token scope 必須在 Dashboard 建立並由人確認最小權限。</td></tr>
+      <tr><td>GitHub OAuth</td><td>建立 OAuth App，callback <code>https://api.clawdline.com/v1/auth/oauth/callback</code>。</td><td>目前 <code>gh</code> session 無效；建立 OAuth app 是帳號外部狀態。</td></tr>
+      <tr><td>Stripe test mode</td><td>Pro recurring price、portal、webhook endpoint + signing secret。</td><td>付款產品與 webhook 是商業帳號決策。</td></tr>
+      <tr><td>Runtime secrets</td><td>Mongo password、SESSION_SECRET、SERVICE_TOKEN、Ed25519 device-token signing key。</td><td>只應在私密 operator terminal 產生，不進 Artifact、git 或聊天。</td></tr>
+    </table>
+  </section>
+
+  <h2>Landing 與部署順序</h2>
+  <section class="grid">
+    <article class="card wide"><ol>
+      <li>完成 P1c independent review → exact staged-tree test → public commit → landing landed → explicit release <code>fb235777…</code>。</li>
+      <li>完成 CloudAccount independent review → staged-only public commit。</li>
+      <li>實作 Mac Settings GitHub Connect 第一 slice；再做 QR/recovery/viewer revoke。</li>
+      <li>完成 ctl response final review；canonical vectors → Relay → Mac → Viewer response slices。</li>
+      <li>建立 Pages projects、填 non-secret tfvars；Relay/toolchain repair已在 <code>de068f2</code>。</li>
+      <li>取得上述人類授權包後：Terraform plan review → apply → API/Mongo/Caddy → OAuth/Stripe proof → Relay → Pages。</li>
+      <li>real Mac + separate viewer production acceptance；signed response、usage flush、zero-plaintext-log 全部通過才完成。</li>
+    </ol></article>
+    <article class="card"><h3>完成的唯一判準</h3><p>Viewer 從 <code>app.clawdline.com</code> 經 GitHub 登入／配對，Mac 經 API 取得 credential/token，雙方連上 relay；Viewer 發 command，Mac 本地 broker 執行並回 signed response，Viewer 驗簽後 Promise exactly-once settle。全程沒有 localhost、trycloudflare 或 cloudflared。</p></article>
+  </section>
+
+  <div class="callout"><strong>下一個人類 checkpoint 不是「幫我找 bug」。</strong>程式與可自動驗證的部署準備會繼續由 Agents 推進；只有當 AWS/Cloudflare plan 已可 review、且需要建立付費/帳號資源或 OAuth/Stripe secrets 時，才帶著本 Artifact 要授權。</div>
+
+  <h2>來源與當日外部規則</h2>
+  <section class="card full"><ul>
+    <li><a href="https://developers.cloudflare.com/changelog/post/2026-07-09-restrict-new-kv-backed-namespaces/">Cloudflare：新 Durable Object namespace 必須使用 SQLite backend</a></li>
+    <li><a href="https://developers.cloudflare.com/workers/platform/pricing/">Cloudflare Workers / Durable Objects pricing</a></li>
+    <li><a href="https://docs.aws.amazon.com/ec2/latest/instancetypes/ec2-instance-regions.html">AWS：Taipei ap-east-2 instance families</a></li>
+    <li><a href="https://aws.amazon.com/vpc/pricing/">AWS：public IPv4 pricing</a></li>
+  </ul></section>
+  <footer>State snapshot; secrets intentionally omitted. Public HEAD <span class="mono">dc63f815</span>; private cloud HEAD <span class="mono">d149bf58331ca9161dc98dd95c6281bde7fcd106</span>. Active-task language must be replaced with exact landing receipts before final handoff.</footer>
+</main></body></html>
