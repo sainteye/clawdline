@@ -1,0 +1,899 @@
+import Foundation
+
+private struct CloudAppBridgeTestFailure: Error, CustomStringConvertible {
+    let description: String
+}
+
+private actor CloudAppBridgeTestSequence: CloudEnvelopeSequencing {
+    private var value: UInt64 = 0
+
+    func nextSequence(sender: String) async throws -> UInt64 {
+        value += 1
+        return value
+    }
+}
+
+private struct CloudAppBridgeTestTokenProvider: CloudDeviceTokenProviding {
+    let token: CloudDeviceToken
+
+    func fetchDeviceToken() async throws -> CloudDeviceToken { token }
+}
+
+private final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable {
+    nonisolated let commands: AsyncStream<CloudInboundCommand>
+    nonisolated let readyGenerations: AsyncStream<UInt64>
+
+    private let lock = NSLock()
+    private var continuation: AsyncStream<CloudInboundCommand>.Continuation!
+    private var readyContinuation: AsyncStream<UInt64>.Continuation!
+    private var sent: [CloudEnvelope] = []
+    private var connected = false
+    private var stopped = false
+    private var connectStarted = false
+    private var connectFinished = false
+    private var connectContinuation: CheckedContinuation<Void, Never>?
+    private var readyGeneration: UInt64 = 0
+    private let suspendConnect: Bool
+    private let suspendPublication: Bool
+    private let publicationContinuation: AsyncStream<Void>.Continuation
+    private let publicationStream: AsyncStream<Void>
+    private var publicationStarted = false
+    private var publicationCancelled = false
+
+    init(suspendConnect: Bool = false, suspendPublication: Bool = false) {
+        self.suspendConnect = suspendConnect
+        self.suspendPublication = suspendPublication
+        var continuation: AsyncStream<CloudInboundCommand>.Continuation!
+        commands = AsyncStream { continuation = $0 }
+        self.continuation = continuation
+        var readyContinuation: AsyncStream<UInt64>.Continuation!
+        readyGenerations = AsyncStream { readyContinuation = $0 }
+        self.readyContinuation = readyContinuation
+        var publicationContinuation: AsyncStream<Void>.Continuation!
+        publicationStream = AsyncStream { publicationContinuation = $0 }
+        self.publicationContinuation = publicationContinuation
+    }
+
+    func connect(role: CloudTransportRole) async throws {
+        if suspendConnect {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                connectStarted = true
+                connectContinuation = continuation
+                lock.unlock()
+            }
+            markConnectFinished()
+        }
+        if Task.isCancelled { throw CancellationError() }
+        setConnected(role == .machine)
+        signalReady()
+    }
+
+    private func setConnected(_ value: Bool) {
+        lock.lock()
+        connected = value
+        lock.unlock()
+    }
+
+    func publish(envelope: CloudEnvelope) async throws {
+        if suspendPublication {
+            markPublicationStarted()
+            await withTaskCancellationHandler {
+                var iterator = publicationStream.makeAsyncIterator()
+                _ = await iterator.next()
+            } onCancel: {
+                self.cancelPublication()
+            }
+            if Task.isCancelled { throw CancellationError() }
+        }
+        append(envelope)
+    }
+
+    private func markPublicationStarted() {
+        lock.lock()
+        publicationStarted = true
+        lock.unlock()
+    }
+
+    private func cancelPublication() {
+        lock.lock()
+        publicationCancelled = true
+        lock.unlock()
+        publicationContinuation.finish()
+    }
+
+    private func append(_ envelope: CloudEnvelope) {
+        lock.lock()
+        sent.append(envelope)
+        lock.unlock()
+    }
+
+    func shutdown() async {
+        markStopped()
+        continuation.finish()
+        readyContinuation.finish()
+        let suspended = takeConnectContinuation()
+        if let suspended {
+            Task {
+                try? await Task.sleep(nanoseconds: 75_000_000)
+                suspended.resume()
+            }
+        }
+    }
+
+    private func markStopped() {
+        lock.lock()
+        stopped = true
+        connected = false
+        lock.unlock()
+    }
+
+    private func markConnectFinished() {
+        lock.lock()
+        connectFinished = true
+        lock.unlock()
+    }
+
+    private func takeConnectContinuation() -> CheckedContinuation<Void, Never>? {
+        lock.lock()
+        defer { lock.unlock() }
+        let suspended = connectContinuation
+        connectContinuation = nil
+        return suspended
+    }
+
+    func signalReady() {
+        lock.lock()
+        readyGeneration += 1
+        let generation = readyGeneration
+        lock.unlock()
+        readyContinuation.yield(generation)
+    }
+
+    func yield(_ plaintext: String, sequence: UInt64, commandClass: CloudEnvelopeClass = .ctl,
+               channel: String = "ctl/Mac%20%2F%20%E5%8F%B0%E7%81%A3") {
+        continuation.yield(CloudInboundCommand(
+            channel: channel, sequence: sequence, timestamp: 1,
+            commandClass: commandClass, sender: "viewer", plaintext: Data(plaintext.utf8)
+        ))
+    }
+
+    func envelopes() -> [CloudEnvelope] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sent
+    }
+
+    func state() -> (
+        connected: Bool, stopped: Bool, connectStarted: Bool, connectFinished: Bool,
+        publicationStarted: Bool, publicationCancelled: Bool
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (
+            connected, stopped, connectStarted, connectFinished,
+            publicationStarted, publicationCancelled
+        )
+    }
+}
+
+private actor CloudAppBridgeTestRouter: CloudCommandRouting {
+    struct Call: Equatable {
+        let command: CloudHeadlessCommand
+        let sender: String
+        let idempotencyKey: String
+    }
+
+    private var calls: [Call] = []
+
+    func route(_ command: CloudHeadlessCommand, sender: String,
+               idempotencyKey: String) async -> CloudCommandResult {
+        calls.append(Call(command: command, sender: sender, idempotencyKey: idempotencyKey))
+        return CloudCommandResult(status: 200, code: nil)
+    }
+
+    func recorded() -> [Call] { calls }
+}
+
+private final class CloudAppBridgeTestGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    func set(_ value: Bool) {
+        lock.lock()
+        self.value = value
+        lock.unlock()
+    }
+
+    func get() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
+private final class CloudAppBridgeCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    func finish() {
+        lock.lock()
+        value = true
+        lock.unlock()
+    }
+
+    func finished() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
+private final class CloudAppBridgeTestResults: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [CloudCommandResult] = []
+
+    func append(_ value: CloudCommandResult) {
+        lock.lock()
+        values.append(value)
+        lock.unlock()
+    }
+
+    func all() -> [CloudCommandResult] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+}
+
+private func runCloudAppBridgeBaseTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudAppBridgeTestFailure(description: message) }
+    }
+
+    let signingKey = CloudDeviceKeyPair()
+    let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x51, count: 32))
+    let transport = CloudAppBridgeTestTransport()
+    let sequence = CloudAppBridgeTestSequence()
+    let router = CloudAppBridgeTestRouter()
+    let gate = CloudAppBridgeTestGate()
+    let results = CloudAppBridgeTestResults()
+    let bridge = CloudAppBridge(
+        transport: transport,
+        identity: CloudAppIdentity(
+            machineID: "Mac / 台灣", deviceID: "machine-device", keyID: "ms-1",
+            masterSecret: masterSecret, signingKey: signingKey
+        ),
+        sequencing: sequence,
+        allowCloudCommands: { gate.get() },
+        commandRouter: router,
+        nowMilliseconds: { 1_787_740_000_000 },
+        commandResult: { results.append($0) }
+    )
+
+    try require(transport.state().connected == false, "the bridge is inert before start")
+    try await bridge.start()
+    try require(transport.state().connected, "explicit start connects the machine transport")
+
+    let sessionPayload: [String: Any] = [
+        "sessions": [
+            ["id": "session/一|?", "label": "First", "state": "working"],
+            ["id": "plain", "label": "Second", "state": "idle"],
+        ],
+        "at": 123,
+        "scan": ["generation": 4, "complete": true, "emptyAuthoritative": false],
+    ]
+    try await bridge.publishSessions(JSONSerialization.data(withJSONObject: sessionPayload))
+    let orchestratorPayload = try JSONSerialization.data(withJSONObject: [
+        "tasks": [["id": "task-one", "state": "working"]], "at": 124,
+    ], options: [.sortedKeys])
+    try await bridge.publishOrchestrator(orchestratorPayload)
+
+    let published = transport.envelopes()
+    try require(published.count == 3, "two full sessions and one orchestrator snapshot publish")
+    try require(
+        published.map(\.ch).contains("s/Mac%20%2F%20%E5%8F%B0%E7%81%A3/session%2F%E4%B8%80%7C%3F"),
+        "machine and session channel segments use encodeURIComponent-compatible encoding"
+    )
+    try require(published.map(\.ch).contains("orch/Mac%20%2F%20%E5%8F%B0%E7%81%A3"),
+                "the orchestrator uses the encoded machine channel")
+    try require(published.allSatisfy { $0.envelopeClass == .stream },
+                "all app snapshots use the stream class")
+
+    let firstSession = try published.first { $0.ch.hasSuffix("session%2F%E4%B8%80%7C%3F") }!
+        .open(masterSecret: masterSecret, publicKeyForSender: {
+            $0 == "machine-device" ? signingKey.publicKeyRaw : nil
+        })
+    let firstObject = try JSONSerialization.jsonObject(with: firstSession) as! [String: Any]
+    let firstRow = firstObject["session"] as? [String: Any]
+    try require(firstRow?["label"] as? String == "First",
+                "the channel contains the full locally serialized session row")
+    let orch = try published.first { $0.ch.hasPrefix("orch/") }!
+        .open(masterSecret: masterSecret, publicKeyForSender: {
+            $0 == "machine-device" ? signingKey.publicKeyRaw : nil
+        })
+    try require(orch == orchestratorPayload, "orchestrator publication keeps the local payload bytes")
+
+    let incompleteEmpty: [String: Any] = [
+        "sessions": [], "at": 125,
+        "scan": ["generation": 5, "complete": false, "emptyAuthoritative": false],
+    ]
+    try await bridge.publishSessions(JSONSerialization.data(withJSONObject: incompleteEmpty))
+    try require(transport.envelopes().count == 3,
+                "an incomplete nonauthoritative scan never tombstones known sessions")
+
+    let oneRemaining: [String: Any] = [
+        "sessions": [["id": "session/一|?", "label": "First", "state": "idle"]],
+        "at": 126,
+        "scan": ["generation": 6, "complete": true, "emptyAuthoritative": false],
+    ]
+    try await bridge.publishSessions(JSONSerialization.data(withJSONObject: oneRemaining))
+    let afterRemoval = transport.envelopes()
+    let plainFrames = afterRemoval.filter { $0.ch.hasSuffix("/plain") }
+    let removedPlain = try plainFrames.last?.open(
+        masterSecret: masterSecret,
+        publicKeyForSender: { $0 == "machine-device" ? signingKey.publicKeyRaw : nil }
+    )
+    let removedObject: [String: Any]? = removedPlain.flatMap {
+        (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
+    }
+    try require(plainFrames.count == 2 && removedObject?["deleted"] as? Bool == true,
+                "a complete A+B to A scan publishes a B tombstone")
+
+    let authoritativeEmpty: [String: Any] = [
+        "sessions": [], "at": 127,
+        "scan": ["generation": 7, "complete": false, "emptyAuthoritative": true],
+    ]
+    try await bridge.publishSessions(JSONSerialization.data(withJSONObject: authoritativeEmpty))
+    let firstFrames = transport.envelopes().filter {
+        $0.ch.hasSuffix("session%2F%E4%B8%80%7C%3F")
+    }
+    let removedFirst = try firstFrames.last?.open(
+        masterSecret: masterSecret,
+        publicKeyForSender: { $0 == "machine-device" ? signingKey.publicKeyRaw : nil }
+    )
+    let removedFirstObject: [String: Any]? = removedFirst.flatMap {
+        (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
+    }
+    try require(firstFrames.count == 3 && removedFirstObject?["deleted"] as? Bool == true,
+                "independent authoritative-empty evidence tombstones the last session")
+
+    transport.yield(#"{"type":"send","session":"plain","text":"hello","images":[]}"#,
+                    sequence: 10)
+    try await waitForCloudAppBridge("default-off command refusal") {
+        results.all().contains { $0.code == "cloud_commands_disabled" }
+    }
+    let defaultOffCalls = await router.recorded()
+    try require(defaultOffCalls.isEmpty, "default-off commands never enter the broker")
+
+    gate.set(true)
+    transport.yield(#"{"type":"answer","session":"plain","answer":"2"}"#, sequence: 11)
+    try await waitForCloudAppBridge("allowed command routing") {
+        await router.recorded().count == 1
+    }
+    let routed = await router.recorded()
+    try require(routed.first?.command == .answer(session: "plain", key: "2"),
+                "answer uses the shared typed broker seam")
+    try require(routed.first?.idempotencyKey == "cloud:viewer:11",
+                "verified sender and sequence supply HTTP-equivalent idempotency")
+
+    transport.yield("not json", sequence: 12)
+    transport.yield(#"{"type":"erase","session":"plain"}"#, sequence: 13)
+    transport.yield(#"{"type":"dispatch","task":{"title":"not pinned"}}"#,
+                    sequence: 14, commandClass: .dispatch)
+    try await waitForCloudAppBridge("typed command refusals") {
+        let codes = results.all().compactMap(\.code)
+        return codes.contains("malformed_command") && codes.contains("unknown_command")
+            && codes.contains("cloud_dispatch_unpinned")
+    }
+    let refusedCalls = await router.recorded()
+    try require(refusedCalls.count == 1,
+                "malformed, unknown, and unpinned dispatch commands never reach execution")
+
+    await bridge.stop()
+    try require(transport.state().stopped, "bridge shutdown stops the transport")
+    let bridgeRunning = await bridge.isRunning()
+    try require(bridgeRunning == false, "bridge lifecycle ends after stream shutdown")
+
+    return checks
+}
+
+private func runCloudAppBridgeLifecycleTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudAppBridgeTestFailure(description: message) }
+    }
+
+    let signingKey = CloudDeviceKeyPair()
+    let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x52, count: 32))
+    RemoteServer.cloudSnapshotDataForTesting = try cloudAppBridgeTestSnapshots(sessionID: nil)
+    defer { RemoteServer.cloudSnapshotDataForTesting = nil }
+    func makeBridge(_ transport: CloudAppBridgeTestTransport,
+                    _ router: CloudAppBridgeTestRouter) -> CloudAppBridge {
+        CloudAppBridge(
+            transport: transport,
+            identity: CloudAppIdentity(
+                machineID: "lifecycle", deviceID: "machine-device", keyID: "ms-1",
+                masterSecret: masterSecret, signingKey: signingKey
+            ),
+            sequencing: CloudAppBridgeTestSequence(),
+            allowCloudCommands: { true },
+            commandRouter: router
+        )
+    }
+
+    var detachedTransport: CloudAppBridgeTestTransport? = CloudAppBridgeTestTransport(
+        suspendConnect: true
+    )
+    let detachedRouter = CloudAppBridgeTestRouter()
+    var detachedBridge: CloudAppBridge? = makeBridge(detachedTransport!, detachedRouter)
+    weak var detachedTransportReference = detachedTransport
+    weak var detachedBridgeReference = detachedBridge
+    await attachCloudBridgeForTest(detachedBridge)
+    try await waitForCloudAppBridge("suspended attach starts connecting") {
+        detachedTransport!.state().connectStarted
+    }
+    await attachCloudBridgeForTest(nil)
+    await RemoteServer.shared.awaitCloudBridgeLifecycle()
+    try require(detachedTransport!.state().stopped,
+                "detach closes a suspended bridge transport")
+    try require(detachedTransport!.state().connectFinished,
+                "detach waits for the suspended connect lifecycle to finish")
+    let detachedRunning = await detachedBridge!.isRunning()
+    try require(detachedRunning == false,
+                "detached suspended bridge stays stopped")
+    detachedTransport!.signalReady()
+    detachedTransport!.yield(
+        #"{"type":"send","session":"stale","text":"no","images":[]}"#,
+        sequence: 40, channel: "ctl/lifecycle"
+    )
+    try await Task.sleep(nanoseconds: 30_000_000)
+    let detachedCalls = await detachedRouter.recorded()
+    try require(detachedCalls.isEmpty,
+                "detach during connect leaves no stale command consumer")
+    try require(detachedTransport!.envelopes().isEmpty,
+                "detach leaves stale transport publications empty")
+    detachedBridge = nil
+    detachedTransport = nil
+    try require(detachedBridgeReference == nil && detachedTransportReference == nil,
+                "completed detach releases the old bridge and transport")
+
+    var replacedTransport: CloudAppBridgeTestTransport? = CloudAppBridgeTestTransport(
+        suspendConnect: true
+    )
+    let replacedRouter = CloudAppBridgeTestRouter()
+    var replacedBridge: CloudAppBridge? = makeBridge(replacedTransport!, replacedRouter)
+    weak var replacedTransportReference = replacedTransport
+    weak var replacedBridgeReference = replacedBridge
+    await attachCloudBridgeForTest(replacedBridge)
+    try await waitForCloudAppBridge("replacement candidate starts connecting") {
+        replacedTransport!.state().connectStarted
+    }
+    let activeTransport = CloudAppBridgeTestTransport()
+    let activeRouter = CloudAppBridgeTestRouter()
+    let activeBridge = makeBridge(activeTransport, activeRouter)
+    await attachCloudBridgeForTest(activeBridge)
+    try await waitForCloudAppBridge("replacement starts after stopping stale bridge") {
+        activeTransport.state().connected
+    }
+    try require(replacedTransport!.state().stopped
+                && replacedTransport!.state().connectFinished,
+                "replacement starts only after the old connect lifecycle terminates")
+    let replacedRunning = await replacedBridge!.isRunning()
+    try require(replacedRunning == false,
+                "replaced suspended bridge cannot revive")
+    replacedTransport!.signalReady()
+    replacedTransport!.yield(
+        #"{"type":"send","session":"stale","text":"no","images":[]}"#,
+        sequence: 41, channel: "ctl/lifecycle"
+    )
+    try await Task.sleep(nanoseconds: 30_000_000)
+    let replacedCalls = await replacedRouter.recorded()
+    try require(replacedCalls.isEmpty,
+                "replacement leaves no stale command consumer")
+    try require(replacedTransport!.envelopes().isEmpty,
+                "replacement leaves stale transport publications empty")
+    replacedBridge = nil
+    replacedTransport = nil
+    try require(replacedBridgeReference == nil && replacedTransportReference == nil,
+                "completed replacement releases the old bridge and transport")
+    await attachCloudBridgeForTest(nil)
+    await RemoteServer.shared.awaitCloudBridgeLifecycle()
+    try require(activeTransport.state().stopped,
+                "replacement cleanup stops active transport")
+    return checks
+}
+
+private func runCloudAppBridgeTransitiveLifecycleTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudAppBridgeTestFailure(description: message) }
+    }
+
+    let signingKey = CloudDeviceKeyPair()
+    let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x56, count: 32))
+    RemoteServer.cloudSnapshotDataForTesting = try cloudAppBridgeTestSnapshots(sessionID: nil)
+    defer { RemoteServer.cloudSnapshotDataForTesting = nil }
+    func makeBridge(_ transport: CloudAppBridgeTestTransport,
+                    _ router: CloudAppBridgeTestRouter) -> CloudAppBridge {
+        CloudAppBridge(
+            transport: transport,
+            identity: CloudAppIdentity(
+                machineID: "transitive", deviceID: "machine-device", keyID: "ms-1",
+                masterSecret: masterSecret, signingKey: signingKey
+            ),
+            sequencing: CloudAppBridgeTestSequence(), allowCloudCommands: { true },
+            commandRouter: router
+        )
+    }
+
+    var transportA: CloudAppBridgeTestTransport? = CloudAppBridgeTestTransport(suspendConnect: true)
+    let routerA = CloudAppBridgeTestRouter()
+    var bridgeA: CloudAppBridge? = makeBridge(transportA!, routerA)
+    weak var transportAReference = transportA
+    weak var bridgeAReference = bridgeA
+    await attachCloudBridgeForTest(bridgeA)
+    try await waitForCloudAppBridge("transitive A starts its suspended connect") {
+        transportA!.state().connectStarted
+    }
+
+    var transportB: CloudAppBridgeTestTransport? = CloudAppBridgeTestTransport()
+    let routerB = CloudAppBridgeTestRouter()
+    var bridgeB: CloudAppBridge? = makeBridge(transportB!, routerB)
+    weak var transportBReference = transportB
+    weak var bridgeBReference = bridgeB
+    await attachCloudBridgeForTest(bridgeB)
+
+    let transportC = CloudAppBridgeTestTransport()
+    let bridgeC = makeBridge(transportC, CloudAppBridgeTestRouter())
+    await attachCloudBridgeForTest(bridgeC)
+    let lifecycleCompletion = CloudAppBridgeCompletion()
+    let lifecycleTask = Task {
+        await RemoteServer.shared.awaitCloudBridgeLifecycle()
+        lifecycleCompletion.finish()
+    }
+    try await Task.sleep(nanoseconds: 30_000_000)
+    try require(transportC.state().connected == false,
+                "C cannot connect while transitive A teardown is still blocked")
+    try require(lifecycleCompletion.finished() == false,
+                "latest lifecycle await includes every predecessor teardown")
+
+    await lifecycleTask.value
+    try require(transportA!.state().stopped && transportA!.state().connectFinished,
+                "transitive lifecycle terminates A's suspended connect")
+    try require(transportB!.state().connected == false,
+                "cancelled intermediate B never starts")
+    try require(transportC.state().connected,
+                "C starts after the complete predecessor lifecycle chain")
+    try require(transportA!.envelopes().isEmpty && transportB!.envelopes().isEmpty,
+                "transitive teardown emits no stale publication")
+    transportA!.yield(
+        #"{"type":"send","session":"stale-a","text":"no","images":[]}"#,
+        sequence: 60, channel: "ctl/transitive"
+    )
+    transportB!.yield(
+        #"{"type":"send","session":"stale-b","text":"no","images":[]}"#,
+        sequence: 61, channel: "ctl/transitive"
+    )
+    try await Task.sleep(nanoseconds: 30_000_000)
+    let callsA = await routerA.recorded()
+    let callsB = await routerB.recorded()
+    try require(callsA.isEmpty && callsB.isEmpty,
+                "transitive teardown leaves no stale command consumer")
+
+    bridgeA = nil
+    transportA = nil
+    bridgeB = nil
+    transportB = nil
+    try require(bridgeAReference == nil && transportAReference == nil
+                && bridgeBReference == nil && transportBReference == nil,
+                "latest lifecycle completion releases A and B ownership")
+    await attachCloudBridgeForTest(nil)
+    await RemoteServer.shared.awaitCloudBridgeLifecycle()
+    return checks
+}
+
+private func runCloudAppBridgePublicationLifecycleTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudAppBridgeTestFailure(description: message) }
+    }
+
+    let signingKey = CloudDeviceKeyPair()
+    let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x57, count: 32))
+    RemoteServer.cloudSnapshotDataForTesting = try cloudAppBridgeTestSnapshots(
+        sessionID: "publication-lifecycle"
+    )
+    defer { RemoteServer.cloudSnapshotDataForTesting = nil }
+    func makeBridge(_ transport: CloudAppBridgeTestTransport) -> CloudAppBridge {
+        CloudAppBridge(
+            transport: transport,
+            identity: CloudAppIdentity(
+                machineID: "publication", deviceID: "machine-device", keyID: "ms-1",
+                masterSecret: masterSecret, signingKey: signingKey
+            ),
+            sequencing: CloudAppBridgeTestSequence()
+        )
+    }
+
+    var transportA: CloudAppBridgeTestTransport? = CloudAppBridgeTestTransport(
+        suspendPublication: true
+    )
+    var bridgeA: CloudAppBridge? = makeBridge(transportA!)
+    weak var transportAReference = transportA
+    weak var bridgeAReference = bridgeA
+    await attachCloudBridgeForTest(bridgeA)
+    try await waitForCloudAppBridge("A publication suspends after entry") {
+        transportA!.state().publicationStarted
+    }
+
+    let transportB = CloudAppBridgeTestTransport()
+    let bridgeB = makeBridge(transportB)
+    await attachCloudBridgeForTest(bridgeB)
+    await RemoteServer.shared.awaitCloudBridgeLifecycle()
+    try require(transportA!.state().publicationCancelled,
+                "replacement cancels an in-flight bridge-owned publication")
+    try await waitForCloudAppBridge("B fresh publications bypass A's invalidated tail") {
+        let channels = transportB.envelopes().map(\.ch)
+        return channels.filter { $0.hasPrefix("s/publication/") }.count == 1
+            && channels.filter { $0 == "orch/publication" }.count == 1
+    }
+    try require(transportA!.envelopes().isEmpty,
+                "cancelled A publication emits no stale envelope")
+    bridgeA = nil
+    transportA = nil
+    try require(bridgeAReference == nil && transportAReference == nil,
+                "publication lifecycle completion releases A and its transport")
+    await attachCloudBridgeForTest(nil)
+    await RemoteServer.shared.awaitCloudBridgeLifecycle()
+    return checks
+}
+
+private func runCloudAppBridgeABATests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudAppBridgeTestFailure(description: message) }
+    }
+
+    await attachCloudBridgeForTest(nil)
+    await RemoteServer.shared.awaitCloudBridgeLifecycle()
+    let before = await RemoteServer.shared.cloudLifecycleStateForTesting(bridge: nil)
+    let signingKey = CloudDeviceKeyPair()
+    let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x54, count: 32))
+    let transport = CloudAppBridgeTestTransport()
+    let bridge = CloudAppBridge(
+        transport: transport,
+        identity: CloudAppIdentity(
+            machineID: "aba", deviceID: "machine-device", keyID: "ms-1",
+            masterSecret: masterSecret, signingKey: signingKey
+        ),
+        sequencing: CloudAppBridgeTestSequence()
+    )
+
+    let mainEntered = DispatchSemaphore(value: 0)
+    let backgroundAttached = DispatchSemaphore(value: 0)
+    let mainFinished = DispatchSemaphore(value: 0)
+    DispatchQueue.main.async {
+        mainEntered.signal()
+        _ = backgroundAttached.wait(timeout: .now() + 2)
+        RemoteServer.shared.attachCloudBridge(nil)
+        mainFinished.signal()
+    }
+    await waitForCloudAppBridgeSemaphore(mainEntered)
+    DispatchQueue.global(qos: .userInitiated).async {
+        RemoteServer.shared.attachCloudBridge(bridge)
+        backgroundAttached.signal()
+    }
+    await waitForCloudAppBridgeSemaphore(mainFinished)
+    await RemoteServer.shared.awaitCloudBridgeLifecycle()
+    await MainActor.run {}
+
+    let after = await RemoteServer.shared.cloudLifecycleStateForTesting(bridge: nil)
+    let observerPresent = await MainActor.run {
+        SessionWatch.shared.observers["remote"] != nil
+    }
+    try require(after.bridgeMatches, "ABA final bridge reflects the newest detach request")
+    try require(after.generation == before.generation + 2,
+                "ABA lifecycle generation includes both ordered requests")
+    try require(observerPresent == false,
+                "ABA final SessionWatch observer reflects the newest detach request")
+    try require(transport.state().connected == false,
+                "ABA newest detach leaves no superseded bridge lifecycle active")
+    return checks
+}
+
+private func runCloudAppBridgeReconnectTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudAppBridgeTestFailure(description: message) }
+    }
+
+    let signingKey = CloudDeviceKeyPair()
+    let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x53, count: 32))
+    let transport = CloudAppBridgeTestTransport()
+    let bridge = CloudAppBridge(
+        transport: transport,
+        identity: CloudAppIdentity(
+            machineID: "reconnect", deviceID: "machine-device", keyID: "ms-1",
+            masterSecret: masterSecret, signingKey: signingKey
+        ),
+        sequencing: CloudAppBridgeTestSequence()
+    )
+    RemoteServer.cloudSnapshotDataForTesting = try cloudAppBridgeTestSnapshots(
+        sessionID: "cloud-reconnect"
+    )
+    defer { RemoteServer.cloudSnapshotDataForTesting = nil }
+
+    await attachCloudBridgeForTest(bridge)
+    try await waitForCloudAppBridge("initial ready generation publishes both snapshots") {
+        let channels = transport.envelopes().map(\.ch)
+        return channels.filter { $0.hasPrefix("s/reconnect/") }.count == 1
+            && channels.filter { $0 == "orch/reconnect" }.count == 1
+    }
+    transport.signalReady()
+    try await waitForCloudAppBridge("reconnect republishes without a local observation") {
+        let channels = transport.envelopes().map(\.ch)
+        return channels.filter { $0.hasPrefix("s/reconnect/") }.count == 2
+            && channels.filter { $0 == "orch/reconnect" }.count == 2
+    }
+    try await Task.sleep(nanoseconds: 30_000_000)
+    let channels = transport.envelopes().map(\.ch)
+    try require(channels.filter { $0.hasPrefix("s/reconnect/") }.count == 2,
+                "one reconnect generation has one session observer publication")
+    try require(channels.filter { $0 == "orch/reconnect" }.count == 2,
+                "one reconnect generation has one orchestrator publication")
+    await attachCloudBridgeForTest(nil)
+    try await waitForCloudAppBridge("reconnect test shutdown completes") {
+        transport.state().stopped
+    }
+    return checks
+}
+
+private func runCloudAppBridgeConcreteReconnectTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudAppBridgeTestFailure(description: message) }
+    }
+
+    let signingKey = CloudDeviceKeyPair()
+    let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x55, count: 32))
+    let relay = CloudLoopbackRelay(
+        account: "bridge-account", deviceID: "bridge-machine",
+        devicePublicKey: signingKey.publicKeyRaw, allowedTokens: ["bridge-token"]
+    )
+    let transport = CloudTransport(
+        relayBaseURL: URL(string: "ws://loopback.invalid/v1/connect")!,
+        tokenProvider: CloudAppBridgeTestTokenProvider(token: CloudDeviceToken(
+            value: "bridge-token", expiresAt: Date().addingTimeInterval(3_600)
+        )),
+        keyProvider: CloudStaticTransportKeys(
+            deviceKey: signingKey, masterSecrets: ["ms-1": masterSecret], pairedDevices: [:]
+        ),
+        connector: CloudLoopbackSocketConnector(relay: relay),
+        initialBackoff: 0.01,
+        maximumBackoff: 0.02
+    )
+    let bridge = CloudAppBridge(
+        transport: transport,
+        identity: CloudAppIdentity(
+            machineID: "concrete", deviceID: "bridge-machine", keyID: "ms-1",
+            masterSecret: masterSecret, signingKey: signingKey
+        ),
+        sequencing: CloudAppBridgeTestSequence()
+    )
+    RemoteServer.cloudSnapshotDataForTesting = try cloudAppBridgeTestSnapshots(
+        sessionID: "concrete-reconnect"
+    )
+    defer { RemoteServer.cloudSnapshotDataForTesting = nil }
+
+    await attachCloudBridgeForTest(bridge)
+    await RemoteServer.shared.awaitCloudBridgeLifecycle()
+    try await waitForCloudAppBridge("concrete initial ready publishes fresh snapshots") {
+        let channels = await relay.publishedEnvelopes().map(\.ch)
+        return channels.filter { $0.hasPrefix("s/concrete/") }.count == 1
+            && channels.filter { $0 == "orch/concrete" }.count == 1
+    }
+    await relay.dropConnections()
+    try await waitForCloudAppBridge("concrete reconnect republishes fresh snapshots") {
+        let channels = await relay.publishedEnvelopes().map(\.ch)
+        return channels.filter { $0.hasPrefix("s/concrete/") }.count == 2
+            && channels.filter { $0 == "orch/concrete" }.count == 2
+    }
+    let handshakes = await relay.completedHandshakes()
+    try require(handshakes >= 2,
+                "concrete CloudTransport reconnect completes a second signed handshake")
+    let channels = await relay.publishedEnvelopes().map(\.ch)
+    try require(channels.filter { $0.hasPrefix("s/concrete/") }.count == 2
+                && channels.filter { $0 == "orch/concrete" }.count == 2,
+                "concrete Transport to Bridge to RemoteServer path publishes one fresh pair per ready generation")
+    await attachCloudBridgeForTest(nil)
+    await RemoteServer.shared.awaitCloudBridgeLifecycle()
+    let state = await transport.currentState()
+    try require(state == .shutDown,
+                "concrete reconnect path shutdown owns the active transport lifecycle")
+    await relay.stop()
+    return checks
+}
+
+func runCloudAppBridgeTests() async throws -> Int {
+    switch ProcessInfo.processInfo.environment["CLAWDLINE_CLOUD_BRIDGE_CASE"] {
+    case "base": return try await runCloudAppBridgeBaseTests()
+    case "lifecycle": return try await runCloudAppBridgeLifecycleTests()
+    case "transitive-lifecycle": return try await runCloudAppBridgeTransitiveLifecycleTests()
+    case "publication-lifecycle": return try await runCloudAppBridgePublicationLifecycleTests()
+    case "reconnect": return try await runCloudAppBridgeReconnectTests()
+    case "concrete-reconnect": return try await runCloudAppBridgeConcreteReconnectTests()
+    case "aba": return try await runCloudAppBridgeABATests()
+    default:
+        let base = try await runCloudAppBridgeBaseTests()
+        let lifecycle = try await runCloudAppBridgeLifecycleTests()
+        let transitiveLifecycle = try await runCloudAppBridgeTransitiveLifecycleTests()
+        let publicationLifecycle = try await runCloudAppBridgePublicationLifecycleTests()
+        let reconnect = try await runCloudAppBridgeReconnectTests()
+        let concreteReconnect = try await runCloudAppBridgeConcreteReconnectTests()
+        let aba = try await runCloudAppBridgeABATests()
+        return base + lifecycle + transitiveLifecycle + publicationLifecycle
+            + reconnect + concreteReconnect + aba
+    }
+}
+
+private func waitForCloudAppBridgeSemaphore(_ semaphore: DispatchSemaphore) async {
+    await withCheckedContinuation { continuation in
+        DispatchQueue.global(qos: .userInitiated).async {
+            semaphore.wait()
+            continuation.resume()
+        }
+    }
+}
+
+private func attachCloudBridgeForTest(_ bridge: CloudAppBridge?) async {
+    await MainActor.run {
+        RemoteServer.shared.attachCloudBridge(bridge)
+    }
+}
+
+private func cloudAppBridgeTestSnapshots(
+    sessionID: String?
+) throws -> (sessions: Data, orchestrator: Data) {
+    let rows: [[String: Any]] = sessionID.map {
+        [["id": $0, "label": "Reconnect", "state": "idle"]]
+    } ?? []
+    return (
+        try JSONSerialization.data(withJSONObject: [
+            "sessions": rows, "at": 200,
+            "scan": ["generation": 1, "complete": true, "emptyAuthoritative": rows.isEmpty],
+        ]),
+        try JSONSerialization.data(withJSONObject: ["tasks": [], "at": 201])
+    )
+}
+
+private func waitForCloudAppBridge(
+    _ description: String,
+    timeout: TimeInterval = 3,
+    condition: @escaping () async -> Bool
+) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await condition() { return }
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    throw CloudAppBridgeTestFailure(description: "timed out: \(description)")
+}
+
+#if CLOUD_APP_BRIDGE_STANDALONE
+@main
+private enum CloudAppBridgeTestMain {
+    static func main() async throws {
+        let count = try await runCloudAppBridgeTests()
+        print("\(count) CloudAppBridge checks passed")
+    }
+}
+#endif
