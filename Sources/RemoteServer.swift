@@ -48,6 +48,13 @@ final class RemoteServer {
     private var streams: [ObjectIdentifier: Stream] = [:]
     private var nextEventID = 0
 
+    /// Pure route seam: tests supply complete process-bound observations without asking iTerm,
+    /// tmux or assistant transcript registries. Production never sets it.
+    static var coordinatorSessionsForTesting: [Coordinator.LiveSession]?
+    /// Route-level serializer seam. Tests still execute `sessionsPayload()` and `json(of:)`; they
+    /// replace only SessionWatch's external terminal inventory with deterministic rows.
+    static var sessionPayloadForTesting: ([TargetSession], [String: SessionState])?
+
     /// Put non-HTTP orchestrator work behind the same serial gate as requests. Schedule timing
     /// is calculated off this queue; only the ordinary dispatch transaction enters here.
     func serialized(_ work: @escaping () -> Void) {
@@ -809,6 +816,44 @@ final class RemoteServer {
                 ?? [:]
             return answer(Orchestrator.agentNotify(title: body["title"] as? String ?? "",
                                                    body: body["body"] as? String ?? ""))
+
+        case ("POST", "/v1/orchestrator/coordinator/register"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Registering the machine coordinator needs the orchestrator token.")
+            }
+            guard let body = try? JSONSerialization.jsonObject(with: request.body),
+                  let obj = body as? [String: Any], Set(obj.keys) == ["session_id"],
+                  let sessionID = obj["session_id"] as? String, !sessionID.isEmpty else {
+                return .error(400, "bad_request",
+                              "The closed request schema requires only session_id.")
+            }
+            let live = coordinatorObservation().sessions
+            guard let candidate = live.first(where: {
+                $0.identity.terminalID == sessionID
+            }) else {
+                return .error(404, "session_not_found",
+                              "No live Claude or Codex session has that terminal-neutral id.")
+            }
+            return answer(Coordinator.register(candidate, among: live))
+
+        case ("GET", "/v1/orchestrator/coordinator"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Reading the machine coordinator needs the orchestrator token.")
+            }
+            let observation = coordinatorObservation()
+            let live = observation.sessions
+            let registry = observation.registry
+            return .json(Coordinator.inspection(
+                liveSessions: live,
+                bearings: .init(
+                    sessionsFresh: observation.sessionsFresh,
+                    activeTaskCount: registry.activeTasks,
+                    pendingLandingCount: registry.pendingLandings,
+                    openWaitCount: registry.openWaits,
+                    sessionsObservedAt: observation.sessionsObservedAt,
+                    registryObservedAt: registry.observedAt)))
 
         case ("GET", "/v1/orchestrator/waits"):
             return .json(["waits": Orchestrator.coordinationWaitRecords(),
@@ -2526,8 +2571,11 @@ final class RemoteServer {
 
     private func sessionsPayload() -> [String: Any] {
         let watch = SessionWatch.shared
+        let supplied = Self.sessionPayloadForTesting
+        let targets = supplied?.0 ?? watch.targets
+        let states = supplied?.1
         return [
-            "sessions": watch.targets.map { json(of: $0) },
+            "sessions": targets.map { json(of: $0, stateOverride: states?[$0.id]) },
             "at": Int(Date().timeIntervalSince1970),
             "scan": [
                 "generation": watch.scanGeneration,
@@ -2561,6 +2609,84 @@ final class RemoteServer {
                 assistant: session.assistant, processBound: Transcript.sessionID(of: session)))
     }
 
+    private struct CoordinatorSessionBase {
+        let identity: Orchestrator.SessionWorkIdentity
+        let state: SessionState
+        let label: String
+        let cwd: String?
+    }
+
+    private struct CoordinatorObservation {
+        let sessions: [Coordinator.LiveSession]
+        let sessionsObservedAt: Date
+        let sessionsFresh: Bool
+        let registry: Orchestrator.CoordinatorSnapshot
+    }
+
+    /// SessionWatch and Orchestrator are independent sources, so they are observed in that order
+    /// and carry separate times/provenance. Within the second window, all work/ownership rows and
+    /// all three totals are one registry snapshot.
+    private func coordinatorObservation() -> CoordinatorObservation {
+        if let supplied = Self.coordinatorSessionsForTesting {
+            return CoordinatorObservation(
+                sessions: supplied, sessionsObservedAt: Date(), sessionsFresh: true,
+                registry: Orchestrator.coordinatorSnapshot([]))
+        }
+        let observation: ([TargetSession], [String: SessionState], Bool, Date)
+        if Thread.isMainThread {
+            let watch = SessionWatch.shared
+            observation = (watch.targets, watch.states, watch.scanComplete, Date())
+        } else {
+            observation = DispatchQueue.main.sync {
+                let watch = SessionWatch.shared
+                return (watch.targets, watch.states, watch.scanComplete, Date())
+            }
+        }
+        let bases = observation.0.filter(\.isAssistant).map { session in
+            CoordinatorSessionBase(
+                identity: Self.sessionWorkIdentity(session),
+                state: observation.1[session.id] ?? .unknown,
+                label: session.displayLabel, cwd: Targets.workingDirectory(of: session))
+        }
+        let registry = Orchestrator.coordinatorSnapshot(bases.map {
+            .init(identity: $0.identity, terminalState: $0.state)
+        })
+        let sessions = zip(bases, registry.sessions).map { base, facts in
+            Coordinator.LiveSession(
+                identity: base.identity, label: base.label, cwd: base.cwd,
+                workState: facts.work.state,
+                waitingOnSession: !facts.coordination.waitingOn.isEmpty,
+                hasWaiters: !facts.coordination.waitedOnBy.isEmpty)
+        }
+        return CoordinatorObservation(
+            sessions: sessions, sessionsObservedAt: observation.3,
+            sessionsFresh: observation.2, registry: registry)
+    }
+
+    /// Shared by both Session JSON surfaces. Keeping this one optional assignment as the whole
+    /// integration point makes an unregistered installation byte-for-byte equivalent at row level.
+    static func attachCoordinator(to row: inout [String: Any],
+                                  liveSession: Coordinator.LiveSession) {
+        if let coordinator = Coordinator.sessionProjection(for: liveSession) {
+            row["coordinator"] = coordinator
+        }
+    }
+
+    /// Production constructs the projection from the current process-bound facts. Tests may
+    /// replace only that external observation, so both real serializers can be executed without
+    /// inventing a PID or transcript in the test runner process.
+    private static func coordinatorProjectionSession(
+        identity: Orchestrator.SessionWorkIdentity, label: String, cwd: String?,
+        workState: Orchestrator.SessionWorkState, waitingOnSession: Bool, hasWaiters: Bool
+    ) -> Coordinator.LiveSession {
+        if let supplied = coordinatorSessionsForTesting?.first(where: {
+            $0.identity.terminalID == identity.terminalID
+        }) { return supplied }
+        return Coordinator.LiveSession(
+            identity: identity, label: label, cwd: cwd, workState: workState,
+            waitingOnSession: waitingOnSession, hasWaiters: hasWaiters)
+    }
+
     /// The sessions a coordination wait can address, as the facts needed to address one and
     /// nothing else.
     ///
@@ -2585,8 +2711,9 @@ final class RemoteServer {
                                         states: [String: SessionState]) -> [[String: Any]] {
         sessions.filter { $0.isAssistant }.map { session -> [String: Any] in
             let terminalState = states[session.id] ?? .unknown
+            let identity = sessionWorkIdentity(session)
             let work = Orchestrator.sessionWorkProjection(
-                identity: sessionWorkIdentity(session), terminalState: terminalState)
+                identity: identity, terminalState: terminalState)
             var row: [String: Any] = [
                 "id": session.id,
                 "label": session.displayLabel,
@@ -2599,6 +2726,11 @@ final class RemoteServer {
             // already reads the whole record at `GET /v1/orchestrator/tasks`, so this discloses
             // nothing new — and it is the one address that needs no label matching at all.
             if let role = Orchestrator.role(forTerminal: session.id) { row["taskId"] = role.taskID }
+            let live = coordinatorProjectionSession(
+                identity: identity, label: session.displayLabel,
+                cwd: Targets.workingDirectory(of: session), workState: work.state,
+                waitingOnSession: false, hasWaiters: false)
+            attachCoordinator(to: &row, liveSession: live)
             return row
         }
     }
@@ -2640,9 +2772,10 @@ final class RemoteServer {
             + "option is highlighted rather than deliver this notice."
     }
 
-    private func json(of session: TargetSession) -> [String: Any] {
+    private func json(of session: TargetSession,
+                      stateOverride: SessionState? = nil) -> [String: Any] {
         let watch = SessionWatch.shared
-        let state = watch.states[session.id] ?? .unknown
+        let state = stateOverride ?? watch.states[session.id] ?? .unknown
         let menu = watch.menu(of: session.id)
         var out: [String: Any] = [
             "id": session.id,
@@ -2685,6 +2818,11 @@ final class RemoteServer {
                 "waitingOn": waitingOn, "waitedOnBy": waitedOnBy,
             ]
         }
+        Self.attachCoordinator(to: &out, liveSession: Self.coordinatorProjectionSession(
+            identity: identity, label: session.displayLabel,
+            cwd: Targets.workingDirectory(of: session), workState: work.state,
+            waitingOnSession: !coordination.waitingOn.isEmpty,
+            hasWaiters: !coordination.waitedOnBy.isEmpty))
         if case .working(let line) = state { out["line"] = line }
         if state == .waiting, let menu {
             // The page's transcript revision predates structured menus and watches `line`, not

@@ -2,6 +2,46 @@ import AppKit
 import Carbon.HIToolbox
 import Foundation
 
+/// A subprocess-only entry used by the coordinator singleton race test near the end of this
+/// file. Both workers deliberately cache initial absence before the parent releases them; the
+/// production registration path must force a post-flock reload rather than trust that cache.
+func runCoordinatorRegistrationWorkerIfRequested() {
+    let environment = ProcessInfo.processInfo.environment
+    guard let role = environment["CLAWDLINE_COORDINATOR_RACE_ROLE"],
+          let store = environment["CLAWDLINE_COORDINATOR_RACE_STORE"],
+          let barrier = environment["CLAWDLINE_COORDINATOR_RACE_BARRIER"] else { return }
+    Coordinator.storeURLOverrideForTesting = URL(fileURLWithPath: store)
+    Coordinator.forgetForTesting()
+    let isFirst = role == "first"
+    let session = Coordinator.LiveSession(
+        identity: Orchestrator.SessionWorkIdentity(
+            terminalID: role, assistant: isFirst ? .codex : .claude,
+            tty: isFirst ? "/dev/ttys071" : "/dev/ttys072",
+            pid: isFirst ? 701 : 702,
+            processStart: Date(timeIntervalSince1970: isFirst ? 1_800_000_701 : 1_800_000_702),
+            conversationID: "conversation-\(role)"),
+        label: role, cwd: "/tmp", workState: .ready,
+        waitingOnSession: false, hasWaiters: false)
+    _ = Coordinator.sessionProjection(for: session)
+    let barrierURL = URL(fileURLWithPath: barrier, isDirectory: true)
+    try? Data("ready".utf8).write(to: barrierURL.appendingPathComponent(role))
+    let go = barrierURL.appendingPathComponent("go").path
+    let deadline = Date().addingTimeInterval(5)
+    while !FileManager.default.fileExists(atPath: go), Date() < deadline { usleep(10_000) }
+    guard FileManager.default.fileExists(atPath: go) else { print("barrier_timeout"); exit(2) }
+    switch Coordinator.register(session, among: [session], makeID: {
+        UUID(uuidString: isFirst
+            ? "33333333-4444-4555-8666-777777777777"
+            : "44444444-5555-4666-8777-888888888888")!
+    }) {
+    case .ok(let body): print(body["created"] as? Bool == true ? "created" : "idempotent")
+    case .refused(_, let code, _, _): print(code)
+    }
+    exit(0)
+}
+
+runCoordinatorRegistrationWorkerIfRequested()
+
 // A test binary rather than XCTest, for the same reason the app has no Xcode project:
 // `swiftc` and nothing else. Run it with ./test.sh.
 //
@@ -16647,6 +16687,549 @@ group("child briefings put heavyweight temporary work in owned task storage") {
     check("and names the heavyweight examples that belong there",
           brief.contains("repo copies") && brief.contains("build outputs")
             && brief.contains("scratchpad"))
+}
+
+// MARK: - Durable coordinator identity and read-only Bearings
+
+func coordinatorFixture(_ terminalID: String, assistant: Assistant = .codex,
+                        tty: String = "/dev/ttys041", pid: Int32 = 410,
+                        processStart: Date = Date(timeIntervalSince1970: 1_800_000_000),
+                        conversation: String = "conversation-a",
+                        workState: Orchestrator.SessionWorkState = .ready,
+                        waitingOnSession: Bool = false,
+                        hasWaiters: Bool = false) -> Coordinator.LiveSession {
+    Coordinator.LiveSession(
+        identity: Orchestrator.SessionWorkIdentity(
+            terminalID: terminalID, assistant: assistant, tty: tty, pid: pid,
+            processStart: processStart,
+            conversationID: conversation),
+        label: terminalID == "father" ? "Clawdfather" : "ordinary work",
+        cwd: "/Users/me/code/clawdline", workState: workState,
+        waitingOnSession: waitingOnSession, hasWaiters: hasWaiters)
+}
+
+group("a coordinator is explicitly registered, durable, singleton and process-bound") {
+    let manager = FileManager.default
+    let directory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-coordinator-\(UUID().uuidString)", isDirectory: true)
+    try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    Coordinator.storeURLOverrideForTesting = directory.appendingPathComponent("coordinator.json")
+    Coordinator.forgetForTesting()
+    defer {
+        Coordinator.storeURLOverrideForTesting = nil
+        Coordinator.forgetForTesting()
+        RemoteServer.coordinatorSessionsForTesting = nil
+        try? manager.removeItem(at: directory)
+    }
+
+    let father = coordinatorFixture("father")
+    let other = coordinatorFixture("other", pid: 411, conversation: "conversation-b")
+    let created = Coordinator.register(
+        father, among: [father, other], now: Date(timeIntervalSince1970: 1_800_000_010),
+        makeID: { UUID(uuidString: "11111111-2222-4333-8444-555555555555")! })
+    guard case .ok(let createdBody) = created else {
+        check("the first exact live identity registers", false); return
+    }
+    expect("the first registration creates the stable opaque id",
+           (createdBody["coordinator"] as? [String: Any])?["id"] as? String,
+           "11111111-2222-4333-8444-555555555555")
+    expect("the durable record is private to this user",
+           ((try? manager.attributesOfItem(atPath: Coordinator.storeURL.path)[.posixPermissions])
+            as? NSNumber)?.intValue, 0o600)
+    expect("the registration lock is private to this user",
+           ((try? manager.attributesOfItem(
+            atPath: Coordinator.registrationLockURL.path)[.posixPermissions]) as? NSNumber)?.intValue,
+           0o600)
+    expect("the coordinator store parent is private to this user",
+           ((try? manager.attributesOfItem(atPath: directory.path)[.posixPermissions])
+            as? NSNumber)?.intValue, 0o700)
+
+    let again = Coordinator.register(
+        father, among: [father, other], now: Date(timeIntervalSince1970: 1_800_000_020),
+        makeID: { UUID() })
+    guard case .ok(let againBody) = again else {
+        check("the exact registration is idempotent", false); return
+    }
+    expect("idempotency is explicit", againBody["created"] as? Bool, false)
+    expect("and keeps the first coordinator id",
+           (againBody["coordinator"] as? [String: Any])?["id"] as? String,
+           "11111111-2222-4333-8444-555555555555")
+
+    let insideTolerance = coordinatorFixture(
+        "father", processStart: Date(timeIntervalSince1970:
+            1_800_000_000 + SessionRegistry.startTolerance - 0.25))
+    check("a reconstructed process start inside the canonical tolerance stays bound",
+          Coordinator.sessionProjection(for: insideTolerance) != nil)
+    Coordinator.forgetForTesting()
+    guard case .ok(let driftedAgain) = Coordinator.register(
+        insideTolerance, among: [insideTolerance, other], makeID: { UUID() }) else {
+        check("inside-tolerance restart registration is idempotent", false); return
+    }
+    expect("inside-tolerance drift never creates a second coordinator",
+           driftedAgain["created"] as? Bool, false)
+    expect("inside-tolerance drift keeps the durable coordinator id",
+           (driftedAgain["coordinator"] as? [String: Any])?["id"] as? String,
+           "11111111-2222-4333-8444-555555555555")
+
+    let beyondTolerance = coordinatorFixture(
+        "father", processStart: Date(timeIntervalSince1970:
+            1_800_000_000 + SessionRegistry.startTolerance + 0.25))
+    check("process start drift beyond tolerance fails closed",
+          Coordinator.sessionProjection(for: beyondTolerance) == nil)
+    check("an assistant change fails closed",
+          Coordinator.sessionProjection(for: coordinatorFixture("father", assistant: .claude)) == nil)
+    check("a tty change fails closed",
+          Coordinator.sessionProjection(for: coordinatorFixture("father", tty: "/dev/ttys099")) == nil)
+
+    guard case .refused(let conflictStatus, let conflictCode, _, let conflictExtra) =
+        Coordinator.register(other, among: [father, other]) else {
+        check("a different live identity cannot take over", false); return
+    }
+    expect("the singleton conflict is 409", conflictStatus, 409)
+    expect("the singleton conflict is typed", conflictCode, "coordinator_exists")
+    check("the conflict returns only safe current metadata",
+          conflictExtra["coordinator"] is [String: Any])
+
+    Coordinator.forgetForTesting()
+    check("restart reload binds the same exact process",
+          Coordinator.sessionProjection(for: father) != nil)
+    check("a reused terminal with a different process cannot inherit the role",
+          Coordinator.sessionProjection(for: coordinatorFixture(
+            "father", pid: 999, conversation: "conversation-a")) == nil)
+    check("a stale conversation in the same terminal and process cannot inherit the role",
+          Coordinator.sessionProjection(for: coordinatorFixture(
+            "father", pid: 410, conversation: "conversation-stale")) == nil)
+    check("a label that says Clawdfather never creates the role",
+          Coordinator.sessionProjection(for: Coordinator.LiveSession(
+            identity: other.identity, label: "Clawdfather father root", cwd: other.cwd,
+            workState: .working, waitingOnSession: false, hasWaiters: false)) == nil)
+
+    let offline = Coordinator.inspection(
+        liveSessions: [other], bearings: .init(sessionsFresh: true, activeTaskCount: 0,
+                                               pendingLandingCount: 0, openWaitCount: 0))
+    expect("a missing exact process preserves durable identity but reports offline",
+           (offline["coordinator"] as? [String: Any])?["lifecycle"] as? String, "offline")
+    check("offline presence exposes no private binding evidence",
+          !String(decoding: try! JSONSerialization.data(withJSONObject: offline), as: UTF8.self)
+            .contains("conversation-a"))
+
+    let projected = Coordinator.sessionProjection(for: father)
+    expect("the authenticated optional row has the fixed label",
+           projected?["label"] as? String, "Clawdfather")
+    expect("the exact live row is online", projected?["status"] as? String, "online")
+    let commands = projected?["commands"] as? [[String: Any]] ?? []
+    let byType = Dictionary(uniqueKeysWithValues: commands.compactMap { row -> (String, [String: Any])? in
+        guard let type = row["type"] as? String else { return nil }; return (type, row)
+    })
+    for type in ["status_report", "duplicates_conflicts_ownership", "landing_closure",
+                 "scope_permissions", "since_away", "coordinate_work", "dispatch_independent_work",
+                 "ask_coordinator", "quiet_watch", "stop", "reconnect"] {
+        check("Phase A1 honestly disables \(type)", byType[type]?["enabled"] as? Bool == false
+              && (byType[type]?["why"] as? String)?.contains("Phase A1") == true)
+    }
+    for type in ["status_report", "duplicates_conflicts_ownership", "landing_closure",
+                 "scope_permissions"] {
+        check("the four preview-only entries point to Bearings without claiming a web action",
+              (byType[type]?["why"] as? String)?.contains("GET /v1/orchestrator/coordinator") == true
+              && (byType[type]?["why"] as? String)?.lowercased().contains("not connected") == true)
+    }
+
+    let validBytes = try! Data(contentsOf: Coordinator.storeURL)
+    var future = try! JSONSerialization.jsonObject(with: validBytes) as! [String: Any]
+    future["version"] = 99
+    try! JSONSerialization.data(withJSONObject: future).write(
+        to: Coordinator.storeURL, options: .atomic)
+    Coordinator.forgetForTesting()
+    check("an unknown durable version fails closed",
+          Coordinator.sessionProjection(for: father) == nil)
+    let unsupported = Coordinator.inspection(
+        liveSessions: [father], bearings: .init(sessionsFresh: true, activeTaskCount: 0,
+                                                pendingLandingCount: 0, openWaitCount: 0))
+    expect("unknown-version evidence is preserved and explained",
+           (unsupported["store"] as? [String: Any])?["status"] as? String, "unsupported")
+
+    // Corruption is not absence with a convenient fallback. It removes every projection and is
+    // exposed only as store health on the authenticated inspection surface.
+    try! Data("{not-json".utf8).write(to: Coordinator.storeURL, options: .atomic)
+    Coordinator.forgetForTesting()
+    check("a corrupt durable record fails closed", Coordinator.sessionProjection(for: father) == nil)
+    let corrupt = Coordinator.inspection(
+        liveSessions: [father], bearings: .init(sessionsFresh: true, activeTaskCount: 0,
+                                                pendingLandingCount: 0, openWaitCount: 0),
+        now: Date(timeIntervalSince1970: 1_800_000_030))
+    expect("corruption is explained without inventing an identity",
+           (corrupt["store"] as? [String: Any])?["status"] as? String, "corrupt")
+    expect("and no coordinator is configured",
+           (corrupt["coordinator"] as? [String: Any])?["status"] as? String, "unregistered")
+}
+
+group("coordinator cache observes another process's atomic creation") {
+    let manager = FileManager.default
+    let directory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-coordinator-cache-\(UUID().uuidString)", isDirectory: true)
+    try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    let source = directory.appendingPathComponent("source.json")
+    let observed = directory.appendingPathComponent("observed.json")
+    let father = coordinatorFixture("father")
+    defer {
+        Coordinator.storeURLOverrideForTesting = nil
+        Coordinator.forgetForTesting()
+        try? manager.removeItem(at: directory)
+    }
+
+    Coordinator.storeURLOverrideForTesting = source
+    Coordinator.forgetForTesting()
+    _ = Coordinator.register(father, among: [father], makeID: {
+        UUID(uuidString: "22222222-3333-4444-8555-666666666666")!
+    })
+    let externalRecord = try! Data(contentsOf: source)
+
+    Coordinator.storeURLOverrideForTesting = observed
+    Coordinator.forgetForTesting()
+    check("the first inspection records genuine absence",
+          Coordinator.sessionProjection(for: father) == nil)
+    try! externalRecord.write(to: observed, options: .atomic)
+    check("a later inspection sees an atomic file created by another process",
+          Coordinator.sessionProjection(for: father) != nil)
+
+    try! manager.removeItem(at: observed)
+    try! manager.createSymbolicLink(at: observed, withDestinationURL: source)
+    Coordinator.forgetForTesting()
+    check("a symlinked coordinator record fails closed",
+          Coordinator.sessionProjection(for: father) == nil)
+    guard case .refused(_, let symlinkCode, _, _) = Coordinator.register(
+        father, among: [father]) else {
+        check("a symlinked store is never replaced", false); return
+    }
+    expect("a symlinked store reports invalid durable state", symlinkCode,
+           "coordinator_store_invalid")
+}
+
+group("coordinator registration is a real cross-process singleton") {
+    let manager = FileManager.default
+    let directory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-coordinator-race-\(UUID().uuidString)", isDirectory: true)
+    let barrier = directory.appendingPathComponent("barrier", isDirectory: true)
+    try! manager.createDirectory(at: barrier, withIntermediateDirectories: true)
+    defer { try? manager.removeItem(at: directory) }
+    let store = directory.appendingPathComponent("coordinator.json")
+
+    func worker(_ role: String) -> (Process, Pipe) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+        process.arguments = Array(CommandLine.arguments.dropFirst())
+        var environment = ProcessInfo.processInfo.environment
+        environment["CLAWDLINE_COORDINATOR_RACE_ROLE"] = role
+        environment["CLAWDLINE_COORDINATOR_RACE_STORE"] = store.path
+        environment["CLAWDLINE_COORDINATOR_RACE_BARRIER"] = barrier.path
+        process.environment = environment
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try! process.run()
+        return (process, pipe)
+    }
+
+    let first = worker("first")
+    let second = worker("second")
+    check("both processes first observe absence", eventually(timeout: 5) {
+        manager.fileExists(atPath: barrier.appendingPathComponent("first").path)
+            && manager.fileExists(atPath: barrier.appendingPathComponent("second").path)
+    })
+    try! Data("go".utf8).write(to: barrier.appendingPathComponent("go"))
+    first.0.waitUntilExit()
+    second.0.waitUntilExit()
+    let replies = [first, second].map { process, pipe in
+        String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }.sorted()
+    expect("exactly one process creates and the other observes coordinator_exists",
+           replies, ["coordinator_exists", "created"])
+}
+
+group("Bearings is a closed deterministic projection without transcript data") {
+    let manager = FileManager.default
+    let directory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-bearings-\(UUID().uuidString)", isDirectory: true)
+    try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    Coordinator.storeURLOverrideForTesting = directory.appendingPathComponent("coordinator.json")
+    Coordinator.forgetForTesting()
+    defer {
+        Coordinator.storeURLOverrideForTesting = nil
+        Coordinator.forgetForTesting()
+        RemoteServer.coordinatorSessionsForTesting = nil
+        try? manager.removeItem(at: directory)
+    }
+
+    let states = Orchestrator.SessionWorkState.allCases
+    let sessions = states.enumerated().map { index, state in
+        coordinatorFixture(index == 0 ? "father" : "session-\(index)", pid: Int32(500 + index),
+                           conversation: "private-conversation-\(index)", workState: state,
+                           waitingOnSession: state == .waitingSession,
+                           hasWaiters: state == .working)
+    }
+    _ = Coordinator.register(
+        sessions[0], among: sessions, makeID: {
+            UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")!
+        })
+    let snapshot = Coordinator.inspection(
+        liveSessions: sessions,
+        bearings: .init(sessionsFresh: false, activeTaskCount: 3,
+                        pendingLandingCount: 2, openWaitCount: 1),
+        now: Date(timeIntervalSince1970: 1_800_000_100))
+    let bearings = snapshot["bearings"] as? [String: Any]
+    let counts = bearings?["work_state_counts"] as? [String: Any]
+    expect("all seven work states are counted even when zero would be needed", counts?.count, 7)
+    for state in states { expect("one \(state.rawValue) row", counts?[state.rawValue] as? Int, 1) }
+    expect("active task count comes through unchanged", bearings?["active_task_count"] as? Int, 3)
+    expect("pending landing count comes through unchanged",
+           bearings?["pending_landing_count"] as? Int, 2)
+    expect("open wait count comes through unchanged", bearings?["open_wait_count"] as? Int, 1)
+    expect("an incomplete session scan is marked stale",
+           ((bearings?["sources"] as? [String: Any])?["sessions"] as? [String: Any])?["freshness"] as? String,
+           "stale")
+    expect("needs-triage names only that safe session",
+           (bearings?["needs_triage"] as? [[String: Any]])?.count, 1)
+    expect("waiting names human and peer waiting states",
+           (bearings?["waiting"] as? [[String: Any]])?.count, 2)
+    expect("blocking names only a session with current waiters",
+           (bearings?["blocking"] as? [[String: Any]])?.count, 1)
+    let encoded = String(decoding: try! JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self)
+    check("inspection never leaks assistant conversation ids", !encoded.contains("private-conversation"))
+    check("inspection never leaks tty or pid binding evidence",
+          !encoded.contains("ttys041") && !encoded.contains("\"pid\""))
+
+    let before = Orchestrator.projectSessionWorkState(
+        terminalState: .idle, task: nil, hasCoordinationWait: false,
+        hasOpenHandoff: false, assignmentKnownAbsent: false)
+    _ = Coordinator.register(sessions[0], among: sessions)
+    let after = Orchestrator.projectSessionWorkState(
+        terminalState: .idle, task: nil, hasCoordinationWait: false,
+        hasOpenHandoff: false, assignmentKnownAbsent: false)
+    expect("registration changes no hierarchy or work-state decision", after, before)
+
+    let owner = coordinatorFixture("owner", pid: 610, conversation: "owner",
+                                   workState: .ready, hasWaiters: true)
+    let waiter = coordinatorFixture("waiter", pid: 611, conversation: "waiter",
+                                    workState: .waitingSession, waitingOnSession: true)
+    let both = coordinatorFixture("both", pid: 612, conversation: "both",
+                                  workState: .waitingSession, waitingOnSession: true,
+                                  hasWaiters: true)
+    let human = coordinatorFixture("human", pid: 613, conversation: "human",
+                                   workState: .waitingHuman)
+    let overlap = Coordinator.inspection(
+        liveSessions: [owner, waiter, both, human],
+        bearings: .init(sessionsFresh: true, activeTaskCount: 0,
+                        pendingLandingCount: 0, openWaitCount: 2))
+    let overlapBearings = overlap["bearings"] as? [String: Any]
+    let waitingIDs = Set((overlapBearings?["waiting"] as? [[String: Any]] ?? [])
+        .compactMap { $0["id"] as? String })
+    let blockingIDs = Set((overlapBearings?["blocking"] as? [[String: Any]] ?? [])
+        .compactMap { $0["id"] as? String })
+    expect("waiting honestly includes peer waiters, both-role sessions and human questions",
+           waitingIDs, Set(["waiter", "both", "human"]))
+    expect("blocking honestly includes owners even when that owner is also waiting",
+           blockingIDs, Set(["owner", "both"]))
+    check("named Bearings lists are filters and may overlap", waitingIDs.contains("both")
+          && blockingIDs.contains("both"))
+
+    let serverSource = try! String(contentsOfFile: "Sources/RemoteServer.swift", encoding: .utf8)
+    check("Bearings uses one Orchestrator registry snapshot after its SessionWatch observation",
+          serverSource.contains("Orchestrator.coordinatorSnapshot(")
+          && !serverSource.contains("let counts = Orchestrator.coordinatorCounts()"))
+    let coordinatorSource = try! String(contentsOfFile: "Sources/Coordinator.swift", encoding: .utf8)
+    check("Phase A1 production advertises no enabled web coordinator command",
+          !coordinatorSource.contains("[\"type\": $0, \"enabled\": true]"))
+}
+
+group("Bearings takes one coherent Orchestrator snapshot for every session fact") {
+    try? FileManager.default.removeItem(at: Orchestrator.storeURL)
+    Orchestrator.forget()
+    defer {
+        try? FileManager.default.removeItem(at: Orchestrator.storeURL)
+        Orchestrator.forget()
+    }
+    func makeWait(owner: String, waiter: String, path: String) {
+        _ = Orchestrator.registerCoordinationWait([
+            "repository": "/tmp/coordinator-snapshot", "paths": [path],
+            "owner_session_id": owner, "waiter_session_id": waiter,
+            "reason": "snapshot fixture", "release_condition": "explicit release",
+        ], deliver: { _, _ in nil })
+    }
+    makeWait(owner: "owner", waiter: "both", path: "Sources/Owner.swift")
+    makeWait(owner: "both", waiter: "waiter", path: "Sources/Waiter.swift")
+    let identities = ["owner", "waiter", "both", "human"].enumerated().map { index, id in
+        Orchestrator.SessionWorkIdentity(
+            terminalID: id, assistant: .codex, tty: "/dev/ttys\(80 + index)",
+            pid: Int32(800 + index),
+            processStart: Date(timeIntervalSince1970: 1_800_000_800 + Double(index)),
+            conversationID: "snapshot-\(id)")
+    }
+    let snapshot = Orchestrator.coordinatorSnapshot(
+        identities.enumerated().map { index, identity in
+            .init(identity: identity, terminalState: index == 3 ? .waiting : .idle)
+        }, now: Date(timeIntervalSince1970: 1_800_000_900))
+    expect("the registry snapshot has one positional fact per SessionWatch row",
+           snapshot.sessions.count, identities.count)
+    let owner = snapshot.sessions[0]
+    let waiter = snapshot.sessions[1]
+    let both = snapshot.sessions[2]
+    let human = snapshot.sessions[3]
+    check("owner-only provenance has waiters but is not itself waiting",
+          owner.coordination.waitingOn.isEmpty && owner.coordination.waitedOnBy.count == 1)
+    check("waiter-only provenance waits but owns no waiter",
+          waiter.coordination.waitingOn.count == 1 && waiter.coordination.waitedOnBy.isEmpty)
+    check("the same session can honestly be both owner and waiter",
+          both.coordination.waitingOn.count == 1 && both.coordination.waitedOnBy.count == 1)
+    expect("a human question outranks other registry-derived work states",
+           human.work.state, .waitingHuman)
+    expect("both wait groups and their per-session flags share the snapshot",
+           snapshot.openWaits, 2)
+    expect("the registry source keeps its own observation time",
+           snapshot.observedAt, Date(timeIntervalSince1970: 1_800_000_900))
+}
+
+group("coordinator routes require the machine token and expose no implicit takeover") {
+    let manager = FileManager.default
+    let directory = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-coordinator-route-\(UUID().uuidString)", isDirectory: true)
+    try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    Coordinator.storeURLOverrideForTesting = directory.appendingPathComponent("coordinator.json")
+    Coordinator.forgetForTesting()
+    let father = coordinatorFixture("father")
+    let other = coordinatorFixture("other", pid: 411, conversation: "conversation-b")
+    let unbound = Coordinator.LiveSession(
+        identity: Orchestrator.SessionWorkIdentity(
+            terminalID: "unbound", assistant: .claude, tty: "/dev/ttys099", pid: nil,
+            processStart: nil, conversationID: nil),
+        label: "Clawdfather by title only", cwd: "/Users/me/code/clawdline",
+        workState: .needsTriage, waitingOnSession: false, hasWaiters: false)
+    RemoteServer.coordinatorSessionsForTesting = [father, other, unbound]
+    defer {
+        RemoteServer.coordinatorSessionsForTesting = nil
+        RemoteServer.sessionPayloadForTesting = nil
+        Coordinator.storeURLOverrideForTesting = nil
+        Coordinator.forgetForTesting()
+        try? manager.removeItem(at: directory)
+    }
+
+    let path = "/v1/orchestrator/coordinator/register"
+    expect("anonymous registration is refused",
+           RemoteServer.shared.route(remoteRequest("POST", path,
+               body: "{\"session_id\":\"father\"}")).status, 401)
+    let phone = RemoteAuth.addDevice(name: "coordinator route phone", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: phone.id) }
+    expect("a paired device cannot register the coordinator",
+           RemoteServer.shared.route(remoteRequest(
+            "POST", path, headers: ["Authorization": "Bearer \(phone.token)"],
+            body: "{\"session_id\":\"father\"}")).status, 403)
+    let taskSecret = ["X-Clawdline-Task-Secret": String(repeating: "ab", count: 32)]
+    expect("a task secret cannot register the coordinator",
+           RemoteServer.shared.route(remoteRequest(
+            "POST", path, headers: taskSecret,
+            body: "{\"session_id\":\"father\"}")).status, 401)
+    expect("a task secret cannot read Bearings",
+           RemoteServer.shared.route(remoteRequest(
+            "GET", "/v1/orchestrator/coordinator", headers: taskSecret)).status, 401)
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let malformed = RemoteServer.shared.route(remoteRequest("POST", path, headers: auth, body: "{}"))
+    expect("registration requires a closed session id field", malformed.status, 400)
+    let brokenJSON = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: "{not-json"))
+    expect("malformed JSON is rejected before identity lookup", brokenJSON.status, 400)
+    let unknown = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: "{\"session_id\":\"missing\"}"))
+    expect("an unknown terminal-neutral session is refused", unknown.status, 404)
+    expect("with a typed identity error", remoteErrorCode(unknown), "session_not_found")
+    let incomplete = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: "{\"session_id\":\"unbound\"}"))
+    expect("a visible row without complete process proof is refused", incomplete.status, 409)
+    expect("without falling back to its title", remoteErrorCode(incomplete), "session_unbound")
+    let made = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: "{\"session_id\":\"father\"}"))
+    expect("an exact live assistant session registers", made.status, 200)
+    let conflict = RemoteServer.shared.route(remoteRequest(
+        "POST", path, headers: auth, body: "{\"session_id\":\"other\"}"))
+    expect("the route refuses implicit takeover", conflict.status, 409)
+    expect("with the singleton code", remoteErrorCode(conflict), "coordinator_exists")
+
+    let anonymousGet = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/coordinator"))
+    expect("anonymous inspection is refused", anonymousGet.status, 401)
+    let get = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/coordinator", headers: auth))
+    expect("machine-authenticated inspection succeeds", get.status, 200)
+    let body = (try? JSONSerialization.jsonObject(with: get.body)) as? [String: Any]
+    expect("the exact binding is standby",
+           (body?["coordinator"] as? [String: Any])?["lifecycle"] as? String, "standby")
+
+    let ordinary: [String: Any] = ["id": "other", "label": "ordinary"]
+    var projectedOrdinary = ordinary
+    RemoteServer.attachCoordinator(to: &projectedOrdinary, liveSession: other)
+    check("ordinary rows have no coordinator field", projectedOrdinary["coordinator"] == nil)
+    var projectedFather: [String: Any] = ["id": "father", "label": "ordinary title"]
+    RemoteServer.attachCoordinator(to: &projectedFather, liveSession: father)
+    check("only the exact row gets the optional coordinator record",
+          projectedFather["coordinator"] is [String: Any])
+    let fatherTarget = TargetSession(
+        backend: .iterm, id: "father", name: "ordinary title", tty: "/dev/ttys041",
+        windowIndex: 0, tabIndex: 0, assistant: .codex, cwd: "/Users/me/code/clawdline")
+    let ordinaryTarget = TargetSession(
+        backend: .iterm, id: "other", name: "ordinary work", tty: "/dev/ttys042",
+        windowIndex: 0, tabIndex: 1, assistant: .codex, cwd: "/Users/me/code/clawdline")
+    let lookalikeTarget = TargetSession(
+        backend: .iterm, id: "lookalike", name: "Clawdfather", tty: "/dev/ttys043",
+        windowIndex: 0, tabIndex: 2, assistant: .codex, cwd: "/Users/me/code/clawdline")
+    let serializerTargets = [fatherTarget, ordinaryTarget, lookalikeTarget]
+    let serializerStates: [String: SessionState] = [
+        "father": .idle, "other": .idle, "lookalike": .idle,
+    ]
+    func coordinatorRecordIsClosed(_ row: [String: Any]) -> Bool {
+        guard let record = row["coordinator"] as? [String: Any],
+              record["label"] as? String == "Clawdfather",
+              record["status"] as? String == "online",
+              let commands = record["commands"] as? [[String: Any]], commands.count == 11
+        else { return false }
+        return Set(record.keys) == Set(["label", "status", "commands"])
+            && commands.allSatisfy { $0["enabled"] as? Bool == false }
+    }
+
+    let addressRows = RemoteServer.coordinationSessionRows(
+        serializerTargets, states: serializerStates)
+    check("the orchestrator Session serializer projects the exact coordinator row",
+          addressRows.first(where: { $0["id"] as? String == "father" })
+            .map(coordinatorRecordIsClosed) == true)
+    for id in ["other", "lookalike"] {
+        check("the orchestrator Session serializer leaves (id) ordinary",
+              addressRows.first(where: { $0["id"] as? String == id })?["coordinator"] == nil)
+    }
+
+    RemoteServer.sessionPayloadForTesting = (serializerTargets, serializerStates)
+    let sessionsResponse = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/sessions", headers: ["Authorization": "Bearer \(phone.token)"]))
+    expect("the ordinary Session payload route executes", sessionsResponse.status, 200)
+    let sessionsBody = (try? JSONSerialization.jsonObject(with: sessionsResponse.body))
+        as? [String: Any]
+    let sessionRows = sessionsBody?["sessions"] as? [[String: Any]] ?? []
+    check("the ordinary Session serializer projects the exact coordinator row",
+          sessionRows.first(where: { $0["id"] as? String == "father" })
+            .map(coordinatorRecordIsClosed) == true)
+    for id in ["other", "lookalike"] {
+        check("the ordinary Session serializer leaves (id) ordinary",
+              sessionRows.first(where: { $0["id"] as? String == id })?["coordinator"] == nil)
+    }
+
+    let apiDoc = try! String(contentsOfFile: "docs/api.md", encoding: .utf8)
+    let orchestratorDoc = try! String(contentsOfFile: "docs/orchestrator.md", encoding: .utf8)
+    let artifact = try! String(contentsOfFile:
+        "artifacts/2026-08-26-clawdline-communication-protocol.html", encoding: .utf8)
+    for (name, text) in [("API", apiDoc), ("orchestrator", orchestratorDoc),
+                         ("candidate Artifact", artifact)] {
+        check("\(name) documents observer_unreachable provenance without authorizing restart",
+              text.contains("observer_unreachable") && text.contains("sandbox_loopback")
+              && text.contains("host_listener") && text.contains("host_health")
+              && text.lowercased().contains("cannot authorize restart"))
+    }
 }
 
 // MARK: - Result

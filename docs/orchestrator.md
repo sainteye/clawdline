@@ -1126,6 +1126,69 @@ drives the loud row and push notification. Native and web rows draw peer waits q
 `⏳ owner · release condition`, making an idle-looking but parked session safe for a person to leave
 open. A final-line `[Clawdline waiting]` sentence is only a fallback when that UI is unavailable.
 
+### Clawdfather Phase A1: durable identity and read-only Bearings
+
+Clawdfather is now a broker-authenticated role, not presentation fiction. Construction is explicit:
+a local caller reads a terminal-neutral assistant id from `GET /v1/orchestrator/sessions` and sends
+that exact id to `POST /v1/orchestrator/coordinator/register` with the orchestrator token. The
+broker accepts only a live Claude or Codex row whose complete process-bound identity is proved by
+the same seam used for task mounting and Session completion receipts: terminal id, assistant, tty,
+pid/start and current transcript/rollout conversation id. Label, cwd, title, task ancestry, root
+depth, words such as “father”, and recency are not evidence.
+
+The durable version-1 record lives at `~/.config/clawdline/coordinator.json`. It contains a stable
+opaque coordinator UUID, fixed `scope: machine` and `label: Clawdfather`, plus the private binding
+tuple and last safe session label/cwd. The private parent is repaired toward `0700`; the regular,
+non-symlink lock and store files are `0600`. Registration holds a machine-local exclusive `flock`,
+force-reloads after it acquires the lock, keeps it through atomic creation, and verifies the bytes
+it wrote before succeeding. Cache fingerprints notice another process's atomic create/replacement.
+A first registration creates the UUID; the same tuple is idempotent. Process start uses the shared
+`SessionRegistry.startTolerance` to absorb subsecond `Date() - etime` reconstruction drift while
+terminal, assistant, tty, pid and process-proved conversation remain exact. Any other tuple gets
+`409 coordinator_exists` and safe metadata about the existing identity. There is deliberately no
+takeover, replacement, deletion, stop or reconnect path. Corrupt and unknown-version records fail
+closed and are preserved for diagnosis rather than treated as absence.
+
+Restart continuity is identity continuity, not conversation resurrection. After the app reloads,
+the durable record projects `session.coordinator` only when all private binding facts still match
+the one current process. That exact row receives the web renderer's closed record—`label`, online
+`status`, and `commands`—on both Session JSON surfaces. Every ordinary row is unchanged. A missing
+or reused process leaves the durable coordinator `offline` and decorates no row; the role never
+migrates to a matching label or the most recently active assistant.
+
+`GET /v1/orchestrator/coordinator`, also orchestrator-token-only, returns safe durable presence and
+**Bearings**: one deterministic snapshot over existing Session metadata, active task records,
+pending landing records and open coordination-wait groups. It always counts the seven closed
+`work_state` values and names safe metadata for `needs_triage`, human/peer `waiting`, and owners
+`blocking` peers. Named lists are independent filters and may honestly overlap when a session is
+both owner and waiter. RemoteServer takes one SessionWatch observation and then one Orchestrator
+snapshot; every Orchestrator-derived row flag plus task, landing and open-wait total is computed in
+that single registry lock window. SessionWatch and the registry are not cross-source atomic. Each
+source therefore carries its own observation time, provenance and freshness; an incomplete Session
+inventory is `stale`, never silently complete. The route returns only the
+opaque coordinator UUID and terminal-neutral session id, assistant, cwd/label/work-state. It never
+returns transcript text/path, assistant conversation id, tty, pid or process start.
+
+All commands are disabled in A1. The four vocabulary entries for status report,
+duplicate/conflict/ownership inspection, landing closure advice and scope/permissions explain that
+Bearings exists at authenticated `GET /v1/orchestrator/coordinator`, but their web actions are
+preview-only and not connected. The renderer must say Disabled/Preview, never Available.
+Since-away, cross-session coordination judgement, ask/quiet-watch, dispatch, stop and reconnect are
+also explicitly disabled with a specific Phase A1 reason. There is no command execution route,
+no transcript grant/read, no typing into sessions, no dispatch or task/landing/wait mutation, no
+Build, no model wake and no inference.
+
+Registering this optional role does not enter the task registry. It cannot change parent links,
+depth or caps, root keys, claim ownership, wait/landing writers, terminal `state`, `work_state`, or
+the evidence that writes `milestone_complete`/`work_complete`. Bearings explains those receipts;
+it never authors them. The exact request, response and error schemas are in
+[`docs/api.md`](api.md#machine-coordinator-identity-and-bearings).
+
+**Proposed liveness boundary, not a current power.** A sandbox-loopback refusal is only
+`observer_unreachable`, never `app_down`. Before any future restart, Clawdfather must corroborate it
+with host listener/process proof and a host-network health probe, and record observer domain and
+provenance such as `sandbox_loopback`, `host_listener`, and `host_health`. One failed observer cannot authorize restart. Phase A1 implements no restart or other health-driven mutation capability.
+
 ### Session work-state projection: one answer, separate evidence axes
 
 Every live Session row carries exactly one closed `work_state`: `ready`, `working`,

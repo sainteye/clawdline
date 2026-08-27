@@ -122,6 +122,8 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/orchestrator/storage` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/inflight` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/sessions` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/coordinator/register` | orchestrator token | — |
+| `GET` | `/v1/orchestrator/coordinator` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/waits` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/waits` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/waits/:id/release` | orchestrator token | — |
@@ -1360,6 +1362,7 @@ had nowhere to read the ids it takes.
 | `state` | `working`, `waiting`, `idle` or `unknown` — the terminal state, so a caller knows whether anybody is home |
 | `work_state` | the closed, fail-closed broker projection documented on [the Session object](#the-session-object); always present |
 | `taskId` | the Clawdline task this tab was opened for. **Absent** for a session a person opened themselves |
+| `coordinator` | present only on the one exact process-bound Session registered as coordinator; the closed row projection is `{"label":"Clawdfather","status":"online","commands":[…]}` |
 
 **What a caller may not learn from it.** Nothing a session said, showed or is running: no `line`
 (what it is working on), no `menu` (the question a waiting session is asking), no `agents`, no
@@ -1379,6 +1382,146 @@ Two older ways of finding an id still work and are worth knowing, because neithe
 session's *own* terminal-neutral id is the UUID after the colon in `$ITERM_SESSION_ID` — that
 answers "who am I" and nothing else. [`GET /v1/orchestrator/waits`](#coordination-waits) names the
 ids already inside a wait — which is no help to the first session that needs to wait on somebody.
+
+### Machine coordinator identity and Bearings
+
+Phase A1 adds one explicit, durable machine-scope coordinator identity. Both routes require the
+exact `X-Clawdline-Orchestrator` credential: anonymous callers receive `401 unauthorized`, and a
+paired device that reaches the handler receives `403 forbidden`. Neither route accepts a device
+token or task secret.
+
+#### `POST /v1/orchestrator/coordinator/register`
+
+The request has a closed schema with one field. `session_id` is the terminal-neutral `id` read
+from [`GET /v1/orchestrator/sessions`](#get-v1orchestratorsessions), not an assistant transcript or
+conversation id:
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/coordinator/register \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d '{"session_id":"35D87610-E7F4-4A9A-95A0-11947CF5115C"}'
+{"ok":true,"created":true,"coordinator":{"configured":true,
+ "id":"e76f1e87-6de4-4f39-8cc7-c62eef96712f","scope":"machine","label":"Clawdfather",
+ "registered_at":1787832000,"status":"online","lifecycle":"standby",
+ "session":{"id":"35D87610-E7F4-4A9A-95A0-11947CF5115C","assistant":"codex",
+            "label":"coordinate Phase A","cwd":"/Users/you/code/clawdline",
+            "work_state":"working"}}}
+```
+
+The named row must currently be a Claude or Codex assistant with a complete process-bound identity:
+terminal-neutral id, assistant, tty, pid and process start, plus the conversation/rollout proved by
+that current process. Those binding facts are stored in
+`~/.config/clawdline/coordinator.json` as version 1 using atomic replacement and mode `0600`; they
+are never returned by this route. The parent is repaired to `0700` where possible. Registration
+holds a machine-local exclusive `flock` on a regular, non-symlink `coordinator.json.lock` (`0600`),
+force-reloads after acquiring it, holds it through creation, and reads the written record back
+before reporting success. Thus two processes that cached initial absence cannot both create or
+overwrite the singleton. Read-side cache validation follows the atomic file's identity and metadata,
+so another process's creation or replacement invalidates cached absence. A non-regular/symlinked
+store or lock fails closed.
+
+The first registration creates the stable opaque coordinator UUID. Repeating the same identity
+returns `200` with `created:false` and the same UUID. “Same process start” uses the canonical
+`SessionRegistry.startTolerance`, because the production `Date() - etime` reconstruction can move
+slightly between observations; terminal id, assistant, tty, pid and process-proved conversation id
+must still match exactly. Drift beyond that tolerance fails closed.
+
+A different live identity returns `409 coordinator_exists` with the current safe `coordinator`
+metadata and does not take over. There is no replace, delete, stop or reconnect operation in A1.
+`400 bad_request` means malformed JSON, an extra/missing field, or a non-string `session_id`;
+`404 session_not_found` means no current assistant row has that terminal-neutral id;
+`409 session_unbound` means the row exists but its complete process identity cannot be proved;
+`409 coordinator_store_invalid` means a corrupt or unknown-version durable record was preserved
+rather than overwritten; and `500 coordinator_store_failed` means the atomic write did not land.
+
+Registration changes no task parent, depth, cap, root key, owner, wait, landing, terminal `state`,
+`work_state`, milestone or completion receipt. Labels, cwd, task ancestry, title words such as
+“father”, and most-recent-session order are never identity inputs.
+
+#### `GET /v1/orchestrator/coordinator`
+
+This returns durable presence and deterministic read-only Bearings:
+
+```jsonc
+{
+  "version": 1,
+  "observed_at": 1787832060,
+  "store": {"status": "ready"}, // absent | ready | corrupt | unsupported
+  "coordinator": {
+    "configured": true,
+    "id": "e76f1e87-6de4-4f39-8cc7-c62eef96712f",
+    "scope": "machine", "label": "Clawdfather",
+    "registered_at": 1787832000,
+    "status": "online",         // online | offline
+    "lifecycle": "standby",    // standby | offline
+    "session": {
+      "id": "35D87610-E7F4-4A9A-95A0-11947CF5115C",
+      "assistant": "codex", "label": "coordinate Phase A",
+      "cwd": "/Users/you/code/clawdline", "work_state": "working"
+    }
+  },
+  "bearings": {
+    "observed_at": 1787832060,
+    "coordinator_lifecycle": "standby",
+    "work_state_counts": {
+      "ready": 0, "working": 3, "waiting_human": 1, "waiting_session": 1,
+      "needs_triage": 2, "milestone_complete": 1, "work_complete": 0
+    },
+    "active_task_count": 2, "pending_landing_count": 1, "open_wait_count": 1,
+    "needs_triage": [{"id":"…","assistant":"claude","label":"…","cwd":"…",
+                       "work_state":"needs_triage"}],
+    "waiting": [{"id":"…","assistant":"codex","label":"…","cwd":"…",
+                  "work_state":"waiting_session"}],
+    "blocking": [{"id":"…","assistant":"claude","label":"…","cwd":"…",
+                   "work_state":"working"}],
+    "sources": {
+      "sessions": {"observed_at":1787832060,"provenance":"session_watch","freshness":"current"},
+      "tasks": {"observed_at":1787832060,"provenance":"orchestrator_task_registry","freshness":"current"},
+      "landings": {"observed_at":1787832060,"provenance":"orchestrator_landing_registry","freshness":"current"},
+      "waits": {"observed_at":1787832060,"provenance":"orchestrator_coordination_wait_registry","freshness":"current"}
+    }
+  }
+}
+```
+
+All seven `work_state_counts` keys are always present. Active tasks are non-terminal task records;
+pending landings are task landings in `pending`; open waits count durable wait groups with at least
+one unreleased waiter. `needs_triage` selects that work state, `waiting` selects
+`waiting_human`/`waiting_session`, and `blocking` selects live owner sessions with waiters. Each
+named row is limited to terminal-neutral `id`, assistant, cwd, label and `work_state`. These are
+independent filters, not a partition: a session that is both waiting on a peer and owns another
+peer's wait appears in both `waiting` and `blocking`.
+
+SessionWatch is observed once, then all Orchestrator-derived per-session work/ownership facts and
+the task/landing/wait totals are built under one Orchestrator registry lock window. The two sources
+cannot be transactional together: their distinct `observed_at`, provenance and freshness fields
+state that boundary instead of advertising an all-source instant. An incomplete terminal scan marks
+only the Session source `stale`; missing facts are not guessed.
+If the durable binding is valid but no exact current process matches, the coordinator is
+`status:"offline", lifecycle:"offline"`, retains the last safe session metadata, and is attached
+to no live Session row. An absent, corrupt or unsupported record produces
+`configured:false, status:"unregistered", lifecycle:"unregistered"`; corruption never elects a
+replacement. No response contains a transcript, transcript path, assistant conversation id, tty,
+pid or process start.
+
+The optional `session.coordinator` record is projected on both `GET /v1/sessions` and
+`GET /v1/orchestrator/sessions` for the exact bound row only. It advertises
+`status_report`, `duplicates_conflicts_ownership`, `landing_closure` and `scope_permissions`, but
+all four have `enabled:false`: Bearings exists at the authenticated
+`GET /v1/orchestrator/coordinator` route, while these web actions are preview-only and not connected
+to that route. `since_away`, coordination/judgement commands, dispatch, quiet watch, stop and
+reconnect are likewise disabled with a specific Phase A1 reason. The renderer therefore says
+Disabled/Preview, never Available. The record is absent from every ordinary row, preserving their
+old JSON behavior.
+
+#### Proposed observer provenance for any future liveness action
+
+A refusal seen from a sandbox's loopback domain is only `observer_unreachable`, never `app_down`.
+Any future restart proposal must first corroborate it with both host listener/process proof and a
+host-network health probe, recording each observer domain and provenance—for example
+`sandbox_loopback`, `host_listener`, and `host_health`. One failed observer cannot authorize restart.
+This is a proposed liveness policy, not a current mutation capability: Phase A1 has no restart,
+reconnect, stop, health-to-action, or command-execution route.
 
 ### Coordination waits
 
@@ -2234,6 +2377,9 @@ app, and an open-ended size is an open-ended cache.
     "state": "waiting_on_session",                 // or "has_waiters"
     "waitingOn": [ … ], "waitedOnBy": [ … ]
   },
+  "coordinator": {                                 // absent except on exact registered row
+    "label": "Clawdfather", "status": "online", "commands": [ … ]
+  },
   "disposition": {                                 // only with either completion work_state
     "scope": "task", "taskId": "…",
     "evidence": "authenticated_task_delivery",   // or broker_verified_target_landing
@@ -2286,6 +2432,14 @@ not count as waiting for a person and does not trigger the waiting push. Each wa
 current waiter's `reason`; `waitedOnBy` also names `waiterSessionId`. Live session labels are added
 as `ownerLabel`/`waiterLabel` when available; ids stay authoritative and unresolved relationships
 remain visible when a session disappears. The full waiter arrays live on the wait-registry route.
+
+`coordinator` is a different optional overlay and is never inferred from the row's label, cwd,
+title, task ancestry or age. It appears on exactly the current process-bound Session whose
+terminal-neutral id, assistant, tty, pid/start and assistant conversation identity match the
+durable machine coordinator record. The closed renderer boundary contains only `label`,
+`status: "online"` and `commands`; an offline durable identity does not decorate a similar or
+reused terminal row. Its registration and read-only Bearings contract are documented under
+[Machine coordinator identity and Bearings](#machine-coordinator-identity-and-bearings).
 
 `label` is the tab title with two things taken off: iTerm's ` (job name)` suffix, which helps nobody
 pick a tab, and the status glyph Claude Code puts on the front — which is now a frame of an

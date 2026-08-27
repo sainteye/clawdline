@@ -1919,7 +1919,15 @@ enum Orchestrator {
     static func sessionWorkProjection(identity: SessionWorkIdentity,
                                       terminalState: SessionState) -> SessionWorkProjection {
         load()
-        lock.lock()
+        lock.lock(); defer { lock.unlock() }
+        return sessionWorkProjectionLocked(identity: identity, terminalState: terminalState)
+    }
+
+    /// The caller owns `lock`. Bearings uses this beside coordination and aggregate facts so a
+    /// registry mutation cannot split one response into mutually impossible before/after rows.
+    private static func sessionWorkProjectionLocked(identity: SessionWorkIdentity,
+                                                    terminalState: SessionState)
+        -> SessionWorkProjection {
         let task = taskForCurrentSession(Array(tasks.values), identity: identity)
         let hasWait = coordinationWaits.values.contains { wait in
             wait.waiters.contains { waiter in
@@ -1931,7 +1939,6 @@ enum Orchestrator {
         let hasOpenHandoff = handoffs.values.contains {
             $0.state != .delivered && handoffSource($0.fromSession, matches: identity)
         }
-        lock.unlock()
 
         // A non-assistant prompt is a terminal waiting for a command. For an assistant, absence
         // of a broker task is not proof that its human-authored assignment ended; fail closed.
@@ -3699,6 +3706,49 @@ enum Orchestrator {
     private static func activeCount() -> Int {
         lock.lock(); defer { lock.unlock() }
         return tasks.values.filter { !$0.state.isTerminal }.count
+    }
+
+    struct CoordinatorSessionObservation {
+        let identity: SessionWorkIdentity
+        let terminalState: SessionState
+    }
+
+    struct CoordinatorSessionFacts {
+        let work: SessionWorkProjection
+        let coordination: Coordination
+    }
+
+    /// One Orchestrator-registry observation for Bearings. Facts stay positional so a malformed
+    /// duplicate terminal id cannot make one SessionWatch row silently replace another.
+    struct CoordinatorSnapshot {
+        let observedAt: Date
+        let sessions: [CoordinatorSessionFacts]
+        let activeTasks: Int
+        let pendingLandings: Int
+        let openWaits: Int
+    }
+
+    /// Build every Orchestrator-derived Bearings fact during one registry lock window. The
+    /// SessionWatch inventory was observed separately by the caller; that cross-source boundary
+    /// is represented by distinct timestamps/provenance in the response rather than called
+    /// transactional.
+    static func coordinatorSnapshot(_ observations: [CoordinatorSessionObservation],
+                                    now: Date = Date()) -> CoordinatorSnapshot {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        return CoordinatorSnapshot(
+            observedAt: now,
+            sessions: observations.map {
+                CoordinatorSessionFacts(
+                    work: sessionWorkProjectionLocked(
+                        identity: $0.identity, terminalState: $0.terminalState),
+                    coordination: coordinationLocked(forTerminal: $0.identity.terminalID))
+            },
+            activeTasks: tasks.values.filter { !$0.state.isTerminal }.count,
+            pendingLandings: tasks.values.filter { $0.landing?.state == .pending }.count,
+            openWaits: coordinationWaits.values.filter { wait in
+                wait.waiters.contains { $0.releaseDeliveredAt == nil }
+            }.count)
     }
 
     /// The live tasks already dispatched by whoever is asking now.
@@ -7365,6 +7415,12 @@ enum Orchestrator {
     static func coordination(forTerminal id: String) -> Coordination {
         load()
         lock.lock(); defer { lock.unlock() }
+        return coordinationLocked(forTerminal: id)
+    }
+
+    /// The caller owns `lock`; kept separate so Bearings can derive all ownership flags inside
+    /// the same observation as task, landing and wait totals.
+    private static func coordinationLocked(forTerminal id: String) -> Coordination {
         var waitingOn: [[String: Any]] = []
         var waitedOnBy: [[String: Any]] = []
         for wait in coordinationWaits.values {
