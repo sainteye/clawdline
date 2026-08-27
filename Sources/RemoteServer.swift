@@ -2463,7 +2463,9 @@ final class RemoteServer {
             ? SessionInfo.permissionMode(screen: Targets.visibleScreen(of: session)) : nil
         var payload = SessionInfo.payload(
             id: session.id, assistant: session.assistant,
-            sessionId: HookBridge.note(for: session)?.session, model: model,
+            sessionId: Self.sessionIdentity(assistant: session.assistant,
+                                            processBound: Transcript.sessionID(of: session)),
+            model: model,
             cwd: cwd, startedAt: Targets.processStart(of: session),
             usage: usage, context: context, limits: limits,
             files: cwd.flatMap { SessionInfo.files(cwd: $0) },
@@ -2490,11 +2492,12 @@ final class RemoteServer {
     ///
     /// Split out from ``json(of:)`` so the identity source is a testable contract rather than a
     /// field assignment hidden among presentation data. `processBound` is the identity proved by
-    /// the current process/transcript reader; `legacyHook` preserves the old source while the
-    /// contract test demonstrates why it is insufficient.
-    static func sessionIdentity(assistant: Assistant?, legacyHook: String?,
-                                processBound: String?) -> String? {
-        legacyHook
+    /// the current process/transcript reader. A tty hook is deliberately not an input: it can
+    /// outlive the Claude process that wrote it and must never identify a later Codex process or
+    /// an ordinary shell which reused the terminal.
+    static func sessionIdentity(assistant: Assistant?, processBound: String?) -> String? {
+        guard assistant != nil else { return nil }
+        return processBound
     }
 
     /// The sessions a coordination wait can address, as the facts needed to address one and
@@ -2635,7 +2638,6 @@ final class RemoteServer {
         if let cwd = Targets.workingDirectory(of: session) { out["cwd"] = cwd }
         if let sessionID = Self.sessionIdentity(
                 assistant: session.assistant,
-                legacyHook: HookBridge.note(for: session)?.session,
                 processBound: Transcript.sessionID(of: session)) {
             out["sessionId"] = sessionID
         }

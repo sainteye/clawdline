@@ -395,7 +395,7 @@ $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/info
 
 | field | |
 |---|---|
-| `session` | `id` and `assistant` always; `sessionId` with hooks installed; `model` when a transcript has named one — the **last** model the transcript names, so a session that switched mid-way shows what it is on now; `cwd`, `startedAt` and `seconds` (its age, as of this answer) when the process could be found |
+| `session` | `id` and `assistant` always; `sessionId` when the current process can be bound to its exact Claude transcript or Codex rollout; `model` when a transcript has named one — the **last** model the transcript names, so a session that switched mid-way shows what it is on now; `cwd`, `startedAt` and `seconds` (its age, as of this answer) when the process could be found |
 | `permission` | Claude Code's current permission mode and the Shift-Tab cycle order. `current` is `auto`, `manual`, `acceptEdits`, `plan`, or `unknown`; `manual` specifically means the screen was readable and showed no mode line, while `unknown` means the screen capture was absent or empty. **Absent for Codex sessions**, which do not have this mode cycle |
 | `usage` | the transcript's token totals — `input`, `output`, `cacheRead`, `cacheWrite`, `total` — with `model` and, for Claude, `costUsd` at list price. **Absent** when no transcript has been found, which is not the same as zero |
 | `context` | the current conversation against its model window: `usedPercent`, plus `usedTokens` and `windowTokens` for the exact ratio. Codex records all three together on each `token_count`; **absent** when the assistant did not record both sides of that ratio. This is per-turn context, not cumulative `usage` |
@@ -2214,7 +2214,7 @@ app, and an open-ended size is an open-ended cache.
   "agents": [ … ],                               // only when this session has agents out
   "shells": [ … ],                               // only when it left a command running
   "cwd": "/Users/you/code/atrium",          // absent if the terminal would not say
-  "sessionId": "841cbb8d-58b1-…",                // Claude Code's own id — only with hooks installed
+  "sessionId": "841cbb8d-58b1-…",                // assistant id — only with process-bound proof
   "icon": { "accent": "#5CBBA1", "cells": [ … ] } // absent when the project has no icon
 }
 ```
@@ -2245,9 +2245,14 @@ text with. A PNG would have been fewer bytes and a worse answer: you are drawing
 a pixel ratio this end does not know, and a pixel mark that has been resampled is not a pixel mark
 any more.
 
-`sessionId` appears only when Claude Code's hooks are installed ([`docs/hooks.md`](hooks.md)). It is
-Claude Code's id for the conversation and the name of its transcript file; `id` is the terminal's id
-for the tab, and they are different things. Use `id` everywhere in this API.
+`sessionId` appears only when Clawdline can bind the assistant's durable conversation id to the
+process currently occupying this terminal. For Claude, a process registry entry or hook must name
+an exact transcript which belongs to that process; for Codex, the current pid must hold the user
+rollout whose `session_meta.session_id` is returned. A stale hook, stale rollout or reused tty
+therefore omits the field. `id` is still the terminal's id for the tab, and clients should use it
+everywhere in this API. In particular, child grouping uses the broker-resolved
+`tasks[].root.terminalId`; clients must not compare `root.sessionId` directly with an unverified
+session field.
 
 `menu` is the question a `waiting` session is showing, read off the same screen capture the state
 came from. Each option is `{"n":1,"label":"Yes","selected":false,"can":true}` — and **`n` is a

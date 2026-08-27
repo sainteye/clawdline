@@ -1083,16 +1083,17 @@ assigns and `GET /v1/sessions` lists as `id`. Comparing a root's self-reported i
 column is comparing two different namespaces; a miss there proves nothing about whether the other
 session is still alive, only that the two ids do not name the same thing.
 
-**`sessions[].sessionId` is not a reliable second column either — it exists for one assistant and
-not the other.** [`docs/api.md`](api.md#the-session-object) says so plainly: `sessionId` appears
-only when Claude Code's hooks are installed. A Codex root's own id is a thread id this app never
-reads back into that field at all, hooks or not — so for a Codex root, `sessions[].sessionId` is
-`null` on every row, and a miss there proves nothing about whether it is alive, exactly like the
-`id` column above. Comparing against it works only for a Claude root, and only once hooks are
-installed. **Querying for a session by an id and getting nothing back is never proof that session
-is gone** — it may only mean this app never learned the id to compare against. To judge whether a
-particular root is still around, use what a session listing can actually promise instead: the `cwd`,
-`label` and `state` of a session sitting where the root said it would be — from
+**`sessions[].sessionId` is verified but optional.** It is emitted only when the current process
+can be bound to its exact Claude transcript or Codex user rollout. That makes a value which is
+present useful identity evidence, but absence still proves nothing: a brand-new rollout may not
+exist yet, a process reading may fail, or a Claude session may have neither a registry entry nor a
+hook naming its transcript. A stale hook, stale rollout or reused tty is omitted rather than used.
+The broker performs this same process-bound resolution when it writes `tasks[].root.terminalId`;
+that field, not a client-side comparison against `root.sessionId`, is the grouping contract.
+**Querying for a session by an id and getting nothing back is never proof that session is gone** —
+it may only mean this app could not prove the id at that moment. To judge whether a particular root
+is still around, use what a session listing can always promise instead: the `cwd`, `label` and
+`state` of a session sitting where the root said it would be — from
 `GET /v1/orchestrator/sessions` with the orchestrator credential, or `GET /v1/sessions` with a
 device token — or sending the root a message and reading whether anything answers.
 

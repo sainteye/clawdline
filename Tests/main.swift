@@ -9846,7 +9846,6 @@ group("a public session id and task root use one process-bound identity") {
                               assistant: .codex)
 
     let exposed = RemoteServer.sessionIdentity(assistant: codex.assistant,
-                                                legacyHook: staleHook,
                                                 processBound: currentRollout)
     expect("a Codex row exposes the rollout proved for its current process, not a tty's old hook",
            exposed, currentRollout)
@@ -9866,14 +9865,12 @@ group("a public session id and task root use one process-bound identity") {
           Orchestrator.rootTerminalID(for: staleTask, parentTerminalID: nil, among: [codex],
                                       sessionID: { _ in currentRollout }) == nil)
     check("a stale hook alone is not published as a Codex process identity",
-          RemoteServer.sessionIdentity(assistant: .codex, legacyHook: staleHook,
-                                       processBound: nil) == nil)
+          RemoteServer.sessionIdentity(assistant: .codex, processBound: nil) == nil)
     expect("a Claude row likewise prefers its process-validated registry or transcript identity",
-           RemoteServer.sessionIdentity(assistant: .claude, legacyHook: staleHook,
-                                        processBound: currentRollout), currentRollout)
+           RemoteServer.sessionIdentity(assistant: .claude, processBound: currentRollout),
+           currentRollout)
     check("an ordinary shell cannot inherit an old assistant hook",
-          RemoteServer.sessionIdentity(assistant: nil, legacyHook: staleHook,
-                                       processBound: currentRollout) == nil)
+          RemoteServer.sessionIdentity(assistant: nil, processBound: currentRollout) == nil)
 }
 
 group("a task keeps its per-dispatch Codex reasoning effort") {
