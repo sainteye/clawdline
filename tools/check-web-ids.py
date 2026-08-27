@@ -11,6 +11,14 @@ WEB = ROOT / "Resources" / "web"
 INDEX = WEB / "index.html"
 JS_ROOT = WEB / "app" / "js"
 
+# An `id="…"` written in markup, wherever that markup is authored. `index.html` is not
+# the only place the page defines an id: a module that builds its own sheet, writes it
+# into `innerHTML` and appends it defines those ids as surely as the document does —
+# `input/user-messages.js` and `view/transcript.js` both do exactly that. Reading only
+# `index.html` called that a broken contract and went red on correct code, which is the
+# tax that gets a check deleted rather than fixed.
+MARKUP_ID = re.compile(r"\bid\s*=\s*['\"]([^'\"]+)['\"]")
+
 # Nearly every id this check knows about comes out of one literal array, matched by one regular
 # expression in registry_ids().  Rewriting its callback as an arrow function, or putting a
 # grouping comment inside the array, drops the match to nothing — and the script would then print
@@ -205,7 +213,7 @@ def main():
     except OSError as error:
         fail(str(error))
 
-    defined = set(re.findall(r"\bid\s*=\s*['\"]([^'\"]+)['\"]", html))
+    defined = set(MARKUP_ID.findall(html))
     required = defaultdict(list)
     registry = set()
 
@@ -216,6 +224,8 @@ def main():
         except OSError as error:
             fail(str(error))
         label = str(path.relative_to(ROOT))
+        # The markup this module authors, before its own lookups are read below.
+        defined |= set(MARKUP_ID.findall(text))
         depths = scan(label, text)
         for element_id in registry_ids(text):
             required[element_id].append(label)
@@ -252,7 +262,8 @@ def main():
             print(f"  looked up but not defined: {element_id} ({', '.join(required[element_id])})")
         return 1
 
-    print(f"web ids agree: {len(required)} looked up at load time, {len(defined)} defined in index.html")
+    print(f"web ids agree: {len(required)} looked up at load time, "
+          f"{len(defined)} defined in index.html and the modules")
     return 0
 
 
