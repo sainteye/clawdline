@@ -3994,6 +3994,137 @@ enum Orchestrator {
         return rows
     }
 
+    // MARK: - Owned storage inventory
+
+    /// The dry-run view for owned storage. It enumerates only ledger receipts; an interactive
+    /// session or an unowned directory cannot enter this list by resembling one of our paths.
+    static func storageInventory(now: Date = Date()) -> [String: Any] {
+        load()
+        let ledger = OwnedStorage.readLedger()
+        guard case .known(let entries, let malformedLines) = ledger else {
+            return [
+                "at": Int(now.timeIntervalSince1970),
+                "source_state": OwnedStorage.DecisionState.unknown.rawValue,
+                "why": "ledger_unreadable",
+                "totals": storageTotals(),
+                "owned": [],
+                "warnings": ["ledger_unreadable"],
+                "config": storageConfig(),
+            ]
+        }
+
+        lock.lock()
+        let taskSnapshot = tasks
+        lock.unlock()
+        let registryReadable: Bool = {
+            guard let data = try? Data(contentsOf: storeURL),
+                  let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  object["tasks"] is [[String: Any]] else {
+                return taskSnapshot.isEmpty && !FileManager.default.fileExists(atPath: storeURL.path)
+            }
+            return true
+        }()
+        let sessions = OwnedStorage.liveSessions()
+        var totals = storageTotals()
+        var rows: [[String: Any]] = []
+
+        for entry in entries.sorted(by: {
+            if $0.at == $1.at { return $0.path < $1.path }
+            return $0.at < $1.at
+        }) {
+            let task = registryReadable ? taskSnapshot[entry.taskID] : nil
+            let taskFacts: OwnedStorage.Source<OwnedStorage.TaskFacts>
+            let landing: OwnedStorage.Source<OwnedStorage.Landing>
+            let process: OwnedStorage.ProcessStatus
+            if let task {
+                taskFacts = .known(OwnedStorage.TaskFacts(
+                    isTerminal: task.state.isTerminal, createdAt: task.created,
+                    finishedAt: task.finishedAt, childPID: task.childPID,
+                    childProcStart: task.childProcStart))
+                switch task.landing?.state {
+                case .pending: landing = .known(.pending)
+                case .landed, .abandoned: landing = .known(.settled)
+                case nil: landing = .known(.none)
+                }
+                process = OwnedStorage.processStatus(pid: task.childPID,
+                                                     recordedStart: task.childProcStart)
+            } else {
+                taskFacts = .unreadable
+                landing = .unreadable
+                process = .unreadable
+            }
+            let path = OwnedStorage.pathStatus(for: entry)
+            var decision = OwnedStorage.evaluate(.init(
+                entry: entry, task: taskFacts, landing: landing, sessions: sessions,
+                process: process, path: path, now: now))
+            let bytes: Int?
+            if path == .valid {
+                switch OwnedStorage.directorySize(at: entry.path) {
+                case .known(let value): bytes = value
+                case .unreadable:
+                    bytes = nil
+                    decision = .init(state: .unknown, why: "size_unreadable", eligibleAt: nil)
+                }
+            } else {
+                bytes = nil
+            }
+
+            totals["owned_items", default: 0] += 1
+            if let bytes { totals["owned_bytes", default: 0] += bytes }
+            else { totals["unknown_size_items", default: 0] += 1 }
+            totals["\(decision.state.rawValue)_items", default: 0] += 1
+            if let bytes { totals["\(decision.state.rawValue)_bytes", default: 0] += bytes }
+
+            let finished = task?.finishedAt ?? task?.created ?? entry.at
+            rows.append([
+                "task": entry.taskID,
+                "assistant": entry.assistant,
+                "session": entry.sessionID,
+                "kind": "scratchpad",
+                "path": entry.path,
+                "proof": entry.proof,
+                "registered_at": Int(entry.at.timeIntervalSince1970),
+                "bytes": bytes as Any? ?? NSNull(),
+                "state": decision.state.rawValue,
+                "why": decision.why,
+                "age_seconds": ageSeconds(since: finished, now: now),
+                "eligible_at": decision.eligibleAt.map {
+                    Int($0.timeIntervalSince1970)
+                } as Any? ?? NSNull(),
+            ])
+        }
+        totals["malformed_ledger_lines"] = malformedLines.count
+        var warnings = malformedLines.map { "ledger_line_\($0)_malformed" }
+        if !registryReadable { warnings.append("registry_unreadable") }
+        if case .unreadable = sessions { warnings.append("sessions_unreadable") }
+        let anyUnknown = rows.contains { $0["state"] as? String == "unknown" }
+            || !warnings.isEmpty
+        return [
+            "at": Int(now.timeIntervalSince1970),
+            "source_state": anyUnknown ? OwnedStorage.DecisionState.unknown.rawValue : "known",
+            "totals": totals,
+            "owned": rows,
+            "warnings": warnings,
+            "config": storageConfig(),
+        ]
+    }
+
+    private static func storageTotals() -> [String: Int] {
+        [
+            "owned_items": 0, "owned_bytes": 0,
+            "held_items": 0, "held_bytes": 0,
+            "releasable_items": 0, "releasable_bytes": 0,
+            "unknown_items": 0, "unknown_bytes": 0,
+            "unknown_size_items": 0, "malformed_ledger_lines": 0,
+        ]
+    }
+
+    private static func storageConfig() -> [String: Any] {
+        // GC2 owns the switch and collector settings. GC1 publishes the policy it evaluates and
+        // is explicitly non-mutating.
+        ["enabled": false, "floor_hours": 12, "untracked_process_floor_hours": 24]
+    }
+
     // MARK: - Work in flight
 
     /// Why a piece of work is on the in-flight list, or why it is not.
@@ -5116,7 +5247,11 @@ enum Orchestrator {
     /// Every result is cached while the file signature is unchanged; growth after delivery
     /// naturally causes the pre-briefing candidate to be read and proved again.
     static func noteTranscriptProof(in task: inout Task) -> Bool {
-        guard !task.transcriptProven, let path = task.transcriptPath else { return false }
+        if task.transcriptProven {
+            _ = registerOwnedScratchpad(for: task)
+            return false
+        }
+        guard let path = task.transcriptPath else { return false }
         let transcript = URL(fileURLWithPath: path)
         let ownership = transcriptOwnership(transcript, assistant: task.assistant, taskID: task.id)
         return applyTranscriptOwnership(ownership, transcript: transcript, to: &task)
@@ -5150,7 +5285,18 @@ enum Orchestrator {
             task.childSessionId = id
         }
         task.transcriptProven = true
+        _ = registerOwnedScratchpad(for: task)
         return true
+    }
+
+    /// Transcript proof and ledger registration are separate facts. A failed append never turns
+    /// into a positive ownership receipt; ``noteTranscriptProof(in:)`` retries it on later beats.
+    @discardableResult
+    static func registerOwnedScratchpad(for task: Task, at: Date = Date()) -> Bool {
+        guard task.transcriptProven, task.assistant == .claude,
+              let sessionID = task.childSessionId else { return false }
+        return OwnedStorage.register(taskID: task.id, assistant: task.assistant,
+                                     sessionID: sessionID, projectDir: task.projectDir, at: at)
     }
 
     /// A tty belongs to the tab, not to the assistant process inside it. Until the new process
@@ -5940,6 +6086,9 @@ enum Orchestrator {
         ## Rules
 
         \(workspaceRule)
+        - Put heavyweight temporary work (repo copies, build outputs, mutation worktrees and
+          compiler indexes) in \(dir)/work/, not in the assistant scratchpad. Clawdline owns that
+          directory and reclaims it with the task.
         - \(handOnRule)
         - Do not read any directory under /tmp/.clawdline/ except your own, any you dispatched,
           and any your instructions name explicitly. That last one is how a reviewing node works:
@@ -6982,6 +7131,11 @@ enum Orchestrator {
         coordinationWaits = foundWaits
         reindex()
         lock.unlock()
+        // Proofs stored before the independent ledger existed are still strong proofs. Backfill
+        // only those exact task/session pairs; never enumerate the surrounding scratch root.
+        for task in found.values where task.transcriptProven && task.assistant == .claude {
+            _ = registerOwnedScratchpad(for: task)
+        }
     }
 
     private static func save() {
@@ -7429,7 +7583,8 @@ enum Orchestrator {
         let cutoff = Date().addingTimeInterval(-24 * 3600)
         lock.lock()
         let done = tasks.values.filter { task in
-            task.state.isTerminal && (task.finishedAt ?? task.created) < cutoff
+            task.state.isTerminal && task.landing?.state != .pending
+                && (task.finishedAt ?? task.created) < cutoff
         }
         let expiredHandoffs = handoffs.values.filter {
             $0.state.isTerminal && $0.created < cutoff
@@ -7460,6 +7615,7 @@ enum Orchestrator {
         if !removable.isEmpty || !expiredHandoffs.isEmpty { save() }
         let retained = Set(all.filter { !removedIDs.contains($0.id) }.map(\.id))
         cleanupOrphanWorktrees(knownTaskIDs: retained, olderThan: cutoff)
+        _ = OwnedStorage.compact()
     }
 
     // MARK: - Small lookups

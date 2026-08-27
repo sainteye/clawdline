@@ -117,6 +117,7 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/orchestrator/tasks/:id/cancel` | orchestrator token, **or** token + key | `send` **and** the write switch |
 | `GET` | `/v1/orchestrator/assistants` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/landings` | orchestrator token, **or** token | `read` |
+| `GET` | `/v1/orchestrator/storage` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/inflight` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/waits` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/waits` | orchestrator token | — |
@@ -1786,6 +1787,40 @@ Nullable `target`, `note`, and `root_label` remain present in this list so a das
 stable row shape. A row is a signpost, not a gate: callers decide whether to wait or continue.
 Pending landing obligations are exempt from the registry's ordinary newest-200 cleanup cap; they
 remain queryable until a root explicitly marks them `landed` or `abandoned`.
+
+### `GET /v1/orchestrator/storage`
+
+Lists only storage with an ownership receipt in
+`~/.config/clawdline/owned-storage.jsonl`. Authentication is identical to
+`GET /v1/orchestrator/landings`: the orchestrator token or a paired device with `read` may query
+it. This GET is the dry run; it evaluates the same held/releasable policy the collector will use,
+but has no write or deletion mode.
+
+```json
+{"at":1787100152,"source_state":"known",
+ "totals":{"owned_items":1,"owned_bytes":3232481792,"held_items":0,"held_bytes":0,
+   "releasable_items":1,"releasable_bytes":3232481792,"unknown_items":0,
+   "unknown_bytes":0,"unknown_size_items":0,"malformed_ledger_lines":0},
+ "owned":[{"task":"3f9a21bc-…","assistant":"claude","session":"8d91a14b-…",
+   "kind":"scratchpad","path":"/private/tmp/claude-501/-Users-me-code-repo/8d91a14b-…",
+   "proof":"briefing_marker","registered_at":1787000000,"bytes":3232481792,
+   "state":"releasable","why":"eligible","age_seconds":46800,
+   "eligible_at":1787090000}],
+ "warnings":[],
+ "config":{"enabled":false,"floor_hours":12,"untracked_process_floor_hours":24}}
+```
+
+`state` is `held`, `releasable`, or `unknown`. `unknown` is a fail-closed answer and is treated as
+held by every mutating boundary. It appears when a required source (the ownership ledger,
+orchestrator registry, Claude live-session registry, process identity, canonical path metadata, or
+size reading) is unavailable or malformed. A missing path is `held` with `why: path_missing`; it
+is not silently rediscovered elsewhere. `warnings` identifies malformed ledger line numbers while
+valid independent rows remain visible.
+
+The endpoint does **not** scan `/tmp/claude-*`, interactive assistant sessions, or unowned
+directories. An entry can appear only after a Claude child transcript proves the exact task marker
+and Clawdline successfully appends its task, assistant, session, canonical path, proof method,
+project, and timestamp to the independent ledger.
 
 ### `GET /v1/orchestrator/inflight?project=<dir>`, `GET /v1/orchestrator/tasks/:id/inflight`
 

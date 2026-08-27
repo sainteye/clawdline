@@ -770,6 +770,9 @@ final class RemoteServer {
             return .json(["landings": Orchestrator.landingRecords(),
                           "at": Int(Date().timeIntervalSince1970)])
 
+        case ("GET", "/v1/orchestrator/storage"):
+            return .json(Orchestrator.storageInventory())
+
         // **What is being worked on in a repository right now, including what a worktree hides.**
         //
         // Read-level like the two lists above it, and mechanical: no model, no quota, no account.

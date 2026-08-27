@@ -9780,7 +9780,8 @@ group("worktree task records, briefings and shared-tree coordination stay distin
     let sharedBrief = Orchestrator.childBrief(for: shared)
     let isolatedBrief = Orchestrator.childBrief(for: isolated)
     check("a shared-tree child keeps the existing briefing without worktree rules",
-          !sharedBrief.lowercased().contains("worktree"))
+          !sharedBrief.contains("## Your isolated checkout")
+              && !sharedBrief.contains("only on this branch"))
     check("an isolated child is told its branch, base, and commit-only delivery rule",
           isolatedBrief.contains(isolated.worktree!.branch)
               && isolatedBrief.contains(isolated.worktree!.base)
@@ -15165,6 +15166,297 @@ group("a save keeps the task fields no form has a control for") {
     let fresh = Orchestrator.schedules().first { $0.title == "fresh" }
     let freshTask = fresh?.taskTemplate ?? [:]
     check("a new schedule has no claims of its own", freshTask["claims"] == nil)
+}
+
+group("owned storage evaluation is three-valued and fail-closed") {
+    let now = Date(timeIntervalSince1970: 2_000_000)
+    let taskID = "11111111-2222-4333-8444-555555555555"
+    let sessionID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    let path = "/private/tmp/claude-501/-Users-me-code-repo/\(sessionID)"
+    let entry = OwnedStorage.Entry(at: now.addingTimeInterval(-30 * 3600),
+                                   taskID: taskID, assistant: "claude",
+                                   sessionID: sessionID, path: path,
+                                   proof: "briefing_marker", projectDir: "/Users/me/code/repo")
+    let settled = OwnedStorage.TaskFacts(isTerminal: true,
+                                         createdAt: now.addingTimeInterval(-30 * 3600),
+                                         finishedAt: now.addingTimeInterval(-13 * 3600),
+                                         childPID: 4242,
+                                         childProcStart: now.addingTimeInterval(-30 * 3600))
+    func input(task: OwnedStorage.Source<OwnedStorage.TaskFacts> = .known(settled),
+               landing: OwnedStorage.Source<OwnedStorage.Landing> = .known(.none),
+               retained: OwnedStorage.Source<Bool> = .known(false),
+               sessions: OwnedStorage.Liveness = .known([]),
+               process: OwnedStorage.ProcessStatus = .dead,
+               path: OwnedStorage.PathStatus = .valid) -> OwnedStorage.EvaluationInput {
+        OwnedStorage.EvaluationInput(entry: entry, task: task, landing: landing,
+                                     retained: retained,
+                                     sessions: sessions, process: process, path: path, now: now)
+    }
+
+    expect("a fully eligible owned path becomes releasable",
+           OwnedStorage.evaluate(input()).state, .releasable)
+    expect("an unreadable session source is unknown rather than an empty live set",
+           OwnedStorage.evaluate(input(sessions: .unreadable)).state, .unknown)
+    expect("unknown is conservatively held by the collection boundary",
+           OwnedStorage.evaluate(input(sessions: .unreadable)).mayCollect, false)
+    expect("a live child session holds its storage",
+           OwnedStorage.evaluate(input(sessions: .known([sessionID]))).state, .held)
+    expect("a pending landing holds without a time limit",
+           OwnedStorage.evaluate(input(landing: .known(.pending))).state, .held)
+    expect("an active retain marker holds otherwise eligible storage",
+           OwnedStorage.evaluate(input(retained: .known(true))).state, .held)
+    expect("an unreadable retain source fails closed",
+           OwnedStorage.evaluate(input(retained: .unreadable)).state, .unknown)
+
+    var young = settled
+    young.finishedAt = now.addingTimeInterval(-11 * 3600)
+    expect("no landing uses the twelve-hour floor",
+           OwnedStorage.evaluate(input(task: .known(young))).state, .held)
+    young.finishedAt = now.addingTimeInterval(-2 * 3600)
+    expect("a settled landing uses the one-hour floor",
+           OwnedStorage.evaluate(input(task: .known(young), landing: .known(.settled))).state,
+           .releasable)
+
+    var untracked = settled
+    untracked.finishedAt = now.addingTimeInterval(-13 * 3600)
+    untracked.childProcStart = nil
+    expect("missing process start stretches the floor to twenty-four hours",
+           OwnedStorage.evaluate(input(task: .known(untracked))).state, .held)
+    untracked.finishedAt = now.addingTimeInterval(-25 * 3600)
+    expect("the extended floor eventually expires",
+           OwnedStorage.evaluate(input(task: .known(untracked))).state, .releasable)
+    expect("a still-running original child process holds storage",
+           OwnedStorage.evaluate(input(process: .alive)).state, .held)
+    expect("a reused pid does not impersonate the original process",
+           OwnedStorage.evaluate(input(process: .reused)).state, .releasable)
+    expect("an unreadable process fact fails closed",
+           OwnedStorage.evaluate(input(process: .unreadable)).state, .unknown)
+    expect("a path that does not match its reconstructed canonical path is unknown",
+           OwnedStorage.evaluate(input(path: .invalid)).state, .unknown)
+}
+
+group("owned storage ledger records proof durably and never claims a failed append") {
+    let manager = FileManager.default
+    let base = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-owned-ledger-\(UUID().uuidString)", isDirectory: true)
+    try! manager.createDirectory(at: base, withIntermediateDirectories: true)
+    defer {
+        OwnedStorage.ledgerURLOverrideForTesting = nil
+        OwnedStorage.scratchRootOverrideForTesting = nil
+        try? manager.removeItem(at: base)
+    }
+    OwnedStorage.scratchRootOverrideForTesting = base.appendingPathComponent("scratch",
+                                                                             isDirectory: true)
+    let taskID = "22222222-3333-4444-8555-666666666666"
+    let sessionID = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff"
+
+    let blocked = base.appendingPathComponent("not-a-directory")
+    try! Data("x".utf8).write(to: blocked)
+    OwnedStorage.ledgerURLOverrideForTesting = blocked.appendingPathComponent("owned.jsonl")
+    check("a ledger append failure is reported instead of being called registered",
+          !OwnedStorage.register(taskID: taskID, assistant: .claude,
+                                 sessionID: sessionID, projectDir: "/Users/me/code/repo",
+                                 at: Date(timeIntervalSince1970: 100)))
+
+    let ledger = base.appendingPathComponent("owned-storage.jsonl")
+    OwnedStorage.ledgerURLOverrideForTesting = ledger
+    check("the same proof registers once storage is writable",
+          OwnedStorage.register(taskID: taskID, assistant: .claude,
+                                sessionID: sessionID, projectDir: "/Users/me/code/repo",
+                                at: Date(timeIntervalSince1970: 101)))
+    check("re-registering the same proof is idempotent",
+          OwnedStorage.register(taskID: taskID, assistant: .claude,
+                                sessionID: sessionID, projectDir: "/Users/me/code/repo",
+                                at: Date(timeIntervalSince1970: 102)))
+    guard case .known(let rows, let malformed) = OwnedStorage.readLedger() else {
+        check("the ledger can be read back", false); return
+    }
+    check("one durable row carries every ownership field",
+          rows.count == 1 && malformed.isEmpty
+            && rows[0].taskID == taskID && rows[0].sessionID == sessionID
+            && rows[0].assistant == "claude" && rows[0].proof == "briefing_marker"
+            && rows[0].projectDir == "/Users/me/code/repo")
+    let provenTaskID = "33333333-4444-4555-8666-777777777777"
+    let provenSessionID = "eeeeeeee-ffff-4aaa-8bbb-cccccccccccc"
+    var proven = Orchestrator.Task(
+        id: provenTaskID, state: .briefed, kind: "custom", title: "proof integration",
+        assistant: .claude, projectDir: "/Users/me/code/repo", timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 100),
+        secretHash: String(repeating: "0", count: 64))
+    let transcript = base.appendingPathComponent("\(provenSessionID).jsonl")
+    check("the transcript ownership transition appends its ledger receipt immediately",
+          Orchestrator.applyTranscriptOwnership(.belongs, transcript: transcript, to: &proven)
+            && proven.transcriptProven && proven.childSessionId == provenSessionID)
+    guard case .known(let afterProof, _) = OwnedStorage.readLedger() else {
+        check("the proof-appended ledger can be read", false); return
+    }
+    check("proof integration added exactly the newly owned task and path",
+          afterProof.count == 2 && afterProof.contains { row in
+              row.taskID == provenTaskID && row.sessionID == provenSessionID
+                && row.path == OwnedStorage.scratchpadPath(
+                    projectDir: proven.projectDir, sessionID: provenSessionID)
+          })
+    let attrs = try? manager.attributesOfItem(atPath: ledger.path)
+    expect("the ownership ledger stays private", attrs?[.posixPermissions] as? Int, 0o600)
+    let handle = try! FileHandle(forWritingTo: ledger)
+    try! handle.seekToEnd()
+    try! handle.write(contentsOf: Data("not-json\n".utf8))
+    try! handle.close()
+    guard case .known(let readableRows, let badLines) = OwnedStorage.readLedger() else {
+        check("one malformed line does not hide independent ownership rows", false); return
+    }
+    check("a malformed ledger line is reported while valid rows remain visible",
+          readableRows.count == 2 && badLines == [3])
+    let beforeCompaction = try! Data(contentsOf: ledger)
+    check("compaction fails closed instead of rewriting around unknown ownership evidence",
+          !OwnedStorage.compact(now: Date(timeIntervalSince1970: 10_000)))
+    expect("failed-closed compaction leaves every ledger byte untouched",
+           try? Data(contentsOf: ledger), beforeCompaction)
+}
+
+group("the Claude live-session source distinguishes empty from unreadable") {
+    let manager = FileManager.default
+    let base = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-owned-liveness-\(UUID().uuidString)", isDirectory: true)
+    defer { try? manager.removeItem(at: base) }
+    try! manager.createDirectory(at: base, withIntermediateDirectories: true)
+    expect("a readable empty directory is a known empty live set",
+           OwnedStorage.liveSessions(in: base), .known([]))
+    let live = "cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa"
+    let row = try! JSONSerialization.data(withJSONObject: ["sessionId": live])
+    try! row.write(to: base.appendingPathComponent("123.json"))
+    expect("a readable registry exposes its named sessions",
+           OwnedStorage.liveSessions(in: base), .known([live]))
+    try! Data("not json".utf8).write(to: base.appendingPathComponent("456.json"))
+    expect("one malformed live-session row makes the source unreadable",
+           OwnedStorage.liveSessions(in: base), .unreadable)
+    expect("a missing registry directory is unreadable, never an empty set",
+           OwnedStorage.liveSessions(in: base.appendingPathComponent("missing")), .unreadable)
+}
+
+group("pending landing storage survives task-directory cleanup") {
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    let pendingID = UUID().uuidString.lowercased()
+    let ordinaryID = UUID().uuidString.lowercased()
+    let pendingDir = Orchestrator.root.appendingPathComponent(pendingID, isDirectory: true)
+    let ordinaryDir = Orchestrator.root.appendingPathComponent(ordinaryID, isDirectory: true)
+    defer {
+        try? manager.removeItem(at: pendingDir)
+        try? manager.removeItem(at: ordinaryDir)
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    try! manager.createDirectory(at: pendingDir, withIntermediateDirectories: true)
+    try! manager.createDirectory(at: ordinaryDir, withIntermediateDirectories: true)
+    try! Data("pending receipt".utf8).write(to: pendingDir.appendingPathComponent("receipt"))
+    try! Data("ordinary receipt".utf8).write(to: ordinaryDir.appendingPathComponent("receipt"))
+    let old = Date().addingTimeInterval(-25 * 3600)
+    func task(_ id: String) -> Orchestrator.Task {
+        Orchestrator.Task(id: id, state: .success, kind: "custom", title: "cleanup fixture",
+                          assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30,
+                          created: old, finishedAt: old,
+                          secretHash: String(repeating: "0", count: 64))
+    }
+    var pending = task(pendingID)
+    pending.landing = Orchestrator.Landing(state: .pending, target: "main", delivery: nil,
+                                           ownerRootKey: "12345678", since: old,
+                                           commit: nil, note: nil)
+    Orchestrator.holdScheduleTaskForTesting(pending)
+    Orchestrator.holdScheduleTaskForTesting(task(ordinaryID))
+    Orchestrator.cleanup()
+    check("cleanup preserves the receipt directory behind a pending landing",
+          manager.fileExists(atPath: pendingDir.path))
+    check("the ordinary day-old task directory still expires",
+          !manager.fileExists(atPath: ordinaryDir.path))
+}
+
+group("owned storage is visible through the read-only orchestrator route") {
+    let manager = FileManager.default
+    let base = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-storage-route-\(UUID().uuidString)", isDirectory: true)
+    let ledgerBefore = try? Data(contentsOf: OwnedStorage.ledgerURL)
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    let taskID = "44444444-5555-4666-8777-888888888888"
+    let sessionID = "dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbb"
+    defer {
+        if let ledgerBefore { try? ledgerBefore.write(to: OwnedStorage.ledgerURL, options: .atomic) }
+        else { try? manager.removeItem(at: OwnedStorage.ledgerURL) }
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        OwnedStorage.ledgerURLOverrideForTesting = nil
+        OwnedStorage.scratchRootOverrideForTesting = nil
+        OwnedStorage.sessionsDirectoryOverrideForTesting = nil
+        try? manager.removeItem(at: base)
+        Orchestrator.forget()
+    }
+    try! manager.createDirectory(at: base, withIntermediateDirectories: true)
+    OwnedStorage.ledgerURLOverrideForTesting = base.appendingPathComponent("owned-storage.jsonl")
+    OwnedStorage.scratchRootOverrideForTesting = base.appendingPathComponent("scratch",
+                                                                             isDirectory: true)
+    OwnedStorage.sessionsDirectoryOverrideForTesting = base.appendingPathComponent("sessions",
+                                                                                     isDirectory: true)
+    try! manager.createDirectory(at: OwnedStorage.sessionsDirectory,
+                                 withIntermediateDirectories: true)
+    let path = OwnedStorage.scratchpadPath(projectDir: "/Users/me/code/repo",
+                                           sessionID: sessionID)!
+    try! manager.createDirectory(at: URL(fileURLWithPath: path), withIntermediateDirectories: true)
+    try! Data("owned bytes".utf8).write(to: URL(fileURLWithPath: path)
+        .appendingPathComponent("receipt"))
+    check("the route fixture is entered only through the ledger",
+          OwnedStorage.register(taskID: taskID, assistant: .claude,
+                                sessionID: sessionID, projectDir: "/Users/me/code/repo",
+                                at: Date().addingTimeInterval(-30 * 3600)))
+    Orchestrator.forget()
+    var task = Orchestrator.Task(id: taskID, state: .success, kind: "custom",
+                                 title: "owned storage route", assistant: .claude,
+                                 projectDir: "/Users/me/code/repo", timeoutMinutes: 30,
+                                 created: Date().addingTimeInterval(-30 * 3600),
+                                 finishedAt: Date().addingTimeInterval(-25 * 3600),
+                                 secretHash: String(repeating: "0", count: 64))
+    task.childSessionId = sessionID
+    task.transcriptProven = true
+    task.transcriptPath = "/tmp/\(sessionID).jsonl"
+    Orchestrator.holdScheduleTaskForTesting(task)
+    Orchestrator.saveForTesting()
+
+    let anonymous = RemoteServer.shared.route(remoteRequest("GET", "/v1/orchestrator/storage"))
+    expect("anonymous storage inventory is refused", anonymous.status, 401)
+    let phone = RemoteAuth.addDevice(name: "storage inventory reader", caps: [.read])
+    defer { RemoteAuth.revoke(id: phone.id) }
+    let listed = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/orchestrator/storage",
+        headers: ["Authorization": "Bearer \(phone.token)"]))
+    expect("a paired reader may inspect owned storage", listed.status, 200)
+    let body = (try? JSONSerialization.jsonObject(with: listed.body)) as? [String: Any]
+    let owned = body?["owned"] as? [[String: Any]]
+    let totals = body?["totals"] as? [String: Any]
+    check("the route reports the ledger path, decision and reason",
+          owned?.count == 1 && owned?[0]["task"] as? String == taskID
+            && owned?[0]["state"] as? String == "releasable"
+            && owned?[0]["why"] as? String == "eligible"
+            && owned?[0]["bytes"] is Int)
+    check("the route totals the same owned and releasable item",
+          totals?["owned_items"] as? Int == 1
+            && totals?["releasable_items"] as? Int == 1
+            && totals?["releasable_bytes"] as? Int != nil)
+}
+
+group("child briefings put heavyweight temporary work in owned task storage") {
+    let id = "55555555-6666-4777-8888-999999999999"
+    let task = Orchestrator.Task(id: id, state: .queued, kind: "custom", title: "heavy work",
+                                 assistant: .claude, projectDir: "/repo", timeoutMinutes: 30,
+                                 created: Date(), secretHash: String(repeating: "0", count: 64))
+    let brief = Orchestrator.childBrief(for: task)
+    check("the briefing names the task-owned work directory",
+          brief.contains("/tmp/.clawdline/\(id)/work/"))
+    check("and names the heavyweight examples that belong there",
+          brief.contains("repo copies") && brief.contains("build outputs")
+            && brief.contains("scratchpad"))
 }
 
 // MARK: - Result

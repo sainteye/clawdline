@@ -1019,6 +1019,41 @@ responsible until Clawdline's handoff receipt confirms that the first line reach
 receiving root. For this explicitly assigned obligation, that receipt transfers ownership; it does
 not say that the delivery landed.
 
+### Owned storage is an allowlist, not a scratch-directory sweep
+
+Clawdline records Claude child scratchpads in
+`~/.config/clawdline/owned-storage.jsonl` only after the transcript's first user turn proves the
+exact `Clawdline CHILD agent for task <uuid>` marker. Each append-only `own` row carries the task,
+assistant, session, reconstructed canonical path, proof method, project directory, and timestamp.
+The ledger is independent of `orchestrator.json`: the ordinary task registry keeps only its newest
+200 settled rows, while the ownership fact must survive that turnover. Old rows whose paths have
+been absent for more than 30 days may be compacted by atomic replacement; an unreadable ledger or
+malformed line is never compacted away.
+
+The safety boundary is what the ledger can name. Clawdline does not enumerate `/tmp/claude-*` and
+then apply gates to what it finds. Interactive Claude or Codex sessions, directories with no
+ledger receipt, and other agents' files are outside the candidate set altogether. In particular,
+the approximately 0.95 GB of historical child scratchpads whose task rows were evicted before this
+ledger existed are intentionally left unowned and unreclaimed. Recovering them would require the
+namespace-wide transcript inference that this design rejects; preserving data is the chosen side
+of that ambiguity.
+
+`GET /v1/orchestrator/storage` is the read-only inventory and dry run. It lists each ledger-owned
+path, byte size, task, decision (`held`, `releasable`, or `unknown`), reason, age and eligibility
+time, plus totals. Releasable requires every fact: terminal task, no pending landing, the applicable
+floor (one hour after `landed`/`abandoned`, twelve hours without a landing, or twenty-four hours
+when process-start identity is missing), no matching live child session, a dead or demonstrably
+reused child pid, and an exact canonical nonsymlink path. `pending` has no timeout. Any unreadable
+or malformed source produces `unknown`, and **unknown is held**; an empty live-session set and an
+unreadable registry are different values in the type system.
+
+This phase does not quarantine, purge, delete, or expose a mutating storage route. The collector is
+a separate, default-off phase. Children are also told to put repo copies, build output, mutation
+worktrees and compiler indexes in their own `/tmp/.clawdline/<task-id>/work/` directory so those
+large temporary files live inside storage Clawdline already owns. The existing 24-hour task-root
+cleanup now exempts `landing.state == pending`, because a root that has not landed may still need
+the child's receipts.
+
 ### File release waits belong to Clawdline
 
 A root waiting for paths in a shared tree must not create a relationship that exists only inside
