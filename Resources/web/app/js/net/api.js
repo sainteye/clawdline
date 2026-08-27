@@ -12,5 +12,9 @@
    "function"` to find out whether this mode has that at all.
    -------------------------------------------------------------------------- */
 export let api = null;
+// The new name is an alias of the same live binding. Existing call sites can
+// migrate one module at a time without creating a second selected transport.
+export { api as client };
 
-export function useApi(implementation) { api = implementation; }
+export function useClient(implementation) { api = implementation; }
+export function useApi(implementation) { useClient(implementation); }

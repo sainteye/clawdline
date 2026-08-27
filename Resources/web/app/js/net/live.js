@@ -3,14 +3,32 @@ import { toast, uuid } from "../core/util.js";
 import { handlers } from "./handlers.js";
 import { adoptToken, jsonFetch, post } from "./fetch.js";
 import { Door } from "../door/door.js";
+import { LOCAL_MACHINE, sessionIdentity } from "./client.js";
 
-export var Live = {
+var eventSubscribers = new Set();
+
+function localSessionID(value) { return sessionIdentity(value, LOCAL_MACHINE).session; }
+
+export var LocalClient = {
     es: null,
     attempt: 0,
     timer: null,
     countdown: null,
     sessionProbe: null,
     sessionRevision: 0,
+
+    /** The transport-neutral event lane. Existing handlers remain the first subscriber. */
+    events: function (listener) {
+        if (typeof listener !== "function") throw new TypeError("events() needs a listener");
+        eventSubscribers.add(listener);
+        return function () { eventSubscribers.delete(listener); };
+    },
+
+    emit: function (event) {
+        eventSubscribers.forEach(function (listener) {
+            try { listener(event); } catch (e) { }
+        });
+    },
 
     start: function () {
         var self = this;
@@ -31,6 +49,7 @@ export var Live = {
         // the sessions, and a stale "yes you are signed in" is the wrong answer to have kept.
         return jsonFetch("/v1/health", { cache: "no-store" }).then(function (h) {
             handlers.hello(h);
+            self.emit({ type: "hello", data: h, machine: LOCAL_MACHINE });
             // Only offer the password door when there is a password behind it. `auth` is true for
             // a paired device as well, so it cannot answer this — and a link to a door that was
             // never built teaches somebody to distrust the rest of the page.
@@ -57,7 +76,10 @@ export var Live = {
         // Once, here; the stream keeps it true afterwards and sends a frame of its own the
         // moment it opens. **The refusal is swallowed on purpose**: an app without the route is
         // a 404, and the honest answer to "this Mac has no orchestrator" is the list as it was.
-        this.tasks().then(function (d) { handlers.tasks(d.tasks); }).catch(function () { });
+        this.tasks().then(function (d) {
+            handlers.tasks(d.tasks);
+            self.emit({ type: "orchestrator", data: d, machine: LOCAL_MACHINE });
+        }).catch(function () { });
         if (!this.es) this.connect();
     },
 
@@ -79,7 +101,11 @@ export var Live = {
         this.es = es;
 
         es.addEventListener("hello", function (ev) {
-            try { handlers.hello(JSON.parse(ev.data)); } catch (e) { }
+            try {
+                var d = JSON.parse(ev.data);
+                handlers.hello(d);
+                self.emit({ type: "hello", data: d, machine: LOCAL_MACHINE });
+            } catch (e) { }
         });
         es.addEventListener("sessions", function (ev) {
             try {
@@ -97,7 +123,11 @@ export var Live = {
         // and finishes without the session list changing at all — and an app that has never
         // heard of it simply never sends one.
         es.addEventListener("orchestrator", function (ev) {
-            try { handlers.tasks(JSON.parse(ev.data).tasks); } catch (e) { }
+            try {
+                var d = JSON.parse(ev.data);
+                handlers.tasks(d.tasks);
+                self.emit({ type: "orchestrator", data: d, machine: LOCAL_MACHINE });
+            } catch (e) { }
         });
         es.onerror = function () {
             // EventSource has a reconnect policy of its own, and it is not one that can be seen
@@ -121,6 +151,7 @@ export var Live = {
         if (handlers.sessions(data.sessions, data.at, scan) !== false) {
             this.sessionRevision += 1;
             this.sessionProbe = null;
+            this.emit({ type: "sessions", data: data, machine: LOCAL_MACHINE });
             return Promise.resolve(true);
         }
 
@@ -185,8 +216,11 @@ export var Live = {
             .catch(function (e) { toast(e.message, true); });
     },
 
+    /** The REST half of the interface; start()/events() owns the SSE half. */
+    sessions: function () { return jsonFetch("/v1/sessions"); },
+
     transcript: function (id) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/transcript?limit=200");
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/transcript?limit=200");
     },
 
     /// Every task the app knows about — what a session dispatched, and which session got it.
@@ -197,27 +231,27 @@ export var Live = {
     /// One of that session's background agents: the row the strip is already showing, and the
     /// conversation behind it. Same shape as a transcript, because it is one.
     agent: function (id, agentId) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/agents/"
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/agents/"
                          + encodeURIComponent(agentId) + "?limit=200");
     },
 
     /// One of that session's background commands: the tail of the file it is printing into.
     /// Not a transcript — a command has no turns — so this answers text and whether it has ended.
     shell: function (id, shellId) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/shells/"
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/shells/"
                          + encodeURIComponent(shellId));
     },
 
     /// Stop one. **The second route on this server that destroys something**, after `end`, and
     /// it takes the same key so that a retry of *this* press is not a second signal.
     killShell: function (id, shellId) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/shells/"
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/shells/"
                          + encodeURIComponent(shellId) + "/kill",
                          post({}, { "Idempotency-Key": uuid() }));
     },
 
     skills: function (id) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/skills");
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/skills");
     },
 
     /// `text`, `images`, or both — the server refuses only the message that is neither. The key
@@ -226,7 +260,7 @@ export var Live = {
         var body = {};
         if (text) body.text = text;
         if (images && images.length) body.images = images;
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/send",
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/send",
                          post(body, { "Idempotency-Key": uuid() }));
     },
 
@@ -237,7 +271,7 @@ export var Live = {
     /// highlighted rather than typing anything — the server refuses that outright. A digit is
     /// the only thing that answers the question that was actually asked.
     key: function (id, press) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/key",
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/key",
                          post({ key: String(press) }, { "Idempotency-Key": uuid() }));
     },
 
@@ -269,21 +303,21 @@ export var Live = {
     },
 
     focus: function (id) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/focus",
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/focus",
                          post({}, { "Idempotency-Key": uuid() }));
     },
 
     /// Leave through the assistant's own prompt, then close the terminal session it occupied.
     /// The server knows whether that means `/exit` or `/quit`; the page never sends a command.
     end: function (id) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/end",
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/end",
                          post({}, { "Idempotency-Key": uuid() }));
     },
 
     /// Branch and file changes are also fetched only when their panel opens. Unlike the command
     /// actions in the same menu this is read-only, and it never rides the event stream.
     git: function (id) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/git");
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/git");
     },
 
     /// Where a session may be started. Asked afresh every time the sheet opens: the Mac drops
@@ -294,7 +328,7 @@ export var Live = {
     /// the last deploy went out. Kept out of the session-list stream because answering reads a
     /// transcript that can be fifty megabytes; the client gives the answer a short-lived cache.
     info: function (id) {
-        return jsonFetch("/v1/sessions/" + encodeURIComponent(id) + "/info");
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/info");
     },
 
     places: function () { return jsonFetch("/v1/places"); },
@@ -365,6 +399,15 @@ export var Live = {
     pushTest: function () { return jsonFetch("/v1/push/test", post({})); }
 };
 
+// Interface names. The old names remain because local call sites already use them.
+LocalClient.answer = function (identity, answer) { return LocalClient.key(identity, answer); };
+LocalClient.dispatch = function (place, assistant, model) {
+    return LocalClient.startPlace(place, assistant, model);
+};
+
+// Compatibility export for the entry point; both names are the exact same object.
+export var Live = LocalClient;
+
 /* ---- schedules: reading is ambient, making one is gated ------------------
    Kept outside the transport object above so the two permissions stay visible at a glance:
    listing needs nothing but pairing, the same as everything else on `Live`. Making one goes
@@ -373,19 +416,19 @@ export var Live = {
    could not reach a phone. Neither route can make an existing schedule *run* early; that button
    does not exist anywhere on this page.
    -------------------------------------------------------------------------- */
-Live.schedules = function () { return jsonFetch("/v1/orchestrator/schedules"); };
+LocalClient.schedules = function () { return jsonFetch("/v1/orchestrator/schedules"); };
 
 /// One schedule, made. `input/schedule.js` is the only caller and the only place that builds
 /// `schedule` — see the field list on `POST /v1/orchestrator/schedules` in the plan this task
 /// came with. The key is minted once per press, so a retry of *this* request does not make two.
-Live.createSchedule = function (schedule) {
+LocalClient.createSchedule = function (schedule) {
     return jsonFetch("/v1/orchestrator/schedules", post(schedule, { "Idempotency-Key": uuid() }));
 };
 
 /// One schedule, in full — the task template and every field the list route leaves out. Read
 /// level, same door as `schedules` above: a paired device without `send` can still open a row
 /// and look, and only the two writes below it ask for more.
-Live.schedule = function (id) {
+LocalClient.schedule = function (id) {
     return jsonFetch("/v1/orchestrator/schedules/" + encodeURIComponent(id));
 };
 
@@ -394,7 +437,7 @@ Live.schedule = function (id) {
 /// file that reads back correctly survive the request. `schedule_id` and `created_at` are not on
 /// the body's allowed field list — the id is in the path, and the Mac is the one keeping the
 /// date. `post()` builds the body PATCH and POST share; only the verb differs.
-Live.updateSchedule = function (id, schedule) {
+LocalClient.updateSchedule = function (id, schedule) {
     var opts = post(schedule, { "Idempotency-Key": uuid() });
     opts.method = "PATCH";
     return jsonFetch("/v1/orchestrator/schedules/" + encodeURIComponent(id), opts);
@@ -403,7 +446,7 @@ Live.updateSchedule = function (id, schedule) {
 /// Removing one. There is no body to send — the id in the path is the whole request, the same
 /// shape `killShell` and `end` above already take for "there is nothing this page could send
 /// that would widen what happens" — and no undo route anywhere on this page once it lands.
-Live.deleteSchedule = function (id) {
+LocalClient.deleteSchedule = function (id) {
     return jsonFetch("/v1/orchestrator/schedules/" + encodeURIComponent(id),
                      { method: "DELETE", headers: { "Idempotency-Key": uuid() } });
 };
