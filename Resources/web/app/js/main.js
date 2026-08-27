@@ -10,7 +10,7 @@
 import { MOCK } from "./core/env.js";
 import "./core/esc.js";
 import { applyStrings } from "./core/i18n.js";
-import "./core/state.js";
+import { S } from "./core/state.js";
 import { els } from "./core/dom.js";
 import { clockOf } from "./core/util.js";
 import { drawIcon } from "./core/pixels.js";
@@ -29,11 +29,12 @@ import "./view/markdown.js";
 import "./view/composer.js";
 import { paintStatic } from "./view/static.js";
 import { Waits } from "./view/waits.js";
-import "./session/open.js";
+import { openSession } from "./session/open.js";
 import "./session/agent.js";
 import "./input/keys.js";
 import "./input/swipe.js";
-import "./input/detail-actions.js";
+import { SessionActions } from "./input/detail-actions.js";
+import { CoordinatorControls } from "./input/coordinator-actions.js";
 import "./input/user-messages.js";
 import "./input/git-panel.js";
 import "./input/shell-panel.js";
@@ -58,6 +59,21 @@ import "./input/edges.js";
 // The one thing that has to happen before anything on this page can call the API: which of the
 // two it is. `net/api.js` holds the name and knows about neither — see the note there.
 useApi(MOCK ? Mock : Live);
+
+// The controls module keeps its pure command selection importable without a browser. DOM and
+// the one route back to ordinary Session actions are supplied here, at the page boundary.
+CoordinatorControls.bind({
+    overlay: document.getElementById("coordinator-controls"),
+    sheet: document.getElementById("coordinator-controls-sheet"),
+    title: document.getElementById("coordinator-controls-title"),
+    body: document.getElementById("coordinator-controls-body"),
+    close: document.getElementById("coordinator-controls-close"),
+    context: function () { return { connected: S.conn === "live" }; },
+    onSessionActions: function (id) {
+        openSession(id);
+        setTimeout(function () { SessionActions.open(els["detail-focus"]); }, 0);
+    }
+});
 
 // The wordmark wears the project's own mark, drawn by the same code the rows use — it comes
 // from ~/.claude/project-icons.json in the app, and it is the one icon this page knows by heart.

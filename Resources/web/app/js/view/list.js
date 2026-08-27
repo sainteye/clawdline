@@ -17,6 +17,11 @@ import { openWanted, setWantedSession, wantedSession } from "../input/route.js";
 import { Start } from "../input/start.js";
 import { StatusLine } from "../input/status-line.js";
 import { Info } from "../input/info.js";
+import {
+    CoordinatorControls,
+    coordinatorRoute,
+    coordinatorRowModel
+} from "../input/coordinator-actions.js";
 
 /* ==========================================================================
    7. Render
@@ -357,16 +362,79 @@ function buildRow(s) {
         '<div class="state"></div>' +
         '<button class="swipe-end" type="button" hidden>' + esc(T.webEndSession) + '</button>';
     li.addEventListener("click", function () {
-        if (closingID === s.id) return;
-        openSession(s.id);
+        var current = li._session || s;
+        if (closingID === current.id) return;
+        if (coordinatorRoute(current, "row") === "session") openSession(current.id);
     });
     return li;
+}
+
+/**
+ * Upgrade only a coordinator's existing canvas into a real button. An ordinary row keeps the
+ * exact markup it had before this feature; if the optional record disappears, it gets that
+ * canvas back and the coordinator-only badge is removed.
+ */
+function fillCoordinatorMark(node, s) {
+    var model = coordinatorRowModel(s);
+    var button = node.querySelector(".coordinator-mark");
+    var mark = node.querySelector(".mark");
+    var badge = node.querySelector(".coordinator-chip");
+
+    if (!model) {
+        delete node.dataset.coordinator;
+        if (badge && badge.parentNode) badge.parentNode.removeChild(badge);
+        if (button && mark && button.parentNode) {
+            button.parentNode.replaceChild(mark, button);
+            button = null;
+        }
+        return mark;
+    }
+
+    node.dataset.coordinator = "1";
+    if (!button) {
+        // Every row currently has a canvas mark, but a future compact row must fail closed
+        // instead of throwing while trying to upgrade a shape it does not understand.
+        if (!mark || !mark.parentNode) {
+            delete node.dataset.coordinator;
+            return null;
+        }
+        button = document.createElement("button");
+        button.className = "coordinator-mark";
+        button.type = "button";
+        button.setAttribute("aria-controls", "coordinator-controls");
+        button.setAttribute("aria-expanded", "false");
+        mark.parentNode.replaceChild(button, mark);
+        button.appendChild(mark);
+        button.addEventListener("click", function (event) {
+            var current = node._session;
+            if (!current || closingID === current.id ||
+                coordinatorRoute(current, "mark") !== "controls") return;
+            event.preventDefault();
+            event.stopPropagation();
+            CoordinatorControls.open(current, button, { connected: S.conn === "live" });
+        });
+    }
+    button.setAttribute("aria-haspopup", model.mark.ariaHaspopup);
+    button.setAttribute("aria-label", model.mark.ariaLabel);
+    button.title = model.mark.ariaLabel;
+
+    if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "coordinator-chip";
+        var meta = node.querySelector(".meta");
+        var taskChip = meta.querySelector(".task-chip");
+        meta.insertBefore(badge, taskChip);
+    }
+    badge.textContent = model.badge;
+    badge.title = model.label;
+    return mark;
 }
 
 function fillRow(node, s) {
     var closing = closingID === s.id;
     var closingVisible = closing && Waits.end.visible;
     var pending = Optimistic.entries(s.id).length > 0;
+    node._session = s;
     node.dataset.id = s.id;
     node.dataset.state = s.state;
     if (closingVisible) node.dataset.closing = "1"; else delete node.dataset.closing;
@@ -380,8 +448,10 @@ function fillRow(node, s) {
     node.setAttribute("aria-selected", s.id === S.selectedId ? "true" : "false");
     node.setAttribute("aria-disabled", closing ? "true" : "false");
 
-    var mark = node.querySelector(".mark");
-    if (!drawIcon(mark, s.icon, 4)) mark.classList.add("none"); else mark.classList.remove("none");
+    var mark = fillCoordinatorMark(node, s);
+    if (mark) {
+        if (!drawIcon(mark, s.icon, 4)) mark.classList.add("none"); else mark.classList.remove("none");
+    }
 
     var title = node.querySelector(".title");
     title.querySelector(".label").textContent = s.label || s.tty || s.id;

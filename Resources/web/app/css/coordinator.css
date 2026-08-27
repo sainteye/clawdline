@@ -1,0 +1,126 @@
+/* ==========================================================================
+   Coordinator controls
+
+   A coordinator is still a session. Only its broker-authenticated optional record adds this
+   quiet badge and gives its project mark a second, explicit job; the rest of the row and the
+   ordinary Session actions stay independent.
+   ========================================================================== */
+
+.row .coordinator-mark {
+    position: relative;
+    grid-row: 1 / span 2;
+    align-self: center; justify-self: start;
+    display: flex; align-items: center; justify-content: center;
+    min-width: 28px; min-height: 28px; margin: -6px;
+    border: 1px solid transparent; border-radius: 8px;
+    color: inherit; background: transparent;
+}
+.row .coordinator-mark:hover { border-color: var(--peer-ed); background: var(--peer-in); }
+.row .coordinator-mark:focus-visible { outline: 2px solid var(--peer); outline-offset: 2px; }
+/* Keep the quiet 28px mark in the row grid while giving touch users a full thumb-sized target. */
+.row .coordinator-mark::before {
+    content: "";
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 44px; height: 44px;
+    transform: translate(-50%, -50%);
+}
+/* The wrapper owns the grid slot on coordinator rows; the canvas keeps only its drawing rules. */
+.row .coordinator-mark .mark { grid-row: auto; align-self: auto; justify-self: auto; }
+.row[data-coordinator="1"] .coordinator-mark .mark { opacity: 1; }
+.row .coordinator-chip {
+    flex: 0 0 auto; white-space: nowrap;
+    color: var(--peer); font: 10.5px/1 var(--mono);
+    padding: 2px 5px; border: 1px solid var(--peer-ed); border-radius: 5px;
+    background: var(--peer-in);
+}
+
+.coordinator-controls-sheet {
+    padding: 0; overflow: hidden; width: min(620px, 100%);
+    max-height: calc(var(--vvh) - 48px);
+    display: flex; flex-direction: column;
+}
+.coordinator-controls-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 12px;
+    padding: 15px 18px 13px; border-bottom: 1px solid var(--line);
+}
+.coordinator-controls-head h2 { min-width: 0; flex: 1 1 auto; margin: 0; }
+.coordinator-controls-head .chip { padding: 6px 10px; }
+.coordinator-controls-body {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    padding: 16px 18px 18px;
+}
+.coordinator-presence {
+    display: flex; align-items: center; gap: 7px;
+    margin: 0 0 14px; color: var(--dim); font: 11.5px/1.4 var(--mono);
+}
+.coordinator-presence-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--ok); opacity: 0.85;
+}
+.coordinator-presence[data-status="offline"] { color: var(--faint); }
+.coordinator-presence[data-status="offline"] .coordinator-presence-dot {
+    background: var(--faint); opacity: 1;
+}
+.coordinator-groups {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;
+}
+.coordinator-group { min-width: 0; }
+.coordinator-group h3 {
+    margin: 0 0 7px; color: var(--faint);
+    font: 600 10.5px/1.3 var(--mono); letter-spacing: 0.1em; text-transform: uppercase;
+}
+.coordinator-command {
+    display: block; width: 100%; min-height: 76px;
+    padding: 10px; margin: 0 0 7px;
+    border: 1px solid var(--line); border-radius: 9px;
+    color: var(--ink); background: #141418; text-align: left;
+}
+.coordinator-command:hover:not(:disabled),
+.coordinator-command:focus-visible { border-color: var(--peer-ed); background: var(--card-hi); }
+.coordinator-command:focus-visible { outline: 2px solid var(--peer); outline-offset: 2px; }
+.coordinator-command:disabled { cursor: default; opacity: 0.58; }
+.coordinator-command-head { display: flex; align-items: baseline; gap: 8px; }
+.coordinator-command-head b {
+    min-width: 0; flex: 1 1 auto; font-size: 12.5px; font-weight: 600; line-height: 1.35;
+}
+.coordinator-command-state {
+    flex: 0 0 auto; color: var(--dim); font: 10.5px/1 var(--mono);
+}
+.coordinator-command[data-state="draft"] .coordinator-command-state,
+.coordinator-command[data-state="preview"] .coordinator-command-state { color: var(--warn); }
+.coordinator-command[data-state="unavailable"] .coordinator-command-state,
+.coordinator-command[data-state="disabled"] .coordinator-command-state { color: var(--faint); }
+.coordinator-command-summary,
+.coordinator-command-effect,
+.coordinator-command-why { display: block; }
+.coordinator-command-summary {
+    margin-top: 5px; color: var(--dim); font-size: 11.5px; line-height: 1.45;
+}
+.coordinator-command-effect {
+    margin-top: 7px; color: var(--peer); font: 10.5px/1 var(--mono);
+}
+.coordinator-command[data-effect="read_only"] .coordinator-command-effect { color: var(--dim); }
+.coordinator-command[data-effect="advisory"] .coordinator-command-effect { color: var(--warn); }
+.coordinator-command[data-effect="spawns_session"] .coordinator-command-effect { color: var(--peer); }
+.coordinator-command[data-effect="mutation"] .coordinator-command-effect { color: #d88f7b; }
+.coordinator-command-why {
+    margin-top: 6px; color: #d8a585; font-size: 11px; line-height: 1.4;
+}
+.coordinator-empty { margin: 0; color: var(--faint); font-size: 12.5px; }
+.coordinator-preview {
+    margin-top: 14px; padding: 12px;
+    border: 1px solid var(--peer-ed); border-radius: 9px; background: var(--peer-in);
+}
+.coordinator-preview[hidden] { display: none; }
+.coordinator-preview:focus { outline: none; }
+.coordinator-preview h3 { margin: 0 0 6px; font-size: 12.5px; }
+.coordinator-preview p { margin: 0 0 6px; color: var(--dim); font-size: 11.5px; line-height: 1.45; }
+.coordinator-preview .coordinator-preview-note { color: var(--faint); }
+.coordinator-preview .chip { margin-top: 5px; padding: 6px 10px; }
+.coordinator-controls-body .coordinator-session-actions { margin-top: 16px; }
+
+@media (max-width: 619px) {
+    .coordinator-groups { grid-template-columns: 1fr; gap: 10px; }
+    .coordinator-controls-sheet { max-height: calc(var(--vvh) - 28px); }
+}

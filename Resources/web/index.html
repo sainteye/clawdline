@@ -125,6 +125,7 @@ document.documentElement.className = "booting";
 <link rel="stylesheet" href="/app/css/agents.css">
 <link rel="stylesheet" href="/app/css/status-line.css">
 <link rel="stylesheet" href="/app/css/sheets.css">
+<link rel="stylesheet" href="/app/css/coordinator.css">
 <link rel="stylesheet" href="/app/css/door.css">
 <link rel="stylesheet" href="/app/css/responsive.css">
 
@@ -540,6 +541,21 @@ document.documentElement.className = "booting";
             <button class="chip" id="info-refresh" type="button">Refresh</button>
             <button class="chip" id="info-close" type="button">Close</button>
         </div>
+    </div>
+</div>
+
+<!-- A coordinator is a broker-authenticated optional role on a session, not a session inferred
+     from its title or its task ancestry. Its project mark is the dedicated way into these
+     controls; the rest of the row still opens the ordinary session. Phase A renders the typed
+     command contract and preview gates only — no button here claims that a command ran. -->
+<div class="overlay" id="coordinator-controls" hidden>
+    <div class="sheet coordinator-controls-sheet" id="coordinator-controls-sheet" role="dialog"
+         aria-modal="true" aria-labelledby="coordinator-controls-title">
+        <div class="coordinator-controls-head">
+            <h2 id="coordinator-controls-title">Clawdfather Coordinator controls</h2>
+            <button class="chip" id="coordinator-controls-close" type="button">Close</button>
+        </div>
+        <div class="coordinator-controls-body" id="coordinator-controls-body"></div>
     </div>
 </div>
 

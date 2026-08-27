@@ -29,6 +29,7 @@ tools/build-compatibility.py --check
 # Keep the small browser-independent renderer contracts beside the Swift suite. The web app's
 # scoped package.json marks its shipped files as ESM, matching the browser's module entry.
 node Tests/web-schedules.mjs
+node Tests/web-coordinator.mjs
 
 BIN="${TMPDIR:-/tmp}/clawdline-tests"
 
