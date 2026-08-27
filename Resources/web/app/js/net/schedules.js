@@ -11,13 +11,83 @@ import { renderSchedules } from "../view/schedules.js";
 
 var started = false;
 var inFlight = false;
+var projectBySchedule = {};
+
+function projectLabel(path) {
+    var parts = String(path || "").replace(/\/+$/, "").split("/");
+    return parts[parts.length - 1] || path || "";
+}
+
+/** The list route deliberately carries no task-template fields. Read each valid row through the
+ *  existing detail route so the renderer can say where it will run without widening the ambient
+ *  list response. A missing/vanished detail is local to that row: the summary is still truthful
+ *  and must not disappear because one follow-up read lost a race with an edit or delete. */
+export function loadScheduleProjects(schedules, readSchedule, readPlaces) {
+    var list = schedules || [];
+    if (typeof readSchedule !== "function") return Promise.resolve(list);
+    var details = Promise.all(list.map(function (schedule) {
+        if (!schedule || !schedule.id || schedule.state === "invalid") {
+            return Promise.resolve(schedule);
+        }
+        return Promise.resolve().then(function () {
+            return readSchedule(schedule.id);
+        }).then(function (data) {
+            var task = data && data.schedule && data.schedule.task;
+            var project = task && task.project_dir;
+            return typeof project === "string" && project
+                ? Object.assign({}, schedule, { project_dir: project }) : schedule;
+        }).catch(function () { return schedule; });
+    }));
+    var places = typeof readPlaces === "function"
+        ? Promise.resolve().then(readPlaces).then(function (data) {
+            return (data && data.places) || [];
+        }).catch(function () { return []; })
+        : Promise.resolve([]);
+    return Promise.all([details, places]).then(function (answer) {
+        return answer[0].map(function (schedule) {
+            var path = schedule && schedule.project_dir;
+            if (!path) return schedule;
+            var place = answer[1].filter(function (candidate) {
+                return candidate && candidate.path === path;
+            })[0];
+            return Object.assign({}, schedule, { project: {
+                path: path,
+                label: (place && place.label) || projectLabel(path),
+                icon: (place && place.icon) || null
+            } });
+        });
+    });
+}
 
 function refresh() {
     if (inFlight || !S.arrived || S.locked || S.conn === "locked"
         || !api || typeof api.schedules !== "function") return;
     inFlight = true;
     api.schedules().then(function (data) {
-        renderSchedules((data && data.schedules) || [], data && data.at);
+        var schedules = (data && data.schedules) || [];
+        var at = data && data.at;
+        // Do not make the useful list wait for its supplementary labels. The second render changes
+        // only metadata after all detail reads have settled, successfully or otherwise. Keep the
+        // previous label during later minute refreshes so a stable row does not visibly blink.
+        renderSchedules(schedules.map(function (schedule) {
+            var project = schedule && projectBySchedule[schedule.id];
+            return project ? Object.assign({}, schedule, { project: project }) : schedule;
+        }), at);
+        return loadScheduleProjects(schedules,
+            typeof api.schedule === "function" ? api.schedule.bind(api) : null,
+            typeof api.places === "function" ? api.places.bind(api) : null)
+            .then(function (withProjects) {
+                withProjects.forEach(function (schedule) {
+                    if (schedule && schedule.id && schedule.project) {
+                        projectBySchedule[schedule.id] = schedule.project;
+                    }
+                });
+                renderSchedules(withProjects.map(function (schedule) {
+                    var project = schedule && projectBySchedule[schedule.id];
+                    return project && !schedule.project
+                        ? Object.assign({}, schedule, { project: project }) : schedule;
+                }), at);
+            });
     }).catch(function () {
         // Read-only and ambient: connection state already has a visible home in the header.
     }).then(function () { inFlight = false; });

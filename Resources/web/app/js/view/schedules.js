@@ -1,6 +1,8 @@
 import { esc } from "../core/esc.js";
 import { T } from "../core/i18n.js";
 import { S } from "../core/state.js";
+import { drawIcon } from "../core/pixels.js";
+import { tint } from "../core/util.js";
 
 var section = document.getElementById("schedules");
 var count = document.getElementById("schedules-count");
@@ -48,6 +50,14 @@ function validRow(schedule, at) {
             esc(new Date(schedule.last_missed_at * 1000).toLocaleString()) + '">' +
             esc(T.webScheduleMissed + " " + relativeTime(schedule.last_missed_at, at)) + '</time>'
         : "";
+    var projectData = schedule.project && typeof schedule.project === "object"
+        ? schedule.project : null;
+    var project = projectData
+        ? '<span class="schedule-project"><canvas class="schedule-project-mark" aria-hidden="true"></canvas>' +
+            '<span class="schedule-project-name" title="' + esc(projectData.path || "") + '">' +
+                esc(projectData.label || "") + '</span></span>' : "";
+    var projectSeparator = project && nextLine
+        ? '<span class="schedule-meta-sep" aria-hidden="true"> · </span>' : "";
     // A row opens the same sheet the `+` does, filled in — `input/schedule.js` owns the click,
     // reached through `data-id` rather than an import, so this file stays a renderer and does
     // not have to know a sheet exists at all. `role="button" tabindex="0"` is the ARIA
@@ -63,8 +73,9 @@ function validRow(schedule, at) {
             '<span class="schedule-title">' + esc(schedule.title || "Untitled schedule") + '</span></div>' +
         '<span class="schedule-result" data-state="' + esc(outcome.state) + '">' +
             esc(outcome.label) + '</span>' +
-        '<time class="schedule-next"' + (nextTitle ? ' title="' + esc(nextTitle) + '"' : '') + '>' +
-            esc(nextLine) + '</time>' + missed +
+        '<div class="schedule-meta">' + project + projectSeparator +
+            '<time class="schedule-next"' + (nextTitle ? ' title="' + esc(nextTitle) + '"' : '') + '>' +
+                esc(nextLine) + '</time></div>' + missed +
         '</li>';
 }
 
@@ -96,4 +107,18 @@ export function renderSchedules(schedules, at) {
         return schedule && schedule.state === "invalid"
             ? invalidRow(schedule) : validRow(schedule || {}, at);
     }).join("");
+    if (typeof rows.querySelectorAll !== "function") return;
+    var projects = {};
+    schedules.forEach(function (schedule) {
+        if (schedule && schedule.id && schedule.project) projects[schedule.id] = schedule.project;
+    });
+    var rendered = rows.querySelectorAll(".schedule-row[data-id]");
+    for (var i = 0; i < rendered.length; i++) {
+        var projectData = projects[rendered[i].dataset.id];
+        if (!projectData) continue;
+        var mark = rendered[i].querySelector(".schedule-project-mark");
+        if (mark && !drawIcon(mark, projectData.icon, 3)) mark.classList.add("none");
+        var name = rendered[i].querySelector(".schedule-project-name");
+        if (name) name.style.color = projectData.icon ? tint(projectData.icon.accent) : "";
+    }
 }

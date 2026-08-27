@@ -86,12 +86,36 @@
     color: var(--ink);
     font-size: 12.5px; font-weight: 500;
 }
-.schedule-next {
+.schedule-meta {
     grid-column: 1;
     padding-left: 15px;
+    min-width: 0;
+    display: flex; align-items: baseline;
     color: var(--faint);
     font: 10.5px/1.3 var(--mono);
 }
+.schedule-project {
+    min-width: 0;
+    display: inline-flex; align-items: center; gap: 5px;
+}
+.schedule-project-mark {
+    flex: 0 0 auto;
+    display: block;
+    image-rendering: pixelated;
+    opacity: 0.9;
+}
+.schedule-project-mark.none {
+    width: 18px; height: 10px;
+    border-radius: 2px;
+    background: #202028;
+}
+.schedule-project-name {
+    min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--dim);
+}
+.schedule-meta-sep { flex: 0 0 auto; }
+.schedule-next { flex: 0 0 auto; }
 .schedule-result {
     align-self: center;
     padding: 2px 6px;
@@ -128,5 +152,5 @@
     .schedules > summary { min-height: 40px; padding: 4px 12px; }
     .schedule-row { padding: 11px 12px; gap: 6px 10px; }
     .schedule-title { font-size: 13.5px; }
-    .schedule-next, .schedule-missed, .schedule-error { padding-left: 15px; font-size: 11px; }
+    .schedule-meta, .schedule-missed, .schedule-error { padding-left: 15px; font-size: 11px; }
 }
