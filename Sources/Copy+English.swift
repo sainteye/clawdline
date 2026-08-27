@@ -255,8 +255,8 @@ struct English: Copy {
     let webStateWorking = "working"
     let sessionWorkReady = "ready"
     let sessionWorkNeedsTriage = "status needs triage"
-    let sessionWorkMilestone = "Milestone delivered; review or landing may remain"
-    let sessionWorkComplete = "Broker-verified target landing"
+    let sessionWorkMilestone = "Delivered; awaiting approval"
+    let sessionWorkComplete = "Reviewed and approved"
 
     let webBack = "Sessions"
     let webBackLabel = "Back to the session list"

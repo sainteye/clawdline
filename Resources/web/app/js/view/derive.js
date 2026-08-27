@@ -10,6 +10,15 @@ var RANK = { waiting: 0, working: 1, idle: 2, unknown: 3 };
 
 function rankOf(s) { return RANK[s.state] == null ? 9 : RANK[s.state]; }
 
+function coordinatorSession(s) {
+    var value = s && s.coordinator;
+    return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+export function coordinatorFirst(a, b) {
+    return (coordinatorSession(a) ? 0 : 1) - (coordinatorSession(b) ? 0 : 1);
+}
+
 var SESSION_WORK_STATES = {
     ready: true, working: true, waiting_human: true, waiting_session: true,
     needs_triage: true, milestone_complete: true, work_complete: true
@@ -119,11 +128,13 @@ export function ordered() {
         hold.order.forEach(function (id, i) { at[id] = i; });
         return grouped(list.sort(function (a, b) {
             var ai = at[a.id] == null ? 1e9 : at[a.id], bi = at[b.id] == null ? 1e9 : at[b.id];
-            return (ai - bi) || (rankOf(a) - rankOf(b)) || (a.label || "").localeCompare(b.label || "");
+            return coordinatorFirst(a, b) || (ai - bi) || (rankOf(a) - rankOf(b))
+                || (a.label || "").localeCompare(b.label || "");
         }));
     }
     return grouped(list.sort(function (a, b) {
-        return (rankOf(a) - rankOf(b))
+        return coordinatorFirst(a, b)
+            || (rankOf(a) - rankOf(b))
             || (a.label || "").localeCompare(b.label || "")
             || (a.id < b.id ? -1 : 1);
     }));
@@ -180,6 +191,7 @@ export function taskOfChild(id) {
  * pointing off screen, because an indent is a claim about the row above and there isn't one.
  */
 export function rowDepth(id) {
+    if (coordinatorSession(byId(id))) return 0;
     var n = 0, at = id, seen = {};
     while (n < 2) {
         var t = taskOfChild(at);
@@ -223,13 +235,14 @@ function grouped(list) {
     if (!S.tasks.length || list.length < 2) return list;
 
     var childOf = {};                       // child row id → the root row it belongs under
-    var here = {};
-    list.forEach(function (s) { here[s.id] = true; });
+    var here = {}, sessionsByID = {};
+    list.forEach(function (s) { here[s.id] = true; sessionsByID[s.id] = s; });
     S.tasks.forEach(function (t) {
         if (!taskShaping(t) || !t.child || !t.root) return;
         var kid = t.child.terminalId, root = t.root.terminalId;
         if (!kid || !root || kid === root) return;
         if (!here[kid] || !here[root]) return;
+        if (coordinatorSession(sessionsByID[kid])) return;
         childOf[kid] = root;
     });
     // Two levels, the same floor the app dispatches to. A link that would put a row deeper than

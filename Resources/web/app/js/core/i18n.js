@@ -437,8 +437,8 @@ export var T = {
     sessionWaiting: "waiting for you",
     sessionWorkReady: "ready",
     sessionWorkNeedsTriage: "status needs triage",
-    sessionWorkMilestone: "Milestone delivered; review or landing may remain",
-    sessionWorkComplete: "Broker-verified target landing",
+    sessionWorkMilestone: "Delivered; awaiting approval",
+    sessionWorkComplete: "Reviewed and approved",
     // Two of them, because English counts. See `sessionShellOne` in `Sources/Strings.swift`.
     sessionShellOne: "1 shell running",
     sessionShellMany: "{n} shells running",

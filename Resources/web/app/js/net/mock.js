@@ -54,6 +54,21 @@ export var Mock = (function () {
                 result: "Depth is flat at 0 — nothing is backing up.",
                 tokens: 18420, tools: 5, seconds: 44.2 }
           ] },
+        // Deliberately second in source order: the authenticated optional role, not fixture
+        // placement or the word in its title, is what pins this row above every ordinary one.
+        { id: "CF00-01", backend: "iterm", tty: "ttys001",
+          label: "Clawdfather · machine coordinator", cwd: "/Users/x/code/clawdline",
+          state: "working", work_state: "working", line: "Watching Bearings…",
+          isClaude: false, assistant: "codex", sessionId: "clawdfather-mock", icon: clawdline,
+          coordinator: {
+              label: "Clawdfather", status: "online",
+              commands: [
+                  { type: "status_report", enabled: false,
+                    why: "Preview only in Phase A2: Bearings is read-only." },
+                  { type: "ask_coordinator", enabled: false,
+                    why: "Disabled in Phase A2: Clawdfather actions remain advisory." }
+              ]
+          } },
         // Waiting, **with the question in it**. This is what the phone could never see: the
         // options were parsed on the Mac and thrown away, so the box could only say "go and
         // find the Mac". The caret is on the second row, which is what a bare Return confirms.

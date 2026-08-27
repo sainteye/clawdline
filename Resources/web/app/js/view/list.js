@@ -379,6 +379,7 @@ function fillCoordinatorMark(node, s) {
     var button = node.querySelector(".coordinator-mark");
     var mark = node.querySelector(".mark");
     var badge = node.querySelector(".coordinator-chip");
+    var crown = node.querySelector(".clawdfather-crown");
 
     if (!model) {
         delete node.dataset.coordinator;
@@ -417,6 +418,13 @@ function fillCoordinatorMark(node, s) {
     button.setAttribute("aria-haspopup", model.mark.ariaHaspopup);
     button.setAttribute("aria-label", model.mark.ariaLabel);
     button.title = model.mark.ariaLabel;
+
+    if (!crown) {
+        crown = document.createElement("span");
+        crown.className = "clawdfather-crown";
+        crown.setAttribute("aria-hidden", "true");
+        button.appendChild(crown);
+    }
 
     if (!badge) {
         badge = document.createElement("span");
@@ -601,6 +609,14 @@ function fillRow(node, s) {
     // a partial/old frame fails closed to readable triage rather than leaving an ambiguous gap.
     var work = projectSessionWorkState(s);
     var workSaid = sessionWorkStateHTML(s);
+    // A receipt mark is fast to scan, but it cannot explain whether the child merely delivered
+    // its milestone or the root verified the target landing. Keep the mark's accessible label and
+    // follow it with the same localized receipt in visible text; aria-hidden avoids saying it twice.
+    if (work.state === "milestone_complete" || work.state === "work_complete") {
+        var workCopy = work.state === "work_complete" ? T.sessionWorkComplete : T.sessionWorkMilestone;
+        workSaid += '<span class="session-work-copy" data-work-state="' + work.state +
+            '" aria-hidden="true">' + esc(workCopy) + "</span>";
+    }
     var waitShape = waitingOn.map(function (wait) {
         return [wait.id || "wait", wait.ownerLabel || wait.ownerSessionId || "",
             wait.releaseCondition || ""].join(":");

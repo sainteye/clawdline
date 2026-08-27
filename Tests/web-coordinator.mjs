@@ -54,10 +54,10 @@ assert.equal(coordinatorRoute(coordinatorSession, "row"), "session",
     "the rest of a coordinator row still routes to its session");
 
 const row = coordinatorRowModel(coordinatorSession);
-assert.equal(row.badge, "Coordinator");
+assert.equal(row.badge, "Clawdfather");
 assert.equal(row.mark.role, "button");
 assert.equal(row.mark.ariaHaspopup, "dialog");
-assert.match(row.mark.ariaLabel, /Clawdfather.*Coordinator controls/i);
+assert.equal(row.mark.ariaLabel, "Open Clawdfather controls");
 
 const online = coordinatorGroups(coordinatorSession, { connected: true });
 assert.deepEqual(online.map((group) => group.id), [
@@ -109,7 +109,7 @@ const disconnected = coordinatorGroups(coordinatorSession, { connected: false })
 assert.equal(disconnected.find((action) => action.type === "status_report").state, "available");
 assert.equal(disconnected.find((action) => action.type === "coordinate_work").state, "draft");
 assert.match(coordinatorPanelHTML(coordinatorSession, { connected: false }),
-    /data-status="offline"[^>]*>.*Coordinator offline/s,
+    /data-status="offline"[^>]*>.*Clawdfather offline/s,
     "a dropped browser connection cannot leave the controls claiming the coordinator is online");
 
 const html = coordinatorPanelHTML(coordinatorSession, { connected: true });
@@ -122,12 +122,15 @@ assert.match(html, /data-effect="spawns_session"/);
 assert.match(html, /data-command="stop"[^>]*data-state="preview"/);
 assert.match(html, /Session actions/,
     "Coordinator controls keep an independent exit to ordinary Session actions");
+assert.doesNotMatch(html, />[^<]*Coordinator[^<]*</,
+    "user-facing controls consistently say Clawdfather");
 
 const index = await readFile(new URL("../Resources/web/index.html", import.meta.url), "utf8");
 assert.match(index,
     /id="coordinator-controls-sheet"[^>]*role="dialog"[^>]*aria-modal="true"[^>]*aria-labelledby="coordinator-controls-title"/,
     "the controls surface has an accessible dialog name and modality");
 assert.match(index, /id="coordinator-controls-close"[^>]*type="button"/);
+assert.match(index, /id="coordinator-controls-title">Clawdfather controls</);
 
 const listSource = await readFile(
     new URL("../Resources/web/app/js/view/list.js", import.meta.url), "utf8"
@@ -136,6 +139,26 @@ assert.match(listSource, /coordinatorRoute\([^,]+, "mark"\)/,
     "the logo click uses the tested route selector");
 assert.match(listSource, /stopPropagation\(\)/,
     "the logo click cannot bubble into the ordinary row route");
+assert.match(listSource, /className = "clawdfather-crown"/,
+    "the authenticated Clawdfather mark receives its crown");
+assert.match(listSource, /crown\.setAttribute\("aria-hidden", "true"\)/,
+    "the decorative crown does not duplicate the accessible Clawdfather label");
+
+const coordinatorCSS = await readFile(
+    new URL("../Resources/web/app/css/coordinator.css", import.meta.url), "utf8"
+);
+assert.match(coordinatorCSS,
+    /\.row \.clawdfather-crown\s*\{[^}]*position:\s*absolute[^}]*clip-path:/s,
+    "the crown is a deterministic overlay rather than part of the project icon bitmap");
+assert.match(coordinatorCSS,
+    /\.row \.clawdfather-crown\s*\{[^}]*transform:\s*rotate\(-30deg\)/s,
+    "the crown leans 30 degrees into the Clawdfather icon without looking loose");
+
+const deriveSource = await readFile(
+    new URL("../Resources/web/app/js/view/derive.js", import.meta.url), "utf8"
+);
+assert.match(deriveSource, /coordinatorFirst\(a, b\)/,
+    "the session ordering applies the authenticated Clawdfather pin");
 
 const controlsSource = await readFile(
     new URL("../Resources/web/app/js/input/coordinator-actions.js", import.meta.url), "utf8"

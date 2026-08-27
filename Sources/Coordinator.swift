@@ -363,7 +363,7 @@ enum Coordinator {
                         "landing_closure", "scope_permissions"].map {
             ["type": $0, "enabled": false, "why": previewReason] as [String: Any]
         }
-        let reason = "Disabled in Phase A2: reconnect is machine-token-only; other coordinator "
+        let reason = "Disabled in Phase A2: reconnect is machine-token-only; other Clawdfather "
             + "actions remain read-only and advisory."
         let closed = ["since_away", "coordinate_work", "dispatch_independent_work",
                       "ask_coordinator", "quiet_watch", "stop", "reconnect"].map {

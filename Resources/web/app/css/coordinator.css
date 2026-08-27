@@ -28,6 +28,14 @@
 /* The wrapper owns the grid slot on coordinator rows; the canvas keeps only its drawing rules. */
 .row .coordinator-mark .mark { grid-row: auto; align-self: auto; justify-self: auto; }
 .row[data-coordinator="1"] .coordinator-mark .mark { opacity: 1; }
+.row .clawdfather-crown {
+    position: absolute; top: -2px; left: -2px; z-index: 2;
+    width: 15px; height: 10px; pointer-events: none;
+    background: #f0c75e;
+    clip-path: polygon(0 18%, 27% 52%, 43% 0, 58% 52%, 100% 18%, 86% 100%, 14% 100%);
+    transform: rotate(-30deg); transform-origin: 50% 80%;
+    filter: drop-shadow(0 1px 0 rgba(80, 49, 10, 0.85));
+}
 .row .coordinator-chip {
     flex: 0 0 auto; white-space: nowrap;
     color: var(--peer); font: 10.5px/1 var(--mono);

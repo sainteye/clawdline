@@ -257,8 +257,8 @@ struct TraditionalChinese: Copy {
     let webStateWorking = "在跑"
     let sessionWorkReady = "可開始"
     let sessionWorkNeedsTriage = "狀態待分流"
-    let sessionWorkMilestone = "階段成果已交付；可能仍待審查或落地"
-    let sessionWorkComplete = "Broker 已驗證目標分支落地"
+    let sessionWorkMilestone = "已交付，等待驗收"
+    let sessionWorkComplete = "已驗收完成"
 
     let webBack = "清單"
     let webBackLabel = "回到 session 清單"
@@ -885,8 +885,8 @@ struct SimplifiedChinese: Copy {
     let webStateWorking = "在跑"
     let sessionWorkReady = "可开始"
     let sessionWorkNeedsTriage = "状态待分流"
-    let sessionWorkMilestone = "阶段成果已交付；可能仍待审查或落地"
-    let sessionWorkComplete = "Broker 已验证目标分支落地"
+    let sessionWorkMilestone = "已交付，等待验收"
+    let sessionWorkComplete = "已验收完成"
 
     let webBack = "列表"
     let webBackLabel = "回到 session 列表"
