@@ -2486,6 +2486,17 @@ final class RemoteServer {
         ]
     }
 
+    /// The assistant conversation id a public session row may expose.
+    ///
+    /// Split out from ``json(of:)`` so the identity source is a testable contract rather than a
+    /// field assignment hidden among presentation data. `processBound` is the identity proved by
+    /// the current process/transcript reader; `legacyHook` preserves the old source while the
+    /// contract test demonstrates why it is insufficient.
+    static func sessionIdentity(assistant: Assistant?, legacyHook: String?,
+                                processBound: String?) -> String? {
+        legacyHook
+    }
+
     /// The sessions a coordination wait can address, as the facts needed to address one and
     /// nothing else.
     ///
@@ -2622,7 +2633,12 @@ final class RemoteServer {
         let shells = watch.shells(of: session.id)
         if !shells.isEmpty { out["shells"] = shells.map { json(of: $0) } }
         if let cwd = Targets.workingDirectory(of: session) { out["cwd"] = cwd }
-        if let sessionID = HookBridge.note(for: session)?.session { out["sessionId"] = sessionID }
+        if let sessionID = Self.sessionIdentity(
+                assistant: session.assistant,
+                legacyHook: HookBridge.note(for: session)?.session,
+                processBound: Transcript.sessionID(of: session)) {
+            out["sessionId"] = sessionID
+        }
         if let grid = watch.grid(of: session.id) { out["icon"] = json(of: grid) }
         return out
     }

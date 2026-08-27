@@ -9838,6 +9838,44 @@ group("a child row resolves only to its current parent session") {
            publicRoot?["assistant"] as? String, "codex")
 }
 
+group("a public session id and task root use one process-bound identity") {
+    let staleHook = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    let currentRollout = "11111111-2222-4333-8444-555555555555"
+    let codex = TargetSession(backend: .iterm, id: "CODEX-TAB", name: "root",
+                              tty: "/dev/ttys7", windowIndex: 0, tabIndex: 0,
+                              assistant: .codex)
+
+    let exposed = RemoteServer.sessionIdentity(assistant: codex.assistant,
+                                                legacyHook: staleHook,
+                                                processBound: currentRollout)
+    expect("a Codex row exposes the rollout proved for its current process, not a tty's old hook",
+           exposed, currentRollout)
+
+    let task = Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
+                                 assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30,
+                                 created: Date(), rootSessionId: currentRollout,
+                                 rootAssistant: .codex,
+                                 secretHash: String(repeating: "0", count: 64))
+    expect("the public identity mounts a task carrying that same verified conversation",
+           Orchestrator.rootTerminalID(for: task, parentTerminalID: nil, among: [codex],
+                                       sessionID: { _ in exposed }), codex.id)
+
+    var staleTask = task
+    staleTask.rootSessionId = staleHook
+    check("the stale tty hook remains unable to mount a Codex task",
+          Orchestrator.rootTerminalID(for: staleTask, parentTerminalID: nil, among: [codex],
+                                      sessionID: { _ in currentRollout }) == nil)
+    check("a stale hook alone is not published as a Codex process identity",
+          RemoteServer.sessionIdentity(assistant: .codex, legacyHook: staleHook,
+                                       processBound: nil) == nil)
+    expect("a Claude row likewise prefers its process-validated registry or transcript identity",
+           RemoteServer.sessionIdentity(assistant: .claude, legacyHook: staleHook,
+                                        processBound: currentRollout), currentRollout)
+    check("an ordinary shell cannot inherit an old assistant hook",
+          RemoteServer.sessionIdentity(assistant: nil, legacyHook: staleHook,
+                                       processBound: currentRollout) == nil)
+}
+
 group("a task keeps its per-dispatch Codex reasoning effort") {
     var task = Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "reason",
                                  assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30,
