@@ -60,6 +60,63 @@ private struct VectorDocument: Encodable {
         }
     }
 
+    struct CanonicalBytes: Encodable {
+        let name: String
+        let body: String
+        let byteLength: Int
+        let sha256: String
+        let fieldCount: Int
+
+        enum CodingKeys: String, CodingKey {
+            case name, body, sha256
+            case byteLength = "byte_length"
+            case fieldCount = "field_count"
+        }
+    }
+
+    struct ReplyKey: Encodable {
+        let keyID: String
+        let key: String
+        let decodedByteLength: Int
+
+        enum CodingKeys: String, CodingKey {
+            case key
+            case keyID = "key_id"
+            case decodedByteLength = "decoded_byte_length"
+        }
+    }
+
+    struct OpenResult: Encodable {
+        let name: String
+        let keyID: String
+        let succeeds: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case name, succeeds
+            case keyID = "key_id"
+        }
+    }
+
+    struct ControlResponse: Encodable {
+        let channel: String
+        let allowedClasses: [String]
+        let replyKey: ReplyKey
+        let requestEnvelope: CanonicalBytes
+        let responseEnvelope: CanonicalBytes
+        let responsePayload: CanonicalBytes
+        let responseOpenResults: [OpenResult]
+
+        enum CodingKeys: String, CodingKey {
+            case channel
+            case allowedClasses = "allowed_classes"
+            case replyKey = "reply_key"
+            case requestEnvelope = "request_envelope"
+            case responseEnvelope = "response_envelope"
+            case responsePayload = "response_payload"
+            case responseOpenResults = "response_open_results"
+        }
+    }
+
     let format = 1
     let cipher = "AES-256-GCM"
     let nonceBytes = 12
@@ -68,9 +125,11 @@ private struct VectorDocument: Encodable {
     let masterSecret: String
     let envelopes: [Entry]
     let receipts: [Receipt]
+    let controlResponse: ControlResponse
 
     enum CodingKeys: String, CodingKey {
         case format, cipher, envelopes, receipts
+        case controlResponse = "control_response"
         case nonceBytes = "nonce_bytes"
         case ed25519Seed = "ed25519_seed"
         case ed25519PublicKey = "ed25519_public_key"
@@ -89,6 +148,7 @@ private enum GeneratorError: Error, CustomStringConvertible {
     case receiptMismatch(name: String, expectedLength: Int, actualLength: Int,
                          expectedSHA256: String, actualSHA256: String)
     case nodeSignature(String)
+    case controlResponseInvariant(String)
 
     var description: String {
         switch self {
@@ -99,6 +159,8 @@ private enum GeneratorError: Error, CustomStringConvertible {
                 + "actual_sha256=\(actualSHA256)"
         case let .nodeSignature(message):
             return "node_signature_failed \(message)"
+        case let .controlResponseInvariant(message):
+            return "control_response_vector_invariant \(message)"
         }
     }
 }
@@ -206,12 +268,109 @@ func generateProtocolVectorBytes() throws -> Data {
         )
     }
 
+    let replyKeyRaw = Data((0..<32).map { UInt8(0x40 + $0) })
+    let replyKeyID = "rk-zF3jN8rQ4Wm2pV6sT0uYxA"
+    let replyKeyPattern = try NSRegularExpression(pattern: #"^rk-[A-Za-z0-9_-]{22}$"#)
+    let replyKeyRange = NSRange(replyKeyID.startIndex..<replyKeyID.endIndex, in: replyKeyID)
+    guard replyKeyPattern.firstMatch(in: replyKeyID, range: replyKeyRange)?.range == replyKeyRange,
+          replyKeyRaw.count == 32
+    else {
+        throw GeneratorError.controlResponseInvariant("invalid_reply_key")
+    }
+
+    let requestPlaintext = Data((
+        #"{"deadline_at":1787817720000,"images":[],"reply":{"device":"viewer-device-01","key":""#
+            + replyKeyRaw.base64EncodedString()
+            + #"","key_id":"rk-zF3jN8rQ4Wm2pV6sT0uYxA"},"request_id":"018f2f7a-7d65-4aa8-8e01-11a8f4257ed1","session":"session-id","text":"hello","type":"send","v":1}"#
+    ).utf8)
+    let requestEnvelope = try makeEnvelope(
+        plaintext: requestPlaintext,
+        key: masterRaw,
+        seed: seed,
+        channel: "ctl/mac-01",
+        sequence: 411,
+        timestamp: timestamp,
+        envelopeClass: .ctl,
+        keyID: "ms-1",
+        fixedNonce: nonce(7),
+        sender: "viewer-device-01"
+    )
+
+    let responsePayload = Data(
+        #"{"code":"ok","completed_at":1787817600440,"request_id":"018f2f7a-7d65-4aa8-8e01-11a8f4257ed1","request_seq":411,"result":{"accepted":true},"retryable":false,"status":"ok","type":"execution_response","v":1}"#.utf8
+    )
+    let responseNonce = nonce(8)
+    let responseEnvelope = try makeEnvelope(
+        plaintext: responsePayload,
+        key: replyKeyRaw,
+        seed: seed,
+        channel: "ctlr/mac-01/viewer-device-01",
+        sequence: 912,
+        timestamp: timestamp + 456,
+        envelopeClass: .ctl,
+        keyID: replyKeyID,
+        fixedNonce: responseNonce,
+        sender: "mac-01"
+    )
+
+    let responseCiphertext = try decodeCanonicalBase64(responseEnvelope.ct, field: "response_ct")
+    let masterSecretOpenSucceeded: Bool
+    do {
+        _ = try openAESGCM(responseCiphertext, nonce: responseNonce, key: masterRaw)
+        masterSecretOpenSucceeded = true
+    } catch {
+        masterSecretOpenSucceeded = false
+    }
+    guard !masterSecretOpenSucceeded else {
+        throw GeneratorError.controlResponseInvariant("master_secret_opened_response")
+    }
+    let replyKeyOpened = try openAESGCM(
+        responseCiphertext, nonce: responseNonce, key: replyKeyRaw
+    )
+    guard replyKeyOpened == responsePayload else {
+        throw GeneratorError.controlResponseInvariant("reply_key_plaintext_mismatch")
+    }
+
+    let controlResponse = VectorDocument.ControlResponse(
+        channel: responseEnvelope.ch,
+        allowedClasses: [VectorEnvelopeClass.ctl.rawValue],
+        replyKey: VectorDocument.ReplyKey(
+            keyID: replyKeyID,
+            key: replyKeyRaw.base64EncodedString(),
+            decodedByteLength: replyKeyRaw.count
+        ),
+        requestEnvelope: try canonicalBytes(
+            name: "request-ams-envelope",
+            body: canonicalEnvelopeBody(requestEnvelope),
+            expectedFieldCount: 10
+        ),
+        responseEnvelope: try canonicalBytes(
+            name: "response-reply-key-envelope",
+            body: canonicalEnvelopeBody(responseEnvelope),
+            expectedFieldCount: 10
+        ),
+        responsePayload: try canonicalBytes(
+            name: "execution-response-payload",
+            body: String(decoding: responsePayload, as: UTF8.self),
+            expectedFieldCount: 9
+        ),
+        responseOpenResults: [
+            VectorDocument.OpenResult(
+                name: "response-with-master-secret", keyID: "ms-1", succeeds: false
+            ),
+            VectorDocument.OpenResult(
+                name: "response-with-reply-key", keyID: replyKeyID, succeeds: true
+            ),
+        ]
+    )
+
     let document = VectorDocument(
         ed25519Seed: seed.base64EncodedString(),
         ed25519PublicKey: signingKey.publicKey.rawRepresentation.base64EncodedString(),
         masterSecret: masterRaw.base64EncodedString(),
         envelopes: entries,
-        receipts: receipts
+        receipts: receipts,
+        controlResponse: controlResponse
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -226,6 +385,97 @@ private func nonce(_ lastByte: UInt8) -> Data {
 
 private func sha256(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+}
+
+private func makeEnvelope(
+    plaintext: Data,
+    key: Data,
+    seed: Data,
+    channel: String,
+    sequence: UInt64,
+    timestamp: UInt64,
+    envelopeClass: VectorEnvelopeClass,
+    keyID: String,
+    fixedNonce: Data,
+    sender: String
+) throws -> VectorEnvelope {
+    let sealed = try AES.GCM.seal(
+        plaintext,
+        using: SymmetricKey(data: key),
+        nonce: AES.GCM.Nonce(data: fixedNonce)
+    )
+    let unsigned = VectorEnvelope(
+        v: 1,
+        ch: channel,
+        seq: sequence,
+        ts: timestamp,
+        envelopeClass: envelopeClass,
+        keyID: keyID,
+        nonce: fixedNonce.base64EncodedString(),
+        ct: (sealed.ciphertext + sealed.tag).base64EncodedString(),
+        sender: sender,
+        sig: ""
+    )
+    let signature = try nodeEd25519Signature(seed: seed, message: unsigned.signingBytes)
+    return VectorEnvelope(
+        v: unsigned.v,
+        ch: unsigned.ch,
+        seq: unsigned.seq,
+        ts: unsigned.ts,
+        envelopeClass: unsigned.envelopeClass,
+        keyID: unsigned.keyID,
+        nonce: unsigned.nonce,
+        ct: unsigned.ct,
+        sender: unsigned.sender,
+        sig: signature.base64EncodedString()
+    )
+}
+
+private func canonicalEnvelopeBody(_ envelope: VectorEnvelope) throws -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    return String(decoding: try encoder.encode(envelope), as: UTF8.self)
+}
+
+private func canonicalBytes(
+    name: String,
+    body: String,
+    expectedFieldCount: Int
+) throws -> VectorDocument.CanonicalBytes {
+    let bytes = Data(body.utf8)
+    guard let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+          object.count == expectedFieldCount
+    else {
+        throw GeneratorError.controlResponseInvariant(
+            "field_count name=\(name) expected=\(expectedFieldCount)"
+        )
+    }
+    return VectorDocument.CanonicalBytes(
+        name: name,
+        body: body,
+        byteLength: bytes.count,
+        sha256: sha256(bytes),
+        fieldCount: object.count
+    )
+}
+
+private func decodeCanonicalBase64(_ text: String, field: String) throws -> Data {
+    guard let data = Data(base64Encoded: text), data.base64EncodedString() == text else {
+        throw GeneratorError.controlResponseInvariant("invalid_base64 field=\(field)")
+    }
+    return data
+}
+
+private func openAESGCM(_ ciphertextAndTag: Data, nonce: Data, key: Data) throws -> Data {
+    guard ciphertextAndTag.count > 16 else {
+        throw GeneratorError.controlResponseInvariant("ciphertext_too_short")
+    }
+    let box = try AES.GCM.SealedBox(
+        nonce: AES.GCM.Nonce(data: nonce),
+        ciphertext: Data(ciphertextAndTag.dropLast(16)),
+        tag: Data(ciphertextAndTag.suffix(16))
+    )
+    return try AES.GCM.open(box, using: SymmetricKey(data: key))
 }
 
 private func nodeEd25519Signature(seed: Data, message: Data) throws -> Data {

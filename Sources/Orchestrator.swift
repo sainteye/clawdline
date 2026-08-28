@@ -9479,10 +9479,20 @@ enum Orchestrator {
 
     // MARK: - What the API answers with
 
-    /// Every task, newest first, in the wire shape. Hops to the main thread for the live
+    private static let mainQueueKey: DispatchSpecificKey<Bool> = {
+        let key = DispatchSpecificKey<Bool>()
+        DispatchQueue.main.setSpecific(key: key, value: true)
+        return key
+    }()
+
+    static var isOnMainQueue: Bool {
+        DispatchQueue.getSpecific(key: mainQueueKey) == true
+    }
+
+    /// Every task, newest first, in the wire shape. Hops to the main queue for the live
     /// resolutions (which terminal is the root, right now) the way `session(withID:)` does.
     static func records() -> [[String: Any]] {
-        if !Thread.isMainThread { return DispatchQueue.main.sync { records() } }
+        if !isOnMainQueue { return DispatchQueue.main.sync { records() } }
         lock.lock()
         let all = tasks.values.sorted { $0.created > $1.created }
         lock.unlock()
@@ -9490,7 +9500,7 @@ enum Orchestrator {
     }
 
     static func record(id: String) -> [String: Any]? {
-        if !Thread.isMainThread { return DispatchQueue.main.sync { record(id: id) } }
+        if !isOnMainQueue { return DispatchQueue.main.sync { record(id: id) } }
         guard let task = held(id) else { return nil }
         return record(of: task)
     }
@@ -10895,7 +10905,7 @@ enum Orchestrator {
     }
 
     private static func target(withID id: String) -> TargetSession? {
-        if Thread.isMainThread { return SessionWatch.shared.targets.first { $0.id == id } }
+        if isOnMainQueue { return SessionWatch.shared.targets.first { $0.id == id } }
         return DispatchQueue.main.sync { SessionWatch.shared.targets.first { $0.id == id } }
     }
 
@@ -10946,7 +10956,7 @@ enum Orchestrator {
     }
 
     private static func rootTargets() -> [TargetSession] {
-        if Thread.isMainThread { return SessionWatch.shared.targets }
+        if isOnMainQueue { return SessionWatch.shared.targets }
         return DispatchQueue.main.sync { SessionWatch.shared.targets }
     }
 

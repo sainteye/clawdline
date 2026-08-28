@@ -90,7 +90,9 @@ trap 'rm -rf "$STORE"' EXIT
 #
 # Two other things were eating the output, and only one of them is this pipe's business:
 #
-#   * **stdout was block buffered** to 4096 bytes, and a trap does not flush it. That is fixed in
+#   * **stdout was block buffered** to 16384 bytes — `getconf PAGESIZE` here; 4096 is the Intel
+#     number and was wrong in the first version of this comment — and a trap does not flush it,
+#     so a crash could swallow two thirds of the suite's own output. That is fixed in
 #     `Tests/main.swift`, which now asks for line buffering; both forms lost those lines equally.
 #   * **The shell itself gets killed from outside** — an agent harness timeout, a cancelled CI job,
 #     Ctrl-C, the OOM killer. There is no `echo` in that story at all. Measured: killed at 0.45s,

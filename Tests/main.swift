@@ -44,13 +44,18 @@ runCoordinatorRegistrationWorkerIfRequested()
 
 // **Line buffering, so that where the output stops is where the suite stopped.**
 //
-// `print` to a pipe is 4096-byte block buffered, and a trap writes to stderr and dies without
-// flushing stdout — so up to a block of ticks that were genuinely printed never reach the log, and
-// the last line standing is some distance before the crash. On this machine that turned one
-// `exit 133` into days of argument about whether the truncation point named a test or a buffer.
-// It cost one line to end: with `_IOLBF` the last tick in the log is the last group that finished,
-// and the group after it in a green run of the same tree is the one that died. `group()` prints
-// after its body, so it is always that next one — not the name you can see.
+// `print` to a pipe is block buffered at `getconf PAGESIZE`, which is **16384** here — 4096 is the
+// Intel number, and this comment said 4096 until it was measured — and a trap writes to stderr and
+// dies without flushing stdout. So a block of ticks that were genuinely printed never reaches the
+// log, and the last line standing is a long way before the crash: 16384 bytes is about 269 of this
+// suite's group lines against the 395 it prints, two thirds of the run.
+//
+// That is what made a whole day of reasoning from truncation points worthless — the window was
+// always wider than the distance anybody was arguing about. With `_IOLBF` the last tick in the log
+// is the last group that finished, and since `group()` prints after its body, the group after it
+// is the one that died. When one crashes anyway, the located answer is not in the log at all:
+// `ls -t ~/Library/Logs/DiagnosticReports/ | grep clawdline-tests` has the faulting thread and the
+// backtrace, and has had all along.
 setvbuf(stdout, nil, _IOLBF, 0)
 
 // Do this in the test binary itself, not only in `test.sh`. Contributors sometimes run the
@@ -23267,6 +23272,22 @@ group("a settings tab taller than the screen is capped, and the overflow goes to
           squeezed.viewport == 0, "got \(squeezed.viewport)")
 }
 
+func mainQueueIdentityProbe() async
+    -> (isMainThread: Bool, isOnMainQueue: Bool, recordsReturned: Bool, missingRecord: Bool) {
+    await withCheckedContinuation { continuation in
+        Thread.detachNewThread {
+            Thread.sleep(forTimeInterval: 0.25)
+            DispatchQueue.main.async {
+                _ = Orchestrator.records()
+                let missing = Orchestrator.record(id: "00000000-0000-4000-8000-000000000000")
+                continuation.resume(returning: (
+                    Thread.isMainThread, Orchestrator.isOnMainQueue, true, missing == nil
+                ))
+            }
+        }
+    }
+}
+
 // MARK: - Schedule session resume
 
 checks += 1
@@ -23337,6 +23358,16 @@ Thread.detachNewThread {
 }
 
 Task {
+    let mainQueueIdentity = await mainQueueIdentityProbe()
+    check("dispatchMain drains a delayed main-queue block off the main thread",
+          !mainQueueIdentity.isMainThread)
+    check("the delayed block still identifies itself as running on the main queue",
+          mainQueueIdentity.isOnMainQueue)
+    check("records returns without synchronously dispatching onto its current queue",
+          mainQueueIdentity.recordsReturned)
+    check("record(id:) returns without synchronously dispatching onto its current queue",
+          mainQueueIdentity.missingRecord)
+
     checks += 1
     do {
         let cloudChecks = try await runCloudTransportTests()
