@@ -277,7 +277,7 @@ items:
     title: Dispatch depth is the last consumer that trusts an unproven identity
     problem: >-
       Every other consumer of a child's session id now requires the identity to have been proved
-      against the task's own briefing marker — token accounting, grandchild matching and
+      against the task's own briefing marker — token accounting, parent-task matching and
       cancellation all check. `depthOfNew` does not. It is the last unproven entry, and it is
       left because its error is in the safe direction: a wrong answer makes a new task deeper
       than it should be, and the depth ceiling refuses rather than permits.

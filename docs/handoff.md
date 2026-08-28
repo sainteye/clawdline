@@ -357,8 +357,8 @@ arrangement rather than negotiating with it: the credential, the ladder, the rat
 
 It shares the dispatch rate limiter — **ten in ten minutes, or one full tree's worth if that is
 more**, exactly as [the dispatch brake](orchestrator.md#caps) is — because a loop that opens tabs is
-the same loop whichever route it calls. It spends no child, grandchild or descendant capacity,
-because it creates none of those things. **A refused handoff still spends its
+the same loop whichever route it calls. It spends no child or machine-wide descendant capacity,
+because it creates neither of those things. **A refused handoff still spends its
 ticket**, the way a dispatch refused for a bad `task.json` does: the brake counts calls that reached
 the machinery, not sessions that came out of it, and the failing call in a loop is exactly the one
 worth counting. The same switch governs both, too — `orchestrator_enabled` off refuses this route,
