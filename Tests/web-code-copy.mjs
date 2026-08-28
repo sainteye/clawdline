@@ -58,6 +58,12 @@ function count(html, needle) {
     return html.split(needle).length - 1;
 }
 
+/** Node ships a read-only `navigator` of its own, so the browser's has to be installed over
+ *  it rather than assigned to it. */
+function browserNavigator(value) {
+    Object.defineProperty(globalThis, "navigator", { value: value, configurable: true });
+}
+
 /* ---- what goes to the clipboard ------------------------------------------ */
 
 const command = "curl -s \"http://127.0.0.1:7717/v1/health\" | jq '.ok & .state' > /tmp/a<b>.txt";
@@ -123,19 +129,19 @@ assert.ok(html.includes("<svg"), "the mark is drawn, not typed: a phone font nee
 /* ---- pressing it ---------------------------------------------------------- */
 
 const written = [];
-globalThis.navigator = {
+browserNavigator({
     clipboard: {
         writeText: function (text) { written.push(text); return Promise.resolve(); }
     }
-};
+});
 await copyCodeBlock(source);
 assert.deepEqual(written, [source], "the press writes the block, unescaped, once");
 assert.equal(els.toast.textContent, T.webCodeCopied, "and says so");
 assert.equal(els.toast.className, "toast");
 
-globalThis.navigator = {
+browserNavigator({
     clipboard: { writeText: function () { return Promise.reject(new Error("denied")); } }
-};
+});
 els.toast.textContent = "";
 await copyCodeBlock(source);
 assert.equal(els.toast.textContent, T.webCodeCopyFailed, "a rejected write is not silent");
@@ -143,7 +149,7 @@ assert.equal(els.toast.className, "toast err", "and is not dressed as a success"
 
 // A page served over plain http — which is how this one is read on a home network — has no
 // clipboard object at all. The info card returns silently there; this button must not.
-globalThis.navigator = {};
+browserNavigator({});
 els.toast.textContent = "";
 await copyCodeBlock(source);
 assert.equal(els.toast.textContent, T.webCodeCopyFailed, "a browser with no clipboard says so too");

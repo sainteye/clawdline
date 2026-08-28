@@ -8,7 +8,7 @@ import { ASK_MARK, clockOf, shortPath, tint } from "../core/util.js";
 import { assistantLogo, assistantName, drawIcon, drawSpinner, optimisticSpinners, setOptimisticSpinners, spinPhase } from "../core/pixels.js";
 import { byId, taskOfChild, taskWord } from "./derive.js";
 import { closingID } from "./list.js";
-import { inlineMd, richText } from "./markdown.js";
+import { copyCodeBlock, inlineMd, richText } from "./markdown.js";
 import { Optimistic, Waits, listUnknown, txSkeleton } from "./waits.js";
 import { agentTokens } from "../session/agent.js";
 import { SessionActions } from "../input/detail-actions.js";
@@ -446,13 +446,18 @@ function toggleFold(key) {
 }
 
 els.tx.addEventListener("click", function (ev) {
+    var copy = ev.target.closest ? ev.target.closest("button.codecopy") : null;
+    if (copy) { copyCodeBlock(copy.getAttribute("data-code-copy")); return; }
     var handle = ev.target.closest ? ev.target.closest("[data-fold]") : null;
     if (handle) toggleFold(handle.getAttribute("data-fold"));
 });
 
 els.tx.addEventListener("keydown", function (ev) {
     if (ev.key !== "Enter" && ev.key !== " ") return;
-    if (!ev.target.closest || !ev.target.closest("[data-fold]")) return;
+    // The copy button is here for the same reason a fold is: it is a real button, so the key
+    // is already its own — but only if the page's one keyboard handler never sees the press.
+    if (!ev.target.closest) return;
+    if (!ev.target.closest("[data-fold]") && !ev.target.closest("button.codecopy")) return;
     // Return means "open the selected session" everywhere else on this page, and the handler
     // that does it calls preventDefault — which would stop the button ever seeing the click the
     // browser was about to make out of this key. While a fold has the focus, the key is its own.

@@ -176,10 +176,53 @@
 }
 .entry .body pre.code {
     font-family: var(--mono); font-size: 12px; line-height: 1.5;
-    background: #0b0b0e; border: 1px solid var(--line); border-radius: 8px;
+    background-color: #0b0b0e; border: 1px solid var(--line); border-radius: 8px;
     padding: 9px 11px; margin: 6px 0;
     overflow-x: auto; color: #cfcdc8;
+    /* "There is more of this line to the right." Two pairs of gradients: the fixed pair draws a
+       shade at each edge, and the pair that scrolls with the content (`local`) covers it once
+       that end is reached. No script and no scroll listener — the browser already knows where
+       the content is, and this is how you ask it. A line cut off at the container's edge with
+       nothing to say so is what sent somebody looking for a copy button in the first place. */
+    background-image:
+        linear-gradient(to right, #0b0b0e, rgba(11, 11, 14, 0)),
+        linear-gradient(to left, #0b0b0e, rgba(11, 11, 14, 0)),
+        linear-gradient(to right, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0)),
+        linear-gradient(to left, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0));
+    background-position: 0 0, 100% 0, 0 0, 100% 0;
+    background-repeat: no-repeat;
+    background-size: 20px 100%, 20px 100%, 11px 100%, 11px 100%;
+    background-attachment: local, local, scroll, scroll;
 }
+/* A fenced block and the button that copies it.
+   The button is positioned against the wrapper rather than the `<pre>`, so it stays in the
+   corner while the code scrolls underneath it, and it is out of flow, so the block is exactly
+   as wide as it was before the button existed. What keeps it off the text is the `<pre>`'s own
+   right padding: that gutter is part of the scrollable area, so there is nothing underneath the
+   button at any scroll offset — including the far right, where the last character stops short
+   of it rather than sliding under it. */
+.entry .body .codeblock { position: relative; }
+.entry .body .codeblock > pre.code { padding-right: 42px; }
+.entry .body .codecopy {
+    position: absolute; top: 5px; right: 5px;
+    display: flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; padding: 0;
+    border: 1px solid var(--line); border-radius: 7px;
+    background: #15151b; color: var(--faint);
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+/* Never hover-gated, for the reason the info card's copy button is not: this page is mostly read
+   on a phone, where a control that appears on hover is a control that does not appear. The
+   button stays small enough not to loom over a one-line block, and grows an invisible 44px
+   target around itself for the thumb that is actually pressing it. */
+.entry .body .codecopy::after { content: ""; position: absolute; inset: -7px; }
+.entry .body .codecopy svg {
+    width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4;
+}
+.entry .body .codecopy:hover, .entry .body .codecopy:focus-visible {
+    color: var(--accent); border-color: var(--accent-ed);
+}
+.entry .body .codecopy:active { transform: scale(0.92); }
 /* Everything else Markdown.swift knows how to draw, drawn here too. The bar and this page read
    the same documents, and a heading that is a heading on the Mac and a line of hashes in a browser
    is one of them getting it wrong. */
