@@ -6564,21 +6564,6 @@ enum Orchestrator {
         return closingTasks.count
     }
 
-    /// Clear the linger from the record nominated by a close walk.
-    ///
-    /// Kept separate from terminal I/O so the record transition can be exercised without a live
-    /// terminal. The snapshot is deliberately accepted here: the focused concurrency test makes
-    /// a reclaim settle one of its deadlines between the snapshot and this write.
-    @discardableResult
-    static func settleChildLinger(_ snapshot: Task) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        guard var current = tasks[snapshot.id], current.state == snapshot.state,
-              current.closeAt == snapshot.closeAt else { return false }
-        current.closeAt = nil
-        tasks[snapshot.id] = current
-        return true
-    }
-
     /// Take a child's tab away: the quit word first when there is an assistant in there to hear
     /// it, otherwise the tab on its own.
     ///

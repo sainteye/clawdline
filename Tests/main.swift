@@ -2193,7 +2193,12 @@ group("safe close consumes a fresh exact-tty observation and fails closed") {
     }
     ITerm.ttyAssistantObservationForTesting = { tty in
         observedTTYs.append(tty)
-        return readings.removeFirst()
+        // A scripted reading per decision. Running out means production asked more often than
+        // this scenario allows, which is a failed assertion below — not a crashed suite, which
+        // is what it was, and which hides every check after it.
+        return readings.isEmpty
+            ? ITerm.TTYAssistantObservation(running: nil, error: "no reading was scripted")
+            : readings.removeFirst()
     }
     Targets.terminalCloseForTesting = { _ in closes += 1; return nil }
 
@@ -2210,6 +2215,10 @@ group("safe close consumes a fresh exact-tty observation and fails closed") {
     incomplete.sessions = [session]
     incomplete.isComplete = false
     incomplete.error = "inventory failed"
+    // The scripted reading below positively proves the assistant gone, so the inventory gate is
+    // the only thing left that can refuse. Without it the check passed on the exact-tty guard
+    // behind it, and the gate could be deleted with every check in this file still green.
+    readings = [ITerm.TTYAssistantObservation(running: nil, error: nil)]
     Targets.safeCloseInventoryForTesting = { incomplete }
     check("an explicit close refuses an incomplete fresh terminal inventory",
           Targets.closeIfAssistantGone(session) != nil)
