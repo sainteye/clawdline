@@ -321,6 +321,7 @@ holds a secret: not the orchestrator token, and not the task secret.
   "plan": "root → 3 searchers (haiku) → this one joins them up (opus) → report.md",
   "claims": ["Sources/Orchestrator.swift", "docs"],
   "serialize": ["build"],
+  "attach_session": "B6ADA755-5815-4008-8287-85ED28EFE4F4",
   "timeout_minutes": 30,
   "created_at": "2026-08-24T10:14:02Z",
   "root": {
@@ -355,6 +356,7 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `serialize` | optional array of 0…4 unique operation names. Each uses the `model` token rule: 1…64 characters from `[a-z0-9._-]`, not starting with `-` |
 | `isolation` | optional `none` or `worktree`; absent is `none`. Unknown values are refused, never downgraded |
 | `isolation_base` | optional Git revision, legal only with `isolation: "worktree"`; 1…200 characters from letters, digits, `._/-~`, not starting with `-` and not containing `..`. Absent means `HEAD`; it must resolve to a commit |
+| `attach_session` | optional terminal-neutral Session id of a standing session Clawdline opened with launch-time access to the whole task root. When present, deliver this complete task into that existing assistant session without opening a tab. A user-opened session or a Clawdline leaf launched with access only to its original task directory is `409 attach_not_managed` |
 | `project_dir` | absolute, exists, and is a directory — checked at dispatch, not at planning time |
 | `title` | ≤ 200 characters |
 | `instructions` | non-empty, ≤ 16 KiB |
@@ -435,6 +437,71 @@ owns that task-to-terminal link; it also works before either assistant's transcr
 observable. Naming it is what gets a task filed under its actual parent on the first try instead
 of being counted as a root's. Getting it wrong costs capacity and never buys any — [the two names
 are combined by taking the deeper answer](#depth-stops-at-two-and-the-floor-is-what-has-teeth).
+
+### Attached follow-up tasks
+
+`attach_session` turns dispatch into a complete follow-up assignment for a standing assistant
+session. The task still has a fresh id and secret, its own task directory and `CHILD.md`, claims,
+serialize tokens, timeout, usage, result signal, landing record and inflight visibility. The only
+difference is that Clawdline types the ordinary first line into the named existing session instead
+of opening a terminal tab. The public task record carries `attached: true` and `attachSession`.
+
+**The session needs a recorded task role and the right launch-time grant.** Clawdline gives the
+whole `/tmp/.clawdline` task root only to a child that may dispatch; a leaf gets only
+`/tmp/.clawdline/<its-original-task-id>`. The latter cannot read a new follow-up's sibling
+`CHILD.md`, even though Clawdline opened its tab. A user-opened assistant likewise has no recorded
+task-root grant. Because `--add-dir` cannot be added to a running process, either shape is
+`409 attach_not_managed`, refused before anything is typed. The registry persists the actual grant
+used at launch rather than inferring it from depth, since dispatch settings may change while a tab
+remains standing.
+
+The id is resolved against every terminal session Clawdline can see, which is wider than the
+assistant-only rows `GET /v1/orchestrator/sessions` publishes — a plain shell resolves and is then
+refused by name rather than reported missing. A shell is unsupported, the resident assistant must
+match the task's assistant, and **one session runs at most one live Clawdline task**. That
+single-flight population excludes the task being resolved for, so a serialized attached task —
+registered while it queues, resolved again when the pump promotes it — does not read its own
+reservation as somebody else's. The single-flight check is repeated under the registration lock,
+so two concurrent requests cannot both pass a stale inventory. A cached `waiting` state triggers
+the same narrow `Targets.isChoosing` screen proof as
+coordination-wait delivery; a confirmed menu refuses the dispatch before any line is typed or task
+record is created.
+
+An attached task keeps the standing session's existing depth — the depth of the task that session
+was opened for. Acceptance depends on the persisted task-root grant, not that number: a leaf that
+was launched with only its own task directory is refused. It opens no tab and therefore spends no
+child, grandchild, or machine tab-opening capacity, although it remains a live task, passes through
+the dispatch rate limiter and quota gate, and holds its ordinary claims and serialize reservations.
+If terminal delivery itself fails, the registered task finalizes as `spawn_failed` and the request
+returns `502 attach_delivery_failed`.
+
+The task does not own the tab. Success, failure, timeout, cancellation, root-close cascade and any
+`orchestrator_child_linger` value leave the standing session open. Its briefing says that writing
+`result.json` completes this task but does not end the session, which can then receive a later
+complete follow-up assignment. It also does not own the session's *name*: an attached task
+publishes a live role on that session while it runs, so `GET /v1/orchestrator/sessions` shows the
+`taskId`, but it never renames the session. When it ends, the role and title of the earlier task
+that opened this standing child session are visible again.
+
+**Clawdline never answers a menu on a session it did not open.** On a fresh tab there is one menu
+to answer — the trusted-folder dialog — and the root answered it by asking for work in that
+directory, so the first row is taken once and audited. An attached task did not open its standing
+child session, and a menu there can be a permission prompt, a plan approval or an overwrite
+confirmation from the work already resident in that tab. Those are left standing and audited as
+`orchestrator.menu.left`; once that first decision is recorded, an unchanged menu does not rewrite
+the registry or broadcast every five seconds.
+
+**An attachable standing session already has `/tmp/.clawdline` access.** Clawdline records whether
+that exact add-dir grant was used when the process launched. A user-opened assistant and a
+Clawdline-opened leaf that received only its own task directory are both refused as
+`409 attach_not_managed` before anything is typed; `--add-dir` cannot be added afterwards.
+
+The four-minute `readyLimit` applies only to a new tab that never reaches a prompt. An attached
+task's first line was already typed by `spawnAttached`, so waiting longer for the standing
+session's owner to answer a menu does not relabel delivered work as `spawn_failed`. The wait is
+nevertheless bounded: before transcript acceptance, its ordinary `timeout_minutes` runs from that
+delivery. Expiry finalizes the task as `timeout`, releases claims and serialize tokens, and returns
+the standing session to its earlier role.
 
 For `worktree`, the broker resolves the base to a commit SHA and records that immutable value.
 Branch names and `HEAD` can move while other sessions commit; the SHA is the receipt for what the
@@ -753,6 +820,7 @@ honestly, and explains that the user disabled agent notifications.
   "summary": "Wrote a 1024×1024 SVG portrait; border and lettering hand-pathed, no raster.",
   "symbols": [],
   "artifacts": ["artifacts/project-portrait.svg"],
+  "verification": {"runs": 2, "seconds": 940, "last": "pass", "scope": "swift suite + web-schedules"},
   "finished_at": "2026-08-24T10:41:55Z"
 }
 ```
@@ -763,6 +831,14 @@ compares against what it stored at dispatch in constant time. A file whose secre
 **ignored** and logged once: a wrong secret in a task directory is either a bug or somebody
 poking, and neither is a reason to finalize somebody's task.
 
+`verification` is optional metadata about the proof the child actually ran. `runs` and `seconds`
+are non-negative integers, `last` is `pass`, `fail`, or `skipped`, and `scope` is a short free-text
+description. A well-formed object is stored on the task record. Older results without it work
+unchanged, and a malformed object is ignored rather than turning an otherwise authenticated
+success into failure. The briefing gives verification one third of `timeout_minutes` or three
+full-suite runs, whichever arrives first, while still requiring one relevant compile-and-test pass
+and red-before-green for every new test.
+
 `symbols` names every identifier the child's change introduced: new functions and types, new
 fields, new string keys, the names of test groups it added. Names, not descriptions — the portrait
 above introduced none, and `[]` says that positively where an absent field only says the child did
@@ -772,8 +848,8 @@ because a shared working tree makes authorship unreadable from the diff alone �
 comes to commit, the files a child edited may hold two or three sessions' unfinished work, and
 vocabulary is the only reliable way to tell one session's hunks from another's. Guessing it has
 produced staged trees that would not compile, which is the failure the field is there to prevent.
-The child's briefing asks for it; **the broker does not**. `readResult` takes `status`, `summary`
-and `artifacts` and ignores every other key, so `symbols` never appears on a task record, in a
+The child's briefing asks for it; **the broker does not**. `readResult` takes `status`, `summary`,
+`artifacts` and the optional `verification` object and ignores every other key, so `symbols` never appears on a task record, in a
 notification, or in any API answer — it is written for whichever root opens the file, and root has
 to open the file to get it.
 
@@ -1062,10 +1138,30 @@ unreadable registry are different values in the type system.
 
 This phase does not quarantine, purge, delete, or expose a mutating storage route. The collector is
 a separate, default-off phase. Children are also told to put repo copies, build output, mutation
-worktrees and compiler indexes in their own `/tmp/.clawdline/<task-id>/work/` directory so those
-large temporary files live inside storage Clawdline already owns. The existing 24-hour task-root
-cleanup now exempts `landing.state == pending`, because a root that has not landed may still need
-the child's receipts.
+worktrees and compiler indexes in their own `/tmp/.clawdline/<task-id>/work/` directory. That
+directory is reclaimed as part of task finalization: immediately for `success`, and after
+`orchestrator_work_grace_minutes` for every other terminal state. The setting defaults to 60
+minutes, accepts `0` for immediate reclaim and `-1` to leave `work/` to the ordinary 24-hour sweep.
+A child copies any diagnostic log or diff worth keeping to `artifacts/` before it writes
+`result.json`. The existing 24-hour task-root cleanup exempts `landing.state == pending`, because a
+root that has not landed may still need the child's receipts.
+
+Immediate cleanup happens inside `finalize`: success always goes immediately, and zero grace
+reclaims every terminal outcome inside `finalize`. With a positive grace, other endings carry the
+registry-internal `work_cleanup_at` deadline to the five-second beat, which advances a terminal
+task for exactly as long as it still owes one of these directories.
+
+**An isolated checkout's build output is reclaimed the same way, on its own deadline.**
+`orchestrator_build_grace_minutes` is shaped exactly like the `work/` setting — default 60, range
+`-1…1440`, `0` immediate, `-1` deferred — and it names `<worktree.cwd>/.build`, recorded as
+`build_cleanup_at`. It is set only for a task that has a worktree of its own: a task working in a
+shared tree must never be handed the `.build` of the checkout somebody else is using. It waits for
+neither the 24-hour cutoff nor whole-worktree disposal, and a **pending landing does not exempt
+it** — that was the gap this closed. Disposing a checkout requires `landing.state != pending`, so
+five open landings on this machine were holding 814 MB of object files that no landing has ever
+needed: what a landing needs is the source and the delivery branch, and both are left untouched.
+Removal is `.build` and nothing else; a directory already absent settles the deadline, a refusal
+keeps it for the next beat.
 
 ### File release waits belong to Clawdline
 
@@ -1520,6 +1616,11 @@ ago are removed; terminal handoff envelopes and packages are removed 24 hours af
 time. The registry keeps its most recent 200 task records. **Artifacts are in `/tmp` and
 they are not yours to keep** — if a child produced something worth having, copy it out. The
 directory going away after a day is the same promise `/tmp` always made, made explicitly.
+
+Heavyweight `work/` storage has a shorter, separate life. It is removed during a successful
+finalize, or when the non-success grace deadline expires; `artifacts/`, `task.json`, `CHILD.md` and
+`result.json` remain untouched until the whole task-root sweep above. Reclaiming a missing `work/`
+is success, and a filesystem refusal never delays or reverses the terminal task state.
 
 Worktrees follow a separate, fail-safe policy: an empty clean checkout whose `HEAD` remains on its
 task branch is removed with that empty branch when the child tab closes; after 24 hours a clean

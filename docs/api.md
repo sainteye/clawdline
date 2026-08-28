@@ -1165,9 +1165,11 @@ order:
 
 ### `POST /v1/orchestrator/tasks`
 
-**Dispatch.** One session asks for a task to be run by another one: Clawdline opens a terminal tab
-in the task's directory, starts the assistant the task named, types a first message into it, and
-watches for the answer. The concept, the trust model and the file formats are
+**Dispatch.** One session asks for a task to be run by another one: normally Clawdline opens a
+terminal tab in the task's directory, starts the assistant the task named, types a first message
+into it, and watches for the answer. Optional `task.json` field `attach_session` instead names an
+existing assistant Session from `GET /v1/orchestrator/sessions`; the same complete task is typed
+there without opening a tab. The concept, the trust model and the file formats are
 [`docs/orchestrator.md`](orchestrator.md); what follows is the request.
 
 The body is two fields and neither of them is the work:
@@ -1209,11 +1211,19 @@ already carried by `task_id`, which is the caller's own identifier for the work 
 per-attempt header. Send the same `task_id` twice and the second call answers `200` with the
 existing record, having opened nothing.
 
-Nine refusals, and a client should branch on all of them:
+Attached follow-ups add seven typed refusals, checked in the order they are listed; a client should
+branch on every applicable code:
 
 | `code` | status | |
 |---|---|---|
 | `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
+| `attach_session_not_found` | 404 | no watched session has that id. The resolver sees every session this Mac watches, which is wider than what `GET /v1/orchestrator/sessions` publishes: naming a plain shell resolves and is then refused `attach_unsupported`, not `404`. No task is created |
+| `attach_unsupported` | 409 | the named Session is a plain shell with no assistant to read a briefing |
+| `attach_not_managed` | 409 | the Session has no task role, or its recorded launch grant covers only the earlier task's own directory rather than `/tmp/.clawdline`. Both a user-opened session and a Clawdline-opened leaf fail this check: neither can read a new follow-up task's sibling `CHILD.md`, and `--add-dir` cannot be added to a running process. Only a task role whose persisted launch-time grant covers the whole task root can be attached to |
+| `attach_assistant_mismatch` | 409 | the task's `assistant` differs from the assistant resident in the named Session |
+| `attach_session_occupied` | 409 | the Session already has one live Clawdline task; attached sessions are single-flight |
+| `attach_session_busy` | 409 | its cached state is `waiting` and `Targets.isChoosing` confirms a menu; nothing was typed and retrying the same task body is safe |
+| `attach_delivery_failed` | 502 | validation and registration succeeded but the first line could not be typed. The task record exists in `spawn_failed` |
 | `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `reasoning_effort`, `permission_mode`, `plan`, `claims`, or `serialize`. `reasoning_effort` is Codex-only and exactly `high` or `xhigh`; omission inherits Codex/user defaults. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
 | `assistant_exhausted` | 409 | the named assistant's own account-level quota reads `exhausted` — see [`GET /v1/orchestrator/assistants`](#get-v1orchestratorassistants). The error object carries `assistant`, `availability`, `source`, `observed_at`, `age_seconds`, `resets_at`, `retry_after` (`min(resets_at - now, 3600)`), and `alternatives` — every other assistant's own `id`/`availability`/`detail`, so a client can dispatch to one of those instead of retrying the same one blind. `task.json`'s `"ignore_quota": true` sends it anyway; the message names that field outright. Checked after capacity and depth, before any git subprocess — cheaper than either, and the reply's own `message` says why. This is a fact about the account, not the task: it fires whether or not the failing session sits in this Mac's own tree |
 | `worktree_unavailable` | 409 | worktree isolation was requested but the repository has no commit to use as a base or the destination volume has less than 2 GB available. This is an environment refusal rather than malformed JSON |
@@ -1269,6 +1279,24 @@ the base is `HEAD`. A dirty base succeeds with a warning because its uncommitted
 from the isolated checkout. Unknown isolation values are refused rather than silently sharing the
 tree. The checkout lives under `~/Library/Application Support/Clawdline/worktrees/`; `dir` remains
 the task protocol directory under `/tmp/.clawdline`.
+
+**What the broker reclaims when the task ends, and when.** Two directories are heavyweight,
+reproducible and task-owned, and each has its own registry-internal deadline. These housekeeping
+fields are persisted in the broker registry; they are deliberately absent from the public task
+shape returned by dispatch and `GET /v1/orchestrator/tasks`:
+`<dir>/work/` — the scratch directory a child is told to build in — falls due at
+`work_cleanup_at`, and the isolated child's `<worktree.cwd>/.build` falls due at
+`build_cleanup_at`. Both deadlines are set the same way from their own setting in
+`~/.config/clawdline/config.json`: `orchestrator_work_grace_minutes` and
+`orchestrator_build_grace_minutes`, each defaulting to `60`, each accepting `-1…1440`. A `success`
+reclaims immediately whatever the setting says; `0` does the same for every terminal outcome; a
+positive number is minutes of diagnostic grace, so the failing build log outlives the child that
+wrote it; `-1` leaves that directory to the ordinary sweep. A directory that is already gone
+settles its deadline as a success, and a removal the filesystem refuses keeps it, so the next beat
+tries again. In the registry, `build_cleanup_at` is absent on every task without a worktree of its
+own — a shared checkout's build output belongs to whoever is working in it — and, unlike
+whole-checkout disposal, it is **not** deferred by `landing.state == pending`: a landing under
+review needs the source and the delivery branch, both of which this leaves exactly as they were.
 
 An optional `serialize` array in `task.json` makes named operations machine-global mutexes. A task
 leaves `queued` only when it can acquire every name together; shared names are FIFO across roots,
@@ -1830,7 +1858,10 @@ id at all.
 Every run remains visible while its task record is retained. `terminal_id` names the tab Clawdline
 opened and lets a client go to it if it is still on `/v1/sessions`. `session_id` is stricter: it is
 present only for terminal work whose transcript or rollout still exists and is proved to belong to
-that exact task. It may be sent to the place resume route above; a run without it is readable but
+that exact task. A run that was dispatched into a standing session instead of a tab of its own
+carries `attached: true` and `attach_session`, the terminal-neutral id it was typed into — the
+same pair the task record calls `attached` and `attachSession`, spelled the way the rest of a run
+record is spelled. It may be sent to the place resume route above; a run without it is readable but
 not resumable. `runs_may_be_truncated: true` appears when the machine-wide registry has reached its
 200-record retention boundary, because older occurrences may already have lost their schedule
 association.
@@ -2087,8 +2118,12 @@ The record:
   "root":  {"sessionId": "841cbb8d-…", "assistant": "claude", "label": "clawdline main", "terminalId": "27439AEE-…",
             "taskId": "a70c5e11-…"},   // the parent task — depth 2 only, and only when it said so
   "child": {"terminalId": "9A1F…", "backend": "iterm", "sessionId": "0f2b91ac-…"},
+  "attached": true,                 // present only for an attached follow-up task
+  "attachSession": "9A1F…",       // terminal-neutral standing Session id
   "summary": "…",               // finished tasks; the child's own sentence
   "artifacts": ["artifacts/project-portrait.svg"],
+  "verification": {"runs": 2, "seconds": 940, "last": "pass",
+                   "scope": "swift suite + web-schedules"},
   "claims": ["Sources/Orchestrator.swift"],   // present (maybe []) only when task.json declared it
   "released_claims": [                        // absent unless something was given back early
     {"path": "/Users/you/code/clawdline/Sources/Orchestrator.swift", "released_at": 1787100090}
@@ -2137,6 +2172,11 @@ artifact directory. The broker, not the child, reads `head`, `commits`, and `dir
 serialized isolated task names `isolation: "worktree"` while queued but omits the `worktree`
 object until its tab exists: its base is resolved only when it acquires its mutex, so no preliminary
 SHA is presented as the receipt for what the child actually started from.
+
+`verification` is absent unless the child supplied a well-formed optional object in `result.json`.
+Its `runs` and `seconds` are non-negative integers, `last` is `pass`, `fail`, or `skipped`, and
+`scope` is a short free-text description. Missing or malformed verification metadata never changes
+the authenticated task outcome.
 
 For Codex dispatches, `reasoning_effort` accepts only `high` and `xhigh`; use `high` for coding and
 `xhigh` for planning. Empty, non-string, unknown values (including `max` and `ultra`), and the field

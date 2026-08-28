@@ -289,6 +289,20 @@ final class Config {
     /// Only a child that reported — success or failure — is closed; one that timed out or never
     /// came up is left where it is, because what went wrong is on that screen.
     var orchestratorChildLinger = 180
+    /// How long failed task-owned `work/` directories remain available for diagnosis, in minutes.
+    /// Success always reclaims immediately; `0` does the same for every terminal outcome and
+    /// `-1` leaves the directory to the ordinary 24-hour task-root sweep.
+    var orchestratorWorkGraceMinutes = 60
+    /// How long an isolated checkout's `.build/` remains available before it is reclaimed, in
+    /// minutes. Shaped exactly like `orchestrator_work_grace_minutes`: success reclaims
+    /// immediately, `0` does the same for every terminal outcome, `-1` leaves the build output
+    /// until the whole checkout is disposed of.
+    ///
+    /// It is a separate setting because the two directories answer different questions. `work/`
+    /// holds the failing build log somebody reads after a child dies; `.build/` holds object
+    /// files nobody has ever read, and on this Mac it was 814 MB of them, kept alive by pending
+    /// landings that needed only the source and the branch.
+    var orchestratorBuildGraceMinutes = 60
     /// The used-percentage at which an assistant's quota reads as `low` rather than `ok`, both
     /// from `GET /v1/orchestrator/assistants` and at the dispatch gate — see
     /// `Sources/AssistantQuota.swift`.
@@ -404,6 +418,12 @@ final class Config {
         if let v = obj["orchestrator_child_linger"] as? Int, v >= -1, v <= 3600 {
             orchestratorChildLinger = v
         }
+        if let v = obj["orchestrator_work_grace_minutes"] as? Int, v >= -1, v <= 1440 {
+            orchestratorWorkGraceMinutes = v
+        }
+        if let v = obj["orchestrator_build_grace_minutes"] as? Int, v >= -1, v <= 1440 {
+            orchestratorBuildGraceMinutes = v
+        }
         if let v = obj["assistant_quota_low_threshold"] as? Double, v > 0, v < 100 {
             assistantQuotaLowThreshold = v
         }
@@ -473,6 +493,8 @@ final class Config {
             "orchestrator_notify_root": orchestratorNotifyRoot,
             "orchestrator_agent_notify": orchestratorAgentNotify,
             "orchestrator_child_linger": orchestratorChildLinger,
+            "orchestrator_work_grace_minutes": orchestratorWorkGraceMinutes,
+            "orchestrator_build_grace_minutes": orchestratorBuildGraceMinutes,
             "assistant_quota_low_threshold": assistantQuotaLowThreshold,
             "status_dir": statusDir,
             "icons_file": iconsFile,
