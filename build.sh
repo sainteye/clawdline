@@ -32,6 +32,9 @@ swiftc \
 cp Resources/iterm.js "$RES/"
 cp Resources/Clawdline.icns "$RES/"
 cp Resources/clawdline-hook.sh "$RES/"
+# The default dispatch policy. It is a document people read and edit, so it ships as a file rather
+# than as a string literal in the source; Orchestrator writes it out once if the machine has none.
+cp Resources/dispatch-policy.md "$RES/"
 cp -R Resources/mascots "$RES/"
 # The web interface, served by RemoteServer when it is switched on.
 [ -d Resources/web ] && cp -R Resources/web "$RES/"

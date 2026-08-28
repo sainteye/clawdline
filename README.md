@@ -132,8 +132,11 @@ that writes the task down is [in this repository](skills/clawdline/), for Claude
 
 **How work gets handed out is a file you edit.** `~/.config/clawdline/dispatch-policy.md` — read
 on every dispatch, copied into the briefing of every child that may dispatch in turn. Which
-assistant for which kind of work, which model deserves which job, what shape the graph should be.
-It arrives with opinions in it; delete the contents and there are no house rules. Every task also
+assistant for which kind of work, which model deserves which job, how big one task should be, when
+small work is batched instead of dispatched, what shape the graph should be. The default it arrives
+with is [`Resources/dispatch-policy.md`](Resources/dispatch-policy.md) in this repository, so it can
+be read and argued with before you install anything; your machine's copy is yours to edit, and
+deleting the contents means there are no house rules. Every task also
 carries a `plan`, the whole graph it is one node of, so a leaf knows what its answer feeds instead
 of writing a report nobody asked for.
 
