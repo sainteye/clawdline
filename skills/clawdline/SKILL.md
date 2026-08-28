@@ -160,6 +160,12 @@ review session satisfies by construction and an odd-jobs session does not. Until
 landed, the honest approximation is one ordinary task per emptied pool and one per review round; a
 tab you keep alive by typing into it is not a standing session, and do not call it one.
 
+**An interrupted review is handed over, not restarted.** A reviewer that died, timed out or was
+cancelled has usually written part of its finding set already; give that file to whoever picks it
+up. Review is both the most expensive node here and the one most often thrown away — 30 of 101
+review dispatches on this machine never returned a verdict, and one re-review spent 6.7M tokens
+re-reading 1.9M tokens of work somebody had already read.
+
 **And when the reviewer comes back with findings:** it writes the complete finding set down and
 reports it *before* it repairs anything, then repairs only what does not change the design. Once it
 has edited production bytes its verdict is spent — that repair is a delivery, and the focused diff,
@@ -395,6 +401,17 @@ so "do what we just discussed" says nothing there. Write absolute paths, and nam
 output goes into. **A leaf's instructions should be narrow enough to state in one sentence** — if
 it takes three paragraphs to say what "done" means, that is two children.
 
+**Ask for one `/progress` note in the first three minutes**, saying what it has decided to do now
+that it has read the briefing — before the work, not during it. One line in the instructions buys
+it, and it costs the child one round.
+
+That note is the only thing that makes an early cancellation possible, and the difference is not
+small: the two dearest cancelled tasks measured on this machine burned 18.5M and 16.5M tokens and
+ran twenty-six minutes each before anybody could tell they were going the wrong way. The protocol
+asked for a note only when the work stopped matching its title, which is a signal that arrives
+after the divergence rather than at it. A wrong first sentence is visible at minute three, and it
+is the cheapest thing in this system to correct.
+
 ---
 
 ## 3. Make the directory, the id and the secret
@@ -468,6 +485,16 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `root.session_id` | this assistant's current conversation id, found below; `null` if unavailable — never invented |
 | `root.assistant` | **the assistant dispatching this task**, `claude` or `codex`; it is not the child named by top-level `assistant` |
 | `root.parent_task` | **only when you are yourself a child** — the id of your own task, the one in your first message. Root dispatches leave it out. Getting it wrong bills this task to somebody else or counts it as deeper than it is; there is nothing to gain |
+
+**Declaring `claims` costs about twenty output tokens, and most dispatches skip it anyway.**
+Measured across 206 dispatches on this machine: 60.7% declared nothing at all. A collision costs a
+whole task, which on the same record is between three and eighteen million tokens thrown away.
+
+And know the one case `claims` cannot save you from: **repository-relative claims are discarded for
+a worktree-isolated task**, because the child edits a separate checkout. On 2026-08-28 two roots
+dispatched a correction of the same delivery six seconds apart, both isolated, and nothing refused
+either of them — `/inflight` was still empty for both. When you isolate, `/inflight` is the only
+check there is, so read it, and keep the intended write set in the plan so review still has a scope.
 
 **There are two ways to get `claims` wrong and only one of them is loud.** Leaving it out is the
 quiet one: the broker cannot prove your task is disjoint from anybody else's, so it falls back to
@@ -726,21 +753,25 @@ and alone triggers the loud row and push notification.
 Native and web rows quietly show `⏳ owner · release condition`. Use a final-line
 `[Clawdline waiting]` marker only as fallback when that UI is unavailable.
 
-### Keep the communication-protocol Artifact current
+### Keep the protocol page current, and know which audience you are writing for
 
-The living visual explanation is
-`artifacts/2026-08-26-clawdline-communication-protocol.html`, a standalone Claude Code Artifact with
-`<meta name="artifact:kind" content="state">`. Any change to task dispatch, handoff, claims,
-landing closure, file waits, ownership transfer, structured notices or other cross-session
-communication updates that same file before the protocol work closes. Do not create a dated audit
-beside it as a substitute: `state` means this one Artifact must equal now.
+**Documents split by audience, and the split decides where they live.** A repository's `docs/` is
+what the community gets: English, written from the outside, tracked in git, safe for a test to
+depend on. A private working document — an audit, a research page, a plan in the person's own
+language — belongs wherever that project keeps internal material, and nothing in a public suite may
+depend on it. Moving one across is a rewrite, not a copy.
+
+In this repository the living page is `docs/clawdline-protocol.html`. Any change to task dispatch,
+handoff, claims, landing closure, file waits, ownership transfer, structured notices or other
+cross-session communication updates it before the protocol work closes. It is not a dated audit and
+there is no dated audit beside it: it must equal now.
 
 Have a Claude Code session read the complete authoritative protocol rather than paraphrasing the
-current conversation. It updates the diagrams, state labels, source links and the human checklist,
-then root opens or otherwise inspects the standalone HTML and verifies every claimed transition
-against `AGENTS.md`, `docs/orchestrator.md`, `docs/api.md`, `docs/handoff.md`, this skill and the
-machine's dispatch policy. If those sources changed and the Artifact did not, the landing
-obligation remains pending.
+current conversation. It updates the diagrams, state labels, source links and the checklist, then
+root inspects the standalone HTML and verifies every claimed transition against `AGENTS.md`,
+`docs/dispatching.md`, `docs/landing.md`, `docs/orchestrator.md`, `docs/api.md`, `docs/handoff.md`,
+this skill and the machine's dispatch policy. If those sources changed and the page did not, the
+landing obligation remains pending.
 
 If this root must stop before step 5, make a Clawdline handoff rather than dropping the obligation.
 Its `CURRENT STATE`, `OPEN THREADS` and `IMMEDIATE NEXT STEP` must name the delivery branch, base and
@@ -965,9 +996,10 @@ hand-written SVG instead — see §2.5.
 - **File waiters are Clawdline relationships.** Request and release through Clawdline session ids,
   notify every waiter when paths are released, and revalidate after notification. Never make this
   safety protocol depend on Claude Code or Codex messaging.
-- **The protocol Artifact is part of the protocol.** Any communication-semantics change updates
-  `artifacts/2026-08-26-clawdline-communication-protocol.html` through Claude Code and verifies it
-  against every authoritative source before completion.
+- **The protocol page is part of the protocol.** Any communication-semantics change updates the
+  repository's public protocol page — `docs/clawdline-protocol.html` here — and verifies it against
+  every authoritative source before completion. A private working document is not a substitute: it
+  is the tracked, English one that anybody can check.
 - **Assume anything new in the working tree is not the child's.** Several sessions usually share
   one checkout on this Mac, and they are editing and committing too. If `git status` grows a few
   files after you dispatch, or `git log` grows an entry, **that is not the child's report card**.

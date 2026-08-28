@@ -138,6 +138,11 @@ follow-up task，常駐 session 就完全不能寫共享 tree**——review sess
 不產出 bytes），odd-jobs session 不符合。在那個機制進 `HEAD` 之前，誠實的近似作法是「一批出清派
 一件 task、一輪 review 派一件 task」；用手打字餵著的分頁不是常駐 session，也不要這樣講。
 
+**被中斷的 review 用交接，不要重跑。** 死掉、逾時或被取消的 reviewer，通常已經寫了一部分
+finding set；把那個檔案交給接手的人。review 是這裡最貴的節點，也是被丟掉比例最高的節點——101 次
+review 派工裡有 30 次沒交出 verdict，其中一次重審花了 6.7M tokens 去重讀 1.9M tokens、別人已經
+讀過的工作。
+
 **reviewer 帶著 findings 回來的時候：** 它要先把完整的 finding set 寫下來回報，**才可以動手修**，
 而且只修不改變設計的部分。它一旦寫了 production bytes，verdict 就用掉了——那份修正是一個
 delivery，聚焦 diff、mutation、exact-tree 驗收都是你的事，不是它的。會改變設計的修正回原
@@ -340,6 +345,14 @@ child 讀不到這條對話，它只有 `task.json` 裡的 `instructions` 和 `p
 等於什麼都沒說。路徑寫絕對路徑，產出寫清楚要放哪個檔名。**葉節點的指令要窄到一句話講得完**——
 要寫三段才講得清楚「做完」是什麼意思，那就是兩個 child。
 
+**指令裡要求它在頭三分鐘發一則 `/progress`**，講它讀完 briefing 之後決定要怎麼做——在開工前，
+不是做到一半。一行指令就換得到，child 只要花一個回合。
+
+那一則是「能不能早點取消」的唯一依據，而差距不小：這台機器上最貴的兩筆被取消的 task，各燒了
+18.5M 與 16.5M tokens、各跑了二十六分鐘，才有人看得出它走錯方向。協定原本只要求「工作內容不再
+符合標題時」發一則——那個訊號是在偏離**之後**才到的，不是在偏離的當下。第一句話寫錯，第三分鐘
+就看得出來，而那是這整套系統裡最便宜的一種更正。
+
 ---
 
 ## 3. 建目錄、生 id 和 secret
@@ -409,6 +422,14 @@ jq -n \
 | `root.session_id` | 目前這個助理的 conversation id，照下面查；查不到就 `null`，不要瞎編 |
 | `root.assistant` | **派出這件 task 的助理**，`claude` 或 `codex`；不是最外層 `assistant` 所指定的 child |
 | `root.parent_task` | **只有你自己是 child 才要填**——填你自己那件 task 的 id（第一句話裡那個）。root 派工不用寫。填錯只會讓這件任務被算到別人頭上或被算得更深，不會佔到便宜 |
+
+**宣告 `claims` 大約只花 root 二十個 output token，而多數派工還是沒寫。** 這台機器 206 筆派工
+裡有 60.7% 什麼都沒宣告。撞一次的代價是整件 task 重來——同一份紀錄上是三百萬到一千八百萬 tokens。
+
+還要知道 `claims` 救不了你的那一種情況：**worktree 隔離的 task，repository-relative 的 claims 會
+被丟掉**，因為 child 改的是另一份 checkout。2026-08-28 兩個 root 相隔六秒派出同一件交付的修正，
+兩件都是隔離的，沒有任何一道閘門攔得下來——`/inflight` 對兩邊都還是空的。**一旦用隔離，`/inflight`
+就是唯一的檢查**，所以要去讀它，並且把預計會寫到的檔案留在 `plan` 裡，讓 review 還有範圍可循。
 
 **`claims` 有兩種寫錯的方式，只有一種會叫。** 不寫是安靜的那種：broker 沒辦法證明你這件事跟別人
 不相交，只好退回去對「每一對共用同一個目錄的任務」發警告。2026-08-26 那個晚上就是這樣——一晚十幾
@@ -641,19 +662,21 @@ UI，成為獨立的 `coordination` overlay：被擋住的 session 是 `waiting_
 這**不會**把 terminal `state` 設成 `waiting`；後者仍只代表需要人回答，也只有它會觸發醒目的 row 與 push。原生與 web session row 會安靜顯示 `⏳ owner · release condition`；只有 UI
 不可用時，才用最後一行 `[Clawdline waiting]` marker 當 fallback。
 
-### 維持 communication-protocol Artifact 等於現在
+### 維持協定頁等於現在，並且分清楚你在寫給誰看
 
-這份協定的 living visual explanation 是
-`artifacts/2026-08-26-clawdline-communication-protocol.html`：一個 standalone Claude Code Artifact，
-帶 `<meta name="artifact:kind" content="state">`。任何 task dispatch、handoff、claims、landing
-closure、file wait、ownership transfer、structured notice 或其他 cross-session communication
-語意變更，都要在協定工作關閉前更新同一個檔案。不能另開一份 dated audit 當作替代；`state` 的意思
-就是這一份 Artifact 必須等於現在。
+**文件依讀者分家，而分家決定它住在哪裡。** 一個專案的 `docs/` 是給社群的：英文、對外視角、進
+git、可以讓測試依賴它。私有的工作文件——稽核、研究頁、用自己語言寫的計畫——放在那個專案存放內部
+material 的地方，而**公開的測試不得依賴其中任何一個檔案**。把一份搬過去是重寫，不是複製。
+
+在這個 repo 裡，living 的那一份是 `docs/clawdline-protocol.html`。任何 task dispatch、handoff、
+claims、landing closure、file wait、ownership transfer、structured notice 或其他 cross-session
+communication 語意變更，都要在協定工作關閉前更新它。它不是 dated audit，旁邊也不會有一份 dated
+audit：它必須等於現在。
 
 要讓 Claude Code session 讀完整 authoritative protocol，不能只轉述當下對話。它更新 diagrams、
-state labels、source links 與人的 checklist；root 再打開或用其他方式檢查 standalone HTML，逐項對照
-`AGENTS.md`、`docs/orchestrator.md`、`docs/api.md`、`docs/handoff.md`、這份 skill 與本機 dispatch
-policy。來源改了而 Artifact 沒改，landing obligation 就維持 pending。
+state labels、source links 與 checklist；root 再檢查 standalone HTML，逐項對照 `AGENTS.md`、
+`docs/dispatching.md`、`docs/landing.md`、`docs/orchestrator.md`、`docs/api.md`、`docs/handoff.md`、
+這份 skill 與本機 dispatch policy。來源改了而那一頁沒改，landing obligation 就維持 pending。
 
 這個 root 若必須在第 5 步之前停下來，要用 Clawdline handoff 交接，不能把責任丟著。handoff 的
 `CURRENT STATE`、`OPEN THREADS`、`IMMEDIATE NEXT STEP` 必須寫出 delivery branch/base/head、target
@@ -857,9 +880,9 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
   同一批 delivery 時，pathspec commit 才安全。
 - **file waiter 是 Clawdline relationship。** request 與 release 都用 Clawdline session id，paths
   釋放時通知每一個 waiter，收到後再重驗。這份安全協定不能依賴 Claude Code 或 Codex message。
-- **protocol Artifact 是協定的一部分。** 任何 communication semantics 修改，都要透過 Claude Code
-  更新 `artifacts/2026-08-26-clawdline-communication-protocol.html`，並在完成前對照所有 authoritative
-  source 驗證。
+- **協定頁是協定的一部分。** 任何 communication semantics 修改，都要更新這個 repo 的公開協定頁
+  （這裡是 `docs/clawdline-protocol.html`），並在完成前對照所有 authoritative source 驗證。私有的
+  工作文件不能替代它：能被任何人檢查的是那份進了 git 的英文頁。
 - **工作樹裡多出來的東西，先假設不是 child 做的。** 這台 Mac 上通常有好幾個 session 共用同一個
   工作區，而它們也在改檔案、也在 commit。派工之後看到 `git status` 多了幾個檔、或 `git log`
   多了一筆，**那不是 child 的成績單**——在把任何改動算到 child 頭上之前，先做這三件事：
