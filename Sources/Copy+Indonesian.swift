@@ -526,6 +526,7 @@ struct Indonesian: Copy {
     let webInfoTitleSaved = "Judul disimpan."
     let webInfoTitleLocal = "Judul disimpan di Clawdline; nama hilir tidak diubah."
     let webInfoTitleQueued = "Judul disimpan di Clawdline; pembaruan Codex mengantre."
+    let webInfoTitleNotDurable = "Judul sudah tampil, tetapi Mac ini tidak dapat menyimpannya ke disk; akan hilang setelah dimulai ulang."
     let webInfoSession = "Sesi ini"
     let webInfoAssistant = "Asisten"
     let webInfoModel = "Model"

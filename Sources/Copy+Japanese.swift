@@ -524,6 +524,7 @@ struct Japanese: Copy {
     let webInfoTitleSaved = "タイトルを保存しました。"
     let webInfoTitleLocal = "Clawdline に保存しました。下流の名前は未変更です。"
     let webInfoTitleQueued = "Clawdline に保存しました。Codex の更新は待機中です。"
+    let webInfoTitleNotDurable = "タイトルは反映しましたが、この Mac に保存できませんでした。再起動すると消えます。"
     let webInfoSession = "このセッション"
     let webInfoAssistant = "アシスタント"
     let webInfoModel = "モデル"

@@ -1508,7 +1508,13 @@ final class RemoteServer: @unchecked Sendable {
 
                 let config = Config.shared
                 _ = config.setSessionTitle(raw, for: session)
-                config.save()
+                // The answer says whether the name is durable, because that is the promise the
+                // rest of this route is built on: a busy Claude is deliberately not queued for a
+                // later `/rename`, and the reason given is that the local name survives anyway.
+                // A failed write still leaves the name in memory and on every surface that draws
+                // one, so this is a 200 that tells the truth rather than a 500 that undoes what
+                // the person can already see.
+                let durable = config.save()
 
                 let state: SessionState = Thread.isMainThread
                     ? (SessionWatch.shared.states[session.id] ?? .unknown)
@@ -1551,7 +1557,7 @@ final class RemoteServer: @unchecked Sendable {
                                                     "downstream": downstream])
                 DispatchQueue.main.async { SessionWatch.shared.labelsDidChange() }
                 return .json(["ok": true, "title": title ?? "",
-                              "display_title": session.displayLabel, "local_applied": true,
+                              "display_title": session.displayLabel, "local_applied": durable,
                               "downstream": downstream, "downstream_synced": synced])
             }
 
@@ -3976,6 +3982,7 @@ final class RemoteServer: @unchecked Sendable {
             "webInfoTitleSaved": t.webInfoTitleSaved,
             "webInfoTitleLocal": t.webInfoTitleLocal,
             "webInfoTitleQueued": t.webInfoTitleQueued,
+            "webInfoTitleNotDurable": t.webInfoTitleNotDurable,
             "webInfoSession": t.webInfoSession,
             "webInfoAssistant": t.webInfoAssistant,
             "webInfoModel": t.webInfoModel,

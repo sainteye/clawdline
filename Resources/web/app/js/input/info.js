@@ -597,7 +597,11 @@ export var Info = (function () {
                     data.session.title = answer.display_title;
                 }
                 SessionFacts.drop(id);
-                if (answer.downstream === "queued") said(T.webInfoTitleQueued, true);
+                // The durability answer comes first, whatever happened downstream. Everything
+                // else on this card describes a name that survives a restart, and when the Mac
+                // could not write its config that is the one sentence that is no longer true.
+                if (answer.local_applied === false) said(T.webInfoTitleNotDurable, true);
+                else if (answer.downstream === "queued") said(T.webInfoTitleQueued, true);
                 else if (answer.downstream === "busy" || answer.downstream === "unavailable" ||
                          answer.downstream === "failed") said(T.webInfoTitleLocal, true);
                 else said(T.webInfoTitleSaved, true);

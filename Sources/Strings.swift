@@ -972,6 +972,7 @@ protocol Copy {
     var webInfoTitleSaved: String { get }
     var webInfoTitleLocal: String { get }
     var webInfoTitleQueued: String { get }
+    var webInfoTitleNotDurable: String { get }
     var webInfoSession: String { get }
     var webInfoAssistant: String { get }
     var webInfoModel: String { get }

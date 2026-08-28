@@ -912,8 +912,11 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/title \
 {"ok":true,"title":"Release room","display_title":"Release room","local_applied":true,"downstream":"synced","downstream_synced":true}
 ```
 
-`local_applied` says the durable Clawdline name is already in use. `downstream` separately says
-what happened to the assistant's own name: `synced` for an idle Claude `/rename`, `queued` for
+`local_applied` says whether the durable Clawdline name is durable: it is the result of writing
+this Mac's config, not a constant. `false` means the name is in use on every surface right now and
+will be gone when the app restarts — a full disk or an unwritable `~/.config/clawdline` — and it is
+answered `200` rather than `500` because the name really did take effect. `downstream` separately
+says what happened to the assistant's own name: `synced` for an idle Claude `/rename`, `queued` for
 a Codex thread update, `busy` when Claude was anything other than idle — working, asking a question,
 **on a screen this Mac could not read**, or showing a menu when the screen was read again just
 before typing — `unavailable` when no Codex thread could be identified, `failed` when the terminal

@@ -385,6 +385,7 @@ export var T = {
     webInfoTitleSaved: "Title saved.",
     webInfoTitleLocal: "Title saved in Clawdline; the downstream name was not changed.",
     webInfoTitleQueued: "Title saved in Clawdline; the Codex update is queued.",
+    webInfoTitleNotDurable: "Title is showing here, but this Mac could not write it to disk; it will be gone after a restart.",
     webInfoSession: "This session",
     webInfoAssistant: "Assistant",
     webInfoModel: "Model",

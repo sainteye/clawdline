@@ -9742,6 +9742,31 @@ group("a person's session title belongs to the conversation, not to the tab") {
                               conversationStart: { restarted }) == nil)
 }
 
+group("a config write that did not happen is not reported as saved") {
+    let writable = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-title-durable-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: writable, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: writable) }
+    let stored = Config(directoryForTesting: writable)
+    stored.setSessionTitle("Release room", sessionID: nil, terminalID: "terminal-durable")
+    check("a write that landed says so", stored.save())
+
+    // A real failure, not a stub: the settings directory is a regular file, so `createDirectory`
+    // and the write both fail the way they would on a full or read-only disk. `local_applied` is
+    // what the whole downstream design leans on — a busy Claude is deliberately not queued
+    // because the local name is said to be durable — so it may not be a constant.
+    let blocked = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-title-blocked-\(UUID().uuidString)")
+    try! Data("this is a file where a directory should be\n".utf8).write(to: blocked)
+    defer { try? FileManager.default.removeItem(at: blocked) }
+    let broken = Config(directoryForTesting: blocked)
+    broken.setSessionTitle("Release room", sessionID: nil, terminalID: "terminal-blocked")
+    check("a write that could not happen says that instead", !broken.save())
+    expect("and the name is still in use, which is why the route answers 200",
+           broken.sessionTitle(sessionID: nil, terminalID: "terminal-blocked"),
+           "Release room")
+}
+
 group("clearing a title takes the Codex name off Clawdline's surfaces too") {
     let target = TargetSession(backend: .iterm, id: "terminal-codex-clear",
                                name: "codex", tty: "/dev/ttys077",

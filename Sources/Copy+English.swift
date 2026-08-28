@@ -525,6 +525,7 @@ struct English: Copy {
     let webInfoTitleSaved = "Title saved."
     let webInfoTitleLocal = "Title saved in Clawdline; the downstream name was not changed."
     let webInfoTitleQueued = "Title saved in Clawdline; the Codex update is queued."
+    let webInfoTitleNotDurable = "Title is showing here, but this Mac could not write it to disk; it will be gone after a restart."
     let webInfoSession = "This session"
     let webInfoAssistant = "Assistant"
     let webInfoModel = "Model"

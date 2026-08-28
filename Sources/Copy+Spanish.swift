@@ -526,6 +526,7 @@ struct Spanish: Copy {
     let webInfoTitleSaved = "Título guardado."
     let webInfoTitleLocal = "Título guardado en Clawdline; el nombre posterior no cambió."
     let webInfoTitleQueued = "Título guardado en Clawdline; actualización de Codex en cola."
+    let webInfoTitleNotDurable = "El título está aplicado, pero este Mac no pudo guardarlo en disco; desaparecerá al reiniciar."
     let webInfoSession = "Esta sesión"
     let webInfoAssistant = "Asistente"
     let webInfoModel = "Modelo"

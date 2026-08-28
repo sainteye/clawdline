@@ -538,7 +538,16 @@ final class Config {
         }
     }
 
-    func save() {
+    /// Whether the settings on disk now say what this object says.
+    ///
+    /// It used to return nothing, and one route answered `local_applied: true` on the strength
+    /// of having called it — see `POST /v1/sessions/:id/title`, whose whole justification for
+    /// not queueing a downstream rename is that the local name is durable. A claim about a file
+    /// has to come from the write of that file. Discardable because every other caller is a
+    /// setting a person just changed in a window they can see, where a failure is a log line and
+    /// not a different answer.
+    @discardableResult
+    func save() -> Bool {
         let mine = serialised
         let onDisk = (try? Data(contentsOf: file))
             .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
@@ -549,15 +558,17 @@ final class Config {
                                                      options: [.prettyPrinted, .sortedKeys])
         else {
             Log.write("config: could not serialise, nothing written")
-            return
+            return false
         }
         do {
             try data.write(to: file)
             known = obj
+            return true
         } catch {
             // Worth a line: everything above this is best-effort, and a config that silently
             // stops persisting looks exactly like one that is being ignored.
             Log.write("config: could not write — \(error.localizedDescription)")
+            return false
         }
     }
 

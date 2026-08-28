@@ -530,6 +530,7 @@ struct Hindi: Copy {
     let webInfoTitleSaved = "शीर्षक सहेजा गया।"
     let webInfoTitleLocal = "शीर्षक Clawdline में सहेजा गया; अगला नाम नहीं बदला।"
     let webInfoTitleQueued = "शीर्षक Clawdline में सहेजा गया; Codex अपडेट कतार में है।"
+    let webInfoTitleNotDurable = "शीर्षक अभी दिख रहा है, पर यह Mac इसे डिस्क पर नहीं लिख सका; पुनः आरंभ पर चला जाएगा।"
     let webInfoSession = "यह session"
     let webInfoAssistant = "असिस्टेंट"
     let webInfoModel = "मॉडल"
