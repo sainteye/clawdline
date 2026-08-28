@@ -6681,6 +6681,48 @@ group("smart notifications describe the completed work, not its machinery") {
            "clawdline · 修好重連。")
 }
 
+group("a headless assistant runs in one directory, not a new one per call") {
+    // What this guards is not the scratch directory — that is deleted, and always was. It is the
+    // folder Claude Code writes under ~/.claude/projects, named after the working directory and
+    // outside anything the spawner can remove. A per-call cwd is one permanent folder per call:
+    // 97 from notifications and 22 from the planner by 2026-08-28, against 27 real projects.
+    let root = URL(fileURLWithPath: "/tmp/scratch-root", isDirectory: true)
+    expect("the working directory carries no per-call component",
+           Scratch.directory(for: "smart-notification", in: root).path,
+           "/tmp/scratch-root/clawdline-smart-notification")
+    check("so every run names the same folder under ~/.claude/projects",
+          StartPoints.slug(of: Scratch.directory(for: "smart-notification", in: root).path)
+            == StartPoints.slug(of: Scratch.directory(for: "smart-notification", in: root).path))
+    let notifierFirst = SmartNotification.scratchDirectory
+    let notifierSecond = SmartNotification.scratchDirectory
+    check("the notifier's own working directory is that stable one",
+          notifierFirst == notifierSecond)
+    let plannerFirst = Planner.scratchDirectory
+    let plannerSecond = Planner.scratchDirectory
+    check("and so is the planner's, which had left 22 folders of its own",
+          plannerFirst == plannerSecond)
+    check("both stay under the temporary root, where the start list never offers them",
+          !StartPoints.isDurablePlace(notifierFirst.path)
+            && !StartPoints.isDurablePlace(plannerFirst.path))
+    check("two purposes still do not share a directory",
+          Scratch.directory(for: "smart-notification", in: root)
+            != Scratch.directory(for: "plan-run", in: root))
+
+    // The one thing the per-call directory was really protecting: two runs must not write into
+    // one sink. Two Clawdline processes overlap whenever build.sh restarts the app.
+    let first = Scratch.file("output", extension: "json", in: root)
+    let second = Scratch.file("output", extension: "json", in: root)
+    check("each run still gets a sink no other run is holding", first != second)
+    check("and both of them are inside the one directory",
+          first.deletingLastPathComponent().path == root.path
+            && second.deletingLastPathComponent().path == root.path)
+    expect("a sink a crash left behind still says what it was",
+           Scratch.file("output", extension: "json", in: root,
+                        id: UUID(uuidString: "11111111-2222-4333-8444-555555555555")!)
+             .lastPathComponent,
+           "output-11111111-2222-4333-8444-555555555555.json")
+}
+
 group("a burst of finishes becomes one push, not one each") {
     let base = Date(timeIntervalSince1970: 1_000_000)
     expect("a lone finish waits only for its transcript to settle",
