@@ -57,6 +57,33 @@ version: 1
 artifact: artifacts/backlog.html
 
 items:
+  - id: B-SCHEDULE-WITHOUT-A-SESSION
+    title: A scheduled chore with no judgement in it still opens a whole assistant session
+    problem: >-
+      A schedule's only shape is a dispatch, so every run starts a full assistant: system prompt,
+      tool schemas, the machine's own instruction files, a briefing, and then a handful of tool
+      calls that a shell script could have made. The daily forecast on this machine says in its own
+      instructions that it reads no project file and writes to no repository — it fetches one JSON
+      document and pushes one notification — and it costs between 672,030 and 705,879 tokens a run.
+      What is missing is a schedule that runs a command and only escalates to a session when the
+      command fails, which is most of what these chores actually are.
+    evidence: >-
+      Five recorded runs of three daily chores cost 9,380,031 tokens and $8.52, 4.0% of every task
+      this machine has dispatched, to produce 51,337 output tokens between them. The forecast run
+      spends its whole budget in 34-50 seconds of wall clock, so almost none of it is work: it is
+      the session's standing context read once per turn. POST /v1/orchestrator/notify already
+      accepts the machine credential, so the notification half needs no agent at all. Measured
+      2026-08-28.
+    severity: degrades
+    cost: days
+    who_hurts: us
+    trigger: >-
+      Write the forecast as a shell script pushing through /v1/orchestrator/notify, run it beside
+      the scheduled session for a week, and compare what the person receives. If the two are
+      indistinguishable, the feature is a `command` field on a schedule plus an escalate-on-failure
+      dispatch.
+    opened: 2026-08-28
+
   - id: B-WORKTREE-COLD-CACHE
     title: An isolated task rebuilds from nothing and burns 1.5x the tokens per second
     problem: >-
