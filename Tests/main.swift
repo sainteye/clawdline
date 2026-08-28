@@ -44,11 +44,24 @@ runCoordinatorRegistrationWorkerIfRequested()
 
 // **Line buffering, so that where the output stops is where the suite stopped.**
 //
-// `print` to a pipe is block buffered at `getconf PAGESIZE`, which is **16384** here — 4096 is the
-// Intel number, and this comment said 4096 until it was measured — and a trap writes to stderr and
-// dies without flushing stdout. So a block of ticks that were genuinely printed never reaches the
-// log, and the last line standing is a long way before the crash: 16384 bytes is about 269 of this
-// suite's group lines against the 395 it prints, two thirds of the run.
+// `print` is block buffered at this process's `fstat(1).st_blksize`, and under `test.sh` that is
+// **always 16384**, because `test.sh` pipes this binary into `tee`: fd 1 is a FIFO no matter what
+// the person running it redirects, since their redirection lands on `tee`'s stdout and never
+// reaches here. Measured three ways in one run — this binary straight to a file gives 4096, and
+// through the pipeline gives 16384 whether the outer stdout is a file or a terminal.
+//
+// **That sentence has been wrong three times before this one**: 4096, then "the page size, 16384",
+// then "16 KB down a pipe and 4 KB to a file, so the two are not comparable". The last of those
+// was the worst, because it was written *while correcting* the one before it and it made people
+// treat two byte counts as measured on different rulers when they are measured on the same one.
+//
+// A trap writes to stderr and dies without flushing stdout, so that block of ticks never reaches
+// the log. A review measured one green run of this binary at 394 lines, 390 of them group ticks,
+// 24,158 bytes, 61.9 bytes each — a lost 16 KB is about 264 of those, and the last 16 KB of that
+// run held 234. Either way it is most of the suite. (Those four figures are that review's, not
+// this comment's: counting ticks across all of `test.sh` instead of this binary alone gives a
+// different and equally true number, which is the sort of thing that made the earlier versions of
+// this paragraph wrong.)
 //
 // That is what made a whole day of reasoning from truncation points worthless — the window was
 // always wider than the distance anybody was arguing about. With `_IOLBF` the last tick in the log
