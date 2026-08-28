@@ -441,6 +441,22 @@ jq -n \
 
 ### 查自己的助理與 session id（best-effort，查不到就 null）
 
+> **這台機器上有兩種東西都叫「session id」，這一格填錯是靜默失敗。** `root.session_id` 要的是
+> **助理自己的 conversation id**——Claude 的 transcript uuid，或 Codex 的 rollout id。它**不是**
+> 終端機 id、不是 `$ITERM_SESSION_ID` 的值、也不是 `GET /v1/sessions` 與
+> `GET /v1/orchestrator/sessions` 回的那個 `id`。**那些是 `POST /v1/orchestrator/waits` 要的，
+> 跟這一格要的正好相反。**
+>
+> 填錯不會有任何人告訴你。派工會被接受、id 原封不動回傳、child 跑起來而且把事情做得好好的——
+> 然後 `notifyRoot` 拿你那串去跟 `Transcript.sessionID(of:)` 比，比不到，就 return 了，
+> **連一行 log 都沒有**（`Sources/Orchestrator.swift` 的 `target(forRootSession:…)`：只有
+> `.handoff` 那條路接受終端機 id，`.task` 不接受）。2026-08-28 實測：四件用終端機 id 派出去的
+> task 全部順利完成，但沒有一件回報、沒有一件出現在 root 底下、root 關掉時也不會被連帶取消。
+> **安靜的孤兒。**
+>
+> 所以：照下面的 nonce 做，不要因為終端機 id 比較好拿就拿它頂替。
+
+
 **Codex：**目前 rollout id 已直接放在環境變數裡。要跟寫 `task.json` 放在同一個 shell
 呼叫，兩個變數才會一起進 `jq`：
 

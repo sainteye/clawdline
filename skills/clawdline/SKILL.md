@@ -508,6 +508,24 @@ error, pointing the other way — take that report seriously and declare narrowe
 
 ### Finding your own assistant and session id (best-effort; `null` if you cannot)
 
+> **Two different things on this Mac are called a "session id", and putting the wrong one here
+> fails silently.** `root.session_id` takes **the assistant's own conversation id** — the Claude
+> transcript uuid, or Codex's rollout id. It does *not* take the terminal id, the
+> `$ITERM_SESSION_ID` value, or the `id` that `GET /v1/sessions` and `GET /v1/orchestrator/sessions`
+> return. **Those are what `POST /v1/orchestrator/waits` wants, and they are the opposite of what
+> this field wants.**
+>
+> Nothing tells you when you get it wrong. The dispatch is accepted, the id is echoed back
+> unchanged, the child runs and does the work perfectly — and then `notifyRoot` compares your string
+> against `Transcript.sessionID(of:)`, finds no match, and returns without so much as a log line
+> (`Sources/Orchestrator.swift`, `target(forRootSession:…)`: only `.handoff` resolution accepts a
+> terminal id, `.task` does not). Measured on 2026-08-28: four tasks dispatched with a terminal id
+> in this field all completed, and not one of them reported back, appeared under its root in the
+> session list, or would have been cancelled when that root closed. **Silent orphans.**
+>
+> So: use the nonce below, and do not substitute the terminal id because it was easier to reach.
+
+
 **Codex:** its current rollout id is exported directly. Do this in the same shell call that writes
 `task.json` so both variables reach `jq`:
 
