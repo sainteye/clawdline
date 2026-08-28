@@ -4,6 +4,7 @@
 
 var TRACE_LIMIT = 80;
 var STORAGE_KEY = "clawdline.layout-debug.last";
+var DETAIL_KEY = "clawdline.layout-debug.detail";
 var trace = [];
 var context = null;
 var ready = false;
@@ -14,6 +15,8 @@ var pending = null;
 var activeAnomaly = null;
 var last = null;
 var incidents = [];
+var lastDetail = null;
+var lastDetailSignature = "";
 var debugPanel = null;
 
 function clock() {
@@ -52,8 +55,32 @@ function rectOf(el, viewport) {
         bottom: Math.round(r.bottom), width: Math.round(r.width), height: Math.round(r.height),
         visibleArea: Math.max(0, Math.round(right - left)) * Math.max(0, Math.round(bottom - top)),
         display: style.display || "", visibility: style.visibility || "",
-        opacity: style.opacity || "", transform: style.transform || ""
+        opacity: style.opacity || "", transform: style.transform || "",
+        position: style.position || "", zIndex: style.zIndex || "",
+        pointerEvents: style.pointerEvents || "", overflow: style.overflow || "",
+        background: style.backgroundColor || ""
     };
+}
+
+function hitStack(x, y) {
+    var nodes = document.elementsFromPoint ? document.elementsFromPoint(x, y) :
+        (document.elementFromPoint ? [document.elementFromPoint(x, y)] : []);
+    return nodes.filter(Boolean).slice(0, 6).map(function (el) {
+        var classes = typeof el.className === "string" ? el.className : "";
+        return { tag: el.tagName || "", id: el.id || "", className: classes.slice(0, 160) };
+    });
+}
+
+function visibleCount(nodes, viewport) {
+    var count = 0;
+    Array.prototype.forEach.call(nodes, function (el) {
+        var r = el.getBoundingClientRect();
+        var style = typeof getComputedStyle === "function" ? getComputedStyle(el) : {};
+        if (style.display !== "none" && style.visibility !== "hidden" &&
+            r.right > viewport.left && r.left < viewport.left + viewport.width &&
+            r.bottom > viewport.top && r.top < viewport.top + viewport.height) count++;
+    });
+    return count;
 }
 
 function activeElement() {
@@ -85,6 +112,16 @@ function stateSnapshot(reason) {
     var list = document.querySelector(".pane-list");
     var detail = document.querySelector(".pane-detail");
     var tx = els.tx;
+    var txScroll = els["tx-scroll"];
+    var detailHead = els["detail-head"];
+    var composer = els.composer;
+    var rows = document.querySelectorAll(".pane-list .row");
+    var centerX = Math.max(0, Math.round(viewport.width / 2));
+    var centerY = Math.max(0, Math.round(viewport.height / 2));
+    var centerNode = document.elementFromPoint ? document.elementFromPoint(centerX, centerY) : null;
+    var connRect = els.conn && els.conn.getBoundingClientRect();
+    var connX = connRect ? Math.round(connRect.left + connRect.width / 2) : viewport.width - 30;
+    var connY = connRect ? Math.round(connRect.top + connRect.height / 2) : 26;
     var rootStyle = typeof getComputedStyle === "function" ? getComputedStyle(root) : null;
     return {
         format: 1,
@@ -101,11 +138,25 @@ function stateSnapshot(reason) {
         },
         header: rectOf(header, viewport), body: rectOf(document.body, viewport),
         app: rectOf(els.app, viewport), list: rectOf(list, viewport),
-        detail: rectOf(detail, viewport), transcript: rectOf(tx, viewport),
+        detail: rectOf(detail, viewport), detailHead: rectOf(detailHead, viewport),
+        transcriptScroller: rectOf(txScroll, viewport), transcript: rectOf(tx, viewport),
+        composer: rectOf(composer, viewport),
         view: els.app.dataset.view || "", pane: els.app.dataset.pane || "",
+        panel: detail ? (detail.dataset.panel || "") : "", agent: !!state.agent,
         active: activeElement(),
         hasOpen: !!state.openId, selected: !!state.selectedId,
         sessions: state.sessions.length, arrived: !!state.arrived, conn: state.conn,
+        rows: { dom: rows.length, visible: visibleCount(rows, viewport) },
+        scroll: {
+            pageX: Math.round(window.scrollX || 0), pageY: Math.round(window.scrollY || 0),
+            transcriptTop: txScroll ? Math.round(txScroll.scrollTop) : 0,
+            transcriptHeight: txScroll ? Math.round(txScroll.scrollHeight) : 0,
+            transcriptClient: txScroll ? Math.round(txScroll.clientHeight) : 0
+        },
+        hit: {
+            centerInDetail: !!(centerNode && centerNode.closest && centerNode.closest(".pane-detail")),
+            center: hitStack(centerX, centerY), conn: hitStack(connX, connY)
+        },
         tx: {
             belongsToOpen: !!state.openId && state.tx.id === state.openId,
             entries: (state.tx.entries || []).length,
@@ -127,7 +178,17 @@ export function layoutAnomaly(sample) {
         }
         if (detail.height < 100) return "detail_collapsed";
         if (!detail.visibleArea) return "detail_offscreen";
+        if (sample.hit && sample.hit.centerInDetail === false) return "detail_not_hit_testable";
+        if (!sample.panel) {
+            var scroller = sample.transcriptScroller || {};
+            if (scroller.display === "none" || scroller.visibility === "hidden" ||
+                scroller.opacity === "0") return "transcript_scroller_hidden";
+            if (scroller.height < 80) return "transcript_scroller_collapsed";
+            if (!scroller.visibleArea) return "transcript_scroller_offscreen";
+        }
     }
+    if (!sample.hasOpen && sample.view === "list" && sample.sessions > 0 &&
+        sample.rows && sample.rows.dom === 0) return "list_rows_missing";
     var list = sample.list || {}, pane = sample.detail || {};
     if (sample.app && sample.app.height >= 80 && !list.visibleArea && !pane.visibleArea) {
         return "both_panes_offscreen";
@@ -144,6 +205,30 @@ function readSaved() {
     } catch (e) { return []; }
 }
 
+function readLastDetail() {
+    try {
+        var value = localStorage.getItem(DETAIL_KEY);
+        return value ? JSON.parse(value) : null;
+    } catch (e) { return null; }
+}
+
+function rememberDetail(sample) {
+    if (!sample || !sample.hasOpen || sample.view !== "detail") return;
+    var signature = JSON.stringify({
+        loading: sample.tx.loading, entries: sample.tx.entries,
+        detail: sample.detail.visibleArea,
+        scroller: sample.transcriptScroller.visibleArea,
+        transcript: sample.transcript.visibleArea,
+        head: sample.detailHead.visibleArea, composer: sample.composer.visibleArea,
+        hit: sample.hit.centerInDetail,
+        transform: sample.detail.transform, visibility: sample.detail.visibility
+    });
+    if (signature === lastDetailSignature) return;
+    lastDetailSignature = signature;
+    lastDetail = { sample: sample, trace: trace.slice() };
+    try { localStorage.setItem(DETAIL_KEY, JSON.stringify(lastDetail)); } catch (e) { }
+}
+
 function save(kind, sample, event) {
     last = { kind: kind, event: event || null, sample: sample, trace: trace.slice() };
     incidents.unshift(last);
@@ -158,10 +243,16 @@ function shortLayout(sample) {
         reason: sample.reason, view: sample.view, open: sample.hasOpen,
         bodyH: sample.body.height, appH: sample.app.height,
         listArea: sample.list.visibleArea, detailArea: sample.detail.visibleArea,
+        detailHeadArea: sample.detailHead.visibleArea,
+        scrollerArea: sample.transcriptScroller.visibleArea,
+        transcriptArea: sample.transcript.visibleArea, composerArea: sample.composer.visibleArea,
         detailVisibility: sample.detail.visibility, detailTransform: sample.detail.transform,
+        detailPointerEvents: sample.detail.pointerEvents,
         vvh: sample.vvh.inlineHeight, vvt: sample.vvh.inlineTop,
         innerH: sample.viewport.innerHeight, visualH: sample.viewport.height,
-        active: sample.active && (sample.active.id || sample.active.tag)
+        active: sample.active && (sample.active.id || sample.active.tag),
+        rows: sample.rows, centerInDetail: sample.hit.centerInDetail,
+        centerHit: sample.hit.center[0] || null, connHit: sample.hit.conn[0] || null
     };
 }
 
@@ -170,6 +261,7 @@ function probe(reason) {
     var sample = stateSnapshot(reason);
     if (!sample) return;
     append("layout", shortLayout(sample));
+    rememberDetail(sample);
     var kind = layoutAnomaly(sample);
     var now = clock();
     if (!kind) { pending = null; activeAnomaly = null; drawDebug(); return; }
@@ -215,6 +307,7 @@ function report() {
     return {
         current: ready ? stateSnapshot("debug_report") : null,
         savedIncidents: incidents.slice(),
+        lastDetail: lastDetail,
         currentTrace: trace.slice()
     };
 }
@@ -279,7 +372,10 @@ function debugUI(force, reveal) {
         }, function () { copy.textContent = "Copy failed"; });
     });
     button("Clear saved", function () {
-        last = null; incidents = []; try { localStorage.removeItem(STORAGE_KEY); } catch (e) { }
+        last = null; incidents = []; lastDetail = null; lastDetailSignature = "";
+        try {
+            localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(DETAIL_KEY);
+        } catch (e) { }
         drawDebug();
     });
     panel.appendChild(actions); panel.appendChild(pre); box.appendChild(toggle); box.appendChild(panel);
@@ -334,6 +430,7 @@ export var Diagnostics = {
     bind: function (value) {
         if (installed) return;
         installed = true; context = value; incidents = readSaved(); last = incidents[0] || null;
+        lastDetail = readLastDetail();
         window.__clawdlineDiagnostics = Diagnostics;
         window.addEventListener("error", function (event) {
             captureError("javascript_error", event.error || event.message);
