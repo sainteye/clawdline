@@ -641,7 +641,10 @@ final class Config {
     /// not at all — ``Transcript/sessionID(of:)`` crosses to main for the same table and says so.
     /// The crossing has to be here rather than at the callers: ``TargetSession/displayLabel`` asks
     /// for a title from the server's queue as well as from the panel.
-    private func hookSessionID(of target: TargetSession) -> String? {
+    ///
+    /// Not private because ``SessionNaming/look(at:startedAt:sources:)`` needs the same id from
+    /// the same queues, and a second copy of this crossing is a second chance to get it wrong.
+    func hookSessionID(of target: TargetSession) -> String? {
         if Thread.isMainThread { return HookBridge.note(for: target)?.session }
         return DispatchQueue.main.sync { HookBridge.note(for: target)?.session }
     }

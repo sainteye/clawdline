@@ -438,7 +438,7 @@ why.
 **Why `full` is the default.** A dispatched session's job *is* running commands and writing files,
 and every narrower setting stops somewhere: `ask` stops on the first thing it does (reading its own
 CHILD.md), `edits` gets past writing files but not past `cat` / `mkdir` / `curl` / `sleep` — which
-is the entirety of handing work on. No flag covers those short of `full`. It does not widen *who*
+is most of what a task consists of. No flag covers those short of `full`. It does not widen *who*
 may dispatch; that is still the `0600` token file.
 
 **⚠️ `auto` is model-dependent, which is why Clawdline does not offer it.** Measured:
@@ -1295,8 +1295,8 @@ hand-written SVG instead — see §2.5.
   app cannot type into it, and two minutes later it is `spawn_failed` with nothing on screen but a
   menu that makes no sense. To dispatch into a new directory, ask the user to open claude there by
   hand once first.
-- **If you are a child that dispatched further, wait for those before writing your own
-  `result.json`.** The moment your task ends, everything you sent out is collected with it — your
-  finish is their deadline.
+- **Do not end your own session while a task you dispatched is still out.** The moment your
+  session ends, everything you sent out is collected with it — your finish is their deadline. A
+  child has nothing out to wait for: it dispatches nothing, which is what §0 is for.
 - The full protocol — state machine, file formats, API, how cost is counted — is in
   [`docs/orchestrator.md`](../../docs/orchestrator.md).

@@ -223,12 +223,6 @@ final class CodexNaming {
         return id
     }
 
-    static func displayLabel(threadName: String?, terminalLabel: String) -> String {
-        guard let name = threadName?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !name.isEmpty else { return terminalLabel }
-        return name
-    }
-
     private func associate(targetID: String, with threadID: String) {
         lock.lock()
         let changed = displayedTitles[targetID].map { $0.threadID != threadID } ?? false

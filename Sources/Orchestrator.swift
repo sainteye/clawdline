@@ -6333,6 +6333,9 @@ enum Orchestrator {
         // nothing to read, and the record cannot be damaged by a stale copy anyway: `replaceTask`
         // refuses to move a task backwards.
         let visibleTerminals = Set(SessionWatch.shared.targets.map(\.id))
+        // Outside this type's lock, because it takes one of its own and nothing here needs the
+        // two held together.
+        SessionNaming.forget(closedFrom: visibleTerminals)
         lock.lock()
         pruneClosedHandoffTitles(visible: visibleTerminals)
         beatSequence += 1

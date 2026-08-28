@@ -43,9 +43,12 @@ struct TargetSession: Equatable, Identifiable {
     /// one — and the thing it was standing in for is now answered properly by ``SessionState``.
     ///
     /// **``displayLabel`` deliberately does not use this**, and that is the whole of the fix
-    /// recorded there. What is left here is the terminal-side uses — a tmux pane's name, and the
-    /// title matching inside ``Transcript/locate(cwd:tabTitle:startedAt:sessionID:)`` when a
-    /// pane's own record has to be guessed at.
+    /// recorded there. What is left is nothing in `Sources/`: after that fix this property has no
+    /// caller outside the suite, which reads it to prove the tidying still works and that a row
+    /// is *not* named from it. Said plainly because the first draft of this paragraph named two
+    /// uses that do not exist — `Tmux.swift` never mentions `label`, and
+    /// ``Transcript/locate(in:tabTitle:startedAt:sessionID:)`` is handed the raw `name` — and a
+    /// list of live uses that are not live is an invitation to wire it back up.
     var label: String {
         var s = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.hasSuffix(")"), let open = s.lastIndex(of: "("), open > s.startIndex {
@@ -150,13 +153,22 @@ struct TargetSession: Equatable, Identifiable {
 /// was emptied nothing said so — the row simply started reading `Default`. Two rules follow, and
 /// both are load-bearing here:
 ///
-/// - **More than one source.** Three of them answer the same question independently: the
-///   registry file names the conversation by pid, a hook-free installation still has a transcript
-///   findable by process start time, and either of those alone is enough. See ``look(at:)``.
+/// - **More than one source.** Four of them answer the same question independently: the registry
+///   file names the conversation by pid, a `SessionStart` hook names it by tty, a hook-free
+///   installation still has a transcript findable by process start time, and any of those alone
+///   is enough. See ``look(at:startedAt:sources:)``.
 /// - **A source going quiet is not news that the name has changed.** ``reconcile(remembered:found:startedAt:now:)``
 ///   keeps the last good answer field by field, and gives it up only on evidence that the tab now
 ///   holds a *different* conversation. A lookup that fails for a second — a `ps` that did not
 ///   answer, a registry file mid-rewrite — must not blank a name on screen.
+///
+/// A third rule was added after review, because the first two on their own bought a worse bug
+/// than the one they closed:
+///
+/// - **No identity, no answer.** When nothing can say *which* conversation is in this tab, the
+///   honest reply is a blank, not the project's most recently written transcript. `Default` on
+///   eleven rows announced itself; somebody else's descriptive title on one row does not. See the
+///   guard in ``look(at:startedAt:sources:)``.
 enum SessionNaming {
 
     /// What one look found. Two fields because they fail independently: a session in its first
@@ -230,30 +242,76 @@ enum SessionNaming {
     static func title(of target: TargetSession) -> String? { name(of: target).title }
     static func handle(of target: TargetSession) -> String? { name(of: target).handle }
 
-    /// Reading the files. Kept apart from the caching and the reconciling above so that the two
-    /// rules this type exists for can be tested without a live terminal, a real `~/.claude`, or
-    /// a clock.
+    /// The three files a look reads, each behind a closure so that ``look(at:startedAt:sources:)``
+    /// can be exercised without a live terminal, somebody's real `~/.claude`, or a clock.
     ///
-    /// **`tabTitle: ""` is the fix, stated where it is made.** ``Transcript/locate(cwd:tabTitle:startedAt:sessionID:)``
+    /// The seam is here rather than around the whole of the reading — which is what
+    /// ``lookForTesting`` does, and why it could not answer this — because the reading is the
+    /// part with the rules in it. With `look` itself stubbed out, gutting its body to `return
+    /// .none` left the suite at the same 4987 passing checks: the feature's own headline claim
+    /// had no assertion anywhere behind it.
+    struct Sources {
+        /// Claude Code's registry file for this tab's process, when there is one.
+        var registryEntry: (TargetSession) -> SessionRegistry.Entry?
+        /// The session id a `SessionStart` hook recorded against this tty, when one is installed.
+        var hookSessionID: (TargetSession) -> String?
+        /// The `~/.claude/projects/<slug>` directory this session's transcripts live in.
+        var transcripts: (TargetSession) -> URL?
+
+        static let live = Sources(
+            registryEntry: { target in
+                // Behind the same setting as every other read of that directory: somebody who
+                // has turned the registry off has said not to read those files, and the routes
+                // below still answer without them.
+                Config.shared.sessionRegistry
+                    ? SessionRegistry.entry(for: target.id, in: Targets.registry(of: [target]))
+                    : nil
+            },
+            hookSessionID: { Config.shared.hookSessionID(of: $0) },
+            transcripts: { target in
+                Targets.workingDirectory(of: target).map { Transcript.projectDirectory(forCwd: $0) }
+            })
+    }
+
+    /// Reading the files. Kept apart from the caching and the reconciling above so that the rules
+    /// this type exists for can be tested without a live terminal, a real `~/.claude`, or a clock.
+    ///
+    /// **`tabTitle: ""` is the fix, stated where it is made.** ``Transcript/locate(in:tabTitle:startedAt:sessionID:)``
     /// will rank candidate transcripts by how well their recorded title matches the tab's, which
     /// is exactly the dependency being removed: a tab renamed to `Default` would go looking for a
-    /// transcript called `Default`. Passing nothing skips that branch, leaving the two routes
-    /// that rest on identity — the session id from the registry, and failing that the process
-    /// start time, which no terminal can rewrite.
-    private static func look(at target: TargetSession, startedAt: Date?) -> Name {
-        // Behind the same setting as every other read of that directory: somebody who has turned
-        // the registry off has said not to read those files, and the transcript route below still
-        // answers without them.
-        let entry = Config.shared.sessionRegistry
-            ? SessionRegistry.entry(for: target.id, in: Targets.registry(of: [target])) : nil
-        guard let cwd = Targets.workingDirectory(of: target) else {
-            return Name(title: nil, handle: entry?.name)
+    /// transcript called `Default`. Passing nothing skips that branch, leaving the routes that
+    /// rest on identity — the session id, and failing that the process start time, which no
+    /// terminal can rewrite.
+    ///
+    /// **And when none of those answer, this returns nothing rather than a ranked guess.** With
+    /// no session id and no start time, `locate` has only `files.first` left — the project's most
+    /// recently written transcript, which is how a brand-new tab once ended up showing somebody
+    /// else's conversation with their project's name on it. That is not a hypothetical here:
+    /// the id is absent whenever the registry is switched off, whenever Claude Code predates it,
+    /// and through the whole window in which a child inherits a polluted environment and writes
+    /// no registry file of its own; the start time is absent whenever its `ps` fails. A blank
+    /// name falls back to the handle, or to the coordinate — visibly empty, which somebody can
+    /// see is wrong. A stranger's title is a plausible-looking error, and nobody checks those.
+    /// ``Transcript/sessionID(of:)`` drew the same line for identity one file over: *without a
+    /// registry or hook naming one transcript, no ranked candidate may become somebody's id*.
+    static func look(at target: TargetSession, startedAt: Date?,
+                     sources: Sources = .live) -> Name {
+        let entry = sources.registryEntry(target)
+        let handle = entry?.name
+        // Both precise sources, in the order ``Transcript/record(of:)`` asks them: the registry
+        // is there whether or not anybody installed hooks, and the hook covers the installation
+        // whose registry file this build cannot see.
+        let sessionID = Transcript.namedClaudeSessionID(registry: entry?.sessionID,
+                                                        hook: sources.hookSessionID(target))
+        guard sessionID != nil || startedAt != nil else { return Name(title: nil, handle: handle) }
+        guard let directory = sources.transcripts(target) else {
+            return Name(title: nil, handle: handle)
         }
-        guard let url = Transcript.locate(cwd: cwd, tabTitle: "", startedAt: startedAt,
-                                          sessionID: entry?.sessionID) else {
-            return Name(title: nil, handle: entry?.name)
+        guard let url = Transcript.locate(in: directory, tabTitle: "", startedAt: startedAt,
+                                          sessionID: sessionID) else {
+            return Name(title: nil, handle: handle)
         }
-        return Name(title: Transcript.title(ofTranscript: url), handle: entry?.name)
+        return Name(title: Transcript.title(ofTranscript: url), handle: handle)
     }
 
     /// What survives a look, field by field.
@@ -283,14 +341,38 @@ enum SessionNaming {
     /// missing start time as a mismatch. Here a missing one is a `ps` that did not answer, which
     /// is the ordinary way a source goes quiet for a moment and is the exact case that must not
     /// blank a row.
+    ///
+    /// **But the two missing halves are not the same missing.** *This* look failing to measure a
+    /// start time is that momentary quiet. The *remembered* look having failed to measure one is
+    /// a name with no baseline under it at all — it was written by a look that could not say
+    /// which conversation it was about, and treating a measurement that has now arrived as
+    /// "still the same one" would carry that name across a conversation change forever, since
+    /// ``reconcile(remembered:found:startedAt:now:)`` only ever fills the baseline in once. So a
+    /// start time arriving where there was none is a new baseline, not a continuation: the name
+    /// is given up, and the look that has evidence writes the record from here on.
     static func continues(_ previous: Remembered?, startedAt: Date?) -> Bool {
         guard let previous else { return false }
-        guard let known = previous.startedAt, let current = startedAt else { return true }
+        guard let known = previous.startedAt else { return startedAt == nil }
+        guard let current = startedAt else { return true }
         return Config.sameConversation(known, current)
     }
 
+    /// Drop what is remembered for tabs that are no longer on screen.
+    ///
+    /// A name is forgotten when the tab stops holding an assistant, but a tab that is *closed*
+    /// is never asked about again, so its row sat in the table until the app quit.
+    /// ``Orchestrator/pruneClosedHandoffTitles(visible:)`` is next door for the same reason and
+    /// states the sharper half of it: a terminal id is reusable, so a name left behind under a
+    /// closed tab's id is a name waiting to be handed to a later session.
+    static func forget(closedFrom visible: Set<String>) {
+        lock.lock(); defer { lock.unlock() }
+        remembered = remembered.filter { visible.contains($0.key) }
+    }
+
     /// Test seam for the caching and reconciling above, which are otherwise reachable only
-    /// through a live terminal's `ps`, `lsof` and somebody's real `~/.claude`.
+    /// through a live terminal's `ps`, `lsof` and somebody's real `~/.claude`. **It replaces the
+    /// whole of the reading**, ``look(at:startedAt:sources:)`` included, so a test that is about
+    /// what the reading does goes through ``Sources`` instead.
     static var lookForTesting: ((TargetSession) -> Name)?
 
     static func forgetForTesting() {
