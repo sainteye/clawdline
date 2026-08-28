@@ -32,9 +32,11 @@ tools/check-web-ids.py
 # scoped package.json marks its shipped files as ESM, matching the browser's module entry.
 node Tests/web-schedules.mjs
 node Tests/web-coordinator.mjs
+node Tests/web-clawdfather.mjs
 node Tests/web-optimistic.mjs
 node Tests/web-session-resilience.mjs
 node Tests/web-session-disposition.mjs
+node Tests/web-title-transport.mjs
 
 BIN="${TMPDIR:-/tmp}/clawdline-tests"
 

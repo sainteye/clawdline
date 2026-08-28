@@ -81,7 +81,11 @@ export function scheduleRunsHTML(runs, at, terminalIsOpen) {
                     esc(outcome.label) + '</span>' +
                 '<time class="schedule-run-time"' + (when ? ' title="' + esc(when) + '"' : '') +
                     '>' + esc(relative || when) + '</time>' +
-                (summary ? '<span class="schedule-run-summary">' + esc(summary) + '</span>' : '') +
+                // The summary is clamped to two lines in schedules.css. The title keeps the
+                // whole sentence reachable where a pointer exists, without letting one verbose
+                // run bury the ones under it.
+                (summary ? '<span class="schedule-run-summary" title="' + esc(summary) + '">' +
+                    esc(summary) + '</span>' : '') +
                 '<span class="schedule-run-meta"' +
                     (project ? ' title="' + esc(project) + '"' : '') + '>' + esc(meta) + '</span>' +
                 '<span class="schedule-run-action">' + esc(actionLabel) + '</span>' +

@@ -42,6 +42,15 @@ func runCoordinatorRegistrationWorkerIfRequested() {
 
 runCoordinatorRegistrationWorkerIfRequested()
 
+// The suite exercises persistence and deliberate corruption repeatedly. Keep those fixtures out
+// of the installed app's live registry even when the test binary is run outside a sandbox.
+let orchestratorTestStoreDirectory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("clawdline-orchestrator-tests-\(UUID().uuidString)", isDirectory: true)
+try! FileManager.default.createDirectory(at: orchestratorTestStoreDirectory,
+                                         withIntermediateDirectories: true)
+Orchestrator.storeURLOverrideForTesting = orchestratorTestStoreDirectory
+    .appendingPathComponent("orchestrator.json")
+
 // A test binary rather than XCTest, for the same reason the app has no Xcode project:
 // `swiftc` and nothing else. Run it with ./test.sh.
 //
@@ -6332,6 +6341,49 @@ group("a fan-out is one sentence, whatever it cost") {
            StateHook.projectName(forDirectory: "/", fallback: "Clawdline"), "Clawdline")
 }
 
+group("smart notifications describe the completed work, not its machinery") {
+    let entries = [
+        Transcript.Entry(kind: .user, text: "old request", tool: nil, time: nil),
+        Transcript.Entry(kind: .assistant, text: "old answer", tool: nil, time: nil),
+        Transcript.Entry(kind: .user, text: "fix reconnect delivery", tool: nil, time: nil),
+        Transcript.Entry(kind: .tool, text: "Tests/main.swift", tool: "Read", time: nil),
+        Transcript.Entry(kind: .toolResult, text: "thousands of noisy bytes", tool: nil,
+                         time: nil),
+        Transcript.Entry(kind: .assistant,
+                         text: "Fixed SSE resume and added a lost-event regression test.",
+                         tool: nil, time: nil),
+    ]
+    expect("only the last request and answer become summary material",
+           SmartNotification.context(from: entries),
+           SmartNotification.Context(
+            request: "fix reconnect delivery",
+            outcome: "Fixed SSE resume and added a lost-event regression test."))
+    check("a tool result cannot stand in for a completed answer",
+          SmartNotification.context(from: Array(entries.dropLast())) == nil)
+
+    let tasks = [
+        SmartNotification.TaskLine(title: "resume", state: "success",
+                                   summary: "Added SSE replay."),
+        SmartNotification.TaskLine(title: "receipts", state: "failure",
+                                   summary: "The terminal bridge stayed blocked."),
+    ]
+    let source = SmartNotification.source(for: tasks) ?? ""
+    check("a fan-out names each task, state and authored summary",
+          source.contains("resume") && source.contains("success")
+            && source.contains("Added SSE replay.") && source.contains("failure")
+            && source.contains("The terminal bridge stayed blocked."))
+
+    let envelope = #"{"structured_output":{"summary":"  修好 SSE 重連\n並補上測試。  "}}"#
+    expect("structured model output becomes one lock-screen sentence",
+           SmartNotification.summary(fromClaudeOutput: envelope), "修好 SSE 重連 並補上測試。")
+    check("an empty model answer is a failure, so the ordinary notice can take over",
+          SmartNotification.summary(fromClaudeOutput:
+            #"{"structured_output":{"summary":"   "}}"#) == nil)
+    expect("the project remains visible beside the generated account",
+           SmartNotification.body(project: "clawdline", summary: "修好重連。"),
+           "clawdline · 修好重連。")
+}
+
 group("a push payload keeps the beginning of a sentence that does not fit") {
     let beginning = "KEEP THE FORECAST: "
     let ending = " THROW THIS TAIL AWAY"
@@ -7620,6 +7672,39 @@ group("the key route is gated like every other write") {
     // on screen. It goes through the same parse and the same gates as every other key.
     expect("and submit is a good key",
            key(writer.token, "{\"key\":\"submit\"}").status, 404)
+}
+
+group("the session-title route is a bounded authenticated write") {
+    let wasWriting = Config.shared.remoteWrite
+    defer { Config.shared.remoteWrite = wasWriting }
+    let reader = RemoteAuth.addDevice(name: "a title reader", caps: [.read])
+    let writer = RemoteAuth.addDevice(name: "a title writer", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: reader.id); RemoteAuth.revoke(id: writer.id) }
+
+    func title(_ token: String?, _ value: Any) -> RemoteServer.Response {
+        var headers = ["Content-Type": "application/json",
+                       "Idempotency-Key": UUID().uuidString]
+        if let token { headers["Authorization"] = "Bearer \(token)" }
+        let body = try! JSONSerialization.data(withJSONObject: ["title": value])
+        return RemoteServer.shared.route(remoteRequest(
+            "POST", "/v1/sessions/missing/title", headers: headers,
+            body: String(decoding: body, as: UTF8.self)))
+    }
+
+    Config.shared.remoteWrite = true
+    expect("an anonymous title write is refused", title(nil, "name").status, 401)
+    expect("a read-only device cannot name a session", title(reader.token, "name").status, 403)
+    Config.shared.remoteWrite = false
+    expect("the global write switch protects session titles",
+           remoteErrorCode(title(writer.token, "name")), "write_disabled")
+    Config.shared.remoteWrite = true
+    expect("a well-formed title for no session is a 404",
+           title(writer.token, "name").status, 404)
+    expect("a non-string title is rejected before session lookup",
+           title(writer.token, 7).status, 400)
+    expect("an overlong title is rejected before session lookup",
+           title(writer.token, String(repeating: "x", count: Config.sessionTitleLimit + 1)).status,
+           400)
 }
 
 group("a recording arrives as base64 and is refused before it costs a second of CPU") {
@@ -9446,6 +9531,329 @@ group("the fields of a rollout, one at a time") {
            "one.swift, two.swift, three.swift +1")
 }
 
+group("a person-named session title outranks every automatic label") {
+    expect("a person's title outranks the orchestrator task",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: "My release room", orchestratorTitle: "automatic handoff",
+               threadName: "Codex thread", terminalLabel: "terminal tab"),
+           "My release room")
+    expect("the orchestrator task still outranks Codex metadata",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: nil, orchestratorTitle: "automatic handoff",
+               threadName: "Codex thread", terminalLabel: "terminal tab"),
+           "automatic handoff")
+    expect("Codex metadata still outranks the terminal label",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: nil, orchestratorTitle: nil,
+               threadName: "Codex thread", terminalLabel: "terminal tab"),
+           "Codex thread")
+    // Clearing, through the store rather than by passing `nil` in by hand. Handing the function a
+    // literal `nil` restates the check above it and proves nothing about what happens when a
+    // person empties the box: the interesting half is that `Config` stops answering.
+    let clearingDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-title-clearing-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: clearingDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: clearingDir) }
+    let store = Config(directoryForTesting: clearingDir)
+    func labelForStoredTitle() -> String {
+        TargetSession.preferredDisplayLabel(
+            manualTitle: store.sessionTitle(sessionID: nil, terminalID: "terminal-clearing"),
+            orchestratorTitle: "automatic handoff", threadName: "Codex thread",
+            terminalLabel: "terminal tab")
+    }
+    store.setSessionTitle("Release room", sessionID: nil, terminalID: "terminal-clearing")
+    expect("a stored title is what the display prefers", labelForStoredTitle(), "Release room")
+    store.setSessionTitle("   \n  ", sessionID: nil, terminalID: "terminal-clearing")
+    expect("clearing a person's title restores the automatic label",
+           labelForStoredTitle(), "automatic handoff")
+}
+
+group("session titles are normalized, persisted and bounded") {
+    expect("line breaks and controls become one ordinary space",
+           Config.normalizedSessionTitle("  first\nsecond\u{0007}\tthird  "),
+           "first second third")
+    check("only whitespace clears a title",
+          Config.normalizedSessionTitle(" \n\t ") == nil)
+    expect("the length boundary is accepted",
+           Config.normalizedSessionTitle(String(repeating: "x", count: Config.sessionTitleLimit))?.count,
+           Config.sessionTitleLimit)
+
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-session-titles-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let config = Config(directoryForTesting: directory)
+    let now = Date()
+    expect("setting returns the normalized title",
+           config.setSessionTitle("  release\nroom  ", sessionID: "claude-one",
+                                  terminalID: "terminal-one", now: now),
+           "release room")
+    expect("the stable Claude id is preferred after a terminal changes",
+           config.sessionTitle(sessionID: "claude-one", terminalID: "terminal-two"),
+           "release room")
+    expect("the terminal id remains a fallback when there is no hook id",
+           config.sessionTitle(sessionID: nil, terminalID: "terminal-one"),
+           "release room")
+    config.save()
+    let loaded = Config(directoryForTesting: directory)
+    expect("a saved title makes a config round trip",
+           loaded.sessionTitle(sessionID: "claude-one", terminalID: "terminal-two"),
+           "release room")
+    // Overlong before cleared, because the two used to be the same outcome: the removal ran first
+    // and only the append was bounded, so a title too long to store took the stored one with it —
+    // a name silently lost to a request that was answered `400`.
+    let tooLong = String(repeating: "x", count: Config.sessionTitleLimit + 1)
+    check("an overlong title is refused without taking the stored one with it",
+          loaded.setSessionTitle(tooLong, sessionID: "claude-one",
+                                 terminalID: "terminal-one", now: now) == nil
+              && loaded.sessionTitle(sessionID: "claude-one",
+                                     terminalID: "terminal-one") == "release room")
+    check("clearing removes both lookup keys",
+          loaded.setSessionTitle(" \n ", sessionID: "claude-one",
+                                 terminalID: "terminal-one", now: now) == nil
+              && loaded.sessionTitle(sessionID: "claude-one", terminalID: "terminal-one") == nil)
+
+    let rows: [[String: Any]] = (0..<(Config.sessionTitleCapacity + 3)).map { index in
+        ["title": "title \(index)", "terminal_id": "terminal-\(index)",
+         "updated_at": now.addingTimeInterval(Double(index)).timeIntervalSince1970]
+    }
+    let file = directory.appendingPathComponent("config.json")
+    let data = try! JSONSerialization.data(withJSONObject: ["session_titles": rows])
+    try! data.write(to: file)
+    let bounded = Config(directoryForTesting: directory)
+    check("loading keeps only the newest bounded set",
+          bounded.sessionTitle(sessionID: nil, terminalID: "terminal-0") == nil
+              && bounded.sessionTitle(sessionID: nil,
+                                      terminalID: "terminal-\(Config.sessionTitleCapacity + 2)")
+                  == "title \(Config.sessionTitleCapacity + 2)")
+
+    let stale = [["title": "old", "terminal_id": "old-terminal",
+                  "updated_at": now.addingTimeInterval(-Config.sessionTitleLifetime - 1)
+                    .timeIntervalSince1970]]
+    try! JSONSerialization.data(withJSONObject: ["session_titles": stale]).write(to: file)
+    let cleaned = Config(directoryForTesting: directory)
+    check("expired closed-session titles are discarded",
+          cleaned.sessionTitle(sessionID: nil, terminalID: "old-terminal") == nil)
+}
+
+group("renaming never changes the terminal label used to locate transcripts") {
+    let target = TargetSession(backend: .iterm, id: "terminal-name-test",
+                               name: "Claude Code", tty: "/dev/ttys099",
+                               windowIndex: 0, tabIndex: 0, assistant: .claude)
+    let display = TargetSession.preferredDisplayLabel(
+        manualTitle: "Human title", orchestratorTitle: nil,
+        threadName: nil, terminalLabel: target.label)
+    expect("the display calculation can change independently", display, "Human title")
+
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-title-transcript-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let transcript = directory.appendingPathComponent("matching.jsonl")
+    try! Data("{\"customTitle\":\"Claude Code\"}\n".utf8).write(to: transcript)
+    // A second conversation in the same project, named what this session is *displayed* as. It is
+    // what makes the check below a regression rather than a restatement: comparing `target.label`
+    // with a copy of itself passes for every possible edit to this repository, and matching on the
+    // terminal title passed before any of this existed. What has to stay true is that the two
+    // strings have come apart and that the lookup is still given the terminal one — because the
+    // day a rename feeds back into `label`, or a caller hands `displayLabel` to `locate`, this
+    // session gets attached to somebody else's file, confidently.
+    let impostor = directory.appendingPathComponent("named-like-the-display.jsonl")
+    try! Data("{\"customTitle\":\"Human title\"}\n".utf8).write(to: impostor)
+    expect("transcript matching still receives the unchanged terminal title",
+           Transcript.locate(in: directory, tabTitle: target.label), transcript)
+    check("the display title and the terminal label really have come apart",
+          display != target.label)
+    expect("and looking one up by the display title would land on the other conversation",
+           Transcript.locate(in: directory, tabTitle: display), impostor)
+}
+
+group("a person's session title belongs to the conversation, not to the tab") {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-title-conversation-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let config = Config(directoryForTesting: directory)
+    let now = Date()
+    let started = Date(timeIntervalSince1970: 1_700_000_000)
+    let restarted = started.addingTimeInterval(3_600)
+
+    // The failure this exists for: iTerm2 keeps a tab's session UUID when the assistant inside it
+    // exits, so a name stored against the terminal alone was handed to the next conversation for
+    // up to ninety days — and, being a person's name, it outranked the task title of a tab this
+    // app had opened for a dispatch.
+    config.setSessionTitle("Release room", sessionID: "claude-one", terminalID: "terminal-one",
+                           startedAt: started, now: now)
+    expect("the conversation that chose the name still reads it",
+           config.sessionTitle(sessionID: "claude-one", terminalID: "terminal-one",
+                               conversationStart: { started }),
+           "Release room")
+    check("the next conversation in that tab does not inherit it",
+          config.sessionTitle(sessionID: "claude-two", terminalID: "terminal-one",
+                              conversationStart: { restarted }) == nil)
+    expect("and a resumed conversation keeps it wherever it is resumed",
+           config.sessionTitle(sessionID: "claude-one", terminalID: "terminal-two",
+                               conversationStart: { nil }),
+           "Release room")
+
+    // Codex and a Claude without hooks have no conversation id to offer, so the fallback has to
+    // stand on the process instead of on the tab.
+    config.setSessionTitle("Night shift", sessionID: nil, terminalID: "terminal-codex",
+                           startedAt: started, now: now)
+    expect("a session with no conversation id is matched by the process in its tab",
+           config.sessionTitle(sessionID: nil, terminalID: "terminal-codex",
+                               conversationStart: { started.addingTimeInterval(2) }),
+           "Night shift")
+    check("the next assistant started in that tab is not that session",
+          config.sessionTitle(sessionID: nil, terminalID: "terminal-codex",
+                              conversationStart: { restarted }) == nil)
+    check("and a tab with nothing running in it cannot claim an assistant's name",
+          config.sessionTitle(sessionID: nil, terminalID: "terminal-codex",
+                              conversationStart: { nil }) == nil)
+
+    // A name can be chosen in the moment before the hook note arrives, so a row carrying no
+    // conversation id is still this conversation's when the process agrees.
+    config.setSessionTitle("Before the hook arrived", sessionID: nil, terminalID: "terminal-late",
+                           startedAt: started, now: now)
+    expect("a name chosen before the hook note arrived still belongs to that process",
+           config.sessionTitle(sessionID: "claude-late", terminalID: "terminal-late",
+                               conversationStart: { started }),
+           "Before the hook arrived")
+
+    check("two readings of one process may disagree by a second or two",
+          Config.sameConversation(started, started.addingTimeInterval(2)))
+    check("but not by an hour", !Config.sameConversation(started, restarted))
+    check("nothing running is the same fact on both sides", Config.sameConversation(nil, nil))
+    check("and it is not the same fact as a running process",
+          !Config.sameConversation(nil, started))
+    check("nor the other way round", !Config.sameConversation(started, nil))
+
+    config.save()
+    let loaded = Config(directoryForTesting: directory)
+    expect("the credential survives a config round trip",
+           loaded.sessionTitle(sessionID: nil, terminalID: "terminal-codex",
+                               conversationStart: { started }),
+           "Night shift")
+    check("and it is still the credential after loading, not just a stored field",
+          loaded.sessionTitle(sessionID: nil, terminalID: "terminal-codex",
+                              conversationStart: { restarted }) == nil)
+}
+
+group("a config write that did not happen is not reported as saved") {
+    let writable = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-title-durable-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: writable, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: writable) }
+    let stored = Config(directoryForTesting: writable)
+    stored.setSessionTitle("Release room", sessionID: nil, terminalID: "terminal-durable")
+    check("a write that landed says so", stored.save())
+
+    // A real failure, not a stub: the settings directory is a regular file, so `createDirectory`
+    // and the write both fail the way they would on a full or read-only disk. `local_applied` is
+    // what the whole downstream design leans on — a busy Claude is deliberately not queued
+    // because the local name is said to be durable — so it may not be a constant.
+    let blocked = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-title-blocked-\(UUID().uuidString)")
+    try! Data("this is a file where a directory should be\n".utf8).write(to: blocked)
+    defer { try? FileManager.default.removeItem(at: blocked) }
+    let broken = Config(directoryForTesting: blocked)
+    broken.setSessionTitle("Release room", sessionID: nil, terminalID: "terminal-blocked")
+    check("a write that could not happen says that instead", !broken.save())
+    expect("and the name is still in use, which is why the route answers 200",
+           broken.sessionTitle(sessionID: nil, terminalID: "terminal-blocked"),
+           "Release room")
+}
+
+group("clearing a title takes the Codex name off Clawdline's surfaces too") {
+    let target = TargetSession(backend: .iterm, id: "terminal-codex-clear",
+                               name: "codex", tty: "/dev/ttys077",
+                               windowIndex: 0, tabIndex: 3, assistant: .codex)
+    // Through the label rather than only through the cache, and with no orchestrator title in
+    // the way: a task title would answer this expression whether the cache had been cleared or
+    // not, which is a check that passes for every possible edit to this repository.
+    func label() -> String {
+        TargetSession.preferredDisplayLabel(
+            manualTitle: nil, orchestratorTitle: nil,
+            threadName: CodexNaming.shared.title(for: target), terminalLabel: target.label)
+    }
+    CodexNaming.shared.rememberForTesting("Release room", threadID: "thread-clear",
+                                          targetID: target.id)
+    expect("the name a person typed is what the label draws", label(), "Release room")
+    CodexNaming.shared.forget(target: target)
+    check("clearing drops it from the display cache",
+          CodexNaming.shared.title(for: target) == nil)
+    // The half that stays: the thread keeps the name in Codex's own metadata, because
+    // `thread/name/set` has no undo and this app does not know what Codex would have called it.
+    // What has to come back here is the automatic label, not the name that was just cleared.
+    expect("so the label falls back to the terminal's own", label(), "codex")
+}
+
+group("a rename is not typed into a session that is showing a menu") {
+    var looks = 0
+    let idle = SessionTitleSync.action(assistant: .claude, state: .idle,
+                                       clearing: false, codexThreadID: nil)
+    // The cached `idle` this starts from can be twenty seconds old while the app is in the
+    // background, which is the state the Mac is in whenever somebody renames from a phone. A
+    // slash command sent to a menu confirms whichever row is highlighted; `/send` pays for the
+    // same capture and its comment records what that cost the last time nobody paid it.
+    expect("a screen with a menu on it is busy, whatever the cached state said",
+           SessionTitleSync.confirmed(idle, showingMenu: { looks += 1; return true }), .busy)
+    expect("a screen with no menu on it still receives the rename",
+           SessionTitleSync.confirmed(idle, showingMenu: { looks += 1; return false }),
+           .renameClaude)
+    expect("both of those read the screen", looks, 2)
+
+    let quiet: [SessionTitleSync.Action] = [.localOnly, .busy, .unavailable,
+                                            .renameCodex(threadID: "thread-one")]
+    for action in quiet {
+        expect("an action that types nothing is returned unchanged",
+               SessionTitleSync.confirmed(action, showingMenu: { looks += 1; return true }),
+               action)
+    }
+    expect("and none of them paid for a screen capture", looks, 2)
+}
+
+group("session-title downstream synchronization never interrupts Claude") {
+    expect("an idle Claude session receives its rename",
+           SessionTitleSync.action(assistant: .claude, state: .idle,
+                                   clearing: false, codexThreadID: nil),
+           .renameClaude)
+    expect("a working Claude session stays local",
+           SessionTitleSync.action(assistant: .claude, state: .working("turn"),
+                                   clearing: false, codexThreadID: nil),
+           .busy)
+    expect("a waiting Claude session is never answered by a rename",
+           SessionTitleSync.action(assistant: .claude, state: .waiting,
+                                   clearing: false, codexThreadID: nil),
+           .busy)
+    // A screen this app could not read is not a session it may type into. Same answer as `busy`,
+    // and the reason it is asserted separately is that the two are different facts — `docs/api.md`
+    // has to describe this one as well, or `busy` becomes the word for "we did not look".
+    expect("a session whose screen could not be read is not typed into either",
+           SessionTitleSync.action(assistant: .claude, state: .unknown,
+                                   clearing: false, codexThreadID: nil),
+           .busy)
+    expect("Codex metadata may be renamed without waiting for idle",
+           SessionTitleSync.action(assistant: .codex, state: .working("turn"),
+                                   clearing: false, codexThreadID: "thread-one"),
+           .renameCodex(threadID: "thread-one"))
+    expect("a Codex session with no thread to name says so rather than reporting success",
+           SessionTitleSync.action(assistant: .codex, state: .idle,
+                                   clearing: false, codexThreadID: nil),
+           .unavailable)
+    expect("a plain shell keeps the name locally and claims nothing downstream",
+           SessionTitleSync.action(assistant: nil, state: .idle,
+                                   clearing: false, codexThreadID: nil),
+           .localOnly)
+    expect("clearing is local-only for every assistant",
+           SessionTitleSync.action(assistant: .claude, state: .idle,
+                                   clearing: true, codexThreadID: nil),
+           .localOnly)
+}
+
 group("which assistant a process name stands for") {
     expect("a bare name", Assistant.named("codex"), .codex)
     expect("a path to one", Assistant.named("/opt/homebrew/bin/claude"), .claude)
@@ -10149,6 +10557,22 @@ group("a child row resolves only to its current parent session") {
     expect("handoff compatibility may address the watched terminal id directly",
            resolveTarget(root: codex.id, assistant: nil, resolution: .handoff,
                          targets: [codex], identities: [:]), codex)
+
+    let terminalBinding = Orchestrator.canonicalRootSession(
+        codex.id, assistant: .codex, among: [codex], sessionID: { _ in wanted })
+    expect("dispatch canonicalizes a terminal id to the process-bound conversation",
+           terminalBinding.sessionID, wanted)
+    check("a resolved dispatch emits no root warning", terminalBinding.warning == nil)
+    let conversationBinding = Orchestrator.canonicalRootSession(
+        wanted, assistant: .codex, among: [codex], sessionID: { _ in wanted })
+    expect("the conversation namespace canonicalizes to the same durable key",
+           conversationBinding.sessionID, wanted)
+    let unresolvedBinding = Orchestrator.canonicalRootSession(
+        "MISSING", assistant: .codex, among: [codex], sessionID: { _ in wanted })
+    expect("an unresolved root spelling is retained for compatibility",
+           unresolvedBinding.sessionID, "MISSING")
+    expect("and dispatch reports the typed orphan-risk warning",
+           unresolvedBinding.warning?["code"] as? String, "root_unresolved")
 
     // Same terminal and tty, but a different assistant now occupies them. Even a stale identity
     // source claiming the old id cannot move this new process under the Codex root.
@@ -11627,6 +12051,16 @@ group("session work state is a closed broker projection, never an idle guess") {
            project(.waiting, waiting: true), .waitingHuman)
     expect("a peer or owed wait is waiting-session without asking the human",
            project(.idle, waiting: true), .waitingSession)
+    expect("an idle root with an active child is waiting-session",
+           Orchestrator.projectSessionWorkState(
+            terminalState: .idle, task: nil, hasCoordinationWait: false,
+            hasOpenHandoff: false, assignmentKnownAbsent: false,
+            hasOutstandingChild: true), .waitingSession)
+    expect("a root working beside its child still reads as working",
+           Orchestrator.projectSessionWorkState(
+            terminalState: .working("parallel work"), task: nil,
+            hasCoordinationWait: false, hasOpenHandoff: false,
+            assignmentKnownAbsent: false, hasOutstandingChild: true), .working)
     expect("an unreadable terminal outranks a delivered milestone",
            project(.unknown, task: task(.success)), .needsTriage)
     expect("renewed activity outranks an older delivery receipt",
@@ -11706,6 +12140,127 @@ group("session completion receipts are bound to the current process, not a reusa
           !Orchestrator.handoffSource("TAB-old", matches: identity))
     check("a stale conversation is not guessed",
           !Orchestrator.handoffSource("conversation-later", matches: identity))
+}
+
+group("a root session can report one delivered turn without becoming a child task") {
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+
+    let started = Date(timeIntervalSince1970: 300)
+    let rootConversation = "12121212-3434-4567-8899-abcdefabcdef"
+    let identity = Orchestrator.SessionWorkIdentity(
+        terminalID: "ROOT-TAB", assistant: .codex, tty: "/dev/ttys9", pid: 900,
+        processStart: started, conversationID: rootConversation)
+    let reported = Orchestrator.reportSessionDelivery(
+        identity: identity, terminalState: .working("wrapping up"),
+        summary: "Implemented and committed the requested change.",
+        now: Date(timeIntervalSince1970: 400))
+    guard case .ok(let payload) = reported,
+          let disposition = payload["disposition"] as? [String: Any] else {
+        check("a bound working root can report delivery", false); return
+    }
+    expect("the root receipt is session-scoped", disposition["scope"] as? String, "session")
+    expect("with explicit self-reported delivery evidence",
+           disposition["evidence"] as? String, "authenticated_session_delivery")
+    expect("and the authored summary", disposition["title"] as? String,
+           "Implemented and committed the requested change.")
+    if case .ok(let retry) = Orchestrator.reportSessionDelivery(
+        identity: identity, terminalState: .working("still wrapping up"),
+        summary: "Implemented and committed the requested change.",
+        now: Date(timeIntervalSince1970: 401)) {
+        expect("an identical in-turn report is idempotent", retry["created"] as? Bool, false)
+        expect("and preserves the original receipt time",
+               (retry["disposition"] as? [String: Any])?["receiptAt"] as? Int, 400)
+    } else { check("an identical root report can be retried", false) }
+
+    let unrelatedChild = Orchestrator.Task(
+        id: "cdcdcdcd-1111-4222-8333-444444444444", state: .briefed, kind: "custom",
+        title: "another root's child", assistant: .claude, projectDir: "/repo",
+        timeoutMinutes: 30, created: Date(timeIntervalSince1970: 399),
+        rootSessionId: "34343434-5656-4789-8abc-defabcdefabc", rootAssistant: .codex,
+        secretHash: String(repeating: "0", count: 64))
+    Orchestrator.holdScheduleTaskForTesting(unrelatedChild)
+
+    let idle = Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle)
+    expect("another root's top-level child does not turn this root into waiting",
+           idle.state, .milestoneComplete)
+    expect("the public projection keeps the session scope",
+           idle.disposition?["scope"] as? String, "session")
+    Orchestrator.saveForTesting()
+    Orchestrator.forget()
+    expect("the root receipt survives an app restart",
+           Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle).state,
+           .milestoneComplete)
+
+    var reused = identity
+    reused.pid = 901
+    expect("a later process in the same terminal cannot borrow the root receipt",
+           Orchestrator.sessionWorkProjection(identity: reused, terminalState: .idle).state,
+           .needsTriage)
+
+    Orchestrator.noteSessionStateChange(terminalID: identity.terminalID, to: .idle)
+    Orchestrator.noteSessionStateChange(terminalID: identity.terminalID,
+                                        to: .working("new request"))
+    expect("starting the next observed turn consumes the old root receipt",
+           Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle).state,
+           .needsTriage)
+
+    let child = Orchestrator.Task(
+        id: "dededede-1111-4222-8333-444444444444", state: .briefed, kind: "custom",
+        title: "live child", assistant: .claude, projectDir: "/repo", timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 450), rootSessionId: rootConversation,
+        rootAssistant: .codex, secretHash: String(repeating: "0", count: 64))
+    Orchestrator.holdScheduleTaskForTesting(child)
+    expect("the broker projects an idle root with its live child as waiting-session",
+           Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle).state,
+           .waitingSession)
+
+    let childIdentity = Orchestrator.SessionWorkIdentity(
+        terminalID: "CHILD-TAB", assistant: .claude, tty: "/dev/ttys10", pid: 1000,
+        processStart: Date(timeIntervalSince1970: 500), conversationID: "child-conversation")
+    var ownTask = Orchestrator.Task(
+        id: "efefefef-1111-4222-8333-444444444444", state: .briefed, kind: "custom",
+        title: "this process is a child", assistant: .claude, projectDir: "/repo",
+        timeoutMinutes: 30, created: Date(timeIntervalSince1970: 490),
+        secretHash: String(repeating: "0", count: 64))
+    ownTask.childTerminalId = childIdentity.terminalID
+    ownTask.childTTY = childIdentity.tty
+    ownTask.childPID = childIdentity.pid
+    ownTask.childProcStart = childIdentity.processStart
+    ownTask.childSessionId = childIdentity.conversationID
+    ownTask.transcriptProven = true
+    Orchestrator.holdScheduleTaskForTesting(ownTask)
+    if case .refused(let status, let code, _, _) = Orchestrator.reportSessionDelivery(
+        identity: childIdentity, terminalState: .working("done"), summary: "done") {
+        expect("a child cannot use the root completion route", status, 409)
+        expect("and is sent back to its task result", code, "child_session")
+    } else { check("a child report is refused", false) }
+
+    if case .refused(let status, let code, _, _) = Orchestrator.reportSessionDelivery(
+        identity: identity, terminalState: .idle, summary: "too late") {
+        expect("a report outside its active turn is a conflict", status, 409)
+        expect("and says the session is not working", code, "session_not_working")
+    } else { check("an idle root cannot mint a fresh check", false) }
+
+    var incomplete = identity
+    incomplete.conversationID = nil
+    if case .refused(let status, let code, _, _) = Orchestrator.reportSessionDelivery(
+        identity: incomplete, terminalState: .working("done"), summary: "done") {
+        expect("an unbound root report is refused", status, 409)
+        expect("with the process-binding code", code, "session_unbound")
+    } else { check("an unbound process cannot report delivery", false) }
+
+    let path = "/v1/orchestrator/sessions/ROOT-TAB/complete"
+    let anonymous = RemoteServer.shared.route(remoteRequest(
+        "POST", path, body: "{\"summary\":\"done\"}"))
+    expect("the root completion route needs the machine-local credential",
+           anonymous.status, 401)
 }
 
 group("only broker-verified target landing evidence can produce the double check") {
@@ -14096,6 +14651,32 @@ group("the agent-notification preference defaults on, including for old config f
         .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
     expect("saving uses the orchestrator_agent_notify key",
            written?["orchestrator_agent_notify"] as? Bool, true)
+}
+
+group("smart notifications are an explicit quota-spending preference") {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-smart-notify-config-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let absent = Config(directoryForTesting: directory)
+    expect("smart notifications default off", absent.smartNotifications, false)
+
+    try! Data("{}".utf8).write(to: directory.appendingPathComponent("config.json"))
+    let missing = Config(directoryForTesting: directory)
+    expect("an old config does not silently start spending assistant quota",
+           missing.smartNotifications, false)
+
+    try! Data("{\"smart_notifications\":true}".utf8)
+        .write(to: directory.appendingPathComponent("config.json"))
+    let enabled = Config(directoryForTesting: directory)
+    expect("the explicit on value is loaded", enabled.smartNotifications, true)
+    enabled.save()
+    let written = (try? Data(contentsOf: enabled.fileURL))
+        .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    expect("saving uses the smart_notifications key",
+           written?["smart_notifications"] as? Bool, true)
 }
 
 group("an agent notification is narrow, scarce and audited") {
@@ -17871,7 +18452,7 @@ group("an attached briefing is delivered work, not a tab still trying to open") 
         Orchestrator.forget()
     }
     Orchestrator.forget()
-    func oldSpawning(attached: Bool) -> Orchestrator.Task {
+    func oldSpawning(attached: Bool, age: TimeInterval? = nil) -> Orchestrator.Task {
         let id = UUID().uuidString.lowercased()
         let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
         made.append(directory)
@@ -17880,12 +18461,23 @@ group("an attached briefing is delivered work, not a tab still trying to open") 
             id: id, state: .spawning, kind: "custom", title: "old briefing",
             assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
             secretHash: String(repeating: "0", count: 64))
-        let age = attached ? TimeInterval(task.timeoutMinutes * 60 + 1)
-                           : Orchestrator.readyLimit + 1
-        task.spawnedAt = Date().addingTimeInterval(-age)
+        let reached = age ?? (attached ? TimeInterval(task.timeoutMinutes * 60 + 1)
+                                       : Orchestrator.readyLimit + 1)
+        task.spawnedAt = Date().addingTimeInterval(-reached)
         task.attachSessionId = attached ? "STANDING" : nil
         return task
     }
+    // The window the tab deadline used to swallow: past the four-minute limit for a tab that
+    // never reached a prompt, but nowhere near this task's own timeout. Nothing else in the suite
+    // puts an attached fixture in it, so without a case here the `attachSessionId == nil` guard on
+    // that deadline can be deleted and every remaining assertion stays green — the owner is still
+    // reading a menu and the task is called spawn_failed anyway.
+    let answering = oldSpawning(attached: true, age: Orchestrator.readyLimit + 1)
+    Orchestrator.holdScheduleTaskForTesting(answering)
+    Orchestrator.beat(fromTimer: true)
+    expect("an attached task is not called spawn_failed while its owner answers a menu",
+           Orchestrator.record(id: answering.id)?["state"] as? String, "spawning")
+
     let attached = oldSpawning(attached: true)
     Orchestrator.holdScheduleTaskForTesting(attached)
     Orchestrator.beat(fromTimer: true)
@@ -19121,6 +19713,8 @@ Task {
     // MARK: - Result
 
     cloudRunnerWatchdog.cancel()
+    Orchestrator.storeURLOverrideForTesting = nil
+    try? FileManager.default.removeItem(at: orchestratorTestStoreDirectory)
     print("")
     let finalStatus: Int32
     if failures.isEmpty {

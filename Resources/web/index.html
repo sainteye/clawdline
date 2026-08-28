@@ -282,6 +282,12 @@ document.documentElement.className = "booting";
                         <div class="session-action-level" id="session-actions-main" data-place="current">
                             <button id="session-focus" type="button" role="menuitem">Show on Mac</button>
                             <button id="session-info" type="button" role="menuitem">Session info</button>
+                            <!-- Nothing privileged happens here: this types one instruction into
+                                 the session through the same send route the composer uses, and
+                                 the session — a local process that can read the orchestrator
+                                 token — registers itself. Its label and disabled state are
+                                 written per session by `SessionActions.syncClawdfather`. -->
+                            <button id="session-clawdfather" type="button" role="menuitem" hidden>Make this session Clawdfather</button>
                             <button id="session-git-more" type="button" role="menuitem" aria-haspopup="menu">Git <span class="next" aria-hidden="true">›</span></button>
                             <button class="end" id="session-end" type="button" role="menuitem">Close session</button>
                         </div>

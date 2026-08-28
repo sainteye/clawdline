@@ -132,8 +132,11 @@ that writes the task down is [in this repository](skills/clawdline/), for Claude
 
 **How work gets handed out is a file you edit.** `~/.config/clawdline/dispatch-policy.md` — read
 on every dispatch, copied into the briefing of every child that may dispatch in turn. Which
-assistant for which kind of work, which model deserves which job, what shape the graph should be.
-It arrives with opinions in it; delete the contents and there are no house rules. Every task also
+assistant for which kind of work, which model deserves which job, how big one task should be, when
+small work is batched instead of dispatched, what shape the graph should be. The default it arrives
+with is [`Resources/dispatch-policy.md`](Resources/dispatch-policy.md) in this repository, so it can
+be read and argued with before you install anything; your machine's copy is yours to edit, and
+deleting the contents means there are no house rules. Every task also
 carries a `plan`, the whole graph it is one node of, so a leaf knows what its answer feeds instead
 of writing a report nobody asked for.
 
@@ -151,8 +154,12 @@ out at once and each of those may have three, but what *they* open, nothing open
 three is twenty terminals at full stretch, which is already more than anybody wants to audit;
 without a floor it is a fork bomb with a language model in it.
 
-**[docs/orchestrator.md](docs/orchestrator.md)** is the protocol: the file formats, the
-credentials, the lifecycle and the routes with `curl` transcripts.
+**[docs/clawdline-protocol.html](docs/clawdline-protocol.html)** is the whole protocol on one
+page, written for somebody who just installed this: how a task is dispatched, what claims and file
+waits guarantee, why landing belongs to the root that asked, and what each promise is worth. Open it
+from a checkout; it needs nothing from the network.
+**[docs/orchestrator.md](docs/orchestrator.md)** is the same protocol in reference form: the file
+formats, the credentials, the lifecycle and the routes with `curl` transcripts.
 **[docs/dispatch-permissions.md](docs/dispatch-permissions.md)** is the part that bites: the four
 places a dispatched session stops to ask, which two of them no setting reaches, and why the flag
 that reads as "get on with it" quietly means the opposite on the cheapest model.
@@ -566,6 +573,7 @@ itself.
 | `remote_tunnel_name` · `remote_hostname` | `""` | both required for a named tunnel |
 | `cloudflared_path` | `""` | empty looks where package managers put it |
 | `push_on_finish` · `push_on_deploy` | `true` · `false` | when a phone should buzz |
+| `smart_notifications` | `false` | let Haiku replace a generic finish notice with one sentence about what the work did |
 | `orchestrator_enabled` | `true` | may a session hand work to another |
 | `orchestrator_max_children` | `5` | child sessions one session may have out, 1–10 |
 | `orchestrator_max_grandchildren` | `3` | and what each of those may have out, 0–10; `0` stops the tree one level up |

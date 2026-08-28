@@ -12,6 +12,7 @@ import {
     parseEnvelopeChannel,
     sealEnvelope
 } from "./cloud-crypto.js";
+import { T } from "../core/i18n.js";
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
@@ -335,6 +336,21 @@ export class CloudClient {
     }
 
     key(value, answer) { return this.answer(value, answer); }
+
+    /**
+     * Naming a session is a local operation on the Mac that owns it, and the cloud protocol has
+     * no envelope class for it — a session title is written into that Mac's config and read back
+     * by its own panel, which is not something a relay can carry today.
+     *
+     * The sentence comes from the string table rather than being written here, because it is
+     * shown to a person: `info.js` puts `error.message` straight on the card, so an English
+     * literal at this line is an English sentence on a page in thirteen other languages, and it
+     * is exactly the kind of literal `tools/check-web-strings.py` exists to keep out.
+     */
+    title(value) {
+        sessionIdentity(value);
+        return Promise.reject(cloudError("unsupported", T.webInfoTitleCloud));
+    }
 
     dispatch(machine, task) {
         if (machine && typeof machine === "object") {

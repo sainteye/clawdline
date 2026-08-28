@@ -776,6 +776,35 @@ export var Mock = (function () {
                 }, 300);
             });
         },
+        /**
+         * Naming a session, offline.
+         *
+         * Behind `MOCK_WRITE` like every other write here, and refusing in the fixture's own
+         * words is the point: this method exists because the real one used to be grafted onto
+         * this object by `net/api.js`, which sent a rename from `?mock=1` at the network and
+         * put a static file server's `Unsupported method ('POST')` on the card.
+         *
+         * `downstream` is always `local_only`, because there is no terminal behind a fixture to
+         * type a slash command into and claiming otherwise would be the one lie a mock of this
+         * route could tell.
+         */
+        title: function (id, title) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (!MOCK_WRITE) { fail(Object.assign(new Error("Renaming is not enabled on this server."), { code: "write_disabled" })); return; }
+                    var wanted = String(title || "").replace(/\s+/g, " ").trim();
+                    var s = find(id);
+                    var shown = wanted || (s && s.label) || id;
+                    if (info[id] && info[id].session) info[id].session.title = shown;
+                    if (s) s.label = shown;
+                    emit();
+                    done({ ok: true, title: wanted, display_title: shown,
+                           local_applied: true, downstream: "local_only",
+                           downstream_synced: false });
+                }, 260);
+            });
+        },
+
         /** Answering moves the session off `waiting`, which is the whole thing worth seeing
          *  from a file:// copy: the menu goes, the buttons go, and the composer comes back. */
         key: function (id, press) {

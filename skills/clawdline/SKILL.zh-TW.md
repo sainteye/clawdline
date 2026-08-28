@@ -108,6 +108,46 @@ context 留給別的事、或單純想在一個分頁裡看著它跑。**他說�
 終端機，開一百個既慢又貴又沒人看得完）、有人在等的即時路徑、需要 agent 之間來回討論的、
 產出必須是程式直接吃的結構化資料、以及**寫指令比自己做還久的小事**。
 
+### 2.0b 一件任務該多大，小事什麼時候出去
+
+**一件任務就是一片完整、能獨立審查的 feature slice**——production 改動、先紅後綠的測試、文件、
+以及它自己的驗證，由同一個 session 一路做完。實作者留在那片上：同一個 feature 冒出來的新發現或
+修正回到同一個 session，不要為每一件開一個新分頁。
+
+**大到值得派的一片，也大到輸得起整片。** `timeout_minutes` 上限 240，助理額度可能中途耗盡，
+context 也會滿。所以會跑很久、或會動到好幾個檔的一片，要用 `isolation: "worktree"` 派出去，並且
+在指令裡要求它**每完成一個階段就在 delivery branch 上 commit**（不是最後才 commit），工作內容偏離
+標題時用 `/progress` 講一句。這樣 child 死在第三個小時只損失一小時——branch 上還留著其餘的。
+
+**絕對不要為了一個小改動開一個 session。** 小事累積成一個池子，符合任一條件就整批派出去：
+
+- 池子裡有 5 件，或
+- 這些事加起來超過大約 30 分鐘的工，或
+- 其中一件擋住 landing，或有人在等它。
+
+再加一個上限，免得「累積」變成「永遠不做」：**任何一件都不能在池子裡超過 24 小時。** 一件 task
+帶整批，`claims` 是整批會寫到的檔案的聯集，指令要把每一件分開列出來，這樣 result 才能逐件回報。
+
+**常駐 session。** session 可以在兩件工作之間不關：一個 **odd-jobs** session 接上面那些批次，
+一個 **review** session 接每一片完成的 feature 或每一批。兩者都用 `orchestrator_child_linger: -1`
+留住分頁，並在 `kind` 裡寫明角色。但是**工作只能以 attached follow-up task 的形式進到常駐 session**
+——那是一筆完整的 task 記錄：自己的 id、secret、`claims`、`timeout_minutes` 和 `result.json`。
+`POST /v1/sessions/:id/send` 不算：那是配對裝置的路由，不會產生任何 task 記錄，用它餵進去的工作
+沒有 claims、沒有完成訊號、不會出現在 `inflight`、也不算進任何用量。所以**沒有帶 `claims` 的
+follow-up task，常駐 session 就完全不能寫共享 tree**——review session 天生符合（它只產出 findings
+不產出 bytes），odd-jobs session 不符合。在那個機制進 `HEAD` 之前，誠實的近似作法是「一批出清派
+一件 task、一輪 review 派一件 task」；用手打字餵著的分頁不是常駐 session，也不要這樣講。
+
+**被中斷的 review 用交接，不要重跑。** 死掉、逾時或被取消的 reviewer，通常已經寫了一部分
+finding set；把那個檔案交給接手的人。review 是這裡最貴的節點，也是被丟掉比例最高的節點——101 次
+review 派工裡有 30 次沒交出 verdict，其中一次重審花了 6.7M tokens 去重讀 1.9M tokens、別人已經
+讀過的工作。
+
+**reviewer 帶著 findings 回來的時候：** 它要先把完整的 finding set 寫下來回報，**才可以動手修**，
+而且只修不改變設計的部分。它一旦寫了 production bytes，verdict 就用掉了——那份修正是一個
+delivery，聚焦 diff、mutation、exact-tree 驗收都是你的事，不是它的。會改變設計的修正回原
+implementer 的 session。永遠不要一個 finding 派一件 task。
+
 ### 2.0a 決定這件任務要不要獨立 worktree
 
 能以 Git branch 審查、收進來的程式修改，才用 `"isolation":"worktree"`。broker 會在任務真的
@@ -305,6 +345,14 @@ child 讀不到這條對話，它只有 `task.json` 裡的 `instructions` 和 `p
 等於什麼都沒說。路徑寫絕對路徑，產出寫清楚要放哪個檔名。**葉節點的指令要窄到一句話講得完**——
 要寫三段才講得清楚「做完」是什麼意思，那就是兩個 child。
 
+**指令裡要求它在頭三分鐘發一則 `/progress`**，講它讀完 briefing 之後決定要怎麼做——在開工前，
+不是做到一半。一行指令就換得到，child 只要花一個回合。
+
+那一則是「能不能早點取消」的唯一依據，而差距不小：這台機器上最貴的兩筆被取消的 task，各燒了
+18.5M 與 16.5M tokens、各跑了二十六分鐘，才有人看得出它走錯方向。協定原本只要求「工作內容不再
+符合標題時」發一則——那個訊號是在偏離**之後**才到的，不是在偏離的當下。第一句話寫錯，第三分鐘
+就看得出來，而那是這整套系統裡最便宜的一種更正。
+
 ---
 
 ## 3. 建目錄、生 id 和 secret
@@ -371,9 +419,17 @@ jq -n \
 | `isolation_base` | 選填 Git revision，只能跟 `isolation: "worktree"` 一起用；不寫就是實際開始時的 `HEAD` |
 | `plan` | 選填但**強烈建議**：整張圖，≤ 4 KiB。同一批任務全部放同一份 |
 | `timeout_minutes` | 1…240，沒寫當 30 |
-| `root.session_id` | 目前這個助理的 conversation id，照下面查；查不到就 `null`，不要瞎編 |
+| `root.session_id` | 目前這個助理的 conversation id（優先）或受監看的 terminal id；查不到就 `null`，不要瞎編 |
 | `root.assistant` | **派出這件 task 的助理**，`claude` 或 `codex`；不是最外層 `assistant` 所指定的 child |
 | `root.parent_task` | **只有你自己是 child 才要填**——填你自己那件 task 的 id（第一句話裡那個）。root 派工不用寫。填錯只會讓這件任務被算到別人頭上或被算得更深，不會佔到便宜 |
+
+**宣告 `claims` 大約只花 root 二十個 output token，而多數派工還是沒寫。** 這台機器 206 筆派工
+裡有 60.7% 什麼都沒宣告。撞一次的代價是整件 task 重來——同一份紀錄上是三百萬到一千八百萬 tokens。
+
+還要知道 `claims` 救不了你的那一種情況：**worktree 隔離的 task，repository-relative 的 claims 會
+被丟掉**，因為 child 改的是另一份 checkout。2026-08-28 兩個 root 相隔六秒派出同一件交付的修正，
+兩件都是隔離的，沒有任何一道閘門攔得下來——`/inflight` 對兩邊都還是空的。**一旦用隔離，`/inflight`
+就是唯一的檢查**，所以要去讀它，並且把預計會寫到的檔案留在 `plan` 裡，讓 review 還有範圍可循。
 
 **`claims` 有兩種寫錯的方式，只有一種會叫。** 不寫是安靜的那種：broker 沒辦法證明你這件事跟別人
 不相交，只好退回去對「每一對共用同一個目錄的任務」發警告。2026-08-26 那個晚上就是這樣——一晚十幾
@@ -384,6 +440,13 @@ jq -n \
 下一次宣告窄一點。
 
 ### 查自己的助理與 session id（best-effort，查不到就 null）
+
+> `root.session_id` 優先填助理自己的 conversation id——Claude 的 transcript uuid 或 Codex 的
+> rollout id；broker 現在也接受受監看的 terminal id。派工當下會把兩種拼法依
+> `root.assistant` 解析成同一個 process-bound conversation key，完成通知、分組、容量與 root 關閉
+> cascade 全部用這一把 key。一定要讀 response 的 `warnings`：非 null 的值若找不到唯一 live owner，
+> 會回 `root_unresolved`；這種 Child 可能得自己 poll，也不能假設會隨 Root 關閉。
+
 
 **Codex：**目前 rollout id 已直接放在環境變數裡。要跟寫 `task.json` 放在同一個 shell
 呼叫，兩個變數才會一起進 `jq`：
@@ -546,6 +609,38 @@ delivered -> reviewed -> pending landing -> landed
 除非另一個具名 root 接受了一份 Clawdline handoff，派工的 root 就是 landing owner。「未來某個人」
 不是 owner。責任還在 `delivered`、`reviewed` 或 `pending landing` 時，不得對使用者回報完成。
 
+### 回報 Root 自己完成的這一輪
+
+Root 自己這一輪真的完成時——包含必要整合、驗證與 commit——把 authenticated session delivery
+report 當成最後一個 tool action，再向使用者給 final answer。這是 Root 對應 Child `result.json` 的
+路徑，但語意刻意較弱：只畫一個勾，表示**已交付，等待驗收**；絕不宣稱獨立 review 或 broker-verified
+landing。
+
+```bash
+if [ -n "${TMUX_PANE:-}" ]; then
+  ROOT_TERMINAL="$TMUX_PANE"
+elif [[ "${ITERM_SESSION_ID:-}" == *:* ]]; then
+  ROOT_TERMINAL="${ITERM_SESSION_ID##*:}"
+else
+  echo "無法解析這個 Root 的 terminal-neutral Clawdline id" >&2
+  exit 1
+fi
+jq -n --arg summary "$SUMMARY" '{summary:$summary}' \
+  | curl -sS -X POST \
+      "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$ROOT_TERMINAL/complete" \
+      -H "X-Clawdline-Orchestrator: $TOKEN" \
+      -H 'Content-Type: application/json' --data-binary @-
+```
+
+先把 `SUMMARY` 設成一句不超過 500 字、具體描述本輪交付的句子。只能在最後一輪仍是 working 時呼叫；
+部分成果、只做診斷、遇到 blocker、正在問問題，或自己是 Child 時都不得呼叫。按 typed refusal 分支並如實
+回報；自然語言不能代替缺少的 receipt。Clawdline 在同一個 terminal 開始下一個 observed turn 時會消耗
+receipt，所以舊勾不會在新一輪未回報的工作後重新出現。
+
+Root idle 且仍有 live Clawdline Child 時，broker 會投影成 `waiting_session`，卡片在安靜的 `⏳` 後列出
+Child 工作；這是等待，不是待分流，也不是已交付。Root 同時做事仍顯示 `working`，Child 完成只會移除
+等待 evidence，不會替 Root 的整合工作宣告完成。
+
 有 claims 的 child 成果回來時，root 要用該 task secret 在原 task 上登記尚未關閉的義務：呼叫
 `POST /v1/orchestrator/tasks/:id/landing`，body 是
 `{"state":"pending","target":"<目標 ref>"}`。具名 root 接受 handoff 後，也可比照 cancel 與
@@ -606,19 +701,48 @@ UI，成為獨立的 `coordination` overlay：被擋住的 session 是 `waiting_
 這**不會**把 terminal `state` 設成 `waiting`；後者仍只代表需要人回答，也只有它會觸發醒目的 row 與 push。原生與 web session row 會安靜顯示 `⏳ owner · release condition`；只有 UI
 不可用時，才用最後一行 `[Clawdline waiting]` marker 當 fallback。
 
-### 維持 communication-protocol Artifact 等於現在
+### 有人叫你去當 Clawdfather 的時候
 
-這份協定的 living visual explanation 是
-`artifacts/2026-08-26-clawdline-communication-protocol.html`：一個 standalone Claude Code Artifact，
-帶 `<meta name="artifact:kind" content="state">`。任何 task dispatch、handoff、claims、landing
-closure、file wait、ownership transfer、structured notice 或其他 cross-session communication
-語意變更，都要在協定工作關閉前更新同一個檔案。不能另開一份 dated audit 當作替代；`state` 的意思
-就是這一份 Artifact 必須等於現在。
+沒有任何東西可以替你註冊 machine coordinator。三條 coordinator route 只收 orchestrator token，所以
+app 上那個 **讓這個 session 成為 Clawdfather** 不會去打它們——它只是把這段流程的指示，用一般的 send
+route 打進你的 session，真正做事的是你。完整版連每一種拒絕都寫在
+[`docs/orchestrator.md`](../../docs/orchestrator.md)，這裡是短的。
+
+1. **自己的 terminal-neutral id** 是 `$ITERM_SESSION_ID` 冒號後面那段 UUID——那是分頁，不是對話。
+   Codex 也是同一行：`CODEX_THREAD_ID`／`CODEX_SESSION_ID` 是 rollout 的
+   `session_meta.session_id`，是另一個 namespace 的值，送過去只會拿到 `404 session_not_found`。
+   在 tmux 底下那個 id 是 pane id，環境變數答不出來，改去 `GET /v1/orchestrator/sessions` 讀。
+   不管哪一種，送出去之前先確認它真的出現在那份清單裡。
+2. **先讀現況**——`GET /v1/orchestrator/coordinator`，用本 skill 第 1 節的 `$TOKEN`。
+   `coordinator.configured` 是 false 代表沒有人擔任；否則看 `coordinator.status` 是 `online` 還是
+   `offline`，而 `coordinator.id` 與 `coordinator.generation` 是重新接上時必須原樣帶回去的那一對。
+3. **沒有人註冊過** → `POST /v1/orchestrator/coordinator/register`，body 只有 `{"session_id": …}`
+   一個欄位，多一個都不行。回 `created:false` 代表本來就是你。
+4. **有註冊但 `offline`** → `POST /v1/orchestrator/coordinator/rebind`，帶
+   `expected_coordinator_id`、`expected_generation` 與 `session_id`。UUID 是刻意跨重新接上不變的，
+   所以真正的 compare-and-swap 值是 generation。對不上代表你讀完之後紀錄動過了：回第 2 步重讀，
+   不要拿舊的數字再試一次。
+5. **有註冊、`online`、而且是別人** → 停手。註冊從來就不是接管，API 也會擋
+   （`coordinator_exists`、`coordinator_online`）。回報是誰在擔任，然後別動它。
+
+最後把結果講出來。叫你去做的人通常在另一個視窗，「已經由另一個 checkout 的那個 session 擔任」跟
+「註冊好了」一樣是答案。
+
+### 維持協定頁等於現在，並且分清楚你在寫給誰看
+
+**文件依讀者分家，而分家決定它住在哪裡。** 一個專案的 `docs/` 是給社群的：英文、對外視角、進
+git、可以讓測試依賴它。私有的工作文件——稽核、研究頁、用自己語言寫的計畫——放在那個專案存放內部
+material 的地方，而**公開的測試不得依賴其中任何一個檔案**。把一份搬過去是重寫，不是複製。
+
+在這個 repo 裡，living 的那一份是 `docs/clawdline-protocol.html`。任何 task dispatch、handoff、
+claims、landing closure、file wait、ownership transfer、structured notice 或其他 cross-session
+communication 語意變更，都要在協定工作關閉前更新它。它不是 dated audit，旁邊也不會有一份 dated
+audit：它必須等於現在。
 
 要讓 Claude Code session 讀完整 authoritative protocol，不能只轉述當下對話。它更新 diagrams、
-state labels、source links 與人的 checklist；root 再打開或用其他方式檢查 standalone HTML，逐項對照
-`AGENTS.md`、`docs/orchestrator.md`、`docs/api.md`、`docs/handoff.md`、這份 skill 與本機 dispatch
-policy。來源改了而 Artifact 沒改，landing obligation 就維持 pending。
+state labels、source links 與 checklist；root 再檢查 standalone HTML，逐項對照 `AGENTS.md`、
+`docs/dispatching.md`、`docs/landing.md`、`docs/orchestrator.md`、`docs/api.md`、`docs/handoff.md`、
+這份 skill 與本機 dispatch policy。來源改了而那一頁沒改，landing obligation 就維持 pending。
 
 這個 root 若必須在第 5 步之前停下來，要用 Clawdline handoff 交接，不能把責任丟著。handoff 的
 `CURRENT STATE`、`OPEN THREADS`、`IMMEDIATE NEXT STEP` 必須寫出 delivery branch/base/head、target
@@ -822,9 +946,9 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
   同一批 delivery 時，pathspec commit 才安全。
 - **file waiter 是 Clawdline relationship。** request 與 release 都用 Clawdline session id，paths
   釋放時通知每一個 waiter，收到後再重驗。這份安全協定不能依賴 Claude Code 或 Codex message。
-- **protocol Artifact 是協定的一部分。** 任何 communication semantics 修改，都要透過 Claude Code
-  更新 `artifacts/2026-08-26-clawdline-communication-protocol.html`，並在完成前對照所有 authoritative
-  source 驗證。
+- **協定頁是協定的一部分。** 任何 communication semantics 修改，都要更新這個 repo 的公開協定頁
+  （這裡是 `docs/clawdline-protocol.html`），並在完成前對照所有 authoritative source 驗證。私有的
+  工作文件不能替代它：能被任何人檢查的是那份進了 git 的英文頁。
 - **工作樹裡多出來的東西，先假設不是 child 做的。** 這台 Mac 上通常有好幾個 session 共用同一個
   工作區，而它們也在改檔案、也在 commit。派工之後看到 `git status` 多了幾個檔、或 `git log`
   多了一筆，**那不是 child 的成績單**——在把任何改動算到 child 頭上之前，先做這三件事：

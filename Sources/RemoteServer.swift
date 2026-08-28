@@ -2,6 +2,53 @@ import AppKit
 import Foundation
 import Network
 
+/// Decide whether a local title can also be handed to the assistant without changing what its
+/// current turn means. Claude accepts a slash command only at an idle prompt; Codex names thread
+/// metadata out of band and therefore does not share that restriction.
+enum SessionTitleSync {
+    enum Action: Equatable {
+        case localOnly
+        case busy
+        case unavailable
+        case renameClaude
+        case renameCodex(threadID: String)
+    }
+
+    static func action(assistant: Assistant?, state: SessionState, clearing: Bool,
+                       codexThreadID: String?) -> Action {
+        guard !clearing else { return .localOnly }
+        switch assistant {
+        case .claude:
+            return state == .idle ? .renameClaude : .busy
+        case .codex:
+            guard let codexThreadID, !codexThreadID.isEmpty else { return .unavailable }
+            return .renameCodex(threadID: codexThreadID)
+        case nil:
+            return .localOnly
+        }
+    }
+
+    /// One look at the actual screen before anything is typed into it.
+    ///
+    /// ``action(assistant:state:clearing:codexThreadID:)`` decides from the session list's
+    /// cached state, and that cache is refreshed every 1.2 seconds while the app is in front and
+    /// **every twenty seconds while it is not** — which is the state the Mac is in whenever
+    /// somebody is renaming a session from their phone. A cached `idle` can therefore be twenty
+    /// seconds behind a Claude that is now showing a menu, and a slash command sent to a menu is
+    /// not typed: the picker discards the bracketed paste and acts on the Return after it. The
+    /// measurement is written up beside `/send`, which pays for the same capture — with the
+    /// caret on the third option, sending the word "Tea" answered "Water".
+    ///
+    /// So the capture is paid here too, and only here: `busy`, `unavailable`, `local_only` and
+    /// the Codex path never reach a keyboard, and a rename is the one operation on this server
+    /// that is never urgent. `showingMenu` is a closure for that reason — an unread one is a
+    /// terminal round trip not made.
+    static func confirmed(_ action: Action, showingMenu: () -> Bool) -> Action {
+        guard action == .renameClaude, showingMenu() else { return action }
+        return .busy
+    }
+}
+
 /// The bar, as something other than a bar.
 ///
 /// Everything this app knows is already computed for four consumers — the panel, the strip above
@@ -1132,6 +1179,36 @@ final class RemoteServer: @unchecked Sendable {
                                                                    states: watch.states),
                           "at": Int(Date().timeIntervalSince1970)])
 
+        // A root's explicit end-of-turn receipt. The path names the terminal-neutral id already
+        // published by the GET above; every process/conversation fact is resolved here from the
+        // live target, never trusted from the request body. It is a single-check delivery claim,
+        // not the broker-verified landing that produces work_complete.
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/sessions/")
+            && path.hasSuffix("/complete"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Reporting root delivery needs the orchestrator token.")
+            }
+            let encoded = String(path.dropFirst("/v1/orchestrator/sessions/".count)
+                .dropLast("/complete".count))
+            let id = encoded.removingPercentEncoding ?? encoded
+            guard !id.isEmpty, !id.contains("/") else {
+                return .error(400, "bad_request", "The route must name one session id.")
+            }
+            guard let target = self.session(withID: id), target.isAssistant else {
+                return .error(404, "session_not_found", "No current assistant session named \(id).")
+            }
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            guard Set(body.keys) == Set(["summary"]), body["summary"] is String else {
+                return .error(400, "bad_request", "The body must contain only string summary.")
+            }
+            let reply = Orchestrator.reportSessionDelivery(
+                identity: Self.sessionWorkIdentity(target), terminalState: self.state(of: id),
+                summary: body["summary"] as? String ?? "")
+            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+            return answer(reply)
+
         // What this Mac can say about each assistant's own account-level quota — one read of two
         // small local files, 5-second cached, and deliberately *not* behind `readingDepth`: it
         // has to be cheap enough for `Orchestrator.dispatch()` itself to call synchronously at
@@ -1411,6 +1488,77 @@ final class RemoteServer: @unchecked Sendable {
                 }
                 SessionWatch.shared.nudge()
                 return .json(["ok": true])
+            }
+
+        case ("POST", let path) where path.hasSuffix("/title")
+            && path.hasPrefix("/v1/sessions/"):
+            let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/title".count))
+            return writing(request) { body in
+                guard let raw = body["title"] as? String else {
+                    return .error(400, "bad_request", "title must be a string.")
+                }
+                let title = Config.normalizedSessionTitle(raw)
+                guard title?.count ?? 0 <= Config.sessionTitleLimit else {
+                    return .error(400, "bad_request",
+                                  "title must be at most \(Config.sessionTitleLimit) characters.")
+                }
+                guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
+                    return .error(404, "not_found", "No session named that")
+                }
+
+                let config = Config.shared
+                _ = config.setSessionTitle(raw, for: session)
+                // The answer says whether the name is durable, because that is the promise the
+                // rest of this route is built on: a busy Claude is deliberately not queued for a
+                // later `/rename`, and the reason given is that the local name survives anyway.
+                // A failed write still leaves the name in memory and on every surface that draws
+                // one, so this is a 200 that tells the truth rather than a 500 that undoes what
+                // the person can already see.
+                let durable = config.save()
+
+                let state: SessionState = Thread.isMainThread
+                    ? (SessionWatch.shared.states[session.id] ?? .unknown)
+                    : DispatchQueue.main.sync {
+                        SessionWatch.shared.states[session.id] ?? .unknown
+                    }
+                let action = SessionTitleSync.confirmed(
+                    SessionTitleSync.action(
+                        assistant: session.assistant, state: state, clearing: title == nil,
+                        codexThreadID: CodexNaming.shared.threadID(for: session)),
+                    showingMenu: { Targets.isChoosing(session) })
+                var downstream = "local_only"
+                var synced = false
+                switch action {
+                case .localOnly:
+                    // Clearing has to reach Codex's display cache as well, or it clears nothing
+                    // there: the name a person typed was remembered on the way in and
+                    // `displayLabel` would go on finding it. The thread keeps that name — see
+                    // `CodexNaming.forget(target:)` and `docs/api.md`.
+                    if title == nil { CodexNaming.shared.forget(target: session) }
+                case .busy:
+                    downstream = "busy"
+                case .unavailable:
+                    downstream = "unavailable"
+                case .renameClaude:
+                    if let failure = Targets.send("/rename \(title ?? "")", to: session) {
+                        downstream = "failed"
+                        Log.write("session title: Claude rename failed — \(failure)")
+                    } else {
+                        downstream = "synced"
+                        synced = true
+                    }
+                case .renameCodex(let threadID):
+                    CodexNaming.shared.name(title ?? "", thread: threadID, target: session,
+                                            replacingExisting: true)
+                    downstream = "queued"
+                }
+                RemoteAuth.audit("session.title", ["id": session.id,
+                                                    "cleared": title == nil ? "1" : "0",
+                                                    "downstream": downstream])
+                DispatchQueue.main.async { SessionWatch.shared.labelsDidChange() }
+                return .json(["ok": true, "title": title ?? "",
+                              "display_title": session.displayLabel, "local_applied": durable,
+                              "downstream": downstream, "downstream_synced": synced])
             }
 
         // Stopping one of a session's background commands.
@@ -2999,6 +3147,13 @@ final class RemoteServer: @unchecked Sendable {
         }
     }
 
+    private func state(of sessionID: String) -> SessionState {
+        if Thread.isMainThread { return SessionWatch.shared.states[sessionID] ?? .unknown }
+        return DispatchQueue.main.sync {
+            SessionWatch.shared.states[sessionID] ?? .unknown
+        }
+    }
+
     /// Whether Clawdline may type a coordination-wait notice into that session right now, in the
     /// same terms `POST /v1/sessions/<id>/send` already uses: a picker discards the words and acts
     /// on the Return that follows them, so a message sent into one is lost *and* answers somebody
@@ -3823,6 +3978,12 @@ final class RemoteServer: @unchecked Sendable {
         add([
             "webSessionInfo": t.webSessionInfo,
             "webInfoTitle": t.webInfoTitle,
+            "webInfoEditTitle": t.webInfoEditTitle,
+            "webInfoTitleSaved": t.webInfoTitleSaved,
+            "webInfoTitleLocal": t.webInfoTitleLocal,
+            "webInfoTitleQueued": t.webInfoTitleQueued,
+            "webInfoTitleNotDurable": t.webInfoTitleNotDurable,
+            "webInfoTitleCloud": t.webInfoTitleCloud,
             "webInfoSession": t.webInfoSession,
             "webInfoAssistant": t.webInfoAssistant,
             "webInfoModel": t.webInfoModel,
@@ -3871,6 +4032,18 @@ final class RemoteServer: @unchecked Sendable {
             "webInfoCopied": t.webInfoCopied,
             "webInfoAsOf": t.webInfoAsOf,
             "webInfoWhyUnknown": t.webInfoWhyUnknown,
+        ])
+
+        // Asking a session to make itself Clawdfather. The browser composes the sentence and
+        // types it through the ordinary send route; only the session can read the orchestrator
+        // token, so only the session performs the registration.
+        add([
+            "webMakeClawdfather": t.webMakeClawdfather,
+            "webClawdfatherIs": t.webClawdfatherIs,
+            "webConfirmClawdfatherTitle": t.webConfirmClawdfatherTitle,
+            "webConfirmClawdfatherSay": t.webConfirmClawdfatherSay,
+            "webClawdfatherAsk": t.webClawdfatherAsk,
+            "webClawdfatherAsked": t.webClawdfatherAsked,
         ])
 
         var response = Response.json(out)

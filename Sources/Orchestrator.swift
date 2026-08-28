@@ -1797,7 +1797,11 @@ enum Orchestrator {
             ?? root.appendingPathComponent("handoffs", isDirectory: true)
     }
 
-    static var storeURL: URL { RemoteAuth.directory.appendingPathComponent("orchestrator.json") }
+    static var storeURLOverrideForTesting: URL?
+    static var storeURL: URL {
+        storeURLOverrideForTesting
+            ?? RemoteAuth.directory.appendingPathComponent("orchestrator.json")
+    }
     static var tokenURL: URL { RemoteAuth.directory.appendingPathComponent("orchestrator-token") }
     static var archiveKeyURL: URL {
         RemoteAuth.directory.appendingPathComponent("orchestrator-archive-key")
@@ -1825,6 +1829,9 @@ enum Orchestrator {
     private static var handoffs: [String: HandoffEnvelope] = [:]
     private static var handoffDeliveries: [String: HandoffDelivery] = [:]
     private static var coordinationWaits: [String: CoordinationWait] = [:]
+    /// Root terminal id → the last turn that root explicitly delivered. Unlike a child result,
+    /// this receipt is consumed when the same tab begins another observed turn.
+    private static var sessionDeliveries: [String: SessionDelivery] = [:]
     /// How many `beat` walks are inside the loop, and which walk this is. Both exist to catch the
     /// overlap that should not be possible; neither changes what a walk does.
     private static var beatsInFlight = 0
@@ -1966,6 +1973,37 @@ enum Orchestrator {
         var conversationID: String?
     }
 
+    /// A root's authenticated claim that its current turn delivered what it was assigned.
+    ///
+    /// This is deliberately weaker than a broker-verified landing and therefore produces only
+    /// the single-check milestone. `settled` means the report has subsequently been observed at
+    /// an idle prompt; the next working/waiting transition consumes it so an older turn cannot
+    /// reappear as complete after a newer one ends without reporting.
+    struct SessionDelivery {
+        let identity: SessionWorkIdentity
+        let summary: String
+        let reportedAt: Date
+        var settled: Bool
+    }
+
+    static let sessionDeliverySummaryLimit = 500
+
+    static func sessionDeliveryMatchesCurrentSession(_ delivery: SessionDelivery,
+                                                      identity: SessionWorkIdentity) -> Bool {
+        guard let assistant = identity.assistant,
+              delivery.identity.assistant == assistant,
+              delivery.identity.terminalID == identity.terminalID,
+              delivery.identity.tty == identity.tty,
+              let recordedPID = delivery.identity.pid, recordedPID == identity.pid,
+              let recordedStart = delivery.identity.processStart,
+              let currentStart = identity.processStart,
+              abs(recordedStart.timeIntervalSince(currentStart))
+                <= SessionRegistry.startTolerance,
+              let recordedConversation = delivery.identity.conversationID,
+              recordedConversation == identity.conversationID else { return false }
+        return true
+    }
+
     /// A terminal task receipt belongs to the current Session only when every durable child
     /// identity agrees with every process-bound fact. Missing legacy fields fail closed: they
     /// remain useful task history, but cannot put a check on an unrelated later process.
@@ -2012,20 +2050,27 @@ enum Orchestrator {
         task: Task?,
         hasCoordinationWait: Bool,
         hasOpenHandoff: Bool,
-        assignmentKnownAbsent: Bool
+        assignmentKnownAbsent: Bool,
+        hasSessionDelivery: Bool = false,
+        hasOutstandingChild: Bool = false
     ) -> SessionWorkState {
         if terminalState == .waiting { return .waitingHuman }
         if hasCoordinationWait { return .waitingSession }
         if terminalState == .unknown { return .needsTriage }
         if case .working = terminalState { return .working }
+        if hasOutstandingChild { return .waitingSession }
 
-        if let task, task.state == .success, task.finishedAt != nil {
-            if task.landing.map(isBrokerVerifiedTargetLanding) == true,
-               !hasOpenHandoff {
-                return .workComplete
+        if let task {
+            if task.state == .success, task.finishedAt != nil {
+                if task.landing.map(isBrokerVerifiedTargetLanding) == true,
+                   !hasOpenHandoff {
+                    return .workComplete
+                }
+                return .milestoneComplete
             }
-            return .milestoneComplete
+            return .needsTriage
         }
+        if hasSessionDelivery { return .milestoneComplete }
         if assignmentKnownAbsent { return .ready }
         // Idle is intentionally absent from the success rules. A prompt proves that activity
         // stopped; without a matching receipt it proves neither completion nor readiness.
@@ -2047,6 +2092,17 @@ enum Orchestrator {
                                                     terminalState: SessionState)
         -> SessionWorkProjection {
         let task = taskForCurrentSession(Array(tasks.values), identity: identity)
+        let sessionDelivery = sessionDeliveries[identity.terminalID].flatMap {
+            sessionDeliveryMatchesCurrentSession($0, identity: identity) ? $0 : nil
+        }
+        let hasOutstandingChild = tasks.values.contains { child in
+            guard !child.state.isTerminal else { return false }
+            if let currentTaskID = task?.id, child.parentTaskId == currentTaskID { return true }
+            guard let conversation = identity.conversationID,
+                  child.rootSessionId == conversation,
+                  (child.rootAssistant ?? .claude) == identity.assistant else { return false }
+            return true
+        }
         let hasWait = coordinationWaits.values.contains { wait in
             wait.waiters.contains { waiter in
                 waiter.releaseDeliveredAt == nil
@@ -2063,9 +2119,22 @@ enum Orchestrator {
         let state = projectSessionWorkState(
             terminalState: terminalState, task: task,
             hasCoordinationWait: hasWait, hasOpenHandoff: hasOpenHandoff,
-            assignmentKnownAbsent: identity.assistant == nil)
-        guard state == .milestoneComplete || state == .workComplete, let task else {
+            assignmentKnownAbsent: identity.assistant == nil,
+            hasSessionDelivery: sessionDelivery != nil,
+            hasOutstandingChild: hasOutstandingChild)
+        guard state == .milestoneComplete || state == .workComplete else {
             return SessionWorkProjection(state: state, disposition: nil)
+        }
+        if let delivery = sessionDelivery, task == nil {
+            return SessionWorkProjection(state: state, disposition: [
+                "scope": "session",
+                "title": delivery.summary,
+                "evidence": "authenticated_session_delivery",
+                "receiptAt": Int(delivery.reportedAt.timeIntervalSince1970),
+            ])
+        }
+        guard let task else {
+            return SessionWorkProjection(state: .needsTriage, disposition: nil)
         }
         var disposition: [String: Any] = [
             "scope": "task",
@@ -2088,6 +2157,95 @@ enum Orchestrator {
             }
         }
         return SessionWorkProjection(state: state, disposition: disposition)
+    }
+
+    /// Record one root turn's explicit delivery claim. The route supplies identity from the
+    /// current watched process rather than accepting it from JSON, and reporting is allowed only
+    /// while that turn is visibly active. Children already have the stronger task/result path.
+    static func reportSessionDelivery(identity: SessionWorkIdentity,
+                                      terminalState: SessionState,
+                                      summary rawSummary: String,
+                                      now: Date = Date()) -> Reply {
+        load()
+        guard case .working = terminalState else {
+            return .refused(409, "session_not_working",
+                            "A root may report delivery only while its current turn is working.")
+        }
+        guard identity.assistant != nil, identity.pid != nil, identity.processStart != nil,
+              identity.conversationID != nil else {
+            return .refused(409, "session_unbound",
+                            "The current assistant process and conversation could not be bound.")
+        }
+        let summary = rawSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !summary.isEmpty, summary.count <= sessionDeliverySummaryLimit,
+              !summary.unicodeScalars.contains(where: { $0.value == 0 }) else {
+            return .refused(400, "bad_request",
+                            "summary must be 1–\(sessionDeliverySummaryLimit) characters without NUL.")
+        }
+
+        lock.lock()
+        if taskForCurrentSession(Array(tasks.values), identity: identity) != nil {
+            lock.unlock()
+            return .refused(409, "child_session",
+                            "A Clawdline child reports through its task result, not this route.")
+        }
+        if let existing = sessionDeliveries[identity.terminalID],
+           sessionDeliveryMatchesCurrentSession(existing, identity: identity),
+           existing.summary == summary, !existing.settled {
+            let disposition = sessionDeliveryDisposition(existing)
+            lock.unlock()
+            return .ok(["ok": true, "created": false, "disposition": disposition])
+        }
+        let made = SessionDelivery(identity: identity, summary: summary,
+                                   reportedAt: now, settled: false)
+        sessionDeliveries[identity.terminalID] = made
+        let disposition = sessionDeliveryDisposition(made)
+        lock.unlock()
+        save()
+        RemoteAuth.audit("orchestrator.session.delivered", [
+            "session": identity.terminalID, "assistant": identity.assistant?.rawValue ?? "?",
+        ])
+        return .ok(["ok": true, "created": true, "disposition": disposition])
+    }
+
+    private static func sessionDeliveryDisposition(_ delivery: SessionDelivery) -> [String: Any] {
+        [
+            "scope": "session", "title": delivery.summary,
+            "evidence": "authenticated_session_delivery",
+            "receiptAt": Int(delivery.reportedAt.timeIntervalSince1970),
+        ]
+    }
+
+    /// Advance the one-turn receipt lifecycle from observed terminal transitions. The first idle
+    /// after reporting arms consumption; the next active state removes the old receipt before a
+    /// later idle prompt could display it again.
+    static func noteSessionStateChange(terminalID: String, to state: SessionState) {
+        load()
+        var changed = false
+        lock.lock()
+        if var delivery = sessionDeliveries[terminalID] {
+            switch state {
+            case .idle where !delivery.settled:
+                delivery.settled = true
+                sessionDeliveries[terminalID] = delivery
+                changed = true
+            case .working where delivery.settled, .waiting where delivery.settled:
+                sessionDeliveries.removeValue(forKey: terminalID)
+                changed = true
+            default:
+                break
+            }
+        }
+        lock.unlock()
+        if changed { save() }
+    }
+
+    /// On app launch there is no transition into an already-idle prompt. Settle those receipts
+    /// from the initial authoritative reading so their next turn still consumes them.
+    static func reconcileSessionDeliveryStates(_ states: [String: SessionState]) {
+        for (terminalID, state) in states where state == .idle {
+            noteSessionStateChange(terminalID: terminalID, to: state)
+        }
     }
 
     /// What a terminal this app opened for a task is called. Nil for every other session.
@@ -3557,11 +3715,17 @@ enum Orchestrator {
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             return .refused(422, "bad_task", "No readable task.json under /tmp/.clawdline/<task_id>/.")
         }
-        let made: Draft
+        var made: Draft
         switch draft(from: obj, expecting: taskID) {
         case .bad(let why): return .refused(422, "bad_task", why)
         case .ok(let ok): made = ok
         }
+        let rootBinding = canonicalRootSession(
+            made.rootSessionId, assistant: made.rootAssistant,
+            among: rootTargets(), sessionID: Transcript.sessionID(of:))
+        made.rootSessionId = rootBinding.sessionID
+        let rootWarnings = rootBinding.warning.map { [$0] } ?? []
+
         var attachedSession: TargetSession?
         var attachedDepth: Int?
         if let sessionID = made.attachSessionId {
@@ -3782,7 +3946,8 @@ enum Orchestrator {
         }
         let reply = successfulDispatchReply(for: task, notify: true,
                                              claimsOverlaps: claimsOverlaps,
-                                             additionalWarnings: quotaWarnings + worktreeWarnings)
+                                             additionalWarnings: rootWarnings + quotaWarnings
+                                                + worktreeWarnings)
         if needsPump { scheduleSerializePump() }
         return reply
     }
@@ -6826,6 +6991,7 @@ enum Orchestrator {
         var failed = 0
         var rootLabel: String?
         var projectDir: String?
+        var tasks: [SmartNotification.TaskLine] = []
     }
 
     /// Root key → tally. In memory only: a process that restarts in the middle of a fan-out has
@@ -6854,6 +7020,8 @@ enum Orchestrator {
         if task.state != .success { batch.failed += 1 }
         if batch.projectDir == nil { batch.projectDir = task.projectDir }
         if batch.rootLabel == nil { batch.rootLabel = task.rootLabel }
+        batch.tasks.append(.init(title: task.title, state: task.state.rawValue,
+                                 summary: task.summary))
         batches[key] = batch
         lock.unlock()
     }
@@ -6897,12 +7065,17 @@ enum Orchestrator {
                              sessionID: Transcript.sessionID(of:)) {
             url = "/#session=\(root.id)"
         }
-        WebPush.send(title: message.title, body: message.body, url: url,
-                     // Keyed on the root and not on a task, so a second fan-out from the same
-                     // session replaces the first rather than stacking under it.
-                     tag: "batch-\(key)",
-                     icon: RemoteIcon.projectPath(
-                        for: batch.projectDir.flatMap { ProjectIcon.grid(forCwd: $0) }))
+        // Keyed on the root and not on a task, so a second fan-out from the same session replaces
+        // the first rather than stacking under it. Smart output and the ordinary count share the
+        // same one-shot delivery boundary.
+        let delivery = SmartNotification.Delivery(
+            title: message.title, project: project, fallbackBody: message.body,
+            url: url, tag: "batch-\(key)",
+            icon: RemoteIcon.projectPath(
+                for: batch.projectDir.flatMap { ProjectIcon.grid(forCwd: $0) }))
+        SmartNotification.send(delivery) {
+            SmartNotification.source(for: batch.tasks)
+        }
     }
 
     /// Pure, so the wording can be checked without a terminal, a phone or a clock.
@@ -8149,10 +8322,16 @@ enum Orchestrator {
             guard let wait = coordinationWait(from: row) else { continue }
             foundWaits[wait.id] = wait
         }
+        var foundSessionDeliveries: [String: SessionDelivery] = [:]
+        for row in obj["session_deliveries"] as? [[String: Any]] ?? [] {
+            guard let delivery = sessionDelivery(from: row) else { continue }
+            foundSessionDeliveries[delivery.identity.terminalID] = delivery
+        }
         lock.lock()
         tasks = found
         handoffs = foundHandoffs
         coordinationWaits = foundWaits
+        sessionDeliveries = foundSessionDeliveries
         reindex()
         lock.unlock()
         // Proofs stored before the independent ledger existed are still strong proofs. Backfill
@@ -8171,16 +8350,19 @@ enum Orchestrator {
             .map { stored($0) }
         let waitRows = coordinationWaits.values.sorted { $0.created < $1.created }
             .map { stored($0) }
+        let sessionDeliveryRows = sessionDeliveries.values
+            .sorted { $0.reportedAt < $1.reportedAt }.map { stored($0) }
         lock.unlock()
         let obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows,
-                                  "coordination_waits": waitRows]
+                                  "coordination_waits": waitRows,
+                                  "session_deliveries": sessionDeliveryRows]
         guard let data = try? JSONSerialization.data(withJSONObject: obj,
                                                      options: [.prettyPrinted, .sortedKeys,
                                                                .withoutEscapingSlashes]) else {
             Log.write("orchestrator: could not serialise the store, nothing written")
             return
         }
-        try? FileManager.default.createDirectory(at: RemoteAuth.directory,
+        try? FileManager.default.createDirectory(at: storeURL.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
         try? data.write(to: storeURL, options: .atomic)
         // Every time, not only at creation — same reason as `RemoteAuth.save`.
@@ -8363,6 +8545,50 @@ enum Orchestrator {
                 return row
             },
         ]
+    }
+
+    static func stored(_ delivery: SessionDelivery) -> [String: Any] {
+        var out: [String: Any] = [
+            "terminal_id": delivery.identity.terminalID,
+            "tty": delivery.identity.tty,
+            "summary": delivery.summary,
+            "reported_at": delivery.reportedAt.timeIntervalSince1970,
+            "settled": delivery.settled,
+        ]
+        if let assistant = delivery.identity.assistant { out["assistant"] = assistant.rawValue }
+        if let pid = delivery.identity.pid { out["pid"] = Int(pid) }
+        if let start = delivery.identity.processStart {
+            out["process_start"] = start.timeIntervalSince1970
+        }
+        if let conversation = delivery.identity.conversationID {
+            out["conversation_id"] = conversation
+        }
+        return out
+    }
+
+    static func sessionDelivery(from obj: [String: Any]) -> SessionDelivery? {
+        guard let terminalID = obj["terminal_id"] as? String, !terminalID.isEmpty,
+              terminalID.count <= 512,
+              let assistantName = obj["assistant"] as? String,
+              let assistant = Assistant(rawValue: assistantName),
+              let tty = obj["tty"] as? String, !tty.isEmpty, tty.count <= 512,
+              let pidValue = obj["pid"] as? Int, let pid = Int32(exactly: pidValue),
+              let processStart = obj["process_start"] as? Double,
+              let conversation = obj["conversation_id"] as? String,
+              !conversation.isEmpty, conversation.count <= 512,
+              let summary = obj["summary"] as? String,
+              !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              summary.count <= sessionDeliverySummaryLimit,
+              !summary.unicodeScalars.contains(where: { $0.value == 0 }),
+              let reportedAt = obj["reported_at"] as? Double,
+              let settled = obj["settled"] as? Bool else { return nil }
+        let identity = SessionWorkIdentity(
+            terminalID: terminalID, assistant: assistant, tty: tty, pid: pid,
+            processStart: Date(timeIntervalSince1970: processStart),
+            conversationID: conversation)
+        return SessionDelivery(identity: identity, summary: summary,
+                               reportedAt: Date(timeIntervalSince1970: reportedAt),
+                               settled: settled)
     }
 
     static func coordinationWait(from obj: [String: Any]) -> CoordinationWait? {
@@ -8681,11 +8907,17 @@ enum Orchestrator {
         let all = tasks.values.sorted { $0.created > $1.created }
         let removable = all.dropFirst(200).filter { $0.landing?.state != .pending }
         let removedIDs = Set(removable.map(\.id))
+        let oldSessionDeliveryIDs = sessionDeliveries.values
+            .sorted { $0.reportedAt > $1.reportedAt }.dropFirst(200)
+            .map { $0.identity.terminalID }
         if !removable.isEmpty {
             for task in removable { tasks.removeValue(forKey: task.id) }
         }
+        for id in oldSessionDeliveryIDs { sessionDeliveries.removeValue(forKey: id) }
         lock.unlock()
-        if !removable.isEmpty || !expiredHandoffs.isEmpty { save() }
+        if !removable.isEmpty || !expiredHandoffs.isEmpty || !oldSessionDeliveryIDs.isEmpty {
+            save()
+        }
         let retained = Set(all.filter { !removedIDs.contains($0.id) }.map(\.id))
         cleanupOrphanWorktrees(knownTaskIDs: retained, olderThan: cutoff)
         _ = OwnedStorage.compact()
@@ -8723,6 +8955,33 @@ enum Orchestrator {
         case task, handoff
     }
 
+    /// Resolve the two namespaces accepted at dispatch into the one durable conversation key
+    /// used by notification, grouping and root-close cascade. An unresolved spelling remains in
+    /// the record for compatibility, but the response warns that no process-bound owner was
+    /// proved; silently accepting it is what used to create an orphaned child.
+    static func canonicalRootSession(
+        _ supplied: String?, assistant: Assistant?, among targets: [TargetSession],
+        sessionID: (TargetSession) -> String?
+    ) -> (sessionID: String?, warning: [String: Any]?) {
+        guard let supplied else { return (nil, nil) }
+        let expectedAssistant = assistant ?? .claude
+        var canonical: Set<String> = []
+        for target in targets where target.assistant == expectedAssistant {
+            let conversation = sessionID(target)
+            guard target.id == supplied || conversation == supplied,
+                  let conversation else { continue }
+            canonical.insert(conversation)
+        }
+        if canonical.count == 1, let resolved = canonical.first {
+            return (resolved, nil)
+        }
+        return (supplied, [
+            "code": "root_unresolved",
+            "message": "root.session_id did not resolve to one live process-bound session; "
+                + "completion notification, grouping and close cascade are not guaranteed.",
+        ])
+    }
+
     static func target(forRootSession rootSessionID: String,
                        assistant: Assistant?, resolution: RootResolution,
                        among targets: [TargetSession],
@@ -8746,6 +9005,7 @@ enum Orchestrator {
         handoffs = [:]
         handoffDeliveries = [:]
         coordinationWaits = [:]
+        sessionDeliveries = [:]
         handoffTitlesByTerminal = [:]
         secrets = [:]
         dispatchTimes = []

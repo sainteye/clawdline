@@ -15,6 +15,9 @@ Package.resolved
 # Frames and working files from tools/shoot-assets.sh — large, and regenerated on demand.
 .shoot/
 
+# Internal working artifacts. They live in the private sibling repo (clawdline-cloud) and are read
+# and written there; this path is only a door into it. Anything meant for the community goes in
+# docs/ instead — English, written from the outside, tracked, and safe for a test to depend on.
 # Local working artifacts — now a symlink into the private sibling repo (clawdline-cloud),
 # where they are tracked. Ignored here either way; no trailing slash so the symlink matches.
 artifacts

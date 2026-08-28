@@ -361,7 +361,7 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `title` | ≤ 200 characters |
 | `instructions` | non-empty, ≤ 16 KiB |
 | `timeout_minutes` | 1…240; absent means 30 |
-| `root.session_id` | the dispatcher's assistant session id: Claude's transcript UUID or Codex's rollout `session_meta.session_id`; `null` when unavailable |
+| `root.session_id` | the dispatcher's assistant conversation id, or its watched terminal id. At dispatch the broker resolves either spelling against the declared assistant and stores the process-bound conversation id; `null` when unavailable |
 | `root.assistant` | optional `claude` or `codex`. New dispatchers send it; absence or explicit `null` is read as missing, and missing is resolved as `claude` for registries and task writers from before this field existed. Other values, including an empty string, are refused |
 | `root.parent_task` | the dispatcher's **own** task id, when the dispatcher is a child. `null` from a root. A value that is not a task id is read as `null` |
 
@@ -379,6 +379,13 @@ somebody's child is a fact about that session whether or not the parent is on sc
 floats at whatever position the sort gave it, which reads at a glance like a bug in the grouping
 rather than a task that declined to say who asked. If a row belonging under yours matters, send
 the id and `root.assistant` together.
+
+Resolution happens once, before capacity, grouping and the task record are chosen. A terminal id
+and the current conversation id therefore become the same durable root key. Completion
+notification, `liveTasks(dispatchedBy:)`, session grouping and root-close cascade all consume that
+canonical key. If a non-null spelling matches no one (or is ambiguous), dispatch still proceeds
+for compatibility but returns a `root_unresolved` item in `warnings`; the task may require polling
+and cannot be assumed to participate in those owner paths.
 
 The broker does not trust either string on its own. For Claude it resolves the exact current
 process's transcript (using the validated process registry when available, otherwise a hook id
@@ -1331,22 +1338,153 @@ menu's `reconnect` command. The menu remains disabled; an authenticated local op
 already-live replacement. Future start/restore or health-driven behavior must keep the separate
 observer provenance and explicit policy boundaries rather than widening this endpoint.
 
+**The web app's *Make this session Clawdfather* item is not a fourth coordinator route.** None of
+the three endpoints above became reachable from a paired device, and none of them types into
+anything. What that item does is compose one instruction and send it over the existing
+`POST /v1/sessions/:id/send`, which the page could already reach; the session that receives it is a
+local process running as the owner of this Mac, so it reads the orchestrator token and performs the
+register or rebind itself — the same act as a person typing the curl by hand, and the same trust
+boundary every Clawdline dispatch already stands on. The browser therefore never holds the
+machine credential, never learns the durable record, and cannot take over a live coordinator, since
+the refusals below still apply at the only place the decision is made. What it *does* know is the
+target's terminal-neutral id, because that is the `id` on the Session row it drew, so it hands that
+over in the instruction. Whether the role was taken is read back the way it always was: the
+authenticated `session.coordinator` projection appears on the exact bound row, and the item turns
+into a statement of who holds it. The recipe that item asks for is the next section.
+
+### Becoming Clawdfather: the recipe a session runs on itself
+
+There is no route by which anything but a local process holding the orchestrator token can register
+the machine coordinator, and there is deliberately not going to be one. So "make that session
+Clawdfather" is never carried out *for* a session; it is carried out *by* it. A person types the
+curl, or the web app's **Make this session Clawdfather** item types an instruction into the session
+through the ordinary `POST /v1/sessions/:id/send` and the session does exactly what is written
+below. This section is the authoritative copy of it, so that a session which has just been asked
+has something to follow rather than Swift source to reverse-engineer.
+
+**The two local facts.** The token is `~/.config/clawdline/orchestrator-token`, mode `0600` and
+readable only by a process running as its owner; the port is `remote_port` in
+`~/.config/clawdline/config.json`, and `7717` when that file says nothing.
+
+```bash
+ORCH=$(cat ~/.config/clawdline/orchestrator-token)
+PORT=$(python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.config/clawdline/config.json"))).get("remote_port",7717))' 2>/dev/null || echo 7717)
+```
+
+**1. Your own terminal-neutral id.** It is not your conversation id and not your transcript's name.
+It is the id of the *terminal pane* you are running in — the value `GET /v1/sessions` and
+`GET /v1/orchestrator/sessions` both call `id`. Under iTerm2 the terminal exports it, and the UUID
+after the colon is the whole of it:
+
+```bash
+SESSION_ID="${ITERM_SESSION_ID##*:}"     # w0t12p0:9A36BDF4-… → 9A36BDF4-…
+```
+
+**This is the same line for Codex as for Claude, and `CODEX_THREAD_ID` is not it.** iTerm2 sets
+`ITERM_SESSION_ID` for whatever runs in the pane, so both assistants read their own id from it;
+`CODEX_THREAD_ID` (and its compatible spelling `CODEX_SESSION_ID`) names the rollout's
+`session_meta.session_id`, which is a different value in a different namespace and is refused here
+as `404 session_not_found`. Measured on one Mac: the Codex tab listed as
+`AE8A927C-D144-4BF8-8DF7-47E0D5463418` had exactly that UUID in its `ITERM_SESSION_ID` while
+holding rollout `01a0462b-9ef7-7161-b0c0-e117929656ff` open. The first is the id these routes take.
+
+Under tmux, or a terminal that exports nothing, the id is a tmux pane id instead and the
+environment cannot answer. Then read it, rather than guess: `GET /v1/orchestrator/sessions` lists
+every live assistant with its `assistant`, `cwd` and `label`, and yours is the row whose working
+directory and title are yours. Either way, **check the id you found appears in that list before
+sending it anywhere** — a value that is not there is not an id, whatever exported it.
+
+**2. Read the current state before deciding anything.** One request answers all three cases, and
+the two fields a reconnect needs come only from here:
+
+```console
+$ curl -s "http://127.0.0.1:$PORT/v1/orchestrator/coordinator" \
+    -H "X-Clawdline-Orchestrator: $ORCH"
+{"version":1,"observed_at":1787884000,"store":{"status":"ready"},
+ "coordinator":{"configured":true,"id":"5ac9c093-f483-4606-87eb-2278b34436fe",
+   "scope":"machine","label":"Clawdfather","registered_at":1787821469,"generation":3,
+   "rebound_at":1787882803,"status":"online","lifecycle":"standby",
+   "session":{"id":"509F54A8-356E-420D-9EAC-73D676C9580E","assistant":"claude",
+              "label":"Clawdfather 新增介面","cwd":"/Users/you/code/clawdline",
+              "work_state":"needs_triage"}},
+ "bearings":{…}}
+```
+
+`coordinator.configured` is `false` when nobody has ever registered. When it is `true`,
+`coordinator.status` is `online` if the exact bound process is still alive and `offline` if it is
+not, and `coordinator.id` and `coordinator.generation` are the pair a reconnect must quote back.
+
+**3. Nobody is configured — register.** One field, and it is your id from step 1:
+
+```console
+$ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/coordinator/register" \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d "{\"session_id\":\"$SESSION_ID\"}"
+{"ok":true,"created":true,"coordinator":{…}}
+```
+
+`created:false` with a `200` means you were already it and nothing changed.
+
+**4. Configured but `offline` — reconnect.** Registration is never a takeover, so reconnecting is a
+separate, guarded operation, and its three fields are closed: the `id` and `generation` you just
+read, plus your own id.
+
+```console
+$ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/coordinator/rebind" \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d "{\"expected_coordinator_id\":\"$COORD_ID\",\"expected_generation\":$GENERATION,\
+         \"session_id\":\"$SESSION_ID\"}"
+{"ok":true,"rebound":true,"coordinator":{…}}
+```
+
+The stable UUID survives a reconnect on purpose, so `expected_generation` is the compare-and-swap
+value, not the UUID. Both are checked under the store's `flock`; a mismatch means the record moved
+after you read it, and the answer is to go back to step 2 rather than to retry with the old numbers.
+
+**5. Configured and `online` on a different session — stop.** Do not attempt it. The API refuses
+this by design — `409 coordinator_exists` from register, `409 coordinator_online` from rebind — and
+the refusal is the point rather than an obstacle: a live coordinator is somebody's running work, and
+there is no unconditional replace, stop or delete operation anywhere in this protocol. Report which
+session holds the role (`coordinator.session.id`, `label`, `cwd`) and leave it alone.
+
+**The refusals worth recognising.** `403 forbidden` means the request reached the handler without
+the orchestrator token — a paired device or a task secret, neither of which may do this.
+`404 session_not_found` almost always means step 1 sent a conversation or rollout id instead of a
+terminal id. `409 session_unbound` means the row exists but its process-bound identity could not be
+completed, so nothing was decided. `409 coordinator_liveness_unknown` means the Session scan is
+stale or older than the current binding, and absence of evidence is refused as proof of death; wait
+for a fresh scan and read step 2 again. `409 coordinator_store_invalid` and
+`500 coordinator_store_failed` are about the durable record itself and are never fixed by retrying
+harder.
+
+**Say what happened.** Registration is machine-wide state, and the person who asked for it is
+usually watching a different window. Whether you registered, reconnected, or found somebody else
+online and left them there, that sentence is the deliverable.
+
 ### Session work-state projection: one answer, separate evidence axes
 
 Every live Session row carries exactly one closed `work_state`: `ready`, `working`,
 `waiting_human`, `waiting_session`, `needs_triage`, `milestone_complete`, or `work_complete`.
-This is not another truth store. The broker deterministically projects it from the terminal
-presence reading, the task registry's authenticated result, the matching landing record, durable
-handoff state, and coordination waits. Those sources remain separate, and top-level terminal
+This is not another free-form truth store. The broker deterministically projects it from the
+terminal presence reading, the task registry's authenticated result, a root's process-bound
+session-delivery receipt, the matching landing record, durable handoff state, and coordination
+waits. Those sources remain separate, and top-level terminal
 `state` is unchanged. A missing or unknown projected value fails closed in the web client as
 `needs_triage`, never as blank idle and never as a check.
 
-The precedence is `waiting_human` (terminal question) > `waiting_session` (waiting-on or owed wait)
-> unreadable or missing evidence (`needs_triage`) > current `working` > delivered milestone >
-broker-verified target landing. Current work intentionally outranks an older receipt: during the
+The precedence is `waiting_human` (terminal question) > waiting-on/owed coordination file wait >
+unreadable or missing evidence (`needs_triage`) > current `working` > an idle dispatcher's live
+child (`waiting_session`) > delivered milestone > broker-verified target landing. Current work
+intentionally outranks an older receipt: during the
 child's linger somebody can resume using the terminal, and the earlier assignment's success cannot claim
 that new activity is finished. `waiting_human` remains the only state that requests a person's
 attention or drives the loud row/push. `waiting_session` stays the quiet `⏳` relationship.
+
+An active child is already typed broker evidence that its dispatcher has an outstanding Session
+obligation. When that exact root process is idle, the projection is therefore `waiting_session`,
+not `needs_triage`; when it works in parallel, current `working` wins. The browser validates the
+same fact against the live task's resolved `root.terminalId` and names the child task beside `⏳`.
+The child finishing removes this wait evidence; it does not itself mark the root delivered.
 
 A successful task with `finishedAt` is `milestone_complete` (one check) only when the task receipt
 is bound to the process occupying the Session now: exact assistant, terminal and tty, pid plus
@@ -1356,27 +1494,38 @@ task. Missing legacy identity fields fail closed. An open handoff's `from_sessio
 two strict namespaces—exact terminal id and exact process-bound conversation id—with no prefix,
 title, tty, or fallback guessing.
 
+An ordinary root has a second, deliberately narrow route to that same one-check milestone:
+`POST /v1/orchestrator/sessions/:terminal-id/complete` while its current turn is observably
+working. The broker resolves and stores the same exact process tuple itself; the body supplies only
+a bounded summary. Its disposition is `scope:session` with
+`evidence:authenticated_session_delivery`. The first subsequent idle settles the receipt, and the
+same terminal's next working or waiting transition consumes it. Thus it says only “this root
+delivered the turn now awaiting approval,” survives an app restart, and cannot be borrowed by a
+reused process or reappear after newer unreported work.
+
 That one check is authenticated, durable reported evidence that the current assignment/phase
 delivered; review, landing, handoff, waits, or later graph nodes may remain. It becomes
 `work_complete` (two checks) only when the same task also has the new machine-authenticated,
 git-verified target landing fields above and the terminal has no unresolved coordination wait or
-handoff. Legacy landed rows without those fields remain a milestone. Neither child prose nor
-progress notes nor Clawdfather advisory can write either check. Clawdfather explains which receipt
+handoff. Legacy landed rows without those fields remain a milestone. Neither unstructured
+assistant prose, progress notes nor Clawdfather advisory can write either check. Clawdfather
+explains which receipt
 is missing, coordinates its owner, and prioritizes `needs_triage`; it is not a status-truth writer.
 
-The existing task result is the typed, durable Session report: `success` maps to delivered
-milestone evidence, while `failure`, `timeout`, cancellation, or a missing finish receipt map to
-triage rather than completion. Natural-language `/progress` notes remain display-only context.
-This deliberately reuses the authenticated, versioned task/result registry instead of adding a
-second session-status API that could drift. A child may intend that all work is complete, but that
-intent is still only its `success` receipt; it cannot directly produce `work_complete`.
+The existing task result remains a child's typed, durable Session report: `success` maps to
+delivered milestone evidence, while `failure`, `timeout`, cancellation, or a missing finish receipt
+map to triage rather than completion. Natural-language `/progress` notes remain display-only
+context. A child may intend that all work is complete, but that intent is still only its `success`
+receipt; it cannot call the root route or directly produce `work_complete`.
 
-The completion scope is deliberately `task`, recorded in the Session's optional `disposition`
-metadata. The registry does not yet model one authoritative set of every descendant, review,
-landing, and handoff obligation belonging to a human root's whole graph. Claiming that broader
-completion would be invented global truth, so the projection fails closed and never calls a root
-graph complete. The typed evidence name is `broker_verified_target_landing`, not “task closure”:
-the broker verified local git containment, not the root's complete test/review graph. `ready` is
+Completion metadata therefore has two narrow scopes. `scope:task` names an authenticated child
+delivery and is the only scope that can advance to a broker-verified target landing.
+`scope:session` names one root-reported turn and is consumed on the next turn; it can never advance
+to two checks. The registry still does not model one authoritative set of every descendant,
+review, landing, and handoff obligation belonging to a human root's whole graph. Claiming that
+broader completion would be invented global truth, so neither scope calls a root graph complete.
+The typed double-check evidence remains `broker_verified_target_landing`, not “task closure”: the
+broker verified local git containment, not the root's complete test/review graph. `ready` is
 likewise not inferred for an idle assistant: without positive evidence
 that no assignment exists, its stopped state is `needs_triage` (the health target for this queue is
 zero). Plain non-assistant prompts can be `ready` because their absence of an assistant assignment

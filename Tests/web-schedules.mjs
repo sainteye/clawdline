@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 const elements = {
     schedules: { hidden: false },
@@ -74,6 +75,13 @@ assert.match(runMarkup, /data-task-id="run-done"[^>]*data-action="resume"/,
     "a finished run with a proven conversation id is resumable");
 assert.match(runMarkup, /published &lt;today&gt;/,
     "run summaries are escaped before they enter the schedule sheet");
+assert.match(runMarkup,
+    /<span class="schedule-run-summary" title="published &lt;today&gt;">published &lt;today&gt;<\/span>/,
+    "the clamped summary keeps its whole text in the title, escaped the same way");
+const scheduleCSS = await readFile(
+    new URL("../Resources/web/app/css/schedules.css", import.meta.url), "utf8");
+assert.match(scheduleCSS, /\.schedule-run-summary\s*\{[^}]*-webkit-line-clamp:\s*2;/,
+    "the picker shows the first lines of a run summary, not the whole report");
 assert.match(runMarkup,
     /class="schedule-run-meta" title="\/Users\/you\/code\/&lt;blog&gt;">codex · &lt;blog&gt;<\/span>/,
     "each occurrence names the project it actually used, with the full escaped path available");

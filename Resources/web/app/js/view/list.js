@@ -615,6 +615,16 @@ function fillRow(node, s) {
     // The server sends exactly one closed work_state. Re-project the safety precedence here so
     // a partial/old frame fails closed to readable triage rather than leaving an ambiguous gap.
     var work = projectSessionWorkState(s);
+    if (work.state === "waiting_session" && !peerSaid) {
+        var liveRoots = roots.filter(taskLive);
+        if (liveRoots.length) {
+            var childWait = T.webTaskTasks + ": " + liveRoots.map(function (task) {
+                return task.title || task.id;
+            }).join(" · ");
+            peerSaid = '<span class="coordination-wait" title="' + esc(childWait) + '">⏳ ' +
+                esc(childWait) + "</span>";
+        }
+    }
     var workSaid = sessionWorkStateHTML(s);
     // A receipt mark is fast to scan, but it cannot explain whether the child merely delivered
     // its milestone or the root verified the target landing. Keep the mark's accessible label and
@@ -633,6 +643,8 @@ function fillRow(node, s) {
         // same bug as the one above, one layer down.
         return ["owed", wait.id || "wait", wait.waiterLabel || wait.waiterSessionId || "",
             wait.releaseCondition || ""].join(":");
+    })).concat(roots.filter(taskLive).map(function (task) {
+        return ["child", task.id || "", task.title || ""].join(":");
     })).join("+");
     var shape = kind + "-" + s.state + "+ws" + work.state + (shells ? "+sh" + shells : "") +
         (waitShape ? "+cw" + waitShape : "");
