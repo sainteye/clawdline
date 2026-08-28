@@ -177,6 +177,21 @@ struct Russian: Copy {
     let settingsPushFinishHint = "Только дольше двух минут."
     let settingsSmartNotifications = "Умные уведомления"
     let settingsSmartNotificationsHint = "Haiku одним предложением опишет результат. При ошибке придёт обычное уведомление."
+    func pushCoalesced(count: Int) -> String { "Завершено сразу: \(count)" }
+    let settingsSmartHealthIdle = "Умные уведомления ещё не пробовались."
+    func settingsSmartHealth(attempts: Int, successes: Int) -> String {
+        "Из \(attempts) попыток \(successes) доставили фразу модели."
+    }
+    func settingsSmartHealthFailure(reason: String, time: String) -> String {
+        "Последний откат в \(time): \(reason)."
+    }
+    func settingsSmartTimeout(seconds: Int) -> String {
+        "Claude превысил лимит в \(seconds) с и был остановлен"
+    }
+    let settingsSmartQueueFull = "завершений больше, чем вмещает очередь"
+    let settingsSmartModelFailed = "Claude не вернул ничего пригодного"
+    let settingsSmartNoSource = "нечего было резюмировать"
+    let settingsSmartMissing = "исполняемый файл claude не найден"
     let settingsPushDeploy = "Сообщать, когда закончится деплой"
     let settingsPushDeployHint = "И об успехе, и об ошибке."
     let settingsAgentNotify = "Разрешить агентам отправлять свои уведомления"

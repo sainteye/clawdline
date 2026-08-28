@@ -178,6 +178,19 @@ struct TraditionalChinese: Copy {
     let settingsPushFinishHint = "只有跑超過兩分鐘的才算。"
     let settingsSmartNotifications = "智慧通知"
     let settingsSmartNotificationsHint = "用 Haiku 說明剛完成了什麼；產生失敗時仍會送出原本的通知。"
+    func pushCoalesced(count: Int) -> String { "\(count) 件工作同時完成" }
+    let settingsSmartHealthIdle = "還沒有嘗試過智慧通知。"
+    func settingsSmartHealth(attempts: Int, successes: Int) -> String {
+        "\(attempts) 次嘗試中，有 \(successes) 次送出了模型寫的句子。"
+    }
+    func settingsSmartHealthFailure(reason: String, time: String) -> String {
+        "最近一次退回原本通知在 \(time)：\(reason)。"
+    }
+    func settingsSmartTimeout(seconds: Int) -> String { "Claude 超過 \(seconds) 秒沒完成，被中止" }
+    let settingsSmartQueueFull = "同時完成的數量超過佇列容量"
+    let settingsSmartModelFailed = "Claude 沒有回覆可用的內容"
+    let settingsSmartNoSource = "沒有可摘要的內容"
+    let settingsSmartMissing = "找不到 claude 執行檔"
     let settingsPushDeploy = "deploy 結束時通知我"
     let settingsPushDeployHint = "成功和失敗都會通知。"
     let settingsAgentNotify = "允許 agent 主動推播"
@@ -886,6 +899,19 @@ struct SimplifiedChinese: Copy {
     let settingsPushFinishHint = "只有跑超过两分钟的才算。"
     let settingsSmartNotifications = "智能通知"
     let settingsSmartNotificationsHint = "用 Haiku 说明刚完成了什么；生成失败时仍会发送原来的通知。"
+    func pushCoalesced(count: Int) -> String { "\(count) 件任务同时完成" }
+    let settingsSmartHealthIdle = "还没有尝试过智能通知。"
+    func settingsSmartHealth(attempts: Int, successes: Int) -> String {
+        "\(attempts) 次尝试中，有 \(successes) 次发出了模型写的句子。"
+    }
+    func settingsSmartHealthFailure(reason: String, time: String) -> String {
+        "最近一次退回原来通知在 \(time)：\(reason)。"
+    }
+    func settingsSmartTimeout(seconds: Int) -> String { "Claude 超过 \(seconds) 秒没完成，被中止" }
+    let settingsSmartQueueFull = "同时完成的数量超过队列容量"
+    let settingsSmartModelFailed = "Claude 没有返回可用的内容"
+    let settingsSmartNoSource = "没有可摘要的内容"
+    let settingsSmartMissing = "找不到 claude 可执行文件"
     let settingsPushDeploy = "deploy 结束时通知我"
     let settingsPushDeployHint = "成功和失败都会通知。"
     let settingsAgentNotify = "允许 agent 主动推送"

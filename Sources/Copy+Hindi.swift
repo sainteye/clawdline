@@ -181,6 +181,21 @@ struct Hindi: Copy {
     let settingsPushFinishHint = "सिर्फ़ दो मिनट से लंबे कामों के लिए।"
     let settingsSmartNotifications = "स्मार्ट सूचनाएँ"
     let settingsSmartNotificationsHint = "Haiku पूरे हुए काम को एक वाक्य में बताएगा। विफल होने पर सामान्य सूचना भेजी जाएगी।"
+    func pushCoalesced(count: Int) -> String { "\(count) काम एक साथ पूरे हुए" }
+    let settingsSmartHealthIdle = "अभी तक कोई स्मार्ट सूचना आज़माई नहीं गई।"
+    func settingsSmartHealth(attempts: Int, successes: Int) -> String {
+        "\(attempts) प्रयासों में से \(successes) ने मॉडल का वाक्य पहुँचाया।"
+    }
+    func settingsSmartHealthFailure(reason: String, time: String) -> String {
+        "आख़िरी बार सामान्य सूचना पर लौटना \(time) बजे: \(reason)।"
+    }
+    func settingsSmartTimeout(seconds: Int) -> String {
+        "Claude \(seconds) सेकंड की सीमा पार कर गया और रोक दिया गया"
+    }
+    let settingsSmartQueueFull = "एक साथ इतने काम पूरे हुए कि कतार में जगह नहीं बची"
+    let settingsSmartModelFailed = "Claude से कोई काम का जवाब नहीं मिला"
+    let settingsSmartNoSource = "सारांश के लिए कुछ नहीं था"
+    let settingsSmartMissing = "claude executable नहीं मिला"
     let settingsPushDeploy = "deploy ख़त्म होने पर बताएँ"
     let settingsPushDeployHint = "सफल हो या फ़ेल, दोनों पर।"
     let settingsAgentNotify = "agents को अपनी सूचनाएँ भेजने दें"

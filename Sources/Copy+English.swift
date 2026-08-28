@@ -176,6 +176,21 @@ struct English: Copy {
     let settingsPushFinishHint = "Only for turns over two minutes."
     let settingsSmartNotifications = "Smart notifications"
     let settingsSmartNotificationsHint = "Use Haiku to say what the finished work did. Falls back to the ordinary notice."
+    func pushCoalesced(count: Int) -> String { "\(count) jobs finished together" }
+    let settingsSmartHealthIdle = "No smart notification has been attempted yet."
+    func settingsSmartHealth(attempts: Int, successes: Int) -> String {
+        "\(successes) of \(attempts) smart notifications carried a model sentence."
+    }
+    func settingsSmartHealthFailure(reason: String, time: String) -> String {
+        "Last fallback at \(time): \(reason)."
+    }
+    func settingsSmartTimeout(seconds: Int) -> String {
+        "Claude ran past the \(seconds)-second deadline and was cut off"
+    }
+    let settingsSmartQueueFull = "more finishes arrived than the queue holds"
+    let settingsSmartModelFailed = "Claude returned nothing usable"
+    let settingsSmartNoSource = "there was nothing to summarize"
+    let settingsSmartMissing = "no claude executable was found"
     let settingsPushDeploy = "Notify when a deploy ends"
     let settingsPushDeployHint = "Both success and failure."
     let settingsAgentNotify = "Let agents send their own notifications"

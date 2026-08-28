@@ -75,6 +75,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     private var policyCard: NoteCard?
     private var deviceChips: DeviceChips?
     private var tunnelCard: NoteCard?
+    private var smartHealthCard: NoteCard?
     private var schedulesControl: ScheduleSettingsControl?
     /// AppKit invokes this window on the main thread, but the older SDK annotations used by the
     /// straight-swiftc build do not carry that fact through NSObject. Keep the actor boundary
@@ -499,6 +500,12 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                       switchFor({ Config.shared.smartNotifications },
                                 { Config.shared.smartNotifications = $0 }),
                       hint: L.t.settingsSmartNotificationsHint)
+        // The feature's record, beside its switch. It once failed 784 times in three hours and
+        // the only evidence was a log line; whether the model is producing sentences, and why the
+        // last attempt fell back, belong where the person who flipped the switch will look.
+        let smartHealth = NoteCard()
+        smartHealthCard = smartHealth
+        pane.left.block(label: nil, view: smartHealth, hint: nil)
         pane.left.row(L.t.settingsPushDeploy,
                       switchFor({ Config.shared.pushOnDeploy },
                                 { Config.shared.pushOnDeploy = $0 }),
@@ -686,7 +693,29 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         refreshPolicyCard()
         refreshDevices()
         refreshTunnel()
+        refreshSmartHealth()
         if Date() >= schedulesRefreshAt { refreshSchedules() }
+    }
+
+    /// Whether smart notifications are actually producing sentences, in the words
+    /// ``SmartNotification.healthLine(_:copy:)`` chooses — refreshed with the other live
+    /// readings so a failure shows up while the window is open, not on the next launch.
+    private func refreshSmartHealth() {
+        guard let card = smartHealthCard else { return }
+        let health = SmartNotification.healthSnapshot()
+        let was = card.text
+        if health.attempts == 0 && !Config.shared.smartNotifications {
+            card.text = ""
+            card.dot = .idle
+        } else {
+            card.text = SmartNotification.healthLine(health, copy: L.t)
+            if let ok = health.lastResolvedWasSuccess {
+                card.dot = ok ? .live : .warn
+            } else {
+                card.dot = .idle
+            }
+        }
+        if card.text != was { relayoutCurrent() }
     }
 
     /// Something that changes size changed, so the tab is measured again. Only called when a
