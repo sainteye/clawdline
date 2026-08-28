@@ -244,6 +244,14 @@ session with no such choice to make.
 
 It ships with opinions rather than a comment saying "put your rules here", because a file with
 defensible rules already in it is one somebody edits and an empty one is a feature nobody finds.
+**What ships is `Resources/dispatch-policy.md`** — the file this repository edits, copied into the
+app bundle by `build.sh` and read from there when a machine has no policy of its own. It used to be
+a Swift string literal holding an older draft of the same rules, which is worse than it sounds:
+`ensurePolicyFile` writes that copy, so it is exactly what a fresh install receives, and a machine
+could start life with rules nobody had read for months. If the resource is missing there are no
+house rules, which is what an empty policy file has always meant — and no file is written at all,
+because this function never overwrites and an empty one created by a bad read would be permanent.
+
 It opens with the two decisions that come before any of the others:
 
 **Whether to dispatch at all.** The measurement is sharp in both directions — work that splits

@@ -7561,164 +7561,47 @@ enum Orchestrator {
     static func ensurePolicyFile() -> URL {
         let url = policyURL
         guard !FileManager.default.fileExists(atPath: url.path) else { return url }
+        // Nothing to write is not the same as writing nothing. This function never overwrites, so
+        // an empty file created because the bundled resource could not be read would be permanent:
+        // the machine would keep the empty rules for good, and a later launch that can read the
+        // resource would leave them alone. Leaving no file at all behaves identically today and
+        // stays fixable tomorrow.
+        let starting = defaultPolicy
+        guard !starting.isEmpty else { return url }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
-        try? Data(defaultPolicy.utf8).write(to: url, options: .atomic)
+        try? Data(starting.utf8).write(to: url, options: .atomic)
         return url
     }
 
-    /// Opinionated on purpose. An empty file with a comment saying "put your rules here" is a
-    /// feature nobody uses; a file with defensible rules already in it is one somebody edits.
-    /// English because it is copied into a briefing every other line of which is English, and
-    /// because it is read by an assistant before it is read by a person — but nothing stops it
-    /// being rewritten in any language, and a child will follow it just the same.
-    static let defaultPolicy = """
-    # How work is handed out on this Mac
+    /// Where the starting policy ships: `Resources/dispatch-policy.md`, which `build.sh` copies
+    /// into the app bundle beside the hook script and the mascots.
+    ///
+    /// The override is for the test binary, which is a bare `swiftc` executable with no bundle to
+    /// ask — and it is also how "the resource is missing" is tested, by pointing it at a path
+    /// that is not there.
+    static var bundledPolicyURLOverrideForTesting: URL?
+    static var bundledPolicyURL: URL? {
+        bundledPolicyURLOverrideForTesting
+            ?? Bundle.main.url(forResource: "dispatch-policy", withExtension: "md")
+    }
 
-    Clawdline reads this file every time a task is dispatched and copies it into the briefing of every
-    child that is allowed to dispatch in turn. Edit it freely. Delete everything and the feature
-    switches itself off — an empty file means there are no house rules.
-
-    ## First: should this be dispatched at all?
-
-    There is a measurement behind this and it is sharp in both directions: on work that splits into
-    independent pieces, coordinating several agents beat a single one by **80.9%**; on work where
-    every step depends on the one before it, *every* multi-agent arrangement tested was **39–70%
-    worse** than a single agent, because the handoffs break a chain that needed to stay whole.
-
-    So the question is one sentence: **can this be cut into pieces that do not need to talk to each
-    other, and joined at the end?**
-
-    **When the answer is no, that is a recommendation and not a refusal.** Say so, give the reason in
-    a sentence, and ask — then do whatever they answer. The person has reasons this file cannot see:
-    they may want Codex to take this one, or their own context left free for something else, or
-    simply to watch it happen in a tab they can step into. **Their yes settles it**, and does not need
-    to be argued with or hedged. What is owed is the reason, once, before the work starts — not after
-    it went badly.
-
-    These are the shapes that look dispatchable and are not, and the ones worth saying it about:
-
-    - **Diagnosis and debugging.** Every step is chosen because of what the last step found. Handing
-      that to a fresh session throws away the reasoning that made the next step obvious.
-    - **Anything needing dozens of small parallel jobs.** Every node is a real assistant cold-starting
-      and holding a terminal tab. A hundred of them is slower and dearer than the batch tool for it,
-      and nobody can read a hundred tabs.
-    - **Anything on a path where somebody is waiting.** A node takes tens of seconds to reach a prompt.
-    - **Agents that need to talk back and forth.** Dispatch is one-way: brief, wait, collect. Every
-      round trip means a whole new task.
-    - **Output that has to be typed data for a program to consume.** What comes back is a paragraph
-      and some file paths.
-    - **Work smaller than its own briefing.** If writing the instructions takes longer than doing it,
-      that is the answer.
-
-    ## Then: should it use an isolated worktree?
-
-    Use `"isolation":"worktree"` for a code-producing child whose tracked-file edits can be
-    reviewed and landed as a branch. Its checkout starts from a commit, so uncommitted base-tree
-    work and gitignored dependencies are absent. The child commits only on its own branch; it does
-    not push, switch branches, or run `git worktree` itself.
-
-    Do not choose it for a running app or port, shared databases/devices/caches, work that needs
-    the base checkout's untracked state, artifact-only or review tasks, or ordinary reading. Those
-    either are not isolated by a worktree or produce no branch worth landing. This is a judgement,
-    not a refusal: say what does not fit and let the person decide. `serialize` remains available
-    for machine-global resources, and may be combined with isolation.
-
-    ## Then: pick a shape
-
-    Named shapes, so a graph is chosen rather than improvised. Every one of them ends the same way —
-    see the last section.
-
-    - **Split and join** — one question, several independent pieces. Leaves gather (`haiku`), one node
-      joins and judges (`sonnet`+). The default for research, audits, and surveys.
-    - **Build then read** — anything producing code or a decision somebody acts on. Workers build;
-      a separate node reads what they built and reports what is wrong. Never the same node, never the
-      same session.
-    - **Decide then do** — one node reads and writes the plan without touching anything; a person
-      passes it; a second node (usually Codex) implements it. The value is the gap in the middle,
-      where a person can still say no cheaply.
-    - **Batch with takeover** — the same mechanical change across independent modules, one node each.
-      When one dies its tab survives with its state on screen, and a person finishes it by typing.
-    - **Candidates** — the same problem to several nodes with different instructions, each producing a
-      complete working answer. A person picks. No judging node: what is being compared is taste, and a
-      judge model has its own.
-
-    ## Which assistant
-
-    - **Codex** for *making* something you can then look at: writing code, drawing an image with
-      the image model it has built in, hand-writing an SVG, running a build until it goes green,
-      mechanical edits across many files. It cannot be told where to save a drawing, so a task
-      that wants one has to say: generate it, then copy the file into the task's `artifacts/`.
-    - **Claude** for reading and judging: reviewing a diff, working out why something behaves the
-      way it does, searching and weighing what it found, writing prose somebody will read.
-
-    ## Which model
-
-    Name one when the default is the wrong size for the job, and say why in the plan.
-
-    - `haiku` — mechanical, single-source work. Fetch a page and pull three facts out of it.
-      Reformat a list. Anything where being wrong is obvious.
-    - `sonnet` — ordinary work with judgement in it, and the default choice for a leaf.
-    - `opus` — a decision somebody will act on without checking, and any synthesis of several
-      children's answers.
-
-    **A verdict runs on a model at least as strong as what produced what it is judging.** A
-    review by something smaller than the thing reviewed is a rubber stamp with a token cost.
-
-    ## The shape of the graph
-
-    - Plan the whole graph before dispatching any of it: what each leaf produces, who joins those
-      answers together, and what the top hands back.
-    - **Breadth before depth.** Two children splitting a job beat one child that will hand half
-      of it on. Go a level deeper only when the second level's work cannot be named until the
-      first level has answered.
-    - **Every node is told the whole graph**, not just its own job — that is what `plan` in
-      task.json is for. A leaf that knows what its output feeds writes a usable output; one that
-      does not writes an essay.
-    - Leaves are narrow enough to state in a sentence. If a child's instructions need three
-      paragraphs to say what "done" means, it is two children.
-
-    ## Dispatching itself
-
-    - **Stagger them.** Wait 30–45 seconds between one dispatch and the next. Every child is a
-      real assistant cold-starting on this Mac, and started together they compete — a tab that
-      has not reached a prompt in four minutes is `spawn_failed`. A minute of waiting buys the
-      whole batch.
-    - **A `spawn_failed` retry needs a fresh id and a fresh secret.** That task id is terminal.
-    - **Say when you did it yourself.** If a dispatch failed twice and you did the work instead,
-      that is usually right — but the summary has to say so.
-
-    ## Somebody has to check the work
-
-    Every graph that produces code, or a decision anybody will act on, ends with a node whose only
-    job is to find what is wrong with it. Not a fifth worker — a reader.
-
-    - **It produces nothing.** It reads the other nodes' artifacts and writes findings. Fixing is
-      the next round's job, or a person's — and that holds even when it is sure it knows the fix,
-      because a repair is a fast way to bury the judgement somebody needed to see.
-    - **It did not help build the thing.** Self-review is measurably bad at this: a model judging
-      its own output misses about a third of its own semantic drift, and the mechanism is
-      structural rather than a capability gap — a judge favours low-perplexity text, and a
-      model's own output is low-perplexity to it by construction. (Giving it the outputs rather
-      than the conversation behind them is the same idea extended one step; that half is
-      reasoning, not a measured result.)
-    - **A different assistant helps, and does not solve it.** Codex wrote it, Claude reads it —
-      but do not mistake that for independence. A panel of nine frontier models was measured to
-      carry only about two votes' worth of independent information, because different models get
-      the same items wrong. Where a review really matters, use *several* reviewers and take the
-      majority, and pick them for being complementary rather than merely different.
-    - **Opus-class, always.** Not "no weaker than what it judges" — an absolute floor. A review is
-      worth exactly what the reviewer's judgement is worth, and a missed finding travels all the
-      way to the end. Measured here: a Sonnet reviewer, in the middle of correctly explaining that
-      judging is prone to hallucination, invented a specific citation — it claimed a document
-      disputed a term the document never mentions.
-    - **Name the paths it may read.** List the exact `/tmp/.clawdline/<id>/artifacts/`
-      directories. This is how the rule above is enforced rather than merely stated: without it a
-      reviewer can wander into the production conversation it was supposed to be kept out of.
-    - **A verdict, with its receipts.** "What is wrong, worst first, is it safe to ship" — and
-      every finding names the artifact and the passage it rests on. A verdict without sources is
-      the exact shape a hallucinating judge produces, and it costs nothing to require.
-    """
+    /// The rules a machine with no policy file of its own starts with.
+    ///
+    /// **This was a string literal, and the literal went stale.** The live rules are
+    /// `Resources/dispatch-policy.md` — the file this repository edits, and the one `build.sh`
+    /// already copies into the bundle — while the copy compiled into the app kept an older draft
+    /// of them. That copy is not a curiosity: `ensurePolicyFile` writes it, so it is exactly what
+    /// a fresh install receives, and a machine could start life with rules nobody had read for
+    /// months.
+    ///
+    /// A missing resource means no house rules at all, which is what an empty policy file has
+    /// always meant. Nothing is invented to fill the gap.
+    static var defaultPolicy: String {
+        guard let url = bundledPolicyURL,
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return "" }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     /// The graph this task is one node of, when the dispatcher wrote one down.
     ///

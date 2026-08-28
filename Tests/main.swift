@@ -13588,24 +13588,58 @@ group("the graph and the house rules reach the child that needs them") {
     check("a file of nothing but whitespace counts as nobody having said anything",
           Orchestrator.policy() == nil)
 
-    check("the starting rules say something about models and something about shape",
+    // The starting rules used to be a Swift string literal holding an old draft of the file this
+    // repository actually edits — and that literal is what a fresh install received, because
+    // `ensurePolicyFile` writes it. Now it is the shipped resource, read at the point of use.
+    let bundledOverride = Orchestrator.bundledPolicyURLOverrideForTesting
+    defer { Orchestrator.bundledPolicyURLOverrideForTesting = bundledOverride }
+    Orchestrator.bundledPolicyURLOverrideForTesting =
+        URL(fileURLWithPath: "Resources/dispatch-policy.md")
+    let shipped = (try? String(contentsOfFile: "Resources/dispatch-policy.md", encoding: .utf8))?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    check("the starting rules are the file this repository ships, character for character",
+          !shipped.isEmpty && Orchestrator.defaultPolicy == shipped)
+    check("which says something about models and something about shape",
           Orchestrator.defaultPolicy.contains("haiku")
               && Orchestrator.defaultPolicy.contains("Breadth before depth"))
     // The two halves a dispatcher needs before it picks anything: whether to dispatch, and what
     // shape to use. Both were added after a graph was dispatched to research them.
     check("and it decides whether to dispatch before it decides how",
-          Orchestrator.defaultPolicy.contains("should this be dispatched at all"))
+          Orchestrator.defaultPolicy.contains("Should this be dispatched at all"))
     // A judgement the person can overrule. The first draft told a dispatcher to decline and do
     // the work itself, which turns a useful check into a veto over somebody else's call — and
     // "I want Codex to take this one" is a reason no policy file can see.
     check("and a no there asks rather than refuses",
           Orchestrator.defaultPolicy.contains("a recommendation and not a refusal")
-              && Orchestrator.defaultPolicy.contains("Their yes settles it"))
+              && Orchestrator.defaultPolicy.contains("their yes settles it"))
     check("and offers named shapes rather than leaving the graph improvised",
           Orchestrator.defaultPolicy.contains("Split and join")
               && Orchestrator.defaultPolicy.contains("Build then read"))
     check("and the whole of it fits inside what a briefing will carry",
           Orchestrator.defaultPolicy.count <= Orchestrator.policyLimit)
+
+    // A missing resource means no house rules, which is exactly what an empty policy file has
+    // always meant. Nothing is invented to fill the gap.
+    Orchestrator.bundledPolicyURLOverrideForTesting =
+        URL(fileURLWithPath: "/nowhere/dispatch-policy.md")
+    check("a bundle with no policy resource in it means no starting rules at all",
+          Orchestrator.defaultPolicy.isEmpty)
+    // …and it must not leave an empty file behind, because `ensurePolicyFile` never overwrites:
+    // a machine that once could not read the resource would keep the empty rules for good.
+    try? FileManager.default.removeItem(at: policyFile)
+    let answered = Orchestrator.ensurePolicyFile()
+    check("nothing to write is not the same as writing nothing",
+          answered == policyFile
+            && !FileManager.default.fileExists(atPath: policyFile.path))
+    Orchestrator.bundledPolicyURLOverrideForTesting =
+        URL(fileURLWithPath: "Resources/dispatch-policy.md")
+    _ = Orchestrator.ensurePolicyFile()
+    check("with the resource there, a machine with no rules of its own starts with the shipped ones",
+          (try? String(contentsOf: policyFile, encoding: .utf8)) == shipped)
+    try? Data("mine, and nobody rewrites it".utf8).write(to: policyFile, options: .atomic)
+    _ = Orchestrator.ensurePolicyFile()
+    check("and a file that is already there is never overwritten",
+          (try? String(contentsOf: policyFile, encoding: .utf8)) == "mine, and nobody rewrites it")
 
     // Cutting used to be silent and mid-word: the first policy long enough to hit the limit lost
     // its last rule, and the briefing read as though the file simply ended there.
