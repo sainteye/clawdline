@@ -13524,14 +13524,20 @@ group("the graph and the house rules reach the child that needs them") {
             try? FileManager.default.removeItem(at: policyFile)
         }
     }
-    func brief(plan: String?, allowance: Int) -> String {
+    func fixture(plan: String?, allowance: Int) -> Orchestrator.Task {
         Config.shared.orchestratorMaxGrandchildren = allowance
         var task = Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
                                      assistant: .claude, projectDir: "/Users/me/code/thing",
                                      timeoutMinutes: 30, created: Date(), depth: 1,
                                      secretHash: String(repeating: "0", count: 64))
         task.plan = plan
-        return Orchestrator.childBrief(for: task)
+        return task
+    }
+    func brief(plan: String?, allowance: Int) -> String {
+        Orchestrator.childBrief(for: fixture(plan: plan, allowance: allowance))
+    }
+    func rules(plan: String?, allowance: Int) -> String? {
+        Orchestrator.dispatchingBrief(for: fixture(plan: plan, allowance: allowance))
     }
     try? FileManager.default.createDirectory(at: policyFile.deletingLastPathComponent(),
                                              withIntermediateDirectories: true)
@@ -13543,20 +13549,27 @@ group("the graph and the house rules reach the child that needs them") {
     check("above the rules, because it is what the rules are read in the light of",
           both.range(of: "## The plan this is part of")!.lowerBound
               < both.range(of: "## Rules")!.lowerBound)
+    // The house rules travel with the recipe rather than with the briefing: they are about a
+    // decision only a dispatching child makes, and they used to be pasted beside the task's own
+    // instructions in every child's CHILD.md.
+    let handOn = rules(plan: "root → 3 searchers → this one joins them up", allowance: 3)
     check("and this Mac's house rules are there for a child that may dispatch",
-          both.contains("Review runs on opus."))
+          handOn?.contains("Review runs on opus.") == true)
     check("named by path, so a child can say where a rule it followed came from",
-          both.contains(Orchestrator.policyURL.path))
+          handOn?.contains(Orchestrator.policyURL.path) == true)
+    check("and they are not also copied into the briefing every child pays for",
+          !both.contains("Review runs on opus."))
 
     let leaf = brief(plan: "root → 3 searchers → this one", allowance: 0)
     check("a leaf is told the plan too — it is what makes its answer joinable",
           leaf.contains("root → 3 searchers → this one"))
     check("but not the rules for handing work out, which it has no decision to spend them on",
-          !leaf.contains("Review runs on opus."))
+          !leaf.contains("Review runs on opus.")
+            && rules(plan: nil, allowance: 0) == nil)
 
     try? FileManager.default.removeItem(at: policyFile)
     check("no file at all is no paragraph, rather than an empty heading",
-          !brief(plan: nil, allowance: 3).contains("What this Mac says"))
+          rules(plan: nil, allowance: 3)?.contains("What this Mac says") == false)
     check("and no plan is no paragraph either",
           !brief(plan: nil, allowance: 3).contains("## The plan this is part of"))
     try? Data("   \n\n  ".utf8).write(to: policyFile, options: .atomic)
@@ -18473,6 +18486,164 @@ group("dispatch answers an immediate tab refusal; the later pump finalizes its r
     check("a pump-promoted tab refusal carries both reclaim deadlines",
           Orchestrator.workCleanupAtForTesting(reclaimID) != nil
             && Orchestrator.buildCleanupAtForTesting(reclaimID) != nil)
+}
+
+// `spawn_failed` was 34 of 206 dispatches on the machine this was measured on, and the answer
+// used to be that the root writes the whole task out again under a fresh id — thirty-four
+// rewrites by the most context-loaded session in the tree. The retry belongs to the broker,
+// which already holds everything the original said.
+group("a tab that never opened is retried from its own task file, twice and no further") {
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    var made: [URL] = []
+    defer {
+        for directory in made { try? manager.removeItem(at: directory) }
+        AssistantQuota.clearOverridesForTesting()
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    AssistantQuota.setOverrideForTesting(
+        AssistantQuota(assistant: .claude, installed: true, loggedIn: true, plan: nil,
+                       availability: .ok, source: .observed,
+                       observedAt: Int(Date().timeIntervalSince1970), resetsAt: nil,
+                       detail: "plenty", windows: []),
+        for: .claude)
+    Orchestrator.workspaceOverlapObserverForTesting = { _, _ in }
+    Orchestrator.rootNotificationObserverForTesting = { _ in }
+    var tabOpens = false
+    Orchestrator.taskStarterForTesting = { _, _, _, _, _, _ in
+        tabOpens
+            ? .started(id: "TAB-\(UUID().uuidString)", backend: .iterm)
+            : .refused(status: 409, code: "terminal_closed",
+                       message: "no terminal is running", app: "iTerm")
+    }
+
+    func write(_ id: String) {
+        let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
+        made.append(directory)
+        try? manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try! JSONSerialization.data(withJSONObject: [
+            "clawdline_protocol": 1, "task_id": id, "kind": "code", "assistant": "claude",
+            "model": "opus", "project_dir": "/tmp", "title": "the work itself",
+            "instructions": "the instructions nothing else wrote down", "timeout_minutes": 45,
+            "plan": "one node, retried", "claims": ["Sources/Respawned.swift"],
+            "root": ["session_id": "respawn-root"],
+        ]).write(to: directory.appendingPathComponent("task.json"), options: .atomic)
+    }
+    func refusal(_ reply: Orchestrator.Reply) -> (Int, String)? {
+        guard case .refused(let status, let code, _, _) = reply else { return nil }
+        return (status, code)
+    }
+    func payload(_ reply: Orchestrator.Reply) -> [String: Any]? {
+        guard case .ok(let body) = reply else { return nil }
+        return body
+    }
+    func record(_ body: [String: Any]?) -> [String: Any]? { body?["task"] as? [String: Any] }
+    // Never `appendingPathComponent("")`: that names the task root itself, and this group's
+    // `defer` deletes what it is given.
+    func sweep(_ candidate: String?) {
+        guard let candidate, Orchestrator.isTaskID(candidate) else { return }
+        made.append(Orchestrator.root.appendingPathComponent(candidate, isDirectory: true))
+    }
+
+    let originalID = UUID().uuidString.lowercased()
+    let originalSecret = String(repeating: "a1", count: 32)
+    write(originalID)
+    expect("the original dispatch fails to open a tab",
+           record(payload(Orchestrator.dispatch(taskID: originalID,
+                                                secret: originalSecret)))?["state"] as? String,
+           "spawn_failed")
+
+    let firstReply = Orchestrator.respawn(taskID: originalID)
+    let first = payload(firstReply)
+    let firstRecord = record(first)
+    let firstID = firstRecord?["id"] as? String ?? ""
+    sweep(firstID)
+    check("a spawn_failed task is respawned under a new id", !firstID.isEmpty && firstID != originalID)
+    check("and the retry carries everything the original task file said",
+          firstRecord?["title"] as? String == "the work itself"
+            && firstRecord?["kind"] as? String == "code"
+            && firstRecord?["model"] as? String == "opus"
+            && firstRecord?["claims"] as? [String] == ["Sources/Respawned.swift"]
+            && (firstRecord?["root"] as? [String: Any])?["sessionId"] as? String == "respawn-root")
+    // The one field that lives nowhere but the file: the broker never held it, so a retry that
+    // did not copy the file would open a tab with nothing in it.
+    let copied = try? String(contentsOf: Orchestrator.root
+        .appendingPathComponent(firstID, isDirectory: true)
+        .appendingPathComponent("task.json"), encoding: .utf8)
+    check("including the instructions, which the registry never held",
+          copied?.contains("the instructions nothing else wrote down") == true
+            && copied?.contains("\"task_id\"") == true && copied?.contains(firstID) == true)
+    check("the secret is fresh, and handed back so the caller has what a dispatch would give it",
+          (first?["secret"] as? String).map(Orchestrator.isTaskSecret) == true
+            && first?["secret"] as? String != originalSecret)
+    check("and the chain is visible in the registry rather than three unrelated tasks",
+          firstRecord?["respawn_of"] as? String == originalID
+            && firstRecord?["respawn_generation"] as? Int == 1
+            && first?["original_task"] as? String == originalID)
+    // Straight through the registry serializer, because the chain has to outlive a restart: a
+    // respawn cap that forgets on relaunch is a cap somebody can wait out.
+    var carried = Orchestrator.Task(
+        id: firstID, state: .spawnFailed, kind: "code", title: "the work itself",
+        assistant: .claude, projectDir: "/tmp", timeoutMinutes: 45, created: Date(),
+        secretHash: String(repeating: "0", count: 64))
+    carried.respawnOf = originalID
+    carried.respawnGeneration = 2
+    let carriedBack = Orchestrator.task(from: Orchestrator.stored(carried))
+    check("the chain survives being written down and read back",
+          carriedBack?.respawnOf == originalID && carriedBack?.respawnGeneration == 2)
+    var orphan = Orchestrator.stored(carried)
+    orphan["respawn_of"] = nil
+    check("and a generation with no task to descend from counts as no chain at all",
+          Orchestrator.task(from: orphan)?.respawnGeneration == 0)
+
+    let secondReply = Orchestrator.respawn(taskID: firstID)
+    let secondRecord = record(payload(secondReply))
+    let secondID = secondRecord?["id"] as? String ?? ""
+    sweep(secondID)
+    check("a second retry is allowed, and counts along the chain",
+          !secondID.isEmpty && secondRecord?["respawn_generation"] as? Int == 2
+            && secondRecord?["respawn_of"] as? String == firstID)
+    check("and still names the task the whole chain descends from",
+          payload(secondReply)?["original_task"] as? String == originalID)
+
+    // Counting per call rather than along the chain is the mistake this forbids: each of these
+    // respawns was the first from *its* immediate parent.
+    let third = refusal(Orchestrator.respawn(taskID: secondID))
+    expect("the third retry in one chain is refused", third?.0, 409)
+    expect("with its own code", third?.1, "respawn_exhausted")
+
+    let successID = UUID().uuidString.lowercased()
+    tabOpens = true
+    write(successID)
+    _ = Orchestrator.dispatch(taskID: successID, secret: String(repeating: "b2", count: 32))
+    let live = refusal(Orchestrator.respawn(taskID: successID))
+    expect("a task whose tab did open is not respawnable", live?.0, 409)
+    expect("and says so in its own code", live?.1, "not_respawnable")
+    Orchestrator.finalize(successID, as: .success, summary: "it did the work")
+    expect("nor is one that finished — that would be re-running work, not retrying a dispatch",
+           refusal(Orchestrator.respawn(taskID: successID))?.1, "not_respawnable")
+    expect("and a task nobody has heard of is a 404",
+           refusal(Orchestrator.respawn(taskID: UUID().uuidString.lowercased()))?.0, 404)
+
+    // A caller may still choose the secret, exactly as it does for an ordinary dispatch.
+    let chosenID = UUID().uuidString.lowercased()
+    tabOpens = false
+    write(chosenID)
+    _ = Orchestrator.dispatch(taskID: chosenID, secret: String(repeating: "c3", count: 32))
+    let chosen = String(repeating: "d4", count: 32)
+    let chosenReply = Orchestrator.respawn(taskID: chosenID, secret: chosen)
+    if let body = payload(chosenReply), let id = record(body)?["id"] as? String {
+        sweep(id)
+        expect("a supplied secret is used rather than replaced", body["secret"] as? String, chosen)
+    } else {
+        check("a respawn accepts a caller's own secret", false, "\(chosenReply)")
+    }
+    expect("and a malformed one is refused before anything is written",
+           refusal(Orchestrator.respawn(taskID: chosenID, secret: "too-short"))?.1, "bad_task")
 }
 
 group("an attached briefing is delivered work, not a tab still trying to open") {

@@ -928,7 +928,9 @@ enum Orchestrator {
         tasks.values.contains { $0.scheduleID == id && !$0.state.isTerminal }
     }
 
-    private static func scheduleSecret() -> String? {
+    /// 32 random bytes as hex. Every task secret this app mints itself comes from here — the
+    /// scheduled dispatch below, and a respawn retrying a tab that would not open.
+    private static func freshTaskSecret() -> String? {
         var bytes = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
             return nil
@@ -940,7 +942,7 @@ enum Orchestrator {
     /// gate as every root request. No claims, capacity, trust or serialization rule is duplicated.
     private static func dispatch(_ schedule: Schedule) -> Reply {
         let id = UUID().uuidString.lowercased()
-        guard let secret = scheduleSecret() else {
+        guard let secret = freshTaskSecret() else {
             return .refused(500, "internal", "Could not create the scheduled task secret.")
         }
         var obj = schedule.taskTemplate
@@ -1291,6 +1293,14 @@ enum Orchestrator {
         /// The task whose child dispatched this one, when it said so. Nil at depth 1, and nil at
         /// depth 2 when the parent was recognised by session id instead.
         var parentTaskId: String?
+        /// The `spawn_failed` task this one was retried from, when it was. Nil for every
+        /// ordinary dispatch. Recorded so the chain is visible in the registry rather than being
+        /// three unrelated-looking tasks with the same title.
+        var respawnOf: String?
+        /// How far down a respawn chain this task sits: `0` for an original, `1` for the retry of
+        /// one, `2` for the retry of that. Counted along the chain when the task is made rather
+        /// than per call, so a chain of respawns cannot launder ``Orchestrator/respawnLimit``.
+        var respawnGeneration = 0
         /// The whole graph this task is one node of, in the dispatcher's own words. Carried into
         /// the briefing so a leaf knows what its output feeds — which is the difference between
         /// a usable answer and an essay.
@@ -2754,6 +2764,12 @@ enum Orchestrator {
         return id.allSatisfy { ("a"..."f").contains($0) || $0.isNumber || $0 == "-" }
     }
 
+    /// 32 bytes written as lower-case hex, which is what every task secret on this Mac is —
+    /// `openssl rand -hex 32` in the briefing, `freshTaskSecret()` when the broker mints one.
+    static func isTaskSecret(_ secret: String) -> Bool {
+        secret.count == 64 && secret.allSatisfy { ("a"..."f").contains($0) || $0.isNumber }
+    }
+
     static func validIsolationBase(_ value: String) -> Bool {
         guard !value.isEmpty, value.count <= 200, !value.hasPrefix("-"), !value.contains("..")
         else { return false }
@@ -3692,7 +3708,16 @@ enum Orchestrator {
 
     /// Runs on the server queue. Everything filesystem- and process-shaped is safe there — the
     /// `/start` route has always called `StartPoints.start` from it.
-    static func dispatch(taskID: String, secret: String, schedule: Schedule? = nil) -> Reply {
+    /// Where a respawned task came from, handed to `dispatch` rather than read out of
+    /// `task.json`. Deliberately not a public field: the chain position is the broker's own
+    /// count, and a caller writing it into a task file could reset it to zero.
+    struct RespawnOrigin: Equatable {
+        let taskID: String
+        let generation: Int
+    }
+
+    static func dispatch(taskID: String, secret: String, schedule: Schedule? = nil,
+                         respawn: RespawnOrigin? = nil) -> Reply {
         guard Config.shared.orchestratorEnabled else {
             return .refused(403, "orchestrator_disabled", "Task dispatch is switched off in Settings.")
         }
@@ -3702,7 +3727,7 @@ enum Orchestrator {
         // Same task again is the same answer again: the root retrying a dispatch that already
         // landed must not spawn a second child.
         if let existing = held(taskID) { return successfulDispatchReply(for: existing) }
-        guard secret.count == 64, secret.allSatisfy({ ("a"..."f").contains($0) || $0.isNumber }) else {
+        guard isTaskSecret(secret) else {
             return .refused(422, "bad_task", "secret must be 64 hex characters.")
         }
         guard let rateTicket = takeDispatchRate() else {
@@ -3835,6 +3860,8 @@ enum Orchestrator {
         task.scheduleID = schedule?.id
         task.scheduleCloseTab = schedule?.closeTab ?? .onSuccess
         task.scheduleNotifyFailure = schedule?.notifyOnFailure ?? true
+        task.respawnOf = respawn?.taskID
+        task.respawnGeneration = respawn?.generation ?? 0
         task.isolation = made.isolation
         task.worktree = preparedWorktree
         task.attachSessionId = made.attachSessionId
@@ -3950,6 +3977,117 @@ enum Orchestrator {
                                                 + worktreeWarnings)
         if needsPump { scheduleSerializePump() }
         return reply
+    }
+
+    /// How many retries may descend from one original dispatch.
+    ///
+    /// `spawn_failed` was 16.5% of every dispatch on the machine this was measured on — 34 of
+    /// 206, and 33 of those were Codex — and until this route existed the protocol's answer was
+    /// that the root must write the whole `task.json` out again under a fresh id. That is
+    /// thirty-four rewrites by the most context-loaded session in the tree. Two is enough to get
+    /// past a terminal that would not open, and few enough that a tab failing for a real reason
+    /// stops being retried instead of looping.
+    static let respawnLimit = 2
+
+    /// Retry a dispatch whose tab never opened, without making the root write the task out again.
+    ///
+    /// A fresh id and a fresh secret, because the old id is finished — re-sending it returns the
+    /// terminal record and opens nothing. Everything else comes from the original `task.json`,
+    /// which is the only place `instructions` was ever written down: it is copied with the id
+    /// swapped, so plan, claims, serialize, assistant, model, project directory, isolation and
+    /// the root binding all arrive unchanged.
+    ///
+    /// `secret` may be supplied by the caller exactly as it is for an ordinary dispatch; when it
+    /// is not, the broker mints one and the reply carries it.
+    static func respawn(taskID: String, secret supplied: String? = nil) -> Reply {
+        guard Config.shared.orchestratorEnabled else {
+            return .refused(403, "orchestrator_disabled", "Task dispatch is switched off in Settings.")
+        }
+        guard isTaskID(taskID) else {
+            return .refused(422, "bad_task", "task_id must be a lowercase UUID.")
+        }
+        guard let origin = held(taskID) else {
+            return .refused(404, "not_found", "No task named that")
+        }
+        // Only the one terminal state that means "nothing ran". A `failure` is an answer, a
+        // `timeout` had a session that read the briefing, and a `cancelled` was somebody's
+        // decision — copying any of those into a new tab would be re-running work, not retrying
+        // a dispatch.
+        guard origin.state == .spawnFailed else {
+            return .refused(status: 409, code: "not_respawnable",
+                            message: "Only a spawn_failed task may be respawned; task \(taskID) "
+                                   + "is \(origin.state.rawValue).",
+                            extra: ["state": origin.state.rawValue])
+        }
+        let original = respawnOriginal(of: origin)
+        guard origin.respawnGeneration < respawnLimit else {
+            return .refused(status: 409, code: "respawn_exhausted",
+                            message: "Task \(original) has already been respawned "
+                                   + "\(origin.respawnGeneration) times; the limit is "
+                                   + "\(respawnLimit). Dispatch a new task, or find out why the "
+                                   + "tab will not open.",
+                            extra: ["original_task": original,
+                                    "respawns": origin.respawnGeneration,
+                                    "limit": respawnLimit])
+        }
+        if let supplied, !isTaskSecret(supplied) {
+            return .refused(422, "bad_task", "secret must be 64 hex characters.")
+        }
+        guard let data = try? Data(contentsOf: origin.dir.appendingPathComponent("task.json")),
+              var obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return .refused(422, "bad_task",
+                            "The original task.json is gone, so there is nothing to respawn from; "
+                            + "write a new one.")
+        }
+        guard let secret = supplied ?? freshTaskSecret() else {
+            return .refused(500, "internal", "Could not create the respawned task secret.")
+        }
+        let fresh = UUID().uuidString.lowercased()
+        obj["task_id"] = fresh
+        let directory = root.appendingPathComponent(fresh, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: directory.appendingPathComponent("artifacts", isDirectory: true),
+                withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                                  ofItemAtPath: directory.path)
+            let file = directory.appendingPathComponent("task.json")
+            try JSONSerialization.data(withJSONObject: obj,
+                                       options: [.prettyPrinted, .sortedKeys,
+                                                 .withoutEscapingSlashes]).write(to: file,
+                                                                                 options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                  ofItemAtPath: file.path)
+        } catch {
+            return .refused(500, "internal", "Could not write the respawned task file.")
+        }
+        RemoteAuth.audit("orchestrator.respawn", ["task": fresh, "from": taskID,
+                                                  "original": original,
+                                                  "generation": String(origin.respawnGeneration + 1)])
+        let reply = dispatch(taskID: fresh, secret: secret,
+                             respawn: RespawnOrigin(taskID: taskID,
+                                                    generation: origin.respawnGeneration + 1))
+        // The caller needs the secret it did not choose. A dispatch that was refused leaves the
+        // directory behind for the ordinary sweep, exactly as a root's own abandoned attempt does.
+        guard case .ok(var payload) = reply else { return reply }
+        payload["secret"] = secret
+        payload["respawn_of"] = taskID
+        payload["original_task"] = original
+        return .ok(payload)
+    }
+
+    /// The first task in a respawn chain, found by walking back through `respawnOf`. Stops at a
+    /// record the registry no longer holds and at a cycle it should never contain, so a swept
+    /// ancestor shortens the answer rather than hanging the walk.
+    private static func respawnOriginal(of task: Task) -> String {
+        var current = task
+        var seen: Set<String> = [current.id]
+        while let previous = current.respawnOf, !seen.contains(previous),
+              let earlier = held(previous) {
+            seen.insert(previous)
+            current = earlier
+        }
+        return current.id
     }
 
     /// One response builder for both the first request and an idempotent retry. The scan happens
@@ -7942,6 +8080,10 @@ enum Orchestrator {
         if let terminal = rootTerminal { root["terminalId"] = terminal }
         if let parent = task.parentTaskId { root["taskId"] = parent }
         if !root.isEmpty { out["root"] = root }
+        if let from = task.respawnOf {
+            out["respawn_of"] = from
+            out["respawn_generation"] = task.respawnGeneration
+        }
         var child: [String: Any] = [:]
         if let id = task.childTerminalId { child["terminalId"] = id }
         if let backend = task.childBackend { child["backend"] = backend.rawValue }
@@ -8504,6 +8646,10 @@ enum Orchestrator {
         if let v = task.rootAssistant { out["root_assistant"] = v.rawValue }
         if let v = task.rootLabel { out["root_label"] = v }
         if let v = task.parentTaskId { out["parent_task"] = v }
+        if let v = task.respawnOf {
+            out["respawn_of"] = v
+            out["respawn_generation"] = task.respawnGeneration
+        }
         if let v = task.model { out["model"] = v }
         if let v = task.reasoningEffort { out["reasoning_effort"] = v.rawValue }
         out["permission"] = task.permission.rawValue
@@ -8758,6 +8904,13 @@ enum Orchestrator {
         task.rootAssistant = (obj["root_assistant"] as? String).flatMap(Assistant.init(rawValue:))
         task.rootLabel = obj["root_label"] as? String
         task.parentTaskId = obj["parent_task"] as? String
+        // A chain position is only meaningful beside the task it descends from, so a row missing
+        // one is missing both: a generation with no origin would count against a cap for a chain
+        // nothing can name.
+        task.respawnOf = (obj["respawn_of"] as? String).flatMap { isTaskID($0) ? $0 : nil }
+        task.respawnGeneration = task.respawnOf == nil
+            ? 0
+            : min(max(obj["respawn_generation"] as? Int ?? 1, 1), respawnLimit)
         task.model = StartPoints.modelName(obj["model"] as? String)
         task.reasoningEffort = assistant == .codex
             ? (obj["reasoning_effort"] as? String).flatMap(ReasoningEffort.init(rawValue:))

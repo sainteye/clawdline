@@ -989,6 +989,25 @@ task was in `spawning`. That last one is not a bug: once a task starts opening, 
 queued secret is gone, so the app fails closed rather than risk opening the same global operation
 twice. A serialized task that was still `queued` is recovered and pumped instead.
 
+**A `spawn_failed` task can be retried by the broker rather than by the root.** It was 16.5% of
+every dispatch on the machine this was measured on — 34 of 206, 33 of them Codex — and the answer
+used to be that the root writes the whole `task.json` out again under a fresh id, because that id
+is finished and re-sending it just returns the terminal record. That is thirty-four rewrites by
+the most context-loaded session in the tree, and every one of them is a chance to drop a field.
+
+[`POST /v1/orchestrator/tasks/:id/respawn`](api.md#post-v1orchestratortasksidrespawn) copies the
+original `task.json` with a fresh `task_id`, mints a fresh secret unless the caller supplies one,
+and dispatches it through the ordinary gate — same capacity, depth, claims, quota and
+serialization rules, same refusals. `instructions` is why it is a file copy rather than a record
+copy: the registry never held it.
+
+Only `spawn_failed` may be retried, because it is the one terminal state that means *nothing ran*;
+anything else is `409 not_respawnable`. **At most two respawns descend from one original**, counted
+along the chain rather than per call — a retry of a retry cannot launder the cap by being the first
+from its own immediate parent — and the third is `409 respawn_exhausted`. Each new task records
+`respawn_of` and `respawn_generation`, so a chain reads as a chain in the registry instead of as
+three unrelated tasks with the same title.
+
 **A briefed task survives a restart.** Its secret is on disk as a hash, `result.json` is on disk as
 a file, and the timeout is arithmetic on a stored timestamp. So the app comes back up, reads the
 registry, and carries on watching. That is the one restart case that matters, because it is the one
