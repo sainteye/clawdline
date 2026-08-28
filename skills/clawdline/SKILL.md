@@ -46,20 +46,15 @@ to a session that continues it — is a different move with different rules, and
 - You have read, or been asked to read, `/tmp/.clawdline/<id>/CHILD.md`
 - You are holding a `TASK_SECRET=`
 
-**If you are a child, this skill is not what governs you — `CHILD.md` is.** What decides whether you
-may hand anything on is the file beside it, `/tmp/.clawdline/<id>/DISPATCHING.md`:
+**If you are a child, this skill is not what governs you — `CHILD.md` is.** Read its "Handing work
+on" section:
 
-- **The file is there** → read it and follow it. The broker writes it only for a child with an
-  allowance, so its presence *is* the allowance, and it spells the whole thing out including the
-  one field nobody else can fill in: `root.parent_task`, which is the id of your own task. §1–§6
-  below are the long version of the same thing and are fine to consult, but where they disagree,
-  `DISPATCHING.md` and `CHILD.md` win.
-- **The file is not there** → you are the floor. **Stop.** Tell the user this session is at the
+- **The section is there** → follow it. It already spells the whole thing out for you, including
+  the one field nobody else can fill in: `root.parent_task`, which is the id of your own task.
+  §1–§6 below are the long version of the same thing and are fine to consult, but where they
+  disagree, `CHILD.md` wins.
+- **The section is not there** → you are the floor. **Stop.** Tell the user this session is at the
   bottom of the tree and cannot dispatch any further, then do the work yourself.
-
-Look for the file rather than for a section of `CHILD.md`: the dispatch teaching used to live in the
-briefing and does not any more, so "the briefing does not explain dispatching" now says nothing
-about which level you are on.
 
 The tree is two levels deep: the user's session opens children, those children open one more
 level, and that is the end of it. Without a floor, one job becomes five becomes twenty-five and a
