@@ -47,8 +47,8 @@ until the slice is mature; new discoveries go to that session, not a new tab.
 
 **A slice big enough to dispatch is big enough to lose.** `timeout_minutes` stops at 240, quota can
 run out mid-task and a context window can fill. So a long or multi-file slice goes out with
-`isolation: "worktree"`, commits each milestone on its delivery branch, and reports through
-`/progress` when the work stops matching its title. A death in hour three then costs one hour.
+`isolation: "worktree"`, commits each milestone on its delivery branch, and sends a progress note
+when the work stops matching its title. A death in hour three then costs one hour.
 
 **But only Claude can commit in that worktree.** A linked worktree's git metadata lives in the main
 repo's `.git/worktrees/<task-id>/`, outside what a Codex sandbox may write, so every commit dies on
@@ -94,7 +94,9 @@ is for: a leaf that knows what its output feeds writes a usable output, one that
 essay, and leaves are narrow enough to state in a sentence. **Stagger dispatches 30–45 seconds** or
 they compete, and a tab that has not reached a prompt in four minutes is `spawn_failed`, whose retry
 needs a fresh id and secret. **Say when you did it yourself.**
-- **Ask every task for one `/progress` note in its first three minutes**, saying what it has decided
+- **Ask every task for one progress note in its first three minutes** — a file in its task
+  directory for codex, which has no network, or either channel for claude; its briefing carries the
+  one that works. Say what it has decided
   to do now it has read the briefing. One round, and it is the only thing that lets a wrong
   direction be cancelled at minute three rather than minute twenty-six: the two dearest cancelled
   tasks measured on one machine burned 18.5M and 16.5M tokens before anybody could tell.

@@ -142,7 +142,7 @@ the same feature goes back into the same session, not into a new tab.
 **A slice big enough to dispatch is big enough to lose.** `timeout_minutes` stops at 240, an
 assistant can exhaust its quota mid-task, and a context window can fill. So a long or multi-file
 slice goes out with `isolation: "worktree"`, is told to commit each milestone on its delivery branch
-rather than at the end, and to use `/progress` when the work stops matching its title. Then a child
+rather than at the end, and to send a progress note when the work stops matching its title. Then a child
 that dies in its third hour costs one hour, not four, because the branch still holds the rest.
 
 **Never open a session for one small change.** Small items accumulate in a pool, and the pool goes
@@ -457,9 +457,13 @@ so "do what we just discussed" says nothing there. Write absolute paths, and nam
 output goes into. **A leaf's instructions should be narrow enough to state in one sentence** — if
 it takes three paragraphs to say what "done" means, that is two children.
 
-**Ask for one `/progress` note in the first three minutes**, saying what it has decided to do now
+**Ask for one progress note in the first three minutes**, saying what it has decided to do now
 that it has read the briefing — before the work, not during it. One line in the instructions buys
-it, and it costs the child one round.
+it, and it costs the child one round. **Do not name the channel** — the two assistants do not share
+one. A codex child has no network at all (`CODEX_SANDBOX_NETWORK_DISABLED=1`; a `curl` to
+`127.0.0.1` ends in exit 7 and even DNS is off), so it writes `progress.json` in its own task
+directory and the broker collects it the way it collects `result.json`; a claude child can use
+either that file or the HTTP route. Each child's own briefing carries the one that works for it.
 
 That note is the only thing that makes an early cancellation possible, and the difference is not
 small: the two dearest cancelled tasks measured on this machine burned 18.5M and 16.5M tokens and
