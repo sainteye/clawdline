@@ -318,6 +318,14 @@ final class Config {
         let terminalID: String
         let updatedAt: Date
     }
+    /// **The one part of this file that is touched from two threads.** Every other setting here is
+    /// read and written by AppKit code on the main thread; a session title is written by
+    /// `POST /v1/sessions/:id/title` on the server's own queue and read back by
+    /// ``TargetSession/displayLabel``, which the panel computes on main and the server computes on
+    /// its queue. The two neighbouring sources in that same expression each carry a lock of their
+    /// own — see ``Orchestrator/title(forTerminal:)`` and ``CodexNaming/title(for:)`` — so this one
+    /// does too rather than being the odd one out.
+    private let sessionTitleLock = NSLock()
     private var sessionTitles: [SessionTitle] = []
     static let sessionTitleLimit = 200
     static let sessionTitleCapacity = 200
@@ -416,8 +424,10 @@ final class Config {
         if let v = obj["last_target_id"] as? String { lastTargetID = v }
         if let v = obj["history"] as? [String] { history = v }
         if let rows = obj["session_titles"] as? [[String: Any]] {
+            sessionTitleLock.lock()
             sessionTitles = rows.compactMap(Self.sessionTitle(from:))
-            pruneSessionTitles()
+            pruneSessionTitlesLocked()
+            sessionTitleLock.unlock()
         }
         // What the file said, so a later save can tell an edit of ours from an edit of theirs.
         known = obj
@@ -479,15 +489,7 @@ final class Config {
             "whisper_binary": whisperBinary,
             "whisper_model": whisperModel,
             "history": Array(history.suffix(60)),
-            "session_titles": sessionTitles.map { row -> [String: Any] in
-                var out: [String: Any] = [
-                    "title": row.title,
-                    "terminal_id": row.terminalID,
-                    "updated_at": row.updatedAt.timeIntervalSince1970,
-                ]
-                if let sessionID = row.sessionID { out["session_id"] = sessionID }
-                return out
-            },
+            "session_titles": sessionTitleRows(),
         ]
         // Only when there is one. A Swift Optional in this dictionary is not a JSON value, and
         // JSONSerialization throws on it — which `try?` then swallowed, so on a fresh install
@@ -556,8 +558,9 @@ final class Config {
     var fileURL: URL { file }
 
     /// One visible line, with terminal control bytes converted to separators rather than kept
-    /// in config or sent through a slash command. Length is validated by the caller so an
-    /// overlong request is distinguishable from a title that merely needs trimming.
+    /// in config or sent through a slash command. Length is checked separately, so a route can
+    /// tell an overlong request from a title that merely needed trimming and answer each in its
+    /// own words; ``setSessionTitle(_:sessionID:terminalID:now:)`` refuses an overlong one too.
     static func normalizedSessionTitle(_ raw: String) -> String? {
         let separated = raw.unicodeScalars.map { scalar -> String in
             CharacterSet.controlCharacters.contains(scalar) ? " " : String(scalar)
@@ -568,10 +571,21 @@ final class Config {
     }
 
     func sessionTitle(for target: TargetSession) -> String? {
-        sessionTitle(sessionID: HookBridge.note(for: target)?.session, terminalID: target.id)
+        sessionTitle(sessionID: hookSessionID(of: target), terminalID: target.id)
+    }
+
+    /// `HookBridge`'s tty table is replaced wholesale on the main thread, so it is read there or
+    /// not at all — ``Transcript/sessionID(of:)`` crosses to main for the same table and says so.
+    /// The crossing has to be here rather than at the callers: ``TargetSession/displayLabel`` asks
+    /// for a title from the server's queue as well as from the panel.
+    private func hookSessionID(of target: TargetSession) -> String? {
+        if Thread.isMainThread { return HookBridge.note(for: target)?.session }
+        return DispatchQueue.main.sync { HookBridge.note(for: target)?.session }
     }
 
     func sessionTitle(sessionID: String?, terminalID: String) -> String? {
+        sessionTitleLock.lock()
+        defer { sessionTitleLock.unlock() }
         if let sessionID,
            let row = sessionTitles.last(where: { $0.sessionID == sessionID }) {
             return row.title
@@ -579,27 +593,53 @@ final class Config {
         return sessionTitles.last(where: { $0.terminalID == terminalID })?.title
     }
 
-    /// Replace every address for this live session together. That prevents a reused terminal
-    /// from inheriting an old title and leaves one row, not a pair that can drift apart.
+    /// The rows as `save` writes them. Under the lock, because `serialised` is read on whichever
+    /// thread called ``save()``.
+    private func sessionTitleRows() -> [[String: Any]] {
+        sessionTitleLock.lock()
+        defer { sessionTitleLock.unlock() }
+        return sessionTitles.map { row -> [String: Any] in
+            var out: [String: Any] = [
+                "title": row.title,
+                "terminal_id": row.terminalID,
+                "updated_at": row.updatedAt.timeIntervalSince1970,
+            ]
+            if let sessionID = row.sessionID { out["session_id"] = sessionID }
+            return out
+        }
+    }
+
+    /// Replace every address for this live session together, so a name lives in one row rather
+    /// than a pair that can drift apart. Note what that does *not* cover: the read side still
+    /// falls back to the terminal id, so a title outlives the session that chose it and the next
+    /// conversation started in the same tab reads it — see `sessionTitle(sessionID:terminalID:)`.
+    ///
+    /// Refused before anything is removed, and that order is the point: an overlong title used to
+    /// delete the row it was too long to replace, so a request the route answers with `400` would
+    /// still have taken the name off the session. The one caller today checks the length first —
+    /// the Mac-side entry point this feature is heading for would not have.
     @discardableResult
     func setSessionTitle(_ raw: String, sessionID: String?, terminalID: String,
                          now: Date = Date()) -> String? {
         let normalized = Self.normalizedSessionTitle(raw)
+        if let normalized, normalized.count > Self.sessionTitleLimit { return nil }
+        sessionTitleLock.lock()
         sessionTitles.removeAll { row in
             row.terminalID == terminalID
                 || (sessionID != nil && row.sessionID == sessionID)
         }
-        if let normalized, normalized.count <= Self.sessionTitleLimit {
+        if let normalized {
             sessionTitles.append(SessionTitle(title: normalized, sessionID: sessionID,
                                               terminalID: terminalID, updatedAt: now))
         }
-        pruneSessionTitles(now: now)
-        return normalized.flatMap { $0.count <= Self.sessionTitleLimit ? $0 : nil }
+        pruneSessionTitlesLocked(now: now)
+        sessionTitleLock.unlock()
+        return normalized
     }
 
     @discardableResult
     func setSessionTitle(_ raw: String, for target: TargetSession, now: Date = Date()) -> String? {
-        setSessionTitle(raw, sessionID: HookBridge.note(for: target)?.session,
+        setSessionTitle(raw, sessionID: hookSessionID(of: target),
                         terminalID: target.id, now: now)
     }
 
@@ -613,7 +653,8 @@ final class Config {
                             updatedAt: Date(timeIntervalSince1970: timestamp))
     }
 
-    private func pruneSessionTitles(now: Date = Date()) {
+    /// Under ``sessionTitleLock``.
+    private func pruneSessionTitlesLocked(now: Date = Date()) {
         let cutoff = now.addingTimeInterval(-Self.sessionTitleLifetime)
         sessionTitles = sessionTitles.filter { $0.updatedAt >= cutoff }
             .sorted { $0.updatedAt < $1.updatedAt }
