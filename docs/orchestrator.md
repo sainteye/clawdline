@@ -1242,6 +1242,129 @@ menu's `reconnect` command. The menu remains disabled; an authenticated local op
 already-live replacement. Future start/restore or health-driven behavior must keep the separate
 observer provenance and explicit policy boundaries rather than widening this endpoint.
 
+**The web app's *Make this session Clawdfather* item is not a fourth coordinator route.** None of
+the three endpoints above became reachable from a paired device, and none of them types into
+anything. What that item does is compose one instruction and send it over the existing
+`POST /v1/sessions/:id/send`, which the page could already reach; the session that receives it is a
+local process running as the owner of this Mac, so it reads the orchestrator token and performs the
+register or rebind itself — the same act as a person typing the curl by hand, and the same trust
+boundary every Clawdline dispatch already stands on. The browser therefore never holds the
+machine credential, never learns the durable record, and cannot take over a live coordinator, since
+the refusals below still apply at the only place the decision is made. What it *does* know is the
+target's terminal-neutral id, because that is the `id` on the Session row it drew, so it hands that
+over in the instruction. Whether the role was taken is read back the way it always was: the
+authenticated `session.coordinator` projection appears on the exact bound row, and the item turns
+into a statement of who holds it. The recipe that item asks for is the next section.
+
+### Becoming Clawdfather: the recipe a session runs on itself
+
+There is no route by which anything but a local process holding the orchestrator token can register
+the machine coordinator, and there is deliberately not going to be one. So "make that session
+Clawdfather" is never carried out *for* a session; it is carried out *by* it. A person types the
+curl, or the web app's **Make this session Clawdfather** item types an instruction into the session
+through the ordinary `POST /v1/sessions/:id/send` and the session does exactly what is written
+below. This section is the authoritative copy of it, so that a session which has just been asked
+has something to follow rather than Swift source to reverse-engineer.
+
+**The two local facts.** The token is `~/.config/clawdline/orchestrator-token`, mode `0600` and
+readable only by a process running as its owner; the port is `remote_port` in
+`~/.config/clawdline/config.json`, and `7717` when that file says nothing.
+
+```bash
+ORCH=$(cat ~/.config/clawdline/orchestrator-token)
+PORT=$(python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.config/clawdline/config.json"))).get("remote_port",7717))' 2>/dev/null || echo 7717)
+```
+
+**1. Your own terminal-neutral id.** It is not your conversation id and not your transcript's name.
+It is the id of the *terminal pane* you are running in — the value `GET /v1/sessions` and
+`GET /v1/orchestrator/sessions` both call `id`. Under iTerm2 the terminal exports it, and the UUID
+after the colon is the whole of it:
+
+```bash
+SESSION_ID="${ITERM_SESSION_ID##*:}"     # w0t12p0:9A36BDF4-… → 9A36BDF4-…
+```
+
+**This is the same line for Codex as for Claude, and `CODEX_THREAD_ID` is not it.** iTerm2 sets
+`ITERM_SESSION_ID` for whatever runs in the pane, so both assistants read their own id from it;
+`CODEX_THREAD_ID` (and its compatible spelling `CODEX_SESSION_ID`) names the rollout's
+`session_meta.session_id`, which is a different value in a different namespace and is refused here
+as `404 session_not_found`. Measured on one Mac: the Codex tab listed as
+`AE8A927C-D144-4BF8-8DF7-47E0D5463418` had exactly that UUID in its `ITERM_SESSION_ID` while
+holding rollout `01a0462b-9ef7-7161-b0c0-e117929656ff` open. The first is the id these routes take.
+
+Under tmux, or a terminal that exports nothing, the id is a tmux pane id instead and the
+environment cannot answer. Then read it, rather than guess: `GET /v1/orchestrator/sessions` lists
+every live assistant with its `assistant`, `cwd` and `label`, and yours is the row whose working
+directory and title are yours. Either way, **check the id you found appears in that list before
+sending it anywhere** — a value that is not there is not an id, whatever exported it.
+
+**2. Read the current state before deciding anything.** One request answers all three cases, and
+the two fields a reconnect needs come only from here:
+
+```console
+$ curl -s "http://127.0.0.1:$PORT/v1/orchestrator/coordinator" \
+    -H "X-Clawdline-Orchestrator: $ORCH"
+{"version":1,"observed_at":1787884000,"store":{"status":"ready"},
+ "coordinator":{"configured":true,"id":"5ac9c093-f483-4606-87eb-2278b34436fe",
+   "scope":"machine","label":"Clawdfather","registered_at":1787821469,"generation":3,
+   "rebound_at":1787882803,"status":"online","lifecycle":"standby",
+   "session":{"id":"509F54A8-356E-420D-9EAC-73D676C9580E","assistant":"claude",
+              "label":"Clawdfather 新增介面","cwd":"/Users/you/code/clawdline",
+              "work_state":"needs_triage"}},
+ "bearings":{…}}
+```
+
+`coordinator.configured` is `false` when nobody has ever registered. When it is `true`,
+`coordinator.status` is `online` if the exact bound process is still alive and `offline` if it is
+not, and `coordinator.id` and `coordinator.generation` are the pair a reconnect must quote back.
+
+**3. Nobody is configured — register.** One field, and it is your id from step 1:
+
+```console
+$ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/coordinator/register" \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d "{\"session_id\":\"$SESSION_ID\"}"
+{"ok":true,"created":true,"coordinator":{…}}
+```
+
+`created:false` with a `200` means you were already it and nothing changed.
+
+**4. Configured but `offline` — reconnect.** Registration is never a takeover, so reconnecting is a
+separate, guarded operation, and its three fields are closed: the `id` and `generation` you just
+read, plus your own id.
+
+```console
+$ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/coordinator/rebind" \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d "{\"expected_coordinator_id\":\"$COORD_ID\",\"expected_generation\":$GENERATION,\
+         \"session_id\":\"$SESSION_ID\"}"
+{"ok":true,"rebound":true,"coordinator":{…}}
+```
+
+The stable UUID survives a reconnect on purpose, so `expected_generation` is the compare-and-swap
+value, not the UUID. Both are checked under the store's `flock`; a mismatch means the record moved
+after you read it, and the answer is to go back to step 2 rather than to retry with the old numbers.
+
+**5. Configured and `online` on a different session — stop.** Do not attempt it. The API refuses
+this by design — `409 coordinator_exists` from register, `409 coordinator_online` from rebind — and
+the refusal is the point rather than an obstacle: a live coordinator is somebody's running work, and
+there is no unconditional replace, stop or delete operation anywhere in this protocol. Report which
+session holds the role (`coordinator.session.id`, `label`, `cwd`) and leave it alone.
+
+**The refusals worth recognising.** `403 forbidden` means the request reached the handler without
+the orchestrator token — a paired device or a task secret, neither of which may do this.
+`404 session_not_found` almost always means step 1 sent a conversation or rollout id instead of a
+terminal id. `409 session_unbound` means the row exists but its process-bound identity could not be
+completed, so nothing was decided. `409 coordinator_liveness_unknown` means the Session scan is
+stale or older than the current binding, and absence of evidence is refused as proof of death; wait
+for a fresh scan and read step 2 again. `409 coordinator_store_invalid` and
+`500 coordinator_store_failed` are about the durable record itself and are never fixed by retrying
+harder.
+
+**Say what happened.** Registration is machine-wide state, and the person who asked for it is
+usually watching a different window. Whether you registered, reconnected, or found somebody else
+online and left them there, that sentence is the deliverable.
+
 ### Session work-state projection: one answer, separate evidence axes
 
 Every live Session row carries exactly one closed `work_state`: `ready`, `working`,

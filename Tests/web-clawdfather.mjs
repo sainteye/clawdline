@@ -121,6 +121,33 @@ const dom = await readFile(
 assert.match(dom, /"session-clawdfather"/,
     "the element is looked up at load time with the rest of the registry");
 
+/* ---- the recipe the far end is asked to follow ---------------------------- */
+
+// The instruction names a procedure by name. A session that arrives at it and finds nothing there
+// is back to reading Swift source, which is the thing this item exists to avoid — so the written
+// recipe is part of the feature and is checked with it.
+const recipe = await readFile(
+    new URL("../docs/orchestrator.md", import.meta.url), "utf8"
+);
+assert.match(recipe, /### Becoming Clawdfather/,
+    "the procedure has a heading somebody can be sent to");
+assert.match(recipe, /ITERM_SESSION_ID/);
+assert.match(recipe, /CODEX_THREAD_ID/,
+    "the id a Codex session would reach for first, and why it is the wrong one");
+assert.match(recipe, /POST \/v1\/orchestrator\/coordinator\/register/);
+assert.match(recipe, /coordinator\/rebind/);
+assert.match(recipe, /expected_generation/);
+assert.match(recipe, /coordinator_online/,
+    "the refusal that says a live coordinator is not to be taken over");
+
+for (const skill of ["../skills/clawdline/SKILL.md", "../skills/clawdline/SKILL.zh-TW.md"]) {
+    const text = await readFile(new URL(skill, import.meta.url), "utf8");
+    assert.match(text, /Clawdfather/, `${skill} carries the procedure`);
+    assert.match(text, /CODEX_THREAD_ID/, `${skill} names the wrong id`);
+    assert.match(text, /expected_generation/, `${skill} names the compare-and-swap value`);
+    assert.match(text, /docs\/orchestrator\.md/, `${skill} points at the long form`);
+}
+
 // Phase A2's preview-only command list is a separate, still-unresolved feature.
 const controls = await readFile(
     new URL("../Resources/web/app/js/input/coordinator-actions.js", import.meta.url), "utf8"

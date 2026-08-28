@@ -796,6 +796,36 @@ and alone triggers the loud row and push notification.
 Native and web rows quietly show `⏳ owner · release condition`. Use a final-line
 `[Clawdline waiting]` marker only as fallback when that UI is unavailable.
 
+### Becoming Clawdfather, when you are the one asked
+
+Nothing can register the machine coordinator for you. The three coordinator routes take the
+orchestrator token only, so the app's **Make this session Clawdfather** item does not call them —
+it types this procedure's instruction into your session over the ordinary send route, and you carry
+it out. The full text with every refusal is in [`docs/orchestrator.md`](../../docs/orchestrator.md);
+this is the short form.
+
+1. **Your own terminal-neutral id** is the UUID after the colon in `$ITERM_SESSION_ID` — the pane,
+   not the conversation. Same line for Codex: `CODEX_THREAD_ID` / `CODEX_SESSION_ID` is the
+   rollout's `session_meta.session_id`, a different value that these routes refuse with
+   `404 session_not_found`. Under tmux the id is a pane id and the environment cannot answer it;
+   read it off `GET /v1/orchestrator/sessions` instead. Either way, confirm it appears in that
+   list before sending it anywhere.
+2. **Read the state first** — `GET /v1/orchestrator/coordinator`, with `$TOKEN` from step 1 of this
+   skill. `coordinator.configured` false means nobody holds it; otherwise `coordinator.status` is
+   `online` or `offline`, and `coordinator.id` and `coordinator.generation` are the pair a
+   reconnect has to quote.
+3. **Nobody configured** → `POST /v1/orchestrator/coordinator/register` with `{"session_id": …}`,
+   one field and no more. `created:false` means you already were it.
+4. **Configured and `offline`** → `POST /v1/orchestrator/coordinator/rebind` with
+   `expected_coordinator_id`, `expected_generation` and `session_id`. The UUID survives a
+   reconnect on purpose, so the generation is the compare-and-swap value. A mismatch means the
+   record moved while you were reading it: go back to step 2 rather than retrying the old numbers.
+5. **Configured, `online`, somebody else** → stop. Registration is never a takeover and the API
+   refuses it (`coordinator_exists`, `coordinator_online`). Report who holds it and leave it there.
+
+Then say what happened. Whoever asked is usually watching another window, and "already held by the
+session in that other checkout" is as much of an answer as "registered".
+
 ### Keep the protocol page current, and know which audience you are writing for
 
 **Documents split by audience, and the split decides where they live.** A repository's `docs/` is

@@ -701,6 +701,33 @@ UI，成為獨立的 `coordination` overlay：被擋住的 session 是 `waiting_
 這**不會**把 terminal `state` 設成 `waiting`；後者仍只代表需要人回答，也只有它會觸發醒目的 row 與 push。原生與 web session row 會安靜顯示 `⏳ owner · release condition`；只有 UI
 不可用時，才用最後一行 `[Clawdline waiting]` marker 當 fallback。
 
+### 有人叫你去當 Clawdfather 的時候
+
+沒有任何東西可以替你註冊 machine coordinator。三條 coordinator route 只收 orchestrator token，所以
+app 上那個 **讓這個 session 成為 Clawdfather** 不會去打它們——它只是把這段流程的指示，用一般的 send
+route 打進你的 session，真正做事的是你。完整版連每一種拒絕都寫在
+[`docs/orchestrator.md`](../../docs/orchestrator.md)，這裡是短的。
+
+1. **自己的 terminal-neutral id** 是 `$ITERM_SESSION_ID` 冒號後面那段 UUID——那是分頁，不是對話。
+   Codex 也是同一行：`CODEX_THREAD_ID`／`CODEX_SESSION_ID` 是 rollout 的
+   `session_meta.session_id`，是另一個 namespace 的值，送過去只會拿到 `404 session_not_found`。
+   在 tmux 底下那個 id 是 pane id，環境變數答不出來，改去 `GET /v1/orchestrator/sessions` 讀。
+   不管哪一種，送出去之前先確認它真的出現在那份清單裡。
+2. **先讀現況**——`GET /v1/orchestrator/coordinator`，用本 skill 第 1 節的 `$TOKEN`。
+   `coordinator.configured` 是 false 代表沒有人擔任；否則看 `coordinator.status` 是 `online` 還是
+   `offline`，而 `coordinator.id` 與 `coordinator.generation` 是重新接上時必須原樣帶回去的那一對。
+3. **沒有人註冊過** → `POST /v1/orchestrator/coordinator/register`，body 只有 `{"session_id": …}`
+   一個欄位，多一個都不行。回 `created:false` 代表本來就是你。
+4. **有註冊但 `offline`** → `POST /v1/orchestrator/coordinator/rebind`，帶
+   `expected_coordinator_id`、`expected_generation` 與 `session_id`。UUID 是刻意跨重新接上不變的，
+   所以真正的 compare-and-swap 值是 generation。對不上代表你讀完之後紀錄動過了：回第 2 步重讀，
+   不要拿舊的數字再試一次。
+5. **有註冊、`online`、而且是別人** → 停手。註冊從來就不是接管，API 也會擋
+   （`coordinator_exists`、`coordinator_online`）。回報是誰在擔任，然後別動它。
+
+最後把結果講出來。叫你去做的人通常在另一個視窗，「已經由另一個 checkout 的那個 session 擔任」跟
+「註冊好了」一樣是答案。
+
 ### 維持協定頁等於現在，並且分清楚你在寫給誰看
 
 **文件依讀者分家，而分家決定它住在哪裡。** 一個專案的 `docs/` 是給社群的：英文、對外視角、進
