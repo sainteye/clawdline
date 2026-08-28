@@ -408,6 +408,9 @@ struct Russian: Copy {
     let webSteps = "шагов: {n}"
     let webJustNow = "только что"
     let webMinutesAgo = "{n} мин назад"
+    let webCodeCopy = "Скопировать этот код"
+    let webCodeCopied = "Код скопирован."
+    let webCodeCopyFailed = "Не удалось скопировать — выделите текст."
 
     let webSend = "Отправить"
     let webAttach = "Прикрепить картинку"

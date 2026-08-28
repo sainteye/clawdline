@@ -408,6 +408,9 @@ struct Turkish: Copy {
     let webSteps = "{n} adım"
     let webJustNow = "az önce"
     let webMinutesAgo = "{n} dk önce"
+    let webCodeCopy = "Bu kodu kopyala"
+    let webCodeCopied = "Kod kopyalandı."
+    let webCodeCopyFailed = "Kopyalanamadı — metni seçin."
 
     let webSend = "Gönder"
     let webAttach = "Resim ekle"

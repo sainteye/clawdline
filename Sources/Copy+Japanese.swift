@@ -406,6 +406,9 @@ struct Japanese: Copy {
     let webSteps = "{n} ステップ"
     let webJustNow = "たった今"
     let webMinutesAgo = "{n} 分前"
+    let webCodeCopy = "このコードをコピー"
+    let webCodeCopied = "コードをコピーしました。"
+    let webCodeCopyFailed = "コピーできませんでした。テキストを選択してください。"
 
     let webSend = "送信"
     let webAttach = "画像を添付"

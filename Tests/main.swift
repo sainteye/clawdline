@@ -4952,6 +4952,29 @@ group("every Session work-state string crosses the typed localization contract")
     }
 }
 
+group("the code-block copy button's words cross the typed localization contract") {
+    // Three names, three boundaries each: the protocol (which the compiler enforces), the
+    // browser's English fallback, and the `/v1/strings` payload. The compiler covers exactly one
+    // of the three, and the other two fail quietly — a missing fallback is a blank button on a
+    // page whose request for the real words did not arrive, and a missing payload entry is that
+    // button staying in English in thirteen languages.
+    let keys = ["webCodeCopy", "webCodeCopied", "webCodeCopyFailed"]
+    let fallback = try! String(contentsOfFile: "Resources/web/app/js/core/i18n.js")
+    let server = try! String(contentsOfFile: "Sources/RemoteServer.swift")
+    for key in keys {
+        check("the browser fallback and /v1/strings payload both name \(key)",
+              fallback.contains("\(key):") && server.contains("\"\(key)\":"))
+    }
+    // The failure sentence is the one that cannot go missing. Both branches that reach it — a
+    // browser with no clipboard API and a write the browser refused — are silent everywhere else
+    // on this page, and a language that left this blank would put that silence back.
+    for (tag, copy) in L.catalog {
+        check("\(tag) says what a failed copy did",
+              !copy.webCodeCopyFailed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        check("\(tag) tells the two answers apart", copy.webCodeCopied != copy.webCodeCopyFailed)
+    }
+}
+
 group("dictation starts where the caret is") {
     // Speech is not a different kind of input: it goes where typing would have gone. This used
     // to append to the end regardless, so going back to add a sentence in the middle put it at

@@ -406,6 +406,9 @@ struct Korean: Copy {
     let webSteps = "{n}단계"
     let webJustNow = "방금"
     let webMinutesAgo = "{n}분 전"
+    let webCodeCopy = "이 코드 복사"
+    let webCodeCopied = "코드를 복사했습니다."
+    let webCodeCopyFailed = "복사하지 못했습니다. 직접 선택해 주세요."
 
     let webSend = "보내기"
     let webAttach = "사진 첨부"
