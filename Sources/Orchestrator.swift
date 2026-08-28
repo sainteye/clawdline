@@ -1230,6 +1230,39 @@ enum Orchestrator {
         return .removeTreeKeepBranch
     }
 
+    /// Whether an ending may reclaim this task's checkout as one nothing was ever done in.
+    ///
+    /// ``worktreeDisposal(commits:dirty:headOnBranch:branchExists:)`` already refuses to erase
+    /// commits or dirty bytes. This is the guard for the window it cannot see: a child working in
+    /// the directory right now that has not written a byte yet. Measured on 2026-08-28 — one
+    /// child had committed a minute in and kept everything; its sibling had not, and lost the
+    /// checkout *and* the delivery branch while its tab was still `working` inside the deleted
+    /// directory.
+    ///
+    /// **Liveness cannot answer this question**, which is why neither the tab nor the child
+    /// process appears below. A session that never reached a prompt is also a live assistant in a
+    /// live tab — that *is* the case this reclaim exists for. What separates the two readings is
+    /// whether this task's own first message was ever put in front of that session.
+    ///
+    /// A checkout kept by mistake costs a directory until `cleanup` sweeps it a day later. A
+    /// checkout deleted by mistake costs the work inside it, and this app has no copy.
+    static func reclaimsEmptyWorktree(_ task: Task, outcome: State) -> Bool {
+        guard !childWasSpokenTo(task) else { return false }
+        if task.childTerminalId == nil { return true }
+        return outcome == .spawnFailed && task.briefedAt == nil
+    }
+
+    /// Any receipt that this task's first message and a child ever met, in either direction:
+    /// the briefing was accepted, its marker was proved in a transcript, the child answered with
+    /// a note, or the line was typed at a composer this app had already seen was ready.
+    static func childWasSpokenTo(_ task: Task) -> Bool {
+        task.briefedAt != nil
+            || task.transcriptProven
+            || !task.progress.isEmpty
+            || task.progressFileNote != nil
+            || task.injectAttempts > 0
+    }
+
     /// A stale value copy may add fields, but it may never move a task backwards or resurrect it.
     /// Internal rather than private so the invariant has a pure unit test.
     static func mayReplaceState(_ current: State, with candidate: State) -> Bool {
@@ -6467,6 +6500,18 @@ enum Orchestrator {
             return true // finalize saved and broadcast already
         }
         if task.attachSessionId == nil && spawningAge > readyLimit {
+            // A task that has already said what it is doing cannot be a tab that never reached a
+            // prompt. Give the file half of the progress channel its last chance to land — a
+            // sandboxed child's note arrives only when a beat collects it, and no beat collects
+            // it while the task is still `spawning` — and then take whatever receipt is there.
+            var refreshed = task
+            _ = collectProgressFile(of: &refreshed)
+            if let provenAt = briefingProvenByProgress(refreshed),
+               acceptProgressAsBriefing(refreshed, provenAt: provenAt) {
+                save()
+                RemoteServer.shared.broadcastOrchestrator()
+                return true
+            }
             guard replaceTask(task, expecting: .spawning) else { return false }
             finalize(task.id, as: .spawnFailed,
                      summary: "The child session did not reach a prompt within "
@@ -6475,6 +6520,54 @@ enum Orchestrator {
             return true // finalize saved and broadcast already
         }
         return false
+    }
+
+    /// When a `spawning` task's own progress proves the briefing arrived, or nil when nothing
+    /// does.
+    ///
+    /// A progress note is authenticated with the task secret, and that secret reaches the child
+    /// in exactly one place: the line typed into its composer. `task.json` does not carry it and
+    /// `CHILD.md` only names it. So a note is a delivery receipt through a second channel — the
+    /// same fact ``briefingDecision(screen:assistant:transcript:transcriptKnown:taskID:attempts:secondsSinceAttempt:)``
+    /// looks for in the transcript, arriving by a route that does not depend on finding the
+    /// transcript file at all. That independence is the whole point: this is the guard for
+    /// failures nobody has diagnosed yet, including ones in transcript resolution itself.
+    ///
+    /// **What it prevents is not a cosmetic record error.** `finalize` reads `spawn_failed` with
+    /// no `briefedAt` as "nothing was ever done here" and disposes the checkout with
+    /// `allowCommitted: false`. On 2026-08-28 that deleted a live child's worktree *and* its
+    /// delivery branch while the child was still working in the directory; the sibling task that
+    /// had committed once survived the same misjudgement untouched.
+    ///
+    /// Proven at the earlier of the two moments that bound it, because `briefedAt` starts the
+    /// task's own timeout: the line was on the tty by `lastInjectAt`, and had certainly been read
+    /// by the first note.
+    static func briefingProvenByProgress(_ task: Task) -> Date? {
+        guard let firstNote = task.progress.first?.at else { return nil }
+        guard let injected = task.lastInjectAt else { return firstNote }
+        return min(injected, firstNote)
+    }
+
+    /// Cross `spawning` → `briefed` on a progress receipt rather than a transcript one. True when
+    /// the record moved. Deliberately mutates the caller's snapshot instead of re-reading, so a
+    /// briefing step does not lose the identity fields it just filled in.
+    ///
+    /// The transcript stays unproven: this receipt says the child read the line, not which file
+    /// it is writing. `watch` keeps looking, and `applyTranscriptOwnership` still gets to reject
+    /// a wrong candidate afterwards.
+    private static func acceptProgressAsBriefing(_ snapshot: Task, provenAt: Date) -> Bool {
+        var task = snapshot
+        guard task.state == .spawning else { return false }
+        task.state = .briefed
+        task.briefedAt = provenAt
+        task.lastSeenChild = Date()
+        guard replaceTask(task, expecting: .spawning, discardSecret: true) else { return false }
+        RemoteAuth.audit("orchestrator.brief.progress", [
+            "task": task.id,
+            "child": task.childTerminalId ?? "?",
+            "notes": String(task.progress.count),
+        ])
+        return true
     }
 
     static func expireSpawningIfDueForTesting(_ task: Task) -> Bool { expireSpawningIfDue(task) }
@@ -6511,6 +6604,14 @@ enum Orchestrator {
             RemoteAuth.audit("orchestrator.menu.left",
                              ["task": task.id, "session": childID])
             return true
+        }
+
+        // The other delivery receipt, read before the transcript one and before another copy of
+        // the first line can be typed into a child that is already working from the first. See
+        // ``briefingProvenByProgress(_:)``; the acceptance standard in `briefingDecision` is
+        // untouched, because this is a different proof and not a weaker version of that one.
+        if let provenAt = briefingProvenByProgress(task) {
+            return acceptProgressAsBriefing(task, provenAt: provenAt)
         }
 
         let transcript: String?
@@ -7384,8 +7485,7 @@ enum Orchestrator {
         // notification, cascade, or serialize pump. Merge only the worktree field back when its
         // best-effort receipt arrives, so a simultaneous closeStep cannot have its closeAt
         // decision resurrected by this older snapshot.
-        let removeEmpty = task.childTerminalId == nil
-            || (outcome == .spawnFailed && task.briefedAt == nil)
+        let removeEmpty = reclaimsEmptyWorktree(task, outcome: outcome)
         worktreeQueue.async {
             let refreshed = refreshedWorktree(worktree)
             if removeEmpty {
