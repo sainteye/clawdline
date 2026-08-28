@@ -321,6 +321,7 @@ holds a secret: not the orchestrator token, and not the task secret.
   "plan": "root → 3 searchers (haiku) → this one joins them up (opus) → report.md",
   "claims": ["Sources/Orchestrator.swift", "docs"],
   "serialize": ["build"],
+  "attach_session": "B6ADA755-5815-4008-8287-85ED28EFE4F4",
   "timeout_minutes": 30,
   "created_at": "2026-08-24T10:14:02Z",
   "root": {
@@ -355,6 +356,7 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `serialize` | optional array of 0…4 unique operation names. Each uses the `model` token rule: 1…64 characters from `[a-z0-9._-]`, not starting with `-` |
 | `isolation` | optional `none` or `worktree`; absent is `none`. Unknown values are refused, never downgraded |
 | `isolation_base` | optional Git revision, legal only with `isolation: "worktree"`; 1…200 characters from letters, digits, `._/-~`, not starting with `-` and not containing `..`. Absent means `HEAD`; it must resolve to a commit |
+| `attach_session` | optional terminal-neutral Session id from `GET /v1/orchestrator/sessions`. When present, deliver this complete task into that existing assistant session without opening a tab |
 | `project_dir` | absolute, exists, and is a directory — checked at dispatch, not at planning time |
 | `title` | ≤ 200 characters |
 | `instructions` | non-empty, ≤ 16 KiB |
@@ -428,6 +430,34 @@ owns that task-to-terminal link; it also works before either assistant's transcr
 observable. Naming it is what gets a task filed under its actual parent on the first try instead
 of being counted as a root's. Getting it wrong costs capacity and never buys any — [the two names
 are combined by taking the deeper answer](#depth-stops-at-two-and-the-floor-is-what-has-teeth).
+
+### Attached follow-up tasks
+
+`attach_session` turns dispatch into a complete follow-up assignment for a standing assistant
+session. The task still has a fresh id and secret, its own task directory and `CHILD.md`, claims,
+serialize tokens, timeout, usage, result signal, landing record and inflight visibility. The only
+difference is that Clawdline types the ordinary first line into the named existing session instead
+of opening a terminal tab. The public task record carries `attached: true` and `attachSession`.
+
+The id is resolved against the same terminal-neutral list returned by
+`GET /v1/orchestrator/sessions`. A shell is unsupported, the resident assistant must match the
+task's assistant, and **one session runs at most one live Clawdline task**. The single-flight check
+is repeated under the registration lock, so two concurrent requests cannot both pass a stale
+inventory. A cached `waiting` state triggers the same narrow `Targets.isChoosing` screen proof as
+coordination-wait delivery; a confirmed menu refuses the dispatch before any line is typed or task
+record is created.
+
+An attached task keeps the standing session's existing depth (or depth 1 for a user-opened root),
+including at the configured depth floor. It opens no tab and therefore spends no child,
+grandchild, or machine tab-opening capacity, although it remains a live task, passes through the
+dispatch rate limiter and quota gate, and holds its ordinary claims and serialize reservations.
+If terminal delivery itself fails, the registered task finalizes as `spawn_failed` and the request
+returns `502 attach_delivery_failed`.
+
+The task does not own the tab. Success, failure, timeout, cancellation, root-close cascade and any
+`orchestrator_child_linger` value leave the standing session open. Its briefing says that writing
+`result.json` completes this task but does not end the session, which can then receive a later
+complete follow-up assignment.
 
 For `worktree`, the broker resolves the base to a commit SHA and records that immutable value.
 Branch names and `HEAD` can move while other sessions commit; the SHA is the receipt for what the
@@ -746,6 +776,7 @@ honestly, and explains that the user disabled agent notifications.
   "summary": "Wrote a 1024×1024 SVG portrait; border and lettering hand-pathed, no raster.",
   "symbols": [],
   "artifacts": ["artifacts/project-portrait.svg"],
+  "verification": {"runs": 2, "seconds": 940, "last": "pass", "scope": "swift suite + web-schedules"},
   "finished_at": "2026-08-24T10:41:55Z"
 }
 ```
@@ -756,6 +787,14 @@ compares against what it stored at dispatch in constant time. A file whose secre
 **ignored** and logged once: a wrong secret in a task directory is either a bug or somebody
 poking, and neither is a reason to finalize somebody's task.
 
+`verification` is optional metadata about the proof the child actually ran. `runs` and `seconds`
+are non-negative integers, `last` is `pass`, `fail`, or `skipped`, and `scope` is a short free-text
+description. A well-formed object is stored on the task record. Older results without it work
+unchanged, and a malformed object is ignored rather than turning an otherwise authenticated
+success into failure. The briefing gives verification one third of `timeout_minutes` or three
+full-suite runs, whichever arrives first, while still requiring one relevant compile-and-test pass
+and red-before-green for every new test.
+
 `symbols` names every identifier the child's change introduced: new functions and types, new
 fields, new string keys, the names of test groups it added. Names, not descriptions — the portrait
 above introduced none, and `[]` says that positively where an absent field only says the child did
@@ -765,8 +804,8 @@ because a shared working tree makes authorship unreadable from the diff alone �
 comes to commit, the files a child edited may hold two or three sessions' unfinished work, and
 vocabulary is the only reliable way to tell one session's hunks from another's. Guessing it has
 produced staged trees that would not compile, which is the failure the field is there to prevent.
-The child's briefing asks for it; **the broker does not**. `readResult` takes `status`, `summary`
-and `artifacts` and ignores every other key, so `symbols` never appears on a task record, in a
+The child's briefing asks for it; **the broker does not**. `readResult` takes `status`, `summary`,
+`artifacts` and the optional `verification` object and ignores every other key, so `symbols` never appears on a task record, in a
 notification, or in any API answer — it is written for whichever root opens the file, and root has
 to open the file to get it.
 
@@ -1055,10 +1094,13 @@ unreadable registry are different values in the type system.
 
 This phase does not quarantine, purge, delete, or expose a mutating storage route. The collector is
 a separate, default-off phase. Children are also told to put repo copies, build output, mutation
-worktrees and compiler indexes in their own `/tmp/.clawdline/<task-id>/work/` directory so those
-large temporary files live inside storage Clawdline already owns. The existing 24-hour task-root
-cleanup now exempts `landing.state == pending`, because a root that has not landed may still need
-the child's receipts.
+worktrees and compiler indexes in their own `/tmp/.clawdline/<task-id>/work/` directory. That
+directory is reclaimed as part of task finalization: immediately for `success`, and after
+`orchestrator_work_grace_minutes` for every other terminal state. The setting defaults to 60
+minutes, accepts `0` for immediate reclaim and `-1` to leave `work/` to the ordinary 24-hour sweep.
+A child copies any diagnostic log or diff worth keeping to `artifacts/` before it writes
+`result.json`. The existing 24-hour task-root cleanup exempts `landing.state == pending`, because a
+root that has not landed may still need the child's receipts.
 
 ### File release waits belong to Clawdline
 
@@ -1371,6 +1413,11 @@ ago are removed; terminal handoff envelopes and packages are removed 24 hours af
 time. The registry keeps its most recent 200 task records. **Artifacts are in `/tmp` and
 they are not yours to keep** — if a child produced something worth having, copy it out. The
 directory going away after a day is the same promise `/tmp` always made, made explicitly.
+
+Heavyweight `work/` storage has a shorter, separate life. It is removed during a successful
+finalize, or when the non-success grace deadline expires; `artifacts/`, `task.json`, `CHILD.md` and
+`result.json` remain untouched until the whole task-root sweep above. Reclaiming a missing `work/`
+is success, and a filesystem refusal never delays or reverses the terminal task state.
 
 Worktrees follow a separate, fail-safe policy: an empty clean checkout whose `HEAD` remains on its
 task branch is removed with that empty branch when the child tab closes; after 24 hours a clean
