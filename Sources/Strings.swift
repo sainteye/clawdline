@@ -480,8 +480,16 @@ protocol Copy {
     var webStateWorking: String { get }
     /// Quiet Session work-state labels and the accessible descriptions behind one/two checks.
     /// They are server copy, even though the fallback bundle repeats English for old/offline pages.
+    /// The vocabulary contract — what a person should do on seeing each state — is
+    /// docs/session-states.md; `unknown` in particular is an absence, and its copy must never
+    /// read as an instruction.
     var sessionWorkReady: String { get }
-    var sessionWorkNeedsTriage: String { get }
+    var sessionWorkUnknown: String { get }
+    var sessionWorkHolding: String { get }
+    var sessionWorkOwed: String { get }
+    /// The small marker after a self-declared state, so a stated state never dresses as a
+    /// proven one.
+    var sessionWorkSelfStated: String { get }
     var sessionWorkMilestone: String { get }
     var sessionWorkComplete: String { get }
 
@@ -518,6 +526,9 @@ protocol Copy {
     var webConfirmActionSay: String { get }
     var webConfirmEndTitle: String { get }
     var webConfirmEndSay: String { get }
+    /// The line above the list of what a close would take with it — live children, stranded
+    /// waiters — shown at the moment of the confirming press, never as a list column.
+    var webConfirmEndLoses: String { get }
     /// Turning a chosen session into this Mac's Clawdfather.
     ///
     /// The browser cannot register a coordinator — that needs the orchestrator token, and a
@@ -602,9 +613,9 @@ protocol Copy {
     var webCoordActiveTasks: String { get }
     var webCoordPendingLandings: String { get }
     var webCoordOpenWaits: String { get }
-    var webCoordCountTriage: String { get }
+    var webCoordCountUnknown: String { get }
     var webCoordStaleSessions: String { get }
-    var webCoordNeedsTriage: String { get }
+    var webCoordUnknown: String { get }
     var webCoordWaitingList: String { get }
     var webCoordBlockingList: String { get }
     var webCoordAllQuiet: String { get }

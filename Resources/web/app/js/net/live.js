@@ -320,9 +320,12 @@ export var LocalClient = {
 
     /// Leave through the assistant's own prompt, then close the terminal session it occupied.
     /// The server knows whether that means `/exit` or `/quit`; the page never sends a command.
-    end: function (id) {
+    /// `acceptLoss` is sent only after the person has seen the list of what the close takes —
+    /// without it, a close that would cancel live work is refused with that list.
+    end: function (id, acceptLoss) {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/end",
-                         post({}, { "Idempotency-Key": uuid() }));
+                         post(acceptLoss ? { accept_loss: true } : {},
+                              { "Idempotency-Key": uuid() }));
     },
 
     /// Branch and file changes are also fetched only when their panel opens. Unlike the command

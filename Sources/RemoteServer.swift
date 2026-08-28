@@ -1431,6 +1431,60 @@ final class RemoteServer: @unchecked Sendable {
             DispatchQueue.main.async { SessionWatch.shared.nudge() }
             return answer(reply)
 
+        // A session's declaration about its own quiet state — the `self` half of the work-state
+        // provenance boundary (docs/session-states.md). Identity is resolved from the live
+        // watched process exactly as `/complete` does; the body may claim only `ready` or
+        // `holding`, may record or clear the `owed` debt, and can never produce a check.
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/sessions/")
+            && path.hasSuffix("/state"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Declaring a session state needs the orchestrator token.")
+            }
+            let encoded = String(path.dropFirst("/v1/orchestrator/sessions/".count)
+                .dropLast("/state".count))
+            let id = encoded.removingPercentEncoding ?? encoded
+            guard !id.isEmpty, !id.contains("/") else {
+                return .error(400, "bad_request", "The route must name one session id.")
+            }
+            guard let target = self.session(withID: id), target.isAssistant else {
+                return .error(404, "session_not_found", "No current assistant session named \(id).")
+            }
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            let allowed: Set<String> = ["state", "note", "moved_by", "person_needed", "owed"]
+            guard !body.isEmpty, Set(body.keys).isSubset(of: allowed) else {
+                return .error(400, "bad_request",
+                              "The body may contain only state, note, moved_by, person_needed "
+                                  + "and owed.")
+            }
+            if let raw = body["state"], !(raw is String) {
+                return .error(400, "bad_request", "state must be a string.")
+            }
+            var owed: [String: Any]?
+            var clearOwed = false
+            if let rawOwed = body["owed"] {
+                if rawOwed is NSNull {
+                    clearOwed = true
+                } else if let dict = rawOwed as? [String: Any] {
+                    guard Set(dict.keys).isSubset(of: ["note", "moved_by", "person_needed"]) else {
+                        return .error(400, "bad_request",
+                                      "owed may contain only note, moved_by and person_needed.")
+                    }
+                    owed = dict
+                } else {
+                    return .error(400, "bad_request", "owed must be an object, or null to clear.")
+                }
+            }
+            let declared = Orchestrator.declareSessionState(
+                identity: Self.sessionWorkIdentity(target), terminalState: self.state(of: id),
+                claim: body["state"] as? String, note: body["note"] as? String,
+                movedBy: body["moved_by"] as? String,
+                personNeeded: body["person_needed"] as? Bool,
+                owed: owed, clearOwed: clearOwed)
+            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+            return answer(declared)
+
         // What this Mac can say about each assistant's own account-level quota — one read of two
         // small local files, 5-second cached, and deliberately *not* behind `readingDepth`: it
         // has to be cheap enough for `Orchestrator.dispatch()` itself to call synchronously at
@@ -1707,11 +1761,23 @@ final class RemoteServer: @unchecked Sendable {
         // What it stops being is a modal dialog on the Mac that nobody on a phone can answer.
         case ("POST", let path) where path.hasSuffix("/end") && path.hasPrefix("/v1/sessions/"):
             let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/end".count))
-            return writing(request) { _ in
+            return writing(request) { body in
                 guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
                     return .error(404, "not_found", "No session named that")
                 }
-                RemoteAuth.audit("session.end", ["id": session.id])
+                // `lost_if_closed`, computed at the moment somebody presses close — the one
+                // moment a list of live children and stranded waiters can still change the
+                // outcome. A caller that has shown the list repeats the request with
+                // `accept_loss: true`; a close with nothing at stake is unchanged.
+                let lost = Orchestrator.lostIfClosed(root: session)
+                if !lost.isEmpty, body["accept_loss"] as? Bool != true {
+                    return .error(409, "would_lose_work",
+                                  "Closing this session cancels work still in flight. Show the "
+                                      + "lost list, then repeat with accept_loss: true.",
+                                  extra: ["lost": lost])
+                }
+                RemoteAuth.audit("session.end", ["id": session.id,
+                                                 "lost": String(lost.count)])
                 // **The children first, while the root is still there to be recognised.** A task
                 // is matched to its root by the session id in that session's hook note, and the
                 // note is found through the tty of the tab this line is about to close — after
@@ -3735,6 +3801,15 @@ final class RemoteServer: @unchecked Sendable {
         let work = Orchestrator.sessionWorkProjection(
             identity: identity, terminalState: state)
         out["work_state"] = work.state.rawValue
+        // The evidence fields beside the state: who said so (`broker` projected it, or the
+        // session declared it), since when, in whose words, and who will move it. The `owed`
+        // overlay is the independent second axis and rides beside any state.
+        out["work_provenance"] = work.provenance
+        if let note = work.note { out["work_note"] = note }
+        if let since = work.since { out["work_since"] = Int(since.timeIntervalSince1970) }
+        if let movedBy = work.movedBy { out["work_moved_by"] = movedBy }
+        if let personNeeded = work.personNeeded { out["work_person_needed"] = personNeeded }
+        if let owed = work.owed { out["owed"] = owed }
         if let disposition = work.disposition { out["disposition"] = disposition }
         if let assistant = session.assistant { out["assistant"] = assistant.rawValue }
         let coordination = Orchestrator.coordination(forTerminal: session.id)
@@ -4102,7 +4177,10 @@ final class RemoteServer: @unchecked Sendable {
             "webStateUnreadable": t.webStateUnreadable,
             "webStateWorking": t.webStateWorking,
             "sessionWorkReady": t.sessionWorkReady,
-            "sessionWorkNeedsTriage": t.sessionWorkNeedsTriage,
+            "sessionWorkUnknown": t.sessionWorkUnknown,
+            "sessionWorkHolding": t.sessionWorkHolding,
+            "sessionWorkOwed": t.sessionWorkOwed,
+            "sessionWorkSelfStated": t.sessionWorkSelfStated,
             "sessionWorkMilestone": t.sessionWorkMilestone,
             "sessionWorkComplete": t.sessionWorkComplete,
         ])
@@ -4134,6 +4212,7 @@ final class RemoteServer: @unchecked Sendable {
             "webConfirmActionSay": t.webConfirmActionSay,
             "webConfirmEndTitle": t.webConfirmEndTitle,
             "webConfirmEndSay": t.webConfirmEndSay,
+            "webConfirmEndLoses": t.webConfirmEndLoses,
             "webClosing": t.webClosing,
             "webCancel": t.webCancel,
             "webConfirm": t.webConfirm,
@@ -4651,9 +4730,9 @@ final class RemoteServer: @unchecked Sendable {
             "webCoordActiveTasks": t.webCoordActiveTasks,
             "webCoordPendingLandings": t.webCoordPendingLandings,
             "webCoordOpenWaits": t.webCoordOpenWaits,
-            "webCoordCountTriage": t.webCoordCountTriage,
+            "webCoordCountUnknown": t.webCoordCountUnknown,
             "webCoordStaleSessions": t.webCoordStaleSessions,
-            "webCoordNeedsTriage": t.webCoordNeedsTriage,
+            "webCoordUnknown": t.webCoordUnknown,
             "webCoordWaitingList": t.webCoordWaitingList,
             "webCoordBlockingList": t.webCoordBlockingList,
             "webCoordAllQuiet": t.webCoordAllQuiet,

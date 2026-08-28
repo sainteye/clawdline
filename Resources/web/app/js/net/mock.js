@@ -90,7 +90,7 @@ export var Mock = (function () {
         // options were parsed on the Mac and thrown away, so the box could only say "go and
         // find the Mac". The caret is on the second row, which is what a bare Return confirms.
         { id: "2C71-90", backend: "iterm", tty: "ttys011", label: "the signup flow keeps 500ing",
-          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_human", line: null,
+          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_you", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: atrium,
           menu: { selected: 2, options: [
               { n: 1, label: "Yes", selected: false, can: true },
@@ -104,7 +104,7 @@ export var Mock = (function () {
         // were both pushed out of reach. The card is capped and scrolls inside itself now, and it
         // folds; this fixture is what proves both, because a short menu never could.
         { id: "9C1D-42", backend: "iterm", tty: "ttys044", label: "which source to drop",
-          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_human", line: null,
+          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_you", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: atrium,
           menu: { selected: 1, question: "The rate limit bites on every backfill. Which way out?", options: [
               { n: 1, label: "Swap to the official feed", selected: true, can: true,
@@ -121,7 +121,7 @@ export var Mock = (function () {
         // pressed. Kept as a fixture because that button was once read as the last row's
         // description, and there was nothing on this page to press.
         { id: "5B0E-11", backend: "iterm", tty: "ttys012", label: "which sources to drop",
-          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_human", line: null,
+          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_you", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: atrium,
           menu: { selected: 1, question: "Which of these should the report drop?",
                   submit: { label: "Submit", selected: false }, options: [
@@ -135,13 +135,30 @@ export var Mock = (function () {
         // still going. This is the row that said nothing at all before `Shells`: the terminal
         // mentions it once, where the turn ended, and every list after that drew it as done.
         { id: "9B04-2D", backend: "iterm", tty: "ttys002", label: "rewrite the CSV importer",
-          cwd: "/Users/x/code/notebook", state: "idle", work_state: "needs_triage", line: null,
+          cwd: "/Users/x/code/notebook", state: "idle", work_state: "unknown", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: creature,
+          // The second axis riding on a quiet row: the session still gets on with its build,
+          // and the reader still owes it a call — three days old, which is the point.
+          owed: { note: "which CSV dialect wins is still your call", since: now - 3 * 86400,
+                  person_needed: true, provenance: "self" },
           shells: [
               { id: "bvlp3xmku", at: now - 6, command: "cargo build --release 2>&1 | tail -40",
                 what: "Build the importer with the new row parser",
                 doing: "[214/318] Compiling importer/rows.rs" }
           ] },
+        // The two declared quiet states: 🔜 holding moves by itself and nobody is needed; 📭
+        // ready is an invitation to hand the session work. Both carry `self` provenance, so the
+        // row can say stated-not-proven out loud.
+        { id: "B770-3A", backend: "iterm", tty: "ttys031", label: "wait out the release build",
+          cwd: "/Users/x/code/notebook", state: "idle", work_state: "holding",
+          work_provenance: "self", work_note: "resumes when the release build finishes",
+          work_moved_by: "the release build", work_person_needed: false, work_since: now - 1200,
+          line: null, isClaude: true, assistant: "claude", sessionId: null, icon: creature },
+        { id: "B771-4B", backend: "iterm", tty: "ttys032", label: "free hand",
+          cwd: "/Users/x/code/notebook", state: "idle", work_state: "ready",
+          work_provenance: "self", work_note: "RootSession fix landed; can take new work",
+          work_since: now - 300,
+          line: null, isClaude: true, assistant: "claude", sessionId: null, icon: creature },
         // The **owner** of the wait the row below is stuck on, and the reason this fixture is
         // here: an owner's row used to be drawn exactly like a session in no relationship at
         // all, so the one person who can end the wait was the one person not told about it.
@@ -173,10 +190,10 @@ export var Mock = (function () {
               releaseCondition: "the protocol docs are committed and released"
           }] } },
         { id: "44D2-05", backend: "iterm", tty: "ttys017", label: "scratch",
-          cwd: "/Users/x/tmp/notes", state: "idle", work_state: "needs_triage", line: null,
+          cwd: "/Users/x/tmp/notes", state: "idle", work_state: "unknown", line: null,
           isClaude: false, assistant: "codex", sessionId: null, icon: null },
         { id: "C0FF-3E", backend: "iterm", tty: "ttys021", label: "build box over ssh",
-          cwd: "/Users/x", state: "unknown", work_state: "needs_triage", line: null,
+          cwd: "/Users/x", state: "unknown", work_state: "unknown", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: null },
         { id: "5E20-8B", backend: "tmux", tty: "tmux:%14", label: "check the German strings",
           cwd: "/Users/x/code/clawdline", state: "working", work_state: "working",
@@ -583,19 +600,19 @@ export var Mock = (function () {
 
     // The real server projects these two axes atomically in one payload. Keep transitions going
     // through one helper or a mock frame can manufacture the exact missing/mismatched state the
-    // production client is required to fail closed as needs_triage.
+    // production client is required to fail closed as unknown.
     function setSessionState(id, state) {
         var session = find(id);
         if (!session) return;
         session.state = state;
-        if (state === "waiting") session.work_state = "waiting_human";
+        if (state === "waiting") session.work_state = "waiting_you";
         else if (state === "working") session.work_state = "working";
-        else if (state === "unknown") session.work_state = "needs_triage";
+        else if (state === "unknown") session.work_state = "unknown";
         else if ((session.coordination && ((session.coordination.waitingOn || []).length ||
                  (session.coordination.waitedOnBy || []).length))) {
             session.work_state = "waiting_session";
         } else if (session.assistant) {
-            session.work_state = "needs_triage";
+            session.work_state = "unknown";
         } else {
             session.work_state = "ready";
         }
@@ -1085,16 +1102,16 @@ export var Mock = (function () {
                         },
                         bearings: {
                             observed_at: now, coordinator_lifecycle: "standby",
-                            work_state_counts: { ready: 1, working: 3, waiting_human: 1,
-                                                 waiting_session: 1, needs_triage: 1,
+                            work_state_counts: { ready: 1, working: 3, waiting_you: 1,
+                                                 waiting_session: 1, unknown: 1,
                                                  milestone_complete: 1, work_complete: 0 },
                             active_task_count: 2, pending_landing_count: 1, open_wait_count: 1,
-                            needs_triage: [{ id: "9D1B-44", assistant: "claude",
+                            unknown: [{ id: "9D1B-44", assistant: "claude",
                                              label: "the exporter is stuck on fonts",
-                                             work_state: "needs_triage" }],
+                                             work_state: "unknown" }],
                             waiting: [{ id: "2C71-90", assistant: "claude",
                                         label: "the signup flow keeps 500ing",
-                                        work_state: "waiting_human" }],
+                                        work_state: "waiting_you" }],
                             blocking: [{ id: "CF00-01", assistant: "codex",
                                          label: "Clawdfather · machine coordinator",
                                          work_state: "working" }],

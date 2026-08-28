@@ -655,18 +655,21 @@ function fillRow(node, s) {
                 esc(T.webClosing) + "</span>";
         } else if (pending) {
             state.innerHTML = (s.state === "waiting"
-                ? '<span class="wants">' + esc(T.sessionWaiting) + "</span>"
+                ? '<span class="wants">🙋 ' + esc(T.sessionWaiting) + "</span>"
                 : "") + '<canvas class="spin"></canvas><span class="line">' +
                 esc(T.webPending) + "</span>";
-        } else if (work.state === "waiting_human") {
-            state.innerHTML = '<span class="wants">' + esc(T.sessionWaiting) + "</span>" +
-                peerSaid + shellsSaid;
+        } else if (work.state === "waiting_you") {
+            // 🙋 someone is asking and stopped, waiting on you — the one state whose whole
+            // meaning is "act now". The owed badge still rides along in workSaid: answering
+            // the question on screen does not pay an older debt.
+            state.innerHTML = '<span class="wants">🙋 ' + esc(T.sessionWaiting) + "</span>" +
+                peerSaid + workSaid + shellsSaid;
         } else if (work.state === "working") {
             // The shells go after the live line rather than instead of it. A session can be
             // working on one thing and still have a build it started three turns ago going.
             state.innerHTML = '<canvas class="spin"></canvas><span class="line"></span>' +
                 peerSaid + workSaid + shellsSaid;
-        } else if (work.state === "needs_triage" && s.state === "unknown") {
+        } else if (work.state === "unknown" && s.state === "unknown") {
             // Not silence — a screen that could not be read is a different fact from "idle",
             // and drawing it as idle would be a confident wrong answer about someone's work.
             state.innerHTML = '<span class="unread">' + esc(T.webStateUnreadable) + "</span>" +

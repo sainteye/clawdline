@@ -62,7 +62,11 @@
    the screen this sheet is mostly opened on. */
 .sheet .chip.wide { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; }
 .confirm-sheet { width: min(390px, 100%); }
-.confirm-sheet .say { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.55; }
+/* pre-line: the close confirmation carries lost_if_closed as one line per item. */
+.confirm-sheet .say {
+    margin: 0; color: var(--dim); font-size: 13px; line-height: 1.55;
+    white-space: pre-line;
+}
 .confirm-sheet .buttons {
     display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;
 }
