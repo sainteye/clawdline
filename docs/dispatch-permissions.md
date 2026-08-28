@@ -25,13 +25,19 @@ checkout/subdirectory with `isolation: "worktree"`; its entire task still lives 
 `/tmp/.clawdline/<id>/`. So the **first thing it ever does** — open its own `CHILD.md` — is a read
 outside the tree it was started in, and it stops to ask about it.
 
-`--add-dir` is the fix, and both CLIs spell it the same way. How much to grant depends on whether
-the child may dispatch in turn:
+`--add-dir` is the fix, and both CLIs spell it the same way. A child dispatches nothing, so what
+the wider grant now buys is the *next* task: a standing session can be handed a complete follow-up
+task whose directory did not exist when its tab opened, and `--add-dir` cannot be added to a
+running process.
 
-| the child | gets | why |
+| the session | gets | why |
 |---|---|---|
-| a leaf | `/tmp/.clawdline/<its own id>` | it only ever touches its own directory |
-| one that may dispatch | `/tmp/.clawdline` | its grandchildren's directories are named by a `uuidgen` it has not run yet, so no per-task grant can name them in advance |
+| a session Clawdline opened for a task | `/tmp/.clawdline` | a later follow-up task's directory is named by a `uuidgen` nobody has run yet, so no per-task grant can name it in advance — see `attach_not_managed` |
+| a session opened without that grant | `/tmp/.clawdline/<its own id>` | it can read its own briefing and nothing else; it can never host a follow-up |
+
+The briefing still tells every child to read only its own directory. The grant is what keeps the
+first question from being *"may I read my own instructions?"*; the rule about other people's task
+directories is in `CHILD.md`, not in the filesystem.
 
 ### 2. Writing outside the working directory
 
@@ -162,13 +168,15 @@ was tried first and does not work on a shared machine: whoever runs `./build.sh`
 another agent, and it does not stop to read a line it did not ask for. Twice in one afternoon a
 rebuild landed in the second between a tab opening and its first message being typed.
 
-**A child that gave up on dispatching and did the work itself has to say so.** One two-level task
-came back `success` saying "the European group and the Asian group each completed their review".
-Both grandchildren were `spawn_failed` and had never run a turn — the parent had done all of it
-alone, and done it correctly. Falling back like that is the right call; the answer is what was
-asked for, not who produced it. But whoever reads the summary is deciding how much to trust the
-result, and *both halves reported* and *both halves failed and I did it myself* are different
-amounts of evidence behind the same answer. `CHILD.md` now asks for that sentence.
+**A node that gave up on handing work on and did it itself has to say so.** One two-level task —
+from when the tree still had two levels — came back `success` saying "the European group and the
+Asian group each completed their review". Both of the sessions it had opened were `spawn_failed`
+and had never run a turn; the parent had done all of it alone, and done it correctly. Falling back
+like that is the right call; the answer is what was asked for, not who produced it. But whoever
+reads the summary is deciding how much to trust the result, and *both halves reported* and *both
+halves failed and I did it myself* are different amounts of evidence behind the same answer.
+`CHILD.md` still asks for that sentence, and it applies to a root's own fan-out and to an
+assistant's subagents the same way.
 
 ---
 
@@ -224,12 +232,14 @@ it stops mid-task and cannot even write the handover saying what it finished.
 ## Before you implement against this
 
 - If this is a fresh directory, did `orchestrator.menu` record the one automatic trust answer?
-- Is `--add-dir` on the command line, and does a dispatching node get the *parent* directory?
+- Is `--add-dir` on the command line, and does a session that may be handed a follow-up get the
+  *parent* directory?
 - Was the `--permission-mode` value tested on **the model you are actually going to use**?
 - Did that test have a control — with and without the flag, in the same directory?
 - Does the briefing tell the child to write files with its file tool rather than `jq` and a redirect?
-- Does a task ending take what it handed on with it? (Without that, a timeout leaves orphan
-  grandchildren under a parent that no longer exists.)
+- Does a task ending take anything still filed under it with it? (Without that, a timeout leaves
+  orphans under a parent that no longer exists — the tree is one level deep now, so this is the
+  cleanup that catches records an older build left behind.)
 - When something new appears in the working tree, has it been checked against `git log` before being
   attributed to a child?
 - Is "was it ever asked?" being answered by watching the screen, not by reading the transcript
