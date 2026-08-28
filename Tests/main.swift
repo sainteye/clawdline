@@ -22451,6 +22451,22 @@ group("a settings tab taller than the screen is capped, and the overflow goes to
           squeezed.viewport == 0, "got \(squeezed.viewport)")
 }
 
+func mainQueueIdentityProbe() async
+    -> (isMainThread: Bool, isOnMainQueue: Bool, recordsReturned: Bool, missingRecord: Bool) {
+    await withCheckedContinuation { continuation in
+        Thread.detachNewThread {
+            Thread.sleep(forTimeInterval: 0.25)
+            DispatchQueue.main.async {
+                _ = Orchestrator.records()
+                let missing = Orchestrator.record(id: "00000000-0000-4000-8000-000000000000")
+                continuation.resume(returning: (
+                    Thread.isMainThread, Orchestrator.isOnMainQueue, true, missing == nil
+                ))
+            }
+        }
+    }
+}
+
 // MARK: - Schedule session resume
 
 checks += 1
@@ -22521,6 +22537,16 @@ Thread.detachNewThread {
 }
 
 Task {
+    let mainQueueIdentity = await mainQueueIdentityProbe()
+    check("dispatchMain drains a delayed main-queue block off the main thread",
+          !mainQueueIdentity.isMainThread)
+    check("the delayed block still identifies itself as running on the main queue",
+          mainQueueIdentity.isOnMainQueue)
+    check("records returns without synchronously dispatching onto its current queue",
+          mainQueueIdentity.recordsReturned)
+    check("record(id:) returns without synchronously dispatching onto its current queue",
+          mainQueueIdentity.missingRecord)
+
     checks += 1
     do {
         let cloudChecks = try await runCloudTransportTests()
