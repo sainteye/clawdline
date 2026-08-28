@@ -597,3 +597,52 @@ items:
       root. Then read the list once and see whether anything that looks like a hard problem is
       merely an orphan.
     opened: 2026-08-28
+
+  - id: B-STRUCTURAL-FIX-ONLY-REACHES-NEW-MACHINES
+    title: A fix that seeds a file on first run never reaches a machine that has already run
+    problem: >-
+      A change that corrects what a config file is seeded with looks structural — it edits the
+      source of truth and lands with tests — but `ensurePolicyFile()` never overwrites, so it takes
+      effect only on a Mac that has never dispatched. Every machine that has already written the
+      file keeps the old contents indefinitely, and nothing tells anybody that. The diff is
+      complete, the tests are green, and the behaviour on every existing installation is unchanged.
+      That gap is invisible in review because a reviewer reads the change, not the installed base.
+      The same shape covers any seed-once file: dispatch policy today, and whatever else is written
+      with a "create if absent" guard.
+    evidence: >-
+      `~/.config/clawdline/dispatch-policy.md` is a copy, not a symlink (own inode; it was 9,364
+      bytes against the repository's 11,257 on 2026-08-28). The review-round rules landed in
+      `Resources/dispatch-policy.md` and matched zero times in the file dispatch actually reads
+      until a root copied it by hand; that copy is still the only thing that has moved this
+      machine. `Orchestrator.defaultPolicy` additionally holds a stale literal, and `policyURL`
+      points only at `~/.config/clawdline`.
+    severity: degrades
+    cost: hours
+    who_hurts: us
+    trigger: >-
+      The next policy or seeded-config change that is believed to have shipped and has not. A fix
+      would either migrate on version change, or make the read fall back to the bundled resource so
+      the repository copy is authoritative and the local file is an override rather than the only
+      source.
+    opened: 2026-08-28
+
+  - id: B-LANDING-NOTE-LIMIT-IS-UNNAMED
+    title: An over-long landing note is refused without saying which field was too long
+    problem: >-
+      `POST /v1/orchestrator/tasks/:id/landing` answers `400 bad_request` when `note` exceeds 500
+      characters, and the message does not name the field or the limit. A caller closing several
+      landings in a loop gets a row of identical refusals with nothing to act on, and the natural
+      reading is that the request shape is wrong rather than that one string is long. The limit is
+      documented, so this costs a reader who checks the docs nothing — and costs everybody else a
+      detour.
+    evidence: >-
+      On 2026-08-28 a root marking seven superseded landings `abandoned` had all seven refused for
+      this reason and had to find the cause by reading `docs/api.md` rather than the error.
+    severity: noise
+    cost: hours
+    who_hurts: contributor
+    trigger: >-
+      The next time somebody loses time to a refusal that knows exactly what is wrong with the
+      request and does not say. Typed refusals elsewhere in this API name their field; this one
+      should match them.
+    opened: 2026-08-28

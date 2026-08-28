@@ -220,6 +220,22 @@ contradicts the table at `:117`" is something the next reader can test in ten se
 standard findings are already held to here, for the same reason — a claim that names its source can
 be wrong out loud, and one that does not can only be believed.
 
+**And name when you read it.** Five sessions edit this tree at once, so a reading has a shelf life
+measured in minutes. The same afternoon produced three of these: a root quoted a section of this
+file it had read that morning, hours after `d67d2229` moved 254 lines of it into
+`docs/dispatching.md`; and two roots gave each other a rebase distance of fourteen and fifteen
+commits for the same branch, both correct when measured and both wrong by the time they were read,
+because `main` moved between them. **On this tree a rebase map is a measurement that expires, not a
+fact** — and so is `git status`, `git log`, and the file you opened before lunch. Say when you
+looked, or look again before you quote it.
+
+The same expiry applies to a claim about *people*, and that one is easier to miss because it does
+not look like a reading at all. "I have given that to X" is true only for as long as X is still
+open: on 2026-08-28 a session deliberately left a paragraph for another task to write, correctly
+refusing to duplicate it — but that task had finished and landed forty minutes earlier, so the
+paragraph became an orphan. It is the same shape as the work a close cascade strands, with a
+different cause. The sentence that was missing is when you last confirmed X was still open.
+
 ## Dispatching substantial work with Clawdline
 
 Use Clawdline for work that can be split into self-contained tasks and joined later.
