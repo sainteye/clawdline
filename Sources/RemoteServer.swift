@@ -2,6 +2,53 @@ import AppKit
 import Foundation
 import Network
 
+/// Decide whether a local title can also be handed to the assistant without changing what its
+/// current turn means. Claude accepts a slash command only at an idle prompt; Codex names thread
+/// metadata out of band and therefore does not share that restriction.
+enum SessionTitleSync {
+    enum Action: Equatable {
+        case localOnly
+        case busy
+        case unavailable
+        case renameClaude
+        case renameCodex(threadID: String)
+    }
+
+    static func action(assistant: Assistant?, state: SessionState, clearing: Bool,
+                       codexThreadID: String?) -> Action {
+        guard !clearing else { return .localOnly }
+        switch assistant {
+        case .claude:
+            return state == .idle ? .renameClaude : .busy
+        case .codex:
+            guard let codexThreadID, !codexThreadID.isEmpty else { return .unavailable }
+            return .renameCodex(threadID: codexThreadID)
+        case nil:
+            return .localOnly
+        }
+    }
+
+    /// One look at the actual screen before anything is typed into it.
+    ///
+    /// ``action(assistant:state:clearing:codexThreadID:)`` decides from the session list's
+    /// cached state, and that cache is refreshed every 1.2 seconds while the app is in front and
+    /// **every twenty seconds while it is not** — which is the state the Mac is in whenever
+    /// somebody is renaming a session from their phone. A cached `idle` can therefore be twenty
+    /// seconds behind a Claude that is now showing a menu, and a slash command sent to a menu is
+    /// not typed: the picker discards the bracketed paste and acts on the Return after it. The
+    /// measurement is written up beside `/send`, which pays for the same capture — with the
+    /// caret on the third option, sending the word "Tea" answered "Water".
+    ///
+    /// So the capture is paid here too, and only here: `busy`, `unavailable`, `local_only` and
+    /// the Codex path never reach a keyboard, and a rename is the one operation on this server
+    /// that is never urgent. `showingMenu` is a closure for that reason — an unread one is a
+    /// terminal round trip not made.
+    static func confirmed(_ action: Action, showingMenu: () -> Bool) -> Action {
+        guard action == .renameClaude, showingMenu() else { return action }
+        return .busy
+    }
+}
+
 /// The bar, as something other than a bar.
 ///
 /// Everything this app knows is already computed for four consumers — the panel, the strip above
@@ -24,7 +71,7 @@ import Network
 /// and a task title; *writing* to one is remote code execution, because Claude Code runs `bash`.
 /// Those two are not the same feature and they do not ship together — see `docs/remote.md`. Until
 /// the write half exists and is separately armed, every mutating route answers `write_disabled`.
-final class RemoteServer {
+final class RemoteServer: @unchecked Sendable {
 
     static let shared = RemoteServer()
     private init() {}
@@ -47,6 +94,15 @@ final class RemoteServer {
     private var listener: NWListener?
     private var streams: [ObjectIdentifier: Stream] = [:]
     private var nextEventID = 0
+    /// Set only through `attachCloudBridge`. It lives on `queue`, beside the SSE streams whose
+    /// already-serialized readings it shares.
+    private var cloudBridge: CloudAppBridge?
+    private var cloudPublishTail: Task<Void, Never>?
+    private var cloudLifecycleTask: Task<Void, Never>?
+    private var cloudLifecycleGeneration: UInt64 = 0
+    /// Main-thread mirror used only to decide whether SessionWatch still needs its observer when
+    /// the loopback listener is off.
+    private var cloudAttached = false
 
     /// Pure route seam: tests supply complete process-bound observations without asking iTerm,
     /// tmux or assistant transcript registries. Production never sets it.
@@ -62,6 +118,9 @@ final class RemoteServer {
     /// Replaces the route body only after a non-send terminal mutation entered the production
     /// bounded worker. This keeps queue/isolation tests away from real ttys.
     static var terminalRouteForTesting: ((Request) -> Response)?
+    /// Already-serialized full snapshots for bridge lifecycle integration tests. Production keeps
+    /// using the SessionWatch/Orchestrator serializers on the main thread.
+    static var cloudSnapshotDataForTesting: (sessions: Data, orchestrator: Data)?
 
     /// Put non-HTTP orchestrator work behind the same serial gate as requests. Schedule timing
     /// is calculated off this queue; only the ordinary dispatch transaction enters here.
@@ -146,6 +205,168 @@ final class RemoteServer {
         return (terminalOutstanding, terminalOutstandingByChannel.values.reduce(0, +))
     }
 
+    /// Enter a verified cloud command through the same route transaction local HTTP uses. The
+    /// bridge supplies an idempotency key derived from the already replay-checked sender/sequence.
+    func routeVerifiedCloudCommand(_ command: CloudHeadlessCommand, sender: String,
+                                   idempotencyKey: String) async -> Response {
+        await withCheckedContinuation { continuation in
+            queue.async { [weak self] in
+                guard let self else {
+                    continuation.resume(returning: .error(503, "unavailable",
+                                                          "The local command broker is unavailable."))
+                    return
+                }
+                continuation.resume(returning: self.dispatch(Request(
+                    verifiedCloud: command, sender: sender, idempotencyKey: idempotencyKey
+                )))
+            }
+        }
+    }
+
+    /// Explicit Cloud lifecycle seam. Merely constructing a bridge changes nothing; attaching it
+    /// starts its transport and installs the existing SessionWatch observer. Passing nil detaches
+    /// and shuts it down without touching the local listener or its write setting.
+    func attachCloudBridge(_ bridge: CloudAppBridge?) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            let previous = self.cloudBridge
+            // The server queue is the one ordering domain for bridge identity, lifecycle,
+            // observer intent and its main-thread mirror. It therefore cannot replay an older
+            // off-main mirror after a newer main-thread detach (the former ABA race).
+            DispatchQueue.main.async { [weak self] in
+                self?.cloudAttached = bridge != nil
+                self?.syncSnapshotObserver()
+            }
+            if previous === bridge { return }
+            self.cloudLifecycleGeneration &+= 1
+            let generation = self.cloudLifecycleGeneration
+            let predecessorLifecycle = self.cloudLifecycleTask
+            let predecessorPublication = self.cloudPublishTail
+            predecessorLifecycle?.cancel()
+            predecessorPublication?.cancel()
+            // Publications accepted after this point belong only to the new generation. They
+            // must never queue behind an invalidated predecessor tail.
+            self.cloudPublishTail = nil
+            self.cloudBridge = bridge
+            self.cloudLifecycleTask = Task { [weak self] in
+                // Stop the directly replaced bridge first: that is the signal which lets a
+                // suspended connect/publication unwind. Cancellation must not skip the inherited
+                // join that follows, so rapid A -> B -> C remains a transitive lifecycle.
+                if let previous { await previous.stop() }
+                await predecessorLifecycle?.value
+                await predecessorPublication?.value
+                guard let self, let bridge, !Task.isCancelled else { return }
+                await bridge.setTransportReadyObserver { [weak self, weak bridge] readyGeneration in
+                    guard let bridge else { return }
+                    self?.cloudTransportBecameReady(
+                        bridge, lifecycleGeneration: generation,
+                        transportGeneration: readyGeneration
+                    )
+                }
+                do {
+                    try await bridge.start()
+                    let stillCurrent = await self.cloudBridgeIsCurrent(
+                        bridge, generation: generation
+                    )
+                    if Task.isCancelled || !stillCurrent {
+                        await bridge.stop()
+                    }
+                } catch is CancellationError {
+                    await bridge.stop()
+                } catch {
+                    Log.write("cloud: app bridge could not start — \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    /// Wait until the attach, replacement, or detach most recently accepted by `queue` has
+    /// completed. Configuration owners use this when replacing credentials or tearing down.
+    func awaitCloudBridgeLifecycle() async {
+        let task: Task<Void, Never>? = await withCheckedContinuation { continuation in
+            queue.async { [weak self] in
+                continuation.resume(returning: self?.cloudLifecycleTask)
+            }
+        }
+        await task?.value
+    }
+
+    func cloudLifecycleStateForTesting(
+        bridge expected: CloudAppBridge?
+    ) async -> (bridgeMatches: Bool, generation: UInt64) {
+        await withCheckedContinuation { continuation in
+            queue.async { [weak self, weak expected] in
+                guard let self else {
+                    continuation.resume(returning: (expected == nil, 0))
+                    return
+                }
+                let matches = (expected == nil && self.cloudBridge == nil)
+                    || (expected != nil && self.cloudBridge === expected)
+                continuation.resume(returning: (matches, self.cloudLifecycleGeneration))
+            }
+        }
+    }
+
+    private func cloudBridgeIsCurrent(_ bridge: CloudAppBridge, generation: UInt64) async -> Bool {
+        await withCheckedContinuation { continuation in
+            queue.async { [weak self] in
+                continuation.resume(returning:
+                    self?.cloudLifecycleGeneration == generation && self?.cloudBridge === bridge
+                )
+            }
+        }
+    }
+
+    /// A relay-ready generation is authoritative evidence that relay memory may be fresh. Build
+    /// both full snapshots on the main thread, then re-check lifecycle ownership before enqueueing
+    /// them so a stale bridge cannot publish after detach or replacement.
+    private func cloudTransportBecameReady(
+        _ bridge: CloudAppBridge, lifecycleGeneration: UInt64, transportGeneration: UInt64
+    ) {
+        if let supplied = Self.cloudSnapshotDataForTesting {
+            enqueueCloudReadySnapshots(
+                supplied.sessions, orchestrator: supplied.orchestrator, bridge: bridge,
+                lifecycleGeneration: lifecycleGeneration,
+                transportGeneration: transportGeneration
+            )
+            return
+        }
+        DispatchQueue.main.async { [weak self, weak bridge] in
+            guard let self, let bridge else { return }
+            let sessions = try? JSONSerialization.data(
+                withJSONObject: self.sessionsPayload(), options: [.withoutEscapingSlashes]
+            )
+            let orchestrator = try? JSONSerialization.data(withJSONObject: [
+                "tasks": Orchestrator.records(), "at": Int(Date().timeIntervalSince1970),
+            ], options: [.withoutEscapingSlashes])
+            guard let sessions, let orchestrator else { return }
+            self.enqueueCloudReadySnapshots(
+                sessions, orchestrator: orchestrator, bridge: bridge,
+                lifecycleGeneration: lifecycleGeneration,
+                transportGeneration: transportGeneration
+            )
+        }
+    }
+
+    private func enqueueCloudReadySnapshots(
+        _ sessions: Data, orchestrator: Data, bridge: CloudAppBridge,
+        lifecycleGeneration: UInt64, transportGeneration: UInt64
+    ) {
+        queue.async { [weak self, weak bridge] in
+            guard let self, let bridge,
+                  self.cloudLifecycleGeneration == lifecycleGeneration,
+                  self.cloudBridge === bridge
+            else { return }
+            _ = transportGeneration
+            self.enqueueCloudPublication {
+                try await bridge.publishSessions(sessions)
+            }
+            self.enqueueCloudPublication {
+                try await bridge.publishOrchestrator(orchestrator)
+            }
+        }
+    }
+
     // MARK: - Lifecycle
 
     var isRunning: Bool { listener != nil }
@@ -199,7 +420,7 @@ final class RemoteServer {
 
         // One observer for every stream there will ever be. Registering per client would mean a
         // reading fanned out by the watch to N closures that all do the same work.
-        SessionWatch.shared.observers["remote"] = { [weak self] in self?.broadcast() }
+        syncSnapshotObserver()
     }
 
     /// Bring every paired device in line with the one switch.
@@ -215,13 +436,21 @@ final class RemoteServer {
     }
 
     func stop() {
-        SessionWatch.shared.observers.removeValue(forKey: "remote")
         listener?.cancel()
         listener = nil
+        syncSnapshotObserver()
         queue.async { [weak self] in
             guard let self else { return }
             for stream in self.streams.values { stream.connection.cancel() }
             self.streams.removeAll()
+        }
+    }
+
+    private func syncSnapshotObserver() {
+        if isRunning || cloudAttached {
+            SessionWatch.shared.observers["remote"] = { [weak self] in self?.broadcast() }
+        } else {
+            SessionWatch.shared.observers.removeValue(forKey: "remote")
         }
     }
 
@@ -1091,6 +1320,36 @@ final class RemoteServer {
                                                                    states: watch.states),
                           "at": Int(Date().timeIntervalSince1970)])
 
+        // A root's explicit end-of-turn receipt. The path names the terminal-neutral id already
+        // published by the GET above; every process/conversation fact is resolved here from the
+        // live target, never trusted from the request body. It is a single-check delivery claim,
+        // not the broker-verified landing that produces work_complete.
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/sessions/")
+            && path.hasSuffix("/complete"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Reporting root delivery needs the orchestrator token.")
+            }
+            let encoded = String(path.dropFirst("/v1/orchestrator/sessions/".count)
+                .dropLast("/complete".count))
+            let id = encoded.removingPercentEncoding ?? encoded
+            guard !id.isEmpty, !id.contains("/") else {
+                return .error(400, "bad_request", "The route must name one session id.")
+            }
+            guard let target = self.session(withID: id), target.isAssistant else {
+                return .error(404, "session_not_found", "No current assistant session named \(id).")
+            }
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            guard Set(body.keys) == Set(["summary"]), body["summary"] is String else {
+                return .error(400, "bad_request", "The body must contain only string summary.")
+            }
+            let reply = Orchestrator.reportSessionDelivery(
+                identity: Self.sessionWorkIdentity(target), terminalState: self.state(of: id),
+                summary: body["summary"] as? String ?? "")
+            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+            return answer(reply)
+
         // What this Mac can say about each assistant's own account-level quota — one read of two
         // small local files, 5-second cached, and deliberately *not* behind `readingDepth`: it
         // has to be cheap enough for `Orchestrator.dispatch()` itself to call synchronously at
@@ -1187,8 +1446,9 @@ final class RemoteServer {
                     dispatchEnabled: Config.shared.orchestratorEnabled))
             }
 
-        // One schedule, in full, including the task template the list leaves out — see
-        // `Orchestrator.scheduleRecord(id:now:)`. Read-level, like the list it came from.
+        // One schedule, in full, including the task template and retained run history the list
+        // leaves out — see `Orchestrator.scheduleRecord(id:now:)`. Read-level, like the list it
+        // came from.
         case ("GET", let path) where path.hasPrefix("/v1/orchestrator/schedules/"):
             let id = String(path.dropFirst("/v1/orchestrator/schedules/".count))
             guard let record = Orchestrator.scheduleRecord(id: id.removingPercentEncoding ?? id)
@@ -1369,6 +1629,77 @@ final class RemoteServer {
                 }
                 SessionWatch.shared.nudge()
                 return .json(["ok": true])
+            }
+
+        case ("POST", let path) where path.hasSuffix("/title")
+            && path.hasPrefix("/v1/sessions/"):
+            let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/title".count))
+            return writing(request) { body in
+                guard let raw = body["title"] as? String else {
+                    return .error(400, "bad_request", "title must be a string.")
+                }
+                let title = Config.normalizedSessionTitle(raw)
+                guard title?.count ?? 0 <= Config.sessionTitleLimit else {
+                    return .error(400, "bad_request",
+                                  "title must be at most \(Config.sessionTitleLimit) characters.")
+                }
+                guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
+                    return .error(404, "not_found", "No session named that")
+                }
+
+                let config = Config.shared
+                _ = config.setSessionTitle(raw, for: session)
+                // The answer says whether the name is durable, because that is the promise the
+                // rest of this route is built on: a busy Claude is deliberately not queued for a
+                // later `/rename`, and the reason given is that the local name survives anyway.
+                // A failed write still leaves the name in memory and on every surface that draws
+                // one, so this is a 200 that tells the truth rather than a 500 that undoes what
+                // the person can already see.
+                let durable = config.save()
+
+                let state: SessionState = Thread.isMainThread
+                    ? (SessionWatch.shared.states[session.id] ?? .unknown)
+                    : DispatchQueue.main.sync {
+                        SessionWatch.shared.states[session.id] ?? .unknown
+                    }
+                let action = SessionTitleSync.confirmed(
+                    SessionTitleSync.action(
+                        assistant: session.assistant, state: state, clearing: title == nil,
+                        codexThreadID: CodexNaming.shared.threadID(for: session)),
+                    showingMenu: { Targets.isChoosing(session) })
+                var downstream = "local_only"
+                var synced = false
+                switch action {
+                case .localOnly:
+                    // Clearing has to reach Codex's display cache as well, or it clears nothing
+                    // there: the name a person typed was remembered on the way in and
+                    // `displayLabel` would go on finding it. The thread keeps that name — see
+                    // `CodexNaming.forget(target:)` and `docs/api.md`.
+                    if title == nil { CodexNaming.shared.forget(target: session) }
+                case .busy:
+                    downstream = "busy"
+                case .unavailable:
+                    downstream = "unavailable"
+                case .renameClaude:
+                    if let failure = Targets.send("/rename \(title ?? "")", to: session) {
+                        downstream = "failed"
+                        Log.write("session title: Claude rename failed — \(failure)")
+                    } else {
+                        downstream = "synced"
+                        synced = true
+                    }
+                case .renameCodex(let threadID):
+                    CodexNaming.shared.name(title ?? "", thread: threadID, target: session,
+                                            replacingExisting: true)
+                    downstream = "queued"
+                }
+                RemoteAuth.audit("session.title", ["id": session.id,
+                                                    "cleared": title == nil ? "1" : "0",
+                                                    "downstream": downstream])
+                DispatchQueue.main.async { SessionWatch.shared.labelsDidChange() }
+                return .json(["ok": true, "title": title ?? "",
+                              "display_title": session.displayLabel, "local_applied": durable,
+                              "downstream": downstream, "downstream_synced": synced])
             }
 
         // Stopping one of a session's background commands.
@@ -1584,7 +1915,13 @@ final class RemoteServer {
     }
 
     private func permission(for request: Request) -> RemoteAuth.Verdict {
-        RemoteAuth.verify(bearer: bearer(request))
+        if case .verifiedCloud(let sender) = request.source {
+            // CloudTransport already verified this sender against the locally pinned device key,
+            // decrypted it, and replay-checked its sequence. This is an in-process source only;
+            // the HTTP parser cannot construct it.
+            return .allowed(device: "cloud:\(sender)", caps: [.read, .send])
+        }
+        return RemoteAuth.verify(bearer: bearer(request))
     }
 
     /// The two refusals that come before authentication, because they are about a browser being
@@ -1603,6 +1940,7 @@ final class RemoteServer {
     /// **`Sec-Fetch-Site`** is the modern browser saying, unforgeably, that the page asking is on
     /// a different site. Absent for anything that is not a browser, so a script is unaffected.
     func crossOriginRefusal(_ request: Request) -> Response? {
+        if case .verifiedCloud = request.source { return nil }
         if Self.isCrossSiteSubresource(request.headers) {
             return .error(403, "forbidden", "Cross-site requests are not answered.")
         }
@@ -1692,6 +2030,7 @@ final class RemoteServer {
     /// that never reaches `dispatch`: dictation is taken a step earlier, and a write that answered
     /// without this check would be a hole in exactly the shape this closes.
     func writeOriginRefusal(_ request: Request) -> Response? {
+        if case .verifiedCloud = request.source { return nil }
         guard request.method != "GET", let origin = request.headers["origin"], !isOurs(origin)
         else { return nil }
         return .error(403, "forbidden", "That request did not come from this page.")
@@ -1873,6 +2212,10 @@ final class RemoteServer {
                                   + "whichever option is highlighted rather than typing. "
                                   + "Answer it with POST /v1/sessions/<id>/key.")
             } else {
+                // This timestamp shares the transcript row's Mac clock and is captured before the
+                // terminal handoff. The row may be visible while a slow osascript round trip is
+                // still running; a completion-only timestamp would put it outside reconciliation.
+                let acceptedAt = Int(Date().timeIntervalSince1970)
                 let problem: String?
                 if let pieces {
                     problem = Targets.send(pieces, to: session)
@@ -1887,7 +2230,8 @@ final class RemoteServer {
                                                    "images": "\(images.count)",
                                                    "ok": problem == nil ? "1" : "0"])
                 response = problem.map { Self.terminalFailure($0, backend: session.backend) }
-                    ?? .json(["ok": true, "at": Int(Date().timeIntervalSince1970)])
+                    ?? .json(["ok": true, "accepted_at": acceptedAt,
+                              "at": Int(Date().timeIntervalSince1970)])
             }
 
             self.queue.async {
@@ -2087,11 +2431,13 @@ final class RemoteServer {
     /// Asked on the server's own queue and nowhere else — it only reads, but what it reads is
     /// written by `remember` on that queue, and that is the whole of the locking here.
     private func writeGate(_ request: Request) -> WriteGate {
-        guard Config.shared.remoteWrite else {
-            return .refused(.error(403, "write_disabled",
-                                   "Sending is switched off. Settings → Remote turns it on, and it "
-                                   + "is off by default because typing into a session runs code on "
-                                   + "this Mac."))
+        if case .http = request.source {
+            guard Config.shared.remoteWrite else {
+                return .refused(.error(403, "write_disabled",
+                                       "Sending is switched off. Settings → Remote turns it on, and it "
+                                       + "is off by default because typing into a session runs code on "
+                                       + "this Mac."))
+            }
         }
         guard case .allowed(let device, let caps) = permission(for: request), caps.contains(.send) else {
             return .refused(.error(403, "forbidden", "This device may read, and not send."))
@@ -2985,7 +3331,7 @@ final class RemoteServer {
         let permission = session.assistant == .claude
             ? SessionInfo.permissionMode(screen: Targets.visibleScreen(of: session)) : nil
         var payload = SessionInfo.payload(
-            id: session.id, assistant: session.assistant,
+            id: session.id, title: session.displayLabel, assistant: session.assistant,
             sessionId: Self.sessionIdentity(assistant: session.assistant,
                                             processBound: Transcript.sessionID(of: session)),
             model: model,
@@ -3191,6 +3537,13 @@ final class RemoteServer {
         if Thread.isMainThread { return Self.session(withID: id, among: SessionWatch.shared.targets) }
         return DispatchQueue.main.sync {
             Self.session(withID: id, among: SessionWatch.shared.targets)
+        }
+    }
+
+    private func state(of sessionID: String) -> SessionState {
+        if Thread.isMainThread { return SessionWatch.shared.states[sessionID] ?? .unknown }
+        return DispatchQueue.main.sync {
+            SessionWatch.shared.states[sessionID] ?? .unknown
         }
     }
 
@@ -3499,6 +3852,9 @@ final class RemoteServer {
             var row: [String: Any] = ["role": name(of: entry.kind), "text": entry.text]
             if let tool = entry.tool { row["tool"] = tool }
             if let time = entry.time { row["at"] = Int(time.timeIntervalSince1970) }
+            // Current user rows are a closed image contract: zero means an authored literal
+            // marker, while omission remains the legacy shape whose marker had to imply images.
+            if entry.kind == .user { row["imageCount"] = entry.imageCount }
             if let source = entry.source, !source.isEmpty { row["source"] = source }
             if let mode = entry.sourceMode, !mode.isEmpty { row["sourceMode"] = mode }
             if let notice = entry.notice {
@@ -4015,6 +4371,12 @@ final class RemoteServer {
         add([
             "webSessionInfo": t.webSessionInfo,
             "webInfoTitle": t.webInfoTitle,
+            "webInfoEditTitle": t.webInfoEditTitle,
+            "webInfoTitleSaved": t.webInfoTitleSaved,
+            "webInfoTitleLocal": t.webInfoTitleLocal,
+            "webInfoTitleQueued": t.webInfoTitleQueued,
+            "webInfoTitleNotDurable": t.webInfoTitleNotDurable,
+            "webInfoTitleCloud": t.webInfoTitleCloud,
             "webInfoSession": t.webInfoSession,
             "webInfoAssistant": t.webInfoAssistant,
             "webInfoModel": t.webInfoModel,
@@ -4063,6 +4425,18 @@ final class RemoteServer {
             "webInfoCopied": t.webInfoCopied,
             "webInfoAsOf": t.webInfoAsOf,
             "webInfoWhyUnknown": t.webInfoWhyUnknown,
+        ])
+
+        // Asking a session to make itself Clawdfather. The browser composes the sentence and
+        // types it through the ordinary send route; only the session can read the orchestrator
+        // token, so only the session performs the registration.
+        add([
+            "webMakeClawdfather": t.webMakeClawdfather,
+            "webClawdfatherIs": t.webClawdfatherIs,
+            "webConfirmClawdfatherTitle": t.webConfirmClawdfatherTitle,
+            "webConfirmClawdfatherSay": t.webConfirmClawdfatherSay,
+            "webClawdfatherAsk": t.webClawdfatherAsk,
+            "webClawdfatherAsked": t.webClawdfatherAsked,
         ])
 
         var response = Response.json(out)
@@ -4475,9 +4849,16 @@ final class RemoteServer {
     /// and only the writing crosses over.
     private func broadcast() {
         let payload = sessionsPayload()
+        let cloudPayload = try? JSONSerialization.data(withJSONObject: payload,
+                                                        options: [.withoutEscapingSlashes])
         queue.async { [weak self] in
-            guard let self, !self.streams.isEmpty else { return }
+            guard let self else { return }
             for stream in self.streams.values { self.write(event: "sessions", data: payload, to: stream) }
+            if let bridge = self.cloudBridge, let cloudPayload {
+                self.enqueueCloudPublication {
+                    try await bridge.publishSessions(cloudPayload)
+                }
+            }
         }
     }
 
@@ -4486,10 +4867,34 @@ final class RemoteServer {
     func broadcastOrchestrator() {
         let payload: [String: Any] = ["tasks": Orchestrator.records(),
                                       "at": Int(Date().timeIntervalSince1970)]
+        let cloudPayload = try? JSONSerialization.data(withJSONObject: payload,
+                                                        options: [.withoutEscapingSlashes])
         queue.async { [weak self] in
-            guard let self, !self.streams.isEmpty else { return }
+            guard let self else { return }
             for stream in self.streams.values {
                 self.write(event: "orchestrator", data: payload, to: stream)
+            }
+            if let bridge = self.cloudBridge, let cloudPayload {
+                self.enqueueCloudPublication {
+                    try await bridge.publishOrchestrator(cloudPayload)
+                }
+            }
+        }
+    }
+
+    /// Preserve observation order before calls cross into the bridge actor. Full snapshots make
+    /// reconnect replay unnecessary, but an older reading must not acquire a newer sequence.
+    private func enqueueCloudPublication(_ work: @escaping @Sendable () async throws -> Void) {
+        let previous = cloudPublishTail
+        cloudPublishTail = Task {
+            await withTaskCancellationHandler {
+                await previous?.value
+                guard !Task.isCancelled else { return }
+                try? await work()
+            } onCancel: {
+                // The tail owns the complete serial chain. Cancelling it recursively wakes queued
+                // predecessors, while bridge.stop() cancels and joins work already past entry.
+                previous?.cancel()
             }
         }
     }
@@ -4515,12 +4920,42 @@ final class RemoteServer {
 extension RemoteServer {
 
     struct Request {
+        enum Source {
+            case http
+            case verifiedCloud(sender: String)
+        }
+
+        var source: Source = .http
         var method = "GET"
         var path = "/"
         var query: [String: String] = [:]
         var headers: [String: String] = [:]
         var contentLength = 0
         var body: Data = Data()
+
+        /// There is deliberately no header spelling for this initializer. Only the in-process
+        /// CloudAppBridge can name a verified-cloud source.
+        init(verifiedCloud command: CloudHeadlessCommand, sender: String,
+             idempotencyKey: String) {
+            source = .verifiedCloud(sender: sender)
+            method = "POST"
+            headers = ["idempotency-key": idempotencyKey]
+            let segment: String
+            let object: [String: Any]
+            switch command {
+            case .send(let session, let text, let images):
+                segment = CloudAppBridge.channelSegment(session)
+                path = "/v1/sessions/\(segment)/send"
+                object = ["text": text, "images": images]
+            case .answer(let session, let key):
+                segment = CloudAppBridge.channelSegment(session)
+                path = "/v1/sessions/\(segment)/key"
+                object = ["key": key]
+            }
+            body = (try? JSONSerialization.data(withJSONObject: object,
+                                                 options: [.withoutEscapingSlashes])) ?? Data()
+            contentLength = body.count
+        }
 
         /// Parse a request head. Deliberately strict about the shape and uninterested in most of
         /// it: this answers a fixed list of routes and has no business being a general parser.

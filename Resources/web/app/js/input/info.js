@@ -37,6 +37,8 @@ export var Info = (function () {
     var pending = null;  // the word sent after `/model`, until the transcript names that model
     var permissionPending = null; // the mode requested, until a fresh screen capture agrees
     var busy = false;    // a model command or permission key sequence on its way to the Mac
+    var editingTitle = false;
+    var titleDraft = "";
     var stateSeen = "";  // the session's state at the last draw, so a change redraws the buttons
     var confirming = 0;  // the timer reading back, waiting for a sent `/model` to turn up
     var permissionConfirming = 0;
@@ -122,6 +124,13 @@ export var Info = (function () {
 
     function hero(s, u) {
         var model = s.model || (u && u.model) || "";
+        // The model used to be the headline, which meant the one identity the Session list was
+        // built around disappeared as soon as this card opened. Keep old servers readable by
+        // falling back to their model, but a current payload gives the complete, unabridged
+        // Session title this prominent place and keeps the model beside the assistant.
+        var title = s.title || model || T.webInfoUnknown;
+        var modelMeta = s.title && model
+            ? '<span class="dot">·</span><span class="model-name">' + esc(model) + "</span>" : "";
         var meta = [];
         if (s.cwd) meta.push('<span title="' + esc(T.webInfoDirectory) + '">' + esc(shortPath(s.cwd)) + "</span>");
         if (s.sessionId) {
@@ -131,9 +140,24 @@ export var Info = (function () {
         if (typeof s.seconds === "number") {
             meta.push('<span title="' + esc(T.webInfoRunningFor) + '">' + esc(span(s.seconds)) + "</span>");
         }
+        var headline = editingTitle
+            ? '<form class="title-editor" data-title-form="1"><input name="title" type="text" maxlength="200"' +
+                ' value="' + esc(titleDraft) + '" aria-label="' + esc(T.webInfoEditTitle) + '"' +
+                (busy || !S.write ? " disabled" : "") + '><span class="title-actions">' +
+                '<button type="submit" class="chip"' + (busy || !S.write ? " disabled" : "") + '>' +
+                esc(T.webScheduleSave) + '</button><button type="button" class="chip quiet" data-title-cancel="1"' +
+                (busy ? " disabled" : "") + '>' + esc(T.webCancel) + '</button></span></form>'
+            // `title`, not `aria-label`. An `aria-label` here *replaces* the accessible name, so
+            // the headline of this card — the one thing it is about — stopped being readable at
+            // all and a screen reader announced only "Edit session title". As a `title` the same
+            // words arrive as the button's description, after the session's own name.
+            : '<button type="button" class="session-title" data-title-edit="1" title="' +
+                esc(T.webInfoEditTitle) + '"' + (!S.write || busy ? " disabled" : "") + '><span>' +
+                esc(title) + '</span><i aria-hidden="true">✎</i></button>';
         return '<div class="hero">' +
-            '<div class="who">' + assistantLogo(s.assistant) + "<span>" + esc(s.assistant || T.webInfoUnknown) + "</span></div>" +
-            '<div class="model">' + esc(model || T.webInfoUnknown) + "</div>" +
+            '<div class="who">' + assistantLogo(s.assistant) + '<span class="assistant-name">' +
+                esc(s.assistant || T.webInfoUnknown) + "</span>" + modelMeta + "</div>" +
+            headline +
             '<div class="meta">' + meta.join('<span class="dot">·</span>') + "</div>" +
             "</div>";
     }
@@ -304,10 +328,18 @@ export var Info = (function () {
         stateSeen = s ? s.state : "";
         say(loading && !data ? T.webLoading : "");
         // A redraw under somebody's fingers keeps what they had typed and where the caret was.
+        // Both boxes, and not only the model one: `follow()` redraws whenever the shared facts
+        // change or the session changes state, which is exactly what happens while somebody is
+        // slowly typing a title on a phone — and the title box is rebuilt from `titleDraft`, so
+        // without this it snaps back to the value the editor opened with.
         var box = els["info-body"];
         var typed = box.querySelector(".other input");
         var kept = typed ? typed.value : "";
         var focused = !!typed && document.activeElement === typed;
+        var titleBox = box.querySelector(".title-editor input");
+        var keptTitle = titleBox ? titleBox.value : null;
+        var titleFocused = !!titleBox && document.activeElement === titleBox;
+        var titleCaret = titleFocused ? titleBox.selectionStart : null;
         var again = drawn;
         box.classList.toggle("again", again);
         box.innerHTML = data ? html(data) : "";
@@ -316,6 +348,15 @@ export var Info = (function () {
         typed = box.querySelector(".other input");
         if (typed && kept) typed.value = kept;
         if (typed && focused && !typed.disabled) typed.focus({ preventScroll: true });
+        titleBox = box.querySelector(".title-editor input");
+        if (titleBox && keptTitle !== null) {
+            titleBox.value = keptTitle;
+            titleDraft = keptTitle;
+        }
+        if (titleBox && titleFocused && !titleBox.disabled) {
+            titleBox.focus({ preventScroll: true });
+            if (titleCaret !== null) titleBox.setSelectionRange(titleCaret, titleCaret);
+        }
         // The bars grow from nothing to their number the first time: laid out once at nothing
         // (the read of `offsetWidth` is what forces that), then given the number, so the
         // transition has somewhere to start. Not on a frame callback — a tab in the background
@@ -422,6 +463,8 @@ export var Info = (function () {
             pending = null;
             permissionPending = null;
             busy = false;
+            editingTitle = false;
+            titleDraft = "";
             clearTimeout(confirming);
             clearTimeout(permissionConfirming);
             said("");
@@ -446,6 +489,8 @@ export var Info = (function () {
             pending = null;
             permissionPending = null;
             busy = false;
+            editingTitle = false;
+            titleDraft = "";
             clearTimeout(confirming);
             clearTimeout(permissionConfirming);
         },
@@ -519,6 +564,56 @@ export var Info = (function () {
             });
         },
 
+        editTitle: function () {
+            if (!S.write || busy || !data || !data.session) return;
+            editingTitle = true;
+            titleDraft = data.session.title || "";
+            said("");
+            draw();
+            var input = els["info-body"].querySelector(".title-editor input");
+            if (input) { input.focus({ preventScroll: true }); input.select(); }
+        },
+
+        cancelTitle: function () {
+            if (busy) return;
+            editingTitle = false;
+            titleDraft = "";
+            draw();
+        },
+
+        saveTitle: function (value) {
+            var id = forId;
+            if (!id || !S.write || busy) return;
+            titleDraft = String(value || "");
+            busy = true;
+            said("");
+            draw();
+            api.title(id, titleDraft).then(function (answer) {
+                if (forId !== id) return;
+                busy = false;
+                editingTitle = false;
+                titleDraft = "";
+                if (data && data.session && typeof answer.display_title === "string") {
+                    data.session.title = answer.display_title;
+                }
+                SessionFacts.drop(id);
+                // The durability answer comes first, whatever happened downstream. Everything
+                // else on this card describes a name that survives a restart, and when the Mac
+                // could not write its config that is the one sentence that is no longer true.
+                if (answer.local_applied === false) said(T.webInfoTitleNotDurable, true);
+                else if (answer.downstream === "queued") said(T.webInfoTitleQueued, true);
+                else if (answer.downstream === "busy" || answer.downstream === "unavailable" ||
+                         answer.downstream === "failed") said(T.webInfoTitleLocal, true);
+                else said(T.webInfoTitleSaved, true);
+                draw();
+            }).catch(function (e) {
+                if (forId !== id) return;
+                busy = false;
+                said((e && e.message) || T.webInfoFailed);
+                draw();
+            });
+        },
+
         copy: function (text) {
             if (!text || !navigator.clipboard) return;
             navigator.clipboard.writeText(text).then(function () { toast(T.webInfoCopied); }).catch(function () {});
@@ -537,14 +632,35 @@ els["info-body"].addEventListener("click", function (ev) {
     var permission = t.closest ? t.closest("button[data-permission]") : null;
     if (permission) { if (!permission.disabled) Info.switchPermission(permission.dataset.permission); return; }
     var sid = t.closest ? t.closest("button[data-copy]") : null;
-    if (sid) Info.copy(sid.dataset.copy);
+    if (sid) { Info.copy(sid.dataset.copy); return; }
+    var editTitle = t.closest ? t.closest("button[data-title-edit]") : null;
+    if (editTitle) { if (!editTitle.disabled) Info.editTitle(); return; }
+    var cancelTitle = t.closest ? t.closest("button[data-title-cancel]") : null;
+    if (cancelTitle) Info.cancelTitle();
 });
 els["info-body"].addEventListener("submit", function (ev) {
     var form = ev.target;
+    if (form && form.dataset && form.dataset.titleForm) {
+        ev.preventDefault();
+        var title = form.querySelector("input[name=title]");
+        Info.saveTitle(title ? title.value : "");
+        return;
+    }
     if (!form || !form.dataset || !form.dataset.other) return;
     ev.preventDefault();
     var input = form.querySelector("input");
     Info.switchTo(input ? input.value : "", "");
+});
+// `stopPropagation`, not just `preventDefault`. The page's one keyboard handler is on `document`
+// (`input/keys.js`), and its Escape branch closes this sheet before it looks at anything else — so
+// without this the press cancels the edit *and* shuts the card, which is the "two things for one
+// press" that file says it is avoiding.
+els["info-body"].addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && ev.target && ev.target.closest(".title-editor")) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        Info.cancelTitle();
+    }
 });
 els["status-line-open"].addEventListener("click", function () { Info.open(); });
 // The counts in this row are the sheet's own summary, so the row is where the sheet is opened

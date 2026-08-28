@@ -9,7 +9,9 @@ import { byId, ordered, projectSessionWorkState, revisionOf, rowDepth, sessionWo
 import { renderDetailHead } from "./transcript.js";
 import { renderAgents, renderComposer, renderWaiting } from "./composer.js";
 import { Optimistic, Waits, drawListSkeleton, listUnknown } from "./waits.js";
-import { closeDetail, loadTranscript, openSession } from "../session/open.js";
+import {
+    closeDetail, observeTranscriptRevision, openSession, rearmTranscriptRevision
+} from "../session/open.js";
 import { agentRow, agentsRev, loadAgent, renderAgentHead } from "../session/agent.js";
 import { SwipeRows } from "../input/swipe.js";
 import { SessionActions } from "../input/detail-actions.js";
@@ -60,8 +62,13 @@ export function onSessions() {
                 setTimeout(function () { node.classList.remove("finished"); }, 1600);
             }
         }
-        if (open && s.id === open.id && (!was || was.rev !== revisionOf(s))) {
-            loadTranscript(s.id, true);
+        if (open && s.id === open.id) {
+            // `handlers.sessions` runs before the first accepted frame marks the connection live.
+            // That one frame is a real reconnect boundary and may open a new bounded failure
+            // burst. Ordinary live frames only observe, so replaying one snapshot cannot loop.
+            var revision = revisionOf(s);
+            if (S.conn === "live") observeTranscriptRevision(s.id, revision, true);
+            else rearmTranscriptRevision(s.id, revision, true);
         }
         // An agent being read has its own reason to refetch, and the session's revision cannot
         // give it: a session sitting between turns with three agents out looks unchanged the
@@ -379,6 +386,7 @@ function fillCoordinatorMark(node, s) {
     var button = node.querySelector(".coordinator-mark");
     var mark = node.querySelector(".mark");
     var badge = node.querySelector(".coordinator-chip");
+    var crown = node.querySelector(".clawdfather-crown");
 
     if (!model) {
         delete node.dataset.coordinator;
@@ -417,6 +425,13 @@ function fillCoordinatorMark(node, s) {
     button.setAttribute("aria-haspopup", model.mark.ariaHaspopup);
     button.setAttribute("aria-label", model.mark.ariaLabel);
     button.title = model.mark.ariaLabel;
+
+    if (!crown) {
+        crown = document.createElement("span");
+        crown.className = "clawdfather-crown";
+        crown.setAttribute("aria-hidden", "true");
+        button.appendChild(crown);
+    }
 
     if (!badge) {
         badge = document.createElement("span");
@@ -600,7 +615,25 @@ function fillRow(node, s) {
     // The server sends exactly one closed work_state. Re-project the safety precedence here so
     // a partial/old frame fails closed to readable triage rather than leaving an ambiguous gap.
     var work = projectSessionWorkState(s);
+    if (work.state === "waiting_session" && !peerSaid) {
+        var liveRoots = roots.filter(taskLive);
+        if (liveRoots.length) {
+            var childWait = T.webTaskTasks + ": " + liveRoots.map(function (task) {
+                return task.title || task.id;
+            }).join(" · ");
+            peerSaid = '<span class="coordination-wait" title="' + esc(childWait) + '">⏳ ' +
+                esc(childWait) + "</span>";
+        }
+    }
     var workSaid = sessionWorkStateHTML(s);
+    // A receipt mark is fast to scan, but it cannot explain whether the child merely delivered
+    // its milestone or the root verified the target landing. Keep the mark's accessible label and
+    // follow it with the same localized receipt in visible text; aria-hidden avoids saying it twice.
+    if (work.state === "milestone_complete" || work.state === "work_complete") {
+        var workCopy = work.state === "work_complete" ? T.sessionWorkComplete : T.sessionWorkMilestone;
+        workSaid += '<span class="session-work-copy" data-work-state="' + work.state +
+            '" aria-hidden="true">' + esc(workCopy) + "</span>";
+    }
     var waitShape = waitingOn.map(function (wait) {
         return [wait.id || "wait", wait.ownerLabel || wait.ownerSessionId || "",
             wait.releaseCondition || ""].join(":");
@@ -610,6 +643,8 @@ function fillRow(node, s) {
         // same bug as the one above, one layer down.
         return ["owed", wait.id || "wait", wait.waiterLabel || wait.waiterSessionId || "",
             wait.releaseCondition || ""].join(":");
+    })).concat(roots.filter(taskLive).map(function (task) {
+        return ["child", task.id || "", task.title || ""].join(":");
     })).join("+");
     var shape = kind + "-" + s.state + "+ws" + work.state + (shells ? "+sh" + shells : "") +
         (waitShape ? "+cw" + waitShape : "");

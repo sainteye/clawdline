@@ -124,6 +124,54 @@ a hundred of them is slower, dearer and unreadable), anything on a path where so
 anything needing agents to talk back and forth, output that has to be structured data a program
 will consume, and **work smaller than its own briefing**.
 
+### 2.0b How big one task is, and when small work goes out
+
+**One task is one coherent, independently reviewable feature slice** — its production change, its
+red-before-green tests, its docs, and its own verification, carried through one sustained session.
+Keep the implementer there until the slice is mature: a discovery or a correction that belongs to
+the same feature goes back into the same session, not into a new tab.
+
+**A slice big enough to dispatch is big enough to lose.** `timeout_minutes` stops at 240, an
+assistant can exhaust its quota mid-task, and a context window can fill. So a long or multi-file
+slice goes out with `isolation: "worktree"`, is told to commit each milestone on its delivery branch
+rather than at the end, and to use `/progress` when the work stops matching its title. Then a child
+that dies in its third hour costs one hour, not four, because the branch still holds the rest.
+
+**Never open a session for one small change.** Small items accumulate in a pool, and the pool goes
+out as one task when any of these is true:
+
+- five items are waiting, or
+- they are together worth more than about thirty minutes, or
+- one of them blocks a landing, or somebody is waiting on it.
+
+With a ceiling so that "accumulate" does not become "never": **no item sits in the pool for more
+than 24 hours.** One task carries the whole batch, `claims` is the union of what the batch writes,
+and the instructions list the items separately so the result can report on each one.
+
+**Standing sessions.** A session may stay open between jobs — an **odd-jobs** session for those
+batches, a **review** session for each finished feature or batch — holding its tab with
+`orchestrator_child_linger: -1` and naming the role in `kind`. But **work reaches a standing session
+only as an attached follow-up task**: a full task record with its own id, secret, `claims`,
+`timeout_minutes` and `result.json`. `POST /v1/sessions/:id/send` is not that. It is the
+paired-device route, it makes no task record, and anything fed through it holds no claims, signals
+no completion, shows up in no `inflight` answer and is counted in no usage. So **without a follow-up
+task carrying `claims`, a standing session must not write to the shared tree at all** — which a
+review session satisfies by construction and an odd-jobs session does not. Until that mechanism has
+landed, the honest approximation is one ordinary task per emptied pool and one per review round; a
+tab you keep alive by typing into it is not a standing session, and do not call it one.
+
+**An interrupted review is handed over, not restarted.** A reviewer that died, timed out or was
+cancelled has usually written part of its finding set already; give that file to whoever picks it
+up. Review is both the most expensive node here and the one most often thrown away — 30 of 101
+review dispatches on this machine never returned a verdict, and one re-review spent 6.7M tokens
+re-reading 1.9M tokens of work somebody had already read.
+
+**And when the reviewer comes back with findings:** it writes the complete finding set down and
+reports it *before* it repairs anything, then repairs only what does not change the design. Once it
+has edited production bytes its verdict is spent — that repair is a delivery, and the focused diff,
+the mutation and the exact-tree acceptance are yours, not its. A design-changing correction goes
+back to the implementer's session instead. Never one task per finding.
+
 ### 2.0a Decide whether the task needs a private worktree
 
 Use `"isolation":"worktree"` for code changes that can be reviewed and landed as a Git branch.
@@ -353,6 +401,17 @@ so "do what we just discussed" says nothing there. Write absolute paths, and nam
 output goes into. **A leaf's instructions should be narrow enough to state in one sentence** — if
 it takes three paragraphs to say what "done" means, that is two children.
 
+**Ask for one `/progress` note in the first three minutes**, saying what it has decided to do now
+that it has read the briefing — before the work, not during it. One line in the instructions buys
+it, and it costs the child one round.
+
+That note is the only thing that makes an early cancellation possible, and the difference is not
+small: the two dearest cancelled tasks measured on this machine burned 18.5M and 16.5M tokens and
+ran twenty-six minutes each before anybody could tell they were going the wrong way. The protocol
+asked for a note only when the work stopped matching its title, which is a signal that arrives
+after the divergence rather than at it. A wrong first sentence is visible at minute three, and it
+is the cheapest thing in this system to correct.
+
 ---
 
 ## 3. Make the directory, the id and the secret
@@ -423,9 +482,19 @@ Field rules (breaking one is `422 bad_task`; the app will not fill anything in f
 | `isolation_base` | optional Git revision, legal only with `isolation: "worktree"`; absent means `HEAD` at actual start time |
 | `plan` | optional but **strongly recommended**: the whole graph, ≤ 4 KiB. Identical across the batch |
 | `timeout_minutes` | 1…240, 30 if absent |
-| `root.session_id` | this assistant's current conversation id, found below; `null` if unavailable — never invented |
+| `root.session_id` | this assistant's current conversation id (preferred) or watched terminal id; `null` if unavailable — never invented |
 | `root.assistant` | **the assistant dispatching this task**, `claude` or `codex`; it is not the child named by top-level `assistant` |
 | `root.parent_task` | **only when you are yourself a child** — the id of your own task, the one in your first message. Root dispatches leave it out. Getting it wrong bills this task to somebody else or counts it as deeper than it is; there is nothing to gain |
+
+**Declaring `claims` costs about twenty output tokens, and most dispatches skip it anyway.**
+Measured across 206 dispatches on this machine: 60.7% declared nothing at all. A collision costs a
+whole task, which on the same record is between three and eighteen million tokens thrown away.
+
+And know the one case `claims` cannot save you from: **repository-relative claims are discarded for
+a worktree-isolated task**, because the child edits a separate checkout. On 2026-08-28 two roots
+dispatched a correction of the same delivery six seconds apart, both isolated, and nothing refused
+either of them — `/inflight` was still empty for both. When you isolate, `/inflight` is the only
+check there is, so read it, and keep the intended write set in the plan so review still has a scope.
 
 **There are two ways to get `claims` wrong and only one of them is loud.** Leaving it out is the
 quiet one: the broker cannot prove your task is disjoint from anybody else's, so it falls back to
@@ -438,6 +507,14 @@ ever touch it, and at terminal state the broker names every claim the task never
 error, pointing the other way — take that report seriously and declare narrower next time.
 
 ### Finding your own assistant and session id (best-effort; `null` if you cannot)
+
+> `root.session_id` prefers the assistant's own conversation id — the Claude transcript uuid or
+> Codex rollout id — but the broker also accepts the watched terminal id. At dispatch it resolves
+> either spelling against `root.assistant` and stores one process-bound conversation key for
+> completion notification, grouping, capacity and close cascade. Always inspect `warnings`: a
+> non-null spelling that matches no live owner returns `root_unresolved`; that child may require
+> polling and must not be assumed to close with its root.
+
 
 **Codex:** its current rollout id is exported directly. Do this in the same shell call that writes
 `task.json` so both variables reach `jq`:
@@ -613,6 +690,41 @@ The dispatching root is the landing owner unless a named root accepts a Clawdlin
 "someone later" is not an owner. Do not give the user a completion answer while the obligation is
 `delivered`, `reviewed`, or `pending landing`.
 
+### Report the root's completed turn
+
+When your own root turn is genuinely complete—including required integration, verification and
+commit—make its last tool action an authenticated session delivery report, then give the user the
+final answer. This is the root equivalent of a child's `result.json`, but deliberately weaker: it
+draws one check, **delivered; awaiting approval**, and can never claim independent review or a
+broker-verified landing.
+
+```bash
+if [ -n "${TMUX_PANE:-}" ]; then
+  ROOT_TERMINAL="$TMUX_PANE"
+elif [[ "${ITERM_SESSION_ID:-}" == *:* ]]; then
+  ROOT_TERMINAL="${ITERM_SESSION_ID##*:}"
+else
+  echo "cannot resolve this root's terminal-neutral Clawdline id" >&2
+  exit 1
+fi
+jq -n --arg summary "$SUMMARY" '{summary:$summary}' \
+  | curl -sS -X POST \
+      "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$ROOT_TERMINAL/complete" \
+      -H "X-Clawdline-Orchestrator: $TOKEN" \
+      -H 'Content-Type: application/json' --data-binary @-
+```
+
+Set `SUMMARY` to one concrete sentence of at most 500 characters before that block. Call it only
+while the final turn is still working. Do not call it for partial work, a diagnosis-only answer, a
+blocker, a question, or from a child. Branch on typed refusals and report one honestly; prose is
+not a substitute for a missing receipt. Clawdline consumes the receipt when this terminal begins
+its next observed turn, so an old check cannot return after newer unreported work.
+
+While a root is idle with a live Clawdline child, the broker projects `waiting_session` and the row
+names the child beside a quiet `⏳`; that is waiting, not triage and not delivery. Root activity
+still reads `working`, and a child finishing removes the wait without completing the root's own
+integration turn.
+
 When claimed child work comes back, root records the open obligation on that task with its task
 secret: `POST /v1/orchestrator/tasks/:id/landing` and `{"state":"pending","target":"<ref>"}`.
 A named root that accepted a handoff may use the machine-level orchestrator token instead, like
@@ -684,21 +796,55 @@ and alone triggers the loud row and push notification.
 Native and web rows quietly show `⏳ owner · release condition`. Use a final-line
 `[Clawdline waiting]` marker only as fallback when that UI is unavailable.
 
-### Keep the communication-protocol Artifact current
+### Becoming Clawdfather, when you are the one asked
 
-The living visual explanation is
-`artifacts/2026-08-26-clawdline-communication-protocol.html`, a standalone Claude Code Artifact with
-`<meta name="artifact:kind" content="state">`. Any change to task dispatch, handoff, claims,
-landing closure, file waits, ownership transfer, structured notices or other cross-session
-communication updates that same file before the protocol work closes. Do not create a dated audit
-beside it as a substitute: `state` means this one Artifact must equal now.
+Nothing can register the machine coordinator for you. The three coordinator routes take the
+orchestrator token only, so the app's **Make this session Clawdfather** item does not call them —
+it types this procedure's instruction into your session over the ordinary send route, and you carry
+it out. The full text with every refusal is in [`docs/orchestrator.md`](../../docs/orchestrator.md);
+this is the short form.
+
+1. **Your own terminal-neutral id** is the UUID after the colon in `$ITERM_SESSION_ID` — the pane,
+   not the conversation. Same line for Codex: `CODEX_THREAD_ID` / `CODEX_SESSION_ID` is the
+   rollout's `session_meta.session_id`, a different value that these routes refuse with
+   `404 session_not_found`. Under tmux the id is a pane id and the environment cannot answer it;
+   read it off `GET /v1/orchestrator/sessions` instead. Either way, confirm it appears in that
+   list before sending it anywhere.
+2. **Read the state first** — `GET /v1/orchestrator/coordinator`, with `$TOKEN` from step 1 of this
+   skill. `coordinator.configured` false means nobody holds it; otherwise `coordinator.status` is
+   `online` or `offline`, and `coordinator.id` and `coordinator.generation` are the pair a
+   reconnect has to quote.
+3. **Nobody configured** → `POST /v1/orchestrator/coordinator/register` with `{"session_id": …}`,
+   one field and no more. `created:false` means you already were it.
+4. **Configured and `offline`** → `POST /v1/orchestrator/coordinator/rebind` with
+   `expected_coordinator_id`, `expected_generation` and `session_id`. The UUID survives a
+   reconnect on purpose, so the generation is the compare-and-swap value. A mismatch means the
+   record moved while you were reading it: go back to step 2 rather than retrying the old numbers.
+5. **Configured, `online`, somebody else** → stop. Registration is never a takeover and the API
+   refuses it (`coordinator_exists`, `coordinator_online`). Report who holds it and leave it there.
+
+Then say what happened. Whoever asked is usually watching another window, and "already held by the
+session in that other checkout" is as much of an answer as "registered".
+
+### Keep the protocol page current, and know which audience you are writing for
+
+**Documents split by audience, and the split decides where they live.** A repository's `docs/` is
+what the community gets: English, written from the outside, tracked in git, safe for a test to
+depend on. A private working document — an audit, a research page, a plan in the person's own
+language — belongs wherever that project keeps internal material, and nothing in a public suite may
+depend on it. Moving one across is a rewrite, not a copy.
+
+In this repository the living page is `docs/clawdline-protocol.html`. Any change to task dispatch,
+handoff, claims, landing closure, file waits, ownership transfer, structured notices or other
+cross-session communication updates it before the protocol work closes. It is not a dated audit and
+there is no dated audit beside it: it must equal now.
 
 Have a Claude Code session read the complete authoritative protocol rather than paraphrasing the
-current conversation. It updates the diagrams, state labels, source links and the human checklist,
-then root opens or otherwise inspects the standalone HTML and verifies every claimed transition
-against `AGENTS.md`, `docs/orchestrator.md`, `docs/api.md`, `docs/handoff.md`, this skill and the
-machine's dispatch policy. If those sources changed and the Artifact did not, the landing
-obligation remains pending.
+current conversation. It updates the diagrams, state labels, source links and the checklist, then
+root inspects the standalone HTML and verifies every claimed transition against `AGENTS.md`,
+`docs/dispatching.md`, `docs/landing.md`, `docs/orchestrator.md`, `docs/api.md`, `docs/handoff.md`,
+this skill and the machine's dispatch policy. If those sources changed and the page did not, the
+landing obligation remains pending.
 
 If this root must stop before step 5, make a Clawdline handoff rather than dropping the obligation.
 Its `CURRENT STATE`, `OPEN THREADS` and `IMMEDIATE NEXT STEP` must name the delivery branch, base and
@@ -923,9 +1069,10 @@ hand-written SVG instead — see §2.5.
 - **File waiters are Clawdline relationships.** Request and release through Clawdline session ids,
   notify every waiter when paths are released, and revalidate after notification. Never make this
   safety protocol depend on Claude Code or Codex messaging.
-- **The protocol Artifact is part of the protocol.** Any communication-semantics change updates
-  `artifacts/2026-08-26-clawdline-communication-protocol.html` through Claude Code and verifies it
-  against every authoritative source before completion.
+- **The protocol page is part of the protocol.** Any communication-semantics change updates the
+  repository's public protocol page — `docs/clawdline-protocol.html` here — and verifies it against
+  every authoritative source before completion. A private working document is not a substitute: it
+  is the tracked, English one that anybody can check.
 - **Assume anything new in the working tree is not the child's.** Several sessions usually share
   one checkout on this Mac, and they are editing and committing too. If `git status` grows a few
   files after you dispatch, or `git log` grows an entry, **that is not the child's report card**.

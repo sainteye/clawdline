@@ -288,6 +288,26 @@ as `orchestrator.schedule.skipped` with `why=removed`.
 The audit lines are `orchestrator.schedule.updated` and `orchestrator.schedule.deleted`, written
 whichever way each goes.
 
+## Runs are conversations too
+
+`GET /v1/orchestrator/schedules/:id` carries the retained tasks created from that schedule under
+`runs`, newest first. A run names its state, timestamps, assistant, project and optional summary.
+While its terminal is still present, the Web interface opens that existing Session instead of
+starting a second process. After the tab has gone, a terminal run is resumable only when its
+assistant transcript or rollout still exists and Clawdline has proved that conversation belongs to
+that exact task; only then does the detail response include `session_id`.
+
+Scheduled children remain absent from the ordinary project-history picker — they are still broker
+plumbing there. The existing place resume route accepts this narrow second source only when the
+retained task is terminal and its schedule marker, project, assistant, child conversation and
+transcript ownership all agree. Resuming starts an ordinary interactive Session in the schedule's
+original project. It does not create a new scheduled run and does not affect the schedule's active
+occurrence arbitration.
+
+The task registry is machine-wide and keeps its newest 200 records. When that boundary has been
+reached, the detail response says `runs_may_be_truncated: true`; the Web sheet says older runs may
+not be listed rather than presenting the retained tail as complete history.
+
 ## The minute that actually fires
 
 Clawdline checks once a minute. The first check after wake naturally sees the most recent scheduled

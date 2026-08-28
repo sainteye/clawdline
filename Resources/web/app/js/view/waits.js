@@ -7,6 +7,7 @@ import { render, renderList } from "./list.js";
 import { renderTranscript } from "./transcript.js";
 import { ActionConfirm } from "../input/action-confirm.js";
 import { Start } from "../input/start.js";
+import { knownOccurrences, matchesOptimistic, optimisticKey } from "./optimistic-data.js";
 
 /* ---- waiting on the network ---------------------------------------------- */
 
@@ -96,9 +97,10 @@ export var Waits = {
  * letting the next transcript fetch speak for itself.
  */
 export var Optimistic = {
-    add: function (id, text, imageCount, known) {
+    add: function (id, text, imageCount, known, sentAt) {
         var entry = {
-            role: "user", text: text, at: Math.floor(Date.now() / 1000),
+            role: "user", text: text,
+            at: Number(sentAt) > 0 ? Math.floor(Number(sentAt)) : Math.floor(Date.now() / 1000),
             pending: true, imageCount: imageCount || 0, token: uuid(), wait: null,
             known: known || this.known(S.tx.id === id ? S.tx.entries : [])
         };
@@ -112,28 +114,15 @@ export var Optimistic = {
     entries: function (id) { return optimisticBySession[id] || []; },
 
     key: function (entry) {
-        return String(entry.at || 0) + "\u0001" + String(entry.text == null ? "" : entry.text);
+        return optimisticKey(entry);
     },
 
     known: function (entries) {
-        var self = this, found = {};
-        entries.forEach(function (entry) {
-            if (!entry || entry.role !== "user") return;
-            var key = self.key(entry);
-            found[key] = (found[key] || 0) + 1;
-        });
-        return found;
+        return knownOccurrences(entries);
     },
 
     matches: function (pending, actual) {
-        if (!actual || actual.role !== "user") return false;
-        var at = Number(actual.at || 0);
-        if (!at || at < pending.at - 10 || at > pending.at + 10 * 60) return false;
-        var text = String(actual.text == null ? "" : actual.text);
-        if (!pending.imageCount) return text === pending.text;
-        var marks = text.match(/\[Image #\d+\]/g) || [];
-        if (marks.length !== pending.imageCount) return false;
-        return text.replace(/\[Image #\d+\]\s*/g, "").trim() === pending.text;
+        return matchesOptimistic(pending, actual);
     },
 
     reconcile: function (id, actual) {

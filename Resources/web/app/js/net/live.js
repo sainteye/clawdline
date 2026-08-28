@@ -264,6 +264,17 @@ export var LocalClient = {
                          post(body, { "Idempotency-Key": uuid() }));
     },
 
+    /// Give this session a local display name, or clear it with an empty string.
+    ///
+    /// A write like `send` and behind the same switch, and keyed for the same reason: a retry of
+    /// *this* request must not be a second rename. What comes back says both halves separately —
+    /// `local_applied` for the durable Clawdline name, `downstream` for what happened to the
+    /// assistant's own.
+    title: function (id, title) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/title",
+                         post({ title: title }, { "Idempotency-Key": uuid() }));
+    },
+
     /// Answer a menu with the keystroke it is numbered with.
     ///
     /// **Not `send`.** Claude Code's picker discards a bracketed paste and acts on the Return
@@ -369,8 +380,9 @@ export var LocalClient = {
     /// Pick one of them back up. **Both ids are in the path** — the same shape as `startPlace`
     /// and for the same reason: there is no body on this route either, so there is nothing this
     /// page could send that would widen what gets run. The conversation is checked at the Mac
-    /// for being a UUID *and* for being one it just listed for that directory; anything else is
-    /// a 404 there rather than a string on a command line.
+    /// for being a UUID *and* for being either one it just listed for that directory or the proven
+    /// child conversation in a terminal schedule run that its detail route disclosed. Anything
+    /// else is a 404 there rather than a string on a command line.
     resumePlace: function (id, session, assistant) {
         var path = "/v1/places/" + encodeURIComponent(id) + "/resume/";
         if (assistant) path += encodeURIComponent(assistant) + "/";

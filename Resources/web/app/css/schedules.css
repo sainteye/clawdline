@@ -147,10 +147,140 @@
     overflow-wrap: anywhere;
 }
 
+/* A schedule as a timeline of sessions. It is deliberately a separate sheet from the editor:
+   opening history is read-only, while Edit is an explicit second press before any writable form
+   appears. The run list scrolls inside the card so its Close button remains reachable on a phone. */
+.schedule-history-sheet {
+    width: min(500px, 100%);
+    max-height: min(720px, calc(100vh - 28px));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.schedule-history-head {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding-bottom: 13px;
+    border-bottom: 1px solid var(--line);
+}
+.schedule-history-heading { min-width: 0; flex: 1 1 auto; }
+.schedule-history-heading h2 {
+    margin: 0;
+    color: var(--ink);
+    font: 600 19px/1.2 var(--ui);
+    overflow-wrap: anywhere;
+}
+.schedule-history-heading p {
+    margin: 5px 0 0;
+    color: var(--faint);
+    font: 10.5px/1.35 var(--mono);
+    overflow-wrap: anywhere;
+}
+.schedule-history-head > .chip { flex: 0 0 auto; }
+.schedule-history-sheet > .said {
+    min-height: 18px;
+    margin: 9px 0 0;
+    color: var(--bad);
+    font-size: 11px;
+}
+.schedule-history-sheet h3 {
+    margin: 8px 0 7px;
+    color: var(--dim);
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.07em; text-transform: uppercase;
+}
+.schedule-run-rows {
+    min-height: 0;
+    margin: 0; padding: 0;
+    overflow-y: auto;
+    list-style: none;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--card);
+}
+.schedule-run + .schedule-run { border-top: 1px solid var(--line); }
+.schedule-run-button {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 4px 9px;
+    padding: 11px 12px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    text-align: left;
+}
+.schedule-run-button:not([disabled]):hover { background: var(--card-hi); }
+.schedule-run-button[disabled] { opacity: 0.62; cursor: default; }
+.schedule-run-state {
+    padding: 2px 6px;
+    border: 1px solid var(--line); border-radius: 6px;
+    color: var(--faint);
+    font: 9.5px/1.2 var(--mono);
+    text-transform: lowercase;
+}
+.schedule-run-state[data-state="success"] { color: var(--ok); border-color: rgba(95, 158, 115, 0.32); }
+.schedule-run-state[data-state="failure"],
+.schedule-run-state[data-state="timeout"],
+.schedule-run-state[data-state="cancelled"],
+.schedule-run-state[data-state="spawn_failed"] { color: var(--bad); border-color: rgba(163, 86, 74, 0.42); }
+.schedule-run-time {
+    min-width: 0;
+    align-self: center;
+    color: var(--dim);
+    font: 10.5px/1.25 var(--mono);
+}
+.schedule-run-summary {
+    grid-column: 1 / -1;
+    /* This sheet is a picker, not a place to read a report. Two lines are enough to tell one
+       occurrence from another, and the rest of the summary would push the older runs off a
+       phone screen; the whole text stays in the title and in the conversation the row opens. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 12px; line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+.schedule-run-meta {
+    grid-column: 1 / 3;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--faint);
+    font: 10px/1.25 var(--mono);
+}
+.schedule-run-action {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
+    color: var(--accent);
+    font-size: 10.5px;
+    white-space: nowrap;
+}
+.schedule-run-button[disabled] .schedule-run-action { color: var(--faint); }
+.schedule-history-empty, .schedule-history-capped {
+    margin: 10px 1px 0;
+    color: var(--faint);
+    font-size: 11px; line-height: 1.4;
+}
+.schedule-history-capped { color: var(--warn); }
+.schedule-history-sheet > .buttons {
+    flex: 0 0 auto;
+    display: flex; justify-content: flex-end;
+    margin-top: 14px;
+}
+
 @media (max-width: 899px) {
     .schedules { margin-top: 18px; }
     .schedules > summary { min-height: 40px; padding: 4px 12px; }
     .schedule-row { padding: 11px 12px; gap: 6px 10px; }
     .schedule-title { font-size: 13.5px; }
     .schedule-meta, .schedule-missed, .schedule-error { padding-left: 15px; font-size: 11px; }
+    .schedule-history-sheet { max-height: calc(100vh - 16px); }
+    .schedule-history-head { align-items: center; }
+    .schedule-run-button { min-height: 64px; padding: 12px; }
 }

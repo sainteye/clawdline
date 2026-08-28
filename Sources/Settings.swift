@@ -75,6 +75,15 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     private var deviceChips: DeviceChips?
     private var tunnelCard: NoteCard?
     private var schedulesControl: ScheduleSettingsControl?
+    /// AppKit invokes this window on the main thread, but the older SDK annotations used by the
+    /// straight-swiftc build do not carry that fact through NSObject. Keep the actor boundary
+    /// explicit where the UI-independent state model is created.
+    private lazy var cloudSettings = MainActor.assumeIsolated {
+        CloudSettingsModel(
+            services: .production(openVerificationURL: { NSWorkspace.shared.open($0) }),
+            metadata: .currentMac())
+    }
+    private var cloudSettingsControl: CloudSettingsControl?
     private var schedulesRefreshAt = Date.distantPast
     private var schedulesRefreshing = false
     private var schedulesRefreshPending = false
@@ -108,6 +117,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         stopRecording()
         closeScheduleForm()
+        MainActor.assumeIsolated { cloudSettings.close() }
         live?.invalidate()
         live = nil
         // The window itself is kept rather than rebuilt: which tab you were on is a thing you
@@ -116,6 +126,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
     private func tearDown() {
         stopRecording()
+        MainActor.assumeIsolated { cloudSettings.close() }
         // Before the window goes: a sheet outlives the window it was attached to, and the only
         // thing that reaches this path is picking a different language — which rebuilds every
         // label in the window, including the ones on that form.
@@ -126,6 +137,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         strip = nil
         panes = []
         schedulesControl = nil
+        cloudSettingsControl = nil
         schedulesRefreshAt = .distantPast
         schedulesRefreshing = false
         schedulesRefreshPending = false
@@ -422,6 +434,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                       switchFor({ Config.shared.pushOnFinish },
                                 { Config.shared.pushOnFinish = $0 }),
                       hint: L.t.settingsPushFinishHint)
+        pane.left.row(L.t.settingsSmartNotifications,
+                      switchFor({ Config.shared.smartNotifications },
+                                { Config.shared.smartNotifications = $0 }),
+                      hint: L.t.settingsSmartNotificationsHint)
         pane.left.row(L.t.settingsPushDeploy,
                       switchFor({ Config.shared.pushOnDeploy },
                                 { Config.shared.pushOnDeploy = $0 }),
@@ -464,6 +480,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         pane.right.mono(Orchestrator.policyURL.path
             .replacingOccurrences(of: NSHomeDirectory(), with: "~"))
 
+        let cloud = CloudSettingsControl(model: cloudSettings)
+        cloud.onResize = { [weak self] in self?.relayoutCurrent() }
+        cloudSettingsControl = cloud
+        pane.wide.block(label: "Clawdline Cloud", view: cloud,
+                        hint: "Connect this Mac with GitHub to use Clawdline Cloud. The browser opens only after you confirm the one-time code.")
         pane.wide.block(label: L.t.settingsRemoteDevices, view: devicesControl(),
                         hint: L.t.settingsRemotePhoneHint)
         pane.right.block(label: L.t.settingsSchedules, view: scheduleControl(),
@@ -3407,6 +3428,113 @@ private final class StackedRow: NSView, SelfSizing {
             button.frame.origin = NSPoint(x: x, y: 4)
             x += button.frame.width + 8
         }
+    }
+}
+
+/// The Mac's Cloud identity and the explicit GitHub device-code handoff.
+///
+/// The state machine lives in ``CloudSettingsModel`` so none of the security or cancellation
+/// rules depend on a window being present. This view only translates those states into one
+/// selectable reading and the actions that are valid at that moment.
+private final class CloudSettingsControl: NSView, SelfSizing {
+
+    var onResize: (() -> Void)?
+
+    private let model: CloudSettingsModel
+    private let card = NoteCard()
+    private var buttons: [ChipButton] = []
+
+    init(model: CloudSettingsModel) {
+        self.model = model
+        super.init(frame: NSRect(x: 0, y: 0, width: 500, height: 80))
+        addSubview(card)
+        model.onChange = { [weak self] in self?.refresh() }
+        refresh(notifyResize: false)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func height(forWidth width: CGFloat) -> CGFloat {
+        card.height(forWidth: width) + (buttons.isEmpty ? 0 : 40)
+    }
+
+    override func layout() {
+        super.layout()
+        let cardHeight = card.height(forWidth: bounds.width)
+        card.frame = NSRect(x: 0, y: 0, width: bounds.width, height: cardHeight)
+        var x: CGFloat = 0
+        for button in buttons {
+            button.frame.origin = NSPoint(x: x, y: cardHeight + 10)
+            x += button.frame.width + 8
+        }
+    }
+
+    private func refresh(notifyResize: Bool = true) {
+        let text: String
+        let dot: PixelDot.State
+        let actions: [(String, Bool, () -> Void)]
+
+        switch model.phase {
+        case .signedOut:
+            text = "This Mac is not connected to Clawdline Cloud."
+            dot = .idle
+            actions = [("Connect with GitHub", true, { [weak model] in model?.connect() })]
+        case .starting:
+            text = "Starting a secure GitHub connection…"
+            dot = .busy
+            actions = [("Cancel", false, { [weak model] in model?.cancel() })]
+        case .code(let userCode):
+            text = "One-time GitHub code: \(userCode)\nConfirm this code before opening GitHub."
+            dot = .live
+            actions = [
+                ("Confirm & Open GitHub", true, { [weak model] in model?.confirmAndOpen() }),
+                ("Cancel", false, { [weak model] in model?.cancel() }),
+            ]
+        case .waiting(let userCode):
+            text = "Waiting for GitHub authorization for code \(userCode)…"
+            dot = .busy
+            actions = [("Cancel", false, { [weak model] in model?.cancel() })]
+        case .slowDown(let userCode, let retryAfter):
+            text = "GitHub asked Clawdline to slow down. Code \(userCode) will retry in \(retryAfter)s."
+            dot = .busy
+            actions = [("Cancel", false, { [weak model] in model?.cancel() })]
+        case .connected(let identity, let origin):
+            let restored = origin == .restored ? " Restored from this Mac's Keychain." : ""
+            text = "Connected to Clawdline Cloud. Account \(identity.accountID), Mac \(identity.machineID).\(restored)"
+            dot = .live
+            actions = [("Sign Out", false, { [weak model] in model?.signOut() })]
+        case .denied:
+            text = "GitHub connection was denied. No Cloud identity was added."
+            dot = .warn
+            actions = [("Retry", true, { [weak model] in model?.retry() })]
+        case .expired:
+            text = "The one-time GitHub code expired."
+            dot = .warn
+            actions = [("Retry", true, { [weak model] in model?.retry() })]
+        case .cancelled:
+            text = "GitHub connection was cancelled."
+            dot = .idle
+            actions = [("Retry", true, { [weak model] in model?.retry() })]
+        case .failed(let message):
+            text = "GitHub connection failed: \(message)"
+            dot = .warn
+            actions = [("Retry", true, { [weak model] in model?.retry() })]
+        case .signOutFailed(let identity, let message):
+            text = "Still connected as account \(identity.accountID), Mac \(identity.machineID). Sign out failed: \(message)"
+            dot = .warn
+            actions = [("Retry Sign Out", false, { [weak model] in model?.signOut() })]
+        }
+
+        card.text = text
+        card.dot = dot
+        buttons.forEach { $0.removeFromSuperview() }
+        buttons = actions.map { title, prominent, action in
+            let button = ChipButton(title: title, prominent: prominent)
+            button.action = action
+            addSubview(button)
+            return button
+        }
+        needsLayout = true
+        if notifyResize { onResize?() }
     }
 }
 

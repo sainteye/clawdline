@@ -128,6 +128,79 @@ assert.deepEqual(requests.map(function (request) { return request.path; }), [
 ], "string and (machine, session) local identities make byte-identical requests");
 
 const { CloudClient } = await import("./cloud-client.js");
+const canonicalChallenge = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+const malformedChallenges = [
+    {
+        name: "missing expiry",
+        frame: { type: "challenge", v: 1, context: "clawdline-challenge-v1",
+            account: "account-01", device: "device-vector-01", challenge: canonicalChallenge }
+    },
+    {
+        name: "zero expiry",
+        frame: { type: "challenge", v: 1, context: "clawdline-challenge-v1",
+            account: "account-01", device: "device-vector-01", challenge: canonicalChallenge,
+            expires_in_ms: 0 }
+    },
+    {
+        name: "negative expiry",
+        frame: { type: "challenge", v: 1, context: "clawdline-challenge-v1",
+            account: "account-01", device: "device-vector-01", challenge: canonicalChallenge,
+            expires_in_ms: -1 }
+    },
+    {
+        name: "unsafe expiry",
+        frame: { type: "challenge", v: 1, context: "clawdline-challenge-v1",
+            account: "account-01", device: "device-vector-01", challenge: canonicalChallenge,
+            expires_in_ms: Number.MAX_SAFE_INTEGER + 1 }
+    },
+    {
+        name: "fractional expiry",
+        frame: { type: "challenge", v: 1, context: "clawdline-challenge-v1",
+            account: "account-01", device: "device-vector-01", challenge: canonicalChallenge,
+            expires_in_ms: 1.5 }
+    },
+    {
+        name: "noncanonical base64",
+        frame: { type: "challenge", v: 1, context: "clawdline-challenge-v1",
+            account: "account-01", device: "device-vector-01",
+            challenge: canonicalChallenge.slice(0, -1), expires_in_ms: 30_000 }
+    },
+    {
+        name: "31-byte challenge",
+        frame: { type: "challenge", v: 1, context: "clawdline-challenge-v1",
+            account: "account-01", device: "device-vector-01",
+            challenge: Buffer.alloc(31).toString("base64"), expires_in_ms: 30_000 }
+    },
+    {
+        name: "33-byte challenge",
+        frame: { type: "challenge", v: 1, context: "clawdline-challenge-v1",
+            account: "account-01", device: "device-vector-01",
+            challenge: Buffer.alloc(33).toString("base64"), expires_in_ms: 30_000 }
+    }
+];
+
+const originalSign = crypto.subtle.sign;
+let malformedChallengeSignatures = 0;
+crypto.subtle.sign = async function () {
+    malformedChallengeSignatures += 1;
+    return new Uint8Array(64);
+};
+try {
+    for (const malformed of malformedChallenges) {
+        const validationCloud = new CloudClient({
+            relayURL: "wss://relay.example", deviceToken: "token",
+            devicePrivateKey: { extractable: false }
+        });
+        await assert.rejects(validationCloud._receive(JSON.stringify(malformed.frame)),
+            function (error) { return error.code === "bad_challenge"; },
+            malformed.name + " is rejected as bad_challenge");
+    }
+} finally {
+    crypto.subtle.sign = originalSign;
+}
+assert.equal(malformedChallengeSignatures, 0,
+    "malformed challenges are rejected before invoking the device signing key");
+
 const cloud = new CloudClient({
     relayURL: "wss://relay.example", deviceToken: "token", devicePrivateKey: signingKey,
     masterKey: masterKey, senderKeys: { "device-vector-01": senderKey }
@@ -150,9 +223,10 @@ class FakeWebSocket {
         this.protocols = protocols;
         this.readyState = 1;
         this.sent = [];
+        this.sentText = [];
         FakeWebSocket.latest = this;
     }
-    send(text) { this.sent.push(JSON.parse(text)); }
+    send(text) { this.sentText.push(text); this.sent.push(JSON.parse(text)); }
     close() { this.readyState = 3; if (this.onclose) this.onclose(); }
     receive(frame) { this.onmessage({ data: JSON.stringify(frame) }); }
 }
@@ -168,12 +242,21 @@ await connectedCloud.start();
 const fakeSocket = FakeWebSocket.latest;
 assert.deepEqual(fakeSocket.protocols, ["clawdline.v1", "clawdline.token.jwt"]);
 fakeSocket.receive({ type: "challenge", v: 1, context: "clawdline-challenge-v1",
-    account: "account-01", device: "device-vector-01", challenge: "AA==" });
+    account: "account-01", device: "device-vector-01", challenge: canonicalChallenge,
+    expires_in_ms: 30_000 });
 await connectedCloud.messageChain;
 assert.equal(fakeSocket.sent[0].type, "hello", "CloudClient signs the relay challenge");
 fakeSocket.receive({ type: "ready", v: 1, role: "viewer", account: "account-01",
     device: "device-vector-01" });
 await connectedCloud.messageChain;
+const eventCountBeforePing = liveEvents.length;
+fakeSocket.receive({ type: "ping" });
+await connectedCloud.messageChain;
+assert.equal(fakeSocket.sentText.at(-1), '{"type":"pong"}',
+    "an inbound relay ping receives the exact protocol pong response");
+assert.equal(liveEvents.slice(eventCountBeforePing).some(function (event) {
+    return event.type === "error" && event.error && event.error.code === "bad_frame";
+}), false, "an inbound relay ping does not become bad_frame");
 const snapshotEnvelope = await sealEnvelope({
     ch: "s/mac-01/session-01", seq: 10, ts: 1787817600000, class: "stream",
     key_id: "ms-1", sender: "device-vector-01"
@@ -186,5 +269,5 @@ assert.deepEqual((await connectedCloud.sessions()).sessions[0].identity,
 assert.equal(liveEvents.some(function (event) { return event.type === "sessions"; }), true);
 connectedCloud.stop();
 
-console.log("web cloud client tests passed: golden vectors, mutations, identity, local seam");
+console.log("web cloud client tests passed: golden vectors, mutations, identity, heartbeat, challenge, local seam");
 process.exit(0);

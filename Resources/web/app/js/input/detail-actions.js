@@ -4,11 +4,14 @@ import { els } from "../core/dom.js";
 import { toast } from "../core/util.js";
 import { api } from "../net/api.js";
 import { closingID, render, renderList, setClosingID } from "../view/list.js";
+import { byId } from "../view/derive.js";
 import { renderTranscript } from "../view/transcript.js";
 import { Optimistic, Waits } from "../view/waits.js";
+import { authoritativeSendTime, optimisticSendSnapshot } from "../view/optimistic-data.js";
 import { closeDetail, loadTranscript } from "../session/open.js";
 import { closeAgent, openAgent } from "../session/agent.js";
 import { ActionConfirm } from "./action-confirm.js";
+import { clawdfatherInstruction, clawdfatherRequest } from "./clawdfather.js";
 
 els.filter.addEventListener("input", function () { S.filter = els.filter.value; renderList(); });
 /**
@@ -119,6 +122,7 @@ export var SessionActions = {
     open: function (opener) {
         if (!S.openId) return;
         this.opener = opener || this.opener || els["detail-focus"];
+        this.syncClawdfather();
         this.level("main", false);
         els["session-actions"].hidden = false;
         els["detail-focus"].setAttribute("aria-expanded", "true");
@@ -149,15 +153,79 @@ export var SessionActions = {
             .catch(function (e) { toast(e.message, true); });
     },
 
+    /**
+     * The Clawdfather item, written for whichever session is open.
+     *
+     * It is not a static label: the same item is offered to an ordinary session, hidden on a
+     * bare shell prompt that could not read an instruction, and turned into a statement once
+     * the authenticated `session.coordinator` projection says this row already holds the role.
+     * Hidden and disabled travel together, because a hidden button left enabled stays in the
+     * menu's arrow-key ring.
+     */
+    syncClawdfather: function () {
+        var item = els["session-clawdfather"];
+        if (!item) return;
+        var request = clawdfatherRequest(byId(S.openId));
+        item.hidden = !request.shown;
+        item.disabled = !request.enabled;
+        item.textContent = request.label;
+        item.dataset.state = request.state;
+    },
+
+    /**
+     * Ask a session to make itself this Mac's Clawdfather.
+     *
+     * **The browser never registers anything.** Registration needs the orchestrator token, and
+     * this page holds a device token; that boundary is not widened here and no coordinator route
+     * is called. What crosses is one sentence, over the same `POST /v1/sessions/:id/send` the
+     * composer uses — and the session at the other end, being a local process running as the
+     * owner of this Mac, reads the token and carries out the documented recipe itself.
+     *
+     * Machine-wide state, even at one remove, gets the second press every other consequential
+     * session action gets.
+     */
+    clawdfather: function (sessionID) {
+        var id = sessionID || S.openId;
+        if (!id || !S.write) return;
+        var session = byId(id);
+        if (!clawdfatherRequest(session).enabled) return;
+        var text = clawdfatherInstruction(session);
+        if (!text) return;
+        var self = this;
+        ActionConfirm.open("clawdfather", id, null, {
+            title: T.webConfirmClawdfatherTitle,
+            say: T.webConfirmClawdfatherSay,
+            go: function () { return self.sendClawdfather(id, text); }
+        });
+    },
+
+    /** The send itself, shaped exactly like `prompt`: the line shows up in the transcript the
+     *  reader is looking at rather than appearing to have gone nowhere. */
+    sendClawdfather: function (id, text) {
+        var snapshot = optimisticSendSnapshot(
+            S.tx.id === id ? S.tx.entries : [], Date.now() / 1000);
+        return api.send(id, text, []).then(function (answer) {
+            Optimistic.add(id, text, 0, snapshot.known,
+                authoritativeSendTime(answer, snapshot.startedAt));
+            if (S.openId === id && !S.agent) {
+                renderTranscript();
+                loadTranscript(id, true);
+            }
+            toast(T.webClawdfatherAsked);
+        }).catch(function (e) { toast(e.message, true); });
+    },
+
     prompt: function (action, sessionID) {
         var id = sessionID || S.openId;
         if (!id || !S.write) return;
         // The reader can switch sessions during the HTTP trip. Remember the target's transcript
         // before that happens, so an older identical command cannot claim this new local turn.
-        var known = Optimistic.known(S.tx.id === id ? S.tx.entries : []);
+        var snapshot = optimisticSendSnapshot(
+            S.tx.id === id ? S.tx.entries : [], Date.now() / 1000);
         this.close();
-        api.send(id, action, []).then(function () {
-            Optimistic.add(id, action, 0, known);
+        api.send(id, action, []).then(function (answer) {
+            Optimistic.add(id, action, 0, snapshot.known,
+                authoritativeSendTime(answer, snapshot.startedAt));
             if (S.openId === id && !S.agent) {
                 renderTranscript();
                 loadTranscript(id, true);

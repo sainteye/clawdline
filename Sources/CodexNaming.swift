@@ -147,7 +147,8 @@ final class CodexNaming {
     /// there is no model turn to pay for: the title goes on the thread so `codex resume` lists
     /// it by its task, and into the cache so the label changes at once. A name somebody put on
     /// the thread by hand is left alone, and the auto-namer treats the thread as finished.
-    func name(_ title: String, thread threadID: String, target: TargetSession) {
+    func name(_ title: String, thread threadID: String, target: TargetSession,
+              replacingExisting: Bool = false) {
         work.addOperation { [weak self] in
             guard let self else { return }
             self.remember(title, threadID: threadID, targetID: target.id)
@@ -163,12 +164,39 @@ final class CodexNaming {
                 return
             }
             defer { server.stop() }
-            if !autoNamed, let before = server.thread(id: threadID),
+            if !replacingExisting, !autoNamed, let before = server.thread(id: threadID),
                Self.threadName(in: before) != nil { return }
             if !server.setName(title, threadID: threadID) {
                 Log.write("codex name: could not name child thread \(threadID)")
             }
         }
+    }
+
+    /// Test seam. The cache ``forget(target:)`` clears is otherwise only filled by a round trip
+    /// to `codex app-server`, which a suite has no business starting; without this the check that
+    /// clearing a title reaches Codex could only ever be written against a stub of the thing
+    /// being tested.
+    func rememberForTesting(_ title: String, threadID: String, targetID: String) {
+        remember(title, threadID: threadID, targetID: targetID)
+    }
+
+    /// Stop drawing a remembered name for this tab, so the label falls back to whatever the
+    /// automatic sources say now.
+    ///
+    /// Clearing a person's session title is a local operation — nothing is typed at the
+    /// assistant — and without this it was a local operation that cleared nothing on Codex: the
+    /// name went into this cache on the way in (see ``name(_:thread:target:replacingExisting:)``)
+    /// and ``displayLabel`` would go on finding it there.
+    ///
+    /// **The thread's own metadata keeps the name.** `thread/name/set` has no undo and Clawdline
+    /// does not know what Codex would have called the thread, so writing something back would be
+    /// this app inventing a title and persisting it in another program's store. `docs/api.md`
+    /// says so where a caller will read it.
+    func forget(target: TargetSession) {
+        lock.lock()
+        let had = displayedTitles.removeValue(forKey: target.id) != nil
+        lock.unlock()
+        if had { publishTitleChange() }
     }
 
     /// The title to put on Clawdline surfaces. The terminal's own title remains untouched because
@@ -178,6 +206,21 @@ final class CodexNaming {
         lock.lock()
         defer { lock.unlock() }
         return displayedTitles[target.id]?.title
+    }
+
+    /// The cached association is cheapest. A manual title must also work when auto-naming is
+    /// off, so fall back to the rollout already matched to this terminal.
+    func threadID(for target: TargetSession) -> String? {
+        guard target.assistant == .codex else { return nil }
+        lock.lock()
+        let cached = displayedTitles[target.id]?.threadID
+        lock.unlock()
+        if let cached { return cached }
+        guard let record = Transcript.record(of: target), record.assistant == .codex else {
+            return nil
+        }
+        guard let id = Codex.head(of: record.url)?.id, !id.isEmpty else { return nil }
+        return id
     }
 
     static func displayLabel(threadName: String?, terminalLabel: String) -> String {

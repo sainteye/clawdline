@@ -129,12 +129,17 @@ Clawdline 會開一個終端機分頁，把任務指定的那種助理啟動起�
 
 **派工的規矩是一份你自己改的檔案。** `~/.config/clawdline/dispatch-policy.md`——每次派工都會重讀，
 而且會抄進每一個「還能再往下派」的子 session 的指示裡：哪種工作給哪個助理、哪種工作值得用哪個
-模型、整張圖希望長什麼形狀。它出廠就有意見在裡面；內容刪光就等於沒有規矩。每一件任務還會帶著
+模型、一件任務該切多大、小事什麼時候該累積成一批而不是各派各的、整張圖希望長什麼形狀。出廠的
+那一份就是這個 repo 裡的 [`Resources/dispatch-policy.md`](Resources/dispatch-policy.md)，所以你
+可以先讀、先不同意，再決定要不要裝；裝上之後那份是你的，內容刪光就等於沒有規矩。每一件任務還會帶著
 一份 `plan`，也就是它所屬的整張圖——葉節點知道自己的答案要餵給誰，才寫得出接得起來的東西，
 而不是一篇沒人要的心得。
 
-**[docs/orchestrator.md](docs/orchestrator.md)** 是那份協定：檔案格式、憑證、整個生命週期，
-以及帶著 `curl` 紀錄的路由說明。
+**[docs/clawdline-protocol.html](docs/clawdline-protocol.html)** 是整份協定寫成一頁，讀者是剛裝好
+這個東西的人：一件任務怎麼派出去、claims 和 file wait 各自保證了什麼、為什麼 landing 是「誰派工誰
+負責」、每一條承諾值多少。從 checkout 直接打開就能看，不需要網路。英文。
+**[docs/orchestrator.md](docs/orchestrator.md)** 是同一份協定的參考手冊版：檔案格式、憑證、
+整個生命週期，以及帶著 `curl` 紀錄的路由說明。
 **[docs/dispatch-permissions.md](docs/dispatch-permissions.md)** 是會咬人的那一半：被派出去的
 session 會在哪四個地方停下來問、其中哪兩道任何設定都到不了，以及那個讀起來像「放手去做」的
 flag，為什麼在最便宜的模型上意思正好相反。
@@ -197,6 +202,32 @@ session 不自己 commit，改完交回去；不要跑 build，因為它會把�
 要復原。該寫進去的，是一個新的 session 沒辦法從程式碼推出來的那些事：哪些改動不是它可以碰的、
 要怎麼 stage、什麼東西絕對不能跑，以及如果它還能再往下派工，規矩在哪裡。兩個檔案都沒有的 repo
 一樣照常運作，只是對下一個打開它的人沒有話要說。
+
+### 把 Clawdline 規矩放到每個 project 都讀得到的地方
+
+一個 repo 的 `AGENTS.md` 或 `CLAUDE.md`，只會傳到在那個 repo 裡打開的 agent。如果這些 Clawdline
+操作規則應該跟著 agent 跨 project 走，就在 `~/.codex/AGENTS.md` 放一個從
+`<!-- clawdline rules: begin -->` 到 `<!-- clawdline rules: end -->` 的 block；Claude Code 則把
+對應的 block 放進 `~/.claude/CLAUDE.md`。Canonical 文字在這個 repo 的 `AGENTS.md` 裡：
+[localhost failure 規則](AGENTS.md#prove-a-localhost-failure-before-calling-clawdline-offline)與
+[recurring stall 規則](AGENTS.md#repeated-communication-stalls-require-a-capacity-and-protocol-audit)；
+下面的短版保留同一組要求。Project-local instructions 可以覆寫這些全域預設。Clawdline 與
+`install.sh` 都不會修改這兩個全域檔案；加入或更新這個 block 是一個明確的 setup step。
+
+那個 block 裡要留住這兩條：
+
+- **先證明 localhost 真的失敗，才能說 Clawdline unavailable。** Restricted sandbox 連不上
+  `http://127.0.0.1:7717`，不能證明 service down。先讀目前設定的 port，再到獲准連 loopback 的
+  execution environment，用同一個最小、唯讀的 `GET /v1/health` request 複驗；只有這個 permitted
+  request 仍然失敗，才能稱 service unavailable。這是 agent 操作規則，不是要求人類關掉 sandbox：
+  需要額外 localhost 權限時，照 provider 正常的 approval flow 取得。也不能因為一次 Clawdline
+  dispatch 失敗，就改用 provider-native child session，卻把它說成 Clawdline task。
+- **反覆發生的通訊卡頓，要從頭到尾 audit。** Slow send、loading state、pending message 或 event loss
+  一再出現時，只改 timeout 或 spinner 並不算結案。要追 connection 與 queue ownership、queue 與
+  concurrency bounds、backpressure、synchronous external calls、retry amplification、idempotency 與
+  delivery receipts、SSE revision 與 resume、stale snapshots，以及 failure isolation；並把
+  `accepted`、`executed`、`delivered`、`observed`、`acknowledged` 分清楚，不能拿一次 HTTP response
+  當成五種 state 全都成立。
 
 ## 安裝
 
@@ -480,6 +511,7 @@ claude
 | `remote_tunnel_name` · `remote_hostname` | `""` | named tunnel 兩個都必填 |
 | `cloudflared_path` | `""` | 空的 ＝ 去套件管理器慣用的位置找 |
 | `push_on_finish` · `push_on_deploy` | `true` · `false` | 手機什麼時候該震 |
+| `smart_notifications` | `false` | 用 Haiku 把籠統的完成通知換成一句「剛完成了什麼」 |
 | `orchestrator_enabled` | `true` | 能不能讓一個 session 把工作派給另一個 |
 | `orchestrator_max_children` | `5` | 一個 session 同時最多派幾個子 session，1–10 |
 | `orchestrator_max_grandchildren` | `3` | 每個子 session 自己又能派幾個，0–10；`0` ＝ 只有一層 |

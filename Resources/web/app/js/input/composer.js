@@ -9,6 +9,7 @@ import { closingID } from "../view/list.js";
 import { renderDetailHead, renderTranscript } from "../view/transcript.js";
 import { renderComposer } from "../view/composer.js";
 import { Optimistic } from "../view/waits.js";
+import { authoritativeSendTime, optimisticSendSnapshot } from "../view/optimistic-data.js";
 import { atBottom, closeDetail, loadTranscript, toBottom } from "../session/open.js";
 import { carriesPicture, Shots } from "./shots.js";
 import { Voice } from "./voice.js";
@@ -323,10 +324,14 @@ function submit() {
     // sentence mentioning `/exit`, or Claude being sent Codex's `/quit`, stays an ordinary prompt.
     var quit = session && !pictures.length && text.trim() ===
         (session.assistant === "codex" ? "/quit" : "/exit");
+    // Capture this before the POST. The successful answer adds the Mac's accepted time from the
+    // same side of the handoff, so a row can land while the terminal round trip is still slow.
+    var snapshot = quit ? null : optimisticSendSnapshot(
+        S.tx.id === sentID ? S.tx.entries : [], Date.now() / 1000);
     sending = true;
     renderComposer();
     var request = quit ? api.end(sentID) : api.send(sentID, text, pictures);
-    request.then(function () {
+    request.then(function (answer) {
         // Every child node goes, not just the words: the placeholder is drawn from what
         // `innerText` says, and a `<br>` the browser left behind would keep the box looking
         // like it still had something in it.
@@ -339,7 +344,8 @@ function submit() {
         if (quit) closeDetail();
         else if (S.openId === sentID) {
             if (!S.agent) {
-                Optimistic.add(sentID, text, pictures.length);
+                Optimistic.add(sentID, text, pictures.length, snapshot.known,
+                    authoritativeSendTime(answer, snapshot.startedAt));
                 renderTranscript();
                 if (stick) toBottom();
             }

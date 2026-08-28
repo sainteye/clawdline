@@ -170,6 +170,9 @@ protocol CloudTransportSocket: AnyObject, Sendable {
 }
 
 protocol CloudTransportSocketConnecting: Sendable {
+    /// Implementations may suspend while establishing a socket, but must terminate promptly when
+    /// the calling task is cancelled. `CloudTransport` owns that task and cancels/joins it during
+    /// shutdown, before any socket exists that could otherwise be closed.
     func connect(url: URL, bearerToken: String) async throws -> any CloudTransportSocket
 }
 
@@ -225,6 +228,12 @@ actor CloudTransport {
     typealias Logger = @Sendable (String) -> Void
 
     nonisolated let commands: AsyncStream<CloudInboundCommand>
+    /// Emits once after every successful initial or reconnect handshake. Snapshot owners use the
+    /// monotonically increasing value to force a fresh full publication for the new relay state.
+    /// The buffer coalesces to the newest value: an unconsumed older generation describes relay
+    /// state that has already been superseded, while the current generation forces the same full
+    /// snapshot refresh without allowing reconnect bursts to grow memory without bound.
+    nonisolated let readyGenerations: AsyncStream<UInt64>
 
     private let relayBaseURL: URL
     private let tokenProvider: any CloudDeviceTokenProviding
@@ -236,15 +245,19 @@ actor CloudTransport {
     private let initialBackoff: TimeInterval
     private let maximumBackoff: TimeInterval
     private let commandContinuation: AsyncStream<CloudInboundCommand>.Continuation
+    private let readyContinuation: AsyncStream<UInt64>.Continuation
 
     private var state: CloudTransportState = .idle
     private var role: CloudTransportRole?
+    private var connectorTask: Task<any CloudTransportSocket, Error>?
+    private var connectingSocket: (any CloudTransportSocket)?
     private var socket: (any CloudTransportSocket)?
     private var cachedToken: CloudDeviceToken?
     private var receiveTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private var generation = 0
     private var droppedInbound = 0
+    private var droppedReadyGenerations = 0
     private var sequenceTracker = CloudSequenceTracker()
     private var pendingByChannel: [String: CloudEnvelope] = [:]
 
@@ -271,6 +284,11 @@ actor CloudTransport {
         var continuation: AsyncStream<CloudInboundCommand>.Continuation!
         commands = AsyncStream { continuation = $0 }
         commandContinuation = continuation
+        var readyContinuation: AsyncStream<UInt64>.Continuation!
+        readyGenerations = AsyncStream(bufferingPolicy: .bufferingNewest(1)) {
+            readyContinuation = $0
+        }
+        self.readyContinuation = readyContinuation
     }
 
     func connect(role: CloudTransportRole = .machine) async throws {
@@ -283,8 +301,10 @@ actor CloudTransport {
                 await self?.receiveAndReconnect(socket: established.socket, generation: established.generation)
             }
         } catch {
-            state = .idle
-            self.role = nil
+            if state != .shutDown {
+                state = .idle
+                self.role = nil
+            }
             throw error
         }
     }
@@ -310,6 +330,7 @@ actor CloudTransport {
 
     func currentState() -> CloudTransportState { state }
     func droppedInboundCount() -> Int { droppedInbound }
+    func droppedReadyGenerationCount() -> Int { droppedReadyGenerations }
 
     func shutdown() async {
         guard state != .shutDown else { return }
@@ -319,18 +340,54 @@ actor CloudTransport {
         receiveTask?.cancel()
         let task = receiveTask
         receiveTask = nil
+        connectorTask?.cancel()
+        let connector = connectorTask
+        connectorTask = nil
+        connectingSocket?.close()
+        connectingSocket = nil
         socket?.close()
         socket = nil
         cachedToken = nil
         pendingByChannel.removeAll()
         commandContinuation.finish()
+        readyContinuation.finish()
+        _ = await connector?.result
         if let task { await task.value }
     }
 
     private func establish(role: CloudTransportRole) async throws -> (socket: any CloudTransportSocket, generation: Int) {
         let token = try await validToken()
+        // `validToken()` may suspend while another actor turn completes shutdown. From this check
+        // through `connectorTask` registration there is no suspension, so a terminal transport
+        // cannot create a connector after shutdown has already passed its cancel/join boundary.
+        try Task.checkCancellation()
+        guard state != .shutDown else { throw CancellationError() }
         let url = try connectURL(role: role)
-        let newSocket = try await connector.connect(url: url, bearerToken: token.value)
+        let connector = self.connector
+        let attempt = Task {
+            try await connector.connect(url: url, bearerToken: token.value)
+        }
+        connectorTask = attempt
+        let newSocket: any CloudTransportSocket
+        do {
+            newSocket = try await withTaskCancellationHandler {
+                try await attempt.value
+            } onCancel: {
+                attempt.cancel()
+            }
+        } catch {
+            connectorTask = nil
+            throw error
+        }
+        connectorTask = nil
+        guard state != .shutDown, !Task.isCancelled else {
+            newSocket.close()
+            throw CancellationError()
+        }
+        connectingSocket = newSocket
+        defer {
+            if connectingSocket === newSocket { connectingSocket = nil }
+        }
 
         do {
             let challengeText = try await newSocket.receiveText()
@@ -355,6 +412,9 @@ actor CloudTransport {
                   ready.account == challenge.account, ready.device == challenge.device else {
                 throw CloudTransportError.unexpectedFrame("ready")
             }
+            guard state != .shutDown, !Task.isCancelled else {
+                throw CancellationError()
+            }
 
             generation += 1
             let currentGeneration = generation
@@ -362,6 +422,14 @@ actor CloudTransport {
             state = .ready
             scheduleRefresh(token: token, generation: currentGeneration)
             try await flushPending(over: newSocket)
+            switch readyContinuation.yield(UInt64(currentGeneration)) {
+            case .dropped:
+                droppedReadyGenerations += 1
+            case .enqueued, .terminated:
+                break
+            @unknown default:
+                break
+            }
             return (newSocket, currentGeneration)
         } catch {
             newSocket.close()
@@ -371,10 +439,14 @@ actor CloudTransport {
 
     private func validToken() async throws -> CloudDeviceToken {
         let now = await clock.now()
+        try Task.checkCancellation()
+        guard state != .shutDown else { throw CancellationError() }
         if let cachedToken, cachedToken.expiresAt.timeIntervalSince(now) > refreshAhead {
             return cachedToken
         }
         let token = try await tokenProvider.fetchDeviceToken()
+        try Task.checkCancellation()
+        guard state != .shutDown else { throw CancellationError() }
         guard !token.value.isEmpty, token.expiresAt > now else {
             throw CloudTransportError.invalidTokenResponse
         }

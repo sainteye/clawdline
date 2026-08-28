@@ -143,7 +143,7 @@
    CSS strokes so its weight is identical on every platform; no emoji font participates. */
 .session-work-mark {
     flex: 0 0 auto; display: inline-flex; align-items: center; gap: 1px;
-    height: 12px; color: var(--dim);
+    height: 12px; color: var(--ok);
 }
 .session-work-check {
     display: block; width: 8px; height: 5px;

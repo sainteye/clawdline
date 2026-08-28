@@ -132,8 +132,11 @@ that writes the task down is [in this repository](skills/clawdline/), for Claude
 
 **How work gets handed out is a file you edit.** `~/.config/clawdline/dispatch-policy.md` — read
 on every dispatch, copied into the briefing of every child that may dispatch in turn. Which
-assistant for which kind of work, which model deserves which job, what shape the graph should be.
-It arrives with opinions in it; delete the contents and there are no house rules. Every task also
+assistant for which kind of work, which model deserves which job, how big one task should be, when
+small work is batched instead of dispatched, what shape the graph should be. The default it arrives
+with is [`Resources/dispatch-policy.md`](Resources/dispatch-policy.md) in this repository, so it can
+be read and argued with before you install anything; your machine's copy is yours to edit, and
+deleting the contents means there are no house rules. Every task also
 carries a `plan`, the whole graph it is one node of, so a leaf knows what its answer feeds instead
 of writing a report nobody asked for.
 
@@ -151,8 +154,12 @@ out at once and each of those may have three, but what *they* open, nothing open
 three is twenty terminals at full stretch, which is already more than anybody wants to audit;
 without a floor it is a fork bomb with a language model in it.
 
-**[docs/orchestrator.md](docs/orchestrator.md)** is the protocol: the file formats, the
-credentials, the lifecycle and the routes with `curl` transcripts.
+**[docs/clawdline-protocol.html](docs/clawdline-protocol.html)** is the whole protocol on one
+page, written for somebody who just installed this: how a task is dispatched, what claims and file
+waits guarantee, why landing belongs to the root that asked, and what each promise is worth. Open it
+from a checkout; it needs nothing from the network.
+**[docs/orchestrator.md](docs/orchestrator.md)** is the same protocol in reference form: the file
+formats, the credentials, the lifecycle and the routes with `curl` transcripts.
 **[docs/dispatch-permissions.md](docs/dispatch-permissions.md)** is the part that bites: the four
 places a dispatched session stops to ask, which two of them no setting reaches, and why the flag
 that reads as "get on with it" quietly means the opposite on the cheapest model.
@@ -229,6 +236,35 @@ at the root of your own project, no dependency, nothing to undo. What belongs in
 session cannot work out from the code — which changes are not its to touch, how to stage, what it
 must never run, and where the house rules live if it may hand work on. A repository with neither
 still works exactly as it did; it simply has nothing to say to whoever opens it next.
+
+### Put the Clawdline rules where every project can read them
+
+A repository's `AGENTS.md` or `CLAUDE.md` reaches only the agents opened in that repository. If
+these Clawdline operating rules should follow agents across projects, put a block delimited by
+`<!-- clawdline rules: begin -->` and `<!-- clawdline rules: end -->` in `~/.codex/AGENTS.md`, and
+put the corresponding block in `~/.claude/CLAUDE.md` for Claude Code. The canonical text to copy
+is under [the localhost-failure rule](AGENTS.md#prove-a-localhost-failure-before-calling-clawdline-offline)
+and [the recurring-stall rule](AGENTS.md#repeated-communication-stalls-require-a-capacity-and-protocol-audit)
+in this repository's `AGENTS.md`; the short version below carries the same requirements.
+Project-local instructions may override those global defaults. Clawdline and `install.sh` do not
+edit either global file; adding or updating the block is an explicit setup step.
+
+Keep these two rules in that block:
+
+- **Prove a localhost failure before calling Clawdline unavailable.** A restricted sandbox's
+  connection failure to `http://127.0.0.1:7717` is not evidence that the service is down. Read the
+  currently configured port, then repeat the same minimal, read-only `GET /v1/health` request in
+  an execution environment that is allowed to reach loopback. Only that permitted request still
+  failing justifies calling the service unavailable. This is an agent operating rule, not a
+  request for a person to disable their sandbox: obtain any extra localhost permission through
+  the provider's normal approval flow. And do not replace a failed Clawdline dispatch with a
+  provider-native child session while describing it as a Clawdline task.
+- **Audit recurring communication stalls end to end.** Repeated slow sends, loading states,
+  pending messages or event loss are not closed by changing only a timeout or spinner. Trace
+  connection and queue ownership, queue and concurrency bounds, backpressure, synchronous
+  external calls, retry amplification, idempotency and delivery receipts, SSE revision and resume,
+  stale snapshots, and failure isolation. Distinguish `accepted`, `executed`, `delivered`,
+  `observed`, and `acknowledged` instead of treating one HTTP response as all five states.
 
 ## Install
 
@@ -537,6 +573,7 @@ itself.
 | `remote_tunnel_name` · `remote_hostname` | `""` | both required for a named tunnel |
 | `cloudflared_path` | `""` | empty looks where package managers put it |
 | `push_on_finish` · `push_on_deploy` | `true` · `false` | when a phone should buzz |
+| `smart_notifications` | `false` | let Haiku replace a generic finish notice with one sentence about what the work did |
 | `orchestrator_enabled` | `true` | may a session hand work to another |
 | `orchestrator_max_children` | `5` | child sessions one session may have out, 1–10 |
 | `orchestrator_max_grandchildren` | `3` | and what each of those may have out, 0–10; `0` stops the tree one level up |

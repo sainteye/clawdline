@@ -380,7 +380,12 @@ enum Codex {
                 return [Transcript.Entry(kind: .notice, text: notice.body, tool: nil,
                                          time: time, notice: notice)]
             }
-            return [entry(.user, text(inContent: item["content"]))].compactMap { $0 }
+            let canonical = Transcript.canonicalImageContent(text(inContent: item["content"]))
+            if canonical.imageCount > 0 {
+                return [Transcript.Entry(kind: .user, text: canonical.text, tool: nil,
+                                         time: time, imageCount: canonical.imageCount)]
+            }
+            return [entry(.user, canonical.text)].compactMap { $0 }
 
         case "AgentMessage":
             return [entry(.assistant, text(inContent: item["content"]))].compactMap { $0 }

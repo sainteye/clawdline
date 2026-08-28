@@ -215,10 +215,10 @@ document.documentElement.className = "booting";
             <ul class="rows" id="rows" role="listbox" aria-label="Claude Code sessions" tabindex="0"></ul>
             <div class="empty" id="list-empty" hidden></div>
             <!-- A paired device can inspect, make, change and remove a schedule — everything but
-                 run one early, which stays a Mac-only button nowhere on this page. Every row
-                 opens the same sheet the `+` does, filled in rather than blank; see
-                 `input/schedule.js`. Hidden until a non-empty answer lands so an empty inventory
-                 costs the session list no space. -->
+                 run one early, which stays a Mac-only button nowhere on this page. Every row opens
+                 its retained runs; Edit inside that sheet reaches the form the `+` opens blank.
+                 Hidden until a non-empty answer lands so an empty inventory costs the session list
+                 no space. -->
             <details class="schedules" id="schedules" open hidden>
                 <summary><span>Schedules</span><span class="count" id="schedules-count"></span>
                     <!-- Inside the summary, so it sits on the one line this section has, and
@@ -282,6 +282,12 @@ document.documentElement.className = "booting";
                         <div class="session-action-level" id="session-actions-main" data-place="current">
                             <button id="session-focus" type="button" role="menuitem">Show on Mac</button>
                             <button id="session-info" type="button" role="menuitem">Session info</button>
+                            <!-- Nothing privileged happens here: this types one instruction into
+                                 the session through the same send route the composer uses, and
+                                 the session — a local process that can read the orchestrator
+                                 token — registers itself. Its label and disabled state are
+                                 written per session by `SessionActions.syncClawdfather`. -->
+                            <button id="session-clawdfather" type="button" role="menuitem" hidden>Make this session Clawdfather</button>
                             <button id="session-git-more" type="button" role="menuitem" aria-haspopup="menu">Git <span class="next" aria-hidden="true">›</span></button>
                             <button class="end" id="session-end" type="button" role="menuitem">Close session</button>
                         </div>
@@ -552,7 +558,7 @@ document.documentElement.className = "booting";
     <div class="sheet coordinator-controls-sheet" id="coordinator-controls-sheet" role="dialog"
          aria-modal="true" aria-labelledby="coordinator-controls-title">
         <div class="coordinator-controls-head">
-            <h2 id="coordinator-controls-title">Clawdfather Coordinator controls</h2>
+            <h2 id="coordinator-controls-title">Clawdfather controls</h2>
             <button class="chip" id="coordinator-controls-close" type="button">Close</button>
         </div>
         <div class="coordinator-controls-body" id="coordinator-controls-body"></div>
@@ -629,6 +635,31 @@ document.documentElement.className = "booting";
     </div>
 </div>
 
+<!-- One schedule as work that happened, rather than only as a form describing work that will
+     happen. The detail route returns retained orchestrator runs newest first. A row opens its
+     terminal while it is still on the Session list, resumes the exact proven assistant
+     conversation after it has gone, or stays disabled when no conversation identity was proved. -->
+<div class="overlay" id="schedule-history" hidden>
+    <div class="sheet schedule-history-sheet" id="schedule-history-sheet" role="dialog"
+         aria-modal="true" aria-labelledby="schedule-history-title">
+        <div class="schedule-history-head">
+            <div class="schedule-history-heading">
+                <h2 id="schedule-history-title">Schedule</h2>
+                <p id="schedule-history-meta"></p>
+            </div>
+            <button class="chip" id="schedule-history-edit" type="button">Edit schedule</button>
+        </div>
+        <p class="said" id="schedule-history-said" role="status" aria-live="polite"></p>
+        <h3 id="schedule-history-runs-label">Which conversation?</h3>
+        <ul class="schedule-run-rows" id="schedule-run-rows"></ul>
+        <p class="schedule-history-empty" id="schedule-history-empty" hidden></p>
+        <p class="schedule-history-capped" id="schedule-history-capped" hidden></p>
+        <div class="buttons">
+            <button class="chip" id="schedule-history-close" type="button">Close</button>
+        </div>
+    </div>
+</div>
+
 <!-- Making a schedule, which until now meant writing a JSON file by hand. Every field here is
      one the file has, named the same way, so that what somebody fills in and what the parser
      reads back are the same list — see `Orchestrator.schedule(from:)`, which is the authority on
@@ -638,10 +669,10 @@ document.documentElement.className = "booting";
      whatever it could not work out is left for a person, which is the whole reason the form
      exists before the voice does.
 
-     A third door opens it already filled in, from a press on a row in the Schedules list —
-     `GET /v1/orchestrator/schedules/:id` read first, then the same fields, the same PATCH this
-     sheet's Save now sends instead of POST, and the Delete button `#schedule-delete` gains once
-     there is something to delete. See `openEdit` in `input/schedule.js`. -->
+     A third door opens it already filled in, from Edit on the schedule history sheet — `GET
+     /v1/orchestrator/schedules/:id` read first, then the same fields, the same PATCH this sheet's
+     Save now sends instead of POST, and the Delete button `#schedule-delete` gains once there is
+     something to delete. See `openEdit` in `input/schedule.js`. -->
 <div class="overlay" id="schedule-form" hidden>
     <div class="sheet schedule-sheet" id="schedule-sheet" role="dialog" aria-modal="true"
          aria-labelledby="schedule-form-title">

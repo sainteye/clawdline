@@ -312,13 +312,21 @@ enum StartPoints {
     /// The second named action, and deliberately a thin one: everything that decides *where* and
     /// *whether* is ``start(_:assistant:model:permission:addDir:resume:)``, unchanged, and this
     /// adds one literal flag and one id that has already been proved to name a file on this Mac.
+    /// Ordinary project history supplies that proof for human-started conversations. Scheduled
+    /// children stay out of that general picker, so the orchestrator registry supplies the same
+    /// proof only for a terminal run whose schedule detail disclosed the exact conversation id.
     /// A separate entry point rather than an argument on the route, because "start something
     /// here" and "carry on with that" are two different permissions to think about even though
     /// today they share a gate.
     static func resume(_ place: Place, sessionID: String,
                        assistant: Assistant = .claude) -> Outcome {
-        guard let id = sessionName(sessionID),
-              past(withID: id, in: place, assistant: assistant) != nil else {
+        guard let id = sessionName(sessionID) else {
+            return .refused(status: 404, code: "not_found",
+                            message: "No conversation named that", app: nil)
+        }
+        let listed = past(withID: id, in: place, assistant: assistant) != nil
+        guard listed || Orchestrator.scheduledResumeAllowed(
+            sessionID: id, assistant: assistant, projectDir: place.path) else {
             return .refused(status: 404, code: "not_found",
                             message: "No conversation named that", app: nil)
         }

@@ -39,9 +39,160 @@ private final class CloudTestLog: @unchecked Sendable {
     }
 }
 
+private actor CloudTestReadyGenerations {
+    private var values: [UInt64] = []
+
+    func append(_ generation: UInt64) { values.append(generation) }
+    func all() -> [UInt64] { values }
+}
+
+private final class CloudSuspendedHandshakeSocket: CloudTransportSocket, @unchecked Sendable {
+    private let lock = NSLock()
+    private let continuation: AsyncStream<String>.Continuation
+    private var iterator: AsyncStream<String>.Iterator
+    private var receiveStarted = false
+    private var closed = false
+
+    init() {
+        var continuation: AsyncStream<String>.Continuation!
+        let stream = AsyncStream<String> { continuation = $0 }
+        self.continuation = continuation
+        iterator = stream.makeAsyncIterator()
+    }
+
+    func send(text: String) async throws {}
+
+    func receiveText() async throws -> String {
+        markReceiveStarted()
+        guard let text = await iterator.next() else { throw CloudTransportError.notConnected }
+        return text
+    }
+
+    private func markReceiveStarted() {
+        lock.lock()
+        receiveStarted = true
+        lock.unlock()
+    }
+
+    func close() {
+        lock.lock()
+        closed = true
+        lock.unlock()
+        continuation.finish()
+    }
+
+    func state() -> (receiveStarted: Bool, closed: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (receiveStarted, closed)
+    }
+}
+
+private struct CloudSuspendedHandshakeConnector: CloudTransportSocketConnecting {
+    let socket: CloudSuspendedHandshakeSocket
+
+    func connect(url: URL, bearerToken: String) async throws -> any CloudTransportSocket {
+        socket
+    }
+}
+
+private final class CloudSuspendedConnectAttempt: @unchecked Sendable {
+    private let lock = NSLock()
+    private let continuation: AsyncStream<Void>.Continuation
+    let stream: AsyncStream<Void>
+    private var started = false
+    private var cancelled = false
+
+    init() {
+        var continuation: AsyncStream<Void>.Continuation!
+        stream = AsyncStream { continuation = $0 }
+        self.continuation = continuation
+    }
+
+    func markStarted() {
+        lock.lock()
+        started = true
+        lock.unlock()
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+        continuation.finish()
+    }
+
+    func state() -> (started: Bool, cancelled: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (started, cancelled)
+    }
+}
+
+private struct CloudCancellationCooperativeSuspendedConnector: CloudTransportSocketConnecting {
+    let attempt: CloudSuspendedConnectAttempt
+
+    func connect(url: URL, bearerToken: String) async throws -> any CloudTransportSocket {
+        attempt.markStarted()
+        return try await withTaskCancellationHandler {
+            var iterator = attempt.stream.makeAsyncIterator()
+            _ = await iterator.next()
+            throw CancellationError()
+        } onCancel: {
+            attempt.cancel()
+        }
+    }
+}
+
+private actor CloudSuspendedTokenProvider: CloudDeviceTokenProviding {
+    private let token: CloudDeviceToken
+    private var continuation: CheckedContinuation<CloudDeviceToken, Never>?
+    private var started = false
+
+    init(token: CloudDeviceToken) {
+        self.token = token
+    }
+
+    func fetchDeviceToken() async throws -> CloudDeviceToken {
+        started = true
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func hasStarted() -> Bool { started }
+
+    func release() {
+        continuation?.resume(returning: token)
+        continuation = nil
+    }
+}
+
+private final class CloudConnectCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    func finish() {
+        lock.lock()
+        value = true
+        lock.unlock()
+    }
+
+    func finished() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
 /// A standalone end-to-end test against the loopback relay state machine. The injected in-memory
 /// connector is the sandbox fallback for the fake's NWListener WebSocket front end.
 func runCloudTransportTests() async throws -> Int {
+    switch ProcessInfo.processInfo.environment["CLAWDLINE_CLOUD_TRANSPORT_CASE"] {
+    case "owned-connect": return try await runCloudTransportOwnedConnectTests()
+    case "connector-cancel": return try await runCloudTransportConnectorCancellationTests()
+    case "connector-registration": return try await runCloudTransportConnectorRegistrationTests()
+    case "ready-buffer": return try await runCloudTransportReadyBufferTests()
+    default: break
+    }
     var checks = 0
     func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
         checks += 1
@@ -79,6 +230,12 @@ func runCloudTransportTests() async throws -> Int {
         maximumBackoff: 0.08,
         logger: { logs.append($0) }
     )
+    let readyGenerations = CloudTestReadyGenerations()
+    let readyTask = Task {
+        for await generation in transport.readyGenerations {
+            await readyGenerations.append(generation)
+        }
+    }
 
     try await transport.connect(role: .machine)
     let initialState = await transport.currentState()
@@ -87,6 +244,10 @@ func runCloudTransportTests() async throws -> Int {
     try require(initialState == .ready, "handshake reaches ready")
     try require(initialHandshakes == 1, "relay verifies challenge signature")
     try require(initialTokens == ["machine-token-1"], "Bearer token is presented on upgrade")
+    try await waitUntil("initial ready generation is observable") {
+        await readyGenerations.all() == [1]
+    }
+    checks += 1
 
     let snapshot = try CloudEnvelope.seal(
         Data("snapshot-one".utf8),
@@ -161,6 +322,7 @@ func runCloudTransportTests() async throws -> Int {
     try require(refreshedTokens.contains("machine-token-2"), "refresh uses a new device token")
 
     let handshakesBeforeDrop = await relay.completedHandshakes()
+    let readyGenerationsBeforeDrop = await readyGenerations.all().count
     await relay.dropConnections()
     try await waitUntil("transport enters reconnect") {
         await transport.currentState() == .reconnecting
@@ -183,14 +345,226 @@ func runCloudTransportTests() async throws -> Int {
         return completed > handshakesBeforeDrop && published.contains(queuedSnapshot)
     }
     checks += 1
+    try await waitUntil("reconnect ready generation is observable", timeout: 2) {
+        await readyGenerations.all().count > readyGenerationsBeforeDrop
+    }
+    checks += 1
 
     await transport.shutdown()
     let shutdownState = await transport.currentState()
     try require(shutdownState == .shutDown, "shutdown reaches terminal state")
     let streamEnded = try await nextCommand(from: transport.commands, timeout: 0.5) == nil
     try require(streamEnded, "shutdown finishes inbound stream")
+    await readyTask.value
     await relay.stop()
 
+    checks += try await runCloudTransportOwnedConnectTests()
+    checks += try await runCloudTransportConnectorCancellationTests()
+    checks += try await runCloudTransportConnectorRegistrationTests()
+    checks += try await runCloudTransportReadyBufferTests()
+    return checks
+}
+
+private func runCloudTransportOwnedConnectTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudTransportTestFailure(description: message) }
+    }
+
+    let machineKey = CloudDeviceKeyPair()
+    let master = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x43, count: 32))
+    let tokenProvider = CloudTestTokenProvider(tokens: [
+        CloudDeviceToken(value: "suspended-token", expiresAt: Date().addingTimeInterval(60))
+    ])
+    let socket = CloudSuspendedHandshakeSocket()
+    let transport = CloudTransport(
+        relayBaseURL: URL(string: "ws://suspended.invalid/v1/connect")!,
+        tokenProvider: tokenProvider,
+        keyProvider: CloudStaticTransportKeys(
+            deviceKey: machineKey, masterSecrets: ["master-1": master], pairedDevices: [:]
+        ),
+        connector: CloudSuspendedHandshakeConnector(socket: socket)
+    )
+    let completion = CloudConnectCompletion()
+    let connectTask = Task {
+        do { try await transport.connect(role: .machine) } catch {}
+        completion.finish()
+    }
+    try await waitUntil("initial challenge receive is suspended") {
+        socket.state().receiveStarted
+    }
+    await transport.shutdown()
+    try await waitUntil("shutdown terminates initial connect", timeout: 0.5) {
+        completion.finished()
+    }
+    await connectTask.value
+    try require(socket.state().closed,
+                "shutdown closes the socket owned by an initial suspended handshake")
+    let shutdownState = await transport.currentState()
+    try require(shutdownState == .shutDown,
+                "initial connect cancellation preserves terminal shutdown state")
+    return checks
+}
+
+private func runCloudTransportConnectorCancellationTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudTransportTestFailure(description: message) }
+    }
+
+    let machineKey = CloudDeviceKeyPair()
+    let master = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x45, count: 32))
+    let attempt = CloudSuspendedConnectAttempt()
+    let transport = CloudTransport(
+        relayBaseURL: URL(string: "ws://suspended-connector.invalid/v1/connect")!,
+        tokenProvider: CloudTestTokenProvider(tokens: [
+            CloudDeviceToken(value: "connector-token", expiresAt: Date().addingTimeInterval(60))
+        ]),
+        keyProvider: CloudStaticTransportKeys(
+            deviceKey: machineKey, masterSecrets: ["master-1": master], pairedDevices: [:]
+        ),
+        connector: CloudCancellationCooperativeSuspendedConnector(attempt: attempt)
+    )
+    let completion = CloudConnectCompletion()
+    let connectTask = Task {
+        do { try await transport.connect(role: .machine) } catch {}
+        completion.finish()
+    }
+    try await waitUntil("connector attempt is suspended") {
+        attempt.state().started
+    }
+    await transport.shutdown()
+    try await waitUntil("shutdown cancels and joins the connector attempt", timeout: 0.5) {
+        completion.finished()
+    }
+    await connectTask.value
+    try require(attempt.state().cancelled,
+                "connector cancellation terminates suspension without an external resume")
+    let state = await transport.currentState()
+    try require(state == .shutDown,
+                "connector cancellation preserves terminal shutdown state")
+    return checks
+}
+
+private func runCloudTransportConnectorRegistrationTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudTransportTestFailure(description: message) }
+    }
+
+    let machineKey = CloudDeviceKeyPair()
+    let master = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x46, count: 32))
+    let tokenProvider = CloudSuspendedTokenProvider(token: CloudDeviceToken(
+        value: "late-secret-after-shutdown", expiresAt: Date().addingTimeInterval(60)
+    ))
+    let attempt = CloudSuspendedConnectAttempt()
+    let transport = CloudTransport(
+        relayBaseURL: URL(string: "ws://registration-race.invalid/v1/connect")!,
+        tokenProvider: tokenProvider,
+        keyProvider: CloudStaticTransportKeys(
+            deviceKey: machineKey, masterSecrets: ["master-1": master], pairedDevices: [:]
+        ),
+        connector: CloudCancellationCooperativeSuspendedConnector(attempt: attempt)
+    )
+    let completion = CloudConnectCompletion()
+    let connectTask = Task {
+        do { try await transport.connect(role: .machine) } catch {}
+        completion.finish()
+    }
+    try await waitUntil("token fetch is suspended before connector registration") {
+        await tokenProvider.hasStarted()
+    }
+    await transport.shutdown()
+    await tokenProvider.release()
+    try await waitUntil("post-shutdown connect attempt terminates", timeout: 0.5) {
+        completion.finished() || attempt.state().started
+    }
+    let attemptState = attempt.state()
+    if attemptState.started {
+        // Failure cleanup only: the fixed path completes without starting or externally resuming
+        // the connector. This prevents the pre-fix red binary from hanging after its assertion.
+        attempt.cancel()
+    }
+    await connectTask.value
+    let retainedToken = try reflectedCachedTokenValue(in: transport)
+    try require(retainedToken == nil,
+                "shutdown does not retain the late token after its fetch resumes")
+    try require(!attemptState.started,
+                "shutdown prevents a connector from being born after token fetch resumes")
+    try require(completion.finished(),
+                "post-token cancellation finishes connect without a test-side connector resume")
+    let state = await transport.currentState()
+    try require(state == .shutDown,
+                "post-token cancellation preserves terminal shutdown state")
+    return checks
+}
+
+private func reflectedCachedTokenValue(in transport: CloudTransport) throws -> String? {
+    guard let storage = Mirror(reflecting: transport).children.first(where: {
+        $0.label == "cachedToken"
+    })?.value else {
+        throw CloudTransportTestFailure(description: "CloudTransport cachedToken storage is missing")
+    }
+    let optional = Mirror(reflecting: storage)
+    guard optional.displayStyle == .optional else {
+        throw CloudTransportTestFailure(description: "CloudTransport cachedToken storage is not optional")
+    }
+    guard let value = optional.children.first?.value else { return nil }
+    guard let token = value as? CloudDeviceToken else {
+        throw CloudTransportTestFailure(description: "CloudTransport cachedToken has an unexpected type")
+    }
+    return token.value
+}
+
+private func runCloudTransportReadyBufferTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudTransportTestFailure(description: message) }
+    }
+
+    let machineKey = CloudDeviceKeyPair()
+    let master = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x44, count: 32))
+    let relay = CloudLoopbackRelay(
+        account: "buffer-account", deviceID: "buffer-machine",
+        devicePublicKey: machineKey.publicKeyRaw, allowedTokens: ["buffer-token"]
+    )
+    let transport = CloudTransport(
+        relayBaseURL: URL(string: "ws://loopback.invalid/v1/connect")!,
+        tokenProvider: CloudTestTokenProvider(tokens: [
+            CloudDeviceToken(value: "buffer-token", expiresAt: Date().addingTimeInterval(3_600))
+        ]),
+        keyProvider: CloudStaticTransportKeys(
+            deviceKey: machineKey, masterSecrets: ["master-1": master], pairedDevices: [:]
+        ),
+        connector: CloudLoopbackSocketConnector(relay: relay),
+        initialBackoff: 0.01,
+        maximumBackoff: 0.02
+    )
+    try await transport.connect(role: .machine)
+    for wantedHandshakes in 2...3 {
+        await relay.dropConnections()
+        try await waitUntil("burst reconnect generation \(wantedHandshakes)", timeout: 2) {
+            let handshakes = await relay.completedHandshakes()
+            let dropped = await transport.droppedReadyGenerationCount()
+            return handshakes >= wantedHandshakes && dropped == wantedHandshakes - 1
+        }
+    }
+    var iterator = transport.readyGenerations.makeAsyncIterator()
+    let buffered = await iterator.next()
+    try require(buffered == 3,
+                "bounded ready buffer coalesces a burst to the current generation")
+    let dropped = await transport.droppedReadyGenerationCount()
+    try require(dropped == 2,
+                "ready generation yield reports each superseded buffered generation")
+    await transport.shutdown()
+    let ended = await iterator.next()
+    try require(ended == nil,
+                "shutdown finishes a delayed ready-generation iterator")
+    await relay.stop()
     return checks
 }
 

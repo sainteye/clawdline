@@ -504,18 +504,22 @@ enum SessionInfo {
 
     /// What the route answers with. Pure, so a test can hand it every piece and read the JSON.
     ///
-    /// `usage` and `files` are **absent** rather than zeroed when they could not be had: a session
-    /// whose transcript has not been found yet has not spent nothing, and a directory that is not
-    /// a repository has not got a clean tree. `limits.windows` is empty for the same reason.
+    /// `title` is the same complete display title used by the Session list; it is not shortened
+    /// for the card. `usage` and `files` are **absent** rather than zeroed when they could not be
+    /// had: a session whose transcript has not been found yet has not spent nothing, and a
+    /// directory that is not a repository has not got a clean tree. `limits.windows` is empty for
+    /// the same reason.
     /// `deploy` is the deploy and CI rows of `/links`, unchanged, so a state means there what it
     /// means here.
-    static func payload(id: String, assistant: Assistant?, sessionId: String?, model: String?,
+    static func payload(id: String, title: String? = nil, assistant: Assistant?,
+                        sessionId: String?, model: String?,
                         cwd: String?, startedAt: Date?, now: Date = Date(),
                         usage: Orchestrator.Usage?, context: Context? = nil,
                         limits: Limits, files: Files?,
                         deploy: [[String: Any]], models: [Model] = [],
                         permission: PermissionMode? = nil) -> [String: Any] {
         var session: [String: Any] = ["id": id]
+        if let title, !title.isEmpty { session["title"] = title }
         if let assistant { session["assistant"] = assistant.rawValue }
         if let sessionId { session["sessionId"] = sessionId }
         if let model, !model.isEmpty { session["model"] = model }

@@ -266,6 +266,7 @@ enum StateHook {
     /// explicit at the only place it could be got wrong.
     static func observe() {
         previous = SessionWatch.shared.states
+        Orchestrator.reconcileSessionDeliveryStates(previous)
         finishTracker = FinishTracker()
         _ = finishTracker.update(states: previous,
                                  sessions: SessionWatch.shared.targets,
@@ -389,6 +390,22 @@ enum StateHook {
                      icon: RemoteIcon.projectPath(for: projectMark(for: session)))
     }
 
+    /// A completed turn may wait a few seconds for one better sentence. The transcript identity is
+    /// resolved on the state-reading thread, while the bounded file read and model turn happen on
+    /// `SmartNotification`'s queue. Its fallback sends this exact ordinary message once.
+    private static func sendFinishedPush(for session: TargetSession, event: String) {
+        let project = projectName(for: session)
+        let message = pushMessage(for: session, project: project, event: event)
+        let delivery = SmartNotification.Delivery(
+            title: message.title, project: project, fallbackBody: message.body,
+            url: "/#session=\(session.id)", tag: session.id,
+            icon: RemoteIcon.projectPath(for: projectMark(for: session)))
+        let record = Transcript.record(of: session)
+        SmartNotification.send(delivery) {
+            record.flatMap(SmartNotification.source(from:))
+        }
+    }
+
     private static func react() {
         let states = SessionWatch.shared.states
         let sessions = SessionWatch.shared.targets
@@ -399,6 +416,9 @@ enum StateHook {
         defer { previous = states }
 
         let changes = transitions(from: previous, to: states, sessions: sessions)
+        for change in changes {
+            Orchestrator.noteSessionStateChange(terminalID: change.session.id, to: change.to)
+        }
 
         // A phone, buzzing, for the one state that is worth it.
         //
@@ -428,7 +448,7 @@ enum StateHook {
             for session in finished {
                 let role = Orchestrator.role(forTerminal: session.id)
                 if case .send(let event) = pushDecision(.finished, role: role, minutesLeft: nil) {
-                    sendPush(for: session, event: event)
+                    sendFinishedPush(for: session, event: event)
                 }
             }
         }

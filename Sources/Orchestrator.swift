@@ -644,7 +644,8 @@ enum Orchestrator {
         return true
     }
 
-    /// Everything one schedule is, including the task template the list route leaves out.
+    /// Everything one schedule is, including the task template and retained run history the list
+    /// route leaves out.
     ///
     /// The list is a list — it says what exists, when it next fires and how the last run went,
     /// and it says nothing about what any of them actually *does*. That is the right amount for
@@ -677,13 +678,80 @@ enum Orchestrator {
         let snapshots = Array(tasks.values)
         let missed = lastMissedScheduleFires[schedule.id]
         lock.unlock()
-        if let last = snapshots.filter({ $0.scheduleID == schedule.id })
-            .max(by: { $0.created < $1.created }) {
+        let runs = snapshots.filter { $0.scheduleID == schedule.id }
+            .sorted { $0.created > $1.created }
+        if let last = runs.first {
             out["last_run"] = ["task_id": last.id, "state": last.state.rawValue,
                                "at": Int(last.created.timeIntervalSince1970)]
         }
+        // A schedule run is an ordinary orchestrator task, but this is the one screen where its
+        // child conversation is product data rather than broker plumbing. Only an identity already
+        // proved against that task's own briefing is returned. A guessed or stale session id never
+        // becomes a resume flag merely because it survived in the registry.
+        out["runs"] = runs.map(scheduleRunRecord)
+        // Cleanup keeps two hundred task records for the whole Mac. At that boundary this schedule
+        // may have older runs the registry can no longer associate with it, and the client must say
+        // so rather than drawing the bottom of the list as the beginning of history.
+        if snapshots.count >= 200 { out["runs_may_be_truncated"] = true }
         if let missed { out["last_missed_at"] = Int(missed.timeIntervalSince1970) }
         return out
+    }
+
+    /// The compact occurrence shape used only inside one schedule detail response.
+    ///
+    /// `terminal_id` is useful while the tab is still visible; `session_id` is useful after it has
+    /// gone. The latter is emitted only for terminal work with a transcript/rollout that still
+    /// exists and is proven to belong to this exact task. That is the authorization fact the
+    /// existing place-resume route rechecks below before turning the id into a CLI flag.
+    private static func scheduleRunRecord(_ task: Task) -> [String: Any] {
+        var out: [String: Any] = [
+            "task_id": task.id,
+            "state": task.state.rawValue,
+            "assistant": task.assistant.rawValue,
+            "project_dir": task.projectDir,
+            "created": Int(task.created.timeIntervalSince1970),
+        ]
+        if let finished = task.finishedAt {
+            out["finished_at"] = Int(finished.timeIntervalSince1970)
+        }
+        if let terminal = task.childTerminalId { out["terminal_id"] = terminal }
+        if task.state.isTerminal, let session = availableScheduledSessionID(of: task) {
+            out["session_id"] = session
+        }
+        if let summary = task.summary { out["summary"] = summary }
+        // snake_case, unlike `shape()`'s `attachSession` — every other key in a schedule run
+        // record is spelled this way and a record is read as one thing.
+        if let session = task.attachSessionId {
+            out["attached"] = true
+            out["attach_session"] = session
+        }
+        return out
+    }
+
+    /// Whether the existing place-resume route may accept one conversation that the ordinary
+    /// project history deliberately hides because it began as Clawdline plumbing.
+    ///
+    /// The exception is schedule-only, terminal-only, project- and assistant-exact, and backed by
+    /// the same task/transcript ownership proof used for usage accounting. This keeps dispatched
+    /// children out of the general history picker while allowing the schedule detail that disclosed
+    /// the run to pick that exact conversation back up.
+    static func scheduledResumeAllowed(sessionID: String, assistant: Assistant,
+                                       projectDir: String) -> Bool {
+        load()
+        lock.lock()
+        let candidates = tasks.values.filter {
+            $0.scheduleID != nil && $0.state.isTerminal && $0.assistant == assistant
+                && $0.projectDir == projectDir && $0.childSessionId == sessionID
+        }
+        lock.unlock()
+        return candidates.contains { availableScheduledSessionID(of: $0) == sessionID }
+    }
+
+    private static func availableScheduledSessionID(of task: Task) -> String? {
+        guard task.scheduleID != nil, let path = task.transcriptPath,
+              FileManager.default.fileExists(atPath: path) else { return nil }
+        guard let session = provenChildSessionID(of: task), isTaskID(session) else { return nil }
+        return session
     }
 
     static func latestFire(of schedule: Schedule, at now: Date,
@@ -1184,6 +1252,17 @@ enum Orchestrator {
         var costUsd: Double?
     }
 
+    struct Verification: Equatable {
+        enum Last: String {
+            case pass, fail, skipped
+        }
+
+        let runs: Int
+        let seconds: Int
+        let last: Last
+        let scope: String
+    }
+
     /// One claim path given back early through `claims/release`, and when — see
     /// `Orchestrator.releaseClaims`. `Task.claimKeys` stays the full original reservation;
     /// `Task.activeClaimKeys` is what this subtracts from it.
@@ -1269,8 +1348,14 @@ enum Orchestrator {
         var progress: [ProgressNote] = []
         var isolation = Isolation.none
         var worktree: Worktree?
+        /// The existing standing Session this task was delivered into. Nil means Clawdline
+        /// opened `childTerminalId` for this task and therefore owns that tab's lifecycle.
+        var attachSessionId: String?
         var childTerminalId: String?
         var childBackend: Backend?
+        /// Whether this task's terminal was actually launched with access to the whole task
+        /// root. Persisted because depth settings can change while the tab remains standing.
+        var childTaskRootAccess = false
         var childTTY: String?
         var childPID: Int32?
         var childProcStart: Date?
@@ -1290,6 +1375,7 @@ enum Orchestrator {
         var summary: String?
         var artifacts: [String] = []
         var usage: Usage?
+        var verification: Verification?
         var injectAttempts = 0
         /// The most recent time the first message was handed to the terminal. In memory only:
         /// a process restart loses the plaintext secret and fails every spawning task anyway.
@@ -1297,6 +1383,9 @@ enum Orchestrator {
         /// The registry answer already sampled by the temporary legacy comparison. In memory
         /// only, so a restart may compare once more without imposing per-beat transcript I/O.
         var registryControlSessionID: String?
+        /// Whether the one menu decision this task is allowed to make has already been made —
+        /// either the default was taken on a tab this app opened, or the menu was recognised as
+        /// somebody else's and left alone. See ``Orchestrator/menuStep(task:choosing:)``.
         var answeredMenu = false
         /// When the child's terminal was last seen in a reading — the difference between a child
         /// that finished and one whose tab was closed under it.
@@ -1321,6 +1410,19 @@ enum Orchestrator {
         /// scan/still-running/tmux failure must stay stopped for a person instead of sending the
         /// quit word and signals again on every five-second beat.
         var terminalIntervention: TerminalIntervention?
+        /// When the task-owned heavyweight `work/` directory may be reclaimed. Nil means either
+        /// there is nothing left to do or the `-1` setting leaves it to the 24-hour root sweep.
+        var workCleanupAt: Date?
+        /// When the isolated checkout's build output may be reclaimed. Nil for every task without
+        /// a worktree of its own: the build directory of a shared checkout belongs to the person
+        /// working in it, and this deadline must never be able to name it.
+        ///
+        /// Separate from ``workCleanupAt`` because the two directories are on opposite sides of
+        /// the repository line — `work/` is Clawdline's own scratch under `/tmp`, this is a
+        /// gitignored directory inside somebody's checkout — and because whole-worktree disposal
+        /// is not allowed to be the only thing that frees it. `.build/` regenerates from the
+        /// source; the source and the branch are the delivery and are never touched here.
+        var buildCleanupAt: Date?
 
         var dir: URL { Orchestrator.root.appendingPathComponent(id, isDirectory: true) }
     }
@@ -1722,7 +1824,11 @@ enum Orchestrator {
             ?? root.appendingPathComponent("handoffs", isDirectory: true)
     }
 
-    static var storeURL: URL { RemoteAuth.directory.appendingPathComponent("orchestrator.json") }
+    static var storeURLOverrideForTesting: URL?
+    static var storeURL: URL {
+        storeURLOverrideForTesting
+            ?? RemoteAuth.directory.appendingPathComponent("orchestrator.json")
+    }
     static var tokenURL: URL { RemoteAuth.directory.appendingPathComponent("orchestrator-token") }
     static var archiveKeyURL: URL {
         RemoteAuth.directory.appendingPathComponent("orchestrator-archive-key")
@@ -1750,6 +1856,9 @@ enum Orchestrator {
     private static var handoffs: [String: HandoffEnvelope] = [:]
     private static var handoffDeliveries: [String: HandoffDelivery] = [:]
     private static var coordinationWaits: [String: CoordinationWait] = [:]
+    /// Root terminal id → the last turn that root explicitly delivered. Unlike a child result,
+    /// this receipt is consumed when the same tab begins another observed turn.
+    private static var sessionDeliveries: [String: SessionDelivery] = [:]
     /// How many `beat` walks are inside the loop, and which walk this is. Both exist to catch the
     /// overlap that should not be possible; neither changes what a walk does.
     private static var beatsInFlight = 0
@@ -1779,6 +1888,20 @@ enum Orchestrator {
     static var scheduleDispatchEnqueuerForTesting: ((@escaping () -> Void) -> Void)?
     /// Test seam: observes the warning decision before optional terminal delivery.
     static var workspaceOverlapObserverForTesting: ((Task, [WorkspaceOverlap]) -> Void)?
+    /// Test receipt for the semantic root-notification boundary. The terminal transport itself
+    /// is exercised elsewhere; this proves a terminal path reached finalization and its notice.
+    static var rootNotificationObserverForTesting: ((Task) -> Void)?
+    static var attachedSenderForTesting: ((String, TargetSession) -> String?)?
+    /// The session inventory an attachment resolves against, and the starter a tab-opening
+    /// dispatch uses.
+    ///
+    /// Production reads `SessionWatch` and opens a real terminal; a suite can do neither, which
+    /// is how everything past ``attachmentDecision(sessionID:assistant:sessions:states:tasks:roles:isChoosing:excluding:)``
+    /// — `spawnAttached`, `502 attach_delivery_failed`, the single-flight check the serialize
+    /// pump re-runs, and every tab-opening failure at dispatch — came to have no test that could
+    /// go red. Both are cleared by ``forget()``.
+    static var attachmentInventoryForTesting: ([TargetSession], [String: SessionState])?
+    static var taskStarterForTesting: TaskStarter?
     /// Test seam for the final display sentence; production always enters WebPush below.
     static var agentPushForTesting:
         ((String, String, String, String?, String?) -> WebPush.Delivery)?
@@ -1809,6 +1932,8 @@ enum Orchestrator {
         /// minutes after its task ends (see `orchestratorChildLinger`), and for those three
         /// minutes it is a child's tab with nobody behind it.
         let live: Bool
+        /// The launch-time grant, not an inference from the task's current depth setting.
+        var taskRootAccess = false
     }
 
     /// One session blocked on a coordination group. Request delivery and release delivery are
@@ -1875,6 +2000,37 @@ enum Orchestrator {
         var conversationID: String?
     }
 
+    /// A root's authenticated claim that its current turn delivered what it was assigned.
+    ///
+    /// This is deliberately weaker than a broker-verified landing and therefore produces only
+    /// the single-check milestone. `settled` means the report has subsequently been observed at
+    /// an idle prompt; the next working/waiting transition consumes it so an older turn cannot
+    /// reappear as complete after a newer one ends without reporting.
+    struct SessionDelivery {
+        let identity: SessionWorkIdentity
+        let summary: String
+        let reportedAt: Date
+        var settled: Bool
+    }
+
+    static let sessionDeliverySummaryLimit = 500
+
+    static func sessionDeliveryMatchesCurrentSession(_ delivery: SessionDelivery,
+                                                      identity: SessionWorkIdentity) -> Bool {
+        guard let assistant = identity.assistant,
+              delivery.identity.assistant == assistant,
+              delivery.identity.terminalID == identity.terminalID,
+              delivery.identity.tty == identity.tty,
+              let recordedPID = delivery.identity.pid, recordedPID == identity.pid,
+              let recordedStart = delivery.identity.processStart,
+              let currentStart = identity.processStart,
+              abs(recordedStart.timeIntervalSince(currentStart))
+                <= SessionRegistry.startTolerance,
+              let recordedConversation = delivery.identity.conversationID,
+              recordedConversation == identity.conversationID else { return false }
+        return true
+    }
+
     /// A terminal task receipt belongs to the current Session only when every durable child
     /// identity agrees with every process-bound fact. Missing legacy fields fail closed: they
     /// remain useful task history, but cannot put a check on an unrelated later process.
@@ -1921,20 +2077,27 @@ enum Orchestrator {
         task: Task?,
         hasCoordinationWait: Bool,
         hasOpenHandoff: Bool,
-        assignmentKnownAbsent: Bool
+        assignmentKnownAbsent: Bool,
+        hasSessionDelivery: Bool = false,
+        hasOutstandingChild: Bool = false
     ) -> SessionWorkState {
         if terminalState == .waiting { return .waitingHuman }
         if hasCoordinationWait { return .waitingSession }
         if terminalState == .unknown { return .needsTriage }
         if case .working = terminalState { return .working }
+        if hasOutstandingChild { return .waitingSession }
 
-        if let task, task.state == .success, task.finishedAt != nil {
-            if task.landing.map(isBrokerVerifiedTargetLanding) == true,
-               !hasOpenHandoff {
-                return .workComplete
+        if let task {
+            if task.state == .success, task.finishedAt != nil {
+                if task.landing.map(isBrokerVerifiedTargetLanding) == true,
+                   !hasOpenHandoff {
+                    return .workComplete
+                }
+                return .milestoneComplete
             }
-            return .milestoneComplete
+            return .needsTriage
         }
+        if hasSessionDelivery { return .milestoneComplete }
         if assignmentKnownAbsent { return .ready }
         // Idle is intentionally absent from the success rules. A prompt proves that activity
         // stopped; without a matching receipt it proves neither completion nor readiness.
@@ -1956,6 +2119,17 @@ enum Orchestrator {
                                                     terminalState: SessionState)
         -> SessionWorkProjection {
         let task = taskForCurrentSession(Array(tasks.values), identity: identity)
+        let sessionDelivery = sessionDeliveries[identity.terminalID].flatMap {
+            sessionDeliveryMatchesCurrentSession($0, identity: identity) ? $0 : nil
+        }
+        let hasOutstandingChild = tasks.values.contains { child in
+            guard !child.state.isTerminal else { return false }
+            if let currentTaskID = task?.id, child.parentTaskId == currentTaskID { return true }
+            guard let conversation = identity.conversationID,
+                  child.rootSessionId == conversation,
+                  (child.rootAssistant ?? .claude) == identity.assistant else { return false }
+            return true
+        }
         let hasWait = coordinationWaits.values.contains { wait in
             wait.waiters.contains { waiter in
                 waiter.releaseDeliveredAt == nil
@@ -1972,9 +2146,22 @@ enum Orchestrator {
         let state = projectSessionWorkState(
             terminalState: terminalState, task: task,
             hasCoordinationWait: hasWait, hasOpenHandoff: hasOpenHandoff,
-            assignmentKnownAbsent: identity.assistant == nil)
-        guard state == .milestoneComplete || state == .workComplete, let task else {
+            assignmentKnownAbsent: identity.assistant == nil,
+            hasSessionDelivery: sessionDelivery != nil,
+            hasOutstandingChild: hasOutstandingChild)
+        guard state == .milestoneComplete || state == .workComplete else {
             return SessionWorkProjection(state: state, disposition: nil)
+        }
+        if let delivery = sessionDelivery, task == nil {
+            return SessionWorkProjection(state: state, disposition: [
+                "scope": "session",
+                "title": delivery.summary,
+                "evidence": "authenticated_session_delivery",
+                "receiptAt": Int(delivery.reportedAt.timeIntervalSince1970),
+            ])
+        }
+        guard let task else {
+            return SessionWorkProjection(state: .needsTriage, disposition: nil)
         }
         var disposition: [String: Any] = [
             "scope": "task",
@@ -1997,6 +2184,95 @@ enum Orchestrator {
             }
         }
         return SessionWorkProjection(state: state, disposition: disposition)
+    }
+
+    /// Record one root turn's explicit delivery claim. The route supplies identity from the
+    /// current watched process rather than accepting it from JSON, and reporting is allowed only
+    /// while that turn is visibly active. Children already have the stronger task/result path.
+    static func reportSessionDelivery(identity: SessionWorkIdentity,
+                                      terminalState: SessionState,
+                                      summary rawSummary: String,
+                                      now: Date = Date()) -> Reply {
+        load()
+        guard case .working = terminalState else {
+            return .refused(409, "session_not_working",
+                            "A root may report delivery only while its current turn is working.")
+        }
+        guard identity.assistant != nil, identity.pid != nil, identity.processStart != nil,
+              identity.conversationID != nil else {
+            return .refused(409, "session_unbound",
+                            "The current assistant process and conversation could not be bound.")
+        }
+        let summary = rawSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !summary.isEmpty, summary.count <= sessionDeliverySummaryLimit,
+              !summary.unicodeScalars.contains(where: { $0.value == 0 }) else {
+            return .refused(400, "bad_request",
+                            "summary must be 1–\(sessionDeliverySummaryLimit) characters without NUL.")
+        }
+
+        lock.lock()
+        if taskForCurrentSession(Array(tasks.values), identity: identity) != nil {
+            lock.unlock()
+            return .refused(409, "child_session",
+                            "A Clawdline child reports through its task result, not this route.")
+        }
+        if let existing = sessionDeliveries[identity.terminalID],
+           sessionDeliveryMatchesCurrentSession(existing, identity: identity),
+           existing.summary == summary, !existing.settled {
+            let disposition = sessionDeliveryDisposition(existing)
+            lock.unlock()
+            return .ok(["ok": true, "created": false, "disposition": disposition])
+        }
+        let made = SessionDelivery(identity: identity, summary: summary,
+                                   reportedAt: now, settled: false)
+        sessionDeliveries[identity.terminalID] = made
+        let disposition = sessionDeliveryDisposition(made)
+        lock.unlock()
+        save()
+        RemoteAuth.audit("orchestrator.session.delivered", [
+            "session": identity.terminalID, "assistant": identity.assistant?.rawValue ?? "?",
+        ])
+        return .ok(["ok": true, "created": true, "disposition": disposition])
+    }
+
+    private static func sessionDeliveryDisposition(_ delivery: SessionDelivery) -> [String: Any] {
+        [
+            "scope": "session", "title": delivery.summary,
+            "evidence": "authenticated_session_delivery",
+            "receiptAt": Int(delivery.reportedAt.timeIntervalSince1970),
+        ]
+    }
+
+    /// Advance the one-turn receipt lifecycle from observed terminal transitions. The first idle
+    /// after reporting arms consumption; the next active state removes the old receipt before a
+    /// later idle prompt could display it again.
+    static func noteSessionStateChange(terminalID: String, to state: SessionState) {
+        load()
+        var changed = false
+        lock.lock()
+        if var delivery = sessionDeliveries[terminalID] {
+            switch state {
+            case .idle where !delivery.settled:
+                delivery.settled = true
+                sessionDeliveries[terminalID] = delivery
+                changed = true
+            case .working where delivery.settled, .waiting where delivery.settled:
+                sessionDeliveries.removeValue(forKey: terminalID)
+                changed = true
+            default:
+                break
+            }
+        }
+        lock.unlock()
+        if changed { save() }
+    }
+
+    /// On app launch there is no transition into an already-idle prompt. Settle those receipts
+    /// from the initial authoritative reading so their next turn still consumes them.
+    static func reconcileSessionDeliveryStates(_ states: [String: SessionState]) {
+        for (terminalID, state) in states where state == .idle {
+            noteSessionStateChange(terminalID: terminalID, to: state)
+        }
     }
 
     /// What a terminal this app opened for a task is called. Nil for every other session.
@@ -2023,11 +2299,24 @@ enum Orchestrator {
         var roles: [String: Role] = [:]
         for task in tasks.values {
             guard let terminal = task.childTerminalId else { continue }
-            found[terminal] = task.title
             let role = Role(taskID: task.id, depth: task.depth, title: task.title,
                             deadline: task.briefedAt?
                                 .addingTimeInterval(Double(task.timeoutMinutes) * 60),
-                            live: !task.state.isTerminal)
+                            live: !task.state.isTerminal,
+                            taskRootAccess: task.childTaskRootAccess)
+            // An attached task is a guest in a session somebody else owns. It may say that the
+            // session is busy with broker work while it is running, and that is all: it never
+            // renames the session, and it leaves nothing behind when it ends. A tab this app
+            // opened is that task's for the record's whole life; a standing session wearing a
+            // finished task's name and a `live: false` role is the one shape it must not have,
+            // because "standing" is the whole reason it exists.
+            if task.attachSessionId != nil {
+                guard role.live else { continue }
+                if let existing = roles[terminal], existing.live { continue }
+                roles[terminal] = role
+                continue
+            }
+            found[terminal] = task.title
             // A tab is normally one task's for its whole life. When two records name the same
             // one — a terminal id reused after a tab closed and another opened in its place —
             // the live task is the one anything asking this question means.
@@ -2180,6 +2469,7 @@ enum Orchestrator {
         /// window opens after the account's own reset has nothing to lose. Never widens anything
         /// else: `unknown` and `ok` already dispatch without this, and `low` only ever warns.
         var ignoreQuota = false
+        var attachSessionId: String?
     }
 
     /// A live task whose working directory intersects the one being dispatched. The task is a
@@ -2239,6 +2529,65 @@ enum Orchestrator {
     enum DraftOutcome: Equatable {
         case ok(Draft)
         case bad(String)
+    }
+
+    enum AttachmentDecision: Equatable {
+        case accepted(TargetSession, depth: Int)
+        case refused(status: Int, code: String, message: String)
+    }
+
+    /// Resolve against the full watched Session inventory, which is intentionally wider than the
+    /// terminal-neutral address book published by the orchestrator route. Every refusal happens
+    /// before registration or terminal input.
+    ///
+    /// `excluding` is the id of the task this decision is *for*. Single-flight is a rule about
+    /// two tasks, and a task is not the other one: the serialize queue writes a task into the
+    /// registry as `spawning` before it opens anything, so re-resolving without this made every
+    /// attached task that also named a `serialize` token refuse itself with
+    /// `attach_session_occupied` — at a moment when the HTTP response that would have carried
+    /// the error was already sent.
+    static func attachmentDecision(
+        sessionID: String, assistant: Assistant,
+        sessions: [TargetSession], states: [String: SessionState],
+        tasks: [Task], roles: [String: Role],
+        isChoosing: (TargetSession) -> Bool,
+        excluding excludedTaskID: String? = nil
+    ) -> AttachmentDecision {
+        guard let session = sessions.first(where: { $0.id == sessionID }) else {
+            return .refused(status: 404, code: "attach_session_not_found",
+                            message: "No session named by attach_session is currently available.")
+        }
+        guard let resident = session.assistant else {
+            return .refused(status: 409, code: "attach_unsupported",
+                            message: "attach_session names a plain shell with no assistant.")
+        }
+        // A standing host needs two launch-time facts: Clawdline opened its tab for a task, and
+        // that process was given the whole task root. A leaf gets only its original task
+        // directory, so it cannot read a new follow-up's sibling CHILD.md even though Clawdline
+        // opened it. Persist the actual grant instead of inferring it from depth: the configured
+        // floor can change while a tab remains standing, but a process's `--add-dir` cannot.
+        guard let role = roles[sessionID], role.taskRootAccess else {
+            return .refused(status: 409, code: "attach_not_managed",
+                            message: "attach_session names a session without Clawdline's "
+                                   + "launch-time task-root access; it cannot read a new "
+                                   + "follow-up task's CHILD.md.")
+        }
+        guard resident == assistant else {
+            return .refused(status: 409, code: "attach_assistant_mismatch",
+                            message: "The task assistant differs from the attached session's assistant.")
+        }
+        if tasks.contains(where: {
+            $0.id != excludedTaskID && !$0.state.isTerminal
+                && ($0.childTerminalId == sessionID || $0.attachSessionId == sessionID)
+        }) {
+            return .refused(status: 409, code: "attach_session_occupied",
+                            message: "That session already has a live Clawdline task.")
+        }
+        if states[sessionID] == .waiting, isChoosing(session) {
+            return .refused(status: 409, code: "attach_session_busy",
+                            message: "That session is showing a menu; no briefing was typed.")
+        }
+        return .accepted(session, depth: role.depth)
     }
 
     static func draft(from obj: [String: Any], expecting id: String,
@@ -2375,6 +2724,13 @@ enum Orchestrator {
             }
             permission = ok
         }
+        var attachSessionId: String?
+        if let raw = obj["attach_session"] {
+            guard let id = raw as? String, !id.isEmpty, id.count <= 512 else {
+                return .bad("attach_session must be a non-empty session id of at most 512 characters")
+            }
+            attachSessionId = id
+        }
         var made = Draft()
         made.id = id
         made.assistant = assistant
@@ -2387,6 +2743,7 @@ enum Orchestrator {
         made.isolation = isolation
         made.isolationBase = isolationBase
         made.ignoreQuota = obj["ignore_quota"] as? Bool ?? false
+        made.attachSessionId = attachSessionId
         made.plan = (obj["plan"] as? String).flatMap {
             let text = $0.trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : text
@@ -3336,6 +3693,30 @@ enum Orchestrator {
 
     // MARK: - Dispatch
 
+    private static func resolveAttachment(sessionID: String, assistant: Assistant,
+                                          excluding excludedTaskID: String? = nil)
+        -> AttachmentDecision {
+        let inventory: ([TargetSession], [String: SessionState])
+        if let supplied = attachmentInventoryForTesting {
+            inventory = supplied
+        } else if Thread.isMainThread {
+            inventory = (SessionWatch.shared.targets, SessionWatch.shared.states)
+        } else {
+            inventory = DispatchQueue.main.sync {
+                (SessionWatch.shared.targets, SessionWatch.shared.states)
+            }
+        }
+        lock.lock()
+        let live = Array(tasks.values)
+        let roles = rolesByTerminal
+        lock.unlock()
+        return attachmentDecision(sessionID: sessionID, assistant: assistant,
+                                  sessions: inventory.0, states: inventory.1,
+                                  tasks: live, roles: roles,
+                                  isChoosing: Targets.isChoosing,
+                                  excluding: excludedTaskID)
+    }
+
     /// Runs on the server queue. Everything filesystem- and process-shaped is safe there — the
     /// `/start` route has always called `StartPoints.start` from it.
     static func dispatch(taskID: String, secret: String, schedule: Schedule? = nil) -> Reply {
@@ -3361,19 +3742,39 @@ enum Orchestrator {
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             return .refused(422, "bad_task", "No readable task.json under /tmp/.clawdline/<task_id>/.")
         }
-        let made: Draft
+        var made: Draft
         switch draft(from: obj, expecting: taskID) {
         case .bad(let why): return .refused(422, "bad_task", why)
         case .ok(let ok): made = ok
+        }
+        let rootBinding = canonicalRootSession(
+            made.rootSessionId, assistant: made.rootAssistant,
+            among: rootTargets(), sessionID: Transcript.sessionID(of:))
+        made.rootSessionId = rootBinding.sessionID
+        let rootWarnings = rootBinding.warning.map { [$0] } ?? []
+
+        var attachedSession: TargetSession?
+        var attachedDepth: Int?
+        if let sessionID = made.attachSessionId {
+            switch resolveAttachment(sessionID: sessionID, assistant: made.assistant,
+                                     excluding: taskID) {
+            case .refused(let status, let code, let message):
+                refundDispatchRate(rateTicket)
+                return .refused(status, code, message)
+            case .accepted(let session, let depth):
+                attachedSession = session
+                attachedDepth = depth
+            }
         }
         // How deep this one sits. A dispatch names who asked, and if who asked is itself a live
         // child then this task is one level below that child's. Best-effort in the sense that a
         // caller can lie about its identity — but lying only ever moves a task *down* (the two
         // signals are combined by taking the deeper answer) or into somebody else's bucket, and
         // `orchestratorMaxDescendants` sits over the whole machine either way.
-        let depth = depthOfNew(parentTask: made.parentTaskId, rootSession: made.rootSessionId)
+        let depth = attachedDepth
+            ?? depthOfNew(parentTask: made.parentTaskId, rootSession: made.rootSessionId)
         let floor = depthFloor
-        if depth > floor {
+        if attachedSession == nil, depth > floor {
             return .refused(409, "depth_exceeded",
                             floor == 1
                             ? "A child session cannot dispatch tasks of its own."
@@ -3381,7 +3782,8 @@ enum Orchestrator {
         }
         let cap = depth == 1 ? Config.shared.orchestratorMaxChildren
                              : Config.shared.orchestratorMaxGrandchildren
-        if activeCount(dispatchedBy: made.rootSessionId, parentTask: made.parentTaskId) >= cap {
+        if attachedSession == nil,
+           activeCount(dispatchedBy: made.rootSessionId, parentTask: made.parentTaskId) >= cap {
             return .refused(status: 429, code: "over_capacity",
                             message: "All \(cap) child slots for this session are busy; "
                                    + "retry when one finishes.",
@@ -3391,7 +3793,7 @@ enum Orchestrator {
         // this is what the Mac may, and it is the one a caller cannot talk its way around by
         // claiming to be somebody else.
         let ceiling = Config.shared.orchestratorMaxDescendants
-        if activeCount() >= ceiling {
+        if attachedSession == nil, activeCount() >= ceiling {
             return .refused(status: 429, code: "over_capacity",
                             message: "All \(ceiling) child sessions on this Mac are busy; "
                                    + "retry when one finishes.",
@@ -3462,6 +3864,10 @@ enum Orchestrator {
         task.scheduleNotifyFailure = schedule?.notifyOnFailure ?? true
         task.isolation = made.isolation
         task.worktree = preparedWorktree
+        task.attachSessionId = made.attachSessionId
+        // `resolveAttachment` accepts only a host whose launch-time grant covers the task root.
+        // A guest inherits that property while it temporarily supplies the session's live role.
+        task.childTaskRootAccess = made.attachSessionId != nil
         worktreeWarnings += prepareClaimsForIsolation(&task)
         task.claimKeys = freezeClaims(task.claims, projectDir: task.projectDir)
         if !task.serialize.isEmpty {
@@ -3475,6 +3881,16 @@ enum Orchestrator {
         // two concurrent dispatches could both observe a free path and then both reserve it.
         // Queued serialized work enters here too: reservation starts at dispatch, not promotion.
         lock.lock()
+        if let sessionID = made.attachSessionId,
+           tasks.values.contains(where: {
+               $0.id != taskID && !$0.state.isTerminal
+                   && ($0.childTerminalId == sessionID || $0.attachSessionId == sessionID)
+           }) {
+            lock.unlock()
+            refundDispatchRate(rateTicket)
+            return .refused(409, "attach_session_occupied",
+                            "That session already has a live Clawdline task.")
+        }
         let claimsOverlaps = claimsOverlapsLocked(for: task)
         if let blocker = claimsOverlaps.first(where: \.blocks) {
             lock.unlock()
@@ -3498,22 +3914,67 @@ enum Orchestrator {
                                                    "model": made.model ?? "default",
                                                    "reasoning_effort": made.reasoningEffort?.rawValue ?? "default",
                                                    "permission": permission.rawValue,
-                                                   "isolation": made.isolation.rawValue])
+                                                   "isolation": made.isolation.rawValue,
+                                                   "attach_session": made.attachSessionId ?? "new_tab"])
+        if let session = made.attachSessionId {
+            RemoteAuth.audit("orchestrator.attach", ["task": taskID, "session": session,
+                                                       "assistant": made.assistant.rawValue])
+        }
 
         // Straight away rather than on the next beat: the root is holding its breath on this
         // request, and the answer should already say whether a terminal opened or which older
         // serialized work left this task queued.
         let needsPump = !task.serialize.isEmpty
+        var attachDeliveryFailed = false
         if !needsPump {
-            task = spawn(task)
-            _ = replaceTask(task, expecting: .queued, discardSecret: task.state.isTerminal)
+            let opened = spawn(task, attachedSession: attachedSession)
+            // Attached delivery is the one failure here that goes through `finalize`, because
+            // `502 attach_delivery_failed` carries the finished record back in its own reply.
+            //
+            // A tab that would not open keeps the recording it always had. `finalize` is the
+            // right place for a task that ran, and the wrong one for a dispatch that failed in
+            // the caller's own request: it types a "task finished (spawn_failed)" line into the
+            // root's terminal, mid-turn, about the very answer the root is at this moment waiting
+            // for in the HTTP response — and then cancels descendants that cannot exist yet and
+            // disposes a worktree the refusal has already disposed.
+            if opened.state == .spawnFailed, made.attachSessionId != nil {
+                let fail = {
+                    finalize(taskID, as: .spawnFailed, summary: opened.summary)
+                }
+                if Thread.isMainThread { fail() } else { DispatchQueue.main.sync(execute: fail) }
+                task = held(taskID) ?? opened
+                attachDeliveryFailed = true
+            } else {
+                task = opened
+                // This refusal does not run task-finalization side effects, but the terminal
+                // record still participates in the two ordinary reclaim schedules. A tab that
+                // never opened normally has no `work/`, and `spawn` already attempted to dispose
+                // its worktree; retaining the deadlines keeps the terminal-state contract whole
+                // when either directory nevertheless exists.
+                if task.state == .spawnFailed {
+                    task.workCleanupAt = reclaimDeadline(
+                        minutes: Config.shared.orchestratorWorkGraceMinutes,
+                        outcome: .spawnFailed)
+                    task.buildCleanupAt = task.worktree == nil ? nil : reclaimDeadline(
+                        minutes: Config.shared.orchestratorBuildGraceMinutes,
+                        outcome: .spawnFailed)
+                }
+                _ = replaceTask(task, expecting: .queued,
+                                discardSecret: task.state.isTerminal)
+            }
         }
         save()
         DispatchQueue.main.async { SessionWatch.shared.nudge() }
         RemoteServer.shared.broadcastOrchestrator()
+        if attachDeliveryFailed {
+            return .refused(status: 502, code: "attach_delivery_failed",
+                            message: task.summary ?? "The attached briefing could not be typed.",
+                            extra: ["task": existingRecord(taskID) ?? [:]])
+        }
         let reply = successfulDispatchReply(for: task, notify: true,
                                              claimsOverlaps: claimsOverlaps,
-                                             additionalWarnings: quotaWarnings + worktreeWarnings)
+                                             additionalWarnings: rootWarnings + quotaWarnings
+                                                + worktreeWarnings)
         if needsPump { scheduleSerializePump() }
         return reply
     }
@@ -3546,14 +4007,19 @@ enum Orchestrator {
 
     /// Internal so the final task-to-terminal wiring can be mutation-tested without opening a
     /// real tab. The default remains the single production path into `StartPoints.start`.
-    static func spawn(_ task: Task,
-                      start: TaskStarter = { place, assistant, model, effort, permission, addDir in
-                          StartPoints.start(place, assistant: assistant, model: model,
-                                            reasoningEffort: effort, permission: permission,
-                                            addDir: addDir)
-                      }) -> Task {
+    static func spawn(_ task: Task, attachedSession: TargetSession? = nil,
+                      start: TaskStarter? = nil) -> Task {
+        let start = start ?? taskStarterForTesting
+            ?? { place, assistant, model, effort, permission, addDir in
+                StartPoints.start(place, assistant: assistant, model: model,
+                                  reasoningEffort: effort, permission: permission,
+                                  addDir: addDir)
+            }
         var task = task
         task.queuedSecret = nil
+        if task.attachSessionId != nil {
+            return spawnAttached(task, resolvedSession: attachedSession)
+        }
         if let prepared = task.worktree {
             guard let worktree = resolveSpawnBase(in: prepared) else {
                 task.state = .spawnFailed
@@ -3602,7 +4068,59 @@ enum Orchestrator {
             task.spawnedAt = Date()
             task.childTerminalId = id
             task.childBackend = backend
+            task.childTaskRootAccess = mayDispatch
         }
+        return task
+    }
+
+    /// Deliver the ordinary first line into a tab this task did not open. The task remains in
+    /// `spawning` until the same transcript receipt as a new-tab dispatch proves the turn landed.
+    private static func spawnAttached(_ snapshot: Task,
+                                      resolvedSession: TargetSession?) -> Task {
+        var task = snapshot
+        guard let sessionID = task.attachSessionId else { return task }
+        let session: TargetSession
+        if let resolvedSession {
+            session = resolvedSession
+        } else {
+            switch resolveAttachment(sessionID: sessionID, assistant: task.assistant,
+                                     excluding: task.id) {
+            case .accepted(let found, _): session = found
+            case .refused(_, let code, let message):
+                task.state = .spawnFailed
+                task.summary = "\(code): \(message)"
+                task.finishedAt = Date()
+                return task
+            }
+        }
+        guard let secret = heldSecret(task.id) else {
+            task.state = .spawnFailed
+            task.summary = "The task's secret was lost before attached delivery."
+            task.finishedAt = Date()
+            return task
+        }
+        writeChildBrief(for: task)
+        let line = firstLine(id: task.id, secret: secret, announce: L.t.childAnnounce(task.title))
+        let sentAt = Date()
+        let failure: String?
+        if let sender = attachedSenderForTesting { failure = sender(line, session) }
+        else { failure = Targets.send(line, to: session) }
+        guard failure == nil else {
+            task.state = .spawnFailed
+            task.summary = "Could not type into the attached session: \(failure!)"
+            task.finishedAt = Date()
+            return task
+        }
+        task.state = .spawning
+        task.spawnedAt = sentAt
+        task.childTerminalId = session.id
+        task.childBackend = session.backend
+        task.childTTY = session.tty
+        task.injectAttempts = 1
+        task.lastInjectAt = sentAt
+        RemoteAuth.audit("orchestrator.attach.inject", ["task": task.id,
+                                                          "session": session.id,
+                                                          "attempt": "1"])
         return task
     }
 
@@ -3653,6 +4171,10 @@ enum Orchestrator {
 
         let opened = spawn(starting)
         if opened.state == .spawnFailed {
+            // The dispatch that returned `202 queued` is long over. Unlike an immediate
+            // tab-opening refusal, nobody is holding an HTTP response that reports this ending;
+            // run the ordinary finalization tail so audit, batch accounting and the typed root
+            // notice all happen. The outer pump pass, not finalize, chooses the next waiter.
             let fail = {
                 finalize(id, as: .spawnFailed, summary: opened.summary, pumpQueue: false)
             }
@@ -3690,9 +4212,9 @@ enum Orchestrator {
         return changed
     }
 
-    /// Serialize pumps rather than opening on their callers. A pump-triggered spawn failure
-    /// finalizes on main with `pumpQueue: false`; the outer pass is already responsible for the
-    /// next waiter, so it cannot recurse back into itself.
+    /// Serialize pumps rather than opening on their callers. The outer pass is responsible for
+    /// the next waiter; a pump-triggered tab-opening refusal still finalizes because the queued
+    /// dispatch response is already gone and root otherwise receives no completion signal.
     private static func scheduleSerializePump() {
         serializePumpQueue.async {
             let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: "serialize-promotion") {
@@ -4797,7 +5319,10 @@ enum Orchestrator {
                 }
             }
         }
-        guard let childID = task.childTerminalId, let child = target(withID: childID) else {
+        // An attached follow-up task borrows a standing session's tab. Cancelling the task must
+        // never end that tab, so it takes the no-terminal path straight to the record.
+        guard task.attachSessionId == nil, let childID = task.childTerminalId,
+              let child = target(withID: childID) else {
             finish(nil); return
         }
         let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: child.id) {
@@ -4860,6 +5385,7 @@ enum Orchestrator {
         lock.lock(); defer { lock.unlock() }
         return tasks.values
             .filter { $0.state.isTerminal && $0.childTerminalId != nil
+                        && $0.attachSessionId == nil
                         && $0.rootSessionId == rootSessionId }
             .sorted { $0.created < $1.created }
             .map { $0.id }
@@ -4878,7 +5404,9 @@ enum Orchestrator {
 
     /// The finished-but-still-tabbed tasks one level below these — `lingeringTasks`' other half.
     static func lingeringTasks(under parents: [String]) -> [String] {
-        tasksUnder(parents) { $0.state.isTerminal && $0.childTerminalId != nil }
+        tasksUnder(parents) {
+            $0.state.isTerminal && $0.childTerminalId != nil && $0.attachSessionId == nil
+        }
     }
 
     private static func tasksUnder(_ parents: [String], where keep: (Task) -> Bool) -> [String] {
@@ -4996,7 +5524,10 @@ enum Orchestrator {
     /// is the ten minutes of patience — that is for a linger running out on its own, and this is
     /// somebody pressing close.
     private static func closeChildTab(ofTask id: String, root: String) -> Bool {
-        guard let task = held(id), let childID = task.childTerminalId,
+        // An attached follow-up task has no tab of its own — it borrows the standing session's,
+        // and ending that would take the session with it.
+        guard let task = held(id), task.attachSessionId == nil,
+              let childID = task.childTerminalId,
               let child = target(withID: childID),
               child.assistant == nil || child.assistant == task.assistant,
               task.childTTY == nil || child.tty == task.childTTY else { return false }
@@ -5084,6 +5615,10 @@ enum Orchestrator {
                 : "The app restarted before the child was briefed."
             dead.finishedAt = Date()
             dead.queuedSecret = nil
+            dead.workCleanupAt = reclaimDeadline(
+                minutes: Config.shared.orchestratorWorkGraceMinutes, outcome: .spawnFailed)
+            dead.buildCleanupAt = dead.worktree == nil ? nil : reclaimDeadline(
+                minutes: Config.shared.orchestratorBuildGraceMinutes, outcome: .spawnFailed)
             tasks[id] = dead
             orphaned.append(id)
         }
@@ -5170,7 +5705,10 @@ enum Orchestrator {
         let overlapping = beatsInFlight > 0
         beatsInFlight += 1
         let liveIDs = tasks.values
-            .filter { !$0.state.isTerminal || $0.closeAt != nil }
+            .filter {
+                !$0.state.isTerminal || $0.closeAt != nil
+                    || $0.workCleanupAt != nil || $0.buildCleanupAt != nil
+            }
             .map(\.id)
         let liveHandoffs = Array(handoffDeliveries.keys)
         lock.unlock()
@@ -5199,13 +5737,24 @@ enum Orchestrator {
         for id in liveIDs {
             // The list is only scheduling. State is read at the instant this task is advanced, so
             // an earlier item in a long beat cannot leave a stale state decision behind it.
-            guard let task = held(id), !task.state.isTerminal || task.closeAt != nil else { continue }
+            //
+            // The three reasons a record is on that list are the three reasons to advance it, and
+            // this guard has to name all of them. It once named only the first two, so a terminal
+            // task carrying nothing but a reclaim deadline was scheduled and then dropped on the
+            // next line — which is every ending except `success`, because `finalize` reclaims that
+            // one in place and only the *other* endings ever wait for a beat.
+            guard let task = held(id),
+                  !task.state.isTerminal || task.closeAt != nil
+                    || task.workCleanupAt != nil || task.buildCleanupAt != nil else { continue }
             switch task.state {
             case .spawning:
                 sawSpawning = true
                 scheduleBriefStep(task)
             case .briefed:  changed = watch(task) || changed
-            default: changed = closeChild(task) || changed
+            default:
+                changed = reclaimTaskWorkIfDue(task.id) || changed
+                changed = reclaimTaskBuildIfDue(task.id) || changed
+                changed = closeChild(task) || changed
             }
         }
         if fromTimer, sawSpawning {
@@ -5264,6 +5813,33 @@ enum Orchestrator {
     /// defeat. The cost of being tight is work that silently did not happen, which is worse.
     static let readyLimit: TimeInterval = 240
 
+    /// What to do about a menu on a briefing task's screen.
+    enum MenuStep: Equatable {
+        /// No menu, or nothing left to decide.
+        case none
+        /// Press the first row. Only ever on a tab this app opened for this task.
+        case answerFirstRow
+        /// A menu on a session this task did not open. Leave it standing.
+        case leaveToOwner
+    }
+
+    /// Whether Clawdline may take the default on the menu in front of a spawning task.
+    ///
+    /// Answering was always justified by *whose screen it is*. A tab this app opened for a task
+    /// in a directory the root named has exactly one menu to show — the trusted-folder dialog —
+    /// and the root already answered it by asking for work there.
+    ///
+    /// An attached task is running in a standing child session this task did not open, and the
+    /// menu on that screen can be anything: a permission prompt, a plan approval, an overwrite
+    /// confirmation. The first row is usually "yes". Nothing about this follow-up dispatch is
+    /// consent to that, so the menu is left for the session's owner. See `docs/orchestrator.md`,
+    /// "Attached follow-up tasks".
+    static func menuStep(task: Task, choosing: Bool) -> MenuStep {
+        guard choosing else { return .none }
+        guard !task.answeredMenu else { return .none }
+        return task.attachSessionId == nil ? .answerFirstRow : .leaveToOwner
+    }
+
     /// Try to put the first message in front of a child that has just opened. True when the task
     /// record changed.
     private static func brief(_ snapshot: Task) -> Bool {
@@ -5271,7 +5847,21 @@ enum Orchestrator {
         // may have advanced the record.
         guard var task = held(snapshot.id), task.state == .spawning else { return false }
         guard let spawnedAt = task.spawnedAt else { return false }
-        if Date().timeIntervalSince(spawnedAt) > readyLimit {
+        let spawningAge = Date().timeIntervalSince(spawnedAt)
+        // `readyLimit` measures whether a tab this dispatch opened ever reached a prompt. An
+        // attached task has no tab-opening phase: `spawnAttached` typed its first line before
+        // registration returned, so four minutes would be a false `spawn_failed` while its owner
+        // considers a menu. It is still bounded by the task's own timeout, measured from that
+        // delivery, so a permanently unanswered menu cannot retain claims or the host forever.
+        if task.attachSessionId != nil
+            && spawningAge > TimeInterval(task.timeoutMinutes * 60) {
+            guard replaceTask(task, expecting: .spawning) else { return false }
+            finalize(task.id, as: .timeout,
+                     summary: "The attached briefing was not accepted within the task's "
+                            + "\(task.timeoutMinutes)-minute timeout.")
+            return false // finalize saved and broadcast already
+        }
+        if task.attachSessionId == nil && spawningAge > readyLimit {
             guard replaceTask(task, expecting: .spawning) else { return false }
             finalize(task.id, as: .spawnFailed,
                      summary: "The child session did not reach a prompt within "
@@ -5288,17 +5878,22 @@ enum Orchestrator {
         }
         let changed = noteChildIdentity(child, in: &task)
         let screen = Targets.capture(child)
-        // A brand-new session in a directory the assistant has not been told to trust opens on a
-        // dialog, and text sent into a dialog confirms whatever is highlighted. The root asked
-        // for work in exactly this directory, so the default answer is taken — once, and written
-        // down.
-        if let screen, SessionState.isChoosing(screen, assistant: task.assistant) {
-            if !task.answeredMenu {
-                task.answeredMenu = true
-                guard replaceTask(task, expecting: .spawning) else { return false }
-                _ = Targets.answer(0x31, to: child)
-                RemoteAuth.audit("orchestrator.menu", ["task": task.id, "answer": "1"])
-            }
+        let choosing = screen.map { SessionState.isChoosing($0, assistant: task.assistant) }
+            ?? false
+        switch menuStep(task: task, choosing: choosing) {
+        case .none:
+            break
+        case .answerFirstRow:
+            task.answeredMenu = true
+            guard replaceTask(task, expecting: .spawning) else { return false }
+            _ = Targets.answer(0x31, to: child)
+            RemoteAuth.audit("orchestrator.menu", ["task": task.id, "answer": "1"])
+            return true
+        case .leaveToOwner:
+            task.answeredMenu = true
+            guard replaceTask(task, expecting: .spawning) else { return false }
+            RemoteAuth.audit("orchestrator.menu.left",
+                             ["task": task.id, "session": childID])
             return true
         }
 
@@ -5497,7 +6092,8 @@ enum Orchestrator {
         if let result = readResult(of: task) {
             guard replaceTask(task, expecting: .briefed) else { return false }
             finalize(task.id, as: result.status == "success" ? .success : .failure,
-                     summary: result.summary, artifacts: result.artifacts)
+                     summary: result.summary, artifacts: result.artifacts,
+                     verification: result.verification)
             return false
         }
 
@@ -5822,7 +6418,7 @@ enum Orchestrator {
     }
 
     /// Close a reported child's terminal once its linger has run out. True when the record changed.
-    private static func closeChild(_ task: Task) -> Bool {
+    static func closeChild(_ task: Task, seen supplied: [TargetSession]? = nil) -> Bool {
         guard let closeAt = task.closeAt, let childID = task.childTerminalId else { return false }
         let now = Date()
         guard now >= closeAt, SessionWatch.shared.scanComplete,
@@ -5830,7 +6426,7 @@ enum Orchestrator {
                                         automationReady: ITerm.automationReady) else {
             return false
         }
-        let seen = SessionWatch.shared.targets
+        let seen = supplied ?? SessionWatch.shared.targets
         let child = seen.first { $0.id == childID }
         guard let child else {
             return verifyChildGone(task)
@@ -5845,8 +6441,9 @@ enum Orchestrator {
     }
 
     /// The half of `closeChild` that touches a terminal, once the decision is made.
-    private static func takeChildTab(_ child: TargetSession, justTheTab: Bool,
-                                     for task: Task) -> Bool {
+    static func takeChildTab(_ child: TargetSession, justTheTab: Bool,
+                            for task: Task,
+                            end: @escaping (TargetSession, Bool) -> String? = endChildTab) -> Bool {
         guard beginClosing(task.id) else { return false }
         RemoteAuth.audit("orchestrator.close", ["task": task.id, "child": child.id,
                                                  "how": justTheTab ? "tab" : "exit"])
@@ -5861,7 +6458,7 @@ enum Orchestrator {
             }
             let failure = activity == .unknown
                 ? "Could not classify the child terminal activity; the tab was left open."
-                : endChildTab(child, justTheTab: justTheTab)
+                : end(child, justTheTab)
             // Type it here, while the returned failure and the circuit that produced it are one
             // observation. A later main callback must not mistake an unrelated process failure
             // for a modal another terminal operation happened to open in the meantime.
@@ -5946,6 +6543,21 @@ enum Orchestrator {
         return closingTasks.count
     }
 
+    /// Clear the linger from the record nominated by a close walk.
+    ///
+    /// Kept separate from terminal I/O so the record transition can be exercised without a live
+    /// terminal. The snapshot is deliberately accepted here: the focused concurrency test makes
+    /// a reclaim settle one of its deadlines between the snapshot and this write.
+    @discardableResult
+    static func settleChildLinger(_ snapshot: Task) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard var current = tasks[snapshot.id], current.state == snapshot.state,
+              current.closeAt == snapshot.closeAt else { return false }
+        current.closeAt = nil
+        tasks[snapshot.id] = current
+        return true
+    }
+
     /// Take a child's tab away: the quit word first when there is an assistant in there to hear
     /// it, otherwise the tab on its own.
     ///
@@ -5964,6 +6576,19 @@ enum Orchestrator {
         var status: String
         var summary: String?
         var artifacts: [String]
+        var verification: Verification?
+    }
+
+    static func verification(from raw: Any?) -> Verification? {
+        guard let obj = raw as? [String: Any],
+              let runs = obj["runs"] as? Int, runs >= 0,
+              let seconds = obj["seconds"] as? Int, seconds >= 0,
+              let lastRaw = obj["last"] as? String,
+              let last = Verification.Last(rawValue: lastRaw),
+              let scope = obj["scope"] as? String,
+              !scope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              scope.count <= 300 else { return nil }
+        return Verification(runs: runs, seconds: seconds, last: last, scope: scope)
     }
 
     /// The child's `result.json`, if it exists and can prove it came from the child.
@@ -5985,7 +6610,8 @@ enum Orchestrator {
         }
         return ChildResult(status: obj["status"] as? String ?? "failure",
                            summary: (obj["summary"] as? String).map { String($0.prefix(2000)) },
-                           artifacts: (obj["artifacts"] as? [String] ?? []).map { String($0.prefix(300)) })
+                           artifacts: (obj["artifacts"] as? [String] ?? []).map { String($0.prefix(300)) },
+                           verification: verification(from: obj["verification"]))
     }
 
     private static var badResults: Set<String> = []
@@ -5995,6 +6621,7 @@ enum Orchestrator {
     /// Main thread. The one place a task ends, whatever ended it.
     static func finalize(_ taskID: String, as outcome: State,
                          summary: String?, artifacts: [String] = [],
+                         verification: Verification? = nil,
                          pumpQueue: Bool = true) {
         lock.lock()
         guard var task = tasks[taskID], !task.state.isTerminal else { lock.unlock(); return }
@@ -6003,9 +6630,12 @@ enum Orchestrator {
         task.queuedSecret = nil
         if let summary { task.summary = summary }
         if !artifacts.isEmpty { task.artifacts = artifacts }
+        if let verification { task.verification = verification }
         secrets.removeValue(forKey: taskID)
         let linger = Config.shared.orchestratorChildLinger
-        if task.scheduleID != nil {
+        if task.attachSessionId != nil {
+            task.closeAt = nil
+        } else if task.scheduleID != nil {
             task.closeAt = scheduledCloseAt(policy: task.scheduleCloseTab, outcome: outcome,
                                              now: Date(), hasChild: task.childTerminalId != nil,
                                              linger: TimeInterval(linger),
@@ -6050,12 +6680,16 @@ enum Orchestrator {
         }
 
         // The result file can carry words the finalizer was not handed — the HTTP route sends
-        // only a sentence, the file has the artifact list too.
-        if task.summary == nil || task.artifacts.isEmpty,
+        // only a sentence, the file has the artifact list and the verification record too. Asked
+        // only when one of the three is still missing: `readResult` is a disk read and a secret
+        // comparison that files a `badResults` entry, and running it for a `cancelled` task that
+        // never wrote a result is a cost with no answer at the end of it.
+        if task.summary == nil || task.artifacts.isEmpty || task.verification == nil,
            let result = readResult(of: task) {
             lock.lock()
             if task.summary == nil { task.summary = result.summary }
             if task.artifacts.isEmpty { task.artifacts = result.artifacts }
+            if task.verification == nil { task.verification = result.verification }
             tasks[taskID] = task
             lock.unlock()
         }
@@ -6065,6 +6699,23 @@ enum Orchestrator {
             task.usage = usage
             tasks[taskID] = task
             lock.unlock()
+        }
+        task.workCleanupAt = reclaimDeadline(
+            minutes: Config.shared.orchestratorWorkGraceMinutes, outcome: outcome)
+        // Only a task with its own disposable checkout has build output of its own to reclaim. A
+        // task working in a shared tree would otherwise be handed the person's `.build/`.
+        task.buildCleanupAt = task.worktree == nil ? nil : reclaimDeadline(
+            minutes: Config.shared.orchestratorBuildGraceMinutes, outcome: outcome)
+        lock.lock()
+        tasks[taskID] = task
+        lock.unlock()
+        if task.workCleanupAt.map({ $0 <= Date() }) == true {
+            _ = reclaimTaskWorkIfDue(taskID)
+            task.workCleanupAt = held(taskID)?.workCleanupAt
+        }
+        if task.buildCleanupAt.map({ $0 <= Date() }) == true {
+            _ = reclaimTaskBuildIfDue(taskID)
+            task.buildCleanupAt = held(taskID)?.buildCleanupAt
         }
         guard let worktree = task.worktree else {
             completeFinalization(task, outcome: outcome, pumpQueue: pumpQueue)
@@ -6125,6 +6776,80 @@ enum Orchestrator {
         }
         endWorkHandedOnBy(task)
         if pumpQueue { scheduleSerializePump() }
+    }
+
+    /// When a reclaimable directory falls due, from one grace setting and one ending.
+    ///
+    /// Shared by `work/` and by the isolated checkout's build output so the two settings cannot
+    /// drift into meaning different things: `0` and every success go now, a positive number is
+    /// minutes of diagnostic grace, and `-1` hands the directory to the 24-hour sweep.
+    static func reclaimDeadline(minutes: Int, outcome: State, now: Date = Date()) -> Date? {
+        if outcome == .success || minutes == 0 { return now }
+        if minutes > 0 { return now.addingTimeInterval(TimeInterval(minutes * 60)) }
+        return nil
+    }
+
+    /// Remove only the heavyweight task-owned scratch directory. A missing directory is already
+    /// the desired result; a real filesystem refusal keeps the deadline so a later beat retries.
+    @discardableResult
+    static func reclaimTaskWorkIfDue(_ taskID: String, now: Date = Date()) -> Bool {
+        guard let snapshot = held(taskID), snapshot.state.isTerminal,
+              let due = snapshot.workCleanupAt, due <= now else { return false }
+        let work = snapshot.dir.appendingPathComponent("work", isDirectory: true)
+        let manager = FileManager.default
+        if manager.fileExists(atPath: work.path) { try? manager.removeItem(at: work) }
+        guard !manager.fileExists(atPath: work.path) else { return false }
+        lock.lock()
+        guard var current = tasks[taskID], current.state.isTerminal,
+              current.workCleanupAt == due else {
+            lock.unlock()
+            return false
+        }
+        current.workCleanupAt = nil
+        tasks[taskID] = current
+        lock.unlock()
+        save()
+        RemoteAuth.audit("orchestrator.work.reclaimed", ["task": taskID])
+        return true
+    }
+
+    /// Remove only the reproducible build output inside an isolated checkout, on the same
+    /// contract as ``reclaimTaskWorkIfDue``: a missing directory is the desired result, and a
+    /// real filesystem refusal keeps the deadline so a later beat retries.
+    ///
+    /// **Why it is not the worktree sweep's job.** Disposing a whole checkout waits for the
+    /// 24-hour cutoff *and* for `landing?.state != .pending`, so a delivery waiting to be landed
+    /// keeps every object file it built for as long as the landing is open — which on this Mac
+    /// was 814 MB across five open landings. A pending landing needs the source and the branch;
+    /// it has never needed the object files, and this deliberately does not consult it.
+    ///
+    /// The checkout, its tracked files and the delivery branch are untouched: the only path this
+    /// will ever remove is `<child cwd>/.build`, and only for a task that owns that checkout. The
+    /// registry decoder proves `worktree.path` is the task-id-derived checkout and `cwd` is inside
+    /// it before a restored record can reach this function.
+    @discardableResult
+    static func reclaimTaskBuildIfDue(_ taskID: String, now: Date = Date()) -> Bool {
+        guard let snapshot = held(taskID), snapshot.state.isTerminal,
+              let due = snapshot.buildCleanupAt, due <= now,
+              let worktree = snapshot.worktree else { return false }
+        let build = URL(fileURLWithPath: worktree.cwd, isDirectory: true)
+            .appendingPathComponent(".build", isDirectory: true)
+        let manager = FileManager.default
+        if manager.fileExists(atPath: build.path) { try? manager.removeItem(at: build) }
+        guard !manager.fileExists(atPath: build.path) else { return false }
+        lock.lock()
+        guard var current = tasks[taskID], current.state.isTerminal,
+              current.buildCleanupAt == due else {
+            lock.unlock()
+            return false
+        }
+        current.buildCleanupAt = nil
+        tasks[taskID] = current
+        lock.unlock()
+        save()
+        RemoteAuth.audit("orchestrator.build.reclaimed",
+                         ["task": taskID, "path": build.path])
+        return true
     }
 
     /// A finished task takes whatever it handed on with it.
@@ -6329,6 +7054,7 @@ enum Orchestrator {
     }
 
     private static func notifyRoot(_ task: Task) {
+        rootNotificationObserverForTesting?(task)
         guard Config.shared.orchestratorNotifyRoot else { return }
         if let parentID = task.parentTaskId, let parent = held(parentID),
            !parent.state.isTerminal, let terminalID = parent.childTerminalId,
@@ -6462,6 +7188,7 @@ enum Orchestrator {
         var failed = 0
         var rootLabel: String?
         var projectDir: String?
+        var tasks: [SmartNotification.TaskLine] = []
     }
 
     /// Root key → tally. In memory only: a process that restarts in the middle of a fan-out has
@@ -6478,9 +7205,10 @@ enum Orchestrator {
         rootKey(of: task, among: tasks)
     }
 
-    /// Main thread, from ``finalize(_:as:summary:artifacts:)``. Every ending goes through there —
-    /// success, failure, timeout, cancellation, a tab that closed under a child — so this counts
-    /// all of them and not only the tidy ones.
+    /// Main thread, from ``finalize(_:as:summary:artifacts:)``. This counts endings for work that
+    /// actually ran: success, failure, timeout, cancellation, or a tab that closed under a child.
+    /// A dispatch-time tab-opening refusal never ran and is returned directly to its caller, so it
+    /// deliberately does not enter a completion batch.
     private static func noteEnded(_ task: Task) {
         lock.lock()
         let key = rootKeyLocked(of: task)
@@ -6489,6 +7217,8 @@ enum Orchestrator {
         if task.state != .success { batch.failed += 1 }
         if batch.projectDir == nil { batch.projectDir = task.projectDir }
         if batch.rootLabel == nil { batch.rootLabel = task.rootLabel }
+        batch.tasks.append(.init(title: task.title, state: task.state.rawValue,
+                                 summary: task.summary))
         batches[key] = batch
         lock.unlock()
     }
@@ -6532,12 +7262,17 @@ enum Orchestrator {
                              sessionID: Transcript.sessionID(of:)) {
             url = "/#session=\(root.id)"
         }
-        WebPush.send(title: message.title, body: message.body, url: url,
-                     // Keyed on the root and not on a task, so a second fan-out from the same
-                     // session replaces the first rather than stacking under it.
-                     tag: "batch-\(key)",
-                     icon: RemoteIcon.projectPath(
-                        for: batch.projectDir.flatMap { ProjectIcon.grid(forCwd: $0) }))
+        // Keyed on the root and not on a task, so a second fan-out from the same session replaces
+        // the first rather than stacking under it. Smart output and the ordinary count share the
+        // same one-shot delivery boundary.
+        let delivery = SmartNotification.Delivery(
+            title: message.title, project: project, fallbackBody: message.body,
+            url: url, tag: "batch-\(key)",
+            icon: RemoteIcon.projectPath(
+                for: batch.projectDir.flatMap { ProjectIcon.grid(forCwd: $0) }))
+        SmartNotification.send(delivery) {
+            SmartNotification.source(for: batch.tasks)
+        }
     }
 
     /// Pure, so the wording can be checked without a terminal, a phone or a clock.
@@ -6596,6 +7331,10 @@ enum Orchestrator {
             use `--git-dir` or `git -C` to reach the base repository, run any `git worktree`
             command, or run `./build.sh`. The app records commits, HEAD and dirty state from git;
             these rules are briefing rules rather than a shell sandbox.
+
+            This checkout's `.build/` is reclaimed on the same schedule as `work/` once the task
+            ends. The source and the delivery branch are never touched by that, but nothing you
+            want to keep should be left inside a build directory.
             """
         } else {
             workspaceRule = "- Work inside \(task.projectDir). Put every file you produce in "
@@ -6611,12 +7350,32 @@ enum Orchestrator {
             ? "You may hand parts of this on to at most \(allowance) child sessions of your own, "
                 + "which cannot hand anything on further — see \"Handing work on\" below."
             : "Do not dispatch Clawdline tasks of your own."
+        let verificationMinutes = task.timeoutMinutes % 3 == 0
+            ? String(task.timeoutMinutes / 3)
+            : String(format: "%.1f", Double(task.timeoutMinutes) / 3.0)
+        let attachedSection = task.attachSessionId == nil ? "" : """
+
+        ## Your standing session
+
+        This task was attached to a standing session instead of opening a new tab. Finishing,
+        failing or cancelling this task does not end this session; after `result.json` is written,
+        leave the tab ready for the next complete follow-up task.
+
+        Clawdline recorded that this process was launched with access to the whole
+        `/tmp/.clawdline` task root; sessions given only their original task directory are
+        refused before a follow-up is typed. This follow-up did not open the tab, however: if any
+        permission, plan or confirmation menu appears, leave it for the session's owner.
+        Clawdline does not choose from a menu on a session this task did not open. If the briefing
+        is still unaccepted when this task's timeout expires, the task ends as `timeout` and
+        releases the standing session and its claims.
+
+        """
         return """
         # Clawdline child briefing — task \(task.id)
 
         You are a CHILD session working for a Clawdline root session. Your one job is the task
         described in \(dir)/task.json — read that file now.
-        \(planSection(for: task))
+        \(planSection(for: task))\(attachedSection)
         ## Language, and the first thing you say
 
         The person watching this terminal reads \(languageName). Everything you say in this
@@ -6634,8 +7393,10 @@ enum Orchestrator {
 
         \(workspaceRule)
         - Put heavyweight temporary work (repo copies, build outputs, mutation worktrees and
-          compiler indexes) in \(dir)/work/, not in the assistant scratchpad. Clawdline owns that
-          directory and reclaims it with the task.
+          compiler indexes) in \(dir)/work/, not in the assistant scratchpad. Everything there
+          is deleted when the task ends — immediately on success, after the configured grace
+          period otherwise — so copy any log or diff worth keeping into `artifacts/` **before**
+          writing `result.json`.
         - \(handOnRule)
         - Do not read any directory under /tmp/.clawdline/ except your own, any you dispatched,
           and any your instructions name explicitly. That last one is how a reviewing node works:
@@ -6644,6 +7405,20 @@ enum Orchestrator {
           not call its task's `/landing` route itself even though it holds that task's secret.
         - Do not do work the task did not ask for.
         - You have \(task.timeoutMinutes) minutes before the task is marked timed out.\(isolationSection)
+
+        ## Verification budget
+
+        `./build.sh` is forbidden. Do not use an app restart or clicking the real UI as acceptance,
+        re-run a full suite as a ritual after every small edit, run a suite unrelated to the paths this task claimed,
+        or repeat a run whose only purpose is to see whether something is flaky.
+
+        Do one verification that actually proves the change: compile, run the tests covering the
+        paths this task touched, and see one red-before-green run for every test you add. Iterating
+        until the change first compiles and passes is ordinary work. Verification stops after one
+        third of this task's timeout (\(verificationMinutes) minutes) or three full-suite runs,
+        whichever comes first. If either limit arrives, stop and report the state reached in
+        `result.json`. Point verification's private `TMPDIR` at `\(dir)/work/tmp`; the repository's
+        snapshot recipe remains unchanged, and its test binary is then reclaimed with the task.
 
         ## Up to 5 timely notifications, when the user is waiting
 
@@ -6710,6 +7485,7 @@ enum Orchestrator {
          "summary": "<one paragraph: what you did, or why it failed>",
          "symbols": ["<every name your change introduced>", "..."],
          "artifacts": ["artifacts/<file>", "..."],
+         "verification": {"runs": 2, "seconds": 940, "last": "pass", "scope": "swift suite + web-schedules"},
          "finished_at": "<ISO8601 UTC>"}
         ```
 
@@ -7237,6 +8013,10 @@ enum Orchestrator {
     /// describes the work rather than the housekeeping waiting on it.
     static func closeAtForTesting(_ id: String) -> Date? { held(id)?.closeAt }
 
+    static func workCleanupAtForTesting(_ id: String) -> Date? { held(id)?.workCleanupAt }
+
+    static func buildCleanupAtForTesting(_ id: String) -> Date? { held(id)?.buildCleanupAt }
+
     /// Test seams for the scheduler's in-memory arbitration. Production reaches the same state
     /// only through ordinary dispatch registration on the remote serial queue.
     static func holdScheduleTaskForTesting(_ task: Task) {
@@ -7323,6 +8103,10 @@ enum Orchestrator {
             out["terminal_intervention"] = payload
         }
         if let summary = task.summary { out["summary"] = summary }
+        if let session = task.attachSessionId {
+            out["attached"] = true
+            out["attachSession"] = session
+        }
         if !task.artifacts.isEmpty { out["artifacts"] = task.artifacts }
         if task.claimsDeclared { out["claims"] = task.claims }
         if !task.releasedClaims.isEmpty {
@@ -7358,6 +8142,9 @@ enum Orchestrator {
             if let model = usage.model { counts["model"] = model }
             if let cost = usage.costUsd { counts["costUsd"] = cost }
             out["usage"] = counts
+        }
+        if let verification = task.verification {
+            out["verification"] = verificationRecord(verification)
         }
         return out
     }
@@ -7743,10 +8530,16 @@ enum Orchestrator {
             guard let wait = coordinationWait(from: row) else { continue }
             foundWaits[wait.id] = wait
         }
+        var foundSessionDeliveries: [String: SessionDelivery] = [:]
+        for row in obj["session_deliveries"] as? [[String: Any]] ?? [] {
+            guard let delivery = sessionDelivery(from: row) else { continue }
+            foundSessionDeliveries[delivery.identity.terminalID] = delivery
+        }
         lock.lock()
         tasks = found
         handoffs = foundHandoffs
         coordinationWaits = foundWaits
+        sessionDeliveries = foundSessionDeliveries
         reindex()
         lock.unlock()
         // Proofs stored before the independent ledger existed are still strong proofs. Backfill
@@ -7765,16 +8558,19 @@ enum Orchestrator {
             .map { stored($0) }
         let waitRows = coordinationWaits.values.sorted { $0.created < $1.created }
             .map { stored($0) }
+        let sessionDeliveryRows = sessionDeliveries.values
+            .sorted { $0.reportedAt < $1.reportedAt }.map { stored($0) }
         lock.unlock()
         let obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows,
-                                  "coordination_waits": waitRows]
+                                  "coordination_waits": waitRows,
+                                  "session_deliveries": sessionDeliveryRows]
         guard let data = try? JSONSerialization.data(withJSONObject: obj,
                                                      options: [.prettyPrinted, .sortedKeys,
                                                                .withoutEscapingSlashes]) else {
             Log.write("orchestrator: could not serialise the store, nothing written")
             return
         }
-        try? FileManager.default.createDirectory(at: RemoteAuth.directory,
+        try? FileManager.default.createDirectory(at: storeURL.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
         try? data.write(to: storeURL, options: .atomic)
         // Every time, not only at creation — same reason as `RemoteAuth.save`.
@@ -7819,6 +8615,11 @@ enum Orchestrator {
 
     private static func stored(_ note: ProgressNote) -> [String: Any] {
         ["note": note.note, "at": note.at.timeIntervalSince1970]
+    }
+
+    private static func verificationRecord(_ verification: Verification) -> [String: Any] {
+        ["runs": verification.runs, "seconds": verification.seconds,
+         "last": verification.last.rawValue, "scope": verification.scope]
     }
 
     /// Notes back off disk. A row that lost its text or its clock is dropped rather than
@@ -7892,8 +8693,10 @@ enum Orchestrator {
             out["worktree"] = storedWorktree
         }
         if let v = task.queuedSecret { out["queued_secret"] = v }
+        if let v = task.attachSessionId { out["attach_session"] = v }
         if let v = task.childTerminalId { out["child_terminal"] = v }
         if let v = task.childBackend { out["child_backend"] = v.rawValue }
+        if task.childTaskRootAccess { out["child_task_root_access"] = true }
         if let v = task.childTTY { out["child_tty"] = v }
         if let v = task.childPID { out["child_pid"] = Int(v) }
         if let v = task.childProcStart { out["child_proc_start"] = v.timeIntervalSince1970 }
@@ -7902,9 +8705,14 @@ enum Orchestrator {
         if let v = task.terminalIntervention {
             out["terminal_intervention"] = ["kind": v.kind.rawValue, "message": v.message]
         }
+        if let at = task.workCleanupAt { out["work_cleanup_at"] = at.timeIntervalSince1970 }
+        if let at = task.buildCleanupAt { out["build_cleanup_at"] = at.timeIntervalSince1970 }
         if let v = task.transcriptPath { out["transcript"] = v }
         if task.transcriptProven { out["transcript_proven"] = true }
         if let v = task.summary { out["summary"] = v }
+        if let verification = task.verification {
+            out["verification"] = verificationRecord(verification)
+        }
         if let usage = task.usage {
             var counts: [String: Any] = ["input": usage.input, "output": usage.output,
                                          "cache_read": usage.cacheRead,
@@ -7948,6 +8756,50 @@ enum Orchestrator {
                 return row
             },
         ]
+    }
+
+    static func stored(_ delivery: SessionDelivery) -> [String: Any] {
+        var out: [String: Any] = [
+            "terminal_id": delivery.identity.terminalID,
+            "tty": delivery.identity.tty,
+            "summary": delivery.summary,
+            "reported_at": delivery.reportedAt.timeIntervalSince1970,
+            "settled": delivery.settled,
+        ]
+        if let assistant = delivery.identity.assistant { out["assistant"] = assistant.rawValue }
+        if let pid = delivery.identity.pid { out["pid"] = Int(pid) }
+        if let start = delivery.identity.processStart {
+            out["process_start"] = start.timeIntervalSince1970
+        }
+        if let conversation = delivery.identity.conversationID {
+            out["conversation_id"] = conversation
+        }
+        return out
+    }
+
+    static func sessionDelivery(from obj: [String: Any]) -> SessionDelivery? {
+        guard let terminalID = obj["terminal_id"] as? String, !terminalID.isEmpty,
+              terminalID.count <= 512,
+              let assistantName = obj["assistant"] as? String,
+              let assistant = Assistant(rawValue: assistantName),
+              let tty = obj["tty"] as? String, !tty.isEmpty, tty.count <= 512,
+              let pidValue = obj["pid"] as? Int, let pid = Int32(exactly: pidValue),
+              let processStart = obj["process_start"] as? Double,
+              let conversation = obj["conversation_id"] as? String,
+              !conversation.isEmpty, conversation.count <= 512,
+              let summary = obj["summary"] as? String,
+              !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              summary.count <= sessionDeliverySummaryLimit,
+              !summary.unicodeScalars.contains(where: { $0.value == 0 }),
+              let reportedAt = obj["reported_at"] as? Double,
+              let settled = obj["settled"] as? Bool else { return nil }
+        let identity = SessionWorkIdentity(
+            terminalID: terminalID, assistant: assistant, tty: tty, pid: pid,
+            processStart: Date(timeIntervalSince1970: processStart),
+            conversationID: conversation)
+        return SessionDelivery(identity: identity, summary: summary,
+                               reportedAt: Date(timeIntervalSince1970: reportedAt),
+                               settled: settled)
     }
 
     static func coordinationWait(from obj: [String: Any]) -> CoordinationWait? {
@@ -8132,11 +8984,15 @@ enum Orchestrator {
             task.worktree = worktree
         }
         task.queuedSecret = obj["queued_secret"] as? String
+        task.attachSessionId = (obj["attach_session"] as? String).flatMap {
+            !$0.isEmpty && $0.count <= 512 ? $0 : nil
+        }
         // A registry written before tasks had a depth holds only tasks a root dispatched, which
         // is exactly what 1 means.
         task.depth = (obj["depth"] as? Int).map { min(max($0, 1), 9) } ?? 1
         task.childTerminalId = obj["child_terminal"] as? String
         task.childBackend = (obj["child_backend"] as? String).flatMap(Backend.init(rawValue:))
+        task.childTaskRootAccess = obj["child_task_root_access"] as? Bool == true
         task.childTTY = obj["child_tty"] as? String
         task.childPID = (obj["child_pid"] as? Int).flatMap(Int32.init(exactly:))
         task.childProcStart = (obj["child_proc_start"] as? Double)
@@ -8154,6 +9010,10 @@ enum Orchestrator {
             task.terminalIntervention = TerminalIntervention(
                 kind: modal ? .iTermModal : .terminal, message: legacy)
         }
+        task.workCleanupAt = (obj["work_cleanup_at"] as? Double)
+            .map(Date.init(timeIntervalSince1970:))
+        task.buildCleanupAt = (obj["build_cleanup_at"] as? Double)
+            .map(Date.init(timeIntervalSince1970:))
         task.transcriptPath = obj["transcript"] as? String
         task.transcriptProven = obj["transcript_proven"] as? Bool == true
             && task.childSessionId != nil && task.transcriptPath != nil
@@ -8168,6 +9028,7 @@ enum Orchestrator {
         }
         task.summary = obj["summary"] as? String
         task.artifacts = obj["artifacts"] as? [String] ?? []
+        task.verification = verification(from: obj["verification"])
         if let counts = obj["usage"] as? [String: Any] {
             var usage = Usage()
             usage.input = counts["input"] as? Int ?? 0
@@ -8268,11 +9129,17 @@ enum Orchestrator {
         let all = tasks.values.sorted { $0.created > $1.created }
         let removable = all.dropFirst(200).filter { $0.landing?.state != .pending }
         let removedIDs = Set(removable.map(\.id))
+        let oldSessionDeliveryIDs = sessionDeliveries.values
+            .sorted { $0.reportedAt > $1.reportedAt }.dropFirst(200)
+            .map { $0.identity.terminalID }
         if !removable.isEmpty {
             for task in removable { tasks.removeValue(forKey: task.id) }
         }
+        for id in oldSessionDeliveryIDs { sessionDeliveries.removeValue(forKey: id) }
         lock.unlock()
-        if !removable.isEmpty || !expiredHandoffs.isEmpty { save() }
+        if !removable.isEmpty || !expiredHandoffs.isEmpty || !oldSessionDeliveryIDs.isEmpty {
+            save()
+        }
         let retained = Set(all.filter { !removedIDs.contains($0.id) }.map(\.id))
         cleanupOrphanWorktrees(knownTaskIDs: retained, olderThan: cutoff)
         _ = OwnedStorage.compact()
@@ -8310,6 +9177,33 @@ enum Orchestrator {
         case task, handoff
     }
 
+    /// Resolve the two namespaces accepted at dispatch into the one durable conversation key
+    /// used by notification, grouping and root-close cascade. An unresolved spelling remains in
+    /// the record for compatibility, but the response warns that no process-bound owner was
+    /// proved; silently accepting it is what used to create an orphaned child.
+    static func canonicalRootSession(
+        _ supplied: String?, assistant: Assistant?, among targets: [TargetSession],
+        sessionID: (TargetSession) -> String?
+    ) -> (sessionID: String?, warning: [String: Any]?) {
+        guard let supplied else { return (nil, nil) }
+        let expectedAssistant = assistant ?? .claude
+        var canonical: Set<String> = []
+        for target in targets where target.assistant == expectedAssistant {
+            let conversation = sessionID(target)
+            guard target.id == supplied || conversation == supplied,
+                  let conversation else { continue }
+            canonical.insert(conversation)
+        }
+        if canonical.count == 1, let resolved = canonical.first {
+            return (resolved, nil)
+        }
+        return (supplied, [
+            "code": "root_unresolved",
+            "message": "root.session_id did not resolve to one live process-bound session; "
+                + "completion notification, grouping and close cascade are not guaranteed.",
+        ])
+    }
+
     static func target(forRootSession rootSessionID: String,
                        assistant: Assistant?, resolution: RootResolution,
                        among targets: [TargetSession],
@@ -8333,6 +9227,7 @@ enum Orchestrator {
         handoffs = [:]
         handoffDeliveries = [:]
         coordinationWaits = [:]
+        sessionDeliveries = [:]
         handoffTitlesByTerminal = [:]
         secrets = [:]
         dispatchTimes = []
@@ -8347,8 +9242,13 @@ enum Orchestrator {
         scheduleRunnerForTesting = nil
         scheduleDispatchEnqueuerForTesting = nil
         workspaceOverlapObserverForTesting = nil
+        rootNotificationObserverForTesting = nil
+        attachedSenderForTesting = nil
+        attachmentInventoryForTesting = nil
+        taskStarterForTesting = nil
         agentPushForTesting = nil
         titlesByTerminal = [:]
+        rolesByTerminal = [:]
         loaded = false
         lock.unlock()
         ownershipLock.lock()

@@ -54,6 +54,21 @@ export var Mock = (function () {
                 result: "Depth is flat at 0 — nothing is backing up.",
                 tokens: 18420, tools: 5, seconds: 44.2 }
           ] },
+        // Deliberately second in source order: the authenticated optional role, not fixture
+        // placement or the word in its title, is what pins this row above every ordinary one.
+        { id: "CF00-01", backend: "iterm", tty: "ttys001",
+          label: "Clawdfather · machine coordinator", cwd: "/Users/x/code/clawdline",
+          state: "working", work_state: "working", line: "Watching Bearings…",
+          isClaude: false, assistant: "codex", sessionId: "clawdfather-mock", icon: clawdline,
+          coordinator: {
+              label: "Clawdfather", status: "online",
+              commands: [
+                  { type: "status_report", enabled: false,
+                    why: "Preview only in Phase A2: Bearings is read-only." },
+                  { type: "ask_coordinator", enabled: false,
+                    why: "Disabled in Phase A2: Clawdfather actions remain advisory." }
+              ]
+          } },
         // Waiting, **with the question in it**. This is what the phone could never see: the
         // options were parsed on the Mac and thrown away, so the box could only say "go and
         // find the Mac". The caret is on the second row, which is what a bare Return confirms.
@@ -445,7 +460,8 @@ export var Mock = (function () {
         "8F3A-1C": {
             models: CLAUDE_MODELS,
             permission: { current: "auto", options: PERMISSION_MODES },
-            session: { id: "8F3A-1C", assistant: "claude", sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38",
+            session: { id: "8F3A-1C", title: "fix the webhook signature and ship the receiver",
+                       assistant: "claude", sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38",
                        model: "claude-fable-5", cwd: "/Users/x/code/clawdline",
                        startedAt: now - 5580, seconds: 5580 },
             usage: { input: 4821, output: 38210, cacheRead: 2984120, cacheWrite: 214880, total: 3242031,
@@ -460,7 +476,8 @@ export var Mock = (function () {
         "2C71-90": {
             models: CLAUDE_MODELS,
             permission: { current: "unknown", options: PERMISSION_MODES },
-            session: { id: "2C71-90", assistant: "claude", model: "claude-opus-5", cwd: "/Users/x/code/atrium",
+            session: { id: "2C71-90", title: "trace the signup 500 from the browser to the database",
+                       assistant: "claude", model: "claude-opus-5", cwd: "/Users/x/code/atrium",
                        startedAt: now - 24300, seconds: 24300 },
             usage: { input: 19340, output: 61022, cacheRead: 7120400, cacheWrite: 380210, total: 7580972,
                      model: "claude-opus-5", costUsd: 5.61 },
@@ -471,7 +488,8 @@ export var Mock = (function () {
         },
         "44D2-05": {
             models: CODEX_MODELS,
-            session: { id: "44D2-05", assistant: "codex", model: "gpt-5.3-codex", cwd: "/Users/x/tmp/notes",
+            session: { id: "44D2-05", title: "turn the field notes into a publishable technical brief",
+                       assistant: "codex", model: "gpt-5.3-codex", cwd: "/Users/x/tmp/notes",
                        startedAt: now - 840, seconds: 840 },
             usage: { input: 8190546, output: 16956, cacheRead: 7978752, cacheWrite: 0, total: 8207502,
                      model: "gpt-5.3-codex" },
@@ -758,6 +776,35 @@ export var Mock = (function () {
                 }, 300);
             });
         },
+        /**
+         * Naming a session, offline.
+         *
+         * Behind `MOCK_WRITE` like every other write here, and refusing in the fixture's own
+         * words is the point: this method exists because the real one used to be grafted onto
+         * this object by `net/api.js`, which sent a rename from `?mock=1` at the network and
+         * put a static file server's `Unsupported method ('POST')` on the card.
+         *
+         * `downstream` is always `local_only`, because there is no terminal behind a fixture to
+         * type a slash command into and claiming otherwise would be the one lie a mock of this
+         * route could tell.
+         */
+        title: function (id, title) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (!MOCK_WRITE) { fail(Object.assign(new Error("Renaming is not enabled on this server."), { code: "write_disabled" })); return; }
+                    var wanted = String(title || "").replace(/\s+/g, " ").trim();
+                    var s = find(id);
+                    var shown = wanted || (s && s.label) || id;
+                    if (info[id] && info[id].session) info[id].session.title = shown;
+                    if (s) s.label = shown;
+                    emit();
+                    done({ ok: true, title: wanted, display_title: shown,
+                           local_applied: true, downstream: "local_only",
+                           downstream_synced: false });
+                }, 260);
+            });
+        },
+
         /** Answering moves the session off `waiting`, which is the whole thing worth seeing
          *  from a file:// copy: the menu goes, the buttons go, and the composer comes back. */
         key: function (id, press) {
@@ -957,7 +1004,7 @@ export var Mock = (function () {
                     if (info[id]) { done({ info: info[id] }); return; }
                     var session = sessions.filter(function (s) { return s.id === id; })[0] || {};
                     done({ info: {
-                        session: { id: id, assistant: session.assistant, cwd: session.cwd },
+                        session: { id: id, title: session.label, assistant: session.assistant, cwd: session.cwd },
                         limits: { windows: [] },
                         links: (links[id] || []).slice(),
                         models: session.assistant === "codex" ? CODEX_MODELS : CLAUDE_MODELS,

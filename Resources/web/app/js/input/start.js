@@ -671,6 +671,10 @@ export var Start = (function () {
     return {
         open: open,
         close: close,
+        // Schedule history reaches the same resume route and creates the same arriving Session
+        // row. Sharing this transition keeps its placeholder and slow warning identical to a
+        // resume started from the ordinary project picker.
+        began: began,
         press: press,
         pick: pick,
         typed: function (value) { find = value; draw(); },

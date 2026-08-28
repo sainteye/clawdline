@@ -23,7 +23,7 @@ var SECTIONS = [
 var COMMANDS = {
     status_report: {
         label: "Status report", section: "observe", effect: "read_only",
-        summary: "Read the coordinator's current status and active obligations."
+        summary: "Read Clawdfather's current status and active obligations."
     },
     since_away: {
         label: "Since you were away", section: "observe", effect: "read_only",
@@ -46,8 +46,8 @@ var COMMANDS = {
         summary: "Preview a dispatch that would start an independent child session."
     },
     ask_coordinator: {
-        label: "Ask coordinator", section: "coordinate", effect: "advisory",
-        summary: "Draft a question for the coordinator's judgement."
+        label: "Ask Clawdfather", section: "coordinate", effect: "advisory",
+        summary: "Draft a question for Clawdfather's judgement."
     },
     quiet_watch: {
         label: "Quiet watch", section: "presence", effect: "advisory",
@@ -55,15 +55,15 @@ var COMMANDS = {
     },
     scope_permissions: {
         label: "Scope & permissions", section: "administration", effect: "read_only",
-        summary: "Read the coordinator's current scope and granted permissions."
+        summary: "Read Clawdfather's current scope and granted permissions."
     },
     stop: {
-        label: "Stop coordinator", section: "administration", effect: "mutation",
-        summary: "Preview stopping this coordinator."
+        label: "Stop Clawdfather", section: "administration", effect: "mutation",
+        summary: "Preview stopping Clawdfather."
     },
     reconnect: {
-        label: "Reconnect coordinator", section: "administration", effect: "mutation",
-        summary: "Preview reconnecting this coordinator."
+        label: "Reconnect Clawdfather", section: "administration", effect: "mutation",
+        summary: "Preview reconnecting Clawdfather."
     }
 };
 
@@ -107,12 +107,12 @@ export function coordinatorRowModel(session) {
     var coordinator = coordinatorForSession(session);
     if (!coordinator) return null;
     return {
-        badge: "Coordinator",
+        badge: "Clawdfather",
         label: coordinator.label,
         mark: {
             role: "button",
             ariaHaspopup: "dialog",
-            ariaLabel: "Open " + coordinator.label + " Coordinator controls"
+            ariaLabel: "Open " + coordinator.label + " controls"
         }
     };
 }
@@ -159,7 +159,7 @@ export function coordinatorGroups(session, context) {
             state: state,
             stateLabel: STATE_LABELS[state],
             why: state === "disabled"
-                ? (nonempty(command.why) || "Disabled by the coordinator.")
+                ? (nonempty(command.why) || "Disabled by Clawdfather.")
                 : ""
         });
     });
@@ -176,16 +176,16 @@ export function coordinatorPreview(action) {
     if (!action) {
         note = "No command selected; nothing has been sent.";
     } else if (mutation) {
-        note = "Preview only — nothing has been sent. Confirmation stays unavailable until the Coordinator command API is connected.";
+        note = "Preview only — nothing has been sent. Confirmation stays unavailable until the Clawdfather command API is connected.";
     } else if (action.state === "draft") {
-        note = "Offline draft only — nothing has been sent or presented as coordinator judgement.";
+        note = "Offline draft only — nothing has been sent or presented as Clawdfather judgement.";
     } else if (action.effect === "spawns_session") {
         note = "Preview only — no session has been started.";
     } else {
         note = "Phase A shows this command contract only; nothing has been sent.";
     }
     return {
-        title: action ? action.label : "Coordinator command",
+        title: action ? action.label : "Clawdfather command",
         summary: action ? action.summary : "",
         note: note,
         requiresConfirmation: mutation,
@@ -218,11 +218,11 @@ export function coordinatorPanelHTML(session, context) {
             esc(group.label) + "</h3>" + group.actions.map(actionHTML).join("") + "</section>";
     }).join("");
     if (!sections) {
-        sections = '<p class="coordinator-empty">No supported Coordinator commands were advertised.</p>';
+        sections = '<p class="coordinator-empty">No supported Clawdfather commands were advertised.</p>';
     }
     return '<div class="coordinator-presence" data-status="' + (online ? "online" : "offline") + '">' +
         '<span class="coordinator-presence-dot" aria-hidden="true"></span><span>' +
-        esc(online ? "Coordinator online" : "Coordinator offline") +
+        esc(online ? "Clawdfather online" : "Clawdfather offline") +
         "</span></div>" +
         '<div class="coordinator-groups">' + sections + "</div>" +
         '<section class="coordinator-preview" aria-live="polite" hidden></section>' +
@@ -282,7 +282,7 @@ export var CoordinatorControls = {
         if (!this.dom || !coordinatorForSession(session)) return false;
         this.session = session;
         this.opener = opener || null;
-        this.dom.title.textContent = coordinatorForSession(session).label + " Coordinator controls";
+        this.dom.title.textContent = coordinatorForSession(session).label + " controls";
         this.dom.body.innerHTML = coordinatorPanelHTML(session, context);
         this.dom.overlay.hidden = false;
         // The body is reused across opens. A preview can scroll it to the bottom, so reset the

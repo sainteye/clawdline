@@ -57,6 +57,80 @@ version: 1
 artifact: artifacts/backlog.html
 
 items:
+  - id: B-SCHEDULE-WITHOUT-A-SESSION
+    title: A scheduled chore with no judgement in it still opens a whole assistant session
+    problem: >-
+      A schedule's only shape is a dispatch, so every run starts a full assistant: system prompt,
+      tool schemas, the machine's own instruction files, a briefing, and then a handful of tool
+      calls that a shell script could have made. The daily forecast on this machine says in its own
+      instructions that it reads no project file and writes to no repository — it fetches one JSON
+      document and pushes one notification — and it costs between 672,030 and 705,879 tokens a run.
+      What is missing is a schedule that runs a command and only escalates to a session when the
+      command fails, which is most of what these chores actually are.
+    evidence: >-
+      Five recorded runs of three daily chores cost 9,380,031 tokens and $8.52, 4.0% of every task
+      this machine has dispatched, to produce 51,337 output tokens between them. The forecast run
+      spends its whole budget in 34-50 seconds of wall clock, so almost none of it is work: it is
+      the session's standing context read once per turn. POST /v1/orchestrator/notify already
+      accepts the machine credential, so the notification half needs no agent at all. Measured
+      2026-08-28.
+    severity: degrades
+    cost: days
+    who_hurts: us
+    trigger: >-
+      Write the forecast as a shell script pushing through /v1/orchestrator/notify, run it beside
+      the scheduled session for a week, and compare what the person receives. If the two are
+      indistinguishable, the feature is a `command` field on a schedule plus an escalate-on-failure
+      dispatch.
+    opened: 2026-08-28
+
+  - id: B-WORKTREE-COLD-CACHE
+    title: An isolated task rebuilds from nothing and burns 1.5x the tokens per second
+    problem: >-
+      A fresh checkout has no build cache and none of the gitignored dependencies the shared tree
+      already holds, so an isolated child spends its first minutes re-fetching and re-compiling
+      what was sitting on disk the whole time. The protocol asks for isolation on exactly the
+      large, long-running slices, which is where that cost is largest.
+    evidence: >-
+      Across 138 Codex dispatches on this machine, isolated tasks ran at a median 8,185 tokens per
+      second against 5,375 for shared-tree ones, a ratio of 1.52x. Total tokens ran 2.03x, but that
+      is confounded — the policy sends bigger work to isolation on purpose. The per-second gap is
+      the part selection effects do not explain. Measured in the token-economics review, 2026-08-28.
+    severity: degrades
+    cost: days
+    who_hurts: us
+    trigger: >-
+      Seed a read-only build cache into a new worktree and compare tokens per second against the
+      8,185 median. Below about 6,000 and the effect is real. It must stay read-only: sharing a
+      writable build directory puts back the cross-session interference isolation exists to stop.
+    opened: 2026-08-28
+
+  - id: B-ROUND-BUDGET-RESEARCH
+    title: Nothing budgets a session's rounds, and rounds are what the bill is actually made of
+    problem: >-
+      The protocol caps every input it can name — the policy at 12,000 characters, the plan at
+      4,096, instructions at 16 KiB — and caps nothing about output or the number of turns taken.
+      But output is a quarter of the bill and it is not report length: an 8,000-character artifact
+      is about 2% of a session's output tokens, and the rest is thinking, tool arguments and
+      per-turn text. The meter runs on time, not on answer size. This is the one recommendation in
+      the token-economics review marked a trade rather than waste, and it is open deliberately:
+      red-before-green tests, independent review and claims all cost rounds, because that is what
+      they are, and a budget set too tight buys twenty saved minutes with a defect nobody found. It
+      is plausible only for research and survey nodes, where the work is reading rather than
+      proving, and it must never reach a code or a review node.
+    evidence: >-
+      2,247,280 output tokens at $25/M is 25.8% of the bill; corr(elapsed seconds, total tokens)
+      = 0.718; tokens per second is tightly bounded (p10-p90 of 3,092-13,371, median 6,681), so a
+      session costs roughly 400k tokens per extra minute alive. Measured 2026-08-28.
+    severity: noise
+    cost: days
+    who_hurts: us
+    trigger: >-
+      Give the next ten research-shaped tasks a stated round budget in their instructions and
+      compare median output and total against the current medians. Do not extend it past research
+      nodes on a good result alone.
+    opened: 2026-08-28
+
   - id: B-NO-SELF-UPDATE
     title: A downloaded app has no way to learn a newer one exists
     problem: >-
@@ -358,3 +432,168 @@ items:
     who_hurts: user
     trigger: A Codex task binds to a rollout from a replaced process or reused tty.
     opened: 2026-08-26
+
+  - id: B-PAGE-PROSE-UNCHECKED
+    title: Only the protocol page's code names are checked; its sentences can go stale silently
+    problem: >-
+      The suite compares the refusal codes named on docs/clawdline-protocol.html against the set
+      derived from Sources/Orchestrator.swift, so a code added and never documented, or documented
+      and never built, is caught. Nothing checks the sentences around those codes. Two of the three
+      falsehoods found on that page in one review were prose rather than names: a conditional
+      success path written as though it were unconditional, and a bound that exists in the code and
+      appeared nowhere on the page. Both can regress the same way again, and this is the page the
+      project points the community at. The distinction worth keeping in view is that a set equality
+      catches an inconsistency after it exists, while generating the text makes the inconsistency
+      impossible — the difference between a check and a guarantee.
+    evidence: >-
+      Review 3cbbb7b7 (F1, MEDIUM) found three false claims on that page, and a previous reviewer
+      had run a keyword scan over the same file and missed all three — which is why the assertion
+      that landed derives its set from the source instead of listing more keywords. That closes the
+      names half and leaves this half open by design rather than by oversight. 2026-08-28.
+    severity: degrades
+    cost: days
+    who_hurts: user
+    trigger: >-
+      Another reviewer finding a false sentence on that page, or somebody building against it and
+      hitting the gap. The shape worth trying first is generating the error code table from the
+      source instead of writing it, so that section stops being prose at all — which is what
+      tools/build-compatibility.py already does for the compatibility page.
+    opened: 2026-08-28
+
+  - id: B-ATTACH-GRANT-TIED-TO-TAB
+    title: The attach grant is recorded against a terminal id, not the process that actually holds it
+    problem: >-
+      `attach_not_managed` exists to stop a follow-up being typed into a session that was never
+      given `--add-dir /tmp/.clawdline`, because such a child's first act — reading its own
+      `CHILD.md` — raises a permission question on a tab nobody is watching for it, and the menu
+      answerer would press the first option. The guard now rests on a grant persisted when the
+      process started, which is right, but the grant is keyed on the terminal id rather than on the
+      process that received it. A person who restarts the assistant in that same tab gets a new
+      process with no such grant, while the role and the recorded grant both survive, so the guard
+      goes on saying yes to a session that can no longer read the directory. The failure is silent
+      and lands exactly where the guard was built to protect.
+    evidence: >-
+      Independent review `3cbbb7b7` of `eda0fa76`, 2026-08-28, raised this as MEDIUM and explicitly
+      marked it not a landing blocker because closing it is a design decision rather than a repair.
+      The materials are already in `Sources/Orchestrator.swift` and used daily by `brief()`:
+      `childPID`, `childProcStart`, and `identityStep`'s `refuseForeignProcess`, which is how child
+      delivery already refuses a tty whose process was replaced.
+    severity: degrades
+    cost: hours
+    who_hurts: user
+    trigger: >-
+      Restart an assistant in a standing session's tab, then dispatch a follow-up with
+      `attach_session` naming it, and watch whether the child stops on a permission question. If it
+      does, extend the persisted grant to carry pid and process start and compare them the way
+      `refuseForeignProcess` already does.
+    opened: 2026-08-28
+
+  - id: B-SUITE-WALKS-LIVE-WORKTREES
+    title: The reclaim tests walk the real worktree root, not a fixture root
+    problem: >-
+      The suite now covers a feature whose whole job is deleting directories, and the tests reach
+      the actual worktree root this machine keeps its isolated checkouts in rather than a fixture
+      directory built for the run. Nothing was deleted, and the safety checks in front of the
+      deletion are real — the resolved path must equal what `worktreePath(project:taskID:)`
+      computes, and a container check defeats `..` and symlinks. But the distance between "the
+      guards held" and "the test could not have reached anybody's work" is the whole difference,
+      and it is currently spanned by review rather than by construction. Somebody's uncommitted
+      hours live in those directories.
+    evidence: >-
+      Independent review 3cbbb7b7 of eda0fa76, 2026-08-28, recorded it as INFO and confirmed all 19
+      worktree directories were still present when it finished — which is to say it had to go and
+      count them. The reclaim path is `reclaimTaskBuildIfDue` in `Sources/Orchestrator.swift`; the
+      tests are the `.build` and `work/` groups in `Tests/main.swift`.
+    severity: degrades
+    cost: hours
+    who_hurts: contributor
+    trigger: >-
+      Point the tests at a temporary root through the seam the suite already uses for the store,
+      then delete the guards and confirm the tests still cannot touch a real checkout. If that is
+      awkward to arrange, the awkwardness is the finding.
+    opened: 2026-08-28
+
+  - id: B-RECLAIM-HAS-NO-BACKFILL
+    title: A task that finished before the deadline field existed never gets one
+    problem: >-
+      `work/` and `.build` are reclaimed on a deadline written when the task reaches a terminal
+      state. Nothing gives a deadline to a task that reached its terminal state earlier, so every
+      task that finished before the field shipped is invisible to the feature that exists to clean
+      up after it. Those directories then wait for the 24-hour whole-task sweep, which takes the
+      evidence with them, or for somebody to notice and delete them by hand. This is not a one-off
+      caused by one upgrade: it is the shape of every future change to how a deadline is decided,
+      so the same orphan set appears again each time.
+    evidence: >-
+      Measured within an hour of the feature landing, 2026-08-28. The new build was installed at
+      12:50:33; `/tmp/.clawdline` held 695 MB across 23 `work/` directories and **not one of them
+      carried a deadline**, because all 23 tasks finished before the build. It was cleared by hand
+      for the third time that day (19 GB at 09:00, 695 MB at 13:00), which is the chore the feature
+      was built to end.
+    severity: degrades
+    cost: hours
+    who_hurts: us
+    trigger: >-
+      Have `cleanup()` give a reclaim deadline to any terminal task that has none, using the same
+      grace rules, so the next pass collects it. Then check the disk an hour after the following
+      upgrade instead of asking somebody to remember.
+    opened: 2026-08-28
+
+  - id: B-SECRETS-OUTLIVE-EVERYTHING-ELSE
+    title: A task secret is still recoverable long after every trace of its task is gone
+    problem: >-
+      That a secret stays in the dispatching session's transcript is known and accepted —
+      `skills/clawdline/SKILL.md` says so plainly, at the same trust boundary as the token file.
+      What nobody wrote down is the asymmetry in how long it stays. A task directory is swept 24
+      hours after the task ends, taking `task.json`, `CHILD.md`, `result.json` and the artifacts
+      with it. Transcripts are swept never. So the retention policy that governs everything else
+      about a task does not reach the one field the design treats as a credential, and the window
+      in which a secret can be recovered is not 24 hours, it is unbounded.
+    evidence: >-
+      Demonstrated 2026-08-28, not reasoned about: seven task secrets were recovered from a single
+      52.9 MB codex rollout under `~/.codex/sessions/2026/08/27/` by matching the exact dispatch
+      body `{"task_id":"<id>","secret":"<64 hex>"}` — hours after those tasks ended, and after
+      three of the seven task directories had already been swept off disk. `CHILD.md` holds only
+      the literal `<TASK_SECRET>` placeholder, so the task directory was never the thing keeping
+      them alive.
+    severity: noise
+    cost: hours
+    who_hurts: us
+    trigger: >-
+      Not an escalation today: anything running as the user can already read
+      `~/.config/clawdline/orchestrator-token`, which is strictly more powerful than any one task
+      secret. It stops being noise the day a transcript is synced, shared, or attached to a report,
+      because the thing travelling is then older and wider than the retention policy anybody
+      reasoned about. The cheap fix is to stop putting the secret in a shell command line: hand it
+      to the app through a file or a header, so the dispatch body never carries it.
+    opened: 2026-08-28
+
+  - id: B-PENDING-CANNOT-SEE-ITS-EXECUTOR
+    title: A pending landing cannot tell work in progress from work whose executor was killed
+    problem: >-
+      A landing record has one word for two situations that need opposite responses. `pending` on a
+      task somebody is actively working is a reason to wait. `pending` on a task whose session was
+      closed hours ago is a reason to redispatch, and nothing in the record distinguishes them. The
+      obligation therefore looks healthy while it is dead, and the longer it sits the more it looks
+      like difficulty rather than absence — so the line gets ranked as hard, not as stalled, and
+      everybody routes around it. What is missing is not more state on the task; it is a liveness
+      fact the record already has the parts for, since every task names the root that dispatched it
+      and the app already knows which sessions are alive.
+    evidence: >-
+      Measured 2026-08-28. Review `7555eb14` returned seven P1s at 22:53:39 on 08-27; the
+      correction `9bb8eae0` was dispatched 75 seconds later at 22:54:54, ran for 25 minutes, and
+      then it and three sibling tasks under the same root `01a04276` were cancelled inside a
+      14-second window — 23:20:37, :41, :48, :51 — the signature of a close cascade rather than
+      four decisions. The other three were the display-name final review, the numeric `pending`
+      compatibility fix, and the registry accumulation cap. **The safe-close line then sat for
+      fourteen hours**, and a handoff document written by the outgoing root faithfully recorded
+      that the four tasks "were cancelled" without recording that they died together and why, so
+      the receiving root inherited the fact and still could not act on it.
+    severity: degrades
+    cost: hours
+    who_hurts: us
+    trigger: >-
+      Have `GET /v1/orchestrator/landings` answer, per row, whether the dispatching root session is
+      still alive — the app already publishes session state, and the task record already names its
+      root. Then read the list once and see whether anything that looks like a hard problem is
+      merely an orphan.
+    opened: 2026-08-28
