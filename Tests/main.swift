@@ -15883,6 +15883,55 @@ group("the automatic close runs closeStep against an inventory it took itself") 
            "terminal_intervention_required")
 }
 
+group("a beat with several lingering children takes one terminal walk, not one each") {
+    // The decision has to be fresh, which means a walk; it does not have to be one walk per
+    // task. Per task, eight children finishing together was eight iTerm lists plus eight
+    // `list-panes` every five seconds, all on the single serial terminal lane a phone's `/send`
+    // queues in — the lane this whole change exists to keep clear.
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    defer {
+        Targets.safeCloseInventoryForTesting = nil
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    ITerm.completeInventoryForTesting()
+    var lingering: [Orchestrator.Task] = []
+    for index in 0..<4 {
+        var task = Orchestrator.Task(
+            id: UUID().uuidString.lowercased(), state: .success, kind: "custom",
+            title: "batched linger", assistant: .codex, projectDir: "/tmp",
+            timeoutMinutes: 30, created: Date(), secretHash: String(repeating: "0", count: 64))
+        task.finishedAt = Date()
+        task.childTerminalId = "BATCH-TAB-\(index)"
+        task.closeAt = Date().addingTimeInterval(-1)
+        Orchestrator.holdScheduleTaskForTesting(task)
+        lingering.append(task)
+    }
+    // A complete inventory holding somebody else's tab and none of theirs: every one of them is
+    // decided, none of them touches a terminal, and the count below is the whole point.
+    var elsewhere = Targets.Snapshot()
+    elsewhere.sessions = [TargetSession(backend: .iterm, id: "NOT-OURS", name: "other",
+                                        tty: "/dev/ttys95", windowIndex: 0, tabIndex: 0,
+                                        assistant: .claude, cwd: "/tmp")]
+    let walkLock = NSLock()
+    var walks = 0
+    Targets.safeCloseInventoryForTesting = {
+        walkLock.lock(); walks += 1; walkLock.unlock()
+        return elsewhere
+    }
+    Orchestrator.closeDueChildren(lingering)
+    check("every lingering child is decided", eventually {
+        Orchestrator.terminalClosesInFlightForTesting() == 0
+            && lingering.allSatisfy { Orchestrator.closeAtForTesting($0.id) == nil }
+    })
+    walkLock.lock(); let taken = walks; walkLock.unlock()
+    expect("four due children cost one terminal inventory, not four", taken, 1)
+}
+
 group("terminal intervention type follows the returned failure, not unrelated global state") {
     defer { ITerm.completeInventoryForTesting() }
     ITerm.blockAutomationForTesting("iTerm modal timeout")
@@ -18480,12 +18529,31 @@ group("every terminal path keeps the reclaim contract at its real filesystem bou
             && Orchestrator.reclaimTaskBuildIfDue(staleID))
     // Safe close no longer acts on a cached inventory at all: what a beat holds may nominate a
     // task, and absence, identity and activity are all decided on a fresh walk inside the
-    // terminal broker. The deadline guard the reclaim needs is unchanged — a nomination that
-    // never reaches a decision must not write the stale record back.
+    // terminal broker. So the walk is seamed from here on — a nomination that reaches the broker
+    // must never take a real inventory of this Mac from inside the suite — and the circuit is
+    // cleared, because `closeStep` refuses everything while an iTerm modal is up.
+    var inventory = Targets.Snapshot()
+    inventory.sessions = [TargetSession(backend: .iterm, id: "OTHER-TAB", name: "other",
+                                        tty: "/dev/ttys099", windowIndex: 0, tabIndex: 0,
+                                        assistant: .codex, cwd: "/tmp")]
+    // Degraded for the first half: the nomination reaches the broker and the walk it takes there
+    // proves nothing, so this half is exactly "a close that decided nothing wrote nothing".
+    inventory.isComplete = false
+    inventory.error = "the walk was degraded"
+    Targets.safeCloseInventoryForTesting = { inventory }
+    defer { Targets.safeCloseInventoryForTesting = nil }
+    ITerm.completeInventoryForTesting()
+    // The deadline guard the reclaim needs is unchanged: a nomination must not write the stale
+    // record back.
     check("and closeChild's stale snapshot cannot resurrect either deadline",
           !Orchestrator.closeChild(stale)
             && Orchestrator.workCleanupAtForTesting(staleID) == nil
             && Orchestrator.buildCleanupAtForTesting(staleID) == nil)
+    // Whether it entered the broker depends on whether a terminal scan has completed in this
+    // process yet, and both halves of this test name the same task. One close at a time is the
+    // whole point of the closing guard, so wait for it rather than racing it.
+    check("the nomination settles before the next half takes the same task id",
+          eventually { Orchestrator.terminalClosesInFlightForTesting() == 0 })
 
     var staleTake = stale
     staleTake.closeAt = Date().addingTimeInterval(-1)
@@ -18500,18 +18568,22 @@ group("every terminal path keeps the reclaim contract at its real filesystem bou
     let child = TargetSession(backend: .iterm, id: "TAB", name: "child",
                               tty: "/dev/ttys098", windowIndex: 0, tabIndex: 0,
                               assistant: nil, cwd: "/tmp")
-    var freshInventory = Targets.Snapshot()
-    freshInventory.sessions = [child]
-    Targets.safeCloseInventoryForTesting = { freshInventory }
-    defer { Targets.safeCloseInventoryForTesting = nil }
+    inventory.sessions = [child]
+    inventory.isComplete = true
+    inventory.error = nil
     // The close is asynchronous now — it is admitted to the terminal broker and settles on main
     // — so the synchronous answer is false and the record is read again before it is written.
-    check("and takeChildTab's stale snapshot cannot resurrect either deadline",
+    check("the close is admitted and answers on the main thread, not to its caller",
           !Orchestrator.takeChildTab(for: staleTake, childID: child.id,
                                      closeAt: staleTake.closeAt ?? Date(),
-                                     end: { _, _ in nil })
-            && eventually { Orchestrator.closeAtForTesting(staleID) == nil }
-            && Orchestrator.workCleanupAtForTesting(staleID) == nil
+                                     end: { _, _ in nil }))
+    check("the close settles", eventually {
+        Orchestrator.terminalClosesInFlightForTesting() == 0
+    })
+    check("a successful close drops the deadline it was given",
+          Orchestrator.closeAtForTesting(staleID) == nil)
+    check("and takeChildTab's stale snapshot cannot resurrect either deadline",
+          Orchestrator.workCleanupAtForTesting(staleID) == nil
             && Orchestrator.buildCleanupAtForTesting(staleID) == nil)
 }
 

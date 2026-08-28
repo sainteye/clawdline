@@ -5728,6 +5728,7 @@ enum Orchestrator {
 
         var changed = false
         var sawSpawning = false
+        var closing: [Task] = []
         for id in liveIDs {
             // The list is only scheduling. State is read at the instant this task is advanced, so
             // an earlier item in a long beat cannot leave a stale state decision behind it.
@@ -5751,9 +5752,11 @@ enum Orchestrator {
             default:
                 changed = reclaimTaskWorkIfDue(task.id) || changed
                 changed = reclaimTaskBuildIfDue(task.id) || changed
-                changed = closeChild(task) || changed
+                // Collected, not closed: one walk answers the whole batch below.
+                if let current = held(id) { closing.append(current) }
             }
         }
+        closeDueChildren(closing)
         if fromTimer, sawSpawning {
             // Away from the panel the watch reads every twenty seconds, which is a long time to
             // leave a freshly opened terminal unbriefed.
@@ -6434,23 +6437,57 @@ enum Orchestrator {
     /// the empty list the app carries for its first few seconds, so this thread is allowed to say
     /// "look at that one" and nothing else. ``closeStep`` decides, inside the terminal broker,
     /// against an inventory taken there. Returns true only when this thread changed the record,
-    /// which it never does — the answer arrives on a later beat, from the broker.
+    /// which it never does — the answer arrives from the broker, on a later beat.
+    @discardableResult
     static func closeChild(_ task: Task) -> Bool {
-        guard let closeAt = task.closeAt, let childID = task.childTerminalId else { return false }
-        // The cheap refusals only: due, a terminal scan that has happened at all, and a previous
-        // failure that has not earned another attempt. Everything costlier is terminal work.
-        guard Date() >= closeAt, SessionWatch.shared.scanComplete,
-              terminalCloseRetryAllowed(intervention: task.terminalIntervention,
-                                        automationReady: ITerm.automationReady) else {
-            return false
+        closeDueChildren([task])
+        return false
+    }
+
+    /// Every lingering child a beat found due, decided together against **one** inventory.
+    ///
+    /// Batched because the inventory is the expensive half and the broker has one serial lane.
+    /// Per task it was one iTerm list plus one `list-panes` every five seconds, so eight
+    /// lingering children — an ordinary fan-out finishing — would have spent most of that lane on
+    /// re-reading the same terminals, and that lane is the one a phone's `/send` waits in.
+    static func closeDueChildren(_ candidates: [Task]) {
+        let now = Date()
+        // The cheap refusals only: due, and a previous failure that has not earned another
+        // attempt. Everything costlier is terminal work, and happens in the broker.
+        //
+        // There is deliberately no `SessionWatch.scanComplete` gate any more. It was a cached
+        // reading standing in front of a decision that no longer consults one: emptiness and
+        // incompleteness are `closeStep`'s to refuse, from the walk it takes itself, and a gate
+        // that cannot be set is also a gate no test can traverse.
+        let automationReady = ITerm.automationReady
+        let due = candidates.filter { task in
+            guard let closeAt = task.closeAt, task.childTerminalId != nil,
+                  now >= closeAt else { return false }
+            return terminalCloseRetryAllowed(intervention: task.terminalIntervention,
+                                             automationReady: automationReady)
         }
-        return takeChildTab(for: task, childID: childID, closeAt: closeAt)
+        let admitted = due.filter { beginClosing($0.id) }
+        guard !admitted.isEmpty else { return }
+        let ok = RemoteServer.shared.enqueueTerminalCommand(
+            channels: admitted.compactMap(\.childTerminalId)
+        ) {
+            let inventory = Targets.safeCloseInventory()
+            for task in admitted {
+                guard let childID = task.childTerminalId, let closeAt = task.closeAt else {
+                    DispatchQueue.main.async { finishClosing(task.id) }
+                    continue
+                }
+                decideChildClose(task, childID: childID, closeAt: closeAt,
+                                 inventory: inventory, end: endChildTab)
+            }
+        }
+        if !ok { for task in admitted { finishClosing(task.id) } }
     }
 
     /// The one terminal operation that ends a child's tab, shared by the linger running out and
     /// by a root pressing close.
     ///
-    /// Every input it acts on is taken here, in the broker: a fresh complete inventory, and the
+    /// Every input it acts on is taken inside the broker: a fresh complete inventory, and the
     /// screen classification read from it. `closeStep` then answers with the whole decision —
     /// wait, forget, or close — so the branch table that has tests is the branch table production
     /// runs. Always returns false: the record moves on the main thread, afterwards.
@@ -6461,46 +6498,54 @@ enum Orchestrator {
         -> Bool {
         guard beginClosing(task.id) else { return false }
         let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: childID) {
-            let inventory = Targets.safeCloseInventory()
-            let observed = inventory.sessions.first { $0.id == childID }
-            let step = closeStep(now: Date(), closeAt: closeAt,
-                                 inventoryComplete: inventory.isComplete,
-                                 inventoryEmpty: inventory.sessions.isEmpty,
-                                 emptyInventoryAuthoritative: false,
-                                 automationReady: ITerm.automationReady,
-                                 intervention: task.terminalIntervention,
-                                 child: observed, assistant: task.assistant, tty: task.childTTY,
-                                 activity: { observed.map(Targets.safeCloseActivity) ?? .unknown })
-            switch step {
-            case .wait:
-                DispatchQueue.main.async { finishClosing(task.id) }
-            case .forget:
-                DispatchQueue.main.async {
-                    finishClosing(task.id)
-                    settleNothingLeftToClose(task, childID: childID)
-                }
-            case .close(let justTheTab):
-                guard let observed else {
-                    DispatchQueue.main.async { finishClosing(task.id) }
-                    return
-                }
-                RemoteAuth.audit("orchestrator.close", ["task": task.id, "child": childID,
-                                                        "how": justTheTab ? "tab" : "exit"])
-                let failure = end(observed, justTheTab)
-                // Typed here, while the returned failure and the circuit that produced it are one
-                // observation. A later main callback must not mistake an unrelated process
-                // failure for a modal another terminal operation happened to open since.
-                let intervention = failure.map {
-                    terminalIntervention(for: $0, backend: observed.backend)
-                }
-                DispatchQueue.main.async {
-                    finishClosing(task.id)
-                    settleClosedChild(task, childID: childID, intervention: intervention)
-                }
-            }
+            decideChildClose(task, childID: childID, closeAt: closeAt,
+                             inventory: Targets.safeCloseInventory(), end: end)
         }
         if !admitted { finishClosing(task.id) }
         return false
+    }
+
+    /// One task's whole close decision, run on the terminal queue against an inventory the caller
+    /// took there. Releases that task's closing membership on main whichever way it goes.
+    private static func decideChildClose(_ task: Task, childID: String, closeAt: Date,
+                                         inventory: Targets.Snapshot,
+                                         end: (TargetSession, Bool) -> String?) {
+        let observed = inventory.sessions.first { $0.id == childID }
+        let step = closeStep(now: Date(), closeAt: closeAt,
+                             inventoryComplete: inventory.isComplete,
+                             inventoryEmpty: inventory.sessions.isEmpty,
+                             emptyInventoryAuthoritative: false,
+                             automationReady: ITerm.automationReady,
+                             intervention: task.terminalIntervention,
+                             child: observed, assistant: task.assistant, tty: task.childTTY,
+                             activity: { observed.map(Targets.safeCloseActivity) ?? .unknown })
+        switch step {
+        case .wait:
+            DispatchQueue.main.async { finishClosing(task.id) }
+        case .forget:
+            DispatchQueue.main.async {
+                finishClosing(task.id)
+                settleNothingLeftToClose(task, childID: childID)
+            }
+        case .close(let justTheTab):
+            guard let observed else {
+                DispatchQueue.main.async { finishClosing(task.id) }
+                return
+            }
+            RemoteAuth.audit("orchestrator.close", ["task": task.id, "child": childID,
+                                                    "how": justTheTab ? "tab" : "exit"])
+            let failure = end(observed, justTheTab)
+            // Typed here, while the returned failure and the circuit that produced it are one
+            // observation. A later main callback must not mistake an unrelated process failure
+            // for a modal another terminal operation happened to open since.
+            let intervention = failure.map {
+                terminalIntervention(for: $0, backend: observed.backend)
+            }
+            DispatchQueue.main.async {
+                finishClosing(task.id)
+                settleClosedChild(task, childID: childID, intervention: intervention)
+            }
+        }
     }
 
     /// A fresh complete inventory proved the tab gone, or somebody else's. The deadline is
