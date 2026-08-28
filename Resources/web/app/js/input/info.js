@@ -147,7 +147,11 @@ export var Info = (function () {
                 '<button type="submit" class="chip"' + (busy || !S.write ? " disabled" : "") + '>' +
                 esc(T.webScheduleSave) + '</button><button type="button" class="chip quiet" data-title-cancel="1"' +
                 (busy ? " disabled" : "") + '>' + esc(T.webCancel) + '</button></span></form>'
-            : '<button type="button" class="session-title" data-title-edit="1" aria-label="' +
+            // `title`, not `aria-label`. An `aria-label` here *replaces* the accessible name, so
+            // the headline of this card — the one thing it is about — stopped being readable at
+            // all and a screen reader announced only "Edit session title". As a `title` the same
+            // words arrive as the button's description, after the session's own name.
+            : '<button type="button" class="session-title" data-title-edit="1" title="' +
                 esc(T.webInfoEditTitle) + '"' + (!S.write || busy ? " disabled" : "") + '><span>' +
                 esc(title) + '</span><i aria-hidden="true">✎</i></button>';
         return '<div class="hero">' +
@@ -324,10 +328,18 @@ export var Info = (function () {
         stateSeen = s ? s.state : "";
         say(loading && !data ? T.webLoading : "");
         // A redraw under somebody's fingers keeps what they had typed and where the caret was.
+        // Both boxes, and not only the model one: `follow()` redraws whenever the shared facts
+        // change or the session changes state, which is exactly what happens while somebody is
+        // slowly typing a title on a phone — and the title box is rebuilt from `titleDraft`, so
+        // without this it snaps back to the value the editor opened with.
         var box = els["info-body"];
         var typed = box.querySelector(".other input");
         var kept = typed ? typed.value : "";
         var focused = !!typed && document.activeElement === typed;
+        var titleBox = box.querySelector(".title-editor input");
+        var keptTitle = titleBox ? titleBox.value : null;
+        var titleFocused = !!titleBox && document.activeElement === titleBox;
+        var titleCaret = titleFocused ? titleBox.selectionStart : null;
         var again = drawn;
         box.classList.toggle("again", again);
         box.innerHTML = data ? html(data) : "";
@@ -336,6 +348,15 @@ export var Info = (function () {
         typed = box.querySelector(".other input");
         if (typed && kept) typed.value = kept;
         if (typed && focused && !typed.disabled) typed.focus({ preventScroll: true });
+        titleBox = box.querySelector(".title-editor input");
+        if (titleBox && keptTitle !== null) {
+            titleBox.value = keptTitle;
+            titleDraft = keptTitle;
+        }
+        if (titleBox && titleFocused && !titleBox.disabled) {
+            titleBox.focus({ preventScroll: true });
+            if (titleCaret !== null) titleBox.setSelectionRange(titleCaret, titleCaret);
+        }
         // The bars grow from nothing to their number the first time: laid out once at nothing
         // (the read of `offsetWidth` is what forces that), then given the number, so the
         // transition has somewhere to start. Not on a frame callback — a tab in the background
@@ -626,9 +647,14 @@ els["info-body"].addEventListener("submit", function (ev) {
     var input = form.querySelector("input");
     Info.switchTo(input ? input.value : "", "");
 });
+// `stopPropagation`, not just `preventDefault`. The page's one keyboard handler is on `document`
+// (`input/keys.js`), and its Escape branch closes this sheet before it looks at anything else — so
+// without this the press cancels the edit *and* shuts the card, which is the "two things for one
+// press" that file says it is avoiding.
 els["info-body"].addEventListener("keydown", function (ev) {
     if (ev.key === "Escape" && ev.target && ev.target.closest(".title-editor")) {
         ev.preventDefault();
+        ev.stopPropagation();
         Info.cancelTitle();
     }
 });

@@ -886,8 +886,12 @@ whatever the terminal said as the message.
 ### `POST /v1/sessions/:id/title`
 
 Gives one live session a local display title. It is trimmed, folded to one line and limited to 200
-characters. An empty or whitespace-only `title` clears the local choice and restores the automatic
-task, Codex-thread or terminal label. The terminal's own title is never changed by this local step.
+characters. An empty or whitespace-only `title` clears the local choice, and the label falls back to
+whatever the automatic sources say *now*: the task this session was dispatched for, the Codex thread
+name, or the terminal's own title. **On a Codex session that is not the name it had before** —
+naming a thread has no undo, so the thread keeps the name a person gave it and clearing the local
+choice reveals that rather than the label the session started with. The terminal's own title is
+never changed by this local step.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/title \
@@ -899,9 +903,11 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/title \
 
 `local_applied` says the durable Clawdline name is already in use. `downstream` separately says
 what happened to the assistant's own name: `synced` for an idle Claude `/rename`, `queued` for a
-Codex thread update, `busy` when Claude was working or asking a question, `unavailable` when no
-Codex thread could be identified, `failed` when the terminal handoff failed, and `local_only` for
-a clear or a non-assistant shell. `downstream_synced` is true only after a synchronous downstream
+Codex thread update, `busy` when Claude was anything other than idle — working, asking a question,
+**or on a screen this Mac could not read** — `unavailable` when no Codex thread could be identified,
+`failed` when the terminal handoff failed, and `local_only` for a clear or a non-assistant shell.
+`busy` is therefore "not typed into", not "seen to be working": the reading it is made from is the
+session list's, up to twenty seconds old while the app is in the background. `downstream_synced` is true only after a synchronous downstream
 handoff succeeded. Busy Claude sessions are deliberately not queued: a local title is durable,
 while replaying a slash command after an app restart would need a second durable command protocol.
 

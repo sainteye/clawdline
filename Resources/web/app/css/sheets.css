@@ -275,7 +275,7 @@
     min-height: 44px; margin: 1px 0 0 0;
 }
 .info-sheet .hero .title-editor input {
-    min-width: 0; height: 40px; box-sizing: border-box; border: 1px solid var(--line);
+    min-width: 0; height: 44px; box-sizing: border-box; border: 1px solid var(--line);
     border-radius: 9px; padding: 7px 10px; background: var(--bg); color: var(--ink);
     font: 500 16px/1.2 var(--ui);
 }
