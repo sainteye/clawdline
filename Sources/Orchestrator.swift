@@ -7111,6 +7111,14 @@ enum Orchestrator {
     /// head is a tree nobody can be asked to supervise.
     static var depthFloor: Int { Config.shared.orchestratorMaxGrandchildren > 0 ? 2 : 1 }
 
+    /// How many sessions this task may open in turn: the configured allowance while there is a
+    /// level below it, nothing at all once it is standing on the floor. One function because two
+    /// files now depend on the answer — the briefing that mentions it, and the teaching that only
+    /// exists when it is above zero.
+    static func handOnAllowance(for task: Task) -> Int {
+        task.depth < depthFloor ? Config.shared.orchestratorMaxGrandchildren : 0
+    }
+
     static func childBrief(for task: Task) -> String {
         let dir = "/tmp/.clawdline/\(task.id)"
         let workspaceRule: String
@@ -7144,14 +7152,16 @@ enum Orchestrator {
                 + "\(dir)/artifacts/\n  (create the directory if it is missing)."
             isolationSection = ""
         }
-        // What this one may hand on in turn: the configured allowance while there is a level
-        // below it, and nothing at all once it is standing on the floor. Written into the
-        // briefing rather than left to be discovered, because a child that finds out by being
-        // refused has already spent a turn on it.
-        let allowance = task.depth < depthFloor ? Config.shared.orchestratorMaxGrandchildren : 0
+        // What this one may hand on in turn, and where the recipe for doing it lives. Written
+        // into the briefing rather than left to be discovered, because a child that finds out by
+        // being refused has already spent a turn on it — but the recipe itself is one line away
+        // in `DISPATCHING.md` rather than here. See `dispatchingBrief(for:)`.
+        let allowance = handOnAllowance(for: task)
         let handOnRule = allowance > 0
             ? "You may hand parts of this on to at most \(allowance) child sessions of your own, "
-                + "which cannot hand anything on further — see \"Handing work on\" below."
+                + "which cannot hand anything on further. How — the credential, the fields, the "
+                + "refusals and this Mac's house rules — is in \(dir)/DISPATCHING.md, and it is "
+                + "nowhere else: read that file before you hand anything on."
             : "Do not dispatch Clawdline tasks of your own."
         let verificationMinutes = task.timeoutMinutes % 3 == 0
             ? String(task.timeoutMinutes / 3)
@@ -7275,7 +7285,7 @@ enum Orchestrator {
         is in, what files it claimed, and for isolated ones the branch and head where its code
         actually lives. Read it before you build something you think nobody has built. If a row
         looks like your job, say so in your result rather than doing it twice.
-        \(handOnSection(for: task, allowance: allowance))\(policySection(allowance: allowance))
+
         ## Reporting — this is the completion signal, do it exactly
 
         When the work is done (or has failed for good), write \(dir)/result.json:
@@ -7670,9 +7680,52 @@ enum Orchestrator {
         """
     }
 
+    /// Everything about handing work on, in its own file — or nil for a child that may not.
+    ///
+    /// **This used to be two sections of `CHILD.md`, and every child paid for them.** Measured
+    /// across 206 dispatches on one machine: 28,323 characters of instructions on how to
+    /// dispatch went into every direct child's briefing, and not one of those 206 ever
+    /// dispatched anything. It is not that the teaching is wrong; it is that it is addressed to
+    /// the rare child that will actually use it, and was being charged to all of them.
+    ///
+    /// So it moved beside `CHILD.md`, in the same task directory the child already has access
+    /// to, and `CHILD.md` keeps one line naming it. **The credential path, the `parent_task`
+    /// rule and the `curl` live only here**, which is what makes that line un-skippable rather
+    /// than merely polite: a child that did not open this file does not know how to
+    /// authenticate, so it cannot dispatch without reading. A convenience summary back in
+    /// `CHILD.md` would undo the whole mechanism, and is the thing not to add.
+    static func dispatchingBrief(for task: Task) -> String? {
+        let allowance = handOnAllowance(for: task)
+        guard allowance > 0 else { return nil }
+        let sections = handOnSection(for: task, allowance: allowance)
+            + policySection(allowance: allowance)
+        return """
+        # Handing work on — task \(task.id)
+
+        You are reading this because \(task.dir.path)/CHILD.md said to, and it said to because you
+        are about to hand part of your task to a session of your own. Your own job is in
+        `CHILD.md` and in `task.json`; this file is only about opening somebody else.
+
+        Nothing here is repeated in `CHILD.md`. If you dispatch from memory instead of from this
+        file you will get the credential or the parent field wrong, and a dispatch with the parent
+        field wrong is filed under somebody else.
+
+        \(sections.trimmingCharacters(in: .newlines))
+        """
+    }
+
     private static func writeChildBrief(for task: Task) {
         let url = task.dir.appendingPathComponent("CHILD.md")
         try? Data(childBrief(for: task).utf8).write(to: url, options: .atomic)
+        // Beside it, and only for a child that may use it. Removed rather than left when the
+        // allowance is nothing, so a re-brief after the setting changed cannot leave a child
+        // reading a recipe it is no longer allowed to follow.
+        let teaching = task.dir.appendingPathComponent("DISPATCHING.md")
+        if let text = dispatchingBrief(for: task) {
+            try? Data(text.utf8).write(to: teaching, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: teaching)
+        }
     }
 
     // MARK: - Usage and cost

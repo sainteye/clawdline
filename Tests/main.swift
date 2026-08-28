@@ -13413,33 +13413,37 @@ group("a child is told whether it may hand work on, and never has to find out by
     // already spent a turn on it, and one that assumes the old rule never tries at all.
     let saved = Config.shared.orchestratorMaxGrandchildren
     defer { Config.shared.orchestratorMaxGrandchildren = saved }
-    func brief(depth: Int, allowance: Int) -> String {
+    func task(depth: Int, allowance: Int) -> Orchestrator.Task {
         Config.shared.orchestratorMaxGrandchildren = allowance
-        let task = Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
-                                     assistant: .claude, projectDir: "/Users/me/code/thing",
-                                     timeoutMinutes: 30, created: Date(), depth: depth,
-                                     secretHash: String(repeating: "0", count: 64))
-        return Orchestrator.childBrief(for: task)
+        return Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
+                                 assistant: .claude, projectDir: "/Users/me/code/thing",
+                                 timeoutMinutes: 30, created: Date(), depth: depth,
+                                 secretHash: String(repeating: "0", count: 64))
+    }
+    func brief(depth: Int, allowance: Int) -> String {
+        Orchestrator.childBrief(for: task(depth: depth, allowance: allowance))
+    }
+    func teaching(depth: Int, allowance: Int) -> String? {
+        Orchestrator.dispatchingBrief(for: task(depth: depth, allowance: allowance))
     }
 
     let allowed = brief(depth: 1, allowance: 3)
     check("a child with a level under it is told how many it may open",
           allowed.contains("at most 3 child sessions of your own"))
-    check("and gets the recipe rather than a pointer to a skill — half of them are Codex",
-          allowed.contains("## Handing work on") && allowed.contains("/v1/orchestrator/tasks"))
-    check("and the recipe teaches Codex's closed reasoning override",
-          allowed.contains("`reasoning_effort` is Codex-only")
-            && allowed.contains("`high` for coding")
-            && allowed.contains("`xhigh` for planning or review"))
-    check("and names only permission values the task parser accepts",
-          allowed.contains("`permission_mode` is `ask`, `edits` or `full`")
-            && !allowed.contains("`ask`, `auto` or `full`"))
-    check("with its own task id already filled in as the parent, since that is the field nothing else would tell it",
-          allowed.contains("\"root\": {\"parent_task\": \"\(taskID)\"}"))
-    check("and the task file is built with a heredoc, since screening refuses a quoted jq filter",
-          allowed.contains("cat > /tmp/.clawdline/$sub/task.json <<JSON"))
-    check("with the reason stated, so a child does not helpfully rewrite it as one",
-          allowed.contains("not with `jq -n` and a quoted filter"))
+    // The measured finding this split came from: 28,323 characters of dispatch teaching went
+    // into every one of 206 direct children's briefings, and not one of the 206 ever dispatched
+    // anything. So CHILD.md points at the recipe instead of carrying it, and the pointer is
+    // un-skippable because the credential is only on the other side of it.
+    check("and is pointed at the file that teaches it, by full path",
+          allowed.contains("/tmp/.clawdline/\(taskID)/DISPATCHING.md")
+            && allowed.contains("read that file before you hand anything on"))
+    check("but the teaching itself is no longer in the briefing every child pays for",
+          !allowed.contains("## Handing work on")
+            && !allowed.contains("cat > /tmp/.clawdline/$sub/task.json <<JSON"))
+    check("and no convenience summary of the credential either, which is what makes the pointer bite",
+          !allowed.contains("orchestrator-token") && !allowed.contains("X-Clawdline-Orchestrator"))
+    check("nor the one field nothing else would tell a dispatcher",
+          !allowed.contains("parent_task"))
     check("and reporting says to use the file tool rather than a shell line",
           allowed.contains("Write it with your file-writing tool, not with a shell command"))
     check("and it learns the narrow push opening without needing a skill",
@@ -13450,20 +13454,51 @@ group("a child is told whether it may hand work on, and never has to find out by
               && allowed.contains("at most 30 per hour"))
     check("and it is told where the answer will appear",
           allowed.contains("result.json"))
-    check("the token stays this Mac's, not something to pass down",
-          allowed.contains("do not hand it to anything you dispatch"))
     check("the at-rest archive key is never named in a child briefing",
           !allowed.contains("orchestrator-archive-key") && !allowed.contains("archive key"))
+
+    let recipe = teaching(depth: 1, allowance: 3)
+    check("the recipe is written, rather than pointed at a skill — half of them are Codex",
+          recipe?.contains("## Handing work on") == true
+            && recipe?.contains("/v1/orchestrator/tasks") == true)
+    check("and it carries the credential path, which is what CHILD.md deliberately does not",
+          recipe?.contains("~/.config/clawdline/orchestrator-token") == true)
+    check("and the recipe teaches Codex's closed reasoning override",
+          recipe?.contains("`reasoning_effort` is Codex-only") == true
+            && recipe?.contains("`high` for coding") == true
+            && recipe?.contains("`xhigh` for planning or review") == true)
+    check("and names only permission values the task parser accepts",
+          recipe?.contains("`permission_mode` is `ask`, `edits` or `full`") == true
+            && recipe?.contains("`ask`, `auto` or `full`") == false)
+    check("with its own task id already filled in as the parent, since that is the field nothing else would tell it",
+          recipe?.contains("\"root\": {\"parent_task\": \"\(taskID)\"}") == true)
+    check("and the task file is built with a heredoc, since screening refuses a quoted jq filter",
+          recipe?.contains("cat > /tmp/.clawdline/$sub/task.json <<JSON") == true)
+    check("with the reason stated, so a child does not helpfully rewrite it as one",
+          recipe?.contains("not with `jq -n` and a quoted filter") == true)
+    check("the token stays this Mac's, not something to pass down",
+          recipe?.contains("do not hand it to anything you dispatch") == true)
+    check("and it names the task whose CHILD.md sent the child here",
+          recipe?.contains("task \(taskID)") == true)
 
     let floor = brief(depth: 2, allowance: 3)
     check("a child already on the floor is told not to dispatch",
           floor.contains("Do not dispatch Clawdline tasks of your own."))
     check("and is given no recipe to ignore", !floor.contains("## Handing work on"))
+    check("and no file to read it out of either", teaching(depth: 2, allowance: 3) == nil)
 
     let off = brief(depth: 1, allowance: 0)
     check("nor is one on a Mac where the level is switched off",
           off.contains("Do not dispatch Clawdline tasks of your own.")
               && !off.contains("## Handing work on"))
+    check("and that Mac writes no teaching file at all", teaching(depth: 1, allowance: 0) == nil)
+
+    // What the split is worth, stated as an arithmetic somebody can break: a child that may
+    // dispatch and one that may not are now briefed with almost the same file. Before this,
+    // they differed by the whole recipe.
+    check("a child that may dispatch is briefed with barely more than one that may not",
+          allowed.count - off.count < 500,
+          "difference of \(allowed.count - off.count) characters")
 
     Config.shared.orchestratorMaxGrandchildren = 0
     expect("zero grandchildren is the rule this app had before the level existed",

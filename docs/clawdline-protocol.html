@@ -320,6 +320,7 @@
   &lt;task-id&gt;/                     <span class="c"># 0700 — lowercase UUID</span>
     task.json                    <span class="c"># the root writes this, before dispatching</span>
     CHILD.md                     <span class="c"># the app writes this, just before injection</span>
+    DISPATCHING.md               <span class="c"># …and this, only for a child that may hand work on</span>
     result.json                  <span class="c"># the child writes this, when it is done</span>
     artifacts/                   <span class="c"># whatever the child was asked to produce</span>
     work/                        <span class="c"># heavyweight scratch; reclaimed with the task</span></code></pre>
@@ -551,7 +552,9 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
 <pre><code>You are a Clawdline CHILD agent for task 3f9a21bc-… . Read
 /tmp/.clawdline/3f9a21bc-…/CHILD.md and follow it exactly. TASK_SECRET=…</code></pre>
 
-  <p>One line, because it is typed into a terminal and Return ends it. <code>CHILD.md</code> — written by the app immediately before injection — carries the rest: where the task is, where the outputs go, how long it has, the graph it is one node of, whether it may dispatch and how many, the machine's house rules if it may, that it must not read other task directories, and exactly what <code>result.json</code> has to look like.</p>
+  <p>One line, because it is typed into a terminal and Return ends it. <code>CHILD.md</code> — written by the app immediately before injection — carries the rest: where the task is, where the outputs go, how long it has, the graph it is one node of, whether it may dispatch and how many, that it must not read other task directories, and exactly what <code>result.json</code> has to look like.</p>
+
+  <p><strong>How to dispatch is not in there.</strong> It is in <code>DISPATCHING.md</code>, written beside it and only when the allowance is above zero, with the machine's house rules appended; <code>CHILD.md</code> keeps one line naming that file. Measured across 206 dispatches on one machine, 28,323 characters of instructions on how to dispatch went into every direct child's briefing and not one of those 206 ever dispatched anything. The pointer is un-skippable rather than merely polite: <strong>the credential path, the <code>root.parent_task</code> rule and the <code>curl</code> appear only in <code>DISPATCHING.md</code></strong>, so a child that did not open the file does not know how to authenticate and cannot dispatch without reading.</p>
 
   <p>It also says what language to speak. The briefing itself is English so that every assistant reads it the same way, but the person watching the tab reads whatever Clawdline is set to — so the file names that language and asks for the summary in it. The one fixed line the child says before anything else rides in the typed message, ahead of “read CHILD.md”: an assistant answers the line before it opens the file, and the first thing on the screen should be what the tab was sent to do. A tab that opens and starts working in silence is a tab nobody can tell apart from a stray one.</p>
 
@@ -833,7 +836,7 @@ git -C &lt;project_dir&gt; branch -d clawdline/task/&lt;id&gt;       <span class
   <ul>
     <li><strong><code>work/</code> is reclaimed as part of finalizing the task</strong> — immediately on <code>success</code>, and after a grace period for every other terminal state.</li>
     <li>The grace period is a setting: 60 minutes by default, <code>0</code> to reclaim immediately whatever the outcome, and <code>-1</code> to leave the directory to the ordinary sweep. The default exists because a task that failed is the one whose leftovers somebody may still want to read.</li>
-    <li><strong><code>artifacts/</code>, <code>task.json</code>, <code>CHILD.md</code> and <code>result.json</code> are untouched</strong> by this and live until the whole task directory is swept.</li>
+    <li><strong><code>artifacts/</code>, <code>task.json</code>, <code>CHILD.md</code>, <code>DISPATCHING.md</code> and <code>result.json</code> are untouched</strong> by this and live until the whole task directory is swept.</li>
     <li>Reclaiming a <code>work/</code> that is not there counts as success, and a filesystem refusal never delays or reverses the terminal state of the task. Accounting is not allowed to hold up a finalize.</li>
   </ul>
 

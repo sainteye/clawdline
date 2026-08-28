@@ -105,8 +105,9 @@ already more terminals than anybody wants to audit. Five, three and three would 
 The floor is enforced twice, and the two fail differently.
 
 **The briefing says so.** `CHILD.md` tells every child which level it is on: one with room under it
-gets the whole recipe for dispatching — including `root.parent_task`, the field that says where the
-new task hangs — and one standing on the floor is told plainly not to.
+is given one line naming `DISPATCHING.md`, the file beside it that holds the whole recipe —
+including `root.parent_task`, the field that says where the new task hangs — and one standing on
+the floor is told plainly not to dispatch at all.
 [`skills/clawdline/SKILL.md`](../skills/clawdline/SKILL.md) carries the same rule for a root. A child that follows its instructions never has to find the limit
 by hitting it.
 
@@ -237,9 +238,9 @@ quota it describes is the provider's, shared by everything running under that lo
 
 `~/.config/clawdline/dispatch-policy.md` is what this Mac says about **how** work should be
 handed out, as opposed to how much of it. It is read fresh on every dispatch — an edit reaches
-the next task, not the next launch — and copied into the briefing of every child that is allowed
-to dispatch in turn. A leaf never sees it: rules about choosing a model are noise to a session
-with no such choice to make.
+the next task, not the next launch — and copied into the `DISPATCHING.md` of every child that is
+allowed to dispatch in turn. A leaf never sees it: rules about choosing a model are noise to a
+session with no such choice to make.
 
 It ships with opinions rather than a comment saying "put your rules here", because a file with
 defensible rules already in it is one somebody edits and an empty one is a feature nobody finds.
@@ -289,6 +290,7 @@ having a good day.
   <task-id>/                     # 0700 — lowercase UUID
     task.json                    # the root writes this, before dispatching
     CHILD.md                     # the app writes this, just before injection
+    DISPATCHING.md               # …and this, only for a child that may hand work on
     result.json                  # the child writes this, when it is done
     artifacts/                   # whatever the child was asked to produce
 ```
@@ -762,8 +764,22 @@ You are a Clawdline CHILD agent for task 3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234. R
 One line, because it is typed into a terminal and Return ends it. Everything that would not fit is
 in `CHILD.md`, which the app writes immediately before injecting: where the task is, where the
 outputs go, how long it has, the graph it is one node of, whether it may dispatch and how many,
-this Mac's house rules if it may, that it must not read other task directories, and exactly what
-`result.json` has to look like.
+that it must not read other task directories, and exactly what `result.json` has to look like.
+
+**How to dispatch is not in there.** It is in `DISPATCHING.md`, written beside it and only when the
+allowance is above zero; `CHILD.md` keeps one line naming that file. The reason is a measurement:
+across 206 dispatches on one machine, 28,323 characters of instructions on how to dispatch went
+into every direct child's briefing — about 7,081 tokens each — and not one of those 206 children
+ever dispatched anything. The teaching is not wrong, it is addressed to the rare child that will
+use it, and it was being charged to all of them.
+
+The pointer is un-skippable rather than merely polite, and that is deliberate: **the credential
+path, the `root.parent_task` rule and the `curl` appear only in `DISPATCHING.md`.** A child that
+did not open the file does not know how to authenticate, so it cannot dispatch without reading. A
+convenience summary back in `CHILD.md` — enough to act on without following the pointer — would
+undo the whole mechanism, and is the thing not to add. The file costs nothing when it is not read:
+it lands in the task directory the child already has `--add-dir` access to, and is reclaimed with
+the rest of that directory.
 
 It also says what language to speak. The briefing itself is English so every assistant reads it
 the same way, but the person watching the tab is whoever set Clawdline's language — so the file
@@ -1621,7 +1637,7 @@ they are not yours to keep** — if a child produced something worth having, cop
 directory going away after a day is the same promise `/tmp` always made, made explicitly.
 
 Heavyweight `work/` storage has a shorter, separate life. It is removed during a successful
-finalize, or when the non-success grace deadline expires; `artifacts/`, `task.json`, `CHILD.md` and
+finalize, or when the non-success grace deadline expires; `artifacts/`, `task.json`, `CHILD.md`, `DISPATCHING.md` and
 `result.json` remain untouched until the whole task-root sweep above. Reclaiming a missing `work/`
 is success, and a filesystem refusal never delays or reverses the terminal task state.
 
@@ -1726,9 +1742,9 @@ finishes with a picture nobody can reach. Vector is still the right ask for diag
 anything that has to stay editable.
 
 The one rule stated before any of them: **a child dispatches only if its briefing said it could,
-and what it opens opens nothing.** `CHILD.md` is where a child reads that, and it carries the same
-dispatch steps in miniature — spelled out rather than pointed at the skill, because half of these
-sessions are Codex and Codex has no skills.
+and what it opens opens nothing.** `CHILD.md` is where a child reads that, and `DISPATCHING.md`
+beside it carries the same dispatch steps in miniature — spelled out rather than pointed at the
+skill, because half of these sessions are Codex and Codex has no skills.
 
 ---
 
