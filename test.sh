@@ -73,6 +73,12 @@ swiftc \
 STORE="${TMPDIR:-/tmp}/clawdline-test-store-$$"
 mkdir -p "$STORE"
 trap 'rm -rf "$STORE"' EXIT
+# The drop cache goes inside it, and that is the same problem with teeth: the suite writes real
+# image files through `Drop.store`, and every write prunes the oldest entries away. Unisolated,
+# running the tests deletes pictures the person dropped into the bar — see Drop.directory. Spelled
+# out at the invocation below rather than held in a variable of its own, because `test-sh-streaming`
+# re-runs that block with only `$BIN`, `$STORE` and `$LOG` defined. The binary sets the same
+# boundary for itself, so narrowing a failure by running it directly is safe too.
 
 # Streamed through `tee` rather than captured into a variable and echoed at the end.
 #
@@ -102,7 +108,7 @@ trap 'rm -rf "$STORE"' EXIT
 # `if` included, is a chance to have replaced it.
 LOG="${TMPDIR:-/tmp}/clawdline-tests-$$.log"
 set +e
-CLAWDLINE_REMOTE_DIR="$STORE" "$BIN" Resources/mascots 2>&1 | tee "$LOG"
+CLAWDLINE_REMOTE_DIR="$STORE" CLAWDLINE_DROPS_DIR="$STORE/drops" "$BIN" Resources/mascots 2>&1 | tee "$LOG"
 # Copied whole, in one assignment. Reading the members one at a time does not work and does not
 # look broken: the first assignment is itself a command, so it replaces `PIPESTATUS` with its own
 # one-element status, and the second read is of an array that no longer has a second member —

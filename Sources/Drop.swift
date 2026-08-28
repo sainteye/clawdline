@@ -16,7 +16,21 @@ enum Drop {
     /// which is the right answer for dragged text.
     static let acceptedTypes: [NSPasteboard.PasteboardType] = [.fileURL, .png, .tiff]
 
+    /// Where the written-out images live.
+    ///
+    /// `CLAWDLINE_DROPS_DIR` moves it, for the same reason `CLAWDLINE_REMOTE_DIR` moves the remote
+    /// store — see ``RemoteAuth/directory``. **This one is worse than writing fixtures into
+    /// somebody's config, because this directory prunes.** The suite writes real files here
+    /// (`Drop.paths` writes one for a pasted image, `RemoteServer.pieces` writes one per upload),
+    /// every write calls ``prune(keeping:)``, and `prune` deletes the oldest by name until the
+    /// count is back under the limit. So a suite run on a machine whose cache is near full does
+    /// not just leave litter — it silently deletes pictures the person dropped into the bar. When
+    /// this seam was added the live cache held 37 of a 40-file limit: three more runs' worth.
     static var directory: URL {
+        if let override = ProcessInfo.processInfo.environment["CLAWDLINE_DROPS_DIR"],
+           !override.isEmpty {
+            return URL(fileURLWithPath: Paths.expand(override), isDirectory: true)
+        }
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         return base.appendingPathComponent("dev.sainteye.clawdline/drops", isDirectory: true)

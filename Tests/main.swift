@@ -64,6 +64,26 @@ guard setenv("CLAWDLINE_REMOTE_DIR", isolatedTestStoreDirectory.path, 1) == 0 el
     fatalError("could not isolate the test remote store")
 }
 
+// The same boundary for the drop cache, and the same reasoning one step further on: this suite
+// writes *files* there — `Drop.paths` writes one for a pasted image, `RemoteServer.pieces` one per
+// upload — and every one of those writes calls `Drop.prune(keeping:)`, which deletes the oldest
+// entries by name until the count is back under the limit. Unisolated, a run does not merely leave
+// litter in somebody's cache; once that cache is near its limit the run deletes pictures the person
+// dropped into the bar. Measured when this was added: 37 files against a limit of 40.
+let isolatedTestDropsDirectory = isolatedTestStoreDirectory
+    .appendingPathComponent("drops", isDirectory: true)
+guard setenv("CLAWDLINE_DROPS_DIR", isolatedTestDropsDirectory.path, 1) == 0 else {
+    fatalError("could not isolate the test drop cache")
+}
+
+/// The drop cache the app itself would use — what this suite must never write into.
+///
+/// Spelled out rather than read from `Drop.directory`, which is the thing under test: asking the
+/// code under test where the live directory is would make the assertion agree with any answer.
+let liveDropDirectory = (FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+    ?? FileManager.default.temporaryDirectory)
+    .appendingPathComponent("dev.sainteye.clawdline/drops", isDirectory: true)
+
 /// A subprocess-only entry used to prove that the test binary protects the live remote store
 /// even when somebody runs the compiled binary directly instead of entering through `test.sh`.
 func runRemoteDirectoryIsolationProbeIfRequested() {
@@ -75,6 +95,17 @@ func runRemoteDirectoryIsolationProbeIfRequested() {
 }
 
 runRemoteDirectoryIsolationProbeIfRequested()
+
+/// The same probe for the drop cache, run the same way and for the same reason.
+func runDropDirectoryIsolationProbeIfRequested() {
+    guard ProcessInfo.processInfo.environment["CLAWDLINE_TEST_DROPS_DIRECTORY_PROBE"] == "1"
+    else { return }
+    print(Drop.directory.path)
+    try? FileManager.default.removeItem(at: isolatedTestStoreDirectory)
+    exit(0)
+}
+
+runDropDirectoryIsolationProbeIfRequested()
 
 // The suite exercises persistence and deliberate corruption repeatedly. Keep those fixtures in
 // the same process-owned boundary as RemoteAuth and WebPush.
@@ -168,6 +199,37 @@ group("the test binary isolates push state even when it is launched directly") {
                 && output.hasPrefix(FileManager.default.temporaryDirectory.path), output)
     } catch {
         check("the direct-process isolation probe starts", false, "\(error)")
+    }
+}
+
+group("the test binary isolates the drop cache even when it is launched directly") {
+    // The drop cache is the one shared resource here whose ordinary use *deletes*: every write
+    // prunes. So this is not only about litter — an unisolated run throws away the person's own
+    // dropped images once their cache is near the limit.
+    check("this process resolves the drop cache inside its own boundary",
+          Drop.directory.path == isolatedTestDropsDirectory.path
+            && Drop.directory.path != liveDropDirectory.path, Drop.directory.path)
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    process.arguments = Array(CommandLine.arguments.dropFirst())
+    var environment = ProcessInfo.processInfo.environment
+    environment.removeValue(forKey: "CLAWDLINE_DROPS_DIR")
+    environment["CLAWDLINE_TEST_DROPS_DIRECTORY_PROBE"] = "1"
+    process.environment = environment
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+    do {
+        try process.run()
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        process.waitQuietly()
+        check("a direct test process never writes into the live drop cache",
+              process.terminationStatus == 0 && output != liveDropDirectory.path
+                && output.hasPrefix(FileManager.default.temporaryDirectory.path), output)
+    } catch {
+        check("the direct-process drop-cache isolation probe starts", false, "\(error)")
     }
 }
 
@@ -4697,6 +4759,11 @@ group("remote images survive the terminal handoff") {
     expect("same-millisecond uploads keep distinct paths", Set(made.stored).count, 2)
     check("the cached uploads exist before handoff",
           made.stored.allSatisfy { FileManager.default.fileExists(atPath: $0) })
+    // Two real files, and each `Drop.store` prunes. Unisolated this group alone is two of the
+    // three writes that stood between the live cache and deleting somebody's oldest picture.
+    check("and none of them landed in the live drop cache",
+          made.stored.allSatisfy { !$0.hasPrefix(liveDropDirectory.path) },
+          made.stored.joined(separator: " "))
     RemoteServer.finishUploads(made.stored, sent: true)
     check("a successful handoff keeps them for Codex",
           made.stored.allSatisfy { FileManager.default.fileExists(atPath: $0) })
@@ -5114,6 +5181,10 @@ group("files and images dropped on the bar") {
           written.first.map { FileManager.default.fileExists(atPath: $0) } == true)
     check("and it can be read back",
           written.first.flatMap { NSImage(contentsOfFile: $0) } != nil)
+    // The file this assertion just proved exists had to be written somewhere, and unisolated that
+    // somewhere is the person's own drop cache — which prunes on every write.
+    check("and it was written outside the live drop cache",
+          written.allSatisfy { !$0.hasPrefix(liveDropDirectory.path) }, written.joined(separator: " "))
     written.forEach { try? FileManager.default.removeItem(atPath: $0) }
 }
 
