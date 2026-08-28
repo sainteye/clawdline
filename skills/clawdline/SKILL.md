@@ -172,6 +172,26 @@ has edited production bytes its verdict is spent — that repair is a delivery, 
 the mutation and the exact-tree acceptance are yours, not its. A design-changing correction goes
 back to the implementer's session instead. Never one task per finding.
 
+**One independent review per feature or batch. Count the rounds.** A *round* is one review of a
+delivery; running two complementary reviewers side by side inside a round is still one round, and
+that is not what this limits. What this limits is re-reviewing after a correction, which looks
+free — the finding set is right there, the correction is small — and is not. Measured here on one
+line today: the implementation cost $30.90 and its four review rounds cost $57.39, **1.9× the
+thing being reviewed.**
+
+- **Round two** only when round one found a defect *class* that will recur — the same mistake in
+  places the reviewer did not read — and not merely because a finding was fixed and you would like
+  it checked. "Did the fix work" is answered by the test that was red.
+- **Round three** only with a written reason the coordinator has seen before the dispatch. Two
+  mechanical triggers, both decidable from the correction diff alone and neither needing judgement,
+  since on that same line both correction rounds introduced new defects the next review caught:
+  **(a) the correction touches a code path `main` is also on**; **(b) the correction deleted or
+  weakened an existing assertion.** Either one, dispatch it. Neither, write the reason or stop.
+- **Beyond three, ask the user.** Blanket multi-round review has been rejected here explicitly.
+
+Cheaper than a round, and usually the right answer: send the finding back to the session that wrote
+the code, which still has the context, and read the correction diff yourself.
+
 ### 2.0a Decide whether the task needs a private worktree
 
 Use `"isolation":"worktree"` for code changes that can be reviewed and landed as a Git branch.
@@ -182,12 +202,31 @@ state, or operations whose real collision is a running app, port, device, databa
 build destination. Use `serialize` for those machine-global collisions.
 
 This changes the child rule narrowly. In a shared checkout a child still never commits. In its own
-worktree it should commit early and only on `clawdline/task/<complete-task-id>`; it must not push,
-switch branches, merge, rebase, stash, hard-reset, invoke `git worktree`, or run a machine-global
-installer such as `build.sh`. **The delivery is that branch, not the checkout directory and not an
-artifact diff.** The root reviews it with `git diff <base>...clawdline/task/<id>` and lands it by
-merge or cherry-pick. Worktree isolation protects tracked files only; it does not copy ignored
-dependencies, caches, or env files.
+worktree a **Claude** child should commit early and only on `clawdline/task/<complete-task-id>`; it
+must not push, switch branches, merge, rebase, stash, hard-reset, invoke `git worktree`, or run a
+machine-global installer such as `build.sh`. **The delivery is that branch, not the checkout
+directory and not an artifact diff.** The root reviews it with
+`git diff <base>...clawdline/task/<id>` and lands it by merge or cherry-pick. Worktree isolation
+protects tracked files only; it does not copy ignored dependencies, caches, or env files.
+
+**A Codex child in a worktree cannot commit, so do not ask it to.** A linked worktree keeps no
+`.git` of its own — its `.git` is a one-line pointer at `<main repo>/.git/worktrees/<task-id>/`,
+which is *outside* the directory Codex's sandbox grants it write access to. Every commit therefore
+dies on `fatal: Unable to create '…/index.lock': Operation not permitted`, and a child that cannot
+record its delivery reports `failure` with the work sitting there, finished. Task `0c3853b8` did
+exactly that today after completing 4438 checks. So when you dispatch:
+
+- **`assistant: "claude"` with `isolation: "worktree"`** — tell it to commit each milestone on the
+  delivery branch. The branch is the delivery, and a death in hour three costs one hour.
+- **`assistant: "codex"` with `isolation: "worktree"`** — tell it explicitly to **leave the bytes
+  uncommitted and not to attempt a commit**, and that root will commit them from the worktree path
+  in the task record. Its delivery is the dirty tree plus its `result.json`, and the receipt shows
+  `"dirty": true` with `"commits": 0`, which for a Codex task is success and not an unfinished job.
+
+The generated briefing does not yet know the difference — it tells every worktree child to "commit
+early and often" whichever assistant it is — so the instruction that overrides it has to come from
+you, in `instructions`. Until that is fixed in the app, saying nothing means saying the wrong
+thing.
 
 Follow-up implementation rounds are code changes too. Base the next isolated task on the previous
 delivery branch or commit with `isolation_base`; do not turn the delivery into a bundle in an
@@ -337,6 +376,13 @@ letters, digits, `.`, `_` and `-` only** — anything else comes back as `bad_ta
 with a small one is a rubber stamp with a token cost.
 
 On the Codex side the same field takes its slug (e.g. `gpt-5.1-codex`).
+
+**Name a model only when the default is the wrong size — a pin the account cannot honour fails
+where you will not see it.** Clawdline validates the spelling, not the entitlement, so the task
+reaches `briefed` normally and then dies inside the assistant's own CLI with a 400 that appears
+only in that assistant's rollout, not in the task record, not in `warnings`, and not in
+`result.json`. `gpt-5.1-codex` did this today on a ChatGPT-authenticated account. Omitting `model`
+cannot fail this way.
 
 For a Codex task only, optional `reasoning_effort` is exactly `high` or `xhigh`. Use `high` for
 coding and `xhigh` for planning. Leave it out to inherit the Codex/model and user defaults:
@@ -652,6 +698,32 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$task_id/cancel" \
   -H "X-Clawdline-Orchestrator: $TOKEN"
 ```
 
+**And closing your own session cancels all of them at once, which is the part people forget.**
+Ending a root — the Close button, `POST /v1/sessions/:id/end` — ends every live task it dispatched,
+grandchildren first. That is documented as a mechanism; here it is an obligation with two halves.
+
+*Before* you close, look at what the close takes with it:
+
+```bash
+curl -s "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+  -H "X-Clawdline-Orchestrator: $TOKEN" \
+  | jq --arg s "$ROOT_SESSION" '[.tasks[]
+      | select(.root.sessionId == $s and (.state | IN("queued","spawning","briefed")))
+      | {id, title, state, assistant}]'
+```
+
+An empty list means close freely. A non-empty one is work in progress that your close will end, so
+either wait for it or say in your last message what is being killed. On 2026-08-27, 23:20:37–:51 —
+fourteen seconds, one close — four in-flight tasks died together, one of them a correction
+dispatched 75 seconds after the review that demanded it and 25 minutes into its run.
+
+*After* a cascade, **name who adopts each orphan.** Their landing records say `pending`, which is
+also what live work says; the record cannot tell a task being worked on from one whose worker was
+killed hours ago. So write down, per orphan, the named root or named person picking it up — and if
+there is nobody, put that to the user as a decision rather than leaving it in the list. The
+safe-close correction was recorded as *cancelled* and not as *cancelled by a cascade and now
+unowned*, so it sat for fourteen hours reading as a hard problem instead of an absent one.
+
 Reading the result:
 
 ```bash
@@ -670,6 +742,14 @@ edited may hold two or three sessions' unfinished work, and that vocabulary is h
 session's hunks from another's. Guessing it has produced staged trees that would not compile. A
 child that reports nothing there has not told you it changed nothing; ask, or read the diff for the
 names yourself before staging.
+
+**When you pass what came back to the user, split it in two.** What the results imply for *you* to
+do next is one list; what only *he* can decide is a separate list, labelled as such — never mixed
+into a single "next steps" paragraph, where the decisions reliably disappear. And a decision goes
+to him as an explicit options prompt in his own session, one question at a time, each option naming
+what happens if he picks it, with your recommendation attached: asked in prose he misses it and
+does not know how to answer, which is his own account of it. Full rule:
+[`AGENTS.md`](../../AGENTS.md#decisions-that-are-the-users-go-to-the-user-as-options).
 
 ### Child completion is not code completion
 
@@ -762,6 +842,51 @@ is uncommitted**, because the tree is the union of everybody's work and HEAD is 
 a partial commit is not finished until its own slice has compiled on its own, and before taking one
 ask what else defines what you are taking: a declaration without its values, a call without its
 function, a case without its enum. Each of them passes in the tree and fails in HEAD.
+
+### Close a whole batch, when you are the coordinator
+
+Several lines of work finish around the same time, all wanting the same tree. The section above
+lands **one** delivery; this is the six steps that land **all of them**, and it is what a
+registered Clawdfather does when it stops dispatching and starts closing. Run them in order — the
+ordering step is the one that is skipped, and it is the one that prevents the merge conflicts.
+
+1. **Freeze.** Tell every live line to stop at a clean boundary and report — not to abandon what it
+   is doing, and not to start anything new. Give them the report shape in the same message, because
+   a freeze that returns six differently-shaped answers has to be asked twice.
+2. **Inventory.** From each line, in a fixed shape, six fields and no prose:
+   - **delivery branch, base, head** — what exists, and what it was built on;
+   - **shared-tree paths it must write** — the ordering input for step 3;
+   - **landing task id** — what gets marked `landed` at the end;
+   - **which commit its verification ran against** — a green run against a stale base is not
+     evidence about the tree you are about to make;
+   - **who blocks it, and who it blocks.**
+
+   Read the broker's own view beside those answers rather than instead of them: `GET
+   /v1/orchestrator/tasks` for state, worktree receipt and dirtiness, `GET
+   /v1/orchestrator/inflight?project=<dir>` for what else is claiming those paths.
+3. **Order by contention, not by seniority and not by who waited longest.** The input is which
+   files each delivery writes: two deliveries on disjoint paths need no ordering at all, and two
+   that overlap need the one they both build on to go first. Where they genuinely tie, the
+   tie-break that worked is **the one already rebased onto, and verified against, the newest base
+   goes first** — its green run is the only one still about the tree everybody will inherit, and
+   landing it makes every other line's rebase cheaper rather than dearer.
+4. **Land one at a time, and verify each on the exact staged tree yourself.** Not the deliverer's
+   run — yours, on the index you are about to commit, by the "Close a code delivery" steps above.
+   One at a time is not caution for its own sake: it is what makes a failure attributable, because
+   the only thing that changed since the last green tree is the delivery you just staged.
+5. **Build**, once, at the end — after the last landing, never between them. It replaces and
+   restarts the user's running app, so say so before you do it and do it from HEAD, not from the
+   working tree.
+6. **Resume, and ask each line for two lists.** Before anything restarts, ask every line —
+   separately — for **(a) its technical next steps** and **(b) the decisions only the user can
+   make.** Two questions, two lists, always. Asked as one they come back as one, and it is reliably
+   the user's half that is lost inside a paragraph of to-dos. Those decisions then go to the user
+   as options, one at a time, each carrying its consequence and your recommendation — the shape is
+   in [`AGENTS.md`](../../AGENTS.md#decisions-that-are-the-users-go-to-the-user-as-options).
+
+Then close: only the lines that actually landed are `landed`, everything else keeps its obligation
+with a named owner, and closing your own session is the act described above under "To end one
+early" — look at what it takes with it first.
 
 ### Wait for files through Clawdline
 
