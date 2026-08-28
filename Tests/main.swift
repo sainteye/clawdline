@@ -22055,8 +22055,11 @@ group("a source that cannot be read is a state, and nothing renders it as zero")
     expect("and it says which kind of unavailable the cost is",
            field("missing_reason"), "plan_billed" == field("missing_reason")
             ? field("missing_reason") : "no_cost_recorded")
-    check("every reserved column is present and empty",
-          UsageLedger.reservedColumns.allSatisfy { columns.contains($0) && field($0) == "" })
+    let reserved = ["graph_id", "parent_task_id", "retry_of", "attempt", "landing_state",
+                    "disposition"]
+    expect("the six reserved columns are exactly those", UsageLedger.reservedColumns, reserved)
+    check("every one of them is present in the export and empty",
+          reserved.allSatisfy { columns.contains($0) && field($0) == "" })
 
     // The other way a row reaches `source_missing`: it was seen, it had been counted at zero
     // because nothing had happened yet, and then the source went. Zeros already on the row are
@@ -22088,9 +22091,8 @@ group("a source that cannot be read is a state, and nothing renders it as zero")
     let totals = payload["totals"] as? [String: Any]
     check("the route renders that as null rather than zero",
           totals?["tokens"] is NSNull && totals?["total"] is NSNull)
-    check("and names the columns it cannot answer for",
-          ((payload["unavailable"] as? [String: Any])?["columns"] as? [String])
-            == UsageLedger.reservedColumns)
+    expect("and names the columns it cannot answer for",
+           (payload["unavailable"] as? [String: Any])?["columns"] as? [String], reserved)
 }
 
 group("a cost is copied where it exists and never invented where it does not") {
@@ -22288,9 +22290,9 @@ group("each kind of work is counted exactly once, and the routes answer for the 
         "usage"] as? [String: Any]
     expect("under the grouping it was asked for", body?["groupBy"] as? String, "origin")
     expect("with the same totals", ((body?["totals"] as? [String: Any])?["total"]) as? Int, 530)
-    check("and it names the columns it has no answer for",
-          ((body?["unavailable"] as? [String: Any])?["columns"] as? [String])
-            == UsageLedger.reservedColumns)
+    expect("and it names the columns it has no answer for",
+           (body?["unavailable"] as? [String: Any])?["columns"] as? [String],
+           ["graph_id", "parent_task_id", "retry_of", "attempt", "landing_state", "disposition"])
     expect("the export answers as CSV",
            RemoteServer.shared.route(
             remoteRequest("GET", "/v1/orchestrator/usage.csv", headers: auth))
