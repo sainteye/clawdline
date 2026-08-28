@@ -17184,14 +17184,19 @@ group("an isolated checkout's build output is reclaimed on its own deadline") {
     check("and is treated as already reclaimed",
           Orchestrator.buildCleanupAtForTesting(absent.id) == nil)
 
+    // Locking the directory the object file is *in* is what makes the removal refuse outright.
+    // Locking the checkout, or `.build` itself, only stops the last unlink: `removeItem` walks
+    // depth-first, so the contents go and the directory stays — measured, not assumed.
     let (refused, refusedCheckout) = fixture()
     Orchestrator.holdScheduleTaskForTesting(refused)
+    let lockedDirectory = refusedCheckout!.appendingPathComponent(".build/debug",
+                                                                  isDirectory: true)
     try! manager.setAttributes([.posixPermissions: 0o500],
-                               ofItemAtPath: refusedCheckout!.path)
-    Orchestrator.finalize(refused.id, as: .failure, summary: "read-only checkout")
+                               ofItemAtPath: lockedDirectory.path)
+    Orchestrator.finalize(refused.id, as: .failure, summary: "read-only build directory")
     let keptDeadline = Orchestrator.buildCleanupAtForTesting(refused.id)
     try! manager.setAttributes([.posixPermissions: 0o700],
-                               ofItemAtPath: refusedCheckout!.path)
+                               ofItemAtPath: lockedDirectory.path)
     check("a removal the filesystem refuses keeps its deadline for a later beat",
           keptDeadline != nil && manager.fileExists(atPath: objectFile(refusedCheckout!)))
     check("and the retry after that refusal succeeds",
