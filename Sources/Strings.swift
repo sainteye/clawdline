@@ -503,6 +503,21 @@ protocol Copy {
     var webConfirmActionSay: String { get }
     var webConfirmEndTitle: String { get }
     var webConfirmEndSay: String { get }
+    /// Turning a chosen session into this Mac's Clawdfather.
+    ///
+    /// The browser cannot register a coordinator — that needs the orchestrator token, and a
+    /// paired device does not have one. So the item does not do it: it types
+    /// `webClawdfatherAsk` into the session through the ordinary send route, and the session,
+    /// which is a local process that *can* read the token, carries out the recipe itself.
+    /// `{name}` in `webClawdfatherIs` is the label from the authenticated `session.coordinator`
+    /// projection; `{id}` in `webClawdfatherAsk` is that session's terminal-neutral id, which the
+    /// page already holds and hands over rather than leaving it to be worked out at the far end.
+    var webMakeClawdfather: String { get }
+    var webClawdfatherIs: String { get }
+    var webConfirmClawdfatherTitle: String { get }
+    var webConfirmClawdfatherSay: String { get }
+    var webClawdfatherAsk: String { get }
+    var webClawdfatherAsked: String { get }
     /// The session after its close was confirmed, while the Mac is still carrying it out.
     var webClosing: String { get }
     var webCancel: String { get }

@@ -4034,6 +4034,18 @@ final class RemoteServer: @unchecked Sendable {
             "webInfoWhyUnknown": t.webInfoWhyUnknown,
         ])
 
+        // Asking a session to make itself Clawdfather. The browser composes the sentence and
+        // types it through the ordinary send route; only the session can read the orchestrator
+        // token, so only the session performs the registration.
+        add([
+            "webMakeClawdfather": t.webMakeClawdfather,
+            "webClawdfatherIs": t.webClawdfatherIs,
+            "webConfirmClawdfatherTitle": t.webConfirmClawdfatherTitle,
+            "webConfirmClawdfatherSay": t.webConfirmClawdfatherSay,
+            "webClawdfatherAsk": t.webClawdfatherAsk,
+            "webClawdfatherAsked": t.webClawdfatherAsked,
+        ])
+
         var response = Response.json(out)
         // The answer depends on a request header, so a cache that keyed on the URL alone would
         // hand the next reader somebody else's language.
