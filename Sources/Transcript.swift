@@ -124,10 +124,10 @@ enum Transcript {
     /// Startup metadata alone cannot disprove an identity: both assistants create their file
     /// before the first message is durable, so that state must remain eligible for another read.
     ///
-    /// **`.peer` counts as an external turn and `.notice` deliberately does not.** A peer row is
-    /// another session addressing this one — somebody else's conversation reaching in, which
-    /// disproves ownership exactly as a person's turn does. A Clawdline notice is this app
-    /// speaking about a task, and the app types those into tabs it has already identified,
+    /// **`.peer` and `.message` count as external turns; `.notice` deliberately does not.** Both
+    /// peer shapes are another session addressing this one — somebody else's conversation
+    /// reaching in, which disproves ownership exactly as a person's turn does. A Clawdline notice
+    /// is this app speaking about a task, and the app types those into tabs it has already identified,
     /// including a child's own tab as soon as that child hands work on in turn. Counting one
     /// would let the app disprove an identity by talking to it. A transcript whose only
     /// non-assistant content is a notice therefore stays `.unavailable` — says nothing — rather
@@ -139,7 +139,9 @@ enum Transcript {
         switch assistant {
         case .claude:
             for line in jsonl.split(separator: "\n") {
-                if entries(inRow: line).contains(where: { $0.kind == .user || $0.kind == .peer }) {
+                if entries(inRow: line).contains(where: {
+                    $0.kind == .user || $0.kind == .peer || $0.kind == .message
+                }) {
                     return true
                 }
             }
@@ -154,6 +156,7 @@ enum Transcript {
             case user
             case assistant
             case peer          // another Claude Code session addressing this one
+            case message       // another session addressing this one through Clawdline
             case notice        // a versioned Clawdline message, not a person's words
             case tool          // a tool being called
             case toolResult    // what it returned
@@ -162,10 +165,13 @@ enum Transcript {
         var text: String
         var tool: String?
         var time: Date?
+        /// Canonical attachment metadata used by the Web optimistic-message contract.
+        var imageCount = 0
         /// The human-facing session name on a cross-session message. Socket paths stay out of
         /// the UI: they identify a transport endpoint, not somebody a reader can recognise.
         var source: String? = nil
         var sourceMode: String? = nil
+        var sourceAssistant: Assistant? = nil
         /// Internal receipt identity. It never crosses the API boundary; it only distinguishes
         /// two real deliveries of identical prose from Claude's enqueue/delivery double-write.
         var peerMessageID: String? = nil
@@ -175,6 +181,55 @@ enum Transcript {
         /// said about a task. Both are defaulted, so the synthesised memberwise initialiser
         /// serves every call site and neither feature has to know about the other's fields.
         var notice: ClawdlineMessage.Notice? = nil
+    }
+
+    /// Remove only paths created by Clawdline's own bounded drop cache. The fixed directory is
+    /// the left boundary: starting at an arbitrary slash would let a greedy expression consume
+    /// authored text such as `Resources/web/app.js` before the transport path begins.
+    static func canonicalDropPaths(in raw: String,
+                                   directory: String = Drop.directory.path)
+        -> (text: String, imageCount: Int) {
+        var value = raw
+        let prefix = NSRegularExpression.escapedPattern(for: directory + "/")
+        let file = prefix
+            + #"clawdline-[A-Za-z0-9-]+\.(?:png|tiff|jpg|jpeg|heic|gif|webp)"#
+        let pattern = "(?:'" + file + "'|" + file + ")"
+        guard let expression = try? NSRegularExpression(pattern: pattern) else {
+            return (value.trimmingCharacters(in: .whitespacesAndNewlines), 0)
+        }
+        let matches = expression.matches(in: value,
+            range: NSRange(value.startIndex..<value.endIndex, in: value))
+        for match in matches.reversed() {
+            guard let range = Range(match.range, in: value) else { continue }
+            value.removeSubrange(range)
+        }
+        return (value.trimmingCharacters(in: .whitespacesAndNewlines), matches.count)
+    }
+
+    /// Canonical text and attachment count shared by Claude's structured blocks and either
+    /// assistant's path fallback. A truly image-only turn keeps a visible marker for the pane;
+    /// the browser canonicalizes that marker only for exact optimistic bookkeeping.
+    static func canonicalImageContent(_ raw: String, structuredImages: Int = 0,
+                                      inferMarkers: Bool = false,
+                                      dropDirectory: String = Drop.directory.path)
+        -> (text: String, imageCount: Int) {
+        var value = raw
+        var markerImages = 0
+        if (structuredImages > 0 || inferMarkers),
+           let markers = try? NSRegularExpression(pattern: #"\[Image #\d+\]\s*"#) {
+            if inferMarkers {
+                markerImages = markers.numberOfMatches(in: value,
+                    range: NSRange(value.startIndex..<value.endIndex, in: value))
+            }
+            value = markers.stringByReplacingMatches(in: value,
+                range: NSRange(value.startIndex..<value.endIndex, in: value), withTemplate: "")
+        }
+        let dropped = canonicalDropPaths(in: value, directory: dropDirectory)
+        let count = structuredImages + markerImages + dropped.imageCount
+        if dropped.text.isEmpty, count > 0 {
+            return ((1...count).map { "[Image #\($0)]" }.joined(separator: " "), count)
+        }
+        return (dropped.text, count)
     }
 
     // MARK: - Finding the file
@@ -235,6 +290,30 @@ enum Transcript {
         customTitleCache[url.path] = (size, found.customTitle)
         titleLock.unlock()
         return found.title
+    }
+
+    /// The transcript's own last explicit `/rename`, without ``title(ofTranscript:)``'s fallback
+    /// to `aiTitle`. `Config` needs exactly this — not the effective display title — to tell "no
+    /// rename has happened since a local name was chosen" from "one has, so the local name
+    /// should give way". Reuses ``customTitleCache``: every call to ``title(ofTranscript:)``
+    /// already fills it, cached or not, so asking here never reads the file a second time.
+    static func customTitle(ofTranscript url: URL) -> String? {
+        _ = title(ofTranscript: url)
+        titleLock.lock()
+        defer { titleLock.unlock() }
+        return customTitleCache[url.path]?.title
+    }
+
+    /// Where a session's transcript is right now, and what `/rename` it last recorded — resolved
+    /// once, at the moment a local name is chosen, and never again on the redraw path. Finding
+    /// the transcript from scratch means asking `SessionRegistry` on top of the `ps`/`lsof`
+    /// ``Targets/processStart(of:)`` and ``Targets/workingDirectory(of:)`` already pay for
+    /// elsewhere on that path — exactly the second synchronous read a row cannot afford paying
+    /// for on every repaint. ``Config`` stores the path from here and re-reads only
+    /// ``customTitle(ofTranscript:)`` — cache-backed — on every later look.
+    static func customTitleSnapshot(of target: TargetSession) -> (path: String, title: String?)? {
+        guard target.isClaude, let record = record(of: target) else { return nil }
+        return (record.url.path, customTitle(ofTranscript: record.url))
     }
 
     private static func readTitle(ofTranscript url: URL, tailBytes: Int,
@@ -645,12 +724,13 @@ enum Transcript {
             guard row["operation"] as? String == "enqueue",
                   let raw = row["content"] as? String
             else { return [] }
-            // Two different envelopes reach this one branch, and neither may claim the
-            // other's rows: a cross-session message is what another session said, a
-            // Clawdline notice is what the app said about a task. Both wrappers are
-            // all-or-nothing over the whole queued string, so a peer message that merely
+            // Three different envelopes reach this one branch, and none may claim the
+            // others' rows: a native peer or a Clawdline session message is what another
+            // session said, while a Clawdline notice is what the app said about a task. Every
+            // wrapper is all-or-nothing over the whole queued string, so a peer message that merely
             // quotes a notice stays a peer message and the reverse cannot happen. The peer
             // test runs first because its envelope is the one that carries a free-form body.
+            if let message = clawdlineSessionMessage(in: raw, at: time) { return [message] }
             if let peer = crossSessionMessage(in: raw, at: time) { return [peer] }
             if let notice = ClawdlineMessage.decode(raw) {
                 return [Entry(kind: .notice, text: notice.body, tool: nil, time: time,
@@ -658,8 +738,10 @@ enum Transcript {
             }
             let text = withoutMachineBlocks(raw)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return [] }
-            return [Entry(kind: .user, text: text, tool: nil, time: time)]
+            let canonical = canonicalImageContent(text, inferMarkers: true)
+            guard !canonical.text.isEmpty else { return [] }
+            return [Entry(kind: .user, text: canonical.text, tool: nil, time: time,
+                          imageCount: canonical.imageCount)]
         }
 
         guard let message = row["message"] as? [String: Any] else { return [] }
@@ -676,10 +758,43 @@ enum Transcript {
         // happens to contain a valid envelope.
         if type == "user", blocks.count == 1,
            blocks[0]["type"] as? String == "text",
-           let raw = blocks[0]["text"] as? String,
-           let notice = ClawdlineMessage.decode(raw) {
-            return [Entry(kind: .notice, text: notice.body, tool: nil, time: time,
-                          notice: notice)]
+           let raw = blocks[0]["text"] as? String {
+            if let message = clawdlineSessionMessage(in: raw, at: time) { return [message] }
+            if let notice = ClawdlineMessage.decode(raw) {
+                return [Entry(kind: .notice, text: notice.body, tool: nil, time: time,
+                              notice: notice)]
+            }
+        }
+
+        // Claude stores pasted images as structured blocks and repeats each attachment as
+        // `[Image #N]` display prose in its text block. The blocks own the count; the marker is
+        // transport presentation, not authored text.
+        if type == "user" {
+            let images = blocks.filter { $0["type"] as? String == "image" }.count
+            if images > 0 {
+                let rawText = blocks.compactMap { block -> String? in
+                    guard block["type"] as? String == "text" else { return nil }
+                    let raw = block["text"] as? String ?? ""
+                    return withoutMachineBlocks(raw)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                }.filter { !$0.isEmpty }.joined(separator: "\n")
+                let canonical = canonicalImageContent(rawText, structuredImages: images)
+                return [Entry(kind: .user, text: canonical.text, tool: nil, time: time,
+                              imageCount: canonical.imageCount)]
+            }
+
+            // `send_images_as_paste = false` deliberately hands Claude the same cache path
+            // Codex receives. Canonicalize that real setting too, without teaching arbitrary
+            // paths to disappear from somebody's conversation.
+            let rawText = blocks.compactMap { block -> String? in
+                guard block["type"] as? String == "text" else { return nil }
+                return withoutMachineBlocks(block["text"] as? String ?? "")
+            }.filter { !$0.isEmpty }.joined(separator: "\n")
+            let canonical = canonicalImageContent(rawText)
+            if canonical.imageCount > 0 {
+                return [Entry(kind: .user, text: canonical.text, tool: nil, time: time,
+                              imageCount: canonical.imageCount)]
+            }
         }
 
         var out: [Entry] = []
@@ -751,6 +866,16 @@ enum Transcript {
         return Entry(kind: .peer, text: body, tool: nil, time: time,
                      source: attribute("from-name", in: header),
                      sourceMode: attribute("from-mode", in: header))
+    }
+
+    /// Normalize Clawdline's verified session-to-session envelope to a role of its own. The
+    /// envelope and source metadata are discarded after this boundary; clients receive only the
+    /// body and the locally controlled fields carried by ``Entry``.
+    static func clawdlineSessionMessage(in raw: String, at time: Date?) -> Entry? {
+        guard let message = ClawdlineSessionMessage.decode(raw) else { return nil }
+        return Entry(kind: .message, text: message.body, tool: nil, time: time,
+                     source: message.source.label, sourceMode: "clawdline",
+                     sourceAssistant: message.source.assistant)
     }
 
     /// One double-quoted attribute from the small, fixed opening tag above.
@@ -890,9 +1015,9 @@ enum Transcript {
     /// not been taught about it from drawing JSON at somebody. The character is `U+0001`, which
     /// no transcript contains and no keyboard produces.
     ///
-    /// It rides in `text` because that is the field there is. The wire between the Mac and the
-    /// web interface carries `role`, `text`, `tool` and a time and nothing else, and a second
-    /// field would have to be added at both ends at once.
+    /// It rides in `text` because that is the tool-content field. The wire's role-specific
+    /// metadata belongs to peer, session-message and notice rows; a tool row still carries only
+    /// `role`, `text`, optional `tool` and time.
     static let askMarker = "\u{1}ask\u{1}"
 
     /// One question as it was asked. Several can arrive in one call.
@@ -1173,6 +1298,23 @@ extension Transcript {
                 add(label + "\n", [
                     .font: header,
                     .foregroundColor: NSColor.systemIndigo,
+                    .kern: 0.8,
+                    .paragraphStyle: headerStyle,
+                ])
+                block.append(prose(entry.text, body: body, mono: mono))
+                i += 1
+
+            case .message:
+                endBlock()
+                var label = "CLAWDLINE  ⇄"
+                if let source = entry.source, !source.isEmpty { label += "  " + source }
+                if let assistant = entry.sourceAssistant {
+                    label += "  ·  " + assistant.rawValue.uppercased()
+                }
+                if let t = entry.time { label += "   \(clock.string(from: t))" }
+                add(label + "\n", [
+                    .font: header,
+                    .foregroundColor: Style.accent,
                     .kern: 0.8,
                     .paragraphStyle: headerStyle,
                 ])

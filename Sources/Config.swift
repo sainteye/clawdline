@@ -176,6 +176,11 @@ final class Config {
     /// redundant ones is a rule nobody can debug when it goes quiet**. A feature that is off by
     /// default is also a feature most people never find.
     var pushOnFinish = true
+    /// Replace the generic long-turn and fan-out wording with one bounded Haiku summary.
+    ///
+    /// Off by default because it spends assistant quota and puts authored work detail on the
+    /// lock screen. The ordinary completion notification remains the fallback in every case.
+    var smartNotifications = false
     /// Buzz when a deploy stops running.
     ///
     /// A better candidate than the one above and for the opposite reason: deploys are rare, and
@@ -284,6 +289,20 @@ final class Config {
     /// Only a child that reported — success or failure — is closed; one that timed out or never
     /// came up is left where it is, because what went wrong is on that screen.
     var orchestratorChildLinger = 180
+    /// How long failed task-owned `work/` directories remain available for diagnosis, in minutes.
+    /// Success always reclaims immediately; `0` does the same for every terminal outcome and
+    /// `-1` leaves the directory to the ordinary 24-hour task-root sweep.
+    var orchestratorWorkGraceMinutes = 60
+    /// How long an isolated checkout's `.build/` remains available before it is reclaimed, in
+    /// minutes. Shaped exactly like `orchestrator_work_grace_minutes`: success reclaims
+    /// immediately, `0` does the same for every terminal outcome, `-1` leaves the build output
+    /// until the whole checkout is disposed of.
+    ///
+    /// It is a separate setting because the two directories answer different questions. `work/`
+    /// holds the failing build log somebody reads after a child dies; `.build/` holds object
+    /// files nobody has ever read, and on this Mac it was 814 MB of them, kept alive by pending
+    /// landings that needed only the source and the branch.
+    var orchestratorBuildGraceMinutes = 60
     /// The used-percentage at which an assistant's quota reads as `low` rather than `ok`, both
     /// from `GET /v1/orchestrator/assistants` and at the dispatch gate — see
     /// `Sources/AssistantQuota.swift`.
@@ -303,6 +322,48 @@ final class Config {
     var iconsFile = ""
     var lastTargetID: String?
     var history: [String] = []
+
+    /// Names explicitly chosen by a person. Each row carries every identity we may know:
+    /// Claude's hook session id survives a reopened terminal, the terminal id covers Codex,
+    /// shells and Claude installations without hooks, and `startedAt` is what tells the second
+    /// conversation in a reused tab apart from the first — see
+    /// ``sessionTitle(sessionID:terminalID:conversationStart:currentCustomTitle:)``.
+    struct SessionTitle: Equatable {
+        let title: String
+        let sessionID: String?
+        let terminalID: String
+        /// When the assistant process in that tab started, or nil for a tab with no assistant
+        /// in it. Nil is a value here, not a missing one: a shell has no conversation to
+        /// outlive, so "there was no process" has to match "there is no process" exactly.
+        let startedAt: Date?
+        /// The Claude transcript's own `customTitle` at the moment this name was chosen, or nil
+        /// when the transcript had none yet. Compared against a fresh read of the same file on
+        /// every later look: a difference means a person has since typed `/rename` in the
+        /// terminal, and the newer of the two utterances — theirs — is what should show. Only
+        /// meaningful together with ``seenTranscriptPath``. See
+        /// ``sessionTitle(sessionID:terminalID:conversationStart:currentCustomTitle:)``.
+        let seenCustomTitle: String?
+        /// Where that transcript was, captured alongside ``seenCustomTitle`` so the comparison
+        /// above never has to re-resolve it. Nil when none could be resolved at all — a
+        /// non-Claude session, or one whose file did not exist yet — which switches the whole
+        /// comparison off rather than treating "no transcript" as "no rename": a name set before
+        /// this field existed, or before Claude Code had written its first transcript byte,
+        /// behaves exactly as it always did, and always wins.
+        let seenTranscriptPath: String?
+        let updatedAt: Date
+    }
+    /// **The one part of this file that is touched from two threads.** Every other setting here is
+    /// read and written by AppKit code on the main thread; a session title is written by
+    /// `POST /v1/sessions/:id/title` on the server's own queue and read back by
+    /// ``TargetSession/displayLabel``, which the panel computes on main and the server computes on
+    /// its queue. The two neighbouring sources in that same expression each carry a lock of their
+    /// own — see ``Orchestrator/title(forTerminal:)`` and ``CodexNaming/title(for:)`` — so this one
+    /// does too rather than being the odd one out.
+    private let sessionTitleLock = NSLock()
+    private var sessionTitles: [SessionTitle] = []
+    static let sessionTitleLimit = 200
+    static let sessionTitleCapacity = 200
+    static let sessionTitleLifetime: TimeInterval = 90 * 24 * 60 * 60
 
     /// True when at least one device has been paired or a password set.
     ///
@@ -340,6 +401,7 @@ final class Config {
         if let v = obj["remote"] as? Bool { remote = v }
         if let v = obj["remote_port"] as? Int, v > 0, v < 65536 { remotePort = v }
         if let v = obj["push_on_finish"] as? Bool { pushOnFinish = v }
+        if let v = obj["smart_notifications"] as? Bool { smartNotifications = v }
         if let v = obj["push_on_deploy"] as? Bool { pushOnDeploy = v }
         if let v = obj["on_state_change"] as? [String] { onStateChange = v }
         if let v = obj["remote_write"] as? Bool { remoteWrite = v }
@@ -370,6 +432,12 @@ final class Config {
         if let v = obj["orchestrator_child_linger"] as? Int, v >= -1, v <= 3600 {
             orchestratorChildLinger = v
         }
+        if let v = obj["orchestrator_work_grace_minutes"] as? Int, v >= -1, v <= 1440 {
+            orchestratorWorkGraceMinutes = v
+        }
+        if let v = obj["orchestrator_build_grace_minutes"] as? Int, v >= -1, v <= 1440 {
+            orchestratorBuildGraceMinutes = v
+        }
         if let v = obj["assistant_quota_low_threshold"] as? Double, v > 0, v < 100 {
             assistantQuotaLowThreshold = v
         }
@@ -395,6 +463,12 @@ final class Config {
         if let v = obj["whisper_model"] as? String { whisperModel = v }
         if let v = obj["last_target_id"] as? String { lastTargetID = v }
         if let v = obj["history"] as? [String] { history = v }
+        if let rows = obj["session_titles"] as? [[String: Any]] {
+            sessionTitleLock.lock()
+            sessionTitles = rows.compactMap(Self.sessionTitle(from:))
+            pruneSessionTitlesLocked()
+            sessionTitleLock.unlock()
+        }
         // What the file said, so a later save can tell an edit of ours from an edit of theirs.
         known = obj
     }
@@ -413,6 +487,7 @@ final class Config {
             "remote": remote,
             "remote_port": remotePort,
             "push_on_finish": pushOnFinish,
+            "smart_notifications": smartNotifications,
             "push_on_deploy": pushOnDeploy,
             "on_state_change": onStateChange,
             "remote_write": remoteWrite,
@@ -432,6 +507,8 @@ final class Config {
             "orchestrator_notify_root": orchestratorNotifyRoot,
             "orchestrator_agent_notify": orchestratorAgentNotify,
             "orchestrator_child_linger": orchestratorChildLinger,
+            "orchestrator_work_grace_minutes": orchestratorWorkGraceMinutes,
+            "orchestrator_build_grace_minutes": orchestratorBuildGraceMinutes,
             "assistant_quota_low_threshold": assistantQuotaLowThreshold,
             "status_dir": statusDir,
             "icons_file": iconsFile,
@@ -454,6 +531,7 @@ final class Config {
             "whisper_binary": whisperBinary,
             "whisper_model": whisperModel,
             "history": Array(history.suffix(60)),
+            "session_titles": sessionTitleRows(),
         ]
         // Only when there is one. A Swift Optional in this dictionary is not a JSON value, and
         // JSONSerialization throws on it — which `try?` then swallowed, so on a fresh install
@@ -496,7 +574,16 @@ final class Config {
         }
     }
 
-    func save() {
+    /// Whether the settings on disk now say what this object says.
+    ///
+    /// It used to return nothing, and one route answered `local_applied: true` on the strength
+    /// of having called it — see `POST /v1/sessions/:id/title`, whose whole justification for
+    /// not queueing a downstream rename is that the local name is durable. A claim about a file
+    /// has to come from the write of that file. Discardable because every other caller is a
+    /// setting a person just changed in a window they can see, where a failure is a log line and
+    /// not a different answer.
+    @discardableResult
+    func save() -> Bool {
         let mine = serialised
         let onDisk = (try? Data(contentsOf: file))
             .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
@@ -507,17 +594,251 @@ final class Config {
                                                      options: [.prettyPrinted, .sortedKeys])
         else {
             Log.write("config: could not serialise, nothing written")
-            return
+            return false
         }
         do {
             try data.write(to: file)
             known = obj
+            return true
         } catch {
             // Worth a line: everything above this is best-effort, and a config that silently
             // stops persisting looks exactly like one that is being ignored.
             Log.write("config: could not write — \(error.localizedDescription)")
+            return false
         }
     }
 
     var fileURL: URL { file }
+
+    /// One visible line, with terminal control bytes converted to separators rather than kept
+    /// in config or sent through a slash command. Length is checked separately, so a route can
+    /// tell an overlong request from a title that merely needed trimming and answer each in its
+    /// own words; ``setSessionTitle(_:sessionID:terminalID:now:)`` refuses an overlong one too.
+    static func normalizedSessionTitle(_ raw: String) -> String? {
+        let separated = raw.unicodeScalars.map { scalar -> String in
+            CharacterSet.controlCharacters.contains(scalar) ? " " : String(scalar)
+        }.joined()
+        let line = separated.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return line.isEmpty ? nil : line
+    }
+
+    func sessionTitle(for target: TargetSession) -> String? {
+        // Both closures are paid only when there is a row that would otherwise be returned: most
+        // tabs have no title at all, and this is asked once per session on every redraw.
+        // `currentCustomTitle` never re-resolves the transcript — it re-reads the path the row
+        // already carries through ``Transcript/customTitle(ofTranscript:)``, which is
+        // ``Transcript``'s own size-keyed cache, not a second synchronous lookup on this path.
+        sessionTitle(sessionID: hookSessionID(of: target), terminalID: target.id,
+                     conversationStart: { Targets.processStart(of: target) },
+                     currentCustomTitle: { path in
+                         Transcript.customTitle(ofTranscript: URL(fileURLWithPath: path))
+                     })
+    }
+
+    /// `HookBridge`'s tty table is replaced wholesale on the main thread, so it is read there or
+    /// not at all — ``Transcript/sessionID(of:)`` crosses to main for the same table and says so.
+    /// The crossing has to be here rather than at the callers: ``TargetSession/displayLabel`` asks
+    /// for a title from the server's queue as well as from the panel.
+    private func hookSessionID(of target: TargetSession) -> String? {
+        if Thread.isMainThread { return HookBridge.note(for: target)?.session }
+        return DispatchQueue.main.sync { HookBridge.note(for: target)?.session }
+    }
+
+    /// The name a person gave **this conversation**, not the name somebody once gave this tab.
+    ///
+    /// A terminal outlives what runs in it: leaving `claude` and starting it again in the same
+    /// iTerm2 tab keeps the session UUID, so a row keyed on the terminal alone would hand the
+    /// next conversation the previous one's name — for up to ``sessionTitleLifetime`` — and,
+    /// because a person's title outranks everything, it would do so on top of the task title a
+    /// dispatched tab was opened with. The repository already had a name for this shape one file
+    /// over: *a note is keyed on a tty and can outlive the session that left it*.
+    ///
+    /// So the terminal is a fallback that has to prove itself, and there are two proofs:
+    ///
+    /// - The hook session id, when there is one. It is the conversation, so a row carrying a
+    ///   *different* one is somebody else's row whatever tab it is in, and one carrying the same
+    ///   one is this conversation even if the tab has changed. `--resume` keeps it, which is
+    ///   right: a resumed conversation is the same conversation.
+    /// - Otherwise the assistant process in the tab, by start time. Codex and a Claude without
+    ///   hooks have no conversation id to offer, and the process is the conversation for exactly
+    ///   as long as it runs. Compared with ``SessionRegistry/startTolerance`` because both ends
+    ///   are derived from whole-second `ps` output — see ``ITerm/processStart(ofPID:)``.
+    ///
+    /// A row surviving both proofs still has to survive a third: **the newer of two human
+    /// utterances wins.** `currentCustomTitle`, given the row's own ``SessionTitle/seenTranscriptPath``,
+    /// answers what the transcript's `/rename` says right now; ``staleAfterRename(_:currentCustomTitle:)``
+    /// compares that with what it said when this name was chosen. A difference means somebody
+    /// typed `/rename` afterward, so this row gives way — and is dropped, so the comparison is
+    /// not repeated forever.
+    func sessionTitle(sessionID: String?, terminalID: String,
+                      conversationStart: () -> Date? = { nil },
+                      currentCustomTitle: (String) -> String? = { _ in nil }) -> String? {
+        sessionTitleLock.lock()
+        if let sessionID,
+           let row = sessionTitles.last(where: { $0.sessionID == sessionID }) {
+            sessionTitleLock.unlock()
+            if Self.staleAfterRename(row, currentCustomTitle: currentCustomTitle) {
+                forgetSessionTitle(row)
+                return nil
+            }
+            return row.title
+        }
+        // A row that names a conversation this is not stays out of the fallback entirely. A row
+        // that names none is still a candidate: a title can be set in the moment before the hook
+        // note arrives, and the start time below is what decides it either way.
+        let candidate = sessionTitles.last { row in
+            row.terminalID == terminalID
+                && (sessionID == nil || row.sessionID == nil || row.sessionID == sessionID)
+        }
+        sessionTitleLock.unlock()
+        guard let candidate,
+              Self.sameConversation(candidate.startedAt, conversationStart())
+        else { return nil }
+        if Self.staleAfterRename(candidate, currentCustomTitle: currentCustomTitle) {
+            forgetSessionTitle(candidate)
+            return nil
+        }
+        return candidate.title
+    }
+
+    /// Whether a person has typed `/rename` since this row's name was chosen. No baseline — no
+    /// transcript could be resolved at set time — is not evidence of a change, so the local name
+    /// stands; see ``SessionTitle/seenTranscriptPath``.
+    private static func staleAfterRename(_ row: SessionTitle,
+                                         currentCustomTitle: (String) -> String?) -> Bool {
+        guard let path = row.seenTranscriptPath else { return false }
+        return currentCustomTitle(path) != row.seenCustomTitle
+    }
+
+    /// Drop a name a later `/rename` has superseded, keyed by value rather than by index: both
+    /// callers above already unlocked once to find the row, and re-finding it by identity here
+    /// is simpler than threading an index through that unlock. So the next read finds no row at
+    /// all and falls straight through to the automatic label, instead of repeating this same
+    /// comparison and the same answer on every redraw.
+    private func forgetSessionTitle(_ row: SessionTitle) {
+        sessionTitleLock.lock()
+        sessionTitles.removeAll { $0 == row }
+        sessionTitleLock.unlock()
+    }
+
+    /// Whether two readings of "the assistant process in that tab" are the same process.
+    ///
+    /// Nil on both sides is a match, and that is deliberate: a tab with no assistant in it has
+    /// no conversation that could end, so its own name is the tab's for as long as the tab is
+    /// there. Nil on one side only is a mismatch — a name chosen in a shell is not a name for
+    /// the assistant somebody later started there, and a name chosen for an assistant is not a
+    /// name for the shell left behind when it exited.
+    static func sameConversation(_ stored: Date?, _ current: Date?) -> Bool {
+        guard let stored else { return current == nil }
+        guard let current else { return false }
+        return abs(stored.timeIntervalSince(current)) <= SessionRegistry.startTolerance
+    }
+
+    /// The rows as `save` writes them. Under the lock, because `serialised` is read on whichever
+    /// thread called ``save()``.
+    private func sessionTitleRows() -> [[String: Any]] {
+        sessionTitleLock.lock()
+        defer { sessionTitleLock.unlock() }
+        return sessionTitles.map { row -> [String: Any] in
+            var out: [String: Any] = [
+                "title": row.title,
+                "terminal_id": row.terminalID,
+                "updated_at": row.updatedAt.timeIntervalSince1970,
+            ]
+            if let sessionID = row.sessionID { out["session_id"] = sessionID }
+            if let startedAt = row.startedAt {
+                out["started_at"] = startedAt.timeIntervalSince1970
+            }
+            // `seen_custom_title` is legitimately absent while `seen_transcript_path` is present
+            // — a transcript that had no `/rename` yet when this name was chosen — so the two
+            // are written independently rather than as one optional pair.
+            if let seenCustomTitle = row.seenCustomTitle { out["seen_custom_title"] = seenCustomTitle }
+            if let seenTranscriptPath = row.seenTranscriptPath {
+                out["seen_transcript_path"] = seenTranscriptPath
+            }
+            return out
+        }
+    }
+
+    /// Replace every address for this live session together, so a name lives in one row rather
+    /// than a pair that can drift apart. `startedAt` is the third address and the one the read
+    /// side leans on when there is no conversation id — it is what stops the row outliving the
+    /// conversation that chose it. `seenCustomTitle`/`seenTranscriptPath` are the fourth and
+    /// fifth, the baseline a later `/rename` is measured against. See
+    /// ``sessionTitle(sessionID:terminalID:conversationStart:currentCustomTitle:)``.
+    ///
+    /// Refused before anything is removed, and that order is the point: an overlong title used to
+    /// delete the row it was too long to replace, so a request the route answers with `400` would
+    /// still have taken the name off the session. The one caller today checks the length first —
+    /// the Mac-side entry point this feature is heading for would not have.
+    @discardableResult
+    func setSessionTitle(_ raw: String, sessionID: String?, terminalID: String,
+                         startedAt: Date? = nil, seenCustomTitle: String? = nil,
+                         seenTranscriptPath: String? = nil, now: Date = Date()) -> String? {
+        let normalized = Self.normalizedSessionTitle(raw)
+        if let normalized, normalized.count > Self.sessionTitleLimit { return nil }
+        sessionTitleLock.lock()
+        sessionTitles.removeAll { row in
+            row.terminalID == terminalID
+                || (sessionID != nil && row.sessionID == sessionID)
+        }
+        if let normalized {
+            sessionTitles.append(SessionTitle(title: normalized, sessionID: sessionID,
+                                              terminalID: terminalID, startedAt: startedAt,
+                                              seenCustomTitle: seenCustomTitle,
+                                              seenTranscriptPath: seenTranscriptPath,
+                                              updatedAt: now))
+        }
+        pruneSessionTitlesLocked(now: now)
+        sessionTitleLock.unlock()
+        return normalized
+    }
+
+    @discardableResult
+    func setSessionTitle(_ raw: String, for target: TargetSession, now: Date = Date()) -> String? {
+        // Read here, at the moment the name is chosen, because that is the conversation the
+        // person is naming. Asking again later would only ever describe whatever is in the tab
+        // by then. The transcript snapshot is the one place this feature pays for
+        // ``Transcript/record(of:)`` in full — it happens once, when somebody names a session,
+        // never on the redraw path that reads it back.
+        let snapshot = Transcript.customTitleSnapshot(of: target)
+        return setSessionTitle(raw, sessionID: hookSessionID(of: target), terminalID: target.id,
+                               startedAt: Targets.processStart(of: target),
+                               seenCustomTitle: snapshot?.title,
+                               seenTranscriptPath: snapshot?.path, now: now)
+    }
+
+    private static func sessionTitle(from row: [String: Any]) -> SessionTitle? {
+        guard let raw = row["title"] as? String,
+              let title = normalizedSessionTitle(raw), title.count <= sessionTitleLimit,
+              let terminalID = row["terminal_id"] as? String, !terminalID.isEmpty,
+              let timestamp = row["updated_at"] as? Double else { return nil }
+        let sessionID = (row["session_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        // Absent in rows written before a title had to prove which conversation it belonged to.
+        // Those rows keep working through their session id and stop working through the terminal
+        // alone, which is the whole point of the field.
+        let startedAt = (row["started_at"] as? Double).map { Date(timeIntervalSince1970: $0) }
+        // Both absent in rows written before a name could go stale. Those rows keep working
+        // exactly as they did — ``staleAfterRename(_:currentCustomTitle:)`` treats a nil
+        // ``seenTranscriptPath`` as "nothing to compare against", not as "a rename happened".
+        let seenCustomTitle = row["seen_custom_title"] as? String
+        let seenTranscriptPath = (row["seen_transcript_path"] as? String).flatMap {
+            $0.isEmpty ? nil : $0
+        }
+        return SessionTitle(title: title, sessionID: sessionID, terminalID: terminalID,
+                            startedAt: startedAt, seenCustomTitle: seenCustomTitle,
+                            seenTranscriptPath: seenTranscriptPath,
+                            updatedAt: Date(timeIntervalSince1970: timestamp))
+    }
+
+    /// Under ``sessionTitleLock``.
+    private func pruneSessionTitlesLocked(now: Date = Date()) {
+        let cutoff = now.addingTimeInterval(-Self.sessionTitleLifetime)
+        sessionTitles = sessionTitles.filter { $0.updatedAt >= cutoff }
+            .sorted { $0.updatedAt < $1.updatedAt }
+        if sessionTitles.count > Self.sessionTitleCapacity {
+            sessionTitles.removeFirst(sessionTitles.count - Self.sessionTitleCapacity)
+        }
+    }
 }

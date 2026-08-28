@@ -1,9 +1,9 @@
-import { phone } from "../core/env.js";
+import { phone, releaseKeyboardFocus } from "../core/env.js";
 import { T } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { api } from "../net/api.js";
-import { byId } from "../view/derive.js";
+import { byId, revisionOf } from "../view/derive.js";
 import { closingID, render, rowNodes } from "../view/list.js";
 import { renderTranscript } from "../view/transcript.js";
 import { Optimistic, Waits } from "../view/waits.js";
@@ -15,6 +15,11 @@ import { ActionConfirm } from "../input/action-confirm.js";
 import { Info } from "../input/info.js";
 import { Shots } from "../input/shots.js";
 import { SkillPicker } from "../input/composer.js";
+import {
+    createTranscriptRequests,
+    createTranscriptRevisionObserver
+} from "./transcript-requests.js";
+import { reconcileOptimisticBeforeSignature } from "../view/optimistic-data.js";
 
 /* ==========================================================================
    8. Opening a session
@@ -25,65 +30,102 @@ import { SkillPicker } from "../input/composer.js";
 // last and erase the final entry that the newer one had already drawn.
 var transcriptTicket = 0;
 
-export function loadTranscript(id, quiet) {
+var transcriptRequests = createTranscriptRequests(function (id) {
+    return api.transcript(id);
+}, settleTranscript);
+
+var transcriptRevisions = createTranscriptRevisionObserver(function (id, revision, quiet) {
+    loadTranscript(id, quiet, revision);
+});
+
+export function observeTranscriptRevision(id, revision, quiet) {
+    transcriptRevisions.observe(id, revision, quiet);
+}
+
+export function rearmTranscriptRevision(id, revision, quiet) {
+    transcriptRevisions.rearm(id, revision, quiet);
+}
+
+export function loadTranscript(id, quiet, revision) {
+    // Composer/refresh callers predate revision tracking. Fold them into the same observed
+    // contract so a direct refresh cannot overwrite the coalesced cycle's revision context.
+    var session = byId(id);
+    if (revision == null && session) revision = revisionOf(session);
     var ticket = ++transcriptTicket;
     if (!quiet) {
-        S.tx = { id: id, entries: [], signature: null, loading: true, error: null };
+        S.tx = {
+            id: id, entries: [], signature: null, revision: null,
+            loading: true, error: null
+        };
         // Only the loud kind waits visibly. A refetch behind a transcript that is already on
         // screen has nothing to stand in for — the reader is reading the last version of it.
         Waits.tx.start();
         renderTranscript();
     }
-    // Returned, so a control that started this can wait for it — see the Refresh chip. Every
-    // other caller ignores it, which is what a fire-and-forget refetch should look like.
-    return api.transcript(id).then(function (d) {
-        // A later request owns both the result and the visible wait. Settling an older request
-        // here would take down the skeleton while the request that superseded it is still out.
-        if (S.openId !== id || ticket !== transcriptTicket) return;
+    // Returned, so a control that started this can wait for the whole coalesced cycle. A revision
+    // storm gets one active read and one trailing read, whose answer owns the newest ticket.
+    return transcriptRequests(id, ticket, revision);
+}
+
+function settleTranscript(id, ticket, outcome, revision) {
+    if (revision != null) transcriptRevisions.settle(id, revision, !outcome.error);
+    // A later request owns both the result and the visible wait. Settling an older request here
+    // would take down the skeleton while the request that superseded it is still out.
+    if (S.openId !== id || ticket !== transcriptTicket) return;
+    if (!outcome.error) {
+        var d = outcome.value || {};
         var received = d.entries || [];
         // Reconcile before trusting the signature. The common first fetch after a send quite
         // correctly says the file is unchanged; that must preserve the echo, while an eventual
         // matching entry must retire it even if an older server reports a stale signature.
-        var reconciled = Optimistic.reconcile(id, received);
+        var reconciled = reconcileOptimisticBeforeSignature(function (sessionID, entries) {
+            return Optimistic.reconcile(sessionID, entries);
+        }, id, received);
         // The signature is the server's own answer to "is this the same transcript". Trusting it
         // is what keeps a refetch from throwing the reader's scroll position away every few seconds.
         if (d.signature && d.signature === S.tx.signature) {
+            if (revision != null) S.tx.revision = revision;
             S.tx.loading = false;
             if (reconciled) S.tx.entries = received;
             Waits.tx.settle(renderTranscript);
             return;
         }
         var stick = atBottom();
-        S.tx = { id: id, entries: received, signature: d.signature || null, loading: false, error: null };
+        S.tx = {
+            id: id, entries: received, signature: d.signature || null,
+            revision: revision != null ? revision : S.tx.revision,
+            loading: false, error: null
+        };
         Waits.tx.settle(function () {
             renderTranscript();
             if (stick) toBottom();
         });
-    }).catch(function (e) {
-        if (S.openId !== id || ticket !== transcriptTicket) return;
-        // A read that failed keeps whatever is already on screen. It is the same rule as the
-        // skeleton above and it is here for the same reason — the reader is reading the last
-        // version of it — except that this is the branch where it matters: the list refetches
-        // roughly once a second while a session works, so one refused read used to empty the pane
-        // somebody was mid-sentence in, with no gesture of theirs behind it.
-        //
-        // **Not only `busy`.** A dropped connection, a 500 and a refusal all leave the same thing
-        // true: the last transcript that arrived is still the best answer there is, and throwing
-        // it away buys nothing. Only a first load has nothing to keep, and that one still says so
-        // with the whole pane.
-        var held = S.tx.id === id ? S.tx.entries : [];
-        S.tx = {
-            id: id,
-            entries: held,
-            // Kept with them. The signature is the server's name for *these* entries, so holding
-            // it is what lets the next read that comes back unchanged be believed; nulling it
-            // would turn the recovery into a full replace and take the reader's scroll with it.
-            signature: held.length ? S.tx.signature : null,
-            loading: false,
-            error: whyTranscript(e)
-        };
-        Waits.tx.settle(renderTranscript);
-    });
+        return;
+    }
+    var e = outcome.error;
+    // A read that failed keeps whatever is already on screen. It is the same rule as the
+    // skeleton above and it is here for the same reason — the reader is reading the last
+    // version of it — except that this is the branch where it matters: the list refetches
+    // roughly once a second while a session works, so one refused read used to empty the pane
+    // somebody was mid-sentence in, with no gesture of theirs behind it.
+    //
+    // **Not only `busy`.** A dropped connection, a 500 and a refusal all leave the same thing
+    // true: the last transcript that arrived is still the best answer there is, and throwing
+    // it away buys nothing. Only a first load has nothing to keep, and that one still says so
+    // with the whole pane.
+    var held = S.tx.id === id ? S.tx.entries : [];
+    S.tx = {
+        id: id,
+        entries: held,
+        // Kept with them. The signature is the server's name for *these* entries, so holding
+        // it is what lets the next read that comes back unchanged be believed; nulling it
+        // would turn the recovery into a full replace and take the reader's scroll with it.
+        signature: held.length ? S.tx.signature : null,
+        revision: S.tx.id === id ? S.tx.revision : null,
+        loading: false,
+        error: whyTranscript(e)
+    };
+    Waits.tx.settle(renderTranscript);
 }
 
 /**
@@ -116,6 +158,7 @@ export function openSession(id, keepFocus, forceRefresh) {
     if (!s || closingID === id) return;
     S.selectedId = id;
     if (S.openId !== id) {
+        if (S.openId) transcriptRevisions.stop(S.openId);
         SessionActions.close();
         ActionConfirm.close();
         // An agent belongs to the session that sent it away. Carrying one over into the next
@@ -132,9 +175,14 @@ export function openSession(id, keepFocus, forceRefresh) {
         Info.follow();
         GitPanel.follow();
     ShellPanel.follow();
-        loadTranscript(id, false);
+        observeTranscriptRevision(id, revisionOf(s), false);
     } else if (forceRefresh) loadTranscript(id, true);
     if (phone()) {
+        // A touch on a row does not reliably take focus from the filter on iOS. Release it before
+        // the list becomes invisible so the keyboard's outgoing viewport cannot become the
+        // detail pane's permanent height. Do this only for the screen transition: routing a push
+        // back to the session already being composed in must not dismiss that composer.
+        if (els.app.dataset.view !== "detail") releaseKeyboardFocus();
         els.app.dataset.view = "detail";
         // The phone's own back gesture should mean what it looks like it means.
         try { history.pushState({ view: "detail", id: id }, ""); } catch (e) { }
@@ -156,9 +204,13 @@ export function closeDetail(silent) {
     // still closing underneath it; the successful end clears `closingID` before coming here.
     if (closingID && S.openId === closingID) return;
     ActionConfirm.close();
+    if (S.openId) transcriptRevisions.stop(S.openId);
     S.openId = null;
     S.agent = null;
-    S.tx = { id: null, entries: [], signature: null, loading: false, error: null };
+    S.tx = {
+        id: null, entries: [], signature: null, revision: null,
+        loading: false, error: null
+    };
     S.expanded = {};
     Shots.clear();
     Info.follow();

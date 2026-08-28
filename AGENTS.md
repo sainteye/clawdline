@@ -12,12 +12,20 @@ Do not infer ownership from a filename, a recent timestamp, or a new commit; ins
 - Use `git add -- <file>...` with every path named explicitly.
 - Never use `git add -A`, `git add .`, or another broad staging command.
 - Before any root-owned commit, run `git diff --cached --stat` and remove anything outside that
-  commit's scope.
+  commit's scope. **What you are looking for is a path you did not stage yourself.** The index is
+  shared: another session's `git add` is already sitting in it, and a plain `git commit` with no
+  pathspec commits the whole index, theirs included. That happened twice on 2026-08-28. Read the
+  stat as *"is every one of these lines mine?"* rather than *"does this look about right"*, and
+  take a stranger back out with `git reset -- <path>`, which unstages without touching their bytes.
 - Read the staged diff itself; a clean stat does not prove that a file contains only your work.
 - After hunk-staging, commit the reviewed index with plain `git commit -m <message>` and no
   pathspec. `git commit -- <path>...` takes the named files from the worktree instead of the staged
   hunk selection and can absorb another session's unstaged hunks. A commit pathspec is safe only
   when the entire worktree diff of every named path belongs to that commit.
+- **The two commit traps point in opposite directions**, which is why neither bullet above replaces
+  the other: no pathspec sweeps in what somebody else *staged*, a pathspec sweeps in what somebody
+  else left *unstaged*. `git diff --cached --stat` catches the first, reading the staged diff
+  catches the second, and a commit that has had neither run on it is guarded against neither.
 - A child or worker session does not commit. It hands its changes back to the root session for
   review and commit.
 - Once a root session has completed the task it was originally assigned, reviewed its own diff,
@@ -25,72 +33,89 @@ Do not infer ownership from a filename, a recent timestamp, or a new commit; ins
   for a separate user request to commit. This permission applies only when the root can isolate its
   own changes from every pre-existing or unrelated worktree change; otherwise it must keep the work
   uncommitted and coordinate with the owner of the overlapping paths.
-
 ### Root-owned landing closure
 
-- A child task reaching `success`, and a reviewer saying `SAFE TO LAND`, mean **delivered** and
-  **reviewed**. Neither means the user's code change is complete. The root session that dispatched
-  the graph owns integration until the intended target branch contains the reviewed change.
-- Plan code-producing graphs through the root-owned landing step: name the delivery branch, target
-  branch, landing owner, independent review, and post-integration verification. The last child may
-  be a reviewer; the last step of the work is still the root's landing closure.
-- When claimed child work comes back, use its task secret with
-  `POST /v1/orchestrator/tasks/:id/landing` to mark the obligation `pending`; a named root that later
-  accepts a handoff may use the machine-level orchestrator token instead. This makes the obligation
-  visible in `GET /v1/orchestrator/landings` but does not block anyone.
-- Before reporting completion, the root must integrate without absorbing another session's dirty
-  files, test the exact integrated tree with a private `TMPDIR`, and record the resulting target
-  commit. Then mark that same landing record `landed` with the commit. `SAFE TO LAND` is a pending
-  state, not a completion phrase.
-- **HEAD must compile standing alone, and a commit is the only thing that can break that.** It
-  happened twice on 2026-08-26, from two different sessions: a whole-file `git add` carried three
-  lines whose type was defined in a file that stayed uncommitted, and a protocol requirement landed
-  in `Strings.swift` while its fourteen values stayed in the worktree. Both trees were green at the
-  moment of committing. **A green tree says nothing about HEAD while anything is uncommitted** — the
-  tree is the union of everybody's work and HEAD is only your slice, so a suite run in the tree is
-  answering a question nobody asked.
-  A partial commit is therefore not finished until its own slice has compiled on its own. Verify the
-  staged tree the way this file describes, and where a change spans files ask what else defines what
-  you are taking: a declaration without its values, a call without its function, a case without its
-  enum — each of them passes in the tree and fails in HEAD.
-  Recovering another session's half-landed commit is legitimate root work: restore the missing half,
-  or lift the orphaned lines back into the worktree where their owner can still see them. Say in the
-  message that it is not your line's work and why HEAD could not wait for its owner.
-- If overlapping uncommitted work makes integration unsafe, do not merge and do not close the task.
-  Keep the landing obligation pending while coordinating with the owning session. If this root must
-  stop, use a Clawdline handoff that names the delivery branch/base/head, target branch, verdict and
-  test evidence, overlapping paths and owner if known, and the one next landing action. Never leave
-  integration to an unnamed future session. The original root remains owner until Clawdline's
-  handoff receipt confirms that the first line reached the named receiving root.
-- File-release coordination goes through Clawdline, never an assistant provider's native message
-  mechanism. Address the terminal-neutral session `id`, which an agent reads from
-  `GET /v1/orchestrator/sessions` with the local orchestrator credential — `GET /v1/sessions` lists
-  the same ids and is the paired-device route, so it answers that credential with `401
-  unauthorized`. The durable wait routes deliver request and release messages so Claude and Codex
-  participate equally.
-- Register a wait with Clawdline's durable coordination-wait route, naming the repository, exact
-  paths, owner and waiter Clawdline session ids, reason, and release condition. Clawdline persists
-  and deduplicates the relationship, delivers the request, and exposes it on both Session records.
-  The owner explicitly releases it through Clawdline after committing or otherwise releasing the
-  paths; Clawdline fans the release notice out to every waiter and records partial delivery so a
-  retry does not notify successful recipients twice. A notice wakes the waiter; it never replaces
-  the waiter's own HEAD/status/diff verification. Never infer release from a clean worktree sample.
-- A peer wait is the Session's `coordination.state = waiting_on_session` overlay, not its terminal
-  `state`. The latter remains `idle`, `working`, or `waiting`; `waiting` still means the assistant
-  needs an answer from the person and is the only form that earns the loud UI and push alert. Native
-  and web session rows quietly show the owner and release condition, so a person knows the
-  idle-looking session is parked and should stay open. When that UI is unavailable, the fallback
-  user-visible message ends with `⏳ [Clawdline waiting] <owner> — <condition>; please keep this
-  session open.`
-- The living Claude Code Artifact for this protocol is
-  `artifacts/2026-08-26-clawdline-communication-protocol.html`. Any change to Clawdline task,
-  handoff, landing, claims, file-wait or cross-session communication semantics must update that
-  standalone `kind=state` HTML in the same line of work and re-check it against the authoritative
-  docs. A protocol change is not closed while its Artifact still teaches the previous behavior.
-- Check `GET /v1/orchestrator/assistants` before dispatching, and read a `409
-  assistant_exhausted`'s `alternatives` before retrying the same assistant. This closure still
-  applies when a child dies mid-task because its assistant ran out of quota: whatever it had not
-  committed is root's to recover or discard, exactly as with any other child that never reported.
+A child task reaching `success`, and a reviewer saying `SAFE TO LAND`, mean **delivered** and
+**reviewed**. Neither means the change is complete: the root session that dispatched the graph owns
+integration until the target branch contains the reviewed change, and `SAFE TO LAND` is a pending
+state rather than a completion phrase.
+
+**The whole obligation — landing records, the exact-tree acceptance, HEAD compiling on its own,
+overlapping dirty work, file-release waits and handing an unfinished landing to a named root — is
+in [`docs/landing.md`](docs/landing.md). Read it when a delivery comes back.** A child does not
+land and does not need it.
+
+#### Closing a root is an act with victims; look before you do it
+
+Ending a session cancels every live task it dispatched — grandchildren first, then children, live
+ones and the finished ones still holding a tab. [`docs/orchestrator.md`](docs/orchestrator.md)
+describes that mechanism; what follows is the obligation, which the mechanism does not carry.
+
+**Before closing a root, look at what the close takes with it.** One command, and it is short:
+
+```sh
+curl -s "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
+  -H "X-Clawdline-Orchestrator: $TOKEN" \
+  | jq --arg s "$MY_SESSION_ID" '[.tasks[]
+      | select(.root.sessionId == $s and (.state | IN("queued","spawning","briefed")))
+      | {id, title, state, assistant}]'
+```
+
+Nothing there means close freely. Anything there is work in progress that the close will end, so
+either let it finish, or say in your closing message what you are killing and why. On 2026-08-27
+at 23:20:37–:51 — a fourteen-second window, one close, not four decisions — four in-flight tasks
+died together. One of them was a correction dispatched 75 seconds after the review that demanded
+it, 25 minutes into its run.
+
+**After a cascade, the orphans are somebody's, and that somebody has a name.** A cancelled task
+leaves a landing record reading `pending`, which is also what actively progressing work reads —
+the record cannot tell "being worked on" from "its worker was killed hours ago"
+(`B-PENDING-CANNOT-SEE-ITS-EXECUTOR` in [`docs/backlog.yaml`](docs/backlog.yaml)). So the outgoing
+root writes down, for each orphan, **which named root or which named person picks it up**, in the
+same place it records the cancellation. "Somebody will notice" is not an owner: the safe-close
+correction was written down as *cancelled*, not as *cancelled together with three siblings by one
+close, and now unowned*, and it sat for fourteen hours looking like a hard problem rather than an
+absent one. If nobody can be named, say that out loud to the user before closing — an orphan whose
+owner is unknown is a decision for them, in the shape [below](#decisions-that-are-the-users-go-to-the-user-as-options).
+
+### Root completion receipt
+
+After a root has genuinely completed its assigned turn—including required integration,
+verification and the root-owned commit—and immediately before its final completion response, it
+reports one session-scoped delivery receipt through
+`POST /v1/orchestrator/sessions/:terminal-id/complete`. Follow the exact command and refusal rules
+in [`docs/api.md`](docs/api.md#post-v1orchestratorsessionsidcomplete). This produces only
+**delivered, awaiting approval**; it never claims independent review or broker-verified landing.
+
+Do not report this receipt for a partial result, diagnosis-only answer, blocked task, clarifying
+question, or child task. A child still finishes only through its authenticated `result.json`.
+Clawdline consumes a root receipt when that same terminal begins its next observed turn, so an old
+check cannot reappear after newer unreported work.
+
+## Decisions that are the user's go to the user, as options
+
+A decision only the user can make — which of two designs, whether to spend the quota, what happens
+to an orphaned line of work — does not travel in prose. Asked in a paragraph it does not arrive:
+the user said it plainly on 2026-08-28, «我會漏掉，我不知道怎麼回答» — *I miss it, and I do not
+know how to answer.* A question buried in a status report is a question that was not asked.
+
+So it goes to him **in his own session, through an explicit options prompt** (`AskUserQuestion`, or
+whatever that assistant calls its option cards), and:
+
+- **One question at a time.** Four decisions are four prompts, not one prompt with four parts.
+- **Each option names what happens if he picks it** — the cost, what it gives up, who then does
+  what. An option that is only a label makes him do the reasoning you already did.
+- **The asker's recommendation is attached**, first in the list and marked as the recommendation.
+  You have read the evidence; withholding your view is not neutrality, it is extra work for him.
+
+**Technical to-dos and user decisions are two lists, never one.** They get mixed in a single
+"next steps" paragraph, and it is always the user's half that is lost — a to-do can wait for
+whoever picks the work up, but a decision has no owner but him, so a decision filed under to-dos
+simply stops existing. Report them separately and label them: *what we will do next*, and
+*what we need you to decide*. When a line of work resumes after a pause, ask for both lists from
+each line — its next steps, and its decisions — as two questions.
+
+## Verifying your work
 
 The working tree is an editing buffer shared with other sessions, not a reproducible build input.
 **What you verify depends on which half of this protocol you are in, and the two are not the same
@@ -141,11 +166,95 @@ Use a new, private `TMPDIR` for every `./test.sh` run.
 The script writes its test binary to the fixed path `${TMPDIR}/clawdline-tests`; shared `TMPDIR`
 values race and overwrite it.
 
+**Verification is budgeted, and it does not leave its output behind.** A child that keeps re-running
+the suite is paying this repository's largest fixed cost over and over: `./test.sh` compiles every
+file in `Sources/` together with the test files in one `swiftc` invocation, with no cache between
+runs.
+
+- A child does not run `./build.sh` (that is a rule of its own, further down), does not use an app
+  restart or the real UI as acceptance, does not re-run a full suite after every small edit, does
+  not run a suite unrelated to the paths it claimed, and does not repeat a green run to see whether
+  it was flaky.
+- It does run one verification that actually proves its change: compile, the tests covering what it
+  touched, and one red-before-green run for each test it added. Iterating until something first
+  compiles and passes is ordinary work and is not what this rule is about. **Handing back code that
+  does not compile costs root far more than one honest run costs anybody.**
+- The budget is one third of `timeout_minutes`, or three full-suite runs, whichever comes first. On
+  reaching it the child stops verifying and says in `result.json` what state the work was in, rather
+  than spending the rest of its time trying to get to green.
+- `result.json` reports what verification cost: `"verification": {"runs": 2, "seconds": 940, "last":
+  "pass", "scope": "..."}`. Without a number, "it kept re-verifying" is an impression rather than a
+  finding.
+- Heavy temporary output — repository snapshots, build products, compiler indexes — goes in the
+  task's own `work/` directory, and the private `TMPDIR` for a verification run points at
+  `work/tmp`, so the test binary lands there too. Clawdline reclaims `work/` when the task ends;
+  until that reclaim has landed, delete it yourself before writing `result.json`. Anything worth
+  keeping is copied into `artifacts/` first.
+
 A new test must be seen red before the change that makes it green. A test born green proves
 nothing: reviews here have repeatedly found suites that stayed green after the guarded logic was
 replaced with a stub — or deleted outright. Break the thing once, watch the test catch it, then fix it.
+
 Do not build from the live working tree, because it may contain another session's partial edits or
 untracked files.
+
+### A confirmation is worth what it names
+
+"I checked, and you are right" is not a check. On 2026-08-28 one root read the route table at
+`docs/api.md:117` — *task secret for pending/abandoned; orchestrator token only for landed* — and
+told another root that marking a landing `abandoned` required that task's secret. The second root
+replied that it had read `docs/api.md` and confirmed it. Neither had read `docs/api.md:2209`, where
+the prose says `pending` and `abandoned` accept **either** the task secret **or** the machine
+token, and only `landed` is restricted; the comment at `Sources/RemoteServer.swift:622` says the
+same, and so does the behaviour. The page contradicts itself, and the wrong half is the one shaped
+like a summary — which is the half people read.
+
+The misreading was cheap. The confirmation was not. Believing the claim had been independently
+checked, the first root went looking for seven task secrets it never needed — matching dispatch
+bodies across a 52.9 MB rollout — and wrote the false rule into a handover document for the next
+session to inherit. Someone else later closed all seven rows with the orchestrator token, in one
+call, because the rule had never been true.
+
+So **when you confirm a claim, name what you read**: a file and a line, or the command and its
+output. "I confirmed" carries no information and cannot itself be checked, while "`docs/api.md:2209`
+contradicts the table at `:117`" is something the next reader can test in ten seconds. It is the
+standard findings are already held to here, for the same reason — a claim that names its source can
+be wrong out loud, and one that does not can only be believed.
+
+**And name when you read it.** Five sessions edit this tree at once, so a reading has a shelf life
+measured in minutes. The same afternoon produced three of these: a root quoted a section of this
+file it had read that morning, hours after `d67d2229` moved 254 lines of it into
+`docs/dispatching.md`; and two roots gave each other a rebase distance of fourteen and fifteen
+commits for the same branch, both correct when measured and both wrong by the time they were read,
+because `main` moved between them. **On this tree a rebase map is a measurement that expires, not a
+fact** — and so is `git status`, `git log`, and the file you opened before lunch. Say when you
+looked, or look again before you quote it.
+
+The same expiry applies to a claim about *people*, and that one is easier to miss because it does
+not look like a reading at all. "I have given that to X" is true only for as long as X is still
+open: on 2026-08-28 a session deliberately left a paragraph for another task to write, correctly
+refusing to duplicate it — but that task had finished and landed forty minutes earlier, so the
+paragraph became an orphan. It is the same shape as the work a close cascade strands, with a
+different cause. The sentence that was missing is when you last confirmed X was still open.
+### To compare two surfaces, hold the observed thing still
+
+Two sessions asked the same question: is a task's cost a stored fact, or something computed at the
+moment it is served? One compared *the first record on disk that has a `usage` block* against *the
+first record in the HTTP response that has one* — *two different tasks* — and read the difference
+between two rows as a difference between two surfaces, then wrote an acceptance condition on top
+of a mechanism that does not exist. The other compared **one task across both surfaces** and had
+the answer immediately: when the cost is there it is a recorded fact and the exit merely spells it
+in camel case; when it is not, neither surface has it and nothing was computed anywhere.
+
+So: **name the single subject first, then look at it through each surface.** Whenever you are
+about to say "the API differs from the registry", "the child sees something different from what
+the root sees", or "this field is computed rather than stored", check that both readings are of
+the *same row, same task, same id*. Different rows are not evidence about surfaces.
+
+This is the sister of the rule about saying what you actually read before claiming to have
+confirmed something, and it is the harder of the two to catch: that one stops an assertion with no
+source, and this one stops an assertion whose sources are real but not aligned. The second kind
+arrives wearing the shape of an experiment, so nobody thinks to question it.
 
 ## Dispatching substantial work with Clawdline
 
@@ -194,98 +303,13 @@ when no Clawdline-dispatch language was used and the task merely benefits from i
 If a Clawdline dispatch is refused or fails to reach its prompt, report that typed failure and apply
 the retry/topology rules below; do not silently replace it with a provider-native child session.
 
-### Clawdfather coordinates before it executes
+### Everything else about dispatching is in `docs/dispatching.md`
 
-The registered Clawdfather is the machine-wide context owner. Its scarce resource is attention
-across sessions, tasks, waits, landings, failures, and user decisions—not keystrokes in one
-implementation. It should personally do quick inventory reads, decomposition, synthesis,
-conflict resolution, landing review, and final verification. It should dispatch substantial
-diagnosis, implementation, research, and independent review as separate Clawdline tasks whenever
-capacity and authority allow, even when the delegated work is sequential internally.
-
-Do not apply the ordinary "diagnosis is often faster in one session" heuristic to make
-Clawdfather absorb a long investigation. Give one diagnostic task the evidence and a self-contained
-question, let that task preserve its own reasoning chain in its own tab, and keep Clawdfather free
-to understand the rest of the machine. Work smaller than a clear briefing remains reasonable for
-Clawdfather to do directly. Clawdfather still owns the result: compare it with live evidence,
-choose follow-up work, integrate safely, and never equate delegation with completion.
-
-Declare every path a task may write in `claims`, relative to `project_dir`:
-
-```json
-"claims": ["Sources/Feature.swift", "Tests/FeatureTests.swift"]
-```
-
-Claims reserve equal, ancestor, and descendant paths across separately identified root trees.
-A conflict is rejected before a child starts with `409 workspace_busy`, including the blocking
-task, root context, conflicting absolute paths, and retry advice.
-
-**There are two ways to get `claims` wrong and only one of them is loud.** Leaving it out is the
-quiet one: the broker cannot prove two tasks are disjoint, so it falls back to warning about every
-pair sharing a directory — on 2026-08-26 that was a dozen notices in an evening, not one of which
-described a real conflict, while the single genuine collision that night was caught by
-`workspace_busy` in the same breath as the dispatch. **Dispatching without `claims` is not the
-cautious choice; it is the one that produces noise instead of an answer.**
-Claiming too widely is the other, and the broker now names it: a task that finishes without ever
-touching a claimed path is reported as such. A path claimed and unused blocks other trees for
-nothing, so take the report seriously and narrow next time — this is the same error as the first
-one, pointing the other way.
-Claims are a dispatch gate, not filesystem enforcement; instructions must still restrict the child
-to its declared scope.
-
-Use `serialize` for machine-global operations rather than files:
-
-```json
-"serialize": ["build"]
-```
-
-Tasks sharing a serialization token queue in creation order and acquire all requested tokens together.
-Use it for operations such as builds whose fixed outputs can collide even when source claims do not.
-
-Branch on the orchestrator's typed error `code`:
-
-- `over_capacity`: wait for `retry_after`, reduce the batch, or send it in stages.
-- `depth_exceeded`: stop dispatching; this session is at the tree's depth limit.
-- `workspace_busy`: do not start **that shared-tree dispatch**. Treat the refusal as a choice of
-  execution topology, not as proof that the work itself must stop. Apply the decision order below;
-  when a shared-tree wait is genuinely required, coordinate with the named root or ask it to give
-  up completed paths early with `POST .../claims/release` (see
-  `docs/orchestrator.md#releasing-claims-early`) — the only way to break a circular wait where two
-  roots each hold what the other one needs.
-- `bad_task`: correct the invalid `task.json` field and resend the same task id.
-
-### A `workspace_busy` refusal is not a scheduling verdict
-
-Clawdfather and every dispatching root optimize for the fastest **safe completion**, not for the
-fewest concurrent tasks. After `409 workspace_busy`, decide in this order:
-
-1. **Narrow or split first.** If the task does not truly write every conflicting path, correct its
-   claims or split independent discovery, implementation, and review nodes. Never narrow a claim
-   while leaving instructions that still authorize the child to write the path.
-2. **Isolate work that can start from a stable commit.** If the implementation does not need the
-   blocking root's uncommitted bytes, resend it with `"isolation":"worktree"` and an explicit
-   `isolation_base`. The broker will discard repository-relative claims because the child edits a
-   separate checkout; keep the intended write set in the plan and instructions so root review
-   still has an exact scope. A dirty-base warning means the child does not see those working-tree
-   changes, not that isolation failed.
-3. **Wait only for a real data dependency.** Register a durable Clawdline file wait when correctness
-   depends on the blocking root's unfinished version, or when the eventual integration cannot be
-   reviewed without it. Name the exact path and release condition; do not infer release from a
-   transient clean status.
-4. **Keep implementation and integration separate.** Worktree isolation can finish implementation
-   while a shared path is owned, but it never authorizes an early merge. The root still waits for
-   release, reviews the blocker and isolated delta together, resolves conflicts, tests the exact
-   integrated tree, and completes the landing receipt.
-
-Do not use worktree isolation to evade `serialize` for builds or another machine-global resource.
-Isolation changes the checkout; it does not create a second Mac.
-
-The complete task schema, claim and serialization semantics, lifecycle, credentials, and result
-protocol are in [`docs/orchestrator.md`](docs/orchestrator.md).
-Children may use their task secret to push rare, time-sensitive content with `POST /v1/orchestrator/tasks/:id/notify`.
-Routine output stays in `result.json`; notification-shaped work such as a daily forecast should say explicitly to notify.
-The user can turn agent notifications off; on `409 agent_notify_disabled`, do not retry, leave the content in `result.json`, and report the refusal honestly.
-HTTP request and response shapes are in [`docs/api.md`](docs/api.md#post-v1orchestratortasks).
+**Before you dispatch, read [`docs/dispatching.md`](docs/dispatching.md).** Whether the work should
+be dispatched at all, how large one task is, when small work accumulates into a batch instead,
+standing sessions, the graph shapes, declaring `claims`, `serialize`, and how to branch on the
+broker's typed refusals — all of it is there, and none of it is here, because a session that is not
+about to dispatch was paying to read it every time.
 
 ## When Clawdline dispatched you
 
@@ -297,7 +321,10 @@ Write the requested artifacts and write `result.json` last, exactly as the brief
 ## Never
 
 - Never run `git commit`, `git reset`, `git checkout`, or `git stash` from a child or worker
-  session; integration belongs to the root.
+  session; integration belongs to the root. The one exception is a **Claude** child in its own
+  brokered worktree, whose briefing tells it to commit milestones on `clawdline/task/<id>` — that
+  branch is the delivery. A **Codex** child leaves the bytes dirty even in a worktree, because it
+  cannot commit there; see `skills/clawdline/SKILL.md` §2.0a for why.
 - A root may run `./build.sh` when the user explicitly asks to build or install. A child or worker
   session must not run it: the script replaces and restarts the user's running app and can
   interrupt work owned by another session. Before a root runs it, re-check `git status` and make

@@ -78,6 +78,12 @@ Clawdline 把這個形狀畫出來，也讓你在上面動手。按 <kbd>⌘</kb
   只有清單裡兩種都有的時候，那一行才會標出自己是哪一種——因為在只跑其中一種的機器上，那個字會
   出現在每一行，等於什麼都沒分辨；而真的要標的時候，字旁邊還會掛上那一種的產品標誌。Codex 的
   session 也可以自己取名字。[這需要什麼 →](#codex-也在同一條輸入條裡)
+- **這條 session 在做什麼，就叫它什麼** —— 一行的名字來自 assistant 最後寫進分頁標題的那句話，
+  或是這個分頁被派工時就帶著的任務標題，兩種都不見得是你會給它的名字。在 Session 資訊卡上按一下
+  標題就能自己打：它排在所有自動名字前面，清空欄位就把自動的還給你。名字屬於**那一段對話**、
+  不屬於那個分頁，所以同一個視窗裡開下一段對話，它又會用回自己的名字。Codex 那邊會立刻改到
+  thread 上；Claude 則是在它閒著、而且沒有選單開著的時候才用 `/rename` 告訴它，忙的時候名字照樣
+  在這裡生效——回應會說下游沒有跟著改，而不是暗示等一下會補上。
 - **你的 skill，就在輸入框裡** —— 在 Claude Code 的 session 裡打一個 `/`，輸入條就列出那個工作
   目錄真的構得到的 skill，邊打邊篩：專案的、個人的、外掛的，照一個真的被打出來的指令會拿到的
   優先順序。只有名字跟描述，是從 `SKILL.md` 讀出來的——打開一份選單永遠不會去打開一個 skill 的
@@ -129,12 +135,17 @@ Clawdline 會開一個終端機分頁，把任務指定的那種助理啟動起�
 
 **派工的規矩是一份你自己改的檔案。** `~/.config/clawdline/dispatch-policy.md`——每次派工都會重讀，
 而且會抄進每一個「還能再往下派」的子 session 的指示裡：哪種工作給哪個助理、哪種工作值得用哪個
-模型、整張圖希望長什麼形狀。它出廠就有意見在裡面；內容刪光就等於沒有規矩。每一件任務還會帶著
+模型、一件任務該切多大、小事什麼時候該累積成一批而不是各派各的、整張圖希望長什麼形狀。出廠的
+那一份就是這個 repo 裡的 [`Resources/dispatch-policy.md`](Resources/dispatch-policy.md)，所以你
+可以先讀、先不同意，再決定要不要裝；裝上之後那份是你的，內容刪光就等於沒有規矩。每一件任務還會帶著
 一份 `plan`，也就是它所屬的整張圖——葉節點知道自己的答案要餵給誰，才寫得出接得起來的東西，
 而不是一篇沒人要的心得。
 
-**[docs/orchestrator.md](docs/orchestrator.md)** 是那份協定：檔案格式、憑證、整個生命週期，
-以及帶著 `curl` 紀錄的路由說明。
+**[docs/clawdline-protocol.html](docs/clawdline-protocol.html)** 是整份協定寫成一頁，讀者是剛裝好
+這個東西的人：一件任務怎麼派出去、claims 和 file wait 各自保證了什麼、為什麼 landing 是「誰派工誰
+負責」、每一條承諾值多少。從 checkout 直接打開就能看，不需要網路。英文。
+**[docs/orchestrator.md](docs/orchestrator.md)** 是同一份協定的參考手冊版：檔案格式、憑證、
+整個生命週期，以及帶著 `curl` 紀錄的路由說明。
 **[docs/dispatch-permissions.md](docs/dispatch-permissions.md)** 是會咬人的那一半：被派出去的
 session 會在哪四個地方停下來問、其中哪兩道任何設定都到不了，以及那個讀起來像「放手去做」的
 flag，為什麼在最便宜的模型上意思正好相反。
@@ -506,6 +517,7 @@ claude
 | `remote_tunnel_name` · `remote_hostname` | `""` | named tunnel 兩個都必填 |
 | `cloudflared_path` | `""` | 空的 ＝ 去套件管理器慣用的位置找 |
 | `push_on_finish` · `push_on_deploy` | `true` · `false` | 手機什麼時候該震 |
+| `smart_notifications` | `false` | 用 Haiku 把籠統的完成通知換成一句「剛完成了什麼」 |
 | `orchestrator_enabled` | `true` | 能不能讓一個 session 把工作派給另一個 |
 | `orchestrator_max_children` | `5` | 一個 session 同時最多派幾個子 session，1–10 |
 | `orchestrator_max_grandchildren` | `3` | 每個子 session 自己又能派幾個，0–10；`0` ＝ 只有一層 |

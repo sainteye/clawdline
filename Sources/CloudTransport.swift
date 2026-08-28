@@ -439,10 +439,14 @@ actor CloudTransport {
 
     private func validToken() async throws -> CloudDeviceToken {
         let now = await clock.now()
+        try Task.checkCancellation()
+        guard state != .shutDown else { throw CancellationError() }
         if let cachedToken, cachedToken.expiresAt.timeIntervalSince(now) > refreshAhead {
             return cachedToken
         }
         let token = try await tokenProvider.fetchDeviceToken()
+        try Task.checkCancellation()
+        guard state != .shutDown else { throw CancellationError() }
         guard !token.value.isEmpty, token.expiresAt > now else {
             throw CloudTransportError.invalidTokenResponse
         }

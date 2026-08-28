@@ -49,11 +49,11 @@
   <p class="eyebrow">kind=state · private deployment handoff</p>
   <h1>不是「差一個 deploy」。<br>是三條最後一哩路。</h1>
   <p class="lede">目標是讓這台 Mac 經由 <strong>clawdline.com</strong> 登入、配對並連到正式雲端；不再依賴 <code>cloudflared</code> tunnel。此頁只把已驗證的事標成完成，child success、測試綠或 DNS 存在都不會被寫成產品已上線。</p>
-  <div class="stamp"><span class="tag bad">Production：尚未部署</span><span class="tag ok">GitHub Connect web flow：已 commit</span><span class="tag ok">Relay deploy readiness：已 commit</span><span class="tag ok">Terraform configuration：valid</span><span class="tag">updated 2026-08-27 19:30 Asia/Taipei</span></div>
+  <div class="stamp"><span class="tag bad">Production：尚未部署</span><span class="tag ok">AWS bootstrap credential fix：已 landing (990663d)</span><span class="tag warn">ctl-response-seam：round 8 找到安全性發現，暫停等使用者決定</span><span class="tag ok">Account + GitHub Connect Mac UI：已 landing</span><span class="tag ok">P1c + Cloud runner：已 landing</span><span class="tag ok">Browser Cloud：已 landing</span><span class="tag ok">Schedule resume：已 landing</span><span class="tag ok">Terraform cutover gates：已 landing</span><span class="tag ok">Private history：已稽核</span><span class="tag">updated 2026-08-28 11:31 Asia/Taipei</span></div>
 
   <section class="grid">
-    <article class="card"><h3>程式里程碑</h3><div class="metric">約 72%</div><p class="muted">Web GitHub Connect、API、Relay deploy readiness 已 commit；Mac lifecycle 已交付待複審與 landing，Settings UX 與 signed response implementation 仍缺。</p></article>
-    <article class="card"><h3>部署準備</h3><div class="metric">約 45%</div><p class="muted">Terraform、runbook、API、Relay、marketing 已可建置；外部 production 資源本身仍是 0%。</p></article>
+    <article class="card"><h3>程式里程碑</h3><div class="metric">約 91%</div><p class="muted">Account <code>a46a26ec</code>、Browser Cloud <code>bc368912</code>、Mac GitHub Connect <code>d304437f</code>、Schedule resume 與 Cloud runner <code>daeb2732</code> 已在 public <code>main</code>。signed response SHA <code>28b13b9e…</code> 的終審擋下 stable-open barrier與兩種receipt producer contract；修正 task <code>b87e955b…</code> 因token暫停而取消，且檔案SHA確認未變，沒有可吸收的partial。Relay／Mac／Viewer implementation 尚未開始 landing。</p></article>
+    <article class="card"><h3>部署準備</h3><div class="metric">約 72%</div><p class="muted">Terraform staged-cutover gates 已在 private <code>main</code>。真 AWS STS credential 可達；no-token bootstrap plan 在美國 <code>us-east-1</code> 完整列出43個AWS creates、0 Cloudflare changes，四個單gate缺token mutations全fail closed。<strong>AWS bootstrap credential 選擇的 park/rollback 迴歸（原 F1 blocking）已修好、root 親自跑過 4 項 provider-backed acceptance、已 commit <code>990663d</code> 並 landed。</strong>尚未 apply／建立任何實體 AWS 資源。</p></article>
     <article class="card"><h3>可實際驗收的產品路徑</h3><div class="metric">0 / 1</div><p class="muted">尚無 real Mac → relay → paired viewer → signed response 的 production receipt。</p></article>
   </section>
 
@@ -68,39 +68,41 @@
   <h2>目前離 Phase 1 多遠</h2>
   <section class="card full">
     <div class="lane"><b>P1a</b><div class="bar"><i style="width:100%"></i></div><small class="oktxt">Keys、AES-GCM envelope、golden vectors 已在 HEAD（<span class="mono">20ebef38</span>）</small></div>
-    <div class="lane"><b>Account / P1b</b><div class="bar"><i style="width:82%"></i></div><small>device-code client、Keychain machine credential 與 lifecycle repair 已交付且 focused 75 checks 綠；仍待獨立複審與 public commit。</small></div>
-    <div class="lane"><b>P1c app bridge</b><div class="bar"><i style="width:88%"></i></div><small class="warn"><code>7107b190…</code> 已交付、25 Transport + 49 Bridge checks 綠、landing=pending；新獨立複審 <code>bd034a60…</code> 正在執行。</small></div>
-    <div class="lane"><b>signed response</b><div class="bar"><i style="width:30%"></i></div><small>wire/security decision 已修訂但 final review 尚未成功 spawn；Relay / Mac / Viewer implementation 仍未 landing。</small></div>
-    <div class="lane"><b>P1d onboarding</b><div class="bar"><i style="width:35%"></i></div><small>API OAuth redirect、credentialed CORS 與 <code>/connect</code> 已 commit；Mac Settings GitHub Connect、QR/recovery、viewer revoke 與 production attach 尚未完成。</small></div>
-    <div class="lane"><b>Deploy</b><div class="bar"><i style="width:45%"></i></div><small>Terraform validate、帳號盤點、現行 Wrangler/Vitest/SQLite migration、API OAuth 與 5-route marketing build 已完成；尚未 plan/apply、放 secrets、部署 Pages/Worker/API。</small></div>
+    <div class="lane"><b>Account / P1b</b><div class="bar"><i style="width:100%"></i></div><small class="oktxt">device-code／Keychain、crossed-lock 與 same-machine revoke ABA 已在 <code>a46a26ec</code> landing；77 checks、兩個 targeted race modes 與 pure-HEAD production compile 全綠。</small></div>
+    <div class="lane"><b>P1c app bridge</b><div class="bar"><i style="width:100%"></i></div><small class="oktxt">late-token cache repair 已經 final SAFE；runner <code>daeb2732</code> 以 exact-index 與純 HEAD 各跑完 4269 checks，Cloud receipt 精確為 64／29／49；四個 landing receipts 已關閉，所有 runner file waits 已 durable release。</small></div>
+    <div class="lane"><b>signed response</b><div class="bar"><i style="width:82%"></i></div><small><code>81d13994…</code> 確認64+4 receipt batches與四種canonical wire已關閉，但發現AccountDO stable event早於GC-marker barrier開放data plane，且pairing-only manual cleanup／start-retry producer未唯一化；<code>b87e955b…</code> 已取消且未改bytes，下一輪須從SHA <code>28b13b9e…</code>重派。</small></div>
+    <div class="lane"><b>P1d onboarding</b><div class="bar"><i style="width:100%"></i></div><small class="oktxt">Mac Settings production complete-URL、deinit ownership 與 UI 接線已在 <code>d304437f</code> landing；28 checks、strict seam 與 pure-HEAD production compile 全綠。QR/recovery/revoke 後續。</small></div>
+    <div class="lane"><b>Deploy</b><div class="bar"><i style="width:72%"></i></div><small>Terraform pure-commit validate、142 個 bash/zsh fail-fast cases、Relay dry-run、5-route marketing build與Pages preview已完成；no-token bootstrap plan為43個AWS creates、0 Cloudflare changes，其 park/rollback credential 迴歸已修好並 landed（<code>990663d</code>）；apply、API/Worker/app deploy與DNS cutover仍未開始，等人類授權package。</small></div>
   </section>
 
   <h2>已取得的硬收據</h2>
   <section class="grid">
     <article class="card"><h3>Control plane</h3><div class="metric oktxt">116 / 116</div><p class="muted">API typecheck + Vitest + build + audit 0，含 Mongo integration 與 fresh GitHub login 直接核准 Mac。</p></article>
     <article class="card"><h3>Relay</h3><div class="metric oktxt">113 + 27</div><p class="muted">113 unit/config pass（4 skip）+ 27 Workers tests；Wrangler 4、Vitest plugin、SQLite DO migration dry-run 綠。</p></article>
-    <article class="card"><h3>Marketing</h3><div class="metric oktxt">5 routes</div><p class="muted">Astro build + dist assertions + audit 0；<code>/connect</code> desktop/mobile browser QA 通過。</p></article>
-    <article class="card wide"><h3>AWS / Terraform</h3><p><code>terraform init -backend=false</code> 與 <code>terraform validate</code> 成功。AWS default credential 可用；Taipei <code>ap-east-2</code> 有三個 AZ 且支援 <code>t4g.medium</code>。查無 Project=clawdline 的既有 tagged resource。</p></article>
-    <article class="card"><h3>已驗證的 cloud commits</h3><p><code>de068f2</code> Relay deploy readiness；<code>030f093</code> browser OAuth return flow；<code>d149bf5</code> GitHub Connect / Mac approval entry。三者皆在私有 repo <code>main</code>，仍沒有 remote。</p></article>
+    <article class="card"><h3>Marketing</h3><div class="metric oktxt">5 routes</div><p class="muted">Astro build + tests + audit 0；preview 已部署到 <code>clawdline-marketing.pages.dev</code>，但專案位於錯誤 Cloudflare account，尚未接 apex。</p></article>
+    <article class="card wide"><h3>AWS / Terraform</h3><p>Private commit <code>d3fcd6d</code> 已通過 exact-index／pure-commit <code>terraform -chdir=infra validate</code>。第一次 child trace 在 repo root 執行，因沒有 <code>.tf</code> 而只驗到空 root module，是實際發生的 false green；root 改用明確 <code>-chdir=infra</code> 後才採信。AWS STS identity 已以遮罩尾碼確認可達；<code>20afc210…</code> 把修復前被截斷的21-create plan補成43個AWS creates，其中22個是15條IPv4與7條IPv6 Cloudflare edge ingress rules；無credential的四個single-gate plans全fail closed，完整預設plan沒有Cloudflare resource change。獨立 review <code>7067129b…</code> 找到一個 blocking 迴歸：placeholder 在 park／rollback 時會蓋掉真實 Cloudflare token；修正 <code>88fff19a…</code> 加了明確、預設關閉的 <code>cloudflare_use_bootstrap_placeholder</code> opt-in，root 用審查報告的 park repro 對真實 Cloudflare API 重現驗證通過，commit <code>990663d</code> 已 landed。沒有 apply 或建立任何實體資源。</p></article>
+    <article class="card"><h3>已驗證的 cloud commits</h3><p><code>de068f2</code> Relay readiness；<code>030f093</code> OAuth return；<code>d149bf5</code> GitHub Connect；<code>03225e9</code> secret-file guardrails；<code>2499d2d</code> AWS Mongo/backup deploy contract；<code>8f03b1a</code> schedule resume protocol。歷史已稽核；仍無 remote，push 等明確 data-egress 授權。</p></article>
   </section>
 
   <h2>已確認的 blockers</h2>
   <section class="grid">
-    <article class="card wide"><h3>1 · App landings 還沒關閉</h3><p>Mac 的 CloudAccount 與 P1c CloudTransport/CloudAppBridge 都在 shared dirty tree，已測但尚未獨立複審完成、staged-only commit 與 landing closure。<code>RemoteServer.swift</code> durable wait <code>fb235777…</code> 在 commit 或明確 release 前保持。</p></article>
+    <article class="card wide"><h3>1 · Cloud test runner 已關閉</h3><p>Runner <code>be2b152f…</code> 證明 removal→125、hang／dispatch-pool starvation→124、targeted count拒絕；schedule fixture 的錯群組 hunk 經 fresh review 修正。Exact-index tree <code>40832a5f…</code> 與 pure HEAD <code>daeb2732…</code> 都完成 4269 checks，Cloud 64／29／49；四個 landing receipts 已 landed，unresolved durable waits 為零。</p></article>
     <article class="card"><h3>2 · signed execution truth 缺一段</h3><p>Relay ack 只能證明 routing，不能證明 Mac 執行。Phase 1 必須由 Viewer Promise 收到 Mac-signed response 才算完成。</p></article>
-    <article class="card"><h3>3 · Mac onboarding UI 未完成</h3><p>Web <code>/connect</code> 與 OAuth callback 已完成，但 Settings 尚無 GitHub Connect/device-code 狀態、取消/重試/登出 UI；QR viewer pairing、recovery code 與 revoke 是後續 slice。</p></article>
-    <article class="card"><h3>4 · 外部資源尚不存在</h3><p>沒有 Pages project、Worker、Terraform state、EC2、EBS、S3 或 production DNS host records。這不是 DNS 等傳播，而是尚未建立。</p></article>
+    <article class="card"><h3>3 · Browser Cloud 已關閉</h3><p><code>bc368912</code> 已補兩個 web modules、relay ping/pong 與 malformed challenge pre-sign guards；pure-HEAD Node golden vectors／mutations／identity／heartbeat／challenge／local seam 全綠，landing 已 verified。</p></article>
+    <article class="card"><h3>4 · Cloudflare account mismatch</h3><p>正確 account <code>8700…c0c21</code>／zone <code>85d6…d2fc5</code> 沒有 Clawdline Pages project 或 API token；preview 建在另一個 Wrangler account，不能當 production custom-domain closure。</p></article>
     <article class="card"><h3>5 · secrets / provider setup</h3><p>真 GitHub OAuth App/client secret、Stripe test webhook/prices、Cloudflare narrow tokens、Caddy DNS token 與 runtime secrets 均尚未放入。</p></article>
-    <article class="card"><h3>6 · release transport</h3><p>private cloud checkout 沒有 git remote。VM release 要用私有 remote，或用 SSM/copy 的可重現 release bundle；不能覆蓋 EBS mount。</p></article>
+    <article class="card"><h3>5a · AWS bootstrap contract — 已關閉</h3><p><code>20afc210…</code> 已用公開非秘密placeholder修正provider v4矛盾；真plan exit 2、43個AWS creates、零Cloudflare changes，四個缺token gate mutations皆exit 1。root另補 <code>*.tfplan.json</code> ignore。獨立 review <code>7067129b…</code> 找到一個 blocking 迴歸（placeholder 在 park 時蓋掉真實 token，見「已取得的硬收據」）；修正 <code>88fff19a…</code> 已關閉並經 root 4 項 provider-backed acceptance 複驗，commit <code>990663d</code> landed。</p></article>
+    <article class="card wide"><h3>6 · Clawdline task protocol recovery</h3><p>實際 crash／cancel stall／false result path 的 recovery partial 已由 <code>95e83aba…</code> 判定 <strong>DISCARD PARTIAL</strong>：它不 compile，也未解決 whole-record overwrite、finalization receipt、cleanup evidence 或 SSE/cloud backlog。後續必須從 schedule commit <code>b0358d95</code> 分四個隔離 slice重做：cancellation CAS → bounded finalization → SSE/cloud latest-slot → authoritative docs/Artifact。</p></article>
+    <article class="card"><h3>7 · release transport</h3><p>private checkout 已 commit guardrails 但沒有 remote。建立並 push <code>github.com/sainteye/clawdline-cloud</code> 被安全 gate 擋住，等使用者明確授權 exact private destination；VM release 亦不得覆蓋 EBS mount。</p></article>
   </section>
 
   <h2>需要人類授權／提供的最小包</h2>
   <section class="card full">
     <table>
       <tr><th>項目</th><th>建議</th><th>為什麼不能由 Agent 猜</th></tr>
-      <tr><td>AWS region + 花費</td><td><strong>ap-east-2 Taipei</strong>；目前粗估約 US$43/月 AWS 基礎資源，加 S3/流量；Workers Paid 最低 US$5/月（若採 paid）。</td><td>會持續產生帳單；Terraform module default 其實是 us-east-1，必須明確覆寫。</td></tr>
-      <tr><td>Cloudflare</td><td>zone id；Terraform token（DNS + Worker Routes）；另一枚 Caddy DNS-only token。</td><td>token scope 必須在 Dashboard 建立並由人確認最小權限。</td></tr>
-      <tr><td>GitHub OAuth</td><td>建立 OAuth App，callback <code>https://api.clawdline.com/v1/auth/oauth/callback</code>。</td><td>目前 <code>gh</code> session 無效；建立 OAuth app 是帳號外部狀態。</td></tr>
+      <tr><td>AWS region + 花費</td><td><strong>us-east-1（N. Virginia）</strong> 作為第一個 production 預設，仍可在 bootstrap 前覆寫；目前粗估約 US$43/月 AWS 基礎資源，加 S3/流量；Workers Paid 最低 US$5/月（若採 paid）。</td><td>會持續產生帳單；region 影響延遲、價格與 replacement，正式 apply 前仍需 review plan 與月費。</td></tr>
+      <tr><td>Cloudflare</td><td>已確認 account／zone；仍需 Terraform token（DNS + Worker Routes）、Caddy DNS-only token與正確 Wrangler login。</td><td>correct account 目前沒有 API token；建立 token 與 Pages project 需要外部狀態授權。</td></tr>
+      <tr><td>GitHub OAuth</td><td>建立 Clawdline OAuth App，callback <code>https://api.clawdline.com/v1/auth/oauth/callback</code>。</td><td>GitHub session 有效，但 OAuth inventory 只有另一個既有 app；Clawdline app 尚不存在。</td></tr>
       <tr><td>Stripe test mode</td><td>Pro recurring price、portal、webhook endpoint + signing secret。</td><td>付款產品與 webhook 是商業帳號決策。</td></tr>
       <tr><td>Runtime secrets</td><td>Mongo password、SESSION_SECRET、SERVICE_TOKEN、Ed25519 device-token signing key。</td><td>只應在私密 operator terminal 產生，不進 Artifact、git 或聊天。</td></tr>
     </table>
@@ -109,25 +111,71 @@
   <h2>Landing 與部署順序</h2>
   <section class="grid">
     <article class="card wide"><ol>
-      <li>完成 P1c independent review → exact staged-tree test → public commit → landing landed → explicit release <code>fb235777…</code>。</li>
-      <li>完成 CloudAccount independent review → staged-only public commit。</li>
-      <li>實作 Mac Settings GitHub Connect 第一 slice；再做 QR/recovery/viewer revoke。</li>
-      <li>完成 ctl response final review；canonical vectors → Relay → Mac → Viewer response slices。</li>
-      <li>建立 Pages projects、填 non-secret tfvars；Relay/toolchain repair已在 <code>de068f2</code>。</li>
+      <li><strong>已完成：</strong>CloudAccount <code>a46a26ec</code>、Browser Cloud <code>bc368912</code>、P1d Settings <code>d304437f</code> 的 review／exact-index／pure-HEAD／landing closure。</li>
+      <li><strong>已完成：</strong>P1c <code>c333d91c</code>、schedule resume <code>b0358d95</code> 與 private Terraform gates <code>d3fcd6d</code> 的 review／commit／landing closure。</li>
+      <li><strong>已完成：</strong>Cloud runner／schedule fixture 以 <code>daeb2732</code> landing；exact-index／pure-HEAD 4269 checks 全綠，四個 landing receipts與全部 file waits已關閉。</li>
+      <li>signed-response Artifact SHA <code>28b13b9e…</code> 的終審仍是 CHANGES REQUIRED；token恢復後，從相同SHA fresh dispatch真正的兩階段Relay open與可達的pairing-only cleanup producer。取消 task <code>b87e955b…</code> 未改bytes，不繼承其成功語意。</li>
+      <li>完成 ctl response fresh final review後，依 canonical vectors 拆 Relay → Mac → Viewer response slices；再做 QR/recovery/viewer revoke。</li>
+      <li>在正確 Cloudflare account 建立 Pages/token，填 non-secret tfvars；先 full plan，再 AWS-only bootstrap，最後分階段切 API／Pages／Relay DNS。</li>
       <li>取得上述人類授權包後：Terraform plan review → apply → API/Mongo/Caddy → OAuth/Stripe proof → Relay → Pages。</li>
       <li>real Mac + separate viewer production acceptance；signed response、usage flush、zero-plaintext-log 全部通過才完成。</li>
     </ol></article>
     <article class="card"><h3>完成的唯一判準</h3><p>Viewer 從 <code>app.clawdline.com</code> 經 GitHub 登入／配對，Mac 經 API 取得 credential/token，雙方連上 relay；Viewer 發 command，Mac 本地 broker 執行並回 signed response，Viewer 驗簽後 Promise exactly-once settle。全程沒有 localhost、trycloudflare 或 cloudflared。</p></article>
   </section>
 
-  <div class="callout"><strong>下一個人類 checkpoint 不是「幫我找 bug」。</strong>程式與可自動驗證的部署準備會繼續由 Agents 推進；只有當 AWS/Cloudflare plan 已可 review、且需要建立付費/帳號資源或 OAuth/Stripe secrets 時，才帶著本 Artifact 要授權。</div>
+  <div class="callout"><strong>暫停點（已結束，2026-08-28 由新 root session 接手）：</strong>先前因Agent token不足停止，所有active task均已取消，沒有apply／deploy／DNS／外部資源變更；恢復前逐項核對過assistant capacity、in-flight task、AWS四檔與ctl文件SHA均與暫停時一致，才開始派工。取消的 <code>b87e955b…</code>／<code>b0f2eb72…</code> 未留任何 bytes，不繼承其任何語意。<code>artifacts/2026-08-26-coordination-wait-gaps/LANDING.md</code> 全程屬於另一條不相關 in-flight 線，未被本次任何一輪派工觸碰。
+
+<strong>Round 1（09:25 派出，09:38 全數回報）：</strong><code>7067129b…</code>（claude/opus，fresh review AWS 四檔）裁決 <strong>CHANGES REQUIRED</strong>——F1(BLOCKING)：<code>infra/versions.tf:74</code> 的 placeholder 條件判的是「cutover 有沒有開」而非「state 裡還有沒有 Cloudflare 物件」，導致 RUNBOOK §3 API park（第一條 rollback 路徑）與任何 full rollback 的最後一次 park 會被 placeholder 蓋掉操作者的真實 <code>CLOUDFLARE_API_TOKEN</code>，已用成對正反收據重現；另有 F2／F3（LOW，jq guard 抓不到 errored plan、README 步驟一比 RUNBOOK 弱）與 F4（INFORMATIONAL，無需動作）。<code>0baf689e…</code>（claude/opus，從精確 SHA <code>28b13b9e…</code> 出發）已把 Finding 1、2 都改掉：stable-open 改成真正兩階段（新 durable gate 欄位＋<code>ctl_v0_open_gate</code> 第二個 control transition＋<code>applyOpenGateAck</code> settlement barrier），Finding 2 新增 <code>cancelRotationPairing</code> pairing-only 權限與封閉 producer 表，68-row fixture 與四組 exact-hash vectors 不必改；結束 SHA-256 為 <code>ac72206e…</code>（167,410 bytes／2,163 行）。兩者都只讀／只改自己範圍內的檔案，未 stage、未 commit、未碰 git。
+
+<strong>Round 2（09:42 派出）：</strong>F1 的修法是 root 的決定（reviewer 明說這不是它能替 root 做的判斷）——採「反轉預設」：新增 <code>cloudflare_use_bootstrap_placeholder</code>（預設 <code>false</code>），provider 一律優先用真實 env token，只有第一次 bootstrap 且操作者明確傳 <code>true</code> 才用 placeholder，其餘任何 park／rollback 一律走真實 token。<code>88fff19a…</code>（codex，reasoning_effort high）修好 F1＋F2＋F3；但該 child 的 sandbox 禁止 Terraform provider RPC 的 Unix socket bind，所以它只做完靜態驗證（fmt／providers／deterministic contract／console 真值配對），誠實列出 root landing 前必須補跑的 4 項 provider-backed acceptance，沒有冒充已過。
+
+<strong>09:49 root 親自補驗＋落地：</strong>root 不受該 sandbox 限制，逐項重跑：(1) <code>terraform -chdir=infra validate</code> 通過；(2) 用審查報告的 park repro（gate false、物件在 state、可辨識的假 env token）重現，改好後請求確實打到真實 Cloudflare API 並帶著 env token（<code>invalid header field value</code>），不再是 placeholder 的 <code>Authentication error (10000)</code>——F1 證實修好；(3) 顯式開 bootstrap flag、Cloudflare env 全 unset，plan 仍是 <code>43 to add, 0 to change, 0 to destroy</code>，全部 AWS provider；(4) cutover gate 開、flag 預設關、無 token，仍在 <code>must provide exactly one of…</code> fail closed。四項全過。root 精確 stage 四檔（<code>.gitignore</code>／<code>infra/versions.tf</code>／<code>infra/README.md</code>／<code>docs/RUNBOOK-DEPLOY.md</code>，逐檔核對 staged diff 不含 <code>artifacts/2026-08-26-coordination-wait-gaps/LANDING.md</code>），對 exact staged write-tree 再跑一次 <code>validate</code> 確認 HEAD 本身能獨立通過，才 commit 成 <code>990663d</code> 並在 Clawdline 記成 <code>landed</code>。
+
+<code>a5720020…</code>（claude/opus，未參與 0baf689e 撰寫，也沒讀過前一輪 review 就獨立複核 <code>artifacts/2026-08-27-ctl-response-seam.md</code> 精確 SHA <code>ac72206e…</code>）回報 <strong>CHANGES REQUIRED</strong>：前輪兩個 blocking finding 的設計實質都已關閉（兩階段 open 是真的、五個 gate boundary 紅綠測試確實在測試段落、cancelRotationPairing 確實不動三個 Viewer set），四份 receipt vector／KDF-AAD 十六個中間值／容量算術／11-suite CI／結構檢查全數獨立重算通過、無前輪已過項被削弱。但**這輪修訂自己引入了 5 個新問題**（1 blocking、2 high、1 medium、1 low），reviewer 特別點名這正是它被要求盯的「關掉兩個 finding 卻開了第三個」：(1) BLOCKING，live pairing row 的 phase enum 兩處寫成互斥的兩套精確值（<code>started</code> vs <code>created</code>），字面實作會讓這輪新增的 <code>cause="start_retry"</code> 永遠釋放不了它唯一要處理的 row，文件自己說沒有第二條救援路徑；(2) HIGH，gate 已 open 後重複送同一 authority event 的行為沒定義，一種讀法會把 gate 永久關回去且刪掉唯一能重開的 outbox；(3) HIGH，open outbox 的 insert 條件寫在 320 行外的另一節，字面實作會讓 abort／machine-revoke／bootstrap 三條路徑永久卡死，這正是 abort 存在的目的與每個新帳號的必經路徑；(4) MEDIUM，release receipt「封閉集合、每個 reason 恰一個 producer」被文件自己在三處推翻，device revoke 沒有 exact-bytes 測試；(5) LOW，open ack 在 outbox 刪除後的 duplicate 分類未指定。Reviewer 明說五項都是「一個字／一句話／一個條件子句」等級的聚焦修法，不需要重新設計。
+
+<strong>Round 3（10:00 派出，10:13 回報）：</strong><code>7acb254f…</code>（claude/opus，同一份精確 SHA <code>ac72206e…</code>）收掉全部 5 個 finding：F1 把兩處 phase enum 統一成 <code>started</code>，補紅綠測試；F2/F3 各補一句對稱規則與必紅 mutation；F4 選 review 給的 (c) 選項但改寫得更精確（review 建議「唯一判準是 revoked_viewers」對 abort 路徑不成立，因為 abort target 不進 revoked_viewers，round 3 自己發現並寫成涵蓋兩者的版本，並在報告裡明講這個偏離供下一輪檢查）、device revoke 的測試 fixture 刻意獨立於 68-row fixture（沿用既有 219-byte manual_revoke vector）；F5 補一句對稱規則。回歸驗證用 script 對新舊檔做數值／16-64 hex literal 的 multiset 比對，證明沒有動到任何 wire bytes、KDF/AAD 中間值或容量數字。新 SHA-256：<code>342b0c3d…</code>（171,095 bytes／2,197 行）。
+
+<strong>Round 4（10:14 派出，10:28 回報）：</strong><code>0a3ac00d…</code>（claude/opus，第三個完全獨立 reviewer）判 <strong>CHANGES REQUIRED</strong>：F2/F3/F5 三項確認真正關閉且各有必紅收據；F4 那個 round 3 自己做的判斷取捨（偏離「唯一判準是 revoked_viewers」的建議）被獨立用 legal-transition table 逐 producer 重新推導證實**必要且正確**（abort 之後 target 仍在 required_viewers、也不在 revoked_viewers，單看 revoked_viewers 會誤判成必須重建，但那個 rotation 已經死了）；device revoke 沿用既有 219-byte vector 的做法也確認給了真覆蓋、沒動到任何計數。
+
+**但 F1 只關掉表面症狀，實質沒關**：enum 拼字統一成 <code>started</code> 了，可是 <code>target_viewer_device_id</code> 明文規定「只在第一個 offer CAS 才綁定」——也就是 <code>phase=started</code> 的 row（`start_retry_cleanup` 唯一存在理由要處理的那種 row）這個欄位根本是 unset，而 cancel predicate 卻無條件要求 body 的 viewer id 等於 row 的這個欄位、receipt body 也只能取這個 unset 欄位且禁止補值。結果是 round 3 新加的「started row 必須可被 cause=start_retry cancel」這條必綠測試，依規格其他規則字面上不可能通過——F1 的病灶從「拼字」換成了「target binding」，症狀沒變。同一個缺口還多咬出一個 HIGH：一般（非 rotation）stable-epoch pairing row 的 expiry receipt，其 <code>rotation_id</code> 與 <code>viewer_device_id</code> 兩欄在文件裡都沒有定義值，兩個 backend 不可能 byte-identical。
+
+<strong>Round 5（10:31 派出）：</strong>這次不再讓 reviewer 出選項讓下一輪自己挑——root 直接做決定：**不改 pairing/start 的 request body 形狀**（reviewer 給的另一個選項會動到 Viewer 怎麼被選進 wave slot，改動範圍遠超這個 finding），改為明確定義一個 sentinel 值——「這個欄位還沒有值」一律寫成空字串 <code>""</code>（不是 null、不是省略欄位，維持 JSON 型別一致），讓既有的「body 必須等於 row 的值」規則本身不用改，只是這個值現在有了明確定義。這也代表現有那份 <code>start_retry_cleanup</code> 的 225-byte canonical vector（示範用的 <code>viewer_device_id:"viewer-0001"</code>）其實本來就是錯的——它示範了一個這個 reason 永遠不可能有的值，round 5 必須重新算出真正的 byte length 與 SHA-256。<code>d6a724ff…</code>（claude/opus，10:47 回報）把 sentinel 實質寫進文件：<code>target_viewer_device_id</code>／<code>rotation_id</code> 定義為 single-assignment、未綁定時就是 <code>""</code>（不是 immutability 的例外，是 first assignment 的值本身）；**自己額外抓到 round 4 報告沒點名的第三個到達點**——`required_viewers` 的 set membership 檢查同樣會擋住未綁定的 row，已改成 implication（僅在 target≠"" 時才檢查）；把 <code>cause="start_retry"</code> 收緊成只對 <code>phase=started</code> 合法，並驗證 idempotency key 不會卡死（現在三條釋放路徑：started 時的 start_retry、綁定後的 manual、row 自己的 expiry receipt）；重算了本來就錯的 225-byte <code>start_retry_cleanup</code> vector（新值 214 bytes）；查證非 rotation row 到期前確實可能已經 offered，新增第五份 named vector（非 rotation expired，205 bytes）並附獨立 fixture，不動 68 筆算術。驗證用自寫 RFC 8785 canonicalizer 全部重跑，literal bag 比對顯示只有預期的三筆 hex 常數變動，KDF/AAD 全鏈與其他三份 vector 分毫未動。新 SHA-256：<code>f16ef790…</code>（181,114 bytes／2,285 行）。
+
+<strong>Round 6（10:50 派出，11:06 回報）：</strong><code>51f68d41…</code>（claude/opus，第四個獨立 reviewer）判 <strong>CHANGES REQUIRED</strong>：round 5 的 sentinel 修法本身成立、五份 canonical vector／KDF-AAD／容量算術全部逐項重算相符。但它抓到 **round 5 自己開的新洞**：round 5 把「非 rotation（一般 QR pairing）到期也要強制產生 release receipt」這條規則寫進去，卻沒替它配 GC／retention 生命週期——這種 receipt 的 <code>rotation_id=""</code>，而唯二能標記 GC 的兩個 method 都是 rotation-scoped，永遠選不到它，等於**每次一般 pairing 到期都留下一筆永久收據**；per-actor 512 筆上限用完後，那台 Mac 永遠不能再 pairing／rotate，stable epoch 沒有任何 recovery 路徑。同一個缺口還可能讓 rotation 的 retirement barrier 死鎖（一個 stale 的一般 row 剛好在 rotation sealing 期間到期）。文件自己也對這件事有兩處互相矛盾的陳述。另有 F2（MEDIUM，「只有三條路徑能釋放 idempotency key」的封閉列舉漏了至少三條）與 F3–F5 三個 LOW。Reviewer 依 dispatch policy 明確標註「設計層級變更應回到實作 session（Codex），不在 review 內就地改」。
+
+<strong>過程修正（10:50，round 7 起生效）：</strong>回頭讀了這台 Mac 的 <code>~/.config/clawdline/dispatch-policy.md</code>（本來該在第一次派工前讀，這次晚了）——政策明寫「Codex 負責『做』、Claude 負責『讀與判斷』，把該給 Codex 的做的工作送去 Claude 是最貴的意外」。round 2、3、5 三次文件修訂都派了 claude/opus，不符合這條 house rule（review 那幾輪派 claude/opus 是對的，不用改）。
+
+<strong>Round 7（11:09 派出，11:15 回報）：</strong>第一次照政策把「修訂」派給 <strong>codex</strong>（reasoning_effort high）——<code>bd32e060…</code>。root 對 F1 的自相矛盾做了決定：非 rotation receipt 永遠不動 rotation 的 retirement counter，並替它訂一條獨立 24 小時 retention 規則——GC 兩個欄位在建立 receipt 的同一 transaction 直接寫死：sentinel <code>retiring_authority_epoch=0</code>（永遠 ≤ 任何真實 epoch）與 <code>gc_not_before=finalized_at+24h</code>，不再等永遠選不到它的 rotation-scoped marker；同時明講它的到期不受任何 rotation 的 <code>reopen_pending</code> 封鎖影響。K 的釋放改成「row 的 kind 離開 ctl_pairing_v1 就算釋放」的一般規則。F3–F5 一併處理。五份 vector、KDF/AAD、11-suite CI authority、容量算術全部從新 bytes 重算相符。新 SHA-256：<code>8efcaf8d…</code>（183,423 bytes／2,306 行）。
+
+<strong>Round 8（11:16 派出，11:31 回報）：</strong><code>92d322fd…</code>（claude/opus，第六個完全獨立的 reviewer）判 <strong>CHANGES REQUIRED</strong>：round 6/7 關掉的東西確認真的關了（rotation_receipt_count 矛盾逐 11 處檢視乾淨、K 釋放通則逐 6 條 kind-changing transaction 驗證完整、non-rotation receipt 的 GC 生命週期逐 predicate 走過、sentinel 0 不與任何可達 epoch 碰撞、24h 到期後真的會被刪）。**但找到 5 個新問題，其中一個是安全性問題：**
+
+- **F1（HIGH，安全性）**：stable epoch 的 device revoke，對該裝置自己的 live non-rotation pairing row **沒有任何 producer** 處理——文件兩處對這個情況的描述互相矛盾，其中一種讀法下，裝置被撤銷後，它的 confirm blob（含 AMS）**最長還能被那個已撤銷的裝置 claim 10 分鐘**。
+- **F2（MEDIUM）**：non-rotation receipt 併入同一組 counter 後可能佔滿 per-actor 512 cap，讓 rotation 的 generation acceptance 卡住、且沒有 rotation_id 可用來呼叫既有的 recovery route，最長 24 小時沒有任何救援路徑。
+- **F3（MEDIUM）**：round 7 補的 GC-marker 完成條件缺一個「本 rotation」限定，字面實作下會被一筆 <code>rotation_id=""</code> 的較早 <code>gc_not_before</code> 卡住——**這是 round 6 那個死鎖的第三個入口**，而且既有 fixture 因為 non-rotation 被特意隔離在另一個 store，測不到這個迴歸，會綠燈出貨。
+- F4／F5：兩個 LOW（欄位型別未釘、epoch nullability 自相矛盾）。
+
+<strong>暫停在這裡，等使用者決定怎麼走：</strong>這已經是第 4 輪修訂、第 6 輪 review，而且連續兩輪（round 6、round 8）都是「補 non-rotation row 的收據/GC 生命週期」這同一塊反覆冒出新的相鄰問題，模式很像根因是「把非 rotation 的一般 QR pairing 硬塞進為 rotation 設計的收據／counter／GC 機制」本身。F1 又是這一輪第一次出現的真正安全性問題（撤銷後裝置仍可短暫存取），不是單純可用性問題，root 認為這個判斷該讓使用者看過再往下走，而不是照前 7 輪的模式自動再派第 9 輪。AWS apply、Cloudflare、Stripe、runtime secrets 與 DNS cutover 仍全部等待「需要人類授權／提供的最小包」一節列出的項目，八輪派工與 root 的落地完全沒有觸碰它們。</div>
+
+  <h2>Handoff verification｜從 authoritative sources 回答</h2>
+  <section class="card full">
+    <table>
+      <tr><th>題目</th><th>答案</th><th>Source seam</th></tr>
+      <tr><td>dispatch 走哪個 channel/class？</td><td><code>ctl/&lt;machine&gt;</code>，class=<code>dispatch</code>。允許矩陣固定為：<code>s/</code>、<code>t/</code>、<code>orch/</code> 只收 <code>stream</code>；<code>ctl/</code> 只收 <code>ctl</code>／<code>dispatch</code>；<code>ho/</code> 只收 <code>ho</code>。</td><td><code>docs/PROTOCOL.md</code>、<code>Tests/protocol-vectors.json</code> 與三端 envelope validators。</td></tr>
+      <tr><td>usage flush 為何用 literal keys？</td><td>為避免 schema drift，精確 14 keys 是 <code>dispatches</code>、<code>dispatches_machine</code>、<code>handoffs</code>、<code>handoff_bytes</code>、<code>envelopes_in</code>、<code>envelopes_out</code>、<code>bytes_in</code>、<code>bytes_out</code>、<code>connect_minutes</code>、<code>connects</code>、<code>rejected</code>、<code>peak_machines</code>、<code>peak_viewers</code>、<code>channels</code>。</td><td>Relay usage serializer、control-plane usage contract/tests。</td></tr>
+      <tr><td>emergency signing-key rotation 最壞多久？</td><td><strong>24 小時 10 分</strong>：Relay JWKS cache TTL 10 分，加上 hard-coded stale grace 24 小時。5 分鐘 token TTL 不能限制已被偷走的 private signing key；全域 DO cache 也沒有即時 flush。</td><td>Relay JWKS/token verifier 與 rotation tests。</td></tr>
+      <tr><td>enforcement mode？</td><td><code>hard</code> 或 <code>fair_use</code>；<code>fair_use</code> 會計數與回報，但不阻擋。</td><td>Entitlement/quota policy contract。</td></tr>
+      <tr><td>canonical vectors 在哪裡？</td><td>公開 canonical 檔是 <code>Tests/protocol-vectors.json</code>，由 <code>tools/generate-protocol-vectors.swift</code> 產生；consumers 是 Swift <code>Tests/CloudEnvelopeTests.swift</code>、Relay <code>relay/test/vectors.test.ts</code>、Browser <code>Resources/web/app/js/net/client.test.mjs</code>。</td><td>同名 generator、vector 與三端 tests。</td></tr>
+    </table>
+    <p class="muted">目前無法觸達／證明的事：production 尚未完整部署；正確 Cloudflare token、Clawdline GitHub OAuth App、Stripe test resources、runtime secrets、AWS resources與 real Mac/viewer production receipt 都仍不存在或尚未授權建立。</p>
+  </section>
 
   <h2>來源與當日外部規則</h2>
   <section class="card full"><ul>
     <li><a href="https://developers.cloudflare.com/changelog/post/2026-07-09-restrict-new-kv-backed-namespaces/">Cloudflare：新 Durable Object namespace 必須使用 SQLite backend</a></li>
     <li><a href="https://developers.cloudflare.com/workers/platform/pricing/">Cloudflare Workers / Durable Objects pricing</a></li>
-    <li><a href="https://docs.aws.amazon.com/ec2/latest/instancetypes/ec2-instance-regions.html">AWS：Taipei ap-east-2 instance families</a></li>
+    <li><a href="https://docs.aws.amazon.com/global-infrastructure/latest/regions/aws-regions.html">AWS：US regions 與 Availability Zones</a></li>
+    <li><a href="https://docs.aws.amazon.com/wellarchitected/2024-06-27/framework/cost_pricing_model_region_cost.html">AWS Well-Architected：依使用者距離、成本與法遵選 region</a></li>
     <li><a href="https://aws.amazon.com/vpc/pricing/">AWS：public IPv4 pricing</a></li>
   </ul></section>
-  <footer>State snapshot; secrets intentionally omitted. Public HEAD <span class="mono">dc63f815</span>; private cloud HEAD <span class="mono">d149bf58331ca9161dc98dd95c6281bde7fcd106</span>. Active-task language must be replaced with exact landing receipts before final handoff.</footer>
+  <footer>State snapshot; secrets intentionally omitted. Public HEAD <span class="mono">a34fcd07602d7623f18aa72db200bd4a17c8e846</span>（Cloud runner + schedule regression suite已包含）；private cloud HEAD <span class="mono">990663dae5dbd79a1a215e4f70575c9cb786abe8</span>（AWS bootstrap park/rollback credential fix已含）. Active-task language must be replaced with exact landing receipts before final handoff.</footer>
 </main></body></html>

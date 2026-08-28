@@ -62,7 +62,11 @@
    the screen this sheet is mostly opened on. */
 .sheet .chip.wide { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; }
 .confirm-sheet { width: min(390px, 100%); }
-.confirm-sheet .say { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.55; }
+/* pre-line: the close confirmation carries lost_if_closed as one line per item. */
+.confirm-sheet .say {
+    margin: 0; color: var(--dim); font-size: 13px; line-height: 1.55;
+    white-space: pre-line;
+}
 .confirm-sheet .buttons {
     display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;
 }
@@ -213,11 +217,11 @@
 .sheet .place[data-busy="1"] .where canvas { flex: 0 0 auto; display: block; }
 
 /* The Session info card.
-   A dossier rather than a form: the model the session is on is the headline, in the mono face
-   and large, because it is the one fact on this card that somebody came here to check or to
-   change. Under it, sections separated by hairlines and headed in small tracked capitals — the
-   tokens as one big number with its parts in four tiles, the plan's windows as bars that grow
-   to their number, the tree as the status line's own marks, and project addresses as links.
+   A dossier rather than a form: the complete Session title is the headline, large and allowed
+   to wrap for as many lines as it needs. Under it, sections separated by hairlines and headed
+   in small tracked capitals — the tokens as one big number with its parts in four tiles, the
+   plan's windows as bars that grow to their number, the tree as the status line's own marks,
+   and project addresses as links.
    The card scrolls inside itself so that on a phone the buttons under it stay where a thumb is. */
 .info-sheet {
     padding: 0; overflow: hidden; width: min(480px, 100%);
@@ -254,9 +258,56 @@
 .info-sheet .hero > * { position: relative; }
 .info-sheet .hero .who { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--dim); }
 .info-sheet .hero .who .assistant-logo { width: 14px; height: 14px; }
-.info-sheet .hero .model {
-    margin: 7px 0 6px 0; font: 500 22px/1.15 var(--mono); letter-spacing: -0.01em; color: var(--ink);
+.info-sheet .hero .who .dot { color: var(--line); }
+.info-sheet .hero .who .model-name { min-width: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+.info-sheet .hero .title-row { display: flex; align-items: center; gap: 4px; }
+.info-sheet .hero .title-row .session-title { width: auto; flex: 1 1 auto; min-width: 0; }
+/* Read-only, so it is never disabled with the pencil, and never hover-gated: this card is mostly
+   read on a phone, where a control that appears on hover is a control that does not appear. */
+.info-sheet .hero .title-copy {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+    width: 44px; min-height: 44px; padding: 0; border: 0; background: none;
+    color: var(--faint); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.info-sheet .hero .title-copy svg {
+    width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.4;
+}
+.info-sheet .hero .title-copy:hover, .info-sheet .hero .title-copy:focus-visible { color: var(--accent); }
+.info-sheet .hero .title-copy:active { transform: scale(0.92); }
+/* Same reason as above, for the pencil: with no pointer to hover, it was never drawn at all and
+   the one way into renaming was invisible on the device this card is opened on most. */
+@media (hover: none) {
+    .info-sheet .hero .session-title i { opacity: 0.55; }
+}
+.info-sheet .hero .session-title {
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; margin: 1px 0 0 0;
+    padding: 6px 0; border: 0; background: none; text-align: left;
+    font: 500 22px/1.15 var(--ui); letter-spacing: -0.01em; color: var(--ink); cursor: pointer;
     overflow-wrap: anywhere;
+}
+.info-sheet .hero .session-title span { min-width: 0; overflow-wrap: anywhere; }
+.info-sheet .hero .session-title i {
+    flex: 0 0 auto; font: 16px/1 var(--ui); color: var(--faint); opacity: 0; transition: opacity 120ms ease;
+}
+.info-sheet .hero .session-title:hover i,
+.info-sheet .hero .session-title:focus-visible i { opacity: 1; color: var(--accent); }
+.info-sheet .hero .session-title:disabled { cursor: default; opacity: 1; }
+.info-sheet .hero .session-title:disabled i { display: none; }
+.info-sheet .hero .title-editor {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px;
+    min-height: 44px; margin: 1px 0 0 0;
+}
+.info-sheet .hero .title-editor input {
+    min-width: 0; height: 44px; box-sizing: border-box; border: 1px solid var(--line);
+    border-radius: 9px; padding: 7px 10px; background: var(--bg); color: var(--ink);
+    font: 500 16px/1.2 var(--ui);
+}
+.info-sheet .hero .title-editor input:focus { border-color: var(--accent-ed); outline: none; }
+.info-sheet .hero .title-actions { display: flex; gap: 6px; }
+.info-sheet .hero .title-actions .chip { min-height: 44px; padding: 7px 10px; }
+@media (max-width: 520px) {
+    .info-sheet .hero .title-editor { grid-template-columns: 1fr; }
+    .info-sheet .hero .title-actions { justify-content: flex-end; }
 }
 .info-sheet .hero .meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 12px; color: var(--faint); }
 .info-sheet .hero .meta .dot { color: var(--line); }

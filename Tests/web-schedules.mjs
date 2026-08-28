@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 const elements = {
     schedules: { hidden: false },
@@ -23,7 +24,8 @@ globalThis.document = {
 };
 
 const { loadScheduleProjects } = await import("../Resources/web/app/js/net/schedules.js");
-const { renderSchedules } = await import("../Resources/web/app/js/view/schedules.js");
+const { renderSchedules, scheduleRunsHTML, scheduleRunPlace } =
+    await import("../Resources/web/app/js/view/schedules.js");
 
 const rows = [
     { id: "shown", title: "Morning brief", enabled: true, next_fire: 200 },
@@ -58,6 +60,40 @@ assert.match(elements["schedule-rows"].innerHTML,
 assert.match(elements["schedule-rows"].innerHTML,
     /<span class="schedule-project-name"[^>]*>clawdline<\/span><\/span><span class="schedule-meta-sep" aria-hidden="true"> · <\/span><time class="schedule-next"[^>]*>Next/,
     "the project name shares the metadata line with the next-run time");
+
+const runMarkup = scheduleRunsHTML([
+    { task_id: "run-live", state: "briefed", assistant: "codex", created: 300,
+      terminal_id: "terminal-live", session_id: "session-live", summary: "still publishing" },
+    { task_id: "run-done", state: "success", assistant: "codex", created: 200,
+      finished_at: 220, session_id: "session-done", summary: "published <today>",
+      project_dir: "/Users/you/code/<blog>" },
+    { task_id: "run-lost", state: "failure", assistant: "claude", created: 100 }
+], 400, function (terminal) { return terminal === "terminal-live"; });
+assert.match(runMarkup, /data-task-id="run-live"[^>]*data-action="open"/,
+    "a run whose terminal is still present opens it instead of resuming the transcript twice");
+assert.match(runMarkup, /data-task-id="run-done"[^>]*data-action="resume"/,
+    "a finished run with a proven conversation id is resumable");
+assert.match(runMarkup, /published &lt;today&gt;/,
+    "run summaries are escaped before they enter the schedule sheet");
+assert.match(runMarkup,
+    /<span class="schedule-run-summary" title="published &lt;today&gt;">published &lt;today&gt;<\/span>/,
+    "the clamped summary keeps its whole text in the title, escaped the same way");
+const scheduleCSS = await readFile(
+    new URL("../Resources/web/app/css/schedules.css", import.meta.url), "utf8");
+assert.match(scheduleCSS, /\.schedule-run-summary\s*\{[^}]*-webkit-line-clamp:\s*2;/,
+    "the picker shows the first lines of a run summary, not the whole report");
+assert.match(runMarkup,
+    /class="schedule-run-meta" title="\/Users\/you\/code\/&lt;blog&gt;">codex · &lt;blog&gt;<\/span>/,
+    "each occurrence names the project it actually used, with the full escaped path available");
+assert.match(runMarkup, /data-task-id="run-lost"[^>]*disabled/,
+    "a run without a proven conversation stays visible but cannot invent a resume action");
+assert.ok(runMarkup.indexOf("run-live") < runMarkup.indexOf("run-done"),
+    "the server's newest-first run order is kept");
+
+assert.equal(scheduleRunPlace({ project_dir: "/old/project" }, [
+    { id: "current", path: "/new/project" },
+    { id: "original", path: "/old/project" }
+])?.id, "original", "an old run resumes in the project it actually used, not today's template");
 
 console.log("web schedule tests passed");
 process.exit(0);

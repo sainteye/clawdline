@@ -524,6 +524,12 @@ enum Planner {
         return object(inText: raw)
     }
 
+    /// The one directory every planner run works in, whichever engine it starts. Stable rather
+    /// than per-call: the claude engine leaves a `~/.claude/projects` folder named after its
+    /// working directory that nothing here can delete, and 22 of those had accumulated by
+    /// 2026-08-28. ``Scratch`` has the whole account.
+    static var scratchDirectory: URL { Scratch.directory(for: "plan-run") }
+
     /// Run one of them and hand back what it printed, or nothing.
     ///
     /// Standard output goes to a **file** rather than a pipe. A pipe here would be a deadlock
@@ -531,21 +537,19 @@ enum Planner {
     /// has filled the pipe buffer does not exit. ``CodexNaming`` sidesteps this by letting codex
     /// write the file itself with `-o`; `claude -p` prints, so the redirect is on this side.
     ///
-    /// The working directory is that same throwaway directory, so a planner run does not pick up
-    /// the `CLAUDE.md` of whichever project the app happens to have been started in. `--bare`
-    /// would go further and drop the person's global memory too, and it is not usable here: it
-    /// also stops Claude Code reading the keychain, so on an account signed in with OAuth — which
-    /// is the ordinary case — the run has no credentials at all.
+    /// The working directory is ``scratchDirectory``, an empty one under the temporary root, so a
+    /// planner run does not pick up the `CLAUDE.md` of whichever project the app happens to have
+    /// been started in. `--bare` would go further and drop the person's global memory too, and it
+    /// is not usable here: it also stops Claude Code reading the keychain, so on an account signed
+    /// in with OAuth — which is the ordinary case — the run has no credentials at all.
     private static func run(executable: URL, arguments: [String], stdin: String,
                             environment: [String: String], timeout: TimeInterval,
                             engine: String) -> String? {
         let fm = FileManager.default
-        let dir = fm.temporaryDirectory
-            .appendingPathComponent("clawdline-plan-run-\(UUID().uuidString)", isDirectory: true)
-        guard (try? fm.createDirectory(at: dir, withIntermediateDirectories: true)) != nil
+        let dir = scratchDirectory
+        guard let printed = Scratch.prepare(dir, output: "stdout", extension: "json")
         else { return nil }
-        defer { try? fm.removeItem(at: dir) }
-        let printed = dir.appendingPathComponent("stdout.json")
+        defer { try? fm.removeItem(at: printed) }
         guard fm.createFile(atPath: printed.path, contents: nil),
               let sink = try? FileHandle(forWritingTo: printed) else { return nil }
         defer { try? sink.close() }

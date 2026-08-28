@@ -1,0 +1,1191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Clawdline Protocol</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f6f3;
+    --panel: #ffffff;
+    --panel-2: #f1efe9;
+    --line: #e2ded5;
+    --line-strong: #cdc7ba;
+    --ink: #1c1b19;
+    --ink-soft: #3b3833;
+    --muted: #6c665d;
+    --accent: #b04c1d;
+    --accent-soft: #f6e7dc;
+    --ok: #2c6a45;
+    --ok-soft: #e3f0e7;
+    --warn: #8a5a10;
+    --warn-soft: #f7ecd6;
+    --bad: #9a3030;
+    --bad-soft: #f8e3e0;
+    --code-bg: #f1efe9;
+    --code-ink: #7c3a16;
+    --shadow: 0 1px 2px rgba(28,27,25,.05), 0 10px 28px -20px rgba(28,27,25,.45);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101013;
+      --panel: #17171b;
+      --panel-2: #1d1d22;
+      --line: #2c2c34;
+      --line-strong: #3d3d47;
+      --ink: #f1efea;
+      --ink-soft: #d9d5cd;
+      --muted: #9c968d;
+      --accent: #e08a5f;
+      --accent-soft: #2a1f18;
+      --ok: #83c299;
+      --ok-soft: #16261c;
+      --warn: #e0b169;
+      --warn-soft: #251e11;
+      --bad: #e69393;
+      --bad-soft: #271717;
+      --code-bg: #202027;
+      --code-ink: #edc9b0;
+      --shadow: 0 1px 2px rgba(0,0,0,.45), 0 12px 34px -24px rgba(0,0,0,.9);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.62 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-feature-settings: "kern" 1;
+  }
+  main { width: min(920px, calc(100% - 40px)); margin: 0 auto; padding: 60px 0 96px; }
+  p, li { color: var(--ink-soft); }
+  p { margin: 0 0 16px; max-width: 74ch; }
+  strong { color: var(--ink); font-weight: 650; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:hover { text-decoration-thickness: 2px; }
+
+  .eyebrow {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 18px;
+  }
+  h1 {
+    margin: 0 0 20px; font-size: clamp(34px, 6.2vw, 60px); line-height: 1.03;
+    letter-spacing: -.035em; color: var(--ink); max-width: 16ch; font-weight: 700;
+  }
+  .lede { font-size: clamp(17px, 2.2vw, 20px); line-height: 1.55; color: var(--muted); max-width: 66ch; }
+  .lede strong { color: var(--ink-soft); }
+
+  h2 {
+    margin: 64px 0 6px; font-size: 27px; line-height: 1.2; letter-spacing: -.02em;
+    color: var(--ink); font-weight: 680; scroll-margin-top: 20px;
+  }
+  h2 .n {
+    display: inline-block; min-width: 1.9em; color: var(--accent);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 15px; letter-spacing: 0; vertical-align: 3px;
+  }
+  h2 + .sub { color: var(--muted); margin: 0 0 22px 0; font-size: 15px; max-width: 68ch; }
+  h3 { margin: 34px 0 10px; font-size: 18px; letter-spacing: -.01em; color: var(--ink); font-weight: 640; }
+  h4 { margin: 24px 0 8px; font-size: 15px; color: var(--ink); font-weight: 640; }
+
+  code, .mono, pre, kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  code {
+    font-size: .875em; background: var(--code-bg); color: var(--code-ink);
+    padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere;
+  }
+  pre {
+    margin: 18px 0; padding: 16px 18px; background: var(--panel); color: var(--ink-soft);
+    border: 1px solid var(--line); border-radius: 12px; overflow-x: auto;
+    font-size: 13.5px; line-height: 1.6; box-shadow: var(--shadow);
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+  pre .c { color: var(--muted); }
+  pre .k { color: var(--accent); }
+
+  ul, ol { margin: 0 0 18px; padding-left: 22px; max-width: 74ch; }
+  li { margin: 0 0 9px; }
+  li > ul, li > ol { margin-top: 9px; }
+  dl { margin: 0 0 18px; }
+
+  .scroll { overflow-x: auto; margin: 20px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 520px; }
+  th, td { text-align: left; vertical-align: top; padding: 11px 12px; border-top: 1px solid var(--line); }
+  thead th {
+    border-top: 0; border-bottom: 1px solid var(--line-strong); color: var(--muted);
+    font-weight: 600; font-size: 12px; letter-spacing: .07em; text-transform: uppercase;
+  }
+  td:first-child { color: var(--ink); }
+  td code, th code { white-space: nowrap; }
+  tbody tr:hover td { background: var(--panel-2); }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 20px 22px; margin: 22px 0; box-shadow: var(--shadow);
+  }
+  .card > :last-child, .note > :last-child, .rule > :last-child { margin-bottom: 0; }
+
+  .note, .rule {
+    margin: 22px 0; padding: 16px 18px; border-radius: 0 12px 12px 0;
+    border-left: 3px solid var(--accent); background: var(--accent-soft);
+  }
+  .note.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .note.bad { border-left-color: var(--bad); background: var(--bad-soft); }
+  .note.ok { border-left-color: var(--ok); background: var(--ok-soft); }
+  .note p, .rule p { color: var(--ink-soft); }
+  .note .tag {
+    display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 6px;
+    color: var(--accent);
+  }
+  .note.warn .tag { color: var(--warn); }
+  .note.bad .tag { color: var(--bad); }
+  .note.ok .tag { color: var(--ok); }
+
+  .contents {
+    margin: 40px 0 0; padding: 22px 24px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+  }
+  .contents h2 { margin: 0 0 14px; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .contents ol {
+    margin: 0; padding: 0; list-style: none;
+    columns: 2; column-gap: 34px;
+  }
+  .contents li { margin: 0 0 8px; break-inside: avoid; font-size: 14.5px; }
+  .contents a { text-decoration: none; color: var(--ink-soft); display: block; }
+  .contents a:hover { color: var(--accent); }
+  .contents .num {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--muted); font-size: 12px; margin-right: 8px;
+  }
+
+  figure { margin: 26px 0; }
+  figure .scroll { margin: 0; }
+  figure svg { display: block; width: 100%; min-width: 560px; height: auto; }
+  figcaption { margin-top: 10px; color: var(--muted); font-size: 13.5px; max-width: 74ch; }
+  .svg-box { fill: var(--panel); stroke: var(--line-strong); }
+  .svg-box-2 { fill: var(--panel-2); stroke: var(--line-strong); }
+  .svg-accent { fill: var(--accent-soft); stroke: var(--accent); }
+  .svg-t { fill: var(--ink); font: 600 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .svg-s { fill: var(--muted); font: 400 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .svg-l { fill: var(--muted); font: 400 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .svg-line { stroke: var(--line-strong); fill: none; }
+  .svg-arrow { fill: var(--line-strong); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; padding: 0; list-style: none; }
+  .chips li {
+    margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px; padding: 5px 10px; border: 1px solid var(--line-strong);
+    border-radius: 999px; color: var(--muted); background: var(--panel);
+  }
+
+  .kv { display: grid; grid-template-columns: 190px 1fr; gap: 10px 18px; margin: 18px 0; font-size: 15px; }
+  .kv dt { color: var(--ink); font-weight: 600; }
+  .kv dd { margin: 0; color: var(--ink-soft); }
+
+  hr { border: 0; border-top: 1px solid var(--line); margin: 56px 0 0; }
+  footer { margin-top: 26px; color: var(--muted); font-size: 13.5px; }
+  footer a { color: var(--muted); }
+
+  @media (max-width: 700px) {
+    main { padding: 40px 0 64px; }
+    .contents ol { columns: 1; }
+    .kv { grid-template-columns: 1fr; gap: 2px 0; }
+    .kv dd { margin-bottom: 12px; }
+    h2 { margin-top: 48px; font-size: 23px; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+  <p class="eyebrow">Clawdline · cross-session protocol</p>
+  <h1>One session, sending work to another.</h1>
+  <p class="lede">Clawdline lets an assistant session hand a piece of work to a second session running on the same machine — in its own terminal tab, with its own instructions, reporting back through a file. This page is the whole contract: the files, the routes, the guarantees, the refusals, and where each guarantee stops. <strong>Read it once and you can dispatch correctly, and say what every answer you get back is worth.</strong></p>
+
+  <ul class="chips">
+    <li>dispatch</li><li>claims</li><li>serialize</li><li>worktree delivery</li><li>landing</li>
+    <li>attached follow-ups</li><li>coordination waits</li><li>handoff</li><li>typed errors</li>
+  </ul>
+
+  <nav class="contents" aria-label="Contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#parties"><span class="num">01</span>Three parties, and the middle one is the app</a></li>
+      <li><a href="#filesystem"><span class="num">02</span>The filesystem is the protocol</a></li>
+      <li><a href="#taskjson"><span class="num">03</span><code>task.json</code>, field by field</a></li>
+      <li><a href="#gates"><span class="num">04</span>The gates a dispatch passes, in order</a></li>
+      <li><a href="#lifecycle"><span class="num">05</span>The lifecycle</a></li>
+      <li><a href="#briefing"><span class="num">06</span>The briefing, and the first line</a></li>
+      <li><a href="#result"><span class="num">07</span><code>result.json</code> is the signal</a></li>
+      <li><a href="#verification"><span class="num">08</span>Verification is budgeted</a></li>
+      <li><a href="#claims"><span class="num">09</span>Claims: reserving what you will write</a></li>
+      <li><a href="#serialize"><span class="num">10</span>Serializing a machine-global operation</a></li>
+      <li><a href="#worktree"><span class="num">11</span>Isolation: a branch, not a diff</a></li>
+      <li><a href="#landing"><span class="num">12</span>Landing is a root obligation</a></li>
+      <li><a href="#inflight"><span class="num">13</span>What is still outstanding</a></li>
+      <li><a href="#attached"><span class="num">14</span>Attached follow-up tasks</a></li>
+      <li><a href="#work"><span class="num">15</span>Scratch space, and when it is reclaimed</a></li>
+      <li><a href="#waits"><span class="num">16</span>Waiting for somebody else's files</a></li>
+      <li><a href="#handoff"><span class="num">17</span>Handoff: the other motion</a></li>
+      <li><a href="#credentials"><span class="num">18</span>Three credentials, and the boundary</a></li>
+      <li><a href="#coordinator"><span class="num">19</span>The machine coordinator, and the restart boundary</a></li>
+      <li><a href="#errors"><span class="num">20</span>Every typed error, in one place</a></li>
+      <li><a href="#sizing"><span class="num">21</span>How big one task should be</a></li>
+      <li><a href="#cleanup"><span class="num">22</span>What is kept, and for how long</a></li>
+      <li><a href="#later"><span class="num">23</span>Later: the same protocol, elsewhere</a></li>
+    </ol>
+  </nav>
+
+  <!-- 01 -->
+  <h2 id="parties"><span class="n">01</span>Three parties, and the middle one is the app</h2>
+  <p class="sub">A session you are talking to is a session you are waiting on.</p>
+
+  <p>Some of what people ask for does not need the conversation it was asked in: run the suite, draw the icon, read this diff and tell me what is wrong with it. Doing that in-line costs the one thing the conversation is for, which is your attention on the thing you were actually doing. Dispatch is the way to say <em>do this over there</em> and be told when it is done.</p>
+
+  <dl class="kv">
+    <dt>Root</dt>
+    <dd>A session you are in. It writes a task down and asks for it to be run. Nothing else — it never touches a terminal, and it does not learn the child's terminal id until the broker tells it.</dd>
+    <dt>Broker</dt>
+    <dd>Clawdline. It checks the ask, records it, opens a terminal tab, types the first message into it, watches for the answer, adds up what it cost, and tells the root.</dd>
+    <dt>Child</dt>
+    <dd>The session the broker opened. It does exactly one task and writes down what happened. It never learns who asked. It may hand parts of that task to children of its own; <strong>those may not.</strong></dd>
+  </dl>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 880 300" role="img" aria-labelledby="fig1title fig1desc">
+        <title id="fig1title">How a dispatch flows between root, broker and child</title>
+        <desc id="fig1desc">The root writes task.json into a task directory and posts an id and a secret. The broker validates, opens a terminal tab and types a one-line briefing. The child reads CHILD.md, writes artifacts and finally result.json, which the broker notices and reports back to the root.</desc>
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" class="svg-arrow"/>
+          </marker>
+        </defs>
+
+        <rect x="8" y="40" width="228" height="96" rx="12" class="svg-box"/>
+        <text x="28" y="72" class="svg-t">Root session</text>
+        <text x="28" y="96" class="svg-s">writes task.json</text>
+        <text x="28" y="116" class="svg-s">POST id + secret</text>
+
+        <rect x="326" y="40" width="228" height="96" rx="12" class="svg-accent"/>
+        <text x="346" y="72" class="svg-t">Clawdline (broker)</text>
+        <text x="346" y="96" class="svg-s">validates, records,</text>
+        <text x="346" y="116" class="svg-s">opens a tab, types one line</text>
+
+        <rect x="644" y="40" width="228" height="96" rx="12" class="svg-box"/>
+        <text x="664" y="72" class="svg-t">Child session</text>
+        <text x="664" y="96" class="svg-s">reads CHILD.md</text>
+        <text x="664" y="116" class="svg-s">writes result.json</text>
+
+        <path d="M 240 74 L 318 74" class="svg-line" marker-end="url(#ah)"/>
+        <text x="246" y="62" class="svg-l">dispatch</text>
+        <path d="M 558 74 L 636 74" class="svg-line" marker-end="url(#ah)"/>
+        <text x="564" y="62" class="svg-l">first line</text>
+        <path d="M 636 116 L 558 116" class="svg-line" marker-end="url(#ah)"/>
+        <text x="566" y="134" class="svg-l">the file appears</text>
+        <path d="M 318 116 L 240 116" class="svg-line" marker-end="url(#ah)"/>
+        <text x="244" y="134" class="svg-l">one typed line</text>
+
+        <rect x="8" y="186" width="864" height="98" rx="12" class="svg-box-2"/>
+        <text x="28" y="214" class="svg-t">/tmp/.clawdline/&lt;task-id&gt;/</text>
+        <text x="28" y="240" class="svg-s">task.json — the root writes it, before dispatching</text>
+        <text x="28" y="262" class="svg-s">CHILD.md — the app writes it, just before injection</text>
+        <text x="466" y="240" class="svg-s">artifacts/ — whatever the child produced</text>
+        <text x="466" y="262" class="svg-s">result.json — the child writes it, and it is the signal</text>
+      </svg>
+    </div>
+    <figcaption>Nothing in the middle row is a socket or a session. Every hop that matters is a file one side writes and the other side reads.</figcaption>
+  </figure>
+
+  <p>There is a second motion on the same machinery. A <strong>dispatch</strong> sends an errand out and waits for it to come back; a <strong>handoff</strong> sends the line of work itself on and expects nothing back. <a href="#handoff">Section 17</a> is that one.</p>
+
+  <div class="note warn">
+    <span class="tag">What it costs, before anything else</span>
+    <p>Dispatching is remote code execution with a second step. It does not type a line into an existing session — it opens a <em>new</em> terminal tab, starts an assistant in it, and gives that assistant instructions written by somebody else. Anything that can dispatch can run programs on the machine, as you, in a directory it chose, for up to four hours. Everything in <a href="#credentials">section 18</a> follows from that one sentence.</p>
+  </div>
+
+  <!-- 02 -->
+  <h2 id="filesystem"><span class="n">02</span>The filesystem is the protocol</h2>
+  <p class="sub">Everything a child needs and everything it produces is in one directory.</p>
+
+  <p>That is the interface rather than an implementation detail, and it is a directory rather than a socket for a specific reason: <strong>a child is an ordinary assistant session with no special client library.</strong> It can read a file and write a file. Anything that required it to hold a connection, speak a protocol, or keep a credential alive across a context compaction would be a design that only works when the child is having a good day.</p>
+
+<pre><code>/tmp/.clawdline/                 <span class="c"># 0700</span>
+  &lt;task-id&gt;/                     <span class="c"># 0700 — lowercase UUID</span>
+    task.json                    <span class="c"># the root writes this, before dispatching</span>
+    CHILD.md                     <span class="c"># the app writes this, just before injection</span>
+    DISPATCHING.md               <span class="c"># …and this, only for a child that may hand work on</span>
+    result.json                  <span class="c"># the child writes this, when it is done</span>
+    artifacts/                   <span class="c"># whatever the child was asked to produce</span>
+    work/                        <span class="c"># heavyweight scratch; reclaimed with the task</span></code></pre>
+
+  <p><code>0700</code> on both levels, and <code>/tmp</code> is a shared directory on a Unix machine — so a task directory is readable by you and by root and by nobody else on the box. It holds instructions and outputs, and <strong>it never holds a secret</strong>: not the orchestrator token, and not the task secret.</p>
+
+  <p>An isolated task's checkout is deliberately elsewhere, under the application's own support directory rather than in <code>/tmp</code> or inside the repository. That keeps OS cleanup from leaving stale git administration records behind, and keeps another session's <code>git status</code> from seeing a checkout that is not its business. The protocol directory above is unchanged by isolation.</p>
+
+  <!-- 03 -->
+  <h2 id="taskjson"><span class="n">03</span><code>task.json</code>, field by field</h2>
+  <p class="sub">The file is written first; the dispatch carries only an id and a secret.</p>
+
+  <p>Instructions are the part most likely to be long, to contain quotes and newlines and someone's Chinese, and to be edited and re-sent. Putting them in a file that the root owns and the app validates keeps all of that out of an HTTP body, and makes a retry the same request rather than a new one.</p>
+
+<pre><code>{
+  "clawdline_protocol": 1,
+  "task_id": "3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234",
+  "kind": "image",
+  "assistant": "codex",
+  "model": "gpt-5.1-codex",
+  "reasoning_effort": "high",
+  "project_dir": "/Users/you/code/your-project",
+  "title": "Project portrait, medieval hand-drawn",
+  "instructions": "You are in /Users/you/code/your-project … write the SVG to artifacts/portrait.svg",
+  "deliverables": ["artifacts/portrait.svg"],
+  "plan": "root → 3 searchers (haiku) → this one joins them up (opus) → report.md",
+  "claims": ["Sources/Orchestrator.swift", "docs"],
+  "serialize": ["build"],
+  "timeout_minutes": 30,
+  "created_at": "2026-01-14T10:14:02Z",
+  "root": {
+    "session_id": "841cbb8d-58b1-4765-9a71-bcdba19bcfef",
+    "assistant": "claude",
+    "project_dir": "/Users/you/code/your-project",
+    "label": "your project, main window",
+    "parent_task": null
+  }
+}</code></pre>
+
+  <p>Validation is strict, and the refusal is <code>422 bad_task</code> with a message naming the field.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Field</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td><code>clawdline_protocol</code></td><td>Exactly <code>1</code>.</td></tr>
+      <tr><td><code>task_id</code></td><td><code>^[a-f0-9-]{36}$</code>, and <strong>equal to the directory name and to the id in the dispatch body</strong>. Three places, all three checked — the interesting failure is a body pointing at somebody else's directory.</td></tr>
+      <tr><td><code>kind</code></td><td><code>image</code> · <code>code-review</code> · <code>test</code> · <code>custom</code>.</td></tr>
+      <tr><td><code>assistant</code></td><td><code>claude</code> or <code>codex</code>.</td></tr>
+      <tr><td><code>model</code></td><td>Optional. <code>[a-z0-9._-]</code>, at most 64 characters, not starting with <code>-</code>. Absent means that assistant's own default.</td></tr>
+      <tr><td><code>reasoning_effort</code></td><td>Optional and Codex-only: exactly <code>high</code> (coding) or <code>xhigh</code> (planning or review). Absent adds no override and preserves the model and user defaults. <code>max</code> and <code>ultra</code> are not protocol values; on a Claude task the field is refused outright.</td></tr>
+      <tr><td><code>permission_mode</code></td><td>Optional. <code>ask</code> · <code>edits</code> · <code>full</code>. Absent takes the machine's setting, which is also the ceiling — ask for more than the ceiling and you are quietly given the ceiling.</td></tr>
+      <tr><td><code>plan</code></td><td>Optional, ≤ 4 KiB. The whole graph this task is one node of.</td></tr>
+      <tr><td><code>claims</code></td><td>Optional array of 0…32 unique POSIX paths relative to <code>project_dir</code>; each 1…1024 characters, no leading <code>/</code>, no <code>..</code> component. A directory claim covers its whole subtree. <code>[]</code> positively declares read-only work.</td></tr>
+      <tr><td><code>serialize</code></td><td>Optional array of 0…4 unique operation names, each 1…64 characters of <code>[a-z0-9._-]</code>, not starting with <code>-</code>.</td></tr>
+      <tr><td><code>isolation</code></td><td>Optional <code>none</code> or <code>worktree</code>; absent is <code>none</code>. An unknown value is refused, never quietly downgraded to sharing the tree.</td></tr>
+      <tr><td><code>isolation_base</code></td><td>Optional Git revision, legal only with <code>worktree</code>; 1…200 characters of letters, digits and <code>._/-~</code>, not starting with <code>-</code>, no <code>..</code>. Absent means <code>HEAD</code>, and it must resolve to a commit.</td></tr>
+      <tr><td><code>attach_session</code></td><td>Optional terminal-neutral session id. When present, this complete task is delivered into that existing assistant session instead of a new tab — <a href="#attached">section 14</a>.</td></tr>
+      <tr><td><code>project_dir</code></td><td>Absolute, exists, and is a directory — checked at dispatch, not at planning time.</td></tr>
+      <tr><td><code>title</code></td><td>≤ 200 characters. It names the tab on every Clawdline surface, from the moment it appears.</td></tr>
+      <tr><td><code>instructions</code></td><td>Non-empty, ≤ 16 KiB. They have to stand alone: the child cannot see the conversation they came from, so <em>“do what we discussed”</em> arrives as an empty file with extra steps.</td></tr>
+      <tr><td><code>timeout_minutes</code></td><td>1…240; absent means 30. The clock starts when the child is briefed, not when the task is registered.</td></tr>
+      <tr><td><code>ignore_quota</code></td><td>Optional boolean. Dispatch anyway into an assistant whose account reads exhausted, with a warning instead of a refusal.</td></tr>
+      <tr><td><code>root.session_id</code></td><td>The dispatcher's conversation id or watched terminal id. Dispatch canonicalizes either spelling to the process-bound conversation id; <code>null</code> when unavailable.</td></tr>
+      <tr><td><code>root.assistant</code></td><td>Optional <code>claude</code> or <code>codex</code>. Absent or explicit <code>null</code> reads as missing, and missing resolves as <code>claude</code> for older writers. Any other value is refused.</td></tr>
+      <tr><td><code>root.parent_task</code></td><td>The dispatcher's <strong>own</strong> task id, when the dispatcher is itself a child. <code>null</code> from a root. Anything that is not a task id reads as <code>null</code>.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Two fields people get wrong</h3>
+
+  <p><strong><code>root.session_id</code> is nullable on purpose.</strong> A root that cannot work out its own id still gets to dispatch, because a best-effort field must not be a required one — otherwise the honest answer <em>“I don't know”</em> becomes a reason to invent something. Two things follow, and the second surprises people: the task is not told when it finishes, so the dispatcher has to poll; and its row has nothing to sit under, because a listing indents a child beneath the session that asked for it. A task that named nobody is filed under nobody, and floats wherever the sort puts it.</p>
+
+  <p>The broker does not trust the declared id on its own. At dispatch it accepts either the watched terminal id or the current conversation id and resolves it among the live sessions of the declared assistant. <strong>When exactly one of them matches</strong>, that session's process-bound conversation id becomes the single key used by completion notification, grouping, capacity and the root-close cascade. When none matches, or the answer is ambiguous, the id you supplied is stored exactly as you wrote it and the dispatch still succeeds — what you lose is those four things, not the task. A stale rollout, a leftover hook on a reused tty, or a tab now occupied by the other assistant produces <code>root_unresolved</code> in <code>warnings</code> rather than a silent orphan — <strong>it never mounts a child under the wrong row.</strong></p>
+
+  <p><strong><code>plan</code> is the graph, not this task's job.</strong> The same text goes in every task of one dispatch, and it sits near the top of the briefing, above even the language rule, because it is the context every other line is read in. A child that knows its answer is one of four being joined together writes something joinable. Leaves get it too, and that is the half that matters: a leaf that knows what its output feeds is the difference between an answer and an essay.</p>
+
+  <div class="note">
+    <span class="tag">Writing the file</span>
+    <p>Write <code>task.json</code> with an editor or a heredoc rather than assembling it in a shell string. Some assistant harnesses screen commands by shape and refuse a JSON-building one-liner — a brace beside a quote reads as obfuscation — and that refusal is a prompt with no “always allow” on a tab nobody is watching.</p>
+  </div>
+
+  <h3>Sending it</h3>
+
+<pre><code>TASK=$(uuidgen | tr 'A-Z' 'a-z'); SECRET=$(openssl rand -hex 32)
+umask 077; mkdir -p /tmp/.clawdline/$TASK/artifacts   <span class="c"># …and write task.json into it</span>
+
+curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
+  -H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)" \
+  -H 'Content-Type: application/json' \
+  -d "{\"task_id\":\"$TASK\",\"secret\":\"$SECRET\"}"</code></pre>
+
+  <p>The body is two fields and neither of them is the work. There is no <code>Idempotency-Key</code>, because idempotency is already carried by <code>task_id</code>: send the same one twice and the second call answers <code>200</code> with the existing record, having opened nothing. A <code>200</code> means <em>registered and being opened</em>, not <em>running</em>.</p>
+
+  <!-- 04 -->
+  <h2 id="gates"><span class="n">04</span>The gates a dispatch passes, in order</h2>
+  <p class="sub">Each one has its own typed <code>code</code>. Branch on the code, never on the status.</p>
+
+  <ol>
+    <li><strong>The credential, and the switch.</strong> A missing or wrong <code>X-Clawdline-Orchestrator</code> header is <code>403 forbidden</code>, and so is a machine where the orchestrator is switched off. It is <code>403</code> rather than <code>401</code> deliberately: <code>401</code> is this server's answer to <em>no paired device</em>, and pairing a device would not help here.</li>
+    <li><strong>The file.</strong> Missing, unparseable, or a field out of range is <code>422 bad_task</code>, with the offending field named in <code>message</code>. Fix the file and re-send the same id.</li>
+    <li><strong>Capacity.</strong> A dispatcher's own slots being full is <code>429 over_capacity</code> with <code>retry_after</code> in seconds. Registered-but-queued tasks count toward this from the moment they are registered, so an unbounded queue cannot bypass the limit.</li>
+    <li><strong>Depth.</strong> Past the floor it is <code>409 depth_exceeded</code>, and that is not a retry — <a href="#depth">the work is yours to do</a>.</li>
+    <li><strong>The assistant's own quota.</strong> An account reading <em>exhausted</em> is <code>409 assistant_exhausted</code>, carrying <code>alternatives</code>: every other assistant's availability and detail, so the refusal itself says who to send the work to instead.</li>
+    <li><strong>Isolation feasibility.</strong> A repository with no commit to base a worktree on, or a volume with less than 2 GB free, is <code>409 worktree_unavailable</code> — an environment refusal rather than malformed JSON.</li>
+    <li><strong>Claims.</strong> A live task from another definitely identified root holding an equal, ancestor or descendant path is <code>409 workspace_busy</code>, before serialization, before any tab, before the advisory directory warnings. The rejected task is not registered.</li>
+    <li><strong>The brake.</strong> More than ten dispatches in ten minutes — or one full tree's worth, if that is larger — is <code>429 rate_limited</code>. Handoffs share the same brake, because a loop that opens tabs is the same loop whichever route it calls.</li>
+  </ol>
+
+  <p>Two of these are cheap on purpose and answer early. Quota is one read of small local files, cached for a few seconds, so it answers before any git subprocess is started. Claims are compared under the same lock that registers the task, so there is no window in which two roots both pass.</p>
+
+  <h3 id="depth">Depth stops at two, and the floor is what has teeth</h3>
+
+  <p>Dispatch without a floor is a fork bomb with a language model in it. One task becomes five becomes twenty-five, each a real terminal tab running a real assistant against a real bill, and the failure mode is not “it got slow” — it is a machine with sixty tabs open and no obvious way to tell which of them started it.</p>
+
+  <p>So the tree has a bottom, and it is close to the top. <strong>A root's children may dispatch. Their children may not.</strong> Five and three is twenty tabs at full stretch, which is already more than anybody wants to audit; five, three and three would be sixty-five.</p>
+
+  <p>The floor is enforced twice, and the two fail differently. <strong>The briefing says so</strong> — a child with room under it gets the whole recipe for dispatching, and one standing on the floor is told plainly not to. <strong>The app refuses</strong> — a dispatch names who is asking, and past the floor it is <code>409 depth_exceeded</code>. That second stop holds when the first does not, because it does not depend on the child's cooperation. A caller can lie about its identity, but it cannot lie its way <em>up</em>: the two names it supplies are combined by taking the deeper answer, and claiming somebody else's identity moves the task into that session's bucket rather than out of everybody's.</p>
+
+  <h3>The caps, in one list</h3>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Limit</th><th>Default</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Children per dispatching session</td><td>5</td><td>Configurable 1…10. Counted per dispatcher, not per machine: what it bounds is how much work one conversation can have out at once.</td></tr>
+      <tr><td>Children of a child</td><td>3</td><td>Configurable 0…10. <code>0</code> puts the floor back at one level; a child that tries is refused at the door.</td></tr>
+      <tr><td>Whole tree, machine-wide</td><td>20</td><td><em>children × (1 + grandchildren)</em>, and not a setting of its own. This is the one a caller cannot sidestep by claiming to be somebody else.</td></tr>
+      <tr><td>Dispatches per ten minutes</td><td>10</td><td>Or one full tree's worth if that is larger — a brake on a loop should not refuse the work the caps just permitted.</td></tr>
+      <tr><td>Task lifetime</td><td>30 min</td><td><code>timeout_minutes</code>, 1…240. Absolute; a child that has not reported by then is <code>timeout</code>, whatever it is still doing.</td></tr>
+      <tr><td>Time to be briefed</td><td>4 min</td><td>A tab that never reaches a state where the first message can be typed, or that never records having received it after five attempts, is <code>spawn_failed</code>.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>How far a child may go before it stops and asks</h3>
+
+  <p>The permission ceiling defaults to <code>full</code>, and that default is a position rather than a convenience. On a tab somebody is watching, “ask about everything” is the careful setting. On a child's tab <strong>nobody is watching</strong>, and a session that stops for approval does not stop for a moment — it stops until the task times out, which reads afterwards as work that silently did not happen.</p>
+
+  <p>The narrower settings were tried and each one stops the child somewhere: <code>ask</code> stops on the first thing it does, which is reading its own briefing; <code>edits</code> gets it past writing a result but not past the ordinary shell work that handing work on consists of. Note also that a mode named for automatic behaviour is not necessarily the same mode on every model of the same assistant — which is disqualifying for a field a task fills in, since a word here has to mean the same thing to every session a task can name. The three values are <code>ask</code>, <code>edits</code> and <code>full</code>, and each was read back off a real status line on more than one model.</p>
+
+  <p>What the setting does not widen is <em>who may dispatch</em>. That is still a file only a local process can read, and a child already has a shell — the setting changes how many buttons a person has to press for work they already authorised, not what that work can reach. Two doors also sit in front of the session rather than inside it, and no permission value reaches either: a fresh directory's trust prompt (which Clawdline answers once per task, with an audit receipt), and the assistant's own command screening.</p>
+
+  <!-- 05 -->
+  <h2 id="lifecycle"><span class="n">05</span>The lifecycle</h2>
+  <p class="sub">Eight states, four of them terminal, and one that is terminal without ever having started.</p>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 880 300" role="img" aria-labelledby="fig2title fig2desc">
+        <title id="fig2title">The task state machine</title>
+        <desc id="fig2desc">Queued leads to spawning, which leads to briefed. Briefed leads to success, failure, timeout or cancelled. Queued and spawning can both lead to spawn_failed.</desc>
+        <rect x="10" y="96" width="150" height="58" rx="10" class="svg-box"/>
+        <text x="30" y="124" class="svg-t">queued</text>
+        <text x="30" y="144" class="svg-l">registered</text>
+
+        <rect x="222" y="96" width="150" height="58" rx="10" class="svg-box"/>
+        <text x="242" y="124" class="svg-t">spawning</text>
+        <text x="242" y="144" class="svg-l">a tab is opening</text>
+
+        <rect x="434" y="96" width="150" height="58" rx="10" class="svg-accent"/>
+        <text x="454" y="124" class="svg-t">briefed</text>
+        <text x="454" y="144" class="svg-l">the line landed</text>
+
+        <rect x="672" y="14" width="196" height="42" rx="9" class="svg-box-2"/>
+        <text x="692" y="41" class="svg-t">success</text>
+        <rect x="672" y="66" width="196" height="42" rx="9" class="svg-box-2"/>
+        <text x="692" y="93" class="svg-t">failure</text>
+        <rect x="672" y="118" width="196" height="42" rx="9" class="svg-box-2"/>
+        <text x="692" y="145" class="svg-t">timeout</text>
+        <rect x="672" y="170" width="196" height="42" rx="9" class="svg-box-2"/>
+        <text x="692" y="197" class="svg-t">cancelled</text>
+        <rect x="222" y="234" width="362" height="46" rx="9" class="svg-box-2"/>
+        <text x="242" y="263" class="svg-t">spawn_failed</text>
+
+        <path d="M 164 125 L 214 125" class="svg-line" marker-end="url(#ah)"/>
+        <path d="M 376 125 L 426 125" class="svg-line" marker-end="url(#ah)"/>
+        <path d="M 588 125 L 620 125 L 620 35 L 664 35" class="svg-line" marker-end="url(#ah)"/>
+        <path d="M 620 87 L 664 87" class="svg-line" marker-end="url(#ah)"/>
+        <path d="M 620 139 L 664 139" class="svg-line" marker-end="url(#ah)"/>
+        <path d="M 620 125 L 620 191 L 664 191" class="svg-line" marker-end="url(#ah)"/>
+        <path d="M 85 158 L 85 257 L 214 257" class="svg-line" marker-end="url(#ah)"/>
+        <path d="M 297 158 L 297 226" class="svg-line" marker-end="url(#ah)"/>
+      </svg>
+    </div>
+    <figcaption>Only <code>briefed</code> means an assistant has actually received the work. Everything to the left of it is the broker still trying.</figcaption>
+  </figure>
+
+  <dl class="kv">
+    <dt>queued</dt>
+    <dd>Registered: the file validated, the secret's hash stored, the caps checked. A task without <code>serialize</code> is here only until a tab is asked for. A serialized task stays here until every operation it named is free, and <code>waiting_on</code> says which older tasks stand ahead of it. Waiting does not consume <code>timeout_minutes</code>.</dd>
+    <dt>spawning</dt>
+    <dd>Mutexes acquired, a tab opening. For an isolated task this is when the private checkout is created — queued tasks hold no idle checkout. Failure here is <code>spawn_failed</code>, and the next attempt needs a fresh task id — which the respawn route mints for you.</dd>
+    <dt>briefed</dt>
+    <dd>The child's own record shows the first message as a turn it received. This is the fiddly part, and it is worth knowing what the app waits for.</dd>
+    <dt>success · failure</dt>
+    <dd>From <code>result.json</code>, or from the completion route, whichever arrives. Both go through the same finalize.</dd>
+    <dt>timeout</dt>
+    <dd><code>briefedAt + timeout_minutes</code>. There is a second way to get here that is not a clock: if the child's terminal disappears from the session list for more than a minute while the task is briefed, the task is <code>failure</code> with <em>child session ended without reporting</em>. A closed tab is a finished task in every sense except the one that would have been written down.</dd>
+    <dt>cancelled</dt>
+    <dd>Somebody asked — through the cancel route, or by closing the root session.</dd>
+    <dt>spawn_failed</dt>
+    <dd>The tab never happened, or never got briefed inside four minutes, or was typed into five times without the child ever recording the message, or the app restarted while the task was <code>spawning</code>.</dd>
+  </dl>
+
+  <p><strong>A <code>spawn_failed</code> task is retried by the broker, not rewritten by the root.</strong> It was 34 of 206 dispatches on the machine this was measured on — 33 of them Codex — and the old answer was that the root writes the whole <code>task.json</code> out again under a fresh id, because that id is finished and re-sending it just returns the terminal record. <code>POST /v1/orchestrator/tasks/:id/respawn</code> copies the original file with a fresh <code>task_id</code>, mints a fresh secret unless the caller supplies one, and dispatches it through the ordinary gate with every capacity, depth, claims, quota and serialization rule applied again. <code>instructions</code> is why it copies the file rather than the record: the registry never held it.</p>
+
+  <p>Only <code>spawn_failed</code> may be retried, because it is the one terminal state meaning <em>nothing ran</em>; anything else is <code>409 not_respawnable</code>. <strong>At most two respawns descend from one original</strong>, counted over the whole family below it rather than along any one chain — so a retry of a retry cannot launder the cap by being the first from its own immediate parent, and neither can asking the original a third time, which is the shape a caller actually falls into because the id it has in hand is the one that failed — and the third is <code>409 respawn_exhausted</code>. Each new task records <code>respawn_of</code> and <code>respawn_generation</code>, so a chain reads as a chain in the registry instead of as three unrelated tasks with the same title.</p>
+
+  <h3>Why briefing takes as long as it does</h3>
+
+  <p>It waits for <strong>somewhere to type</strong>. A tab in the session list is not that, and neither is a process with the right name: an assistant still starting its tooling has a readable banner and no composer, and a briefing typed into that is swallowed without anything reporting a failure. So the app waits until it can see the assistant's own empty composer.</p>
+
+  <p>Then it waits for <strong>evidence the sentence arrived</strong>. Typing into a terminal proves that bytes reached a tty and nothing more, so the task stays in <code>spawning</code> and keeps its secret until the assistant's own record carries that task's first user turn. Only that moves it to <code>briefed</code>. If the record still has no such turn once the receipt window has passed and the empty composer is back, the app types it again — up to five attempts, then <code>spawn_failed</code>. It will not send a second copy on the strength of a missing file alone: both assistants write the user turn before they begin it, so a message that was accepted closes the gate before it can be run twice.</p>
+
+  <h3>Cancelling, and what a closing root takes with it</h3>
+
+  <p>Closing a root session cancels every live task that session dispatched and closes each child's tab <em>first</em>, before the root's own. The order is not cosmetic: a task is matched to its root through the tab that is about to disappear, so a root closed first is a root that can no longer be matched to anything, and its children run on reporting into a conversation that ended.</p>
+
+  <p><strong>The cascade reaches both levels, deepest first</strong>, and it is gathered from the finished children too — a child that reported while the work it handed on is still running would otherwise leave a grandchild belonging to nobody. Cancelling a single task does the same thing on a smaller scale.</p>
+
+  <p><strong>Only an explicit close cascades.</strong> Closing a tab by hand does not, and the app never watches a root for signs of death: “not in this reading” is a sentence that is also true of a terminal that lost its accessibility permission for a moment, and the cost of being wrong there is somebody's work killed mid-turn.</p>
+
+  <div class="note ok">
+    <span class="tag">Restarts</span>
+    <p><strong>A briefed task survives a restart.</strong> Its secret is on disk as a hash, its result is on disk as a file, and its timeout is arithmetic on a stored timestamp — so the app comes back up, reads the registry, and carries on watching. That is the one restart case that matters, because it is the one where a child is out there doing work. A task caught in <code>spawning</code> is failed closed instead: once a task starts opening, the recoverable queued secret is gone, and failing closed beats risking a global operation running twice.</p>
+  </div>
+
+  <!-- 06 -->
+  <h2 id="briefing"><span class="n">06</span>The briefing, and the first line</h2>
+  <p class="sub">One line into the terminal; everything that would not fit is in a file beside it.</p>
+
+<pre><code>You are a Clawdline CHILD agent for task 3f9a21bc-… . Read
+/tmp/.clawdline/3f9a21bc-…/CHILD.md and follow it exactly. TASK_SECRET=…</code></pre>
+
+  <p>One line, because it is typed into a terminal and Return ends it. <code>CHILD.md</code> — written by the app immediately before injection — carries the rest: where the task is, where the outputs go, how long it has, the graph it is one node of, whether it may dispatch and how many, that it must not read other task directories, and exactly what <code>result.json</code> has to look like.</p>
+
+  <p><strong>How to dispatch is not in there.</strong> It is in <code>DISPATCHING.md</code>, written beside it and only when the allowance is above zero, with the machine's house rules appended; <code>CHILD.md</code> keeps one line naming that file. Measured across 206 dispatches on one machine, 28,323 characters of instructions on how to dispatch went into every direct child's briefing and not one of those 206 ever dispatched anything. The pointer is worth following rather than merely polite: <strong>the credential path, the <code>root.parent_task</code> rule and the <code>curl</code> appear only in <code>DISPATCHING.md</code></strong>, so the briefing no longer hands the credential over and a child that skips the file has to go and find one. A strong pointer, not a lock — the <code>clawdline</code> skill carries the same recipe — but a convenience summary back in <code>CHILD.md</code> would undo even that.</p>
+
+  <p>It also says what language to speak. The briefing itself is English so that every assistant reads it the same way, but the person watching the tab reads whatever Clawdline is set to — so the file names that language and asks for the summary in it. The one fixed line the child says before anything else rides in the typed message, ahead of “read CHILD.md”: an assistant answers the line before it opens the file, and the first thing on the screen should be what the tab was sent to do. A tab that opens and starts working in silence is a tab nobody can tell apart from a stray one.</p>
+
+  <div class="note">
+    <span class="tag">Where the secret lives</span>
+    <p><strong>The secret is in the message and not in the task directory</strong>, and that asymmetry is the whole design. <code>CHILD.md</code> sits in a directory; the message goes into a terminal's input. A file there is a thing that can be read later, by something else, after the task is over. The plaintext secret stays in the app's memory until the child's own transcript proves the line landed, and then it is gone.</p>
+  </div>
+
+  <h3>Saying something mid-task</h3>
+
+  <p>Two narrow channels exist so that a child does not have to stay silent until it is finished.</p>
+
+  <p><strong>A progress note</strong> — <code>POST /v1/orchestrator/tasks/:id/progress</code>, authenticated by the task secret — is one sentence of at most 300 characters. The title was fixed at dispatch, and by the time a result exists somebody else may have spent an hour on the same thing; this is the seam between those two moments. The newest five are kept and appear on the task record and on every <a href="#inflight">outstanding-work row</a>. Repeating the newest sentence is accepted and ignored, because a loop is not news. A terminal task is refused with <code>409 not_live</code>.</p>
+
+  <p><strong>The briefing asks for the first one inside three minutes</strong>, before the work rather than during it: one sentence saying what the child has decided to do now that it has read the briefing and <code>task.json</code>. That is the only thing that lets a wrong direction be cancelled at minute three instead of minute twenty-six — the two dearest cancelled tasks measured on one machine burned 18.5M and 16.5M tokens before anybody could tell what they had set off to do. Every later note is the ordinary one: sent when what the session is doing stops matching the title it was given.</p>
+
+  <p><strong>An agent notification</strong> — <code>POST /v1/orchestrator/tasks/:id/notify</code> — pushes <em>content</em> rather than <em>state</em>: today's forecast, the URL somebody was waiting for, the one answer whose value is arriving on time. It is scarce by construction: 80 title characters, 500 body characters, five per task, thirty per machine in a sliding hour, and valid only while the task is live or for 60 seconds after it finished. A local root or script can send the same kind of thing with the machine token at <code>POST /v1/orchestrator/notify</code>. If the person has turned agent notifications off, both routes answer <code>409 agent_notify_disabled</code> without attempting delivery or spending an allowance — <strong>and the right response to that is not a retry.</strong> Leave the content in <code>result.json</code>, and say honestly that the notification was refused.</p>
+
+  <!-- 07 -->
+  <h2 id="result"><span class="n">07</span><code>result.json</code> is the signal</h2>
+  <p class="sub">Written last. The moment it exists, the task is considered finished.</p>
+
+<pre><code>{
+  "clawdline_protocol": 1,
+  "task_id": "3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234",
+  "task_secret": "…the value from the first message…",
+  "status": "success",
+  "summary": "Wrote a 1024×1024 SVG portrait; border and lettering hand-pathed, no raster.",
+  "symbols": ["Orchestrator.Landing", "updateLanding(taskID:secret:raw:now:)"],
+  "artifacts": ["artifacts/portrait.svg"],
+  "verification": {"runs": 2, "seconds": 940, "last": "pass", "scope": "unit suite + web checks"},
+  "finished_at": "2026-01-14T10:41:55Z"
+}</code></pre>
+
+  <p>Written atomically — to a temporary name and then moved — so the watcher never sees half of it. The app checks once a beat for every briefed task, hashes the supplied secret and compares it against what it stored at dispatch, in constant time. <strong>A file whose secret does not match is ignored and logged once</strong>: a wrong secret in a task directory is either a bug or somebody poking, and neither is a reason to finalize somebody's task.</p>
+
+  <dl class="kv">
+    <dt><code>status</code></dt>
+    <dd><code>success</code> or <code>failure</code>. Use <code>failure</code> when the work could not be done; a summary that reads like success is worth less than an honest failure.</dd>
+    <dt><code>summary</code></dt>
+    <dd>One paragraph: what was done, or why it could not be.</dd>
+    <dt><code>symbols</code></dt>
+    <dd>Every identifier the change introduced — new functions and types, new fields, new string keys, the names of test groups added. Names, not descriptions; <code>[]</code> says positively that there were none, where an absent field only says the child did not answer.</dd>
+    <dt><code>artifacts</code></dt>
+    <dd>Paths, relative to the task directory, of what was produced.</dd>
+    <dt><code>verification</code></dt>
+    <dd>Optional. What proving the work actually cost — <a href="#verification">section 8</a>.</dd>
+  </dl>
+
+  <p><strong>Why <code>symbols</code> exists.</strong> A shared working tree makes authorship unreadable from the diff alone: by the time a root comes to commit, the files a child edited may hold two or three sessions' unfinished work, and vocabulary is the only reliable way to tell one session's hunks from another's. Guessing that vocabulary has produced staged trees that would not compile, because a hunk that <em>read</em> like one session's work actually called another session's new function. The child's briefing asks for the list; <strong>the broker does not read it</strong> — the record keeps <code>status</code>, <code>summary</code>, <code>artifacts</code> and the optional verification object, and ignores every other key. <code>symbols</code> is written for whichever root opens the file, and a root has to open the file to get it.</p>
+
+  <p>There is an HTTP way to say the same thing — <code>POST /v1/orchestrator/tasks/:id/complete</code> — and it is optional on purpose. <strong>The file is the protocol and the route is a convenience.</strong> A child in a sandbox with no outbound network finishes correctly. A repeat is <code>409 already_done</code> rather than a silent overwrite: the first report wins, and the second is told so rather than quietly replacing a summary somebody has already read.</p>
+
+  <h3>What it cost</h3>
+
+  <p>Every finalized task carries a <code>usage</code> object, and it is best-effort by construction: harvesting it never blocks a finalize and never fails one. A task that finished is finished whether or not the accounting worked. The numbers come from the ordinary transcript the child left behind, not from anywhere new. A dollar figure is computed only for models with a published per-token price, and is <code>null</code> otherwise — including for plan-billed assistants, where a currency figure would be a made-up number wearing a currency symbol. Tokens are still counted, and that is the honest reading rather than a gap.</p>
+
+  <!-- 08 -->
+  <h2 id="verification"><span class="n">08</span>Verification is budgeted</h2>
+  <p class="sub">One relevant proof, reported as a number rather than an impression.</p>
+
+  <p>A child that keeps re-running a full suite is paying a project's largest fixed cost over and over. The protocol's answer is a budget with a receipt on the end of it.</p>
+
+  <ul>
+    <li><strong>Do run one verification that actually proves the change</strong>: compile, the tests covering what was touched, and one red-before-green run for each test added. A test born green proves nothing — break the thing once, watch the test catch it, then fix it. Iterating until something first compiles and passes is ordinary work and is not what the budget is about.</li>
+    <li><strong>The budget is one third of <code>timeout_minutes</code>, or three full-suite runs, whichever comes first.</strong> On reaching it the child stops verifying and says in its result what state the work was in, rather than spending the rest of its time trying to reach green.</li>
+    <li><strong>Do not</strong> re-run a full suite after every small edit, run a suite unrelated to the paths claimed, repeat a green run to see whether it was flaky, or treat restarting the application and looking at it as acceptance.</li>
+  </ul>
+
+  <p>The receipt is an optional object in <code>result.json</code>:</p>
+
+<pre><code>"verification": {"runs": 2, "seconds": 940, "last": "pass", "scope": "unit suite + web checks"}</code></pre>
+
+  <p><code>runs</code> and <code>seconds</code> are non-negative integers, <code>last</code> is <code>pass</code>, <code>fail</code> or <code>skipped</code>, and <code>scope</code> is a short free-text description. A well-formed object is stored on the task record and can be read back over the API. <strong>Older results without it work unchanged, and a malformed object is ignored rather than turning an otherwise authenticated success into a failure</strong> — verification metadata never changes the authenticated outcome. Without a number, “it kept re-verifying” is an impression rather than a finding.</p>
+
+  <div class="note warn">
+    <span class="tag">A green tree is not evidence about HEAD</span>
+    <p>In a shared checkout, a passing suite is the union of everybody's work, while a commit is only the committing session's slice. So a suite passing in the tree says nothing about whether the branch still compiles after a partial commit. Before taking one, ask what else defines what you are taking: a declaration without its values, a call without its function, a case without its enum. Each of those passes in the tree and fails on the branch.</p>
+  </div>
+
+  <!-- 09 -->
+  <h2 id="claims"><span class="n">09</span>Claims: reserving what you will write</h2>
+  <p class="sub">A dispatch-time reservation, compared by path, arbitrated between roots.</p>
+
+  <p>Each entry in <code>claims</code> is relative to <code>project_dir</code>. At registration the broker resolves that directory once, normalises the relative claim, and freezes the joined absolute string in the lease. It never resolves the possibly nonexistent target, so <em>creating</em> the file cannot change its key. Comparison is exact and case-sensitive, by path component: equal paths conflict, and so do ancestors and descendants — <code>Sources</code> covers <code>Sources/Orchestrator.swift</code>, while <code>a/b</code> and <code>a/bc</code> are unrelated.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th><code>claims</code></th><th>Means</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td>one or more paths</td><td>the task declares exactly these write scopes</td><td>reserves their frozen keys; two disjoint declarations can silence the directory-level warning</td></tr>
+      <tr><td><code>[]</code></td><td>the task positively declares that it is read-only</td><td>reserves no lease, never conflicts, never receives <code>409 workspace_busy</code>, and still participates in that silence</td></tr>
+      <tr><td>absent</td><td>the write set is unknown</td><td>reserves no lease, keeps the directory-level warning about every pair sharing a <code>project_dir</code>, and the dispatch reply carries a <code>claims_missing</code> warning</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>An empty array gives read-only work an active, harmless declaration. Silence therefore has exactly one meaning: <strong>both tasks supplied enough scope information to prove their claim sets do not intersect.</strong> Merely omitting the field never makes that assertion.</p>
+
+  <p><strong>An absent field is answered out loud, and only an absent one.</strong> 60.7% of the dispatches measured on one machine declared nothing at all. Declaring costs the root about twenty output tokens; a collision costs a whole task, which on that record is three to eighteen million — so the dispatch reply carries <code>warnings:[{"code":"claims_missing",…}]</code>, on the first request and on the idempotent retry alike. It is never a refusal: a root that has not worked its write set out yet must still be able to dispatch. <code>"claims": []</code> does not warn, and that difference is the point — warning about a positive read-only declaration would teach callers that the field is noise, which is how omission reached 60.7% in the first place. The best evidence for the warning is not an argument: the root session that specified it dispatched the review of its own delivery without <code>claims</code>, and drew the <code>workspace_overlap</code> notice that <code>claims_missing</code> exists to prevent — on the day it implemented the guard.</p>
+
+  <div class="note bad">
+    <span class="tag">There are two ways to get this wrong, and only one of them is loud</span>
+    <p><strong>Omitting <code>claims</code> is the quiet one</strong>, and it reads as caution while behaving as noise: with no declaration the broker cannot prove two tasks are disjoint, so it falls back to warning about every pair that shares a directory — a stream of notices, none of which describes a real conflict, while the one genuine collision is caught by the mechanism that needed the field. <strong>Claiming too widely</strong> is the same error pointing the other way, and it does announce itself: an over-wide claim blocks other trees whether or not the task touches it, and the exit audit names every claimed path the task never touched.</p>
+  </div>
+
+  <h3>Arbitration, and what the refusal tells you</h3>
+
+  <p>A live claim from a <em>different</em> root refuses the new dispatch immediately with <code>409 workspace_busy</code> — before serialization, before warnings, before any tab. The error names the blocking task, its title and root label, when it was created, every conflicting absolute path, and an advisory <code>retry_after</code>. It also carries two fields that make it self-sufficient, so nobody has to follow up with another request:</p>
+
+  <ul>
+    <li><code>age_seconds</code> — how old the blocking task is, computed against the answering request's own clock.</li>
+    <li><code>root_key</code> — a short stable hash of the blocking task's root tree. <strong><code>root_label</code> is self-reported prose</strong> and can be stale, or shared by two unrelated trees that both call themselves the same thing; <code>root_key</code> is the same tree's identity every time.</li>
+  </ul>
+
+  <p>Tasks in the <em>same</em> root tree may overlap, because that root owns the graph and may have ordered the work itself; their dispatch succeeds with a <code>claims_overlap</code> warning naming the other task and the conflicting paths. If either side's root cannot be resolved, dispatch also succeeds, with the same warning shape under <code>claims_overlap_unknown_root</code> — <strong>an unknown root never has the authority to hard-block somebody else.</strong> A refused dispatch does not spend a ticket in the ten-minute brake, so following the retry advice cannot turn repeated <code>workspace_busy</code> answers into <code>rate_limited</code> by itself.</p>
+
+  <h3>Giving paths back early</h3>
+
+  <p>Terminal state is not the only way a lease ends. A task that has finished editing some or all of what it declared can hand those paths back with <code>POST /v1/orchestrator/tasks/:id/claims/release</code> while it is still <code>briefed</code> or <code>spawning</code>, and a dispatch blocked on exactly those paths can retry immediately. <strong>This is the only way to break a circular wait</strong> where two roots each hold a path the other one needs: the retry advice on a <code>409</code> says “wait”, and nothing releases on its own until a side chooses to.</p>
+
+  <p>Release is compared the way arbitration compares claims — ancestor and descendant, not string equality — so naming a path inside a directory-shaped claim frees that whole claim key, because a directory claim is one atomic reservation rather than a set of the files under it. It is idempotent: a path already released, or never declared, is silently a no-op. It is refused for an unknown task (<code>404 not_found</code>), a terminal one (<code>409 already_done</code> — its claims are already released in full), a still-queued one (<code>409 not_started</code> — cancel it instead), or a malformed path (<code>400 bad_request</code>).</p>
+
+  <p>Release is a machine-level permission, like cancel. The request carries only the machine token, which does not identify which root is calling, so any root holding it may release any task's claims — including one that is currently blocking it. The audit line names the task and the paths freed, because there is no caller identity to record.</p>
+
+  <h3>The exit audit</h3>
+
+  <p>Purely observational, and never a gate: when a task reaches a terminal state, the broker checks each declared claim against the filesystem and reports which ones were never modified after the tab opened. A directory-shaped claim is judged recursively rather than by its own timestamp; the walk skips version-control and dependency directories and stops after a bounded number of entries, and a claim whose subtree is larger than that is left out of the audit entirely rather than judged from a partial walk.</p>
+
+  <p>Untouched paths land on the task record and in one line appended to the root's completion notice, with a reminder to claim narrower next time. Only <code>success</code> and <code>failure</code> are judged. A task that never spawned has no baseline; and <code>timeout</code>, <code>spawn_failed</code> and <code>cancelled</code> leave the ending ambiguous — saying both “it may still be writing” and “it never touched this” about the same task on the same line was the bug this exclusion exists to prevent.</p>
+
+  <div class="note">
+    <span class="tag">An honest boundary</span>
+    <p><strong>Claims are a dispatch gate, not filesystem enforcement.</strong> The broker does not stop a child from writing outside what it declared, and does not infer a write set from instructions. What dispatch-time refusal buys is the removal of the negotiation window in which two already-briefed tasks keep editing while their roots work out what to do. Cleanup work is work too: a separately dispatched cancel, revert, rollback or removal task declares every path it may change exactly as entering work does.</p>
+  </div>
+
+  <!-- 10 -->
+  <h2 id="serialize"><span class="n">10</span>Serializing a machine-global operation</h2>
+  <p class="sub">For scarce operations rather than directories.</p>
+
+  <p>Two tasks that both run the build can name <code>"serialize": ["build"]</code> when the build writes a fixed output path. Without that mutex, two otherwise unrelated roots overwrite the same file — a fixed temporary binary path is the usual real example. The namespace is machine-global and deliberately ignores roots.</p>
+
+  <ul>
+    <li>A task acquires <strong>all</strong> of its names together as it leaves <code>queued</code>, and holds them until any terminal state. If any one is held, it stays queued.</li>
+    <li>Waiters sharing a name are FIFO by creation time, including waiters from another root. <strong>A multi-name request never holds a subset</strong>, so crossed acquisition orders cannot deadlock.</li>
+    <li>A queued response and every record include <code>waiting_on</code> when blockers exist — it can name a current holder or an older queued waiter entitled to the name first.</li>
+    <li>Cancelling a queued task is immediate, opens no tab, and pumps the next eligible waiter. Every other terminal outcome pumps the same queue, and so does startup.</li>
+    <li>A queued task already occupies its dispatcher's slot and the machine-wide slot: counting registration rather than open tabs is what stops an unbounded queue from bypassing the caps.</li>
+  </ul>
+
+  <p>Do not reach for worktree isolation to evade a serialize token. Isolation changes the checkout; it does not create a second machine.</p>
+
+  <!-- 11 -->
+  <h2 id="worktree"><span class="n">11</span>Isolation: a branch, not a diff</h2>
+  <p class="sub">A clean private checkout, and a delivery that survives the session that made it.</p>
+
+  <p><code>"isolation": "worktree"</code> asks for a clean independent checkout and a delivery branch named after the task. The broker resolves the requested base to a commit and records that immutable value, because branch names and <code>HEAD</code> move while other sessions commit — the resolved commit is the receipt for what the child actually started from. A dirty base is admitted with a warning: uncommitted files do not cross into the clean checkout.</p>
+
+  <p>The child commits early, only on that branch, and never pushes or switches branches. At finalize the broker reads git itself and records the branch, the base, the head, a commit count and whether the checkout was dirty; those last three are best-effort and may be <code>null</code>.</p>
+
+<pre><code>git -C &lt;project_dir&gt; log --oneline &lt;base&gt;..clawdline/task/&lt;id&gt;
+git -C &lt;project_dir&gt; diff &lt;base&gt;...clawdline/task/&lt;id&gt;
+git -C &lt;project_dir&gt; merge --no-ff clawdline/task/&lt;id&gt;   <span class="c"># or cherry-pick</span>
+git -C &lt;project_dir&gt; branch -d clawdline/task/&lt;id&gt;       <span class="c"># only after landing</span></code></pre>
+
+  <p><strong>Relative claims under <code>project_dir</code> are discarded with a warning</strong> for an isolated task, because the child edits the separate checkout and not those shared-tree paths. Machine-global resources still belong in <code>serialize</code>. This also removes a timing mismatch that shared-tree work has: a claim is released at terminal state, but an isolated delivery is not landed until a root integrates it — the delivery stays on its branch until then. That safety property has a corollary worth stating plainly: <strong>a terminal child state cannot be the completion state of a code-producing graph.</strong> The delivery is durable, and still pending.</p>
+
+  <p>A slice big enough to be worth dispatching is big enough to lose — the timeout is bounded, an assistant can exhaust its quota mid-task, and a context window can fill. A long or multi-file slice therefore goes out isolated, commits each milestone on its branch rather than at the end, and says through a progress note when the work stops matching its title. A death in the third hour then costs one hour. Conflicts are the visible cost of parallel work and are resolved at integration; review the branch before landing it, because a commit has not become trusted merely by being isolated.</p>
+
+  <!-- 12 -->
+  <h2 id="landing"><span class="n">12</span>Landing is a root obligation</h2>
+  <p class="sub">The lifecycle answers whether a child ran and reported. It deliberately does not claim the code arrived anywhere.</p>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 880 176" role="img" aria-labelledby="fig3title fig3desc">
+        <title id="fig3title">The four stages after a child reports</title>
+        <desc id="fig3desc">Delivered comes from the child's success. Reviewed comes from an independent review verdict. Pending landing is the recorded obligation. Landed is a broker-verified commit on the target branch, and only the machine credential can write it.</desc>
+        <rect x="6" y="30" width="196" height="76" rx="11" class="svg-box"/>
+        <text x="26" y="60" class="svg-t">delivered</text>
+        <text x="26" y="82" class="svg-l">the child reported</text>
+        <text x="26" y="99" class="svg-l">success</text>
+
+        <rect x="234" y="30" width="196" height="76" rx="11" class="svg-box"/>
+        <text x="254" y="60" class="svg-t">reviewed</text>
+        <text x="254" y="82" class="svg-l">an independent node</text>
+        <text x="254" y="99" class="svg-l">said it is safe to land</text>
+
+        <rect x="462" y="30" width="196" height="76" rx="11" class="svg-box"/>
+        <text x="482" y="60" class="svg-t">pending landing</text>
+        <text x="482" y="82" class="svg-l">recorded, queryable,</text>
+        <text x="482" y="99" class="svg-l">owned by a named root</text>
+
+        <rect x="690" y="30" width="184" height="76" rx="11" class="svg-accent"/>
+        <text x="710" y="60" class="svg-t">landed</text>
+        <text x="710" y="82" class="svg-l">the target contains</text>
+        <text x="710" y="99" class="svg-l">a verified commit</text>
+
+        <path d="M 206 68 L 226 68" class="svg-line" marker-end="url(#ah)"/>
+        <path d="M 434 68 L 454 68" class="svg-line" marker-end="url(#ah)"/>
+        <path d="M 662 68 L 682 68" class="svg-line" marker-end="url(#ah)"/>
+
+        <text x="6" y="146" class="svg-l">task secret or machine token</text>
+        <text x="462" y="146" class="svg-l">task secret or machine token</text>
+        <text x="690" y="146" class="svg-l">machine token only</text>
+      </svg>
+    </div>
+    <figcaption>A child holds its own secret, so letting that credential assert target landing would make the last check self-reported. That is the whole reason the final step needs a different credential.</figcaption>
+  </figure>
+
+  <p><code>success</code> supplies <strong>delivered</strong>. An independent review verdict supplies <strong>reviewed</strong> and opens <strong>pending landing</strong>. Neither is <strong>landed</strong>. The root that dispatched the graph owns the pending landing unless a named root accepts it through a handoff; an unspecified future session is not an owner. The graph's <code>plan</code> therefore names the delivery branch, the target branch, the landing owner, the review node and the root-owned closure <em>before the first child is dispatched</em>.</p>
+
+  <h3>Recording it</h3>
+
+  <p><code>POST /v1/orchestrator/tasks/:id/landing</code> takes <code>state</code> plus optional <code>target</code>, <code>delivery</code>, <code>commit</code> and <code>note</code>. <code>pending</code> and <code>abandoned</code> accept either that task's secret or the machine token; <strong><code>landed</code> accepts only the machine token.</strong> Repeating <code>pending</code> preserves the original <code>since</code> while filling in anything newly known.</p>
+
+  <p>Before writing <code>landed</code>, the broker resolves the supplied commit as a commit object inside the task's own repository, resolves the local target branch, and <strong>proves the former is an ancestor of or equal to the latter.</strong> Caller-supplied revision expressions are replaced by canonical object ids in the receipt, and the moment of proof is recorded separately from the moment the obligation began. Arbitrary text, a remote-only ref, or an unrelated commit is refused with <code>409 unverified_landing</code>; a pending edit racing the git checks is refused with <code>409 stale_write</code>. Both <code>landed</code> and <code>abandoned</code> require a terminal task and are final — genuinely reopened work gets a new task, and <code>abandoned</code> is an explicit decision not to land the delivery rather than a pause.</p>
+
+  <p><code>GET /v1/orchestrator/landings</code> lists every current pending obligation with its title, owner root, original claims, target, note and age. <strong>Pending obligations are exempt from the registry's ordinary record cap</strong>, so age alone cannot erase an unresolved row. When a task with claims reaches a terminal state with no landing record at all, its completion line reminds the root to record one — suppressed when every claim was judged untouched.</p>
+
+  <div class="note">
+    <span class="tag">A signpost, not a gate</span>
+    <p>Landing state does not retain claims, extend their lifetime, refuse a dispatch, freeze a file or stop a commit. It makes an unfinished obligation <em>queryable</em>, so another root can decide whether to wait. Claims arbitration and ordinary pre-commit discipline remain the separate mechanisms that actually prevent collisions.</p>
+  </div>
+
+  <h3>Closing it</h3>
+
+  <p>After review, the root checks the receipt and the verdict, reads the target repository's current head and status, integrates <strong>without absorbing another session's uncommitted files</strong>, tests the exact integrated tree, and records the resulting target commit. Only then may it report the code change complete. An overlapping dirty tree is a landing delay, not a completed outcome: the obligation stays pending while the root coordinates with the owning session and retries when integration is safe.</p>
+
+  <p>If the root must stop first, its handoff package names the delivery branch, base and head, the target branch and its current head, the verdict and test receipts, the overlapping paths and known owner, and exactly one next landing action. <strong>The original root remains responsible until the handoff receipt confirms that the first line reached the named receiving root</strong> — and even then the receipt transfers ownership, not completion.</p>
+
+  <!-- 13 -->
+  <h2 id="inflight"><span class="n">13</span>What is still outstanding</h2>
+  <p class="sub">Including the work a private checkout hides.</p>
+
+  <p>A finished delivery sitting on its own branch appears in no <code>git status</code>, no <code>git diff</code> and no file listing of the shared checkout, and its claims were released the moment the task ended. A session that asks “has anybody done this?”, looks at the tree, sees nothing and does it again has been burned by exactly that. <code>GET /v1/orchestrator/inflight?project=&lt;dir&gt;</code> is the answer to that question — and <code>GET /v1/orchestrator/tasks/:id/inflight</code> is the same list for a child, which reads the repository off its own task and authenticates with its own secret, <strong>because a child has no machine token and should not be taught to read one.</strong> The asking task is left out of its own answer.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th><code>visibility</code></th><th>Means</th></tr></thead>
+    <tbody>
+      <tr><td><code>live</code></td><td>a session is on it now — any non-terminal state</td></tr>
+      <tr><td><code>unmerged</code></td><td>finished, and its delivery is still on a branch nobody has merged</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>A row leaves the list because <strong>git says so, not because somebody remembered to clear a flag</strong>: a delivery disappears when its branch is merged into the repository's head or deleted, which is the same moment the work stops being invisible. Two declared answers are honoured first, because a root saying so is better evidence than a branch this side has to guess about — <code>landed</code> and <code>abandoned</code> settle a row, and <code>pending</code> keeps one visible even with no branch behind it.</p>
+
+  <p><strong>Unknown git facts keep the entry visible.</strong> If the repository cannot be read, every delivery in it stays listed, because the costs are not symmetric: showing a delivery that turns out to be merged costs a glance, and hiding one that is not costs somebody a day of rebuilding it. A task whose session died is finalized as a failure by the ordinary rule, its branch is kept because it carries commits, and it appears here as failed and unmerged — which is exactly right: the work is there, on a branch, and nobody is doing it.</p>
+
+  <!-- 14 -->
+  <h2 id="attached"><span class="n">14</span>Attached follow-up tasks</h2>
+  <p class="sub">A complete task, delivered into a session that is already open.</p>
+
+  <p>Some sessions are worth keeping alive between jobs — one that takes small batches, one that reviews each finished feature. The problem with feeding such a session by hand is that <strong>work typed into an existing session carries no task record</strong>: it holds no claims, signals no completion, appears in no outstanding-work answer and is counted in no usage. A standing session fed that way is invisible to every safety mechanism on this page, which is worse than a session that costs a tab.</p>
+
+  <p><code>attach_session</code> closes that gap. The task still has a fresh id and secret, its own directory and briefing, its own claims, serialize tokens, timeout, usage, result signal, landing record and outstanding-work visibility. <strong>The only difference is that the ordinary first line is typed into the named existing session instead of into a new tab.</strong> The public record carries an <code>attached</code> flag and the session it went to.</p>
+
+  <ul>
+    <li>The id is resolved against the same terminal-neutral session list a caller reads with the machine credential. A plain shell has no assistant to read a briefing; the resident assistant must match the task's <code>assistant</code>.</li>
+    <li><strong>One session runs at most one live Clawdline task.</strong> The single-flight check is repeated under the registration lock, so two concurrent requests cannot both pass a stale inventory.</li>
+    <li>If the session's cached state says it is waiting and a screen reading confirms a menu is up, the dispatch is refused <em>before</em> anything is typed or any record is created — retrying the same body later is safe.</li>
+    <li>An attached task keeps the standing session's existing depth, including at the depth floor — a session Clawdline did not open for a task is refused with <code>attach_not_managed</code> long before depth is considered. It opens no tab, so it spends no child, grandchild or machine tab-opening capacity — but it is a live task, it passes the rate limiter and the quota gate, and it holds its ordinary claims and serialize reservations.</li>
+    <li><strong>The task does not own the tab.</strong> Success, failure, timeout, cancellation, a root-close cascade and any tab-linger setting all leave the standing session open. Its briefing says that writing <code>result.json</code> completes the task and does not end the session, which can then take a later follow-up assignment.</li>
+  </ul>
+
+  <p>Seven typed refusals belong to this path alone: <code>404 attach_session_not_found</code>, <code>409 attach_unsupported</code>, <code>409 attach_not_managed</code>, <code>409 attach_assistant_mismatch</code>, <code>409 attach_session_occupied</code>, <code>409 attach_session_busy</code>, and <code>502 attach_delivery_failed</code> — that last one meaning validation and registration succeeded but the line could not be typed, leaving the task record in <code>spawn_failed</code>.</p>
+
+  <p><strong>An attached task is not held to the four-minute clock, and the difference is worth budgeting for.</strong> That clock asks whether a tab this dispatch opened ever reached a prompt; an attached task has no tab-opening phase at all, because its first line was typed before registration returned. Waiting longer while the standing session's owner answers a menu therefore does not relabel delivered work as <code>spawn_failed</code>. The wait is still bounded — the task's ordinary <code>timeout_minutes</code> runs from that delivery, and expiry finalizes it as <code>timeout</code>, releases its claims and serialize tokens, and returns the session to its earlier role. But notice what that means end to end: <em>an attached task's total wall-clock budget can reach twice <code>timeout_minutes</code></em>, once waiting to be picked up and once running.</p>
+
+  <div class="note">
+    <span class="tag">The rule this exists to make keepable</span>
+    <p>With no follow-up task carrying <code>claims</code>, a standing session must not write to the shared tree at all. A review session satisfies that by construction, because a reviewer produces findings and not bytes. An odd-jobs session does not — which is the whole reason this mechanism has to exist before one is kept alive.</p>
+  </div>
+
+  <!-- 15 -->
+  <h2 id="work"><span class="n">15</span>Scratch space, and when it is reclaimed</h2>
+  <p class="sub">Heavy temporary output has a shorter life than the task directory around it.</p>
+
+  <p>Repository snapshots, build products, mutation checkouts and compiler indexes go in the task's own <code>work/</code> directory rather than in a scratchpad somewhere else, so that large temporary files live inside storage Clawdline already owns and can account for. That has a matching promise on the other end:</p>
+
+  <ul>
+    <li><strong><code>work/</code> is reclaimed as part of finalizing the task</strong> — immediately on <code>success</code>, and after a grace period for every other terminal state.</li>
+    <li>The grace period is a setting: 60 minutes by default, <code>0</code> to reclaim immediately whatever the outcome, and <code>-1</code> to leave the directory to the ordinary sweep. The default exists because a task that failed is the one whose leftovers somebody may still want to read.</li>
+    <li><strong><code>artifacts/</code>, <code>task.json</code>, <code>CHILD.md</code>, <code>DISPATCHING.md</code> and <code>result.json</code> are untouched</strong> by this and live until the whole task directory is swept.</li>
+    <li>Reclaiming a <code>work/</code> that is not there counts as success, and a filesystem refusal never delays or reverses the terminal state of the task. Accounting is not allowed to hold up a finalize.</li>
+  </ul>
+
+  <p>The consequence for a child is one line long: <strong>copy anything worth keeping into <code>artifacts/</code> before writing <code>result.json</code>.</strong> A diagnostic log or a diff left in <code>work/</code> is a file you have asked to have deleted.</p>
+
+  <p>Clawdline also keeps an append-only ledger of the scratch directories it can prove belong to a child, recorded only after that child's own first turn proves the marker. <strong>The safety boundary is what the ledger can name</strong>: the app does not enumerate a temporary directory and then apply rules to whatever it finds there. Interactive sessions, directories with no receipt and other tools' files are outside the candidate set altogether, and a read-only inventory route reports each owned path with a decision of <em>held</em>, <em>releasable</em> or <em>unknown</em> — where <strong>unknown is held</strong>, always.</p>
+
+  <!-- 16 -->
+  <h2 id="waits"><span class="n">16</span>Waiting for somebody else's files</h2>
+  <p class="sub">A relationship the broker remembers, not one that lives inside one assistant.</p>
+
+  <p>When a root needs paths another session is still editing, it must not create a relationship that exists only inside one vendor's messaging. It resolves both parties through Clawdline's own session and git readings and registers the wait with <code>POST /v1/orchestrator/waits</code>, naming the repository, the exact paths, the owner and waiter session ids, the reason and the release condition. The broker canonicalises the paths, deduplicates the same waiter, persists the group, and delivers a typed request into the owner's terminal.</p>
+
+  <ul>
+    <li><strong>Both ids are terminal-neutral session ids</strong>, read from the session listing that the machine credential can open. Registering a waiter the machine cannot find is <code>404 waiter_not_found</code>.</li>
+    <li>If the owner is genuinely showing a menu, the route answers <code>409 owner_busy</code> and nothing is sent — retrying the same registration is safe. A session that is merely working, or invisible to this machine, continues to delivery, so an absent owner becomes <code>502 request_delivery_failed</code>: a send was attempted and did not arrive, rather than being misreported as busy.</li>
+    <li>The registry row is written <em>before</em> delivery, so a retry re-attempts only the missing deliveries.</li>
+    <li><strong>Release is always explicit.</strong> The recorded owner calls the release route after committing or otherwise releasing the paths, and every waiter is sent a notice naming the repository, the paths, the commit if there is one, and the requirement to re-check the branch head, status and diff. Partial delivery is recorded, so a retry does not notify successful recipients twice. <code>403 wrong_owner</code> protects the relationship; a waiter abandoning its work removes only itself, and <code>403 not_waiter</code> protects everybody else's.</li>
+    <li><strong>The broker never infers release from a transient clean status</strong>, and an owner session disappearing does not remove a wait.</li>
+  </ul>
+
+  <p>The relationship shows up on session rows as a quiet overlay — the blocked session names who it is waiting on, the owner names who is waiting on it — <em>without</em> changing the session's own state. That distinction matters: a session marked as waiting for a <em>person</em> is the loud one that earns attention and a push notification. A peer wait is drawn quietly, so that an idle-looking but parked session is safe for somebody to leave open.</p>
+
+  <div class="note warn">
+    <span class="tag">Two namespaces, and only one of them is listed</span>
+    <p>A root identifies itself in <code>task.json</code> with whatever id its own assistant gave it. That is <strong>not</strong> the terminal-neutral session id the app assigns and lists. Comparing one against the other is comparing two different namespaces, and a miss proves nothing.</p>
+    <p><strong>Querying for a session by an id and getting nothing back is never proof that session is gone</strong> — it may only mean the app could not prove that id at that moment. To judge whether a root is still around, use what a listing can always promise: the working directory, label and state of a session sitting where the root said it would be, or send it a message and read whether anything answers.</p>
+  </div>
+
+  <!-- 17 -->
+  <h2 id="handoff"><span class="n">17</span>Handoff: the other motion</h2>
+  <p class="sub">A dispatch sends an errand out. A handoff sends the line of work itself on.</p>
+
+  <p>A conversation ends before its work does — the context window fills, the phase changes from planning to building, the day ends, or the next hour would be better done in the other assistant. What usually happens next is that somebody re-describes half of it from memory to a session that starts knowing nothing, and the half nobody remembered to say is the half that mattered. A handoff is the other move: the session that has the state writes it down, and a new session picks the line of work up from that document. <strong>The file is the protocol; the app is the postman.</strong></p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th></th><th>Dispatch</th><th>Handoff</th></tr></thead>
+    <tbody>
+      <tr><td>what the new session is</td><td>a <strong>child</strong>, in somebody's tree</td><td>a <strong>root</strong>, in nobody's</td></tr>
+      <tr><td>what it is given</td><td>one task it did not choose</td><td>a line of work, and the judgement to continue it</td></tr>
+      <tr><td>credential it holds</td><td>a task secret, good for one sentence</td><td>none. There is nothing for it to prove</td></tr>
+      <tr><td>deadline</td><td><code>timeout_minutes</code>, 1…240</td><td>none. Sessions end when the person ends them</td></tr>
+      <tr><td>what it owes</td><td><code>result.json</code>, which <em>is</em> the completion signal</td><td>nothing back to the sender; it reports to the person in its own tab</td></tr>
+      <tr><td>who watches it</td><td>the app, once a beat, until it reports</td><td>nobody. It is an ordinary session on the list</td></tr>
+      <tr><td>capacity it spends</td><td>a child slot, a descendant slot, and depth</td><td>none of the three. There is no tree to be deep in</td></tr>
+      <tr><td>when the sender closes</td><td>its live tasks are cancelled and their tabs closed</td><td>nothing happens to it. It was never the sender's</td></tr>
+      <tr><td>what the app reads</td><td><code>task.json</code>, strictly validated</td><td>the <em>existence</em> of <code>handoff.md</code>, and nothing inside it</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>The last two rows catch people. <strong>Closing the session that handed over does not touch the session that took over</strong> — the cascade follows parent and root links, a handoff creates neither, and that is correct: you handed the work on precisely so that it would outlive this conversation. And the sender does not have to die: a handoff is a copy of state, not a transfer of ownership. Fork a line off to run in parallel and there are simply two equal roots in one working tree, with everything this page says about claims applying to both.</p>
+
+  <p>There is one deliberate ownership convention on top of that transport fact. A root that must stop while holding a named pending obligation writes that obligation and the receiving root's ownership explicitly into the document, supplies the sending session's name, and waits for the <em>picked up</em> receipt before stopping. The receipt proves that the first line reached the named root — not that the package was understood, and not that the work is done.</p>
+
+  <h3>When it is worth doing</h3>
+
+  <p>Hand over when the work has to <strong>move</strong>; compact when it merely has to continue where it is. Worth a handoff: a phase boundary, a context window that is about to make the decision for you, a parallel fork, multi-day work, a different assistant or model or allowance, a different machine. Not worth one: the same harness in the same directory on an ordinary transition, work smaller than the document that would describe it, or a question you could answer in this session. A handoff is for a <em>line</em> of work, not a step.</p>
+
+  <h3>The package, and the document</h3>
+
+<pre><code>/tmp/.clawdline/handoffs/        <span class="c"># 0700</span>
+  &lt;handoff-id&gt;/                  <span class="c"># 0700 — lowercase UUID</span>
+    handoff.md                   <span class="c"># the sender writes this. Required, non-empty</span>
+    attachments/                 <span class="c"># optional. Copied, not linked</span></code></pre>
+
+  <p>Handoffs live in their own subdirectory rather than beside the task directories, and that is not tidiness: every child briefing carries the rule <em>do not read any task directory but your own</em>, and a task-shaped directory that is not a task would make that rule ambiguous exactly where it needs to be crisp. The package holds <strong>no credential</strong>, because there is nothing a receiving session has to prove.</p>
+
+  <p>Eight headings, in this order:</p>
+
+  <ol>
+    <li><strong>OBJECTIVE</strong> — what this line of work is, and what the receiver's first hour looks like. The only section that may assume nothing.</li>
+    <li><strong>KEY DECISIONS</strong> — what is settled, numbered, marked plainly as <em>do not reopen</em>, each with a date and where it was settled. A decision that lives only in the sender's context has nothing behind the summary of it.</li>
+    <li><strong>CURRENT STATE</strong> — done, not done, in flight, and what belongs to a different line that touches this one. Name commits by hash. This is the section that goes stale, and keeping it true is the receiver's job from the moment it takes over.</li>
+    <li><strong>REFERENCES</strong> — the authoritative sources in reading order, <em>with their content not repeated</em>; a document that summarises its own sources will disagree with them by Thursday. Two layers: what the receiver can read (including every attachment, named one by one — the typed line points at the document and at nothing else, so this section is the only door the rest of the package has), and what it cannot read, with where to ask.</li>
+    <li><strong>CONSTRAINTS &amp; PRINCIPLES</strong> — the red lines. Violating one means the work went the wrong way, not that it went slowly.</li>
+    <li><strong>OPEN THREADS</strong> — numbered, each a sentence, each pickup-able cold.</li>
+    <li><strong>IMMEDIATE NEXT STEP</strong> — one entrance, naming one open thread. Not a plan; a door.</li>
+    <li><strong>VERIFICATION</strong> — three to five questions whose answers are deliberately <em>not</em> in this document, each naming where the answer lives.</li>
+  </ol>
+
+  <p>That last section is the load-bearing one. It is not a quiz for a person, it is a fidelity check built into the handover: a receiver that can answer the questions has demonstrably walked the reference chain, and one that cannot has found a break at the cheapest possible moment to find it.</p>
+
+  <div class="note warn">
+    <span class="tag">Transport is not storage</span>
+    <p>A package is swept a day after it was created, on the same clock a finished task directory is. So the package is <em>transport</em> — good for the hours between one session and the next — and anything the line of work will still need next week has to be durable <em>before</em> it is cited. <strong>References are not duplicated, but a volatile source is the exception: archive it durably first, then cite the durable copy.</strong> In the package, put the pointer, not the copy.</p>
+  </div>
+
+  <h3>The route, and what the receiving session owes</h3>
+
+  <p><code>POST /v1/orchestrator/handoffs</code> takes the handoff id, the project directory, and optionally an assistant, a model, a title and the name of the sending session. <strong>The tab is made before the call answers; the typing happens after.</strong> Opening a tab is synchronous, so a machine that cannot provide one refuses with an HTTP status — but waiting for a composer, typing the line and confirming it landed run for up to four minutes after the connection has closed, so <em>none of that can ever be an HTTP code</em>. It is idempotent by handoff id, and the row survives a restart, so a retry after a dropped connection cannot leave two sessions holding the same line of work. To genuinely open two, make two packages.</p>
+
+  <p>The app opens the tab, waits, types <strong>one canonical English line</strong> naming the document path and what to do with it, confirms it landed by finding that first turn in the assistant's own record, types one receipt line back to the sender if it was told who that is, and then settles the row. <strong>It does not read the document</strong> — not to name the tab, not to summarise it, not to check its headings. An app that validated the shape of a handoff would be an app with an opinion about what a handoff is allowed to say, and the format above is a convention that ought to be able to change without a release. The row it keeps is the envelope and never the contents: <em>did this one already go?</em> is the one question a postman is allowed to have an answer to.</p>
+
+  <p>What the receiver owes is not a report to the sender — there is no channel back and none is needed. It owes the person in front of it a sequence: read the document first; walk the references and actually open them; answer the verification questions <em>from those sources</em> and say the answers out loud in the tab; <strong>say plainly what could not be reached, and do not fill a gap with a plausible answer</strong>, because an invented one costs more than a missing one — it stops anybody looking; continue from the open threads; and keep the current state true, because a handoff that stops being updated is a handoff that can only be made once.</p>
+
+  <p>There is no second route: no list, no cancel, no state to poll. The session it opened is a root, so the ordinary session surface already addresses it.</p>
+
+  <!-- 18 -->
+  <h2 id="credentials"><span class="n">18</span>Three credentials, and the boundary</h2>
+  <p class="sub">Not interchangeable, and the difference is who is asking rather than where from.</p>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Credential</th><th>Where it lives</th><th>What it can do</th><th>What it cannot</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Orchestrator token</strong></td>
+        <td><code>~/.config/clawdline/orchestrator-token</code>, mode <code>0600</code>, minted when the server starts</td>
+        <td>dispatch, hand off, cancel, release claims, close a landing, register a wait, read every task, send a root content notification</td>
+        <td>it is never served over HTTP, never written under <code>/tmp</code>, cannot recover a task secret, and is never accepted from a device that merely holds a device token</td>
+      </tr>
+      <tr>
+        <td><strong>Task secret</strong></td>
+        <td>64 hex characters, made by the root, handed to the child inside the injected first message</td>
+        <td>say “this one task is finished”; post a progress note; record a pending or abandoned landing; ask what else is outstanding in its own repository; send up to five content notifications while live or within 60 seconds afterwards</td>
+        <td>nothing for another task, nothing after its short notification grace, and <strong>it can never write <code>landed</code></strong>. Its durable identity is a hash</td>
+      </tr>
+      <tr>
+        <td><strong>Device token</strong></td>
+        <td>the paired phones and browsers</td>
+        <td>read task state; cancel a task, if it has the send capability and the write switch is on</td>
+        <td><strong>dispatch.</strong> Not with send, not with admin, not over a tunnel, not ever</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Why the boundary is a file and not an address</h3>
+
+  <p>Once a tunnel is running, every request arrives from <code>127.0.0.1</code> — the tunnel client connects to the local port like any other program, so a request from a phone in another country has the same socket address as a <code>curl</code> in the next window. <strong>This feature therefore could not be built on <em>but it came from this machine</em>.</strong></p>
+
+  <p>What separates “a local process running as you” from “somebody on the other end of a tunnel” is a file: the token is mode <code>0600</code> in your home directory, and a request either presents its contents or it does not. <strong>A page on the internet cannot read files. A phone cannot read files.</strong> A shell in your own terminal can, which is the entire point.</p>
+
+  <p>And that guarantee is bought by the URL rather than by a list of exceptions. Authorisation is decided before a route is chosen, on a prefix: a request under <code>/v1/orchestrator/</code> is the only kind that can be answered by this token, and one not carrying it falls through to ordinary device authorisation. Hanging a tab-opening route anywhere else would mean either a paired phone reaching it, or one more special case in the ladder — <strong>and a security boundary with an exception list is a boundary somebody eventually edits.</strong></p>
+
+  <p>Cancel is where the asymmetry is easiest to see. With the machine token it is the same local credential that opened the task and needs nothing else. From a paired device it is a write like any other and passes all three ordinary write gates. <strong>A device may stop work; it may not start any.</strong></p>
+
+  <h3>What is deliberately not a credential</h3>
+
+  <p>A serialized task waiting in the queue has a temporary encrypted copy of its secret in the app's own store, so that the queue can resume after a restart. The key for that is a separate random file, mode <code>0600</code>, created lazily and replaced only when the stored bytes do not parse. <strong>It is not derived from the orchestrator token, is not accepted by any route, and is never named or copied into a briefing</strong>, and the sealed copy is removed before the task starts opening. That is how three request credentials stay non-interchangeable without sacrificing restart recovery.</p>
+
+  <div class="note bad">
+    <span class="tag">What this does not defend against</span>
+    <p>Something already running as your user can read the token exactly as it can read your SSH key. <strong>Same-uid compromise is outside this threat model.</strong> The separation above protects the narrower boundary of a child following its briefing and reading only what that briefing names — not hostile code already running with unrestricted access to the account.</p>
+  </div>
+
+  <!-- 19 -->
+  <h2 id="coordinator"><span class="n">19</span>The machine coordinator, and the restart boundary</h2>
+  <p class="sub">One optional role, durably bound to one process, that explains receipts and never writes them.</p>
+
+  <p>A machine running many sessions can register exactly one <strong>coordinator</strong>: a role that holds the machine-wide picture. It is an authenticated construction rather than a title anybody can claim. A local caller reads a terminal-neutral session id from the machine-credential session listing and posts that exact id to <code>POST /v1/orchestrator/coordinator/register</code>; the broker accepts only a live assistant row whose complete process-bound identity it can prove — terminal, assistant, tty, process and its current conversation. <strong>Labels, working directory, task ancestry, recency and words in a title are not evidence.</strong></p>
+
+  <p>The durable record holds a stable opaque id, a fixed scope and label, and the private binding, in a mode-<code>0600</code> file under an exclusive lock, written atomically and read back before success is reported. A first registration creates the id; the same identity again is idempotent; <strong>any other identity is refused</strong> with the existing coordinator's safe metadata. There is deliberately no takeover through registration, and no unconditional replace, delete or stop.</p>
+
+  <p>Restart continuity is identity continuity, not conversation resurrection. After the app reloads, the role is projected onto a session row only when every private binding fact still matches one current process. A missing or reused process leaves the coordinator <em>offline</em> and decorates no row — <strong>the role never migrates to a matching label or to the most recently active assistant.</strong></p>
+
+  <p>A guarded <em>reconnect</em> — <code>POST /v1/orchestrator/coordinator/rebind</code> — moves that same stable role to one exact current process. It is a closed three-field compare-and-swap: the expected coordinator id, the expected generation, and one live session id, all taken from the most recent read. Either mismatch refuses and asks the caller to refresh. An exact current binding is idempotent. Any different candidate is accepted only when one <em>complete</em> current scan contains the candidate and does not contain the old binding. If the old binding is present, live takeover is refused; <strong>if the scan is incomplete, the answer is that liveness is unknown</strong> — the app refuses to convert absence of evidence into proof of death. The same applies to a scan that predates the current binding: a pre-binding snapshot cannot disprove a newer tuple. A clock that moved backwards fails closed rather than making stale evidence look fresh.</p>
+
+  <h3>What it reads</h3>
+
+  <p><code>GET /v1/orchestrator/coordinator</code> returns durable presence plus <strong>Bearings</strong>: one deterministic snapshot over existing session metadata, active task records, pending landings and open coordination waits. Every live session row carries exactly one closed work state — <code>ready</code>, <code>working</code>, <code>holding</code>, <code>waiting_you</code>, <code>waiting_session</code>, <code>unknown</code>, <code>milestone_complete</code> or <code>work_complete</code> — projected from those separate sources rather than stored as a second truth (see <code>docs/session-states.md</code> for the per-state contract and the independent <code>owed</code> overlay).</p>
+
+  <ul>
+    <li><strong>A missing or unrecognised value fails closed as <code>unknown</code></strong>, never as blank idle and never as a check. An idle assistant without positive evidence — an assistant-free prompt, or its own authenticated declaration — is <code>unknown</code>, an absence that asks nothing of the reader, not <em>ready</em>.</li>
+    <li>Current work outranks an older receipt, because somebody can resume a lingering tab and the earlier assignment's success cannot claim that new activity is finished. An idle dispatcher with a live child is <code>waiting_session</code>, validated against the task's resolved root process and drawn as a quiet <code>⏳</code> child-task wait rather than triage; if the root works in parallel, <code>working</code> wins.</li>
+    <li>One check — a delivered milestone — requires either a task receipt or an explicit root-turn delivery receipt bound to the process occupying that session <em>now</em>. A terminal reused by a later process cannot borrow either receipt.</li>
+    <li>Two checks require the task-scoped, machine-authenticated and git-verified target landing described in <a href="#landing">section 12</a>, and no unresolved wait or open handoff. <strong>Neither unstructured assistant prose, nor a progress note, nor coordinator advice can write either check.</strong></li>
+    <li>Each source in the snapshot carries its own observation time, provenance and freshness. Two independent registries cannot be read transactionally together, so an incomplete inventory is marked <em>stale</em> rather than advertised as a complete instant.</li>
+    <li>The snapshot returns only opaque and terminal-neutral identifiers. <strong>No transcript, transcript path, conversation id, tty, pid or process start is ever in a response.</strong></li>
+  </ul>
+
+  <p>An ordinary root reports that narrow one-turn milestone through <code>POST /v1/orchestrator/sessions/:terminal-id/complete</code> during its final working tool call. The broker resolves the live terminal, assistant, tty, process start and current conversation itself; the request supplies only a bounded summary. The resulting <code>scope:session</code>, <code>authenticated_session_delivery</code> receipt means <em>delivered, awaiting approval</em>—never independent review or whole-graph closure. Its first idle settles it, and that terminal's next working or waiting transition consumes it, so an old check cannot return after newer unreported work. Child tabs continue to report only through their task result, and only a task-scoped verified landing can produce two checks.</p>
+
+  <p>Registering the role enters no task registry. It cannot change parent links, depth or caps, root keys, claim ownership, wait or landing writers, a session's state, or the evidence behind a completion receipt. <strong>The coordinator explains those receipts; it never authors them.</strong></p>
+
+  <h3 id="restart-boundary">The restart boundary</h3>
+
+  <div class="note bad">
+    <span class="tag">One observer is not proof</span>
+    <p>An agent's execution sandbox may refuse or isolate loopback while the application is perfectly healthy. <strong>A refusal seen from a sandbox's loopback domain is only <code>observer_unreachable</code>, never <code>app_down</code>.</strong></p>
+    <p>Before any restart is even proposed, that reading must be corroborated with <strong><code>host_listener</code></strong> proof — the listener and process observed from the host — and a host-network health probe, <strong><code>host_health</code></strong>. Each observer's domain and provenance is recorded with the reading it produced: <code>sandbox_loopback</code> for the constrained one, <code>host_listener</code> for the host-side one. <strong>One failed observer cannot authorize restart.</strong></p>
+  </div>
+
+  <p>This is a stated policy boundary rather than a capability: the coordinator implements no restart and no other health-driven mutation. The guarded reconnect above is the narrow exception, and it only rebinds a <em>provably offline</em> role to an already-live exact process — it starts no tab, wakes no model, resumes no transcript, grants no transcript access, dispatches nothing, mutates no git, and stops or deletes nothing.</p>
+
+  <p>The same lesson generalises, and it is worth carrying off this page: <strong>one constrained or stale observer being unable to see something is not proof that the thing died.</strong> It is the same rule as “a session id that returns nothing may only mean the app could not prove it”, and the same rule as “never infer a file release from one clean status reading”.</p>
+
+  <!-- 20 -->
+  <h2 id="errors"><span class="n">20</span>Every typed error, in one place</h2>
+  <p class="sub">Branch on <code>code</code>. The status is there for the layers between you and this, and <code>message</code> is a sentence for a person that may be reworded or translated at any time.</p>
+
+  <p>Every refusal arrives in the same envelope:</p>
+
+<pre><code>{"error":{"code":"over_capacity","retry_after":60,
+          "message":"All 5 child slots for this session are busy; retry when one finishes.",
+          "request_id":"7b2c19d0-6e44-4a2f-9c31-0d5e8ab41f77"}}</code></pre>
+
+  <h3>Dispatching a task</h3>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Code</th><th>Status</th><th>When, and what to do</th></tr></thead>
+    <tbody>
+      <tr><td><code>forbidden</code></td><td>403</td><td>The header is missing or wrong, or the orchestrator is switched off. Not a retry.</td></tr>
+      <tr><td><code>bad_task</code></td><td>422</td><td>The file is missing, unparseable, or a field is out of range; <code>message</code> names it. Fix the file and re-send <strong>the same id</strong>.</td></tr>
+      <tr><td><code>assistant_exhausted</code></td><td>409</td><td>That assistant's account has nothing left. Read <code>alternatives</code> and send the work elsewhere rather than retrying blind; or set <code>ignore_quota</code> if you have a real reason, and take the warning instead.</td></tr>
+      <tr><td><code>worktree_unavailable</code></td><td>409</td><td>No commit to base an isolated checkout on, or not enough free space. An environment refusal.</td></tr>
+      <tr><td><code>workspace_busy</code></td><td>409</td><td>Another root holds an overlapping claim. <a href="#busy">Narrow, isolate, or wait</a> — it is a choice of topology, not proof the work must stop.</td></tr>
+      <tr><td><code>depth_exceeded</code></td><td>409</td><td>The caller is already as deep as the tree goes. <strong>Not a retry — the work is yours to do.</strong></td></tr>
+      <tr><td><code>over_capacity</code></td><td>429</td><td>This dispatcher's slots, or the whole machine's, are full. <code>retry_after</code> is seconds; wait, or ask for fewer.</td></tr>
+      <tr><td><code>rate_limited</code></td><td>429</td><td>Too many dispatches (and handoffs) in the window. Wait; nothing is draining, it ages out.</td></tr>
+      <tr><td><code>attach_session_not_found</code></td><td>404</td><td>The named session is not in the inventory. No task was created.</td></tr>
+      <tr><td><code>attach_unsupported</code></td><td>409</td><td>That session is a plain shell with no assistant to read a briefing.</td></tr>
+      <tr><td><code>attach_not_managed</code></td><td>409</td><td>Clawdline did not open that session for a task, so it does not hold the access an attached child needs. No task was created.</td></tr>
+      <tr><td><code>attach_assistant_mismatch</code></td><td>409</td><td>The task's assistant differs from the one resident in the session.</td></tr>
+      <tr><td><code>attach_session_occupied</code></td><td>409</td><td>That session already has one live task. Attached sessions are single-flight.</td></tr>
+      <tr><td><code>attach_session_busy</code></td><td>409</td><td>A menu is confirmed on screen. Nothing was typed; retrying the same body is safe.</td></tr>
+      <tr><td><code>attach_delivery_failed</code></td><td>502</td><td>Registered, but the line could not be typed. The record exists in <code>spawn_failed</code>.</td></tr>
+      <tr><td><code>not_found</code></td><td>404</td><td>This build has no orchestrator at all.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Reporting, and the task's own routes</h3>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Route</th><th>Codes</th></tr></thead>
+    <tbody>
+      <tr><td><code>…/complete</code></td><td><code>403 forbidden</code> (wrong secret — the same answer for a real task with a wrong secret and for an id nobody could guess) · <code>404 not_found</code> · <code>409 already_done</code>, and <strong>a retry is not idempotent here</strong>: the first report wins · <code>400 bad_request</code></td></tr>
+      <tr><td><code>…/progress</code></td><td><code>409 not_live</code> for a terminal task · <code>400 bad_request</code> for an empty or over-long note</td></tr>
+      <tr><td><code>…/claims/release</code></td><td><code>404 not_found</code> · <code>409 already_done</code> · <code>409 not_started</code> (still queued — cancel it instead) · <code>400 bad_request</code></td></tr>
+      <tr><td><code>…/landing</code></td><td><code>400 bad_request</code> · <code>403 forbidden</code> (in particular, a task secret is never accepted for <code>landed</code>) · <code>404 not_found</code> · <code>409 not_terminal</code> · <code>409 invalid_transition</code> · <code>409 unverified_landing</code> · <code>409 stale_write</code></td></tr>
+      <tr><td><code>…/notify</code></td><td><code>401 unauthorized</code> · <code>403 forbidden</code> · <code>409 agent_notify_disabled</code> · <code>404 not_found</code> · <code>409 not_subscribed</code> (no allowance is spent) · <code>409 notify_expired</code> · <code>400 bad_request</code> · <code>429 notify_limit</code> · <code>429 rate_limited</code> · <code>502 push_failed</code>, which carries sent and failed counts rather than reporting a silent success</td></tr>
+      <tr><td><code>…/cancel</code></td><td>Machine token: nothing else needed, and an already-finished task answers <code>200</code> with its record unchanged. From a paired device: the ordinary write gates, including <code>403 write_disabled</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Waits, handoffs and the coordinator</h3>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Area</th><th>Codes</th></tr></thead>
+    <tbody>
+      <tr><td>Coordination waits</td><td><code>404 waiter_not_found</code> · <code>409 owner_busy</code> · <code>502 request_delivery_failed</code> · <code>502 release_incomplete</code> (with <code>sent</code> and <code>pending</code>; retry addresses only the pending ones) · <code>403 wrong_owner</code> · <code>403 not_waiter</code></td></tr>
+      <tr><td>Handoff</td><td><code>403 forbidden</code> · <code>400 bad_request</code> · <code>403 orchestrator_disabled</code> · <code>422 bad_task</code> (including a missing or empty package — <strong>422, not 404</strong>, because the caller wrote that directory itself moments ago) · <code>429 rate_limited</code> · <code>409 terminal_closed</code> · <code>409 terminal_unsupported</code> · <code>404 not_found</code> · <code>500</code>/<code>502 internal</code></td></tr>
+      <tr><td>Coordinator register</td><td><code>400 bad_request</code> · <code>404 session_not_found</code> · <code>409 session_unbound</code> · <code>409 coordinator_exists</code> · <code>409 coordinator_store_invalid</code> · <code>500 coordinator_store_failed</code></td></tr>
+      <tr><td>Coordinator reconnect</td><td>the same, plus <code>409 session_ambiguous</code> · <code>409 coordinator_online</code> · <code>409 coordinator_liveness_unknown</code> · <code>409 coordinator_identity_mismatch</code> · <code>409 coordinator_generation_mismatch</code> · <code>409 coordinator_not_configured</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3 id="busy">A <code>workspace_busy</code> refusal is not a scheduling verdict</h3>
+  <p>It says do not start <em>that shared-tree dispatch</em>. Decide in this order:</p>
+  <ol>
+    <li><strong>Narrow or split first.</strong> If the task does not truly write every conflicting path, correct its claims or split discovery, implementation and review into separate nodes. <strong>Never narrow a claim while leaving instructions that still authorise the child to write the path.</strong></li>
+    <li><strong>Isolate work that can start from a stable commit.</strong> If the implementation does not need the blocking root's uncommitted bytes, re-send it isolated with an explicit base. Keep the intended write set in the plan and instructions so review still has an exact scope.</li>
+    <li><strong>Wait only for a real data dependency</strong> — when correctness depends on the blocking root's unfinished version, or the eventual integration cannot be reviewed without it. Register a durable wait naming the exact path and release condition.</li>
+    <li><strong>Keep implementation and integration separate.</strong> Isolation can finish implementation while a shared path is owned; it never authorises an early merge.</li>
+  </ol>
+
+  <!-- 21 -->
+  <h2 id="sizing"><span class="n">21</span>How big one task should be</h2>
+  <p class="sub">The broker enforces limits. Sizing is a policy file, and it is meant to be edited.</p>
+
+  <p><code>~/.config/clawdline/dispatch-policy.md</code> is what a machine says about <em>how</em> work should be handed out, as opposed to how much of it. It is read fresh on every dispatch — an edit reaches the next task, not the next launch — and copied into the <code>DISPATCHING.md</code> of every child that is allowed to dispatch in turn. A leaf never sees it, because rules about choosing a model are noise to a session with no such choice to make. It is truncated at a generous length, and <strong>an empty file means there are no house rules</strong>, which is a position rather than a broken setting. It ships with opinions already in it, because a file with defensible rules is one somebody edits and an empty one is a feature nobody finds — and what ships is the app's own bundled copy of that file, read when a machine has no policy of its own, rather than a second draft of the rules compiled into the binary. A missing resource means no house rules and no file written, because the first-run write never overwrites and an empty file created by a bad read would be permanent.</p>
+
+  <p>What the shipped file says, and why:</p>
+
+  <h3>Should this be dispatched at all?</h3>
+  <p>The measurement is sharp in both directions: on work that splits into independent pieces, several agents beat a single one substantially; where every step depends on the last, every multi-agent arrangement tested was <em>worse</em>, because the handoffs break a chain that needed to stay whole. So the test is one sentence: <strong>can this be cut into pieces that need not talk to each other, and joined at the end?</strong></p>
+
+  <p><strong>When the answer is no, that is a recommendation and not a refusal.</strong> Give the reason in a sentence, ask, then do whatever they answer — their yes settles it, and what is owed is the reason once, before the work starts.</p>
+
+  <p>Shapes that look dispatchable and are not: diagnosis (every step is chosen by what the last one found), dozens of small parallel jobs, anything on a path where somebody is waiting, agents that need to talk back and forth, output a program has to parse, and <strong>work smaller than its own briefing</strong> — which does not vanish, it accumulates.</p>
+
+  <h3>One task is one reviewable slice</h3>
+  <ul>
+    <li>A dispatchable node normally carries its production change, red-before-green tests, the documentation that goes with it, and its own verification, through one sustained session. Keep the implementer there until the slice is mature; new discoveries go to that session, not a new tab.</li>
+    <li><strong>Never open a session for one small change.</strong> Small items pool, and the pool empties when five are waiting, or they are together worth more than about half an hour, or one of them blocks a landing or somebody is waiting on it — and no item sits longer than a day, otherwise “accumulate” quietly becomes “never”. One task carries the whole batch, its claims are the union of what it writes, and its instructions list the items separately so the result can report on each.</li>
+    <li>A batch is a legitimate review target in its own right: a reviewer reads the whole batch boundary in one pass, exactly as it reads one feature.</li>
+  </ul>
+
+  <h3>Pick a shape, and tell every node the whole graph</h3>
+  <ul>
+    <li><strong>Split and join</strong> — independent pieces gathered by cheap leaves, one stronger node joining and judging. The default for research, audits and surveys.</li>
+    <li><strong>Build then read</strong> — for code, or a decision somebody acts on. Never the same node or session.</li>
+    <li><strong>Decide then do</strong> — one node plans touching nothing, a person passes it, a second implements. The value is the gap in the middle, where a person can still say no cheaply.</li>
+    <li><strong>Batch with takeover</strong> — one mechanical change across independent modules, one node each; a dead node leaves its state on screen for a person to finish by typing.</li>
+    <li><strong>Candidates</strong> — one problem, several differently-instructed nodes, a person picks. No judging node: what is compared is taste.</li>
+  </ul>
+
+  <p><strong>Breadth before depth</strong> — two children splitting a job beat one that hands half of it on. Stagger dispatches by half a minute or so rather than firing them together. And say when you did it yourself: a summary that reads as though dispatched sessions did work they never started is worth less than an honest one, because whoever reads it is deciding how much to trust the result.</p>
+
+  <h3>Somebody has to check the work</h3>
+  <p>Every graph producing code, or a decision anybody acts on, ends with a node whose only job is to find what is wrong with it — reading a complete feature or a complete batch, never a fragment, and returning the whole finding set in one pass.</p>
+  <ul>
+    <li><strong>It did not help build the thing.</strong> A model judging its own output misses a large fraction of its own drift, structurally: a judge favours text that looks likely to it, and its own output is exactly that by construction.</li>
+    <li><strong>A different assistant helps and does not solve it.</strong> Where review really matters, use several, complementary.</li>
+    <li><strong>Name the paths it may read</strong> — the exact directories, and for a batch every branch and head. Ask for a verdict with receipts: worst first, is it safe to ship, every finding naming the passage it rests on. <strong>A verdict without sources is the shape a hallucinating judge produces.</strong></li>
+    <li><strong>The finding set is written down and reported before a single byte is repaired.</strong> A repair made while the findings are still in the reviewer's head buries the judgement somebody needed to see. Once a reviewer has edited production bytes its verdict is spent — that repair is a delivery, and the focused diff and exact-tree acceptance belong to the root. It repairs only what does not change the design; a design-changing correction goes back to the implementer's session, where the reasoning behind the code still is. Never one task per finding.</li>
+  </ul>
+
+  <div class="note">
+    <span class="tag">Which assistant, which model</span>
+    <p>Broadly: one assistant for <em>making</em> something you then look at — code, an image, a build driven to green, mechanical edits across many files — and the other for reading and judging: a diff, why something behaves as it does, prose. Use the cheapest model for mechanical single-source work where being wrong is obvious, the middle one for a leaf with judgement in it, and the strongest for a decision somebody will act on without checking, or for any synthesis of several children's answers. Name a model only when the default is the wrong size, and say why in the plan.</p>
+  </div>
+
+  <!-- 22 -->
+  <h2 id="cleanup"><span class="n">22</span>What is kept, and for how long</h2>
+  <p class="sub">The promise is the one <code>/tmp</code> always made, made explicitly.</p>
+
+  <ul>
+    <li><strong>Task directories</strong> for terminal tasks are removed a day after they finished; handoff packages and their envelopes go a day after they were created. The registry keeps its most recent 200 task records.</li>
+    <li><strong>A pending landing exempts a task directory from that sweep</strong>, because a root that has not landed may still need the child's receipts. Pending landing rows are likewise exempt from the record cap.</li>
+    <li><strong><code>work/</code> has a shorter, separate life</strong> — <a href="#work">section 15</a>.</li>
+    <li><strong>Artifacts are in <code>/tmp</code> and they are not yours to keep.</strong> If a child produced something worth having, copy it out.</li>
+    <li><strong>A finished child's tab lingers</strong> for a few minutes by default so somebody can read what it did, then closes; the deadline is written down and survives a restart, and whether that tab is still the child's is asked again of a fresh reading. A timed-out task keeps its tab regardless, because whatever went wrong is written on that screen and closing it would throw away the only copy. A spawn failure that never reached briefing is the exception and closes at once: nothing of the task is on that screen, and each dead tab is a live assistant holding a slot — while the usual reason for failing to reach a prompt in the first place is too many sessions starting at once.</li>
+    <li><strong>Isolated checkouts follow a fail-safe policy of their own.</strong> An empty clean checkout still on its task branch is removed with that empty branch when the tab closes; after a day a clean checkout with commits is removed while its branch is kept indefinitely; any dirty checkout, moved head, missing branch or unreadable git fact is kept. Removal always goes through git rather than deleting the directory. <strong>The one-day promise does not extend to branches: Clawdline never automatically deletes the only copy of committed work.</strong></li>
+  </ul>
+
+  <p>Every state change also goes out on the event stream, which is how a watching interface finds out without asking. And when a task finalizes, the broker looks for the root's terminal and types one compact structured line into it — a single-line envelope with a version, a kind and a closed set of fields, so that both terminal multiplexers preserve it byte for byte. Recognition is strict and whole-message only: any stray newline, extra key, unknown kind or quoted lookalike is not partly interpreted, and stays visible as ordinary text. <strong>One delivery attempt, and a failure is logged rather than retried, because the second copy of a notification is worse than none.</strong> A machine that would rather poll can switch those lines off entirely.</p>
+
+  <p><strong>A session report is not one of those broker notices.</strong> A live Claude or Codex session may address another through machine-token-only <code>POST /v1/orchestrator/messages</code>. Clawdline resolves the source against the current terminal/process identity and types a separate versioned <code>&lt;clawdline-message&gt;</code> envelope. App and Web draw it as <em>Clawdline ↔ source session</em>, restore the body's Markdown and never attribute it to the person. Plain <code>/send</code>, hand-written prefixes such as <code>[a0939bac name]</code>, and <code>===</code> headings remain ordinary user prompts; the reader does not guess identity from prose. The closed role and kind inventory is in <a href="messages.md">messages.md</a>.</p>
+
+  <!-- 23 -->
+  <h2 id="later"><span class="n">23</span>Later: the same protocol, elsewhere</h2>
+
+  <p>Everything above is one machine talking to itself. The shapes were chosen so that it does not have to stay that way.</p>
+
+  <p><code>task.json</code>, <code>result.json</code> and the routes carry no reference to a terminal, a tty, or a local path that could not be a path somewhere else. The only genuinely machine-local thing in the design is <em>how the credential is established</em> — a mode-<code>0600</code> file that proves “a process running as this user” — and that is one function, not a protocol. A hosted version would serve the same JSON at the same paths, with an account key in place of the token file and a workspace in place of a directory on your disk; a root session would not be able to tell the difference beyond the base URL.</p>
+
+  <p>In the same spirit, <code>isolation: "worktree"</code> is a <em>workspace-shape contract</em> — a clean independent checkout whose delivery is a branch — not a demand that a broker invoke one particular command. An implementation may use a clone, a container or a snapshot. The task says what is requested; the record says what the broker actually did.</p>
+
+  <p>Nothing here depends on that happening. It is written down so that the local version does not accidentally make it impossible.</p>
+
+  <hr>
+  <footer>
+    <p><strong>This page is the current contract, not a record of a moment.</strong> When Clawdline's task, handoff, landing, claims, file-wait, session-message or cross-session notification semantics change, this page changes with them, in the same line of work — a protocol change is not finished while the page still teaches the previous behaviour. The routes in full, with exact request and response shapes, are in the API reference that ships beside it.</p>
+  </footer>
+
+</main>
+</body>
+</html>

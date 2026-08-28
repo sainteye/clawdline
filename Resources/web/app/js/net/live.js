@@ -264,6 +264,17 @@ export var LocalClient = {
                          post(body, { "Idempotency-Key": uuid() }));
     },
 
+    /// Give this session a local display name, or clear it with an empty string.
+    ///
+    /// A write like `send` and behind the same switch, and keyed for the same reason: a retry of
+    /// *this* request must not be a second rename. What comes back says both halves separately —
+    /// `local_applied` for the durable Clawdline name, `downstream` for what happened to the
+    /// assistant's own.
+    title: function (id, title) {
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/title",
+                         post({ title: title }, { "Idempotency-Key": uuid() }));
+    },
+
     /// Answer a menu with the keystroke it is numbered with.
     ///
     /// **Not `send`.** Claude Code's picker discards a bracketed paste and acts on the Return
@@ -309,15 +320,25 @@ export var LocalClient = {
 
     /// Leave through the assistant's own prompt, then close the terminal session it occupied.
     /// The server knows whether that means `/exit` or `/quit`; the page never sends a command.
-    end: function (id) {
+    /// `acceptLoss` is sent only after the person has seen the list of what the close takes —
+    /// without it, a close that would cancel live work is refused with that list.
+    end: function (id, acceptLoss) {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/end",
-                         post({}, { "Idempotency-Key": uuid() }));
+                         post(acceptLoss ? { accept_loss: true } : {},
+                              { "Idempotency-Key": uuid() }));
     },
 
     /// Branch and file changes are also fetched only when their panel opens. Unlike the command
     /// actions in the same menu this is read-only, and it never rides the event stream.
     git: function (id) {
         return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/git");
+    },
+
+    /// The device-readable half of Bearings, behind the Clawdfather panel's four read-only
+    /// commands. Fetched only when one of them is pressed — never on the stream — and answered
+    /// with this page's own device token; the machine-token inspection route stays untouched.
+    coordinatorBearings: function () {
+        return jsonFetch("/v1/orchestrator/coordinator/bearings");
     },
 
     /// Where a session may be started. Asked afresh every time the sheet opens: the Mac drops
@@ -369,8 +390,9 @@ export var LocalClient = {
     /// Pick one of them back up. **Both ids are in the path** — the same shape as `startPlace`
     /// and for the same reason: there is no body on this route either, so there is nothing this
     /// page could send that would widen what gets run. The conversation is checked at the Mac
-    /// for being a UUID *and* for being one it just listed for that directory; anything else is
-    /// a 404 there rather than a string on a command line.
+    /// for being a UUID *and* for being either one it just listed for that directory or the proven
+    /// child conversation in a terminal schedule run that its detail route disclosed. Anything
+    /// else is a 404 there rather than a string on a command line.
     resumePlace: function (id, session, assistant) {
         var path = "/v1/places/" + encodeURIComponent(id) + "/resume/";
         if (assistant) path += encodeURIComponent(assistant) + "/";

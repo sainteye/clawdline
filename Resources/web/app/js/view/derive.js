@@ -1,4 +1,4 @@
-import { T } from "../core/i18n.js";
+import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { renderList } from "./list.js";
 
@@ -20,8 +20,8 @@ export function coordinatorFirst(a, b) {
 }
 
 var SESSION_WORK_STATES = {
-    ready: true, working: true, waiting_human: true, waiting_session: true,
-    needs_triage: true, milestone_complete: true, work_complete: true
+    ready: true, working: true, holding: true, waiting_you: true, waiting_session: true,
+    unknown: true, milestone_complete: true, work_complete: true
 };
 
 function attr(value) {
@@ -33,41 +33,88 @@ function attr(value) {
 /**
  * The browser repeats the safety precedence so an old or partial server frame cannot turn a
  * question, peer wait, or unreadable screen into a check. Every other missing/unknown value is
- * one explicit state too: needs_triage, never an empty line.
+ * one explicit state too: unknown — the broker's honest absence — never an empty line.
  */
 export function projectSessionWorkState(s) {
     s = s || {};
-    if (s.state === "waiting") return { state: "waiting_human", failedClosed: false };
+    if (s.state === "waiting") return { state: "waiting_you", failedClosed: false };
     var coordination = s.coordination || {};
     if ((coordination.waitingOn || []).length || (coordination.waitedOnBy || []).length) {
         return { state: "waiting_session", failedClosed: false };
     }
-    if (s.state === "unknown") return { state: "needs_triage", failedClosed: false };
-    if (!SESSION_WORK_STATES[s.work_state]) return { state: "needs_triage", failedClosed: true };
-    // These three claims must agree with their source axes. The server always projects them
-    // consistently; checking again turns a partial or mixed-version frame into triage rather
-    // than two mutually exclusive messages on one row.
-    if (s.work_state === "waiting_human" || s.work_state === "waiting_session") {
-        return { state: "needs_triage", failedClosed: true };
+    if (s.state === "unknown") return { state: "unknown", failedClosed: false };
+    if (!SESSION_WORK_STATES[s.work_state]) return { state: "unknown", failedClosed: true };
+    // These claims must agree with their source axes. The server always projects them
+    // consistently; checking again turns a partial or mixed-version frame into the quiet
+    // absence rather than two mutually exclusive messages on one row.
+    if (s.work_state === "waiting_you") {
+        return { state: "unknown", failedClosed: true };
     }
     if ((s.state === "working") !== (s.work_state === "working")) {
-        return { state: "needs_triage", failedClosed: true };
+        return { state: "unknown", failedClosed: true };
+    }
+    if (s.work_state === "waiting_session") {
+        return tasksOfRoot(s.id).some(taskLive)
+            ? { state: "waiting_session", failedClosed: false }
+            : { state: "unknown", failedClosed: true };
+    }
+    // holding has exactly one entrance — the session's own declared claim — and is never a
+    // fallback. A frame that says holding without saying who declared it fails closed to the
+    // absence, because a holding anything can slide into is the old needs_triage defect back
+    // under a new name.
+    if (s.work_state === "holding" && s.work_provenance !== "self") {
+        return { state: "unknown", failedClosed: true };
     }
     if (s.work_state === "milestone_complete" || s.work_state === "work_complete") {
         var disposition = s.disposition || {};
-        var expected = s.work_state === "work_complete"
-            ? "broker_verified_target_landing" : "authenticated_task_delivery";
-        if (disposition.scope !== "task" || !disposition.taskId ||
-            disposition.evidence !== expected) {
-            return { state: "needs_triage", failedClosed: true };
+        var taskMilestone = s.work_state === "milestone_complete" &&
+            disposition.scope === "task" && !!disposition.taskId &&
+            disposition.evidence === "authenticated_task_delivery";
+        var sessionMilestone = s.work_state === "milestone_complete" &&
+            disposition.scope === "session" &&
+            disposition.evidence === "authenticated_session_delivery";
+        var taskClosure = s.work_state === "work_complete" &&
+            disposition.scope === "task" && !!disposition.taskId &&
+            disposition.evidence === "broker_verified_target_landing";
+        if (!taskMilestone && !sessionMilestone && !taskClosure) {
+            return { state: "unknown", failedClosed: true };
         }
     }
     return { state: s.work_state, failedClosed: false };
 }
 
-/** Check glyphs are CSS strokes, not a platform emoji. Non-check quiet states remain readable. */
+/** A debt's age in the coarsest honest unit. Under an hour it is simply fresh; the value of
+ *  the number starts where memory stops. */
+function owedAge(since) {
+    if (!since) return "";
+    var seconds = Math.floor(Date.now() / 1000) - since;
+    if (seconds < 3600) return "";
+    if (seconds < 172800) return Math.floor(seconds / 3600) + "h";
+    return Math.floor(seconds / 86400) + "d";
+}
+
+/**
+ * The second axis, rendered beside whatever the first is doing. A session can owe-and-work at
+ * once, so this is an appended badge, never a replacement — and it ages in plain sight,
+ * because a debt's failure mode is "nobody remembers in three days", not "not seen now".
+ */
+export function owedBadgeHTML(s) {
+    var owed = s && s.owed;
+    if (!owed || typeof owed !== "object" || Array.isArray(owed)) return "";
+    var copy = "📥 " + (owed.note || T.sessionWorkOwed);
+    var age = owedAge(owed.since);
+    if (age) copy += " · " + age;
+    return '<span class="session-work-owed" data-person-needed="' +
+        (owed.person_needed === false ? "no" : "yes") + '" title="' + attr(copy) + '">' +
+        attr(copy) + "</span>";
+}
+
+/** Check glyphs are CSS strokes, not a platform emoji. The quiet states carry their meaning in
+ *  an icon a phone can scan — except `unknown`, which is an absence, not a category: giving an
+ *  absence a symbol is how needs_triage came to read as a demand, so it deliberately has none. */
 export function sessionWorkStateHTML(s) {
     var projected = projectSessionWorkState(s);
+    var said = "";
     if (projected.state === "milestone_complete" || projected.state === "work_complete") {
         var label = projected.state === "work_complete"
             ? T.sessionWorkComplete : T.sessionWorkMilestone;
@@ -78,15 +125,23 @@ export function sessionWorkStateHTML(s) {
         for (var i = 0; i < count; i++) {
             checks += '<span class="session-work-check" aria-hidden="true"></span>';
         }
-        return '<span class="session-work-mark" role="img" aria-label="' + attr(label) +
+        said = '<span class="session-work-mark" role="img" aria-label="' + attr(label) +
             '" title="' + attr(title) + '">' + checks + "</span>";
+    } else if (projected.state === "ready" || projected.state === "holding") {
+        // 📭 an empty, open box: you can hand this one work. 🔜 it moves by itself; nobody is
+        // needed. Both are usually the session's own words, so the stated-not-proven marker
+        // rides along whenever provenance says `self`.
+        var icon = projected.state === "ready" ? "📭" : "🔜";
+        var copy = (s && s.work_note) ||
+            (projected.state === "ready" ? T.sessionWorkReady : T.sessionWorkHolding);
+        if (s && s.work_provenance === "self") copy += " · " + T.sessionWorkSelfStated;
+        said = '<span class="session-work-copy" data-work-state="' + projected.state +
+            '" title="' + attr(copy) + '">' + attr(icon + " " + copy) + "</span>";
+    } else if (projected.state === "unknown") {
+        said = '<span class="session-work-copy" data-work-state="unknown" title="' +
+            attr(T.sessionWorkUnknown) + '">' + attr(T.sessionWorkUnknown) + "</span>";
     }
-    if (projected.state === "ready" || projected.state === "needs_triage") {
-        var copy = projected.state === "ready" ? T.sessionWorkReady : T.sessionWorkNeedsTriage;
-        return '<span class="session-work-copy" data-work-state="' + projected.state +
-            '" title="' + attr(copy) + '">' + attr(copy) + "</span>";
-    }
-    return "";
+    return said + owedBadgeHTML(s);
 }
 
 /**
@@ -210,6 +265,21 @@ export function tasksOfRoot(id) {
     return S.tasks.filter(function (t) {
         return taskShaping(t) && t.root && t.root.terminalId === id;
     });
+}
+
+/**
+ * What closing a session would take with it, from the facts this page already holds: its live
+ * child tasks, and the sessions parked on files it owns. Shown inside the close confirmation —
+ * at the moment of the press, never as a list column — and the server recomputes the same list
+ * at its end of the same press, so a page holding a stale frame cannot close past it blindly.
+ */
+export function lostIfClosed(id) {
+    var lost = tasksOfRoot(id).filter(taskLive).map(function (t) { return t.title || t.id; });
+    var s = byId(id);
+    var waiters = ((s && s.coordination && s.coordination.waitedOnBy) || []).length;
+    if (waiters === 1) lost.push(T.sessionWaitedOnByOne);
+    else if (waiters) lost.push(fill(T.sessionWaitedOnByMany, { n: waiters }));
+    return lost;
 }
 
 /** One word for where a task got to, in the reader's language. Cancelled and timed out are

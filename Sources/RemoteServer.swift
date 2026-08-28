@@ -2,6 +2,53 @@ import AppKit
 import Foundation
 import Network
 
+/// Decide whether a local title can also be handed to the assistant without changing what its
+/// current turn means. Claude accepts a slash command only at an idle prompt; Codex names thread
+/// metadata out of band and therefore does not share that restriction.
+enum SessionTitleSync {
+    enum Action: Equatable {
+        case localOnly
+        case busy
+        case unavailable
+        case renameClaude
+        case renameCodex(threadID: String)
+    }
+
+    static func action(assistant: Assistant?, state: SessionState, clearing: Bool,
+                       codexThreadID: String?) -> Action {
+        guard !clearing else { return .localOnly }
+        switch assistant {
+        case .claude:
+            return state == .idle ? .renameClaude : .busy
+        case .codex:
+            guard let codexThreadID, !codexThreadID.isEmpty else { return .unavailable }
+            return .renameCodex(threadID: codexThreadID)
+        case nil:
+            return .localOnly
+        }
+    }
+
+    /// One look at the actual screen before anything is typed into it.
+    ///
+    /// ``action(assistant:state:clearing:codexThreadID:)`` decides from the session list's
+    /// cached state, and that cache is refreshed every 1.2 seconds while the app is in front and
+    /// **every twenty seconds while it is not** — which is the state the Mac is in whenever
+    /// somebody is renaming a session from their phone. A cached `idle` can therefore be twenty
+    /// seconds behind a Claude that is now showing a menu, and a slash command sent to a menu is
+    /// not typed: the picker discards the bracketed paste and acts on the Return after it. The
+    /// measurement is written up beside `/send`, which pays for the same capture — with the
+    /// caret on the third option, sending the word "Tea" answered "Water".
+    ///
+    /// So the capture is paid here too, and only here: `busy`, `unavailable`, `local_only` and
+    /// the Codex path never reach a keyboard, and a rename is the one operation on this server
+    /// that is never urgent. `showingMenu` is a closure for that reason — an unread one is a
+    /// terminal round trip not made.
+    static func confirmed(_ action: Action, showingMenu: () -> Bool) -> Action {
+        guard action == .renameClaude, showingMenu() else { return action }
+        return .busy
+    }
+}
+
 /// The bar, as something other than a bar.
 ///
 /// Everything this app knows is already computed for four consumers — the panel, the strip above
@@ -65,6 +112,12 @@ final class RemoteServer: @unchecked Sendable {
     /// Route-level serializer seam. Tests still execute `sessionsPayload()` and `json(of:)`; they
     /// replace only SessionWatch's external terminal inventory with deterministic rows.
     static var sessionPayloadForTesting: ([TargetSession], [String: SessionState])?
+    /// Replaces only the final terminal handoff. Parsing, gates, lookup, reservation and response
+    /// settlement still use the production path.
+    static var terminalSendForTesting: ((String, TargetSession) -> String?)?
+    /// Replaces the route body only after a non-send terminal mutation entered the production
+    /// bounded worker. This keeps queue/isolation tests away from real ttys.
+    static var terminalRouteForTesting: ((Request) -> Response)?
     /// Already-serialized full snapshots for bridge lifecycle integration tests. Production keeps
     /// using the SessionWatch/Orchestrator serializers on the main thread.
     static var cloudSnapshotDataForTesting: (sessions: Data, orchestrator: Data)?
@@ -73,6 +126,83 @@ final class RemoteServer: @unchecked Sendable {
     /// is calculated off this queue; only the ordinary dispatch transaction enters here.
     func serialized(_ work: @escaping () -> Void) {
         queue.async(execute: work)
+    }
+
+    /// Terminal commands have one bounded, serial lane of their own. iTerm2 serializes Apple
+    /// events itself; doing the same here keeps that queue visible and, crucially, keeps a modal
+    /// sheet from occupying the HTTP/SSE queue.
+    @discardableResult
+    func enqueueTerminalCommand(channel: String? = nil, _ work: @escaping () -> Void) -> Bool {
+        enqueueTerminalCommand(channels: channel.map { [$0] } ?? [], work)
+    }
+
+    /// Multi-recipient form used by durable coordination delivery. One HTTP operation may fan a
+    /// release out to several waiter terminals; reserving every known recipient before enqueue
+    /// makes the documented per-session depth true for those production paths too.
+    @discardableResult
+    func enqueueTerminalCommand(channels rawChannels: [String],
+                                _ work: @escaping () -> Void) -> Bool {
+        let channels = Array(Set(rawChannels.filter { !$0.isEmpty })).sorted()
+        // Nested terminal work is already inside the single broker ordering domain. Execute it
+        // inline so a root `/end` can finish children deepest-first without deadlocking behind
+        // itself or reversing the safety order.
+        if DispatchQueue.getSpecific(key: Self.terminalWorkerKey) == true {
+            let added = channels.filter { !terminalActiveChannels.contains($0) }
+            terminalAdmissionLock.lock()
+            guard added.allSatisfy({ (terminalOutstandingByChannel[$0] ?? 0)
+                                        < Self.terminalChannelDepth }) else {
+                terminalAdmissionLock.unlock()
+                return false
+            }
+            for channel in added {
+                terminalOutstandingByChannel[channel, default: 0] += 1
+            }
+            terminalAdmissionLock.unlock()
+            let previous = terminalActiveChannels
+            terminalActiveChannels.formUnion(added)
+            work()
+            terminalActiveChannels = previous
+            terminalAdmissionLock.lock()
+            for channel in added {
+                let remaining = (terminalOutstandingByChannel[channel] ?? 1) - 1
+                if remaining == 0 { terminalOutstandingByChannel.removeValue(forKey: channel) }
+                else { terminalOutstandingByChannel[channel] = remaining }
+            }
+            terminalAdmissionLock.unlock()
+            return true
+        }
+        terminalAdmissionLock.lock()
+        guard terminalOutstanding < Self.terminalDepth,
+              channels.allSatisfy({ (terminalOutstandingByChannel[$0] ?? 0)
+                                      < Self.terminalChannelDepth }) else {
+            terminalAdmissionLock.unlock()
+            return false
+        }
+        terminalOutstanding += 1
+        for channel in channels { terminalOutstandingByChannel[channel, default: 0] += 1 }
+        terminalAdmissionLock.unlock()
+        terminalQueue.async {
+            let previous = self.terminalActiveChannels
+            self.terminalActiveChannels.formUnion(channels)
+            work()
+            self.terminalActiveChannels = previous
+            self.terminalAdmissionLock.lock()
+            self.terminalOutstanding -= 1
+            for channel in channels {
+                let remaining = (self.terminalOutstandingByChannel[channel] ?? 1) - 1
+                if remaining == 0 { self.terminalOutstandingByChannel.removeValue(forKey: channel) }
+                else { self.terminalOutstandingByChannel[channel] = remaining }
+            }
+            self.terminalAdmissionLock.unlock()
+        }
+        return true
+    }
+
+    /// Test receipt for the production admission counters, read under the same lock that mutates
+    /// them. A nested terminal cascade must finish with both totals back at zero.
+    func terminalOutstandingForTesting() -> (total: Int, channels: Int) {
+        terminalAdmissionLock.lock(); defer { terminalAdmissionLock.unlock() }
+        return (terminalOutstanding, terminalOutstandingByChannel.values.reduce(0, +))
     }
 
     /// Enter a verified cloud command through the same route transaction local HTTP uses. The
@@ -446,8 +576,66 @@ final class RemoteServer: @unchecked Sendable {
             readSlowly(request, on: conn)
             return
         }
+        if (request.method == "POST" || request.method == "DELETE"),
+           Self.isOrchestratorTerminalWorkerRoute(request.path) {
+            unfiledTerminalMutation(request) { [weak self] response in
+                guard let self else { conn.cancel(); return }
+                self.send(self.withCachePolicy(response), on: conn)
+            }
+            return
+        }
+        if request.method == "POST", Self.isTerminalSend(request.path) {
+            sendTerminal(request) { [weak self] response in
+                guard let self else { conn.cancel(); return }
+                self.send(self.withCachePolicy(response), on: conn)
+            }
+            return
+        }
+        if request.method == "POST", Self.isTerminalWorkerRoute(request.path) {
+            terminalMutation(request) { [weak self] response in
+                guard let self else { conn.cancel(); return }
+                self.send(self.withCachePolicy(response), on: conn)
+            }
+            return
+        }
         let response = route(request)
         send(response, on: conn)
+    }
+
+    static func isTerminalSend(_ path: String) -> Bool {
+        guard path.hasPrefix("/v1/sessions/"), path.hasSuffix("/send") else { return false }
+        let id = path.dropFirst("/v1/sessions/".count).dropLast("/send".count)
+        return !id.isEmpty && !id.contains("/")
+    }
+
+    /// The remaining HTTP mutations whose existing route bodies may wait on terminal
+    /// automation. `/send` keeps its image-aware path; these share its bounded worker.
+    static func isTerminalWorkerRoute(_ path: String) -> Bool {
+        if path.hasPrefix("/v1/sessions/") {
+            return path.hasSuffix("/key") || path.hasSuffix("/end")
+                || path.hasSuffix("/focus")
+                || (path.hasSuffix("/kill") && path.contains("/shells/"))
+        }
+        guard path.hasPrefix("/v1/places/") else { return false }
+        let rest = path.dropFirst("/v1/places/".count)
+        let parts = rest.split(separator: "/", omittingEmptySubsequences: false)
+        if (2...4).contains(parts.count) && parts[1] == "start" { return true }
+        return (parts.count == 3 || parts.count == 4) && parts[1] == "resume"
+    }
+
+    /// Orchestrator writes that may open a tab or deliver a coordination message. Their own task,
+    /// handoff and wait identifiers provide idempotency, so they need bounded isolation but not
+    /// the paired-device idempotency table used by session routes.
+    static func isOrchestratorTerminalWorkerRoute(_ path: String) -> Bool {
+        if path == "/v1/orchestrator/tasks" || path == "/v1/orchestrator/handoffs"
+            || path == "/v1/orchestrator/waits" { return true }
+        if path.hasPrefix("/v1/orchestrator/schedules/") && path.hasSuffix("/run") {
+            return true
+        }
+        let task = path.dropFirst("/v1/orchestrator/tasks/".count)
+        if path.hasPrefix("/v1/orchestrator/tasks/"), !task.isEmpty,
+           !task.contains("/") { return true } // the DELETE cancel route
+        return path.hasPrefix("/v1/orchestrator/waits/") && path.hasSuffix("/release")
     }
 
     /// Every route that answers with a body and closes. Split out from the connection handling so
@@ -1076,6 +1264,27 @@ final class RemoteServer: @unchecked Sendable {
                     registryObservedAt: registry.observedAt,
                     sessionsGeneration: observation.sessionsGeneration)))
 
+        // The device-readable half of Bearings. No `orchestratorAuthed` guard on purpose: an
+        // orchestrator read without the machine token falls through to ordinary device auth at
+        // the top gate, which is exactly who this projection is for — the Clawdfather panel's
+        // four read-only commands, on a page that holds a device token. What it answers is an
+        // allowlist built in `Coordinator.deviceBearings`: aggregate counts plus session facts
+        // a paired device can already read from `GET /v1/sessions`, and never the durable
+        // coordinator UUID, lifecycle bookkeeping, store health, tty, pid or conversation ids.
+        case ("GET", "/v1/orchestrator/coordinator/bearings"):
+            let observation = coordinatorObservation()
+            let registry = observation.registry
+            return .json(Coordinator.deviceBearings(
+                liveSessions: observation.sessions,
+                bearings: .init(
+                    sessionsFresh: observation.sessionsFresh,
+                    activeTaskCount: registry.activeTasks,
+                    pendingLandingCount: registry.pendingLandings,
+                    openWaitCount: registry.openWaits,
+                    sessionsObservedAt: observation.sessionsObservedAt,
+                    registryObservedAt: registry.observedAt,
+                    sessionsGeneration: observation.sessionsGeneration)))
+
         case ("GET", "/v1/orchestrator/waits"):
             return .json(["waits": Orchestrator.coordinationWaitRecords(),
                           "at": Int(Date().timeIntervalSince1970)])
@@ -1131,6 +1340,150 @@ final class RemoteServer: @unchecked Sendable {
             return .json(["sessions": Self.coordinationSessionRows(watch.targets,
                                                                    states: watch.states),
                           "at": Int(Date().timeIntervalSince1970)])
+
+        // A live assistant session speaking to another through Clawdline. This is not the
+        // paired-device `/send` route: the source is resolved against current process-bound
+        // session identity, the machine credential is required, and the terminal receives a
+        // closed envelope which transcript readers can attribute without calling it the user.
+        case ("POST", "/v1/orchestrator/messages"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Relaying a session message needs the orchestrator token.")
+            }
+            return orchestratorWriting(request) { body in
+                guard Set(body.keys) == Set(["from_session", "to_session", "text"]),
+                      let sourceID = body["from_session"] as? String, !sourceID.isEmpty,
+                      let targetID = body["to_session"] as? String, !targetID.isEmpty,
+                      let text = body["text"] as? String, !text.isEmpty,
+                      text.count <= 100_000 else {
+                    return .error(400, "bad_request",
+                                  "The closed body needs from_session, to_session and "
+                                  + "1…100000 characters of text.")
+                }
+                guard let source = self.sessionMessageSource(withID: sourceID),
+                      let sourceAssistant = source.assistant else {
+                    return .error(404, "source_not_found",
+                                  "No current assistant session has that terminal or "
+                                  + "conversation id.")
+                }
+                guard let target = self.session(withID: targetID), target.isAssistant else {
+                    return .error(404, "target_not_found",
+                                  "No current assistant session has that terminal id.")
+                }
+                guard source.id != target.id else {
+                    return .error(409, "same_session",
+                                  "A session message must go to a different session.")
+                }
+                if self.state(of: target.id) == .waiting, Targets.isChoosing(target) {
+                    return .error(409, "target_busy",
+                                  "The target is showing a menu; typing would answer it instead "
+                                  + "of delivering the message.")
+                }
+
+                let message = ClawdlineSessionMessage.Message(
+                    source: .init(id: source.id, label: source.displayLabel,
+                                  assistant: sourceAssistant),
+                    body: text)
+                let wire = ClawdlineSessionMessage.encode(message)
+                guard wire.hasPrefix(ClawdlineSessionMessage.opening) else {
+                    return .error(500, "encoding_failed",
+                                  "The session message could not be encoded safely.")
+                }
+                if let failure = Targets.send(wire, to: target) {
+                    return .error(502, "delivery_failed", failure)
+                }
+                RemoteAuth.audit("orchestrator.message", [
+                    "from": source.id, "to": target.id,
+                    "assistant": sourceAssistant.rawValue, "chars": "\(text.count)",
+                ])
+                DispatchQueue.main.async { SessionWatch.shared.nudge() }
+                let at = Int(Date().timeIntervalSince1970)
+                return .json(["ok": true, "accepted_at": at, "at": at])
+            }
+
+        // A root's explicit end-of-turn receipt. The path names the terminal-neutral id already
+        // published by the GET above; every process/conversation fact is resolved here from the
+        // live target, never trusted from the request body. It is a single-check delivery claim,
+        // not the broker-verified landing that produces work_complete.
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/sessions/")
+            && path.hasSuffix("/complete"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Reporting root delivery needs the orchestrator token.")
+            }
+            let encoded = String(path.dropFirst("/v1/orchestrator/sessions/".count)
+                .dropLast("/complete".count))
+            let id = encoded.removingPercentEncoding ?? encoded
+            guard !id.isEmpty, !id.contains("/") else {
+                return .error(400, "bad_request", "The route must name one session id.")
+            }
+            guard let target = self.session(withID: id), target.isAssistant else {
+                return .error(404, "session_not_found", "No current assistant session named \(id).")
+            }
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            guard Set(body.keys) == Set(["summary"]), body["summary"] is String else {
+                return .error(400, "bad_request", "The body must contain only string summary.")
+            }
+            let reply = Orchestrator.reportSessionDelivery(
+                identity: Self.sessionWorkIdentity(target), terminalState: self.state(of: id),
+                summary: body["summary"] as? String ?? "")
+            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+            return answer(reply)
+
+        // A session's declaration about its own quiet state — the `self` half of the work-state
+        // provenance boundary (docs/session-states.md). Identity is resolved from the live
+        // watched process exactly as `/complete` does; the body may claim only `ready` or
+        // `holding`, may record or clear the `owed` debt, and can never produce a check.
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/sessions/")
+            && path.hasSuffix("/state"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden",
+                              "Declaring a session state needs the orchestrator token.")
+            }
+            let encoded = String(path.dropFirst("/v1/orchestrator/sessions/".count)
+                .dropLast("/state".count))
+            let id = encoded.removingPercentEncoding ?? encoded
+            guard !id.isEmpty, !id.contains("/") else {
+                return .error(400, "bad_request", "The route must name one session id.")
+            }
+            guard let target = self.session(withID: id), target.isAssistant else {
+                return .error(404, "session_not_found", "No current assistant session named \(id).")
+            }
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            let allowed: Set<String> = ["state", "note", "moved_by", "person_needed", "owed"]
+            guard !body.isEmpty, Set(body.keys).isSubset(of: allowed) else {
+                return .error(400, "bad_request",
+                              "The body may contain only state, note, moved_by, person_needed "
+                                  + "and owed.")
+            }
+            if let raw = body["state"], !(raw is String) {
+                return .error(400, "bad_request", "state must be a string.")
+            }
+            var owed: [String: Any]?
+            var clearOwed = false
+            if let rawOwed = body["owed"] {
+                if rawOwed is NSNull {
+                    clearOwed = true
+                } else if let dict = rawOwed as? [String: Any] {
+                    guard Set(dict.keys).isSubset(of: ["note", "moved_by", "person_needed"]) else {
+                        return .error(400, "bad_request",
+                                      "owed may contain only note, moved_by and person_needed.")
+                    }
+                    owed = dict
+                } else {
+                    return .error(400, "bad_request", "owed must be an object, or null to clear.")
+                }
+            }
+            let declared = Orchestrator.declareSessionState(
+                identity: Self.sessionWorkIdentity(target), terminalState: self.state(of: id),
+                claim: body["state"] as? String, note: body["note"] as? String,
+                movedBy: body["moved_by"] as? String,
+                personNeeded: body["person_needed"] as? Bool,
+                owed: owed, clearOwed: clearOwed)
+            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+            return answer(declared)
 
         // What this Mac can say about each assistant's own account-level quota — one read of two
         // small local files, 5-second cached, and deliberately *not* behind `readingDepth`: it
@@ -1228,8 +1581,9 @@ final class RemoteServer: @unchecked Sendable {
                     dispatchEnabled: Config.shared.orchestratorEnabled))
             }
 
-        // One schedule, in full, including the task template the list leaves out — see
-        // `Orchestrator.scheduleRecord(id:now:)`. Read-level, like the list it came from.
+        // One schedule, in full, including the task template and retained run history the list
+        // leaves out — see `Orchestrator.scheduleRecord(id:now:)`. Read-level, like the list it
+        // came from.
         case ("GET", let path) where path.hasPrefix("/v1/orchestrator/schedules/"):
             let id = String(path.dropFirst("/v1/orchestrator/schedules/".count))
             guard let record = Orchestrator.scheduleRecord(id: id.removingPercentEncoding ?? id)
@@ -1426,6 +1780,20 @@ final class RemoteServer: @unchecked Sendable {
             return answer(Orchestrator.releaseClaims(taskID: id.removingPercentEncoding ?? id,
                                                       paths: paths))
 
+        // Retrying a tab that never opened, without making the root write the task out again.
+        // Local-credential only, like dispatch itself: this opens a session.
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
+            && path.hasSuffix("/respawn"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden", "Respawning a task needs the orchestrator token.")
+            }
+            let id = String(path.dropFirst("/v1/orchestrator/tasks/".count)
+                .dropLast("/respawn".count))
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            return answer(Orchestrator.respawn(taskID: id.removingPercentEncoding ?? id,
+                                                secret: body["secret"] as? String))
+
         // Before the single-task read below, which would otherwise swallow this path.
         case ("GET", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
             && path.hasSuffix("/inflight"):
@@ -1463,11 +1831,23 @@ final class RemoteServer: @unchecked Sendable {
         // What it stops being is a modal dialog on the Mac that nobody on a phone can answer.
         case ("POST", let path) where path.hasSuffix("/end") && path.hasPrefix("/v1/sessions/"):
             let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/end".count))
-            return writing(request) { _ in
+            return writing(request) { body in
                 guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
                     return .error(404, "not_found", "No session named that")
                 }
-                RemoteAuth.audit("session.end", ["id": session.id])
+                // `lost_if_closed`, computed at the moment somebody presses close — the one
+                // moment a list of live children and stranded waiters can still change the
+                // outcome. A caller that has shown the list repeats the request with
+                // `accept_loss: true`; a close with nothing at stake is unchanged.
+                let lost = Orchestrator.lostIfClosed(root: session)
+                if !lost.isEmpty, body["accept_loss"] as? Bool != true {
+                    return .error(409, "would_lose_work",
+                                  "Closing this session cancels work still in flight. Show the "
+                                      + "lost list, then repeat with accept_loss: true.",
+                                  extra: ["lost": lost])
+                }
+                RemoteAuth.audit("session.end", ["id": session.id,
+                                                 "lost": String(lost.count)])
                 // **The children first, while the root is still there to be recognised.** A task
                 // is matched to its root by the session id in that session's hook note, and the
                 // note is found through the tty of the tab this line is about to close — after
@@ -1476,10 +1856,81 @@ final class RemoteServer: @unchecked Sendable {
                 // them; the cascade and its reasoning live in `Orchestrator`.
                 Orchestrator.cancelChildren(ofRoot: session)
                 if let failure = Targets.end(session) {
-                    return .error(502, "internal", failure)
+                    return Self.terminalFailure(failure, backend: session.backend)
                 }
                 SessionWatch.shared.nudge()
                 return .json(["ok": true])
+            }
+
+        case ("POST", let path) where path.hasSuffix("/title")
+            && path.hasPrefix("/v1/sessions/"):
+            let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/title".count))
+            return writing(request) { body in
+                guard let raw = body["title"] as? String else {
+                    return .error(400, "bad_request", "title must be a string.")
+                }
+                let title = Config.normalizedSessionTitle(raw)
+                guard title?.count ?? 0 <= Config.sessionTitleLimit else {
+                    return .error(400, "bad_request",
+                                  "title must be at most \(Config.sessionTitleLimit) characters.")
+                }
+                guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
+                    return .error(404, "not_found", "No session named that")
+                }
+
+                let config = Config.shared
+                _ = config.setSessionTitle(raw, for: session)
+                // The answer says whether the name is durable, because that is the promise the
+                // rest of this route is built on: a busy Claude is deliberately not queued for a
+                // later `/rename`, and the reason given is that the local name survives anyway.
+                // A failed write still leaves the name in memory and on every surface that draws
+                // one, so this is a 200 that tells the truth rather than a 500 that undoes what
+                // the person can already see.
+                let durable = config.save()
+
+                let state: SessionState = Thread.isMainThread
+                    ? (SessionWatch.shared.states[session.id] ?? .unknown)
+                    : DispatchQueue.main.sync {
+                        SessionWatch.shared.states[session.id] ?? .unknown
+                    }
+                let action = SessionTitleSync.confirmed(
+                    SessionTitleSync.action(
+                        assistant: session.assistant, state: state, clearing: title == nil,
+                        codexThreadID: CodexNaming.shared.threadID(for: session)),
+                    showingMenu: { Targets.isChoosing(session) })
+                var downstream = "local_only"
+                var synced = false
+                switch action {
+                case .localOnly:
+                    // Clearing has to reach Codex's display cache as well, or it clears nothing
+                    // there: the name a person typed was remembered on the way in and
+                    // `displayLabel` would go on finding it. The thread keeps that name — see
+                    // `CodexNaming.forget(target:)` and `docs/api.md`.
+                    if title == nil { CodexNaming.shared.forget(target: session) }
+                case .busy:
+                    downstream = "busy"
+                case .unavailable:
+                    downstream = "unavailable"
+                case .renameClaude:
+                    if let failure = Targets.send("/rename \(title ?? "")", to: session) {
+                        downstream = "failed"
+                        Log.write("session title: Claude rename failed — \(failure)")
+                    } else {
+                        downstream = "synced"
+                        synced = true
+                    }
+                case .renameCodex(let threadID):
+                    CodexNaming.shared.name(title ?? "", thread: threadID, target: session,
+                                            replacingExisting: true)
+                    downstream = "queued"
+                }
+                RemoteAuth.audit("session.title", ["id": session.id,
+                                                    "cleared": title == nil ? "1" : "0",
+                                                    "downstream": downstream])
+                DispatchQueue.main.async { SessionWatch.shared.labelsDidChange() }
+                return .json(["ok": true, "title": title ?? "",
+                              "display_title": session.displayLabel, "local_applied": durable,
+                              "downstream": downstream, "downstream_synced": synced])
             }
 
         // Stopping one of a session's background commands.
@@ -1549,73 +2000,12 @@ final class RemoteServer: @unchecked Sendable {
                 let failed = key == "submit" ? Targets.submitMenu(on: session)
                                              : Targets.answer(bytes, to: session)
                 if let failure = failed {
-                    return .error(502, "internal", failure)
+                    return Self.terminalFailure(failure, backend: session.backend)
                 }
                 RemoteAuth.audit("session.key", ["id": session.id, "key": key])
                 // A reading now would still show the menu — the terminal has not repainted yet.
                 SessionWatch.shared.nudge()
                 return .json(["ok": true])
-            }
-
-        case ("POST", let path) where path.hasSuffix("/send") && path.hasPrefix("/v1/sessions/"):
-            let id = String(path.dropFirst("/v1/sessions/".count).dropLast("/send".count))
-            return writing(request) { body in
-                guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
-                    return .error(404, "not_found", "No session named that")
-                }
-                let text = (body["text"] as? String) ?? ""
-                let images = (body["images"] as? [String]) ?? []
-                guard !text.isEmpty || !images.isEmpty else {
-                    return .error(400, "bad_request", "That needs some text or an image.")
-                }
-
-                // **Refuse rather than answer the wrong question.**
-                //
-                // Claude Code's picker discards a bracketed paste and then acts on the Return that
-                // follows it — so sending words to a session showing a menu does not type them, it
-                // confirms whichever row is highlighted. Measured: with the caret on the third
-                // option, sending the word "Tea" answered "Water". Silently. From a phone.
-                //
-                // Only asked when the cached state already says `waiting`, because the answer
-                // costs a screen capture and every other send is the ordinary case.
-                if SessionWatch.shared.states[session.id] == .waiting,
-                   Targets.isChoosing(session) {
-                    return .error(409, "showing_a_menu",
-                                  "That session is showing a menu. Sending text would confirm "
-                                  + "whichever option is highlighted rather than typing. "
-                                  + "Answer it with POST /v1/sessions/<id>/key.")
-                }
-
-                // Off the main thread on purpose: this is an osascript round trip of a hundred
-                // milliseconds or so, and the only thing it touches is a terminal.
-                var problem: String?
-                if images.isEmpty {
-                    problem = Targets.send(text, to: session)
-                } else {
-                    // Written to the bounded drop cache and handed over as files, because that is
-                    // the shape the existing path already takes. Claude consumes the bytes while
-                    // `Drop` borrows the pasteboard; Codex receives the path and opens it only
-                    // after this request is over. Keeping the successful handoff is therefore
-                    // part of the protocol, not leftover temporary state.
-                    let made = Self.pieces(text: text, images: images)
-                    guard made.pieces.contains(where: {
-                        if case .image = $0 { return true }; return false
-                    }) else {
-                        return .error(400, "bad_request", "None of those were images I could read.")
-                    }
-                    problem = Targets.send(made.pieces, to: session)
-                    // A failed terminal handoff has no future reader. Successful paths stay in
-                    // Drop's bounded cache so Codex can open them when it reaches the prompt.
-                    Self.finishUploads(made.stored, sent: problem == nil)
-                }
-                // Written down before the answer goes back, because the interesting case for the
-                // log is the one where something went wrong afterwards.
-                RemoteAuth.audit("session.send", ["id": session.id, "tty": session.tty,
-                                                  "chars": "\(text.count)",
-                                                  "images": "\(images.count)",
-                                                  "ok": problem == nil ? "1" : "0"])
-                if let problem { return .error(502, "internal", problem) }
-                return .json(["ok": true, "at": Int(Date().timeIntervalSince1970)])
             }
 
         case ("POST", let path) where path.hasSuffix("/focus") && path.hasPrefix("/v1/sessions/"):
@@ -1624,7 +2014,12 @@ final class RemoteServer: @unchecked Sendable {
                 guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
                     return .error(404, "not_found", "No session named that")
                 }
-                DispatchQueue.main.async { Targets.reveal(session) }
+                // This route is admitted to the bounded terminal worker before dispatch reaches
+                // here. Do not hop back to main: iTerm focus is an Apple Event and a modal must
+                // not freeze SessionWatch, the orchestrator beat, SSE, or health responses.
+                if let failure = Targets.reveal(session) {
+                    return Self.terminalFailure(failure)
+                }
                 RemoteAuth.audit("session.focus", ["id": session.id])
                 return .json(["ok": true])
             }
@@ -1936,6 +2331,311 @@ final class RemoteServer: @unchecked Sendable {
 
     // MARK: - Writing
 
+    /// A terminal send whose HTTP request is still waiting for its one final answer. The array is
+    /// deliberate: a concurrent retry with the same key joins this operation instead of entering
+    /// iTerm2 a second time. This dictionary and the completed idempotency table are touched only
+    /// on `queue`; admission for both HTTP and internal commands has its own small lock.
+    private var terminalPending: [String: [(Response) -> Void]] = [:]
+    private static let terminalWorkerKey = DispatchSpecificKey<Bool>()
+    private lazy var terminalQueue: DispatchQueue = {
+        let queue = DispatchQueue(label: "dev.sainteye.clawdline.remote.terminal")
+        queue.setSpecific(key: Self.terminalWorkerKey, value: true)
+        return queue
+    }()
+    private let terminalAdmissionLock = NSLock()
+    private var terminalOutstanding = 0
+    private var terminalOutstandingByChannel: [String: Int] = [:]
+    /// Touched only on the serial terminal queue. It lets nested inline work inherit an outer
+    /// reservation without double-counting that same terminal while still accounting a newly
+    /// discovered child/coordination recipient.
+    private var terminalActiveChannels: Set<String> = []
+    static let terminalDepth = 8
+    static let terminalChannelDepth = 2
+
+    /// Production's asynchronous `/send` path. Every decision stays on the HTTP queue; only the
+    /// terminal handoff crosses to `terminalQueue`, and settlement crosses back before touching
+    /// idempotency or delivering any response.
+    private func sendTerminal(_ request: Request, deliver: @escaping (Response) -> Void) {
+        if let refusal = crossOriginRefusal(request) {
+            deliver(refusal); return
+        }
+        if case .denied = permission(for: request) {
+            deliver(.error(401, "unauthorized", "This needs a paired device.")); return
+        }
+        if let refusal = writeOriginRefusal(request) {
+            deliver(refusal); return
+        }
+
+        let device: String, key: String
+        switch writeGate(request) {
+        case .refused(let response), .replay(let response):
+            deliver(response); return
+        case .go(let allowed, let filed):
+            device = allowed
+            key = filed
+        }
+
+        // The reservation precedes every terminal observation, including the menu capture. A
+        // retry arriving while that capture or send is blocked joins the first request and cannot
+        // press Return a second time.
+        if terminalPending[key] != nil {
+            terminalPending[key, default: []].append(deliver)
+            return
+        }
+
+        let parsed = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
+        let text = (parsed["text"] as? String) ?? ""
+        let images = (parsed["images"] as? [String]) ?? []
+        guard !text.isEmpty || !images.isEmpty else {
+            let response = Response.error(400, "bad_request", "That needs some text or an image.")
+            remember(response, under: key, for: request, by: device)
+            deliver(response)
+            return
+        }
+        let id = String(request.path.dropFirst("/v1/sessions/".count).dropLast("/send".count))
+        guard let session = self.session(withID: id.removingPercentEncoding ?? id) else {
+            let response = Response.error(404, "not_found", "No session named that")
+            remember(response, under: key, for: request, by: device)
+            deliver(response)
+            return
+        }
+
+        // Refuse before reservation/admission and before image files are materialised. A request
+        // that cannot run must not occupy a bounded slot or wait behind a blocked command. tmux
+        // remains independent of iTerm's circuit.
+        if let attention = ITerm.automationAttention, session.backend == .iterm {
+            let response = Self.terminalFailure(attention, backend: .iterm)
+            remember(response, under: key, for: request, by: device)
+            deliver(response)
+            return
+        }
+
+        var pieces: [Drop.Piece]?
+        var stored: [String] = []
+        if !images.isEmpty {
+            let made = Self.pieces(text: text, images: images)
+            guard made.pieces.contains(where: {
+                if case .image = $0 { return true }; return false
+            }) else {
+                let response = Response.error(400, "bad_request",
+                                              "None of those were images I could read.")
+                remember(response, under: key, for: request, by: device)
+                deliver(response)
+                return
+            }
+            pieces = made.pieces
+            stored = made.stored
+        }
+
+        terminalPending[key] = [deliver]
+        let shouldCheckMenu = SessionWatch.shared.states[session.id] == .waiting
+
+        let admitted = enqueueTerminalCommand(channel: session.id) { [weak self] in
+            guard let self else { return }
+            let response: Response
+            if let attention = ITerm.automationAttention, session.backend == .iterm {
+                Self.finishUploads(stored, sent: false)
+                response = Self.terminalFailure(attention, backend: .iterm)
+            } else if shouldCheckMenu && Targets.isChoosing(session) {
+                Self.finishUploads(stored, sent: false)
+                response = .error(409, "showing_a_menu",
+                                  "That session is showing a menu. Sending text would confirm "
+                                  + "whichever option is highlighted rather than typing. "
+                                  + "Answer it with POST /v1/sessions/<id>/key.")
+            } else {
+                // This timestamp shares the transcript row's Mac clock and is captured before the
+                // terminal handoff. The row may be visible while a slow osascript round trip is
+                // still running; a completion-only timestamp would put it outside reconciliation.
+                let acceptedAt = Int(Date().timeIntervalSince1970)
+                let problem: String?
+                if let pieces {
+                    problem = Targets.send(pieces, to: session)
+                    Self.finishUploads(stored, sent: problem == nil)
+                } else if let seam = Self.terminalSendForTesting {
+                    problem = seam(text, session)
+                } else {
+                    problem = Targets.send(text, to: session)
+                }
+                RemoteAuth.audit("session.send", ["id": session.id, "tty": session.tty,
+                                                   "chars": "\(text.count)",
+                                                   "images": "\(images.count)",
+                                                   "ok": problem == nil ? "1" : "0"])
+                response = problem.map { Self.terminalFailure($0, backend: session.backend) }
+                    ?? .json(["ok": true, "accepted_at": acceptedAt,
+                              "at": Int(Date().timeIntervalSince1970)])
+            }
+
+            self.queue.async {
+                let waiters = self.terminalPending.removeValue(forKey: key) ?? []
+                self.remember(response, under: key, for: request, by: device)
+                for waiter in waiters { waiter(response) }
+            }
+        }
+        if !admitted {
+            Self.finishUploads(stored, sent: false)
+            terminalPending.removeValue(forKey: key)
+            deliver(.error(429, "busy",
+                           "This Mac already has \(Self.terminalDepth) terminal commands in hand. "
+                           + "Try again after they drain."))
+        }
+    }
+
+    private static func terminalFailure(_ problem: String, backend: Backend) -> Response {
+        if backend == .iterm, let attention = ITerm.automationAttention,
+           problem == attention {
+            return .error(502, "iterm_attention_required", attention,
+                          extra: ["app": "iTerm2", "action": "answer_dialog"])
+        }
+        return .error(502, "terminal_io_failed",
+                      "The terminal command did not complete: \(problem)")
+    }
+
+    private static func terminalFailure(_ failure: TerminalFailure) -> Response {
+        if failure.kind == .iTermAttention {
+            return .error(502, "iterm_attention_required", failure.message,
+                          extra: ["app": "iTerm2", "action": "answer_dialog"])
+        }
+        return .error(502, "terminal_io_failed",
+                      "The terminal command did not complete: \(failure.message)")
+    }
+
+    /// Asynchronous wrapper for `/key`, `/end` and `/start`. Validation, reservation and
+    /// idempotency stay on the server queue; only the existing route body enters the bounded
+    /// terminal worker. The queue-specific marker lets `writing` skip duplicate bookkeeping.
+    private func terminalMutation(_ request: Request, deliver: @escaping (Response) -> Void) {
+        if let refusal = crossOriginRefusal(request) { deliver(refusal); return }
+        if case .denied = permission(for: request) {
+            deliver(.error(401, "unauthorized", "This needs a paired device.")); return
+        }
+        if let refusal = writeOriginRefusal(request) { deliver(refusal); return }
+
+        let device: String, key: String
+        switch writeGate(request) {
+        case .refused(let response), .replay(let response): deliver(response); return
+        case .go(let allowed, let filed): device = allowed; key = filed
+        }
+        if terminalPending[key] != nil {
+            terminalPending[key, default: []].append(deliver)
+            return
+        }
+
+        // A session-bound iTerm command can be refused before admission. Start is deliberately
+        // allowed through: when iTerm2 is stopped, newtab is the operation that launches it.
+        if request.path.hasPrefix("/v1/sessions/") {
+            let rest = request.path.dropFirst("/v1/sessions/".count)
+            let rawID = rest.split(separator: "/", maxSplits: 1).first.map(String.init) ?? ""
+            if let session = session(withID: rawID.removingPercentEncoding ?? rawID),
+               session.backend == .iterm, let attention = ITerm.automationAttention {
+                let response = Self.terminalFailure(TerminalFailure(
+                    kind: .iTermAttention, message: attention))
+                remember(response, under: key, for: request, by: device)
+                deliver(response)
+                return
+            }
+        }
+
+        terminalPending[key] = [deliver]
+        let admitted = enqueueTerminalCommand(channels: Self.terminalChannels(for: request)) { [weak self] in
+            guard let self else { return }
+            let response = Self.terminalRouteForTesting?(request) ?? self.route(request)
+            self.queue.async {
+                let waiters = self.terminalPending.removeValue(forKey: key) ?? []
+                self.remember(response, under: key, for: request, by: device)
+                for waiter in waiters { waiter(response) }
+            }
+        }
+        if !admitted {
+            terminalPending.removeValue(forKey: key)
+            deliver(.error(429, "busy",
+                           "This Mac already has \(Self.terminalDepth) terminal commands in hand. "
+                           + "Try again after they drain."))
+        }
+    }
+
+    private func unfiledTerminalMutation(_ request: Request,
+                                         deliver: @escaping (Response) -> Void) {
+        let admitted = enqueueTerminalCommand(channels: Self.terminalChannels(for: request)) { [weak self] in
+            guard let self else { return }
+            let response = self.route(request)
+            self.queue.async { deliver(response) }
+        }
+        if !admitted {
+            deliver(.error(429, "busy",
+                           "This Mac already has \(Self.terminalDepth) terminal commands in hand. "
+                           + "Try again after they drain."))
+        }
+    }
+
+    private static func terminalChannels(for request: Request) -> [String] {
+        if request.path.hasPrefix("/v1/sessions/") {
+            let rest = request.path.dropFirst("/v1/sessions/".count)
+            guard let first = rest.split(separator: "/", maxSplits: 1).first else { return [] }
+            return [String(first).removingPercentEncoding ?? String(first)]
+        }
+        if request.path.hasPrefix("/v1/places/") {
+            let rest = request.path.dropFirst("/v1/places/".count)
+            guard let first = rest.split(separator: "/", maxSplits: 1).first else { return [] }
+            return ["start:" + String(first)]
+        }
+        if request.path == "/v1/orchestrator/waits" {
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+            return (body?["owner_session_id"] as? String).map { [$0] } ?? []
+        }
+        if request.path.hasPrefix("/v1/orchestrator/waits/")
+            && request.path.hasSuffix("/release") {
+            let id = String(request.path.dropFirst("/v1/orchestrator/waits/".count)
+                .dropLast("/release".count)).removingPercentEncoding ?? ""
+            return Orchestrator.coordinationWaitRecords().compactMap { row in
+                guard row["id"] as? String == id else { return nil }
+                return row["waiter_session_id"] as? String
+            }
+        }
+        if request.path.hasPrefix("/v1/orchestrator/schedules/")
+            && request.path.hasSuffix("/run") {
+            let id = request.path.dropFirst("/v1/orchestrator/schedules/".count)
+                .dropLast("/run".count)
+            return ["schedule:" + String(id)]
+        }
+        if request.path.hasPrefix("/v1/orchestrator/tasks/") {
+            let id = String(request.path.dropFirst("/v1/orchestrator/tasks/".count))
+            if let child = Orchestrator.record(id: id)?["child"] as? [String: Any],
+               let terminal = child["terminalId"] as? String {
+                return [terminal]
+            }
+            return ["task:" + id]
+        }
+        return []
+    }
+
+    static func terminalChannelsForTesting(_ request: Request) -> [String] {
+        terminalChannels(for: request)
+    }
+
+    /// Deterministic queue seams. They submit to the production queues rather than imitating
+    /// them, so a blocked test command proves the actual server and reading lanes still move.
+    func sendTerminalForTesting(_ request: Request,
+                                completion: @escaping (Response) -> Void) {
+        queue.async { self.sendTerminal(request, deliver: completion) }
+    }
+
+    func terminalMutationForTesting(_ request: Request,
+                                    completion: @escaping (Response) -> Void) {
+        queue.async { self.terminalMutation(request, deliver: completion) }
+    }
+
+    func routeOnServerQueueForTesting(_ request: Request,
+                                      completion: @escaping (Response) -> Void) {
+        queue.async { completion(self.route(request)) }
+    }
+
+    func heartbeatTurnForTesting(_ completion: @escaping () -> Void) {
+        queue.async(execute: completion)
+    }
+
+    func readingTurnForTesting(_ completion: @escaping () -> Void) {
+        readingQueue.async(execute: completion)
+    }
+
     /// What the three gates in front of a mutating route decided.
     ///
     /// A verdict rather than a call, because one of the routes behind this gate does not finish in
@@ -2010,6 +2710,11 @@ final class RemoteServer: @unchecked Sendable {
     /// see the note in `transcribe` about `429` and `503`, which is the same argument.
     private func writing(_ request: Request, keeping keep: (Response) -> Bool = { _ in true },
                          _ body: ([String: Any]) -> Response) -> Response {
+        if DispatchQueue.getSpecific(key: Self.terminalWorkerKey) == true {
+            let parsed = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            return body(parsed)
+        }
         switch writeGate(request) {
         case .refused(let response), .replay(let response):
             return response
@@ -2020,6 +2725,24 @@ final class RemoteServer: @unchecked Sendable {
             else { note(response, for: request, by: device) }
             return response
         }
+    }
+
+    /// Machine-token writes use the same ten-minute replay table as paired-device writes without
+    /// inheriting that route family's remote-write switch or device capability gate. A relay is
+    /// still a terminal write, so retrying it without an idempotency key is still unsafe.
+    private func orchestratorWriting(_ request: Request,
+                                     _ body: ([String: Any]) -> Response) -> Response {
+        guard let key = request.headers["idempotency-key"], !key.isEmpty else {
+            return .error(400, "bad_request", "That needs an Idempotency-Key header.")
+        }
+        if let seen = idempotent[key], Date().timeIntervalSince(seen.at) < 600 {
+            return seen.response
+        }
+        let parsed = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+            ?? [:]
+        let response = body(parsed)
+        remember(response, under: key, for: request, by: "orchestrator")
+        return response
     }
 
     private var idempotent: [String: (at: Date, response: Response)] = [:]
@@ -2820,15 +3543,29 @@ final class RemoteServer: @unchecked Sendable {
 
         var usage: Orchestrator.Usage?
         var context: SessionInfo.Context?
+        var costOverrideUsd: Double?
         var limits = SessionInfo.Limits()
         var model: String?
-        if let record, let data = try? Data(contentsOf: record.url), !data.isEmpty {
+        // The transcript is read if it can be, and its absence no longer silences everything
+        // else. Claude Code's status-line cache answers the context fill and the exact cost on
+        // its own, under the same id this record names, so a transcript that is missing, empty
+        // or unreadable now costs only the facts that actually come from it. Every reader below
+        // takes an empty buffer as "the transcript said nothing" and answers absent.
+        if let record {
+            let data = (try? Data(contentsOf: record.url)) ?? Data()
             switch record.assistant {
             case .claude:
+                let sessionID = record.url.deletingPathExtension().lastPathComponent
+                let cache = SessionInfo.claudeSessionCache(
+                    cacheDirectory: ProjectStatus.cacheDirectory, sessionID: sessionID)
                 usage = Orchestrator.claudeUsage(transcript: record.url)
                 let read = SessionInfo.claudeLimits(transcript: data)
                 limits = read.limits
                 model = read.model
+                let usageModel = usage?.model.flatMap { $0.hasPrefix("<") ? nil : $0 }
+                context = SessionInfo.claudeContext(
+                    transcript: data, cache: cache, model: model ?? usageModel)
+                costOverrideUsd = SessionInfo.claudeCost(cache: cache)
             case .codex:
                 usage = Orchestrator.codexUsage(rollout: record.url)
                 context = SessionInfo.codexContext(rollout: data)
@@ -2857,12 +3594,12 @@ final class RemoteServer: @unchecked Sendable {
         let permission = session.assistant == .claude
             ? SessionInfo.permissionMode(screen: Targets.visibleScreen(of: session)) : nil
         var payload = SessionInfo.payload(
-            id: session.id, assistant: session.assistant,
+            id: session.id, title: session.displayLabel, assistant: session.assistant,
             sessionId: Self.sessionIdentity(assistant: session.assistant,
                                             processBound: Transcript.sessionID(of: session)),
             model: model,
             cwd: cwd, startedAt: Targets.processStart(of: session),
-            usage: usage, context: context, limits: limits,
+            usage: usage, context: context, costOverrideUsd: costOverrideUsd, limits: limits,
             files: cwd.flatMap { SessionInfo.files(cwd: $0) },
             deploy: deploy, models: SessionInfo.models(for: session.assistant),
             permission: permission)
@@ -3053,13 +3790,45 @@ final class RemoteServer: @unchecked Sendable {
         sessions.first { $0.id == id }
     }
 
+    /// Resolve a relay source in the two namespaces already exposed to assistant sessions: its
+    /// terminal-neutral id, or the conversation id proved for the process currently in it. No
+    /// title, prefix or tty matching is allowed, and ambiguity fails closed.
+    static func sessionMessageSource(withID id: String, among sessions: [TargetSession],
+                                     conversationID: (TargetSession) -> String?)
+        -> TargetSession? {
+        let matches = sessions.filter { session in
+            session.id == id || conversationID(session) == id
+        }
+        return matches.count == 1 ? matches[0] : nil
+    }
+
     /// The reading lives on the main thread and this runs on the server's queue, so the crossing
     /// is here and nowhere else — one hop for a dictionary lookup, rather than a copy of the
     /// session list kept in two places and drifting.
     private func session(withID id: String) -> TargetSession? {
+        if let supplied = Self.sessionPayloadForTesting?.0 {
+            return Self.session(withID: id, among: supplied)
+        }
         if Thread.isMainThread { return Self.session(withID: id, among: SessionWatch.shared.targets) }
         return DispatchQueue.main.sync {
             Self.session(withID: id, among: SessionWatch.shared.targets)
+        }
+    }
+
+    private func sessionMessageSource(withID id: String) -> TargetSession? {
+        let sessions: [TargetSession]
+        if Thread.isMainThread { sessions = SessionWatch.shared.targets }
+        else { sessions = DispatchQueue.main.sync { SessionWatch.shared.targets } }
+        return Self.sessionMessageSource(withID: id, among: sessions) { session in
+            Self.sessionIdentity(assistant: session.assistant,
+                                 processBound: Transcript.sessionID(of: session))
+        }
+    }
+
+    private func state(of sessionID: String) -> SessionState {
+        if Thread.isMainThread { return SessionWatch.shared.states[sessionID] ?? .unknown }
+        return DispatchQueue.main.sync {
+            SessionWatch.shared.states[sessionID] ?? .unknown
         }
     }
 
@@ -3102,6 +3871,15 @@ final class RemoteServer: @unchecked Sendable {
         let work = Orchestrator.sessionWorkProjection(
             identity: identity, terminalState: state)
         out["work_state"] = work.state.rawValue
+        // The evidence fields beside the state: who said so (`broker` projected it, or the
+        // session declared it), since when, in whose words, and who will move it. The `owed`
+        // overlay is the independent second axis and rides beside any state.
+        out["work_provenance"] = work.provenance
+        if let note = work.note { out["work_note"] = note }
+        if let since = work.since { out["work_since"] = Int(since.timeIntervalSince1970) }
+        if let movedBy = work.movedBy { out["work_moved_by"] = movedBy }
+        if let personNeeded = work.personNeeded { out["work_person_needed"] = personNeeded }
+        if let owed = work.owed { out["owed"] = owed }
         if let disposition = work.disposition { out["disposition"] = disposition }
         if let assistant = session.assistant { out["assistant"] = assistant.rawValue }
         let coordination = Orchestrator.coordination(forTerminal: session.id)
@@ -3368,8 +4146,14 @@ final class RemoteServer: @unchecked Sendable {
             var row: [String: Any] = ["role": name(of: entry.kind), "text": entry.text]
             if let tool = entry.tool { row["tool"] = tool }
             if let time = entry.time { row["at"] = Int(time.timeIntervalSince1970) }
+            // Current user rows are a closed image contract: zero means an authored literal
+            // marker, while omission remains the legacy shape whose marker had to imply images.
+            if entry.kind == .user { row["imageCount"] = entry.imageCount }
             if let source = entry.source, !source.isEmpty { row["source"] = source }
             if let mode = entry.sourceMode, !mode.isEmpty { row["sourceMode"] = mode }
+            if let assistant = entry.sourceAssistant {
+                row["sourceAssistant"] = assistant.rawValue
+            }
             if let notice = entry.notice {
                 row["notice"] = ClawdlineMessage.webObject(for: notice)
             }
@@ -3382,6 +4166,7 @@ final class RemoteServer: @unchecked Sendable {
         case .user:       return "user"
         case .assistant:  return "assistant"
         case .peer:       return "peer"
+        case .message:    return "message"
         case .notice:     return "notice"
         case .tool:       return "tool"
         case .toolResult: return "tool"
@@ -3462,7 +4247,10 @@ final class RemoteServer: @unchecked Sendable {
             "webStateUnreadable": t.webStateUnreadable,
             "webStateWorking": t.webStateWorking,
             "sessionWorkReady": t.sessionWorkReady,
-            "sessionWorkNeedsTriage": t.sessionWorkNeedsTriage,
+            "sessionWorkUnknown": t.sessionWorkUnknown,
+            "sessionWorkHolding": t.sessionWorkHolding,
+            "sessionWorkOwed": t.sessionWorkOwed,
+            "sessionWorkSelfStated": t.sessionWorkSelfStated,
             "sessionWorkMilestone": t.sessionWorkMilestone,
             "sessionWorkComplete": t.sessionWorkComplete,
         ])
@@ -3494,6 +4282,7 @@ final class RemoteServer: @unchecked Sendable {
             "webConfirmActionSay": t.webConfirmActionSay,
             "webConfirmEndTitle": t.webConfirmEndTitle,
             "webConfirmEndSay": t.webConfirmEndSay,
+            "webConfirmEndLoses": t.webConfirmEndLoses,
             "webClosing": t.webClosing,
             "webCancel": t.webCancel,
             "webConfirm": t.webConfirm,
@@ -3884,6 +4673,13 @@ final class RemoteServer: @unchecked Sendable {
         add([
             "webSessionInfo": t.webSessionInfo,
             "webInfoTitle": t.webInfoTitle,
+            "webInfoEditTitle": t.webInfoEditTitle,
+            "webInfoCopyTitle": t.webInfoCopyTitle,
+            "webInfoTitleSaved": t.webInfoTitleSaved,
+            "webInfoTitleLocal": t.webInfoTitleLocal,
+            "webInfoTitleQueued": t.webInfoTitleQueued,
+            "webInfoTitleNotDurable": t.webInfoTitleNotDurable,
+            "webInfoTitleCloud": t.webInfoTitleCloud,
             "webInfoSession": t.webInfoSession,
             "webInfoAssistant": t.webInfoAssistant,
             "webInfoModel": t.webInfoModel,
@@ -3932,6 +4728,88 @@ final class RemoteServer: @unchecked Sendable {
             "webInfoCopied": t.webInfoCopied,
             "webInfoAsOf": t.webInfoAsOf,
             "webInfoWhyUnknown": t.webInfoWhyUnknown,
+        ])
+
+        // Asking a session to make itself Clawdfather. The browser composes the sentence and
+        // types it through the ordinary send route; only the session can read the orchestrator
+        // token, so only the session performs the registration.
+        add([
+            "webMakeClawdfather": t.webMakeClawdfather,
+            "webClawdfatherIs": t.webClawdfatherIs,
+            "webConfirmClawdfatherTitle": t.webConfirmClawdfatherTitle,
+            "webConfirmClawdfatherSay": t.webConfirmClawdfatherSay,
+            "webClawdfatherAsk": t.webClawdfatherAsk,
+            "webClawdfatherAsked": t.webClawdfatherAsked,
+        ])
+
+        // The Clawdfather controls panel — sections, the closed commands table, effect and state
+        // words, disabled reasons by code, and the rendering of the four connected reads.
+        add([
+            "webCoordSectionObserve": t.webCoordSectionObserve,
+            "webCoordSectionCoordinate": t.webCoordSectionCoordinate,
+            "webCoordSectionPresence": t.webCoordSectionPresence,
+            "webCoordSectionAdmin": t.webCoordSectionAdmin,
+            "webCoordCmdStatusReport": t.webCoordCmdStatusReport,
+            "webCoordCmdStatusReportSay": t.webCoordCmdStatusReportSay,
+            "webCoordCmdSinceAway": t.webCoordCmdSinceAway,
+            "webCoordCmdSinceAwaySay": t.webCoordCmdSinceAwaySay,
+            "webCoordCmdDuplicates": t.webCoordCmdDuplicates,
+            "webCoordCmdDuplicatesSay": t.webCoordCmdDuplicatesSay,
+            "webCoordCmdLandingClosure": t.webCoordCmdLandingClosure,
+            "webCoordCmdLandingClosureSay": t.webCoordCmdLandingClosureSay,
+            "webCoordCmdCoordinateWork": t.webCoordCmdCoordinateWork,
+            "webCoordCmdCoordinateWorkSay": t.webCoordCmdCoordinateWorkSay,
+            "webCoordCmdDispatch": t.webCoordCmdDispatch,
+            "webCoordCmdDispatchSay": t.webCoordCmdDispatchSay,
+            "webCoordCmdAsk": t.webCoordCmdAsk,
+            "webCoordCmdAskSay": t.webCoordCmdAskSay,
+            "webCoordCmdQuietWatch": t.webCoordCmdQuietWatch,
+            "webCoordCmdQuietWatchSay": t.webCoordCmdQuietWatchSay,
+            "webCoordCmdScope": t.webCoordCmdScope,
+            "webCoordCmdScopeSay": t.webCoordCmdScopeSay,
+            "webCoordCmdStop": t.webCoordCmdStop,
+            "webCoordCmdStopSay": t.webCoordCmdStopSay,
+            "webCoordCmdReconnect": t.webCoordCmdReconnect,
+            "webCoordCmdReconnectSay": t.webCoordCmdReconnectSay,
+            "webCoordEffectRead": t.webCoordEffectRead,
+            "webCoordEffectAdvisory": t.webCoordEffectAdvisory,
+            "webCoordEffectSpawns": t.webCoordEffectSpawns,
+            "webCoordEffectMutation": t.webCoordEffectMutation,
+            "webCoordStateAvailable": t.webCoordStateAvailable,
+            "webCoordStateDraft": t.webCoordStateDraft,
+            "webCoordStateUnavailable": t.webCoordStateUnavailable,
+            "webCoordStatePreview": t.webCoordStatePreview,
+            "webCoordStateDisabled": t.webCoordStateDisabled,
+            "webCoordOnline": t.webCoordOnline,
+            "webCoordOffline": t.webCoordOffline,
+            "webCoordControlsTitle": t.webCoordControlsTitle,
+            "webCoordOpenControls": t.webCoordOpenControls,
+            "webCoordEmpty": t.webCoordEmpty,
+            "webCoordDisabledFallback": t.webCoordDisabledFallback,
+            "webCoordPreviewTitle": t.webCoordPreviewTitle,
+            "webCoordPreviewNone": t.webCoordPreviewNone,
+            "webCoordPreviewMutation": t.webCoordPreviewMutation,
+            "webCoordPreviewDraft": t.webCoordPreviewDraft,
+            "webCoordPreviewSpawn": t.webCoordPreviewSpawn,
+            "webCoordPreviewContract": t.webCoordPreviewContract,
+            "webCoordWhyNoCommandRoute": t.webCoordWhyNoCommandRoute,
+            "webCoordWhyNoReturnLedger": t.webCoordWhyNoReturnLedger,
+            "webCoordWhyDeviceCannotSpawn": t.webCoordWhyDeviceCannotSpawn,
+            "webCoordWhyMachineTokenOnly": t.webCoordWhyMachineTokenOnly,
+            "webCoordReadFailed": t.webCoordReadFailed,
+            "webCoordActiveTasks": t.webCoordActiveTasks,
+            "webCoordPendingLandings": t.webCoordPendingLandings,
+            "webCoordOpenWaits": t.webCoordOpenWaits,
+            "webCoordCountUnknown": t.webCoordCountUnknown,
+            "webCoordStaleSessions": t.webCoordStaleSessions,
+            "webCoordUnknown": t.webCoordUnknown,
+            "webCoordWaitingList": t.webCoordWaitingList,
+            "webCoordBlockingList": t.webCoordBlockingList,
+            "webCoordAllQuiet": t.webCoordAllQuiet,
+            "webCoordNoLandings": t.webCoordNoLandings,
+            "webCoordUnregistered": t.webCoordUnregistered,
+            "webCoordScopeLine": t.webCoordScopeLine,
+            "webCoordScopeDevice": t.webCoordScopeDevice,
         ])
 
         var response = Response.json(out)

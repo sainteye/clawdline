@@ -56,6 +56,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private var root: FlippedView?
     private var strip: TabStrip?
+    private var scroll: NSScrollView?
     private var panes: [SettingsPane] = []
     private var current = 0
     private var contentWidth: CGFloat = 760
@@ -74,7 +75,17 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     private var policyCard: NoteCard?
     private var deviceChips: DeviceChips?
     private var tunnelCard: NoteCard?
+    private var smartHealthCard: NoteCard?
     private var schedulesControl: ScheduleSettingsControl?
+    /// AppKit invokes this window on the main thread, but the older SDK annotations used by the
+    /// straight-swiftc build do not carry that fact through NSObject. Keep the actor boundary
+    /// explicit where the UI-independent state model is created.
+    private lazy var cloudSettings = MainActor.assumeIsolated {
+        CloudSettingsModel(
+            services: .production(openVerificationURL: { NSWorkspace.shared.open($0) }),
+            metadata: .currentMac())
+    }
+    private var cloudSettingsControl: CloudSettingsControl?
     private var schedulesRefreshAt = Date.distantPast
     private var schedulesRefreshing = false
     private var schedulesRefreshPending = false
@@ -108,6 +119,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         stopRecording()
         closeScheduleForm()
+        MainActor.assumeIsolated { cloudSettings.close() }
         live?.invalidate()
         live = nil
         // The window itself is kept rather than rebuilt: which tab you were on is a thing you
@@ -116,6 +128,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
     private func tearDown() {
         stopRecording()
+        MainActor.assumeIsolated { cloudSettings.close() }
         // Before the window goes: a sheet outlives the window it was attached to, and the only
         // thing that reaches this path is picking a different language — which rebuilds every
         // label in the window, including the ones on that form.
@@ -126,6 +139,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         strip = nil
         panes = []
         schedulesControl = nil
+        cloudSettingsControl = nil
         schedulesRefreshAt = .distantPast
         schedulesRefreshing = false
         schedulesRefreshPending = false
@@ -164,6 +178,24 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
         let root = FlippedView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: 400))
         root.addSubview(strip)
+
+        // The pane sits inside a scroller rather than straight on the root. Without one the window
+        // simply grew to whatever the tab needed, and a tab taller than the screen — the device
+        // list, the schedule list — put its last rows below the bottom edge where nothing could
+        // reach them. The strip and the footer stay outside it, so the tabs do not scroll away
+        // from under the pointer.
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: Metric.stripHeight + 22,
+                                                width: contentWidth, height: 200))
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.autohidesScrollers = true
+        // This window is pinned dark; a scroller drawing its own background would put a pale band
+        // down the side of it.
+        scroll.drawsBackground = false
+        scroll.contentView.drawsBackground = false
+        root.addSubview(scroll)
+        self.scroll = scroll
+
         root.addSubview(footer())
         self.root = root
 
@@ -202,12 +234,23 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         let pane = panes[index]
         let inner = contentWidth - Metric.pad * 2
         let paneHeight = max(pane.layout(width: inner), 140)
-        pane.view.frame = NSRect(x: Metric.pad, y: Metric.stripHeight + 22,
-                                 width: inner, height: paneHeight)
-        root.addSubview(pane.view)
 
-        let height = (Metric.stripHeight + 22 + paneHeight + 24 + Metric.footerHeight).rounded()
+        // The document is the full window width and the pane is inset inside it, so that a legacy
+        // scroller — what somebody gets by asking for scroll bars to always be visible — lands in
+        // the margin rather than over the text.
+        let document = FlippedView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: paneHeight))
+        pane.view.frame = NSRect(x: Metric.pad, y: 0, width: inner, height: paneHeight)
+        document.addSubview(pane.view)
+        scroll?.documentView = document
+
+        let above = Metric.stripHeight + 22
+        let below = 24 + Metric.footerHeight
+        let natural = (above + paneHeight + below).rounded()
+        let fit = Self.contentFit(natural: natural, ceiling: ceilingContentHeight(),
+                                  chrome: above + below)
+        let height = fit.height
         strip?.frame = NSRect(x: 0, y: 0, width: contentWidth, height: Metric.stripHeight)
+        scroll?.frame = NSRect(x: 0, y: above, width: contentWidth, height: fit.viewport)
         for view in root.subviews where view.identifier == Self.footerID {
             view.frame = NSRect(x: 0, y: height - Metric.footerHeight,
                                 width: contentWidth, height: Metric.footerHeight)
@@ -223,6 +266,37 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         next.origin.y += next.height - sized.height
         next.size = sized.size
         w.setFrame(next, display: true)
+    }
+
+    /// How tall the window ends up, and how much of that the scroller gets to show.
+    ///
+    /// Split out from the window so the decision can be checked without an `NSWindow` or a screen.
+    /// Before it existed the height was simply the natural one, so a pane taller than the display
+    /// made a window taller than the display, and its last rows sat below the bottom edge where
+    /// nothing could reach them.
+    static func contentFit(natural: CGFloat, ceiling: CGFloat,
+                           chrome: CGFloat) -> (height: CGFloat, viewport: CGFloat) {
+        let height = min(natural, ceiling)
+        return (height, max(height - chrome, 0))
+    }
+
+    /// The tallest the content is allowed to get: what the screen leaves once the window's own
+    /// title bar is taken off it.
+    ///
+    /// A tab taller than this used to make a window taller than the screen, and the rows past the
+    /// bottom edge could not be reached by any means — not by dragging the window, which is pinned
+    /// by its title bar, and not by resizing it, which this window does not offer. Capping the
+    /// height is what turns the overflow into something the scroller can reach.
+    private func ceilingContentHeight() -> CGFloat {
+        guard let visible = (window?.screen ?? NSScreen.main)?.visibleFrame else {
+            return .greatestFiniteMagnitude
+        }
+        // A titled window's chrome, asked for rather than assumed — except before the window
+        // exists, where the usual title bar is close enough to keep the first open on screen.
+        let chrome = window.map {
+            $0.frameRect(forContentRect: NSRect(x: 0, y: 0, width: contentWidth, height: 0)).height
+        } ?? 28
+        return max(240, visible.height - chrome)
     }
 
     private static let footerID = NSUserInterfaceItemIdentifier("clawdline.settings.footer")
@@ -422,6 +496,16 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                       switchFor({ Config.shared.pushOnFinish },
                                 { Config.shared.pushOnFinish = $0 }),
                       hint: L.t.settingsPushFinishHint)
+        pane.left.row(L.t.settingsSmartNotifications,
+                      switchFor({ Config.shared.smartNotifications },
+                                { Config.shared.smartNotifications = $0 }),
+                      hint: L.t.settingsSmartNotificationsHint)
+        // The feature's record, beside its switch. It once failed 784 times in three hours and
+        // the only evidence was a log line; whether the model is producing sentences, and why the
+        // last attempt fell back, belong where the person who flipped the switch will look.
+        let smartHealth = NoteCard()
+        smartHealthCard = smartHealth
+        pane.left.block(label: nil, view: smartHealth, hint: nil)
         pane.left.row(L.t.settingsPushDeploy,
                       switchFor({ Config.shared.pushOnDeploy },
                                 { Config.shared.pushOnDeploy = $0 }),
@@ -464,6 +548,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         pane.right.mono(Orchestrator.policyURL.path
             .replacingOccurrences(of: NSHomeDirectory(), with: "~"))
 
+        let cloud = CloudSettingsControl(model: cloudSettings)
+        cloud.onResize = { [weak self] in self?.relayoutCurrent() }
+        cloudSettingsControl = cloud
+        pane.wide.block(label: "Clawdline Cloud", view: cloud,
+                        hint: "Connect this Mac with GitHub to use Clawdline Cloud. The browser opens only after you confirm the one-time code.")
         pane.wide.block(label: L.t.settingsRemoteDevices, view: devicesControl(),
                         hint: L.t.settingsRemotePhoneHint)
         pane.right.block(label: L.t.settingsSchedules, view: scheduleControl(),
@@ -604,7 +693,29 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         refreshPolicyCard()
         refreshDevices()
         refreshTunnel()
+        refreshSmartHealth()
         if Date() >= schedulesRefreshAt { refreshSchedules() }
+    }
+
+    /// Whether smart notifications are actually producing sentences, in the words
+    /// ``SmartNotification.healthLine(_:copy:)`` chooses — refreshed with the other live
+    /// readings so a failure shows up while the window is open, not on the next launch.
+    private func refreshSmartHealth() {
+        guard let card = smartHealthCard else { return }
+        let health = SmartNotification.healthSnapshot()
+        let was = card.text
+        if health.attempts == 0 && !Config.shared.smartNotifications {
+            card.text = ""
+            card.dot = .idle
+        } else {
+            card.text = SmartNotification.healthLine(health, copy: L.t)
+            if let ok = health.lastResolvedWasSuccess {
+                card.dot = ok ? .live : .warn
+            } else {
+                card.dot = .idle
+            }
+        }
+        if card.text != was { relayoutCurrent() }
     }
 
     /// Something that changes size changed, so the tab is measured again. Only called when a
@@ -3407,6 +3518,113 @@ private final class StackedRow: NSView, SelfSizing {
             button.frame.origin = NSPoint(x: x, y: 4)
             x += button.frame.width + 8
         }
+    }
+}
+
+/// The Mac's Cloud identity and the explicit GitHub device-code handoff.
+///
+/// The state machine lives in ``CloudSettingsModel`` so none of the security or cancellation
+/// rules depend on a window being present. This view only translates those states into one
+/// selectable reading and the actions that are valid at that moment.
+private final class CloudSettingsControl: NSView, SelfSizing {
+
+    var onResize: (() -> Void)?
+
+    private let model: CloudSettingsModel
+    private let card = NoteCard()
+    private var buttons: [ChipButton] = []
+
+    init(model: CloudSettingsModel) {
+        self.model = model
+        super.init(frame: NSRect(x: 0, y: 0, width: 500, height: 80))
+        addSubview(card)
+        model.onChange = { [weak self] in self?.refresh() }
+        refresh(notifyResize: false)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func height(forWidth width: CGFloat) -> CGFloat {
+        card.height(forWidth: width) + (buttons.isEmpty ? 0 : 40)
+    }
+
+    override func layout() {
+        super.layout()
+        let cardHeight = card.height(forWidth: bounds.width)
+        card.frame = NSRect(x: 0, y: 0, width: bounds.width, height: cardHeight)
+        var x: CGFloat = 0
+        for button in buttons {
+            button.frame.origin = NSPoint(x: x, y: cardHeight + 10)
+            x += button.frame.width + 8
+        }
+    }
+
+    private func refresh(notifyResize: Bool = true) {
+        let text: String
+        let dot: PixelDot.State
+        let actions: [(String, Bool, () -> Void)]
+
+        switch model.phase {
+        case .signedOut:
+            text = "This Mac is not connected to Clawdline Cloud."
+            dot = .idle
+            actions = [("Connect with GitHub", true, { [weak model] in model?.connect() })]
+        case .starting:
+            text = "Starting a secure GitHub connection…"
+            dot = .busy
+            actions = [("Cancel", false, { [weak model] in model?.cancel() })]
+        case .code(let userCode):
+            text = "One-time GitHub code: \(userCode)\nConfirm this code before opening GitHub."
+            dot = .live
+            actions = [
+                ("Confirm & Open GitHub", true, { [weak model] in model?.confirmAndOpen() }),
+                ("Cancel", false, { [weak model] in model?.cancel() }),
+            ]
+        case .waiting(let userCode):
+            text = "Waiting for GitHub authorization for code \(userCode)…"
+            dot = .busy
+            actions = [("Cancel", false, { [weak model] in model?.cancel() })]
+        case .slowDown(let userCode, let retryAfter):
+            text = "GitHub asked Clawdline to slow down. Code \(userCode) will retry in \(retryAfter)s."
+            dot = .busy
+            actions = [("Cancel", false, { [weak model] in model?.cancel() })]
+        case .connected(let identity, let origin):
+            let restored = origin == .restored ? " Restored from this Mac's Keychain." : ""
+            text = "Connected to Clawdline Cloud. Account \(identity.accountID), Mac \(identity.machineID).\(restored)"
+            dot = .live
+            actions = [("Sign Out", false, { [weak model] in model?.signOut() })]
+        case .denied:
+            text = "GitHub connection was denied. No Cloud identity was added."
+            dot = .warn
+            actions = [("Retry", true, { [weak model] in model?.retry() })]
+        case .expired:
+            text = "The one-time GitHub code expired."
+            dot = .warn
+            actions = [("Retry", true, { [weak model] in model?.retry() })]
+        case .cancelled:
+            text = "GitHub connection was cancelled."
+            dot = .idle
+            actions = [("Retry", true, { [weak model] in model?.retry() })]
+        case .failed(let message):
+            text = "GitHub connection failed: \(message)"
+            dot = .warn
+            actions = [("Retry", true, { [weak model] in model?.retry() })]
+        case .signOutFailed(let identity, let message):
+            text = "Still connected as account \(identity.accountID), Mac \(identity.machineID). Sign out failed: \(message)"
+            dot = .warn
+            actions = [("Retry Sign Out", false, { [weak model] in model?.signOut() })]
+        }
+
+        card.text = text
+        card.dot = dot
+        buttons.forEach { $0.removeFromSuperview() }
+        buttons = actions.map { title, prominent, action in
+            let button = ChipButton(title: title, prominent: prominent)
+            button.action = action
+            addSubview(button)
+            return button
+        }
+        needsLayout = true
+        if notifyResize { onResize?() }
     }
 }
 

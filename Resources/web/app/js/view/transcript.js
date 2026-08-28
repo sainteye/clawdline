@@ -456,7 +456,8 @@ els.tx.addEventListener("keydown", function (ev) {
 // User and tool are copy supplied by the server before the first render. Claude, Claude ↔ and
 // Clawdline are names, and a name is the same word in fourteen languages. See `paintStatic`.
 export var WHO = {
-    user: "you", assistant: "claude", peer: "Claude ↔", notice: "Clawdline", tool: "tool",
+    user: "you", assistant: "claude", peer: "Claude ↔", message: "Clawdline ↔",
+    notice: "Clawdline", tool: "tool",
 };
 
 /** A transcript speaker, with the current assistant's mark when this browser opted into it. */
@@ -473,6 +474,19 @@ function whoHTML(role, at) {
 export function entryHTML(e) {
     if (e.role === "notice") return noticeHTML(e);
     var role = WHO[e.role] ? e.role : "assistant";
+    if (role === "message") {
+        var messageSource = String(e.source || "session");
+        var sourceAssistant = String(e.sourceAssistant || "");
+        var sourceMeta = sourceAssistant
+            ? assistantLogo(sourceAssistant) + '<span>' + esc(assistantName(sourceAssistant)) + '</span>'
+            : "";
+        return '<div class="entry" data-role="message">' +
+            whoHTML("message", e.at) +
+            '<div class="body"><div class="message-card">' +
+            '<div class="message-source"><span>' + esc(messageSource) + '</span>' + sourceMeta + '</div>' +
+            '<div>' + richText(e.text) + '</div>' +
+            '</div></div></div>';
+    }
     if (role === "peer") {
         var source = String(e.source || "session");
         var mode = e.sourceMode ? ' title="' + esc(String(e.sourceMode)) + '"' : "";

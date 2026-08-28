@@ -458,7 +458,7 @@ private func runCloudTransportConnectorRegistrationTests() async throws -> Int {
     let machineKey = CloudDeviceKeyPair()
     let master = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x46, count: 32))
     let tokenProvider = CloudSuspendedTokenProvider(token: CloudDeviceToken(
-        value: "late-token", expiresAt: Date().addingTimeInterval(60)
+        value: "late-secret-after-shutdown", expiresAt: Date().addingTimeInterval(60)
     ))
     let attempt = CloudSuspendedConnectAttempt()
     let transport = CloudTransport(
@@ -489,6 +489,9 @@ private func runCloudTransportConnectorRegistrationTests() async throws -> Int {
         attempt.cancel()
     }
     await connectTask.value
+    let retainedToken = try reflectedCachedTokenValue(in: transport)
+    try require(retainedToken == nil,
+                "shutdown does not retain the late token after its fetch resumes")
     try require(!attemptState.started,
                 "shutdown prevents a connector from being born after token fetch resumes")
     try require(completion.finished(),
@@ -497,6 +500,23 @@ private func runCloudTransportConnectorRegistrationTests() async throws -> Int {
     try require(state == .shutDown,
                 "post-token cancellation preserves terminal shutdown state")
     return checks
+}
+
+private func reflectedCachedTokenValue(in transport: CloudTransport) throws -> String? {
+    guard let storage = Mirror(reflecting: transport).children.first(where: {
+        $0.label == "cachedToken"
+    })?.value else {
+        throw CloudTransportTestFailure(description: "CloudTransport cachedToken storage is missing")
+    }
+    let optional = Mirror(reflecting: storage)
+    guard optional.displayStyle == .optional else {
+        throw CloudTransportTestFailure(description: "CloudTransport cachedToken storage is not optional")
+    }
+    guard let value = optional.children.first?.value else { return nil }
+    guard let token = value as? CloudDeviceToken else {
+        throw CloudTransportTestFailure(description: "CloudTransport cachedToken has an unexpected type")
+    }
+    return token.value
 }
 
 private func runCloudTransportReadyBufferTests() async throws -> Int {

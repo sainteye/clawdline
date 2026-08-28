@@ -62,18 +62,35 @@ export var Mock = (function () {
           isClaude: false, assistant: "codex", sessionId: "clawdfather-mock", icon: clawdline,
           coordinator: {
               label: "Clawdfather", status: "online",
+              // The advertisement the Mac sends today: four connected reads, everything that
+              // would send, spawn or mutate disabled with a closed reason code.
               commands: [
-                  { type: "status_report", enabled: false,
-                    why: "Preview only in Phase A2: Bearings is read-only." },
-                  { type: "ask_coordinator", enabled: false,
-                    why: "Disabled in Phase A2: Clawdfather actions remain advisory." }
+                  { type: "status_report", enabled: true },
+                  { type: "duplicates_conflicts_ownership", enabled: true },
+                  { type: "landing_closure", enabled: true },
+                  { type: "scope_permissions", enabled: true },
+                  { type: "since_away", enabled: false, reason: "no_return_ledger",
+                    why: "This Mac does not record a return point yet, so there is nothing to read one against." },
+                  { type: "coordinate_work", enabled: false, reason: "no_command_route",
+                    why: "No route carries a command from this panel into a session yet, so nothing can be sent." },
+                  { type: "dispatch_independent_work", enabled: false,
+                    reason: "device_cannot_spawn",
+                    why: "A paired device can never start a session — that separation is deliberate, and this command will not cross it." },
+                  { type: "ask_coordinator", enabled: false, reason: "no_command_route",
+                    why: "No route carries a command from this panel into a session yet, so nothing can be sent." },
+                  { type: "quiet_watch", enabled: false, reason: "no_command_route",
+                    why: "No route carries a command from this panel into a session yet, so nothing can be sent." },
+                  { type: "stop", enabled: false, reason: "no_command_route",
+                    why: "No route carries a command from this panel into a session yet, so nothing can be sent." },
+                  { type: "reconnect", enabled: false, reason: "machine_token_only",
+                    why: "Reconnecting needs the Mac's own orchestrator token, which a paired device deliberately does not hold." }
               ]
           } },
         // Waiting, **with the question in it**. This is what the phone could never see: the
         // options were parsed on the Mac and thrown away, so the box could only say "go and
         // find the Mac". The caret is on the second row, which is what a bare Return confirms.
         { id: "2C71-90", backend: "iterm", tty: "ttys011", label: "the signup flow keeps 500ing",
-          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_human", line: null,
+          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_you", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: atrium,
           menu: { selected: 2, options: [
               { n: 1, label: "Yes", selected: false, can: true },
@@ -87,7 +104,7 @@ export var Mock = (function () {
         // were both pushed out of reach. The card is capped and scrolls inside itself now, and it
         // folds; this fixture is what proves both, because a short menu never could.
         { id: "9C1D-42", backend: "iterm", tty: "ttys044", label: "which source to drop",
-          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_human", line: null,
+          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_you", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: atrium,
           menu: { selected: 1, question: "The rate limit bites on every backfill. Which way out?", options: [
               { n: 1, label: "Swap to the official feed", selected: true, can: true,
@@ -104,7 +121,7 @@ export var Mock = (function () {
         // pressed. Kept as a fixture because that button was once read as the last row's
         // description, and there was nothing on this page to press.
         { id: "5B0E-11", backend: "iterm", tty: "ttys012", label: "which sources to drop",
-          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_human", line: null,
+          cwd: "/Users/x/code/atrium", state: "waiting", work_state: "waiting_you", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: atrium,
           menu: { selected: 1, question: "Which of these should the report drop?",
                   submit: { label: "Submit", selected: false }, options: [
@@ -118,13 +135,30 @@ export var Mock = (function () {
         // still going. This is the row that said nothing at all before `Shells`: the terminal
         // mentions it once, where the turn ended, and every list after that drew it as done.
         { id: "9B04-2D", backend: "iterm", tty: "ttys002", label: "rewrite the CSV importer",
-          cwd: "/Users/x/code/notebook", state: "idle", work_state: "needs_triage", line: null,
+          cwd: "/Users/x/code/notebook", state: "idle", work_state: "unknown", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: creature,
+          // The second axis riding on a quiet row: the session still gets on with its build,
+          // and the reader still owes it a call — three days old, which is the point.
+          owed: { note: "which CSV dialect wins is still your call", since: now - 3 * 86400,
+                  person_needed: true, provenance: "self" },
           shells: [
               { id: "bvlp3xmku", at: now - 6, command: "cargo build --release 2>&1 | tail -40",
                 what: "Build the importer with the new row parser",
                 doing: "[214/318] Compiling importer/rows.rs" }
           ] },
+        // The two declared quiet states: 🔜 holding moves by itself and nobody is needed; 📭
+        // ready is an invitation to hand the session work. Both carry `self` provenance, so the
+        // row can say stated-not-proven out loud.
+        { id: "B770-3A", backend: "iterm", tty: "ttys031", label: "wait out the release build",
+          cwd: "/Users/x/code/notebook", state: "idle", work_state: "holding",
+          work_provenance: "self", work_note: "resumes when the release build finishes",
+          work_moved_by: "the release build", work_person_needed: false, work_since: now - 1200,
+          line: null, isClaude: true, assistant: "claude", sessionId: null, icon: creature },
+        { id: "B771-4B", backend: "iterm", tty: "ttys032", label: "free hand",
+          cwd: "/Users/x/code/notebook", state: "idle", work_state: "ready",
+          work_provenance: "self", work_note: "RootSession fix landed; can take new work",
+          work_since: now - 300,
+          line: null, isClaude: true, assistant: "claude", sessionId: null, icon: creature },
         // The **owner** of the wait the row below is stuck on, and the reason this fixture is
         // here: an owner's row used to be drawn exactly like a session in no relationship at
         // all, so the one person who can end the wait was the one person not told about it.
@@ -156,10 +190,10 @@ export var Mock = (function () {
               releaseCondition: "the protocol docs are committed and released"
           }] } },
         { id: "44D2-05", backend: "iterm", tty: "ttys017", label: "scratch",
-          cwd: "/Users/x/tmp/notes", state: "idle", work_state: "needs_triage", line: null,
+          cwd: "/Users/x/tmp/notes", state: "idle", work_state: "unknown", line: null,
           isClaude: false, assistant: "codex", sessionId: null, icon: null },
         { id: "C0FF-3E", backend: "iterm", tty: "ttys021", label: "build box over ssh",
-          cwd: "/Users/x", state: "unknown", work_state: "needs_triage", line: null,
+          cwd: "/Users/x", state: "unknown", work_state: "unknown", line: null,
           isClaude: true, assistant: "claude", sessionId: null, icon: null },
         { id: "5E20-8B", backend: "tmux", tty: "tmux:%14", label: "check the German strings",
           cwd: "/Users/x/code/clawdline", state: "working", work_state: "working",
@@ -333,6 +367,9 @@ export var Mock = (function () {
         // `notice` is what the app said to it about a task. Neither should look like the other.
         { role: "peer", text: "The release notes still say **August**. Fix that before you push.", tool: null,
           at: now - 3560, source: "release-room", sourceMode: "prompting" },
+        { role: "message", text: "你那兩點我都收進去了。\n\n## 狀態\n\n`e23f626b` 還在跑。", tool: null,
+          at: now - 3555, source: "clawdline-fa", sourceMode: "clawdline",
+          sourceAssistant: "claude" },
         { role: "assistant", text: "Caught it — the heading was left over from the last cut. Changed to September and pushed.", tool: null, at: now - 3550 },
         { role: "notice", text: "[clawdline] workspace overlap: task 7d40aa19 (Release notes) and task 2ef96bc1 (Review) share /Users/you/code/clawdline/docs", at: now - 3540,
           notice: { kind: "workspace_overlap", audience: "root",
@@ -460,7 +497,8 @@ export var Mock = (function () {
         "8F3A-1C": {
             models: CLAUDE_MODELS,
             permission: { current: "auto", options: PERMISSION_MODES },
-            session: { id: "8F3A-1C", assistant: "claude", sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38",
+            session: { id: "8F3A-1C", title: "fix the webhook signature and ship the receiver",
+                       assistant: "claude", sessionId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38",
                        model: "claude-fable-5", cwd: "/Users/x/code/clawdline",
                        startedAt: now - 5580, seconds: 5580 },
             usage: { input: 4821, output: 38210, cacheRead: 2984120, cacheWrite: 214880, total: 3242031,
@@ -475,7 +513,8 @@ export var Mock = (function () {
         "2C71-90": {
             models: CLAUDE_MODELS,
             permission: { current: "unknown", options: PERMISSION_MODES },
-            session: { id: "2C71-90", assistant: "claude", model: "claude-opus-5", cwd: "/Users/x/code/atrium",
+            session: { id: "2C71-90", title: "trace the signup 500 from the browser to the database",
+                       assistant: "claude", model: "claude-opus-5", cwd: "/Users/x/code/atrium",
                        startedAt: now - 24300, seconds: 24300 },
             usage: { input: 19340, output: 61022, cacheRead: 7120400, cacheWrite: 380210, total: 7580972,
                      model: "claude-opus-5", costUsd: 5.61 },
@@ -486,7 +525,8 @@ export var Mock = (function () {
         },
         "44D2-05": {
             models: CODEX_MODELS,
-            session: { id: "44D2-05", assistant: "codex", model: "gpt-5.3-codex", cwd: "/Users/x/tmp/notes",
+            session: { id: "44D2-05", title: "turn the field notes into a publishable technical brief",
+                       assistant: "codex", model: "gpt-5.3-codex", cwd: "/Users/x/tmp/notes",
                        startedAt: now - 840, seconds: 840 },
             usage: { input: 8190546, output: 16956, cacheRead: 7978752, cacheWrite: 0, total: 8207502,
                      model: "gpt-5.3-codex" },
@@ -560,19 +600,19 @@ export var Mock = (function () {
 
     // The real server projects these two axes atomically in one payload. Keep transitions going
     // through one helper or a mock frame can manufacture the exact missing/mismatched state the
-    // production client is required to fail closed as needs_triage.
+    // production client is required to fail closed as unknown.
     function setSessionState(id, state) {
         var session = find(id);
         if (!session) return;
         session.state = state;
-        if (state === "waiting") session.work_state = "waiting_human";
+        if (state === "waiting") session.work_state = "waiting_you";
         else if (state === "working") session.work_state = "working";
-        else if (state === "unknown") session.work_state = "needs_triage";
+        else if (state === "unknown") session.work_state = "unknown";
         else if ((session.coordination && ((session.coordination.waitingOn || []).length ||
                  (session.coordination.waitedOnBy || []).length))) {
             session.work_state = "waiting_session";
         } else if (session.assistant) {
-            session.work_state = "needs_triage";
+            session.work_state = "unknown";
         } else {
             session.work_state = "ready";
         }
@@ -773,6 +813,35 @@ export var Mock = (function () {
                 }, 300);
             });
         },
+        /**
+         * Naming a session, offline.
+         *
+         * Behind `MOCK_WRITE` like every other write here, and refusing in the fixture's own
+         * words is the point: this method exists because the real one used to be grafted onto
+         * this object by `net/api.js`, which sent a rename from `?mock=1` at the network and
+         * put a static file server's `Unsupported method ('POST')` on the card.
+         *
+         * `downstream` is always `local_only`, because there is no terminal behind a fixture to
+         * type a slash command into and claiming otherwise would be the one lie a mock of this
+         * route could tell.
+         */
+        title: function (id, title) {
+            return new Promise(function (done, fail) {
+                setTimeout(function () {
+                    if (!MOCK_WRITE) { fail(Object.assign(new Error("Renaming is not enabled on this server."), { code: "write_disabled" })); return; }
+                    var wanted = String(title || "").replace(/\s+/g, " ").trim();
+                    var s = find(id);
+                    var shown = wanted || (s && s.label) || id;
+                    if (info[id] && info[id].session) info[id].session.title = shown;
+                    if (s) s.label = shown;
+                    emit();
+                    done({ ok: true, title: wanted, display_title: shown,
+                           local_applied: true, downstream: "local_only",
+                           downstream_synced: false });
+                }, 260);
+            });
+        },
+
         /** Answering moves the session off `waiting`, which is the whole thing worth seeing
          *  from a file:// copy: the menu goes, the buttons go, and the composer comes back. */
         key: function (id, press) {
@@ -972,7 +1041,7 @@ export var Mock = (function () {
                     if (info[id]) { done({ info: info[id] }); return; }
                     var session = sessions.filter(function (s) { return s.id === id; })[0] || {};
                     done({ info: {
-                        session: { id: id, assistant: session.assistant, cwd: session.cwd },
+                        session: { id: id, title: session.label, assistant: session.assistant, cwd: session.cwd },
                         limits: { windows: [] },
                         links: (links[id] || []).slice(),
                         models: session.assistant === "codex" ? CODEX_MODELS : CLAUDE_MODELS,
@@ -1012,6 +1081,49 @@ export var Mock = (function () {
                         ]
                     } });
                 }, 420);
+            });
+        },
+
+        // The device-readable Bearings projection behind the Clawdfather panel's four
+        // read-only commands — the same shape `GET /v1/orchestrator/coordinator/bearings`
+        // answers, with enough in it to demo every branch of the renderer.
+        coordinatorBearings: function () {
+            return new Promise(function (done) {
+                setTimeout(function () {
+                    var now = Math.floor(Date.now() / 1000);
+                    done({
+                        version: 1, observed_at: now,
+                        coordinator: {
+                            configured: true, label: "Clawdfather", scope: "machine",
+                            status: "online", lifecycle: "standby",
+                            session: { id: "CF00-01", assistant: "codex",
+                                       label: "Clawdfather · machine coordinator",
+                                       cwd: "/Users/x/code/clawdline", work_state: "working" }
+                        },
+                        bearings: {
+                            observed_at: now, coordinator_lifecycle: "standby",
+                            work_state_counts: { ready: 1, working: 3, waiting_you: 1,
+                                                 waiting_session: 1, unknown: 1,
+                                                 milestone_complete: 1, work_complete: 0 },
+                            active_task_count: 2, pending_landing_count: 1, open_wait_count: 1,
+                            unknown: [{ id: "9D1B-44", assistant: "claude",
+                                             label: "the exporter is stuck on fonts",
+                                             work_state: "unknown" }],
+                            waiting: [{ id: "2C71-90", assistant: "claude",
+                                        label: "the signup flow keeps 500ing",
+                                        work_state: "waiting_you" }],
+                            blocking: [{ id: "CF00-01", assistant: "codex",
+                                         label: "Clawdfather · machine coordinator",
+                                         work_state: "working" }],
+                            sources: {
+                                sessions: { observed_at: now, freshness: "current" },
+                                tasks: { observed_at: now, freshness: "current" },
+                                landings: { observed_at: now, freshness: "current" },
+                                waits: { observed_at: now, freshness: "current" }
+                            }
+                        }
+                    });
+                }, 360);
             });
         },
 

@@ -105,8 +105,9 @@ already more terminals than anybody wants to audit. Five, three and three would 
 The floor is enforced twice, and the two fail differently.
 
 **The briefing says so.** `CHILD.md` tells every child which level it is on: one with room under it
-gets the whole recipe for dispatching — including `root.parent_task`, the field that says where the
-new task hangs — and one standing on the floor is told plainly not to.
+is given one line naming `DISPATCHING.md`, the file beside it that holds the whole recipe —
+including `root.parent_task`, the field that says where the new task hangs — and one standing on
+the floor is told plainly not to dispatch at all.
 [`skills/clawdline/SKILL.md`](../skills/clawdline/SKILL.md) carries the same rule for a root. A child that follows its instructions never has to find the limit
 by hitting it.
 
@@ -237,12 +238,20 @@ quota it describes is the provider's, shared by everything running under that lo
 
 `~/.config/clawdline/dispatch-policy.md` is what this Mac says about **how** work should be
 handed out, as opposed to how much of it. It is read fresh on every dispatch — an edit reaches
-the next task, not the next launch — and copied into the briefing of every child that is allowed
-to dispatch in turn. A leaf never sees it: rules about choosing a model are noise to a session
-with no such choice to make.
+the next task, not the next launch — and copied into the `DISPATCHING.md` of every child that is
+allowed to dispatch in turn. A leaf never sees it: rules about choosing a model are noise to a
+session with no such choice to make.
 
 It ships with opinions rather than a comment saying "put your rules here", because a file with
 defensible rules already in it is one somebody edits and an empty one is a feature nobody finds.
+**What ships is `Resources/dispatch-policy.md`** — the file this repository edits, copied into the
+app bundle by `build.sh` and read from there when a machine has no policy of its own. It used to be
+a Swift string literal holding an older draft of the same rules, which is worse than it sounds:
+`ensurePolicyFile` writes that copy, so it is exactly what a fresh install receives, and a machine
+could start life with rules nobody had read for months. If the resource is missing there are no
+house rules, which is what an empty policy file has always meant — and no file is written at all,
+because this function never overwrites and an empty one created by a bad read would be permanent.
+
 It opens with the two decisions that come before any of the others:
 
 **Whether to dispatch at all.** The measurement is sharp in both directions — work that splits
@@ -289,6 +298,7 @@ having a good day.
   <task-id>/                     # 0700 — lowercase UUID
     task.json                    # the root writes this, before dispatching
     CHILD.md                     # the app writes this, just before injection
+    DISPATCHING.md               # …and this, only for a child that may hand work on
     result.json                  # the child writes this, when it is done
     artifacts/                   # whatever the child was asked to produce
 ```
@@ -321,6 +331,7 @@ holds a secret: not the orchestrator token, and not the task secret.
   "plan": "root → 3 searchers (haiku) → this one joins them up (opus) → report.md",
   "claims": ["Sources/Orchestrator.swift", "docs"],
   "serialize": ["build"],
+  "attach_session": "B6ADA755-5815-4008-8287-85ED28EFE4F4",
   "timeout_minutes": 30,
   "created_at": "2026-08-24T10:14:02Z",
   "root": {
@@ -355,11 +366,12 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `serialize` | optional array of 0…4 unique operation names. Each uses the `model` token rule: 1…64 characters from `[a-z0-9._-]`, not starting with `-` |
 | `isolation` | optional `none` or `worktree`; absent is `none`. Unknown values are refused, never downgraded |
 | `isolation_base` | optional Git revision, legal only with `isolation: "worktree"`; 1…200 characters from letters, digits, `._/-~`, not starting with `-` and not containing `..`. Absent means `HEAD`; it must resolve to a commit |
+| `attach_session` | optional terminal-neutral Session id of a standing session Clawdline opened with launch-time access to the whole task root. When present, deliver this complete task into that existing assistant session without opening a tab. A user-opened session or a Clawdline leaf launched with access only to its original task directory is `409 attach_not_managed` |
 | `project_dir` | absolute, exists, and is a directory — checked at dispatch, not at planning time |
 | `title` | ≤ 200 characters |
 | `instructions` | non-empty, ≤ 16 KiB |
 | `timeout_minutes` | 1…240; absent means 30 |
-| `root.session_id` | the dispatcher's assistant session id: Claude's transcript UUID or Codex's rollout `session_meta.session_id`; `null` when unavailable |
+| `root.session_id` | the dispatcher's assistant conversation id, or its watched terminal id. At dispatch the broker resolves either spelling against the declared assistant and stores the process-bound conversation id; `null` when unavailable |
 | `root.assistant` | optional `claude` or `codex`. New dispatchers send it; absence or explicit `null` is read as missing, and missing is resolved as `claude` for registries and task writers from before this field existed. Other values, including an empty string, are refused |
 | `root.parent_task` | the dispatcher's **own** task id, when the dispatcher is a child. `null` from a root. A value that is not a task id is read as `null` |
 
@@ -388,6 +400,13 @@ somebody's child is a fact about that session whether or not the parent is on sc
 floats at whatever position the sort gave it, which reads at a glance like a bug in the grouping
 rather than a task that declined to say who asked. If a row belonging under yours matters, send
 the id and `root.assistant` together.
+
+Resolution happens once, before capacity, grouping and the task record are chosen. A terminal id
+and the current conversation id therefore become the same durable root key. Completion
+notification, `liveTasks(dispatchedBy:)`, session grouping and root-close cascade all consume that
+canonical key. If a non-null spelling matches no one (or is ambiguous), dispatch still proceeds
+for compatibility but returns a `root_unresolved` item in `warnings`; the task may require polling
+and cannot be assumed to participate in those owner paths.
 
 The broker does not trust either string on its own. For Claude it resolves the exact current
 process's transcript (using the validated process registry when available, otherwise a hook id
@@ -440,6 +459,74 @@ observable. Naming it is what gets a task filed under its actual parent on the f
 of being counted as a root's. Getting it wrong costs capacity and never buys any — [the two names
 are combined by taking the deeper answer](#depth-stops-at-two-and-the-floor-is-what-has-teeth).
 
+### Attached follow-up tasks
+
+`attach_session` turns dispatch into a complete follow-up assignment for a standing assistant
+session. The task still has a fresh id and secret, its own task directory and `CHILD.md`, claims,
+serialize tokens, timeout, usage, result signal, landing record and inflight visibility. The only
+difference is that Clawdline types the ordinary first line into the named existing session instead
+of opening a terminal tab. The public task record carries `attached: true` and `attachSession`.
+
+**The session needs a recorded task role and the right launch-time grant.** Clawdline gives the
+whole `/tmp/.clawdline` task root only to a child that may dispatch; a leaf gets only
+`/tmp/.clawdline/<its-original-task-id>`. The latter cannot read a new follow-up's sibling
+`CHILD.md`, even though Clawdline opened its tab. A user-opened assistant likewise has no recorded
+task-root grant. Because `--add-dir` cannot be added to a running process, either shape is
+`409 attach_not_managed`, refused before anything is typed. The registry persists the actual grant
+used at launch rather than inferring it from depth, since dispatch settings may change while a tab
+remains standing.
+
+The id is resolved against every terminal session Clawdline can see, which is wider than the
+assistant-only rows `GET /v1/orchestrator/sessions` publishes — a plain shell resolves and is then
+refused by name rather than reported missing. A shell is unsupported, the resident assistant must
+match the task's assistant, and **one session runs at most one live Clawdline task**. That
+single-flight population excludes the task being resolved for, so a serialized attached task —
+registered while it queues, resolved again when the pump promotes it — does not read its own
+reservation as somebody else's. The single-flight check is repeated under the registration lock,
+so two concurrent requests cannot both pass a stale inventory. A cached `waiting` state triggers
+the same narrow `Targets.isChoosing` screen proof as
+coordination-wait delivery; a confirmed menu refuses the dispatch before any line is typed or task
+record is created.
+
+An attached task keeps the standing session's existing depth — the depth of the task that session
+was opened for. Acceptance depends on the persisted task-root grant, not that number: a leaf that
+was launched with only its own task directory is refused. It opens no tab and therefore spends no
+child, grandchild, or machine tab-opening capacity, although it remains a live task, passes through
+the dispatch rate limiter and quota gate, and holds its ordinary claims and serialize reservations.
+If terminal delivery itself fails, the registered task finalizes as `spawn_failed` and the request
+returns `502 attach_delivery_failed`.
+
+The task does not own the tab. Success, failure, timeout, cancellation, root-close cascade and any
+`orchestrator_child_linger` value leave the standing session open. Its briefing says that writing
+`result.json` completes this task but does not end the session, which can then receive a later
+complete follow-up assignment. It also does not own the session's *name*: an attached task
+publishes a live role on that session while it runs, so `GET /v1/orchestrator/sessions` shows the
+`taskId`, but it never renames the session. When it ends, the role and title of the earlier task
+that opened this standing child session are visible again.
+
+**Clawdline never answers a menu on a session it did not open.** On a fresh tab there is one menu
+to answer — the trusted-folder dialog — and the root answered it by asking for work in that
+directory, so the first row is taken once and audited. An attached task did not open its standing
+child session, and a menu there can be a permission prompt, a plan approval or an overwrite
+confirmation from the work already resident in that tab. Those are left standing and audited as
+`orchestrator.menu.left`; once that first decision is recorded, an unchanged menu does not rewrite
+the registry or broadcast every five seconds.
+
+**An attachable standing session already has `/tmp/.clawdline` access.** Clawdline records whether
+that exact add-dir grant was used when the process launched. A user-opened assistant and a
+Clawdline-opened leaf that received only its own task directory are both refused as
+`409 attach_not_managed` before anything is typed; `--add-dir` cannot be added afterwards.
+
+The four-minute `readyLimit` applies only to a new tab that never reaches a prompt. An attached
+task's first line was already typed by `spawnAttached`, so waiting longer for the standing
+session's owner to answer a menu does not relabel delivered work as `spawn_failed`. The wait is
+nevertheless bounded: before transcript acceptance, its ordinary `timeout_minutes` runs from that
+delivery. Expiry finalizes the task as `timeout`, releases claims and serialize tokens, and returns
+the standing session to its earlier role. Budget for what that means end to end: **an attached
+task's total wall-clock can reach twice `timeout_minutes`**, once waiting to be picked up and once
+running. A dispatcher choosing that number for a standing session is choosing half of the longest
+the work can take.
+
 For `worktree`, the broker resolves the base to a commit SHA and records that immutable value.
 Branch names and `HEAD` can move while other sessions commit; the SHA is the receipt for what the
 child actually started from. A serialized task therefore omits the `worktree` object until its tab
@@ -466,7 +553,7 @@ The field has three states, and the registry and every GET record preserve the d
 |---|---|---|
 | one or more paths | the task declares exactly these write scopes | reserves their frozen keys; disjoint declarations can silence L1 |
 | `[]` | the task positively declares that it is read-only | reserves no lease, never conflicts or receives `409 workspace_busy`, and can silence L1 |
-| absent | the task's write set is unknown | reserves no lease; L1 keeps its directory warning |
+| absent | the task's write set is unknown | reserves no lease; L1 keeps its directory warning, and the dispatch reply carries `claims_missing` |
 
 An empty array gives a read-only task an active, harmless declaration. Silence therefore has only
 one meaning: both tasks supplied enough scope information to prove their frozen claim sets do not
@@ -483,6 +570,19 @@ does announce itself: an over-wide claim blocks other trees whether or not the t
 [the terminal audit](#the-terminal-claims-audit) names every claimed path the task never touched.
 One failure mode is reported after the fact and the other is not reported at all, which is why the
 absent field is the more expensive of the two to leave alone.
+
+**So the quiet one is answered out loud.** 60.7% of the dispatches measured on this machine
+declared nothing at all. Declaring costs the root about twenty output tokens, and a collision costs
+a whole task — three to eighteen million on that same record — so an absent field puts a
+`claims_missing` item in the dispatch reply's `warnings`, on the first request and on the
+idempotent retry alike. It is never a refusal: a root that has not worked its write set out yet
+must still be able to dispatch. **`"claims": []` does not warn**, and that difference is the whole
+point — warning about a positive read-only declaration would teach callers that the field is noise,
+which is how omission reached 60.7% in the first place.
+
+The best evidence for the warning is not an argument. The root session that specified it dispatched
+the review of its own delivery without `claims`, and drew the `workspace_overlap` notice that
+`claims_missing` exists to prevent — on the day it implemented the guard.
 
 The check and registration happen atomically as soon as the dispatch has validated. A serialized
 task reserves its claims for its entire time in `queued`; promotion is not a second gap where
@@ -696,8 +796,48 @@ You are a Clawdline CHILD agent for task 3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234. R
 One line, because it is typed into a terminal and Return ends it. Everything that would not fit is
 in `CHILD.md`, which the app writes immediately before injecting: where the task is, where the
 outputs go, how long it has, the graph it is one node of, whether it may dispatch and how many,
-this Mac's house rules if it may, that it must not read other task directories, and exactly what
-`result.json` has to look like.
+that it must not read other task directories, and exactly what `result.json` has to look like.
+
+**It asks for one progress note before the work starts.** `AGENTS.md`, `docs/dispatching.md` and
+the dispatch policy have all required it for a while; the briefing — the only thing a child
+actually reads — asked only for a note when the work drifted. So `CHILD.md` now asks for the first
+one within about three minutes: one sentence saying what the child has decided to do now that it
+has read the briefing and `task.json`, before the work rather than during it. The reason is in the
+briefing too, because a child that knows why will actually send it — it is the only thing that lets
+a wrong direction be cancelled at minute three instead of minute twenty-six, and the two dearest
+cancelled tasks on this machine burned 18.5M and 16.5M tokens before anybody could tell what they
+had set off to do.
+
+**And it only asks through channels the child can reach.** The progress ask was originally one
+curl for everybody, and for a Codex child that ask was physically impossible: its sandbox sets
+`CODEX_SANDBOX_NETWORK_DISABLED=1`, loopback `curl` exits 7 after 0 ms, DNS itself is off, and no
+approval prompt ever appears — measured on this machine by task be9a54c0, where 133 codex children
+were briefed to send the curl and 0 notes arrived, against 26 of 40 claude children. So the
+briefing is honest per assistant. A claude child keeps the HTTP fast path, with the file named as
+the fallback; a codex child is told to write `progress.json` in its task directory — the same
+whole-file-replace, task-secret-inside shape that has always made `result.json` work
+([`docs/api.md`](api.md#post-v1orchestratortasksidprogress) has the collection rules) — and is
+told its network is off rather than left to discover the failure by trying. The notify recipe, the
+`inflight` self-check and the optional completion announce are loopback calls too, so a codex
+briefing replaces each with what is true for it: nothing pushes, the plan it was dispatched with
+is what it has, and the file alone is the completion signal. `DISPATCHING.md` carries the same
+warning above its dispatch curls.
+
+**How to dispatch is not in there.** It is in `DISPATCHING.md`, written beside it and only when the
+allowance is above zero; `CHILD.md` keeps one line naming that file. The reason is a measurement:
+across 206 dispatches on one machine, 28,323 characters of instructions on how to dispatch went
+into every direct child's briefing — about 7,081 tokens each — and not one of those 206 children
+ever dispatched anything. The teaching is not wrong, it is addressed to the rare child that will
+use it, and it was being charged to all of them.
+
+The pointer is worth following rather than merely polite, and that is deliberate: **the credential
+path, the `root.parent_task` rule and the `curl` appear only in `DISPATCHING.md`.** The briefing no
+longer hands the credential over, so a child that skips the file has to go and find one. That is a
+strong pointer and not a lock — the `clawdline` skill carries the same recipe, credential path
+included — but a convenience summary back in `CHILD.md`, enough to act on without following the
+pointer, would undo even the pointer, and is the thing not to add. The file costs nothing when it is not read:
+it lands in the task directory the child already has `--add-dir` access to, and is reclaimed with
+the rest of that directory.
 
 It also says what language to speak. The briefing itself is English so every assistant reads it
 the same way, but the person watching the tab is whoever set Clawdline's language — so the file
@@ -757,6 +897,7 @@ honestly, and explains that the user disabled agent notifications.
   "summary": "Wrote a 1024×1024 SVG portrait; border and lettering hand-pathed, no raster.",
   "symbols": [],
   "artifacts": ["artifacts/project-portrait.svg"],
+  "verification": {"runs": 2, "seconds": 940, "last": "pass", "scope": "swift suite + web-schedules"},
   "finished_at": "2026-08-24T10:41:55Z"
 }
 ```
@@ -767,6 +908,14 @@ compares against what it stored at dispatch in constant time. A file whose secre
 **ignored** and logged once: a wrong secret in a task directory is either a bug or somebody
 poking, and neither is a reason to finalize somebody's task.
 
+`verification` is optional metadata about the proof the child actually ran. `runs` and `seconds`
+are non-negative integers, `last` is `pass`, `fail`, or `skipped`, and `scope` is a short free-text
+description. A well-formed object is stored on the task record. Older results without it work
+unchanged, and a malformed object is ignored rather than turning an otherwise authenticated
+success into failure. The briefing gives verification one third of `timeout_minutes` or three
+full-suite runs, whichever arrives first, while still requiring one relevant compile-and-test pass
+and red-before-green for every new test.
+
 `symbols` names every identifier the child's change introduced: new functions and types, new
 fields, new string keys, the names of test groups it added. Names, not descriptions — the portrait
 above introduced none, and `[]` says that positively where an absent field only says the child did
@@ -776,8 +925,8 @@ because a shared working tree makes authorship unreadable from the diff alone �
 comes to commit, the files a child edited may hold two or three sessions' unfinished work, and
 vocabulary is the only reliable way to tell one session's hunks from another's. Guessing it has
 produced staged trees that would not compile, which is the failure the field is there to prevent.
-The child's briefing asks for it; **the broker does not**. `readResult` takes `status`, `summary`
-and `artifacts` and ignores every other key, so `symbols` never appears on a task record, in a
+The child's briefing asks for it; **the broker does not**. `readResult` takes `status`, `summary`,
+`artifacts` and the optional `verification` object and ignores every other key, so `symbols` never appears on a task record, in a
 notification, or in any API answer — it is written for whichever root opens the file, and root has
 to open the file to get it.
 
@@ -894,11 +1043,44 @@ otherwise leave a grandchild belonging to nobody. Cancelling a single task does 
 smaller scale — what that task handed on goes with it, since it is work nobody is waiting for any
 more.
 
+**None of that is a decision the app makes for you, and describing it as a mechanism was not
+enough.** On 2026-08-27, 23:20:37–:51 — fourteen seconds, one close — four briefed tasks under root
+`01a04276` were cancelled together, among them a correction dispatched 75 seconds after the review
+that demanded it and 25 minutes into its run. Nobody adopted them, and one line then sat for
+fourteen hours behind a landing record reading `pending`, which is also the word for work somebody
+is actively doing (`B-PENDING-CANNOT-SEE-ITS-EXECUTOR` in [`backlog.yaml`](backlog.yaml)). So a
+close carries two obligations the cascade cannot carry for it — **read the live list before closing,
+and name who adopts each orphan afterwards** — and both are written down in
+[`AGENTS.md`](../AGENTS.md#closing-a-root-is-an-act-with-victims-look-before-you-do-it). The query
+that answers the first is `GET /v1/orchestrator/tasks` filtered on `root.sessionId` and the three
+unfinished states.
+
 **spawn_failed** — the tab never happened, or never got briefed inside four minutes, or was typed
 into five times without the child ever recording the message, or the app was restarted while the
 task was in `spawning`. That last one is not a bug: once a task starts opening, the recoverable
 queued secret is gone, so the app fails closed rather than risk opening the same global operation
 twice. A serialized task that was still `queued` is recovered and pumped instead.
+
+**A `spawn_failed` task can be retried by the broker rather than by the root.** It was 16.5% of
+every dispatch on the machine this was measured on — 34 of 206, 33 of them Codex — and the answer
+used to be that the root writes the whole `task.json` out again under a fresh id, because that id
+is finished and re-sending it just returns the terminal record. That is thirty-four rewrites by
+the most context-loaded session in the tree, and every one of them is a chance to drop a field.
+
+[`POST /v1/orchestrator/tasks/:id/respawn`](api.md#post-v1orchestratortasksidrespawn) copies the
+original `task.json` with a fresh `task_id`, mints a fresh secret unless the caller supplies one,
+and dispatches it through the ordinary gate — same capacity, depth, claims, quota and
+serialization rules, same refusals. `instructions` is why it is a file copy rather than a record
+copy: the registry never held it.
+
+Only `spawn_failed` may be retried, because it is the one terminal state that means *nothing ran*;
+anything else is `409 not_respawnable`. **At most two respawns descend from one original**, counted
+over the whole family below it rather than along any one chain — a retry of a retry cannot launder
+the cap by being the first from its own immediate parent, and neither can asking the original
+again, which is the shape a caller actually falls into because the id it has in hand is the one
+that failed — and the third is `409 respawn_exhausted`. Each new task records
+`respawn_of` and `respawn_generation`, so a chain reads as a chain in the registry instead of as
+three unrelated tasks with the same title.
 
 **A briefed task survives a restart.** Its secret is on disk as a hash, `result.json` is on disk as
 a file, and the timeout is arithmetic on a stored timestamp. So the app comes back up, reads the
@@ -911,9 +1093,9 @@ isolation does not turn an interrupted spawn into a resumable dispatch.
 
 ### A branch, not a diff
 
-An isolated child's delivery is `clawdline/task/<task-id>`. The child commits early, only on that
-branch, and never pushes or switches branches. Finalize reads git itself and adds this object to the
-record; `head`, `commits`, and `dirty` are best-effort and may be `null`:
+An isolated child's delivery is `clawdline/task/<task-id>`. A Claude child commits early, only on
+that branch, and never pushes or switches branches. Finalize reads git itself and adds this object
+to the record; `head`, `commits`, and `dirty` are best-effort and may be `null`:
 
 ```jsonc
 "worktree": {
@@ -939,6 +1121,15 @@ git -C <project_dir> branch -d clawdline/task/<id>       # only after landing
 
 Conflicts are the visible cost of parallel work and should be resolved during integration. Review
 the branch before landing it; a child commit has not become trusted merely by being isolated.
+
+**A Codex child in a worktree delivers a dirty tree, not commits, and that is not a failure.** The
+worktree's git metadata lives in `<project_dir>/.git/worktrees/<task-id>/`, outside the directory
+Codex's sandbox may write, so `git commit` there dies on
+`fatal: Unable to create '…/index.lock': Operation not permitted` — after which a child that was
+told to commit reports `failure` holding finished work. Dispatch a Codex worktree task with
+instructions to leave the bytes uncommitted; its receipt then reads `"commits": 0` with
+`"dirty": true`, and root lands it from `worktree.path` instead of from the branch. The generated
+briefing does not yet distinguish the two assistants, so the task's own `instructions` must.
 
 ### Landing is a root obligation, not a child state
 
@@ -1068,10 +1259,30 @@ unreadable registry are different values in the type system.
 
 This phase does not quarantine, purge, delete, or expose a mutating storage route. The collector is
 a separate, default-off phase. Children are also told to put repo copies, build output, mutation
-worktrees and compiler indexes in their own `/tmp/.clawdline/<task-id>/work/` directory so those
-large temporary files live inside storage Clawdline already owns. The existing 24-hour task-root
-cleanup now exempts `landing.state == pending`, because a root that has not landed may still need
-the child's receipts.
+worktrees and compiler indexes in their own `/tmp/.clawdline/<task-id>/work/` directory. That
+directory is reclaimed as part of task finalization: immediately for `success`, and after
+`orchestrator_work_grace_minutes` for every other terminal state. The setting defaults to 60
+minutes, accepts `0` for immediate reclaim and `-1` to leave `work/` to the ordinary 24-hour sweep.
+A child copies any diagnostic log or diff worth keeping to `artifacts/` before it writes
+`result.json`. The existing 24-hour task-root cleanup exempts `landing.state == pending`, because a
+root that has not landed may still need the child's receipts.
+
+Immediate cleanup happens inside `finalize`: success always goes immediately, and zero grace
+reclaims every terminal outcome inside `finalize`. With a positive grace, other endings carry the
+registry-internal `work_cleanup_at` deadline to the five-second beat, which advances a terminal
+task for exactly as long as it still owes one of these directories.
+
+**An isolated checkout's build output is reclaimed the same way, on its own deadline.**
+`orchestrator_build_grace_minutes` is shaped exactly like the `work/` setting — default 60, range
+`-1…1440`, `0` immediate, `-1` deferred — and it names `<worktree.cwd>/.build`, recorded as
+`build_cleanup_at`. It is set only for a task that has a worktree of its own: a task working in a
+shared tree must never be handed the `.build` of the checkout somebody else is using. It waits for
+neither the 24-hour cutoff nor whole-worktree disposal, and a **pending landing does not exempt
+it** — that was the gap this closed. Disposing a checkout requires `landing.state != pending`, so
+five open landings on this machine were holding 814 MB of object files that no landing has ever
+needed: what a landing needs is the source and the delivery branch, and both are left untouched.
+Removal is `.build` and nothing else; a directory already absent settles the deadline, a refusal
+keeps it for the next beat.
 
 ### File release waits belong to Clawdline
 
@@ -1172,8 +1383,8 @@ migrates to a matching label or the most recently active assistant.
 
 `GET /v1/orchestrator/coordinator`, also orchestrator-token-only, returns safe durable presence and
 **Bearings**: one deterministic snapshot over existing Session metadata, active task records,
-pending landing records and open coordination-wait groups. It always counts the seven closed
-`work_state` values and names safe metadata for `needs_triage`, human/peer `waiting`, and owners
+pending landing records and open coordination-wait groups. It always counts the eight closed
+`work_state` values and names safe metadata for `unknown`, human/peer `waiting`, and owners
 `blocking` peers. Named lists are independent filters and may honestly overlap when a session is
 both owner and waiter. RemoteServer takes one SessionWatch observation and then one Orchestrator
 snapshot; every Orchestrator-derived row flag plus task, landing and open-wait total is computed in
@@ -1248,22 +1459,165 @@ menu's `reconnect` command. The menu remains disabled; an authenticated local op
 already-live replacement. Future start/restore or health-driven behavior must keep the separate
 observer provenance and explicit policy boundaries rather than widening this endpoint.
 
+**The web app's *Make this session Clawdfather* item is not a fourth coordinator route.** None of
+the three endpoints above became reachable from a paired device, and none of them types into
+anything. What that item does is compose one instruction and send it over the existing
+`POST /v1/sessions/:id/send`, which the page could already reach; the session that receives it is a
+local process running as the owner of this Mac, so it reads the orchestrator token and performs the
+register or rebind itself — the same act as a person typing the curl by hand, and the same trust
+boundary every Clawdline dispatch already stands on. The browser therefore never holds the
+machine credential, never learns the durable record, and cannot take over a live coordinator, since
+the refusals below still apply at the only place the decision is made. What it *does* know is the
+target's terminal-neutral id, because that is the `id` on the Session row it drew, so it hands that
+over in the instruction. Whether the role was taken is read back the way it always was: the
+authenticated `session.coordinator` projection appears on the exact bound row, and the item turns
+into a statement of who holds it. The recipe that item asks for is the next section.
+
+### Becoming Clawdfather: the recipe a session runs on itself
+
+There is no route by which anything but a local process holding the orchestrator token can register
+the machine coordinator, and there is deliberately not going to be one. So "make that session
+Clawdfather" is never carried out *for* a session; it is carried out *by* it. A person types the
+curl, or the web app's **Make this session Clawdfather** item types an instruction into the session
+through the ordinary `POST /v1/sessions/:id/send` and the session does exactly what is written
+below. This section is the authoritative copy of it, so that a session which has just been asked
+has something to follow rather than Swift source to reverse-engineer.
+
+**The two local facts.** The token is `~/.config/clawdline/orchestrator-token`, mode `0600` and
+readable only by a process running as its owner; the port is `remote_port` in
+`~/.config/clawdline/config.json`, and `7717` when that file says nothing.
+
+```bash
+ORCH=$(cat ~/.config/clawdline/orchestrator-token)
+PORT=$(python3 -c 'import json,os;print(json.load(open(os.path.expanduser("~/.config/clawdline/config.json"))).get("remote_port",7717))' 2>/dev/null || echo 7717)
+```
+
+**1. Your own terminal-neutral id.** It is not your conversation id and not your transcript's name.
+It is the id of the *terminal pane* you are running in — the value `GET /v1/sessions` and
+`GET /v1/orchestrator/sessions` both call `id`. Under iTerm2 the terminal exports it, and the UUID
+after the colon is the whole of it:
+
+```bash
+SESSION_ID="${ITERM_SESSION_ID##*:}"     # w0t12p0:9A36BDF4-… → 9A36BDF4-…
+```
+
+**This is the same line for Codex as for Claude, and `CODEX_THREAD_ID` is not it.** iTerm2 sets
+`ITERM_SESSION_ID` for whatever runs in the pane, so both assistants read their own id from it;
+`CODEX_THREAD_ID` (and its compatible spelling `CODEX_SESSION_ID`) names the rollout's
+`session_meta.session_id`, which is a different value in a different namespace and is refused here
+as `404 session_not_found`. Measured on one Mac: the Codex tab listed as
+`AE8A927C-D144-4BF8-8DF7-47E0D5463418` had exactly that UUID in its `ITERM_SESSION_ID` while
+holding rollout `01a0462b-9ef7-7161-b0c0-e117929656ff` open. The first is the id these routes take.
+
+Under tmux, or a terminal that exports nothing, the id is a tmux pane id instead and the
+environment cannot answer. Then read it, rather than guess: `GET /v1/orchestrator/sessions` lists
+every live assistant with its `assistant`, `cwd` and `label`, and yours is the row whose working
+directory and title are yours. Either way, **check the id you found appears in that list before
+sending it anywhere** — a value that is not there is not an id, whatever exported it.
+
+**2. Read the current state before deciding anything.** One request answers all three cases, and
+the two fields a reconnect needs come only from here:
+
+```console
+$ curl -s "http://127.0.0.1:$PORT/v1/orchestrator/coordinator" \
+    -H "X-Clawdline-Orchestrator: $ORCH"
+{"version":1,"observed_at":1787884000,"store":{"status":"ready"},
+ "coordinator":{"configured":true,"id":"5ac9c093-f483-4606-87eb-2278b34436fe",
+   "scope":"machine","label":"Clawdfather","registered_at":1787821469,"generation":3,
+   "rebound_at":1787882803,"status":"online","lifecycle":"standby",
+   "session":{"id":"509F54A8-356E-420D-9EAC-73D676C9580E","assistant":"claude",
+              "label":"Clawdfather 新增介面","cwd":"/Users/you/code/clawdline",
+              "work_state":"unknown"}},
+ "bearings":{…}}
+```
+
+`coordinator.configured` is `false` when nobody has ever registered. When it is `true`,
+`coordinator.status` is `online` if the exact bound process is still alive and `offline` if it is
+not, and `coordinator.id` and `coordinator.generation` are the pair a reconnect must quote back.
+
+**3. Nobody is configured — register.** One field, and it is your id from step 1:
+
+```console
+$ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/coordinator/register" \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d "{\"session_id\":\"$SESSION_ID\"}"
+{"ok":true,"created":true,"coordinator":{…}}
+```
+
+`created:false` with a `200` means you were already it and nothing changed.
+
+**4. Configured but `offline` — reconnect.** Registration is never a takeover, so reconnecting is a
+separate, guarded operation, and its three fields are closed: the `id` and `generation` you just
+read, plus your own id.
+
+```console
+$ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/coordinator/rebind" \
+    -H "X-Clawdline-Orchestrator: $ORCH" -H 'Content-Type: application/json' \
+    -d "{\"expected_coordinator_id\":\"$COORD_ID\",\"expected_generation\":$GENERATION,\
+         \"session_id\":\"$SESSION_ID\"}"
+{"ok":true,"rebound":true,"coordinator":{…}}
+```
+
+The stable UUID survives a reconnect on purpose, so `expected_generation` is the compare-and-swap
+value, not the UUID. Both are checked under the store's `flock`; a mismatch means the record moved
+after you read it, and the answer is to go back to step 2 rather than to retry with the old numbers.
+
+**5. Configured and `online` on a different session — stop.** Do not attempt it. The API refuses
+this by design — `409 coordinator_exists` from register, `409 coordinator_online` from rebind — and
+the refusal is the point rather than an obstacle: a live coordinator is somebody's running work, and
+there is no unconditional replace, stop or delete operation anywhere in this protocol. Report which
+session holds the role (`coordinator.session.id`, `label`, `cwd`) and leave it alone.
+
+**The refusals worth recognising.** `403 forbidden` means the request reached the handler without
+the orchestrator token — a paired device or a task secret, neither of which may do this.
+`404 session_not_found` almost always means step 1 sent a conversation or rollout id instead of a
+terminal id. `409 session_unbound` means the row exists but its process-bound identity could not be
+completed, so nothing was decided. `409 coordinator_liveness_unknown` means the Session scan is
+stale or older than the current binding, and absence of evidence is refused as proof of death; wait
+for a fresh scan and read step 2 again. `409 coordinator_store_invalid` and
+`500 coordinator_store_failed` are about the durable record itself and are never fixed by retrying
+harder.
+
+**Say what happened.** Registration is machine-wide state, and the person who asked for it is
+usually watching a different window. Whether you registered, reconnected, or found somebody else
+online and left them there, that sentence is the deliverable.
+
 ### Session work-state projection: one answer, separate evidence axes
 
-Every live Session row carries exactly one closed `work_state`: `ready`, `working`,
-`waiting_human`, `waiting_session`, `needs_triage`, `milestone_complete`, or `work_complete`.
-This is not another truth store. The broker deterministically projects it from the terminal
-presence reading, the task registry's authenticated result, the matching landing record, durable
-handoff state, and coordination waits. Those sources remain separate, and top-level terminal
-`state` is unchanged. A missing or unknown projected value fails closed in the web client as
-`needs_triage`, never as blank idle and never as a check.
+Every live Session row carries exactly one closed `work_state`: `ready`, `working`, `holding`,
+`waiting_you`, `waiting_session`, `unknown`, `milestone_complete`, or `work_complete` — plus the
+independent `owed` overlay, the second axis. **The per-state contract — what a person should do
+on seeing each state, the icons, the declaration route, and the holding/waiting_session
+boundary — is [`docs/session-states.md`](session-states.md); that page governs where the two
+disagree.** (`waiting_you` was `waiting_human`; `unknown` was `needs_triage`, renamed because the
+fail-closed default means "the broker has no positive evidence" — an absence, never the reader's
+to-do.)
 
-The precedence is `waiting_human` (terminal question) > `waiting_session` (waiting-on or owed wait)
-> unreadable or missing evidence (`needs_triage`) > current `working` > delivered milestone >
-broker-verified target landing. Current work intentionally outranks an older receipt: during the
+This is not another free-form truth store. The broker deterministically projects it from the
+terminal presence reading, the task registry's authenticated result, a root's process-bound
+session-delivery receipt, the matching landing record, durable handoff state, coordination
+waits, and the session's own bounded self-declaration (`ready`/`holding` claims and the `owed`
+debt, `POST /v1/orchestrator/sessions/:id/state`, provenance `self`). Those sources remain
+separate, and top-level terminal `state` is unchanged. A missing or unknown projected value
+fails closed in the web client as `unknown`, never as blank idle and never as a check.
+
+The precedence is `waiting_you` (terminal question) > waiting-on/owed coordination file wait >
+unreadable or missing evidence (`unknown`) > current `working` > an idle dispatcher's live
+child (`waiting_session`) > the finished task receipt > delivered milestone > the self claim >
+`ready` for an assistant-free prompt. Current work
+intentionally outranks an older receipt: during the
 child's linger somebody can resume using the terminal, and the earlier assignment's success cannot claim
-that new activity is finished. `waiting_human` remains the only state that requests a person's
-attention or drives the loud row/push. `waiting_session` stays the quiet `⏳` relationship.
+that new activity is finished. `waiting_you` remains the only state that requests a person's
+attention or drives the loud row/push. `waiting_session` stays the quiet `⏳` relationship, and
+`holding` has exactly one entrance — a self claim carrying a declared next step and a non-person
+mover — so it can never become the new default exit.
+
+An active child is already typed broker evidence that its dispatcher has an outstanding Session
+obligation. When that exact root process is idle, the projection is therefore `waiting_session`,
+not `unknown` and deliberately not `holding` — a child can wedge, so waiting on one is waiting
+on a session; when it works in parallel, current `working` wins. The browser validates the
+same fact against the live task's resolved `root.terminalId` and names the child task beside `⏳`.
+The child finishing removes this wait evidence; it does not itself mark the root delivered.
 
 A successful task with `finishedAt` is `milestone_complete` (one check) only when the task receipt
 is bound to the process occupying the Session now: exact assistant, terminal and tty, pid plus
@@ -1273,30 +1627,43 @@ task. Missing legacy identity fields fail closed. An open handoff's `from_sessio
 two strict namespaces—exact terminal id and exact process-bound conversation id—with no prefix,
 title, tty, or fallback guessing.
 
+An ordinary root has a second, deliberately narrow route to that same one-check milestone:
+`POST /v1/orchestrator/sessions/:terminal-id/complete` while its current turn is observably
+working. The broker resolves and stores the same exact process tuple itself; the body supplies only
+a bounded summary. Its disposition is `scope:session` with
+`evidence:authenticated_session_delivery`. The first subsequent idle settles the receipt, and the
+same terminal's next working or waiting transition consumes it. Thus it says only “this root
+delivered the turn now awaiting approval,” survives an app restart, and cannot be borrowed by a
+reused process or reappear after newer unreported work.
+
 That one check is authenticated, durable reported evidence that the current assignment/phase
 delivered; review, landing, handoff, waits, or later graph nodes may remain. It becomes
 `work_complete` (two checks) only when the same task also has the new machine-authenticated,
 git-verified target landing fields above and the terminal has no unresolved coordination wait or
-handoff. Legacy landed rows without those fields remain a milestone. Neither child prose nor
-progress notes nor Clawdfather advisory can write either check. Clawdfather explains which receipt
-is missing, coordinates its owner, and prioritizes `needs_triage`; it is not a status-truth writer.
+handoff. Legacy landed rows without those fields remain a milestone. Neither unstructured
+assistant prose, progress notes nor Clawdfather advisory can write either check. Clawdfather
+explains which receipt
+is missing, coordinates its owner, and prioritizes `unknown` rows; it is not a status-truth writer.
 
-The existing task result is the typed, durable Session report: `success` maps to delivered
-milestone evidence, while `failure`, `timeout`, cancellation, or a missing finish receipt map to
-triage rather than completion. Natural-language `/progress` notes remain display-only context.
-This deliberately reuses the authenticated, versioned task/result registry instead of adding a
-second session-status API that could drift. A child may intend that all work is complete, but that
-intent is still only its `success` receipt; it cannot directly produce `work_complete`.
+The existing task result remains a child's typed, durable Session report: `success` maps to
+delivered milestone evidence, while `failure`, `timeout`, cancellation, or a missing finish receipt
+map to triage rather than completion. Natural-language `/progress` notes remain display-only
+context. A child may intend that all work is complete, but that intent is still only its `success`
+receipt; it cannot call the root route or directly produce `work_complete`.
 
-The completion scope is deliberately `task`, recorded in the Session's optional `disposition`
-metadata. The registry does not yet model one authoritative set of every descendant, review,
-landing, and handoff obligation belonging to a human root's whole graph. Claiming that broader
-completion would be invented global truth, so the projection fails closed and never calls a root
-graph complete. The typed evidence name is `broker_verified_target_landing`, not “task closure”:
-the broker verified local git containment, not the root's complete test/review graph. `ready` is
-likewise not inferred for an idle assistant: without positive evidence
-that no assignment exists, its stopped state is `needs_triage` (the health target for this queue is
-zero). Plain non-assistant prompts can be `ready` because their absence of an assistant assignment
+Completion metadata therefore has two narrow scopes. `scope:task` names an authenticated child
+delivery and is the only scope that can advance to a broker-verified target landing.
+`scope:session` names one root-reported turn and is consumed on the next turn; it can never advance
+to two checks. The registry still does not model one authoritative set of every descendant,
+review, landing, and handoff obligation belonging to a human root's whole graph. Claiming that
+broader completion would be invented global truth, so neither scope calls a root graph complete.
+The typed double-check evidence remains `broker_verified_target_landing`, not “task closure”: the
+broker verified local git containment, not the root's complete test/review graph. `ready` is
+likewise never inferred for an idle assistant: without positive evidence, its stopped state is
+`unknown` — an absence that asks nothing of the reader. The positive evidence can now also be the
+session's own authenticated declaration (`POST /v1/orchestrator/sessions/:id/state`, provenance
+`self`, docs/session-states.md), which is how an idle assistant honestly reaches `ready`. Plain
+non-assistant prompts can be `ready` because their absence of an assistant assignment
 is directly observable.
 
 ### The protocol has a living Claude Code Artifact
@@ -1328,6 +1695,30 @@ matching the terminal id, the tty, and the assistant in it. A deadline that ran 
 was away gets twenty seconds first, so the first reading has landed before anything is judged
 missing — and a reading with no terminals in it at all decides nothing, since that is also what
 the first second after launch looks like, and what iTerm2 not answering looks like.
+
+The deadline is not permission to force-close a busy child. Linger cleanup and explicit root close
+share one bounded terminal broker, one per-task closing guard, and one success-only deadline clear.
+Inventory, screen classification and the irreversible decision all execute inside that broker.
+Activity is `busy`, `idle` or `unknown`; capture failure is `unknown` and can never authorize close.
+Immediately before every explicit or linger close Clawdline takes a fresh complete iTerm/tmux
+inventory and requires the same terminal id, backend and tty. After `/quit` or `/exit`, it re-scans
+the exact tty; every TERM/KILL rung is bound to the same `(pid, process start)` identity, so a
+different PID or the same PID reused by a later process fails closed. Only complete inventory plus
+an exact-tty observation proving the assistant absent permits the tab close. A failed scan or a process still present after TERM/KILL
+leaves the tab open and records `terminal_intervention`. There is no ten-minute force-close. An
+empty whole-machine reading may forget a missing tab only when SessionWatch marks that empty
+inventory authoritative. Only an actual iTerm automation timeout/malformed list reports
+`answer_dialog`; process-scan failures and a still-running tty report `inspect_terminal` instead.
+That distinction is persisted as typed state. A modal gets one automatic retry after a fresh
+well-formed iTerm list closes the circuit; `inspect_terminal` never repeats `/exit`, TERM or KILL
+on the five-second beat.
+
+The same global admission domain also owns manual and timer schedule fire, serialized task
+promotion, background shell kill, focus/start/resume, root cascades and every terminal-bearing
+task/handoff/wait delivery. It admits eight operations globally and two per real recipient session;
+nested cascades execute inline to preserve ordering, while inheriting or adding recipient
+accounting. tmux subprocesses have a real deadline and TERM/SIGKILL cleanup, so a hung tmux process
+settles as a typed timeout rather than occupying the serial lane forever.
 
 **A `spawn_failed` that never reached briefing is the exception, and it closes at once.** Nothing
 of the task is on that screen: the session was opened and never spoken to, so what is there is a
@@ -1401,6 +1792,12 @@ true and `0` exactly false. Repeated `pending`, unknown queries, malformed/non-o
 keys and wrong types are typed `400 bad_request`. Reconciliation requires one JSON object
 containing only optional string `task_id` and JSON-boolean `include_dead_letter`.
 
+This is separate from a live session reporting to another live session. That uses machine-token
+`POST /v1/orchestrator/messages`, a version-1 `<clawdline-message>` envelope, and transcript role
+`message`; App and Web name the resolved source instead of drawing the words as the person's user
+turn. The closed inventory, including which first lines intentionally remain ordinary `user`
+prompts, is [`messages.md`](messages.md).
+
 `orchestrator_notify_root` turns it off for anybody who would rather poll. Every task change also
 goes out on [the event stream](api.md#the-event-stream) as an `orchestrator` frame, which is how the
 web interface and anything else watching finds out without asking.
@@ -1412,6 +1809,11 @@ ago are removed; terminal handoff envelopes and packages are removed 24 hours af
 time. The registry keeps its most recent 200 task records. **Artifacts are in `/tmp` and
 they are not yours to keep** — if a child produced something worth having, copy it out. The
 directory going away after a day is the same promise `/tmp` always made, made explicitly.
+
+Heavyweight `work/` storage has a shorter, separate life. It is removed during a successful
+finalize, or when the non-success grace deadline expires; `artifacts/`, `task.json`, `CHILD.md`, `DISPATCHING.md` and
+`result.json` remain untouched until the whole task-root sweep above. Reclaiming a missing `work/`
+is success, and a filesystem refusal never delays or reverses the terminal task state.
 
 Worktrees follow a separate, fail-safe policy: an empty clean checkout whose `HEAD` remains on its
 task branch is removed with that empty branch when the child tab closes; after 24 hours a clean
@@ -1514,9 +1916,9 @@ finishes with a picture nobody can reach. Vector is still the right ask for diag
 anything that has to stay editable.
 
 The one rule stated before any of them: **a child dispatches only if its briefing said it could,
-and what it opens opens nothing.** `CHILD.md` is where a child reads that, and it carries the same
-dispatch steps in miniature — spelled out rather than pointed at the skill, because half of these
-sessions are Codex and Codex has no skills.
+and what it opens opens nothing.** `CHILD.md` is where a child reads that, and `DISPATCHING.md`
+beside it carries the same dispatch steps in miniature — spelled out rather than pointed at the
+skill, because half of these sessions are Codex and Codex has no skills.
 
 ---
 

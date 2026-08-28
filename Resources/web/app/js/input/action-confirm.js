@@ -4,6 +4,7 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { confirmSpin, drawSpinner, setConfirmSpin, spinPhase } from "../core/pixels.js";
 import { Build } from "../net/build.js";
+import { lostIfClosed } from "../view/derive.js";
 import { Waits } from "../view/waits.js";
 import { closeDetail } from "../session/open.js";
 import { closeAgent } from "../session/agent.js";
@@ -35,18 +36,45 @@ export var ActionConfirm = {
         var action = kind === "end" ? T.webEndSession : kind;
         var returnFocus = opener || SessionActions.opener || els["detail-focus"];
         SessionActions.close();
-        this.pending = { id: id, kind: kind, action: action, opener: returnFocus, ask: ask || null };
+        // `lost_if_closed`, at the only moment it can still change the outcome. Confirming a
+        // sheet that showed the list is the acceptance the server's close gate asks for.
+        var lost = kind === "end" ? lostIfClosed(id) : [];
+        this.pending = { id: id, kind: kind, action: action, opener: returnFocus,
+                         ask: ask || null, lost: lost };
         this.busy = false;
         els["action-confirm-sheet"].dataset.kind = kind;
         els["action-confirm-title"].textContent = (ask && ask.title) ? ask.title
             : (kind === "end" ? T.webConfirmEndTitle
                               : fill(T.webConfirmActionTitle, { action: action }));
         els["action-confirm-say"].textContent = (ask && ask.say) ? ask.say
-            : (kind === "end" ? T.webConfirmEndSay
+            : (kind === "end" ? this.endSay(lost)
                               : fill(T.webConfirmActionSay, { action: action }));
         els["action-confirm"].hidden = false;
         this.sync();
         els["action-confirm-go"].focus({ preventScroll: true });
+    },
+
+    endSay: function (lost) {
+        if (!lost || !lost.length) return T.webConfirmEndSay;
+        return T.webConfirmEndSay + "\n" + T.webConfirmEndLoses + "\n" +
+            lost.map(function (item) { return "· " + item; }).join("\n");
+    },
+
+    /**
+     * The server refused the close because it would take work the page did not show — a stale
+     * frame, or a client that predates the gate. Its `lost` rows are the authoritative list, so
+     * the sheet comes back up carrying them, and the next confirm is the informed acceptance.
+     */
+    reopenEndWithLost: function (id, rows) {
+        var lost = (rows || []).map(function (row) {
+            if (row.title) return row.title;
+            if (row.waiters === 1) return T.sessionWaitedOnByOne;
+            if (row.waiters) return fill(T.sessionWaitedOnByMany, { n: row.waiters });
+            return row.task || row.wait || "";
+        }).filter(Boolean);
+        this.open("end", id);
+        if (this.pending) this.pending.lost = lost.length ? lost : ["…"];
+        els["action-confirm-say"].textContent = this.endSay(this.pending && this.pending.lost);
     },
 
     close: function (restore) {
@@ -81,7 +109,7 @@ export var ActionConfirm = {
             // flight — leaves nothing in flight to release these buttons, and both ways out of
             // the sheet are now disabled. So the sheet undoes itself rather than sitting there
             // spinning at somebody who cannot leave it.
-            if (!SessionActions.end(pending.id)) {
+            if (!SessionActions.end(pending.id, (pending.lost || []).length > 0)) {
                 this.busy = false;
                 this.sync();
                 this.close(false);
@@ -124,6 +152,11 @@ els["session-actions"].addEventListener("click", function (ev) {
     // closes and the card opens over the transcript.
     if (ev.target.closest && ev.target.closest("#session-info")) {
         SessionActions.close(); Info.open(); return;
+    }
+    // Its own confirmation, opened by the action rather than by this delegate: the sheet needs
+    // the composed sentence and the target id, and only that method has both.
+    if (ev.target.closest && ev.target.closest("#session-clawdfather")) {
+        SessionActions.clawdfather(); return;
     }
     if (ev.target.closest && ev.target.closest("#session-git-more")) {
         SessionActions.level("git", true); return;

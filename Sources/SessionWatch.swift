@@ -195,8 +195,12 @@ final class SessionWatch {
                 }
                 return
             }
+            // Process absence says the assistant exited; it says nothing about whether its tab
+            // remains as an ordinary shell. Always take a real terminal inventory so an empty
+            // result can never permanently forget a shell-only child on process evidence alone.
+            // `ITerm.list` is also the bounded recovery probe that clears an automation circuit.
+            let snap = Targets.snapshot()
             let anyAssistant = !processScan.assistants.isEmpty
-            let snap = anyAssistant ? Targets.snapshot() : Targets.Snapshot()
             let contradiction = snap.isComplete && Targets.hasLiveProcessContradiction(
                 previous: knownTargets, scanned: snap.sessions,
                 runningTTYs: Set(processScan.assistants.keys))
@@ -225,9 +229,7 @@ final class SessionWatch {
             // A partial terminal walk may still prove every old row closed through the complete
             // process list. That proof is authoritative for an empty result even though the JXA
             // inventory itself was incomplete; otherwise only a complete inventory may say empty.
-            let emptyAuthoritative = sessions.isEmpty && (inventoryComplete
-                || (!knownTargets.isEmpty && reconciled.preserved == 0
-                    && reconciled.confirmedRemoved == knownTargets.count))
+            let emptyAuthoritative = sessions.isEmpty && inventoryComplete
             // The note must reach the parser before the screen is classified. AskUserQuestion's
             // flush-left caret is intentionally ambiguous without this protocol fact. The note
             // only opens that parsing gate; the screen still decides whether a menu exists.

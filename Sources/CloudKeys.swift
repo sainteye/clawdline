@@ -12,6 +12,7 @@
 
 import CryptoKit
 import Foundation
+import os
 import Security
 
 enum CloudKeyError: Error, LocalizedError, Equatable {
@@ -37,7 +38,7 @@ enum CloudKeyError: Error, LocalizedError, Equatable {
     }
 }
 
-struct CloudDeviceKeyPair: Equatable {
+struct CloudDeviceKeyPair: Equatable, Sendable {
     static let privateKeyBytes = 32
 
     let privateKeyRaw: Data
@@ -72,7 +73,7 @@ struct CloudDeviceKeyPair: Equatable {
     }
 }
 
-struct CloudMasterSecret: Equatable {
+struct CloudMasterSecret: Equatable, Sendable {
     static let byteCount = 32
     private static let recoveryPrefix = "CLAWD1"
     private static let checksumDomain = Data("clawdline-recovery-v1".utf8)
@@ -131,19 +132,51 @@ struct CloudMasterSecret: Equatable {
     }
 }
 
+/// Serializes multi-call persistence transactions. Stores that address the same durable boundary
+/// must expose the same coordinator, so independent clients cannot interleave read/compare/write.
+final class CloudKeyStoreCoordinator: Sendable {
+    private let lock = NSRecursiveLock()
+
+    func withCriticalRegion<T: Sendable>(_ body: @Sendable () throws -> T) rethrows -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
+    }
+}
+
+private final class CloudKeychainCoordinatorPool: Sendable {
+    static let shared = CloudKeychainCoordinatorPool()
+
+    private let coordinators = OSAllocatedUnfairLock(
+        initialState: [String: CloudKeyStoreCoordinator]())
+
+    func coordinator(for service: String) -> CloudKeyStoreCoordinator {
+        coordinators.withLock { values in
+            if let existing = values[service] { return existing }
+            let created = CloudKeyStoreCoordinator()
+            values[service] = created
+            return created
+        }
+    }
+}
+
 /// The narrow persistence seam keeps envelope tests and recovery flows Keychain-free.
-protocol CloudKeyStoring {
+protocol CloudKeyStoring: Sendable {
+    var coordinator: CloudKeyStoreCoordinator { get }
     func data(for account: String) throws -> Data?
     func set(_ data: Data, for account: String) throws
+    func remove(_ account: String) throws
 }
 
 final class CloudKeychainStore: CloudKeyStoring {
     static let defaultService = "app.clawdline.cloud.keys"
 
     let service: String
+    let coordinator: CloudKeyStoreCoordinator
 
     init(service: String = CloudKeychainStore.defaultService) {
         self.service = service
+        coordinator = CloudKeychainCoordinatorPool.shared.coordinator(for: service)
     }
 
     func data(for account: String) throws -> Data? {
@@ -182,20 +215,42 @@ final class CloudKeychainStore: CloudKeyStoring {
         let insertStatus = SecItemAdd(insert as CFDictionary, nil)
         guard insertStatus == errSecSuccess else { throw CloudKeyError.keychain(insertStatus) }
     }
+
+    func remove(_ account: String) throws {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw CloudKeyError.keychain(status)
+        }
+    }
 }
 
 final class CloudInMemoryKeyStore: CloudKeyStoring {
-    private var values: [String: Data]
+    let coordinator = CloudKeyStoreCoordinator()
+    private let values: OSAllocatedUnfairLock<[String: Data]>
 
     init(values: [String: Data] = [:]) {
-        self.values = values
+        self.values = OSAllocatedUnfairLock(initialState: values)
     }
 
-    func data(for account: String) throws -> Data? { values[account] }
-    func set(_ data: Data, for account: String) throws { values[account] = data }
+    func data(for account: String) throws -> Data? {
+        values.withLock { $0[account] }
+    }
+
+    func set(_ data: Data, for account: String) throws {
+        values.withLock { $0[account] = data }
+    }
+
+    func remove(_ account: String) throws {
+        _ = values.withLock { $0.removeValue(forKey: account) }
+    }
 }
 
-struct CloudKeys {
+struct CloudKeys: Sendable {
     static let deviceKeyAccount = "device-ed25519-v1"
     static let masterSecretAccount = "account-master-secret-v1"
 
@@ -206,27 +261,33 @@ struct CloudKeys {
     }
 
     func loadOrCreateDeviceKeyPair() throws -> CloudDeviceKeyPair {
-        if let raw = try store.data(for: Self.deviceKeyAccount) {
-            return try CloudDeviceKeyPair(privateKeyRaw: raw)
+        try store.coordinator.withCriticalRegion {
+            if let raw = try store.data(for: Self.deviceKeyAccount) {
+                return try CloudDeviceKeyPair(privateKeyRaw: raw)
+            }
+            let pair = CloudDeviceKeyPair()
+            try store.set(pair.privateKeyRaw, for: Self.deviceKeyAccount)
+            return pair
         }
-        let pair = CloudDeviceKeyPair()
-        try store.set(pair.privateKeyRaw, for: Self.deviceKeyAccount)
-        return pair
     }
 
     func loadOrCreateMasterSecret() throws -> CloudMasterSecret {
-        if let raw = try store.data(for: Self.masterSecretAccount) {
-            return try CloudMasterSecret(rawRepresentation: raw)
+        try store.coordinator.withCriticalRegion {
+            if let raw = try store.data(for: Self.masterSecretAccount) {
+                return try CloudMasterSecret(rawRepresentation: raw)
+            }
+            let secret = try CloudMasterSecret()
+            try store.set(secret.rawRepresentation, for: Self.masterSecretAccount)
+            return secret
         }
-        let secret = try CloudMasterSecret()
-        try store.set(secret.rawRepresentation, for: Self.masterSecretAccount)
-        return secret
     }
 
     func restoreMasterSecret(from recoveryCode: String) throws -> CloudMasterSecret {
-        let secret = try CloudMasterSecret(recoveryCode: recoveryCode)
-        try store.set(secret.rawRepresentation, for: Self.masterSecretAccount)
-        return secret
+        try store.coordinator.withCriticalRegion {
+            let secret = try CloudMasterSecret(recoveryCode: recoveryCode)
+            try store.set(secret.rawRepresentation, for: Self.masterSecretAccount)
+            return secret
+        }
     }
 }
 

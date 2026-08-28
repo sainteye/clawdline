@@ -9,6 +9,95 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: a session can be called what you called it
+
+What a session was called was decided entirely by machines: the task title this app pinned on a
+tab it opened, the name Codex keeps on a thread, or whatever Claude Code last wrote into the
+terminal title. `/rename` reaches that last one and nothing else, and on a tab opened for a
+dispatch or a handoff it could not be seen at all, because the task title sat in front of it.
+
+The title on the Session info card is something you can press now. Type a name, send it, and that
+is what the list, the panel and every notification call it. Empty the field and the automatic name
+comes back. `POST /v1/sessions/:id/title` is the same thing over HTTP, behind the same switch as
+sending, and an empty title clears it there too.
+
+A name belongs to the conversation rather than to the tab, which is narrower than it sounds and is
+the point: leaving `claude` and starting it again in the same window keeps the window, and the
+next conversation gets its own automatic name instead of inheriting the one you chose for the
+last one.
+
+`/rename` in the terminal is the same person speaking, so the newer of the two wins: name a session
+here, rename it there, and the terminal's name is what shows. What is compared is what the
+transcript's last `/rename` said at the moment you chose the name — a rename that happened before
+that changes nothing, and a rename after it takes over.
+
+Downstream is told when it can be, and the answer says which happened. Codex takes the name on its
+thread straight away. Claude is sent `/rename` only when it is idle and not showing a menu — a
+slash command typed into a running turn interrupts it, and one typed into a question answers the
+question — so a session that is busy keeps the name here and says the downstream name did not
+change, rather than implying it will catch up later.
+### Added: a tab that never opened is retried by the broker, not rewritten by you
+
+`POST /v1/orchestrator/tasks/:id/respawn` takes the id of a task whose terminal never came up and
+opens it again. The old answer was that whoever dispatched it writes the whole `task.json` out a
+second time under a fresh id, because the failed id is finished and re-sending it just hands back
+the record of the failure. On the machine this was measured on that was 34 of 206 dispatches — a
+sixth of everything, 33 of them Codex — all of them rewritten by hand by the session that could
+least afford the words.
+
+The broker already holds everything the original said, so it copies the file, swaps the id, mints a
+fresh secret unless you send one, and dispatches the copy through the ordinary gate: same capacity,
+depth, claims, quota and serialization rules, same refusals. Only a `spawn_failed` task may be
+retried — a failure is an answer, a timeout had a session that read its briefing, a cancellation was
+somebody's decision — and **at most two retries descend from one original**, counted across the
+whole family below it rather than along any one chain, so neither a retry of a retry nor asking the
+original again gets past it. The new task records where it came from, so a retried dispatch reads as
+one chain in the list instead of three unrelated tasks with the same title.
+
+### Changed: the briefing stopped teaching dispatching to the children who never dispatch
+
+Every child session was handed the full recipe for opening children of its own: the credential, the
+fields, the refusals, the machine's house rules. Measured across 206 dispatches, that was 28,323
+characters — about 7,081 tokens — in every direct child's briefing, and **not one of those 206 ever
+dispatched anything**. The teaching is not wrong; it was addressed to the rare session that would
+use it and charged to all of them.
+
+It now lives in `DISPATCHING.md`, written into the task's own directory beside `CHILD.md` and only
+when that task may actually hand work on. The briefing keeps one line naming it. The credential
+path, the `parent_task` rule and the `curl` are only in that file, so the briefing no longer hands
+the credential over to a session that skipped the pointer.
+
+`CHILD.md` also asks for something in return: one `/progress` note within about three minutes of
+starting, saying what the session has decided to do now it has read the briefing — and says why, so
+a session that knows the reason will actually send it. It is the only thing that lets a wrong
+direction be stopped at minute three instead of minute twenty-six. The two dearest cancelled tasks
+on that same record had burned 18.5M and 16.5M tokens before anybody could tell.
+
+### Added: a dispatch that never said what it writes is told so
+
+60.7% of the dispatches measured here declared no `claims` at all — no list of the files the task
+will write. The reply now carries a `claims_missing` warning when the field is absent. It is a
+warning and never a refusal, and `"claims": []` is a positive declaration that the task writes
+nothing and is not warned about: the difference between "I write nothing" and "I did not say" is the
+whole point of the thing.
+
+Declaring costs about twenty tokens. A collision costs a whole task, which on this record runs from
+three to eighteen million.
+
+### Fixed: a fresh install started with rules nobody had read for months
+
+`~/.config/clawdline/dispatch-policy.md` — what a machine says about how work should be handed out —
+is created on a machine that has none. What it was created from was a copy of the rules pasted into
+the source code, which had gone stale against the file this project actually edits and ships. So a
+new install began life with an old draft, and the only sign was that its children were following
+rules nobody recognised.
+
+The starting rules are now read from the copy in the app bundle, which is the same document that
+ships. If it cannot be read there are no house rules, exactly as an empty policy file has always
+meant, and nothing is written — a machine that once failed to read the resource would otherwise have
+kept an empty policy for good, because this file is never overwritten once it exists. Machines that
+already have a policy of their own are untouched, as they always were.
+
 ### Added: schedules you can make, instead of only read
 
 A schedule — "every weekday at nine, open a session in this project and tell it to do this" —

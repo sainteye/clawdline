@@ -48,11 +48,28 @@ struct TargetSession: Equatable, Identifiable {
     /// The task name Clawdline should draw. Claude Code puts its task in the terminal title;
     /// Codex persists it as thread metadata, so its optional bridge takes precedence here.
     var displayLabel: String {
+        Self.preferredDisplayLabel(
+            manualTitle: Config.shared.sessionTitle(for: self),
+            orchestratorTitle: Orchestrator.title(forTerminal: id),
+            threadName: CodexNaming.shared.title(for: self), terminalLabel: label)
+    }
+
+    /// The only human-authored source comes first; every other label is generated or inferred.
+    /// `terminalLabel` is an input, never an output written back to ``label``: transcript lookup
+    /// relies on the terminal's original title when hooks are unavailable.
+    ///
+    /// `manualTitle` is not a constant a person set once: ``Config/sessionTitle(for:)`` already
+    /// withholds it the moment a later `/rename` in the terminal supersedes it, so this still
+    /// picks "the only human-authored source" — just not always the same one.
+    static func preferredDisplayLabel(manualTitle: String?, orchestratorTitle: String?,
+                                      threadName: String?, terminalLabel: String) -> String {
+        if let manualTitle = manualTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !manualTitle.isEmpty { return manualTitle }
         // A session this app opened for a task is called by that task, whichever assistant is
         // in it: the title was known before the tab existed, and it is what a list should say.
-        if let sent = Orchestrator.title(forTerminal: id) { return sent }
-        return CodexNaming.displayLabel(threadName: CodexNaming.shared.title(for: self),
-                                       terminalLabel: label)
+        if let orchestratorTitle { return orchestratorTitle }
+        return CodexNaming.displayLabel(threadName: threadName,
+                                        terminalLabel: terminalLabel)
     }
 
     /// Strip a leading status glyph and the space after it.
@@ -85,6 +102,51 @@ struct TargetSession: Equatable, Identifiable {
 enum ITerm {
 
     // MARK: - Subprocesses
+
+    /// A failed Apple event is not an invitation to send another one. In practice the failure
+    /// that matters is iTerm2 holding a confirmation sheet open: every later command stands
+    /// behind the same modal answer and makes the recovery queue longer. The circuit stays open
+    /// until `snapshot()` receives a well-formed list response, which is the first positive
+    /// evidence that iTerm2 is accepting Apple events again. Process-list confidence is a
+    /// separate question: a failed `ps` may make the inventory non-authoritative, but it is not
+    /// evidence of an iTerm modal and must never arm this circuit.
+    private static let automationLock = NSLock()
+    private static var automationFailure: String?
+
+    static var automationReady: Bool {
+        automationLock.lock(); defer { automationLock.unlock() }
+        return automationFailure == nil
+    }
+
+    static var automationAttention: String? {
+        automationLock.lock(); defer { automationLock.unlock() }
+        return automationFailure.map { failure in
+            "iTerm2 needs attention on this Mac before terminal automation can continue. "
+                + "Answer the iTerm2 dialog, then wait for Clawdline to complete a fresh terminal "
+                + "inventory. Last failure: \(failure)"
+        }
+    }
+
+    private static func blockAutomation(_ failure: String) {
+        automationLock.lock()
+        if automationFailure == nil { automationFailure = failure }
+        automationLock.unlock()
+    }
+
+    private static func completeInventory() {
+        automationLock.lock(); automationFailure = nil; automationLock.unlock()
+    }
+
+    static func blockAutomationForTesting(_ failure: String) { blockAutomation(failure) }
+    static func completeInventoryForTesting() { completeInventory() }
+
+    /// The complete set of evidence allowed to arm the automation circuit. Kept as a pure seam
+    /// so tests can prove that process-scan confidence and cross-backend contradictions are not
+    /// silently added to this safety boundary.
+    static func automationCircuitEvidence(appleEventTimedOut: Bool,
+                                          listRowsMalformed: Bool) -> Bool {
+        appleEventTimedOut || listRowsMalformed
+    }
 
     /// Somewhere for the reader thread to put what it read. A class, not a captured `var`,
     /// so the handoff across the semaphore is a reference and not a copy in flight.
@@ -142,18 +204,40 @@ enum ITerm {
         guard let script = scriptPath else {
             return ["ok": false, "error": L.t.scriptMissing]
         }
+        // Inventory is the recovery probe and must always be allowed through. Everything else
+        // fails closed while the circuit is open; another automatic close cannot help a person
+        // answer the dialog already on screen.
+        if args.first != "list", let refusal = automationAttention {
+            return ["ok": false, "error": refusal, "attentionRequired": true]
+        }
         let run = shell("/usr/bin/osascript", ["-l", "JavaScript", script] + args, timeout: timeout)
         // A deadline missed on this path means iTerm2 is not answering Apple events, and by far
         // the likeliest reason is a dialog waiting on the Mac. Said as its own sentence rather
         // than as "did not respond", because the two ask different things of whoever reads it:
         // one is a fault to report, the other is a thing to go and click.
-        if run.timedOut { return ["ok": false, "error": L.t.itermBusy] }
+        if Self.automationCircuitEvidence(appleEventTimedOut: run.timedOut,
+                                          listRowsMalformed: false) {
+            blockAutomation(L.t.itermBusy)
+            return ["ok": false, "error": automationAttention ?? L.t.itermBusy,
+                    "attentionRequired": true]
+        }
         guard let data = run.out.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             let trimmed = run.out.trimmingCharacters(in: .whitespacesAndNewlines)
             return ["ok": false, "error": trimmed.isEmpty ? L.t.itermSilent : trimmed]
         }
         return obj
+    }
+
+    /// Bind failure typing to the dictionary returned by this operation. In particular,
+    /// `attentionRequired` is carried by the refused/timed-out Apple event itself; callers never
+    /// sample the circuit later and accidentally attribute another operation's modal to this one.
+    private static func terminalFailure(_ response: [String: Any], fallback: String)
+        -> TerminalFailure {
+        let message = response["error"] as? String ?? fallback
+        let kind: TerminalFailure.Kind = response["attentionRequired"] as? Bool == true
+            ? .iTermAttention : .io
+        return TerminalFailure(kind: kind, message: message)
     }
 
     // MARK: - Who is running an assistant
@@ -213,7 +297,7 @@ enum ITerm {
         }
         pidLock.unlock()
 
-        let run = shell("/bin/ps", ["-ax", "-o", "tty=,pid=,ppid=,command="])
+        let run = shell("/bin/ps", ["-ax", "-o", "tty=,pid=,ppid=,lstart=,command="])
         let scan = parseAssistantProcessScan(run.out, timedOut: run.timedOut,
                                              exitStatus: run.status)
         if scan.isComplete {
@@ -244,13 +328,45 @@ enum ITerm {
     /// for a couple of seconds, which is right for a status display and wrong here: this is
     /// asked in a loop by ``Targets/end(_:)`` while it waits for a session to finish leaving,
     /// and a two-second-old "still there" is exactly the difference between closing a quiet tab
-    /// and closing one that is still working. Scoped to the tty as well, so it costs a fraction
-    /// of the full listing — `ps -t` prints the same columns for one terminal.
-    static func assistant(onTTY tty: String) -> Assistant.Running? {
+    /// and closing one that is still working. The result is scoped to the exact tty after a fresh
+    /// whole-process read, whose success/failure status is unambiguous.
+    struct TTYAssistantObservation {
+        let running: Assistant.Running?
+        let error: String?
+        var isComplete: Bool {
+            error == nil && (running == nil || running?.processStart != nil)
+        }
+    }
+
+    /// Replaces only the exact-tty subprocess in tests. Callers still exercise the production
+    /// safe-close guards and can prove that each decision asks for a fresh observation.
+    static var ttyAssistantObservationForTesting: ((String) -> TTYAssistantObservation)?
+
+    static func parseTTYAssistantObservation(_ output: String, tty: String,
+                                             timedOut: Bool, exitStatus: Int32?)
+        -> TTYAssistantObservation {
+        let scan = parseAssistantProcessScan(output, timedOut: timedOut, exitStatus: exitStatus)
+        return TTYAssistantObservation(running: scan.assistants[tty], error: scan.error)
+    }
+
+    /// A fresh, confidence-bearing reading of one exact tty. `nil` is useful only when the
+    /// subprocess itself completed; safe close must distinguish "gone" from "could not scan".
+    static func assistantObservation(onTTY tty: String) -> TTYAssistantObservation {
         let bare = tty.hasPrefix("/dev/") ? String(tty.dropFirst("/dev/".count)) : tty
-        guard !bare.isEmpty else { return nil }
-        let out = shell("/bin/ps", ["-t", bare, "-o", "tty=,pid=,ppid=,command="], timeout: 5).out
-        return Assistant.reading(ofPS: out)[bare]
+        guard !bare.isEmpty else {
+            return TTYAssistantObservation(running: nil, error: "terminal has no tty")
+        }
+        if let seam = ttyAssistantObservationForTesting { return seam(bare) }
+        // A whole-process answer has an unambiguous successful empty-for-this-tty case. `ps -t`
+        // uses exit 1 both when no process matched and for some execution failures, which cannot
+        // satisfy a fail-closed decision after stderr has been separated.
+        let run = shell("/bin/ps", ["-ax", "-o", "tty=,pid=,ppid=,lstart=,command="], timeout: 5)
+        return parseTTYAssistantObservation(run.out, tty: bare, timedOut: run.timedOut,
+                                            exitStatus: run.status)
+    }
+
+    static func assistant(onTTY tty: String) -> Assistant.Running? {
+        assistantObservation(onTTY: tty).running
     }
 
     /// When a process started, from how long it has been running.
@@ -259,9 +375,9 @@ enum ITerm {
     /// machine's locale, and parsing a localised date to find a file is a way to work on your
     /// machine and nowhere else.
     static func processStart(ofPID pid: Int32) -> Date? {
-        let out = shell("/bin/ps", ["-o", "etime=", "-p", "\(pid)"]).out
-        guard let seconds = parseElapsed(out) else { return nil }
-        return Date(timeIntervalSinceNow: -seconds)
+        let out = shell("/bin/ps", ["-o", "lstart=", "-p", "\(pid)"]).out
+        return Assistant.parseProcessStart(
+            out.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init))
     }
 
     /// `[[dd-]hh:]mm:ss` → seconds.
@@ -341,8 +457,16 @@ enum ITerm {
         guard let rows = listed["sessions"] as? [[String: Any]] else {
             snap.isComplete = false
             snap.error = listed["error"] as? String ?? L.t.cannotList
+            if automationCircuitEvidence(appleEventTimedOut: false, listRowsMalformed: true) {
+                blockAutomation(snap.error ?? L.t.cannotList)
+            }
             return snap
         }
+        // Reaching this point is the recovery proof: the Apple Event returned a list-shaped
+        // answer. Clear the automation circuit before process evidence can independently lower
+        // the inventory's authority. In particular, iTerm2 being stopped is a valid empty list
+        // and must leave `newtab` able to launch it.
+        completeInventory()
         snap.isComplete = listed["complete"] as? Bool ?? (listed["ok"] as? Bool == true)
         if !snap.isComplete {
             snap.error = listed["error"] as? String ?? L.t.cannotList
@@ -451,11 +575,18 @@ enum ITerm {
     ///
     /// Nothing here brings iTerm2 forward: the tab is made and written into, and the app stays
     /// wherever it was. Whoever asked for this is not at the keyboard.
-    static func newTab(line: String) -> (id: String, tty: String)? {
+    static func newTabResult(line: String)
+        -> Result<(id: String, tty: String), TerminalFailure> {
         let res = osa(["newtab", line])
         guard res["ok"] as? Bool == true,
-              let id = res["id"] as? String, !id.isEmpty else { return nil }
-        return (id, res["tty"] as? String ?? "")
+              let id = res["id"] as? String, !id.isEmpty else {
+            return .failure(terminalFailure(res, fallback: "iTerm2 would not open a tab."))
+        }
+        return .success((id, res["tty"] as? String ?? ""))
+    }
+
+    static func newTab(line: String) -> (id: String, tty: String)? {
+        try? newTabResult(line: line).get()
     }
 
     /// Select a session's window and tab.
@@ -463,7 +594,12 @@ enum ITerm {
     /// `activate: false` stops short of bringing iTerm2 forward, which is what the prompt bar
     /// wants while it is open: the tab underneath should follow the target you are pointing at,
     /// but the keyboard has to stay in the box you are typing into.
-    static func reveal(_ sessionID: String, activate: Bool = true) {
-        _ = osa(["reveal", sessionID, activate ? "1" : "0"])
+    @discardableResult
+    static func reveal(_ sessionID: String, activate: Bool = true) -> TerminalFailure? {
+        let res = osa(["reveal", sessionID, activate ? "1" : "0"])
+        guard res["ok"] as? Bool == true else {
+            return terminalFailure(res, fallback: "iTerm2 would not focus that session.")
+        }
+        return nil
     }
 }

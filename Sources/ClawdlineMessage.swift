@@ -1,12 +1,15 @@
 import Foundation
 
-/// The one semantic message Clawdline types into an assistant session.
+/// A semantic broker notice Clawdline types into an assistant session.
 ///
 /// The terminal transport has no metadata channel: both Claude Code and Codex record injected
 /// input as a user turn. This envelope therefore keeps a short prose body for the model and a
 /// closed, versioned payload for transcript readers. Recognition is deliberately all-or-nothing.
 /// Anything outside the exact wrapper, or any field this version does not understand, remains a
 /// visible ordinary user message.
+///
+/// Live assistant-to-assistant reports use ``ClawdlineSessionMessage`` instead: the source session
+/// authored those words, while the events below are facts asserted by the broker.
 enum ClawdlineMessage {
     static let protocolName = "clawdline.notice"
     /// New writers use version 2. The decoder keeps the closed version-1 schema below because

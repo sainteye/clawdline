@@ -459,8 +459,10 @@ enum WebPush {
     /// The transport is sealed end to end, so nothing here is a disclosure to Apple — and none of
     /// that matters for the thing that actually happens, which is text appearing on a phone lying
     /// on a table in a room with other people in it, quite possibly while its owner is in a
-    /// meeting. Callers should therefore send only the useful session summary: its task title,
-    /// project and state. Transcript text and prompt contents do not belong in a notification.
+    /// meeting. Callers therefore send the useful session summary: its task title, project and
+    /// state. When somebody explicitly enables smart notifications, that may instead be one
+    /// bounded sentence derived from the final request and answer; the lock-screen consequence is
+    /// why that preference is separate and off by default.
     ///
     /// `url` is a deep link the service worker opens on a tap. It carries a session id and no
     /// prose, for the same reason.

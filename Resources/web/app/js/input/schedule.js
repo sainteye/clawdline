@@ -16,8 +16,9 @@ import { Schedules } from "../net/schedules.js";
    `openFrom(draft, instructions)` is the second — `input/command.js` calls it when a spoken
    draft comes back with `kind: "schedule"` — and it is the same sheet holding whatever the
    planner could work out, with whatever it could not left for a person to answer. `openEdit(id)`
-   is the third: a row in the list, pressed, filled from `GET /v1/orchestrator/schedules/:id`
-   rather than from a person or a draft. Nothing sends by itself through any of the three: **a
+   is the third: Edit in the run-history sheet, filled from `GET
+   /v1/orchestrator/schedules/:id` rather than from a person or a draft. Nothing sends by itself
+   through any of the three: **a
    confident schedule draft still does not create one**, and opening a row to look does not
    change or remove it either. Opening a session now and arranging one to run every morning are
    not the same risk, and only the first of those two happens without a press.
@@ -500,7 +501,8 @@ export var Schedule = (function () {
         return match ? match.id : null;
     }
 
-    /** The third door: a row in the Schedules list, pressed. `GET /v1/orchestrator/schedules/:id`
+    /** The third door: Edit in a schedule's run-history sheet. `GET
+     *  /v1/orchestrator/schedules/:id`
      *  is read-level, the same door `schedules` itself is behind — a paired device with no `send`
      *  can still open a row and look — so this opens and starts filling itself in regardless of
      *  `S.write`. Only `create` (which now also saves) and the delete confirm below check that,
@@ -797,24 +799,6 @@ els["schedule-form"].addEventListener("keydown", function (ev) {
     if ((!ev.shiftKey && at === items.length - 1) || (ev.shiftKey && at <= 0)) {
         ev.preventDefault(); items[ev.shiftKey ? items.length - 1 : 0].focus();
     }
-});
-
-/* ---- a row, opened ----------------------------------------------------------
-   Delegated on the list itself rather than one listener per row — `view/schedules.js` redraws
-   `#schedule-rows`' whole `innerHTML` on every refresh, which would otherwise mean re-wiring
-   every row every minute. Only a row with `data-id` answers; the one invalid row this list can
-   draw has no id and nothing this sheet could open. */
-els["schedule-rows"].addEventListener("click", function (ev) {
-    var row = ev.target.closest ? ev.target.closest(".schedule-row[data-id]") : null;
-    if (!row) return;
-    Schedule.openEdit(row.dataset.id);
-});
-els["schedule-rows"].addEventListener("keydown", function (ev) {
-    if (ev.key !== "Enter" && ev.key !== " ") return;
-    var row = ev.target.closest ? ev.target.closest(".schedule-row[data-id]") : null;
-    if (!row) return;
-    ev.preventDefault();       // Space would otherwise scroll the page under a `role="button"` li
-    Schedule.openEdit(row.dataset.id);
 });
 
 els["schedule-delete"].addEventListener("click", function () { Schedule.askDelete(); });

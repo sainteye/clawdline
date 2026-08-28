@@ -20,6 +20,14 @@ enum SessionInfo {
         var usedPercent: Double
         var usedTokens: Int?
         var windowTokens: Int?
+        /// Whether `windowTokens` is a fact or a guess. Codex states its window on every
+        /// `token_count` and Claude Code states it in its status-line cache; when neither has
+        /// spoken, `claudeWindow` supplies a table row instead, and that number does not go on
+        /// the wire — see `payload`. A client that were told `162,277 / 1,000,000` would repeat
+        /// the guess back as a measurement, and the direction it is wrong in is the dangerous
+        /// one: a table that says 1M for an account on 200k reads 20% while the conversation is
+        /// about to compact.
+        var windowIsExact = true
     }
 
     /// Codex writes the exact current-turn usage and model window together on each `token_count`.
@@ -40,6 +48,92 @@ enum SessionInfo {
                            usedTokens: used, windowTokens: window)
         }
         return nil
+    }
+
+    /// Claude model windows used only when the per-session status-line cache is absent. This is
+    /// an estimate table — model ids are prefix-matched so dated ids keep their row — while
+    /// `context_window_size` in the cache is Claude Code's exact answer when it is available.
+    static func claudeWindow(model: String?) -> Int? {
+        guard let model else { return nil }
+        if ["claude-fable-5", "claude-opus-5", "claude-sonnet-5"]
+            .contains(where: { model.hasPrefix($0) }) { return 1_000_000 }
+        if model.hasPrefix("claude-haiku-4-5") { return 200_000 }
+        return nil
+    }
+
+    /// Claude's live conversation fill. The window is the stable fact its status-line cache
+    /// records; the used side is the newest parent assistant turn in the transcript, because a
+    /// cache file can be one turn behind and a sidechain is a different conversation. There is
+    /// deliberately no cache age check: an idle session's unchanged window remains exact.
+    static func claudeContext(transcript data: Data, cache: Data?, model: String?) -> Context? {
+        let cached = cache.flatMap {
+            (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
+        }
+        let cachedContext = cached?["context_window"] as? [String: Any]
+        let exactWindow = int(cachedContext?["context_window_size"]).flatMap { $0 > 0 ? $0 : nil }
+        guard let window = exactWindow ?? claudeWindow(model: model) else { return nil }
+        let exact = exactWindow != nil
+
+        for line in data.split(separator: 0x0A).reversed() {
+            let text = String(decoding: line, as: UTF8.self)
+            guard text.contains("\"assistant\""), text.contains("\"usage\""),
+                  let obj = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
+                  obj["type"] as? String == "assistant",
+                  obj["isSidechain"] as? Bool != true,
+                  let message = obj["message"] as? [String: Any],
+                  let usage = message["usage"] as? [String: Any] else { continue }
+            // `<synthetic>` is what Claude Code writes when the provider refused the turn, and it
+            // carries a complete, all-zero `usage`. It satisfies every guard above, so without
+            // this clause the row reads a green `ctx 0%` for a conversation that just hit its
+            // window — the one moment the number is worth looking at. `claudeLimits` skips the
+            // same shape by the same `<` prefix; so does `infoPayload`, in its own words.
+            if let named = message["model"] as? String, named.hasPrefix("<") { continue }
+            let keys = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"]
+            guard keys.contains(where: { usage[$0] != nil }) else { continue }
+            var values: [Int] = []
+            var malformed = false
+            for key in keys {
+                if usage[key] == nil { values.append(0) }
+                else if let value = int(usage[key]), value >= 0 { values.append(value) }
+                else { malformed = true; break }
+            }
+            guard !malformed else { continue }
+            let used = values.reduce(0, +)
+            return Context(usedPercent: min(100, Double(used) * 100 / Double(window)),
+                           usedTokens: used, windowTokens: window, windowIsExact: exact)
+        }
+
+        // Before the first assistant turn, the cache is the only reading. Prefer its exact
+        // token count; older writers that supplied only a percentage still get an honest partial
+        // Context rather than a made-up token count.
+        if let used = int(cachedContext?["total_input_tokens"]), used >= 0 {
+            return Context(usedPercent: min(100, Double(used) * 100 / Double(window)),
+                           usedTokens: used, windowTokens: window, windowIsExact: exact)
+        }
+        if let percent = double(cachedContext?["used_percentage"]), percent.isFinite,
+           (0...100).contains(percent) {
+            return Context(usedPercent: percent, usedTokens: nil, windowTokens: window,
+                           windowIsExact: exact)
+        }
+        return nil
+    }
+
+    /// Claude Code's own cumulative session cost, when its status-line cache supplied one.
+    static func claudeCost(cache data: Data?) -> Double? {
+        guard let data,
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let cost = obj["cost"] as? [String: Any],
+              let value = double(cost["total_cost_usd"]), value.isFinite, value >= 0 else {
+            return nil
+        }
+        return value
+    }
+
+    /// The per-session file written beside `rate-limits.json` by claude-bestiary's status line.
+    /// Reading stays down here; all interpretation above remains pure and accepts `Data`.
+    static func claudeSessionCache(cacheDirectory: URL, sessionID: String) -> Data? {
+        let url = cacheDirectory.appendingPathComponent("session-\(sessionID).json")
+        return try? Data(contentsOf: url)
     }
 
     // MARK: - Files
@@ -504,18 +598,23 @@ enum SessionInfo {
 
     /// What the route answers with. Pure, so a test can hand it every piece and read the JSON.
     ///
-    /// `usage` and `files` are **absent** rather than zeroed when they could not be had: a session
-    /// whose transcript has not been found yet has not spent nothing, and a directory that is not
-    /// a repository has not got a clean tree. `limits.windows` is empty for the same reason.
+    /// `title` is the same complete display title used by the Session list; it is not shortened
+    /// for the card. `usage` and `files` are **absent** rather than zeroed when they could not be
+    /// had: a session whose transcript has not been found yet has not spent nothing, and a
+    /// directory that is not a repository has not got a clean tree. `limits.windows` is empty for
+    /// the same reason.
     /// `deploy` is the deploy and CI rows of `/links`, unchanged, so a state means there what it
     /// means here.
-    static func payload(id: String, assistant: Assistant?, sessionId: String?, model: String?,
+    static func payload(id: String, title: String? = nil, assistant: Assistant?,
+                        sessionId: String?, model: String?,
                         cwd: String?, startedAt: Date?, now: Date = Date(),
                         usage: Orchestrator.Usage?, context: Context? = nil,
+                        costOverrideUsd: Double? = nil,
                         limits: Limits, files: Files?,
                         deploy: [[String: Any]], models: [Model] = [],
                         permission: PermissionMode? = nil) -> [String: Any] {
         var session: [String: Any] = ["id": id]
+        if let title, !title.isEmpty { session["title"] = title }
         if let assistant { session["assistant"] = assistant.rawValue }
         if let sessionId { session["sessionId"] = sessionId }
         if let model, !model.isEmpty { session["model"] = model }
@@ -545,14 +644,20 @@ enum SessionInfo {
                 "total": usage.total,
             ]
             if let model = usage.model { counts["model"] = model }
-            if let cost = usage.costUsd { counts["costUsd"] = cost }
+            if let cost = costOverrideUsd ?? usage.costUsd { counts["costUsd"] = cost }
             out["usage"] = counts
         }
 
         if let context {
             var current: [String: Any] = ["usedPercent": context.usedPercent]
             if let used = context.usedTokens { current["usedTokens"] = used }
-            if let window = context.windowTokens { current["windowTokens"] = window }
+            // A guessed window does not go on the wire. `usedPercent` still does, because a
+            // percentage a client draws as one number is read as an approximation; `162,277 /
+            // 1,000,000 tokens` in a tooltip is read as a measurement, and only one of those two
+            // survives being wrong. See `Context.windowIsExact`.
+            if let window = context.windowTokens, context.windowIsExact {
+                current["windowTokens"] = window
+            }
             out["context"] = current
         }
 
@@ -616,9 +721,18 @@ enum SessionInfo {
 
     // MARK: - Small readers
 
+    /// A number out of a JSON object, and **never a crash**. `Int(someDouble)` traps outside
+    /// Int64 — `JSONSerialization` rejects `1e400` outright, but it accepts `1e30`, and
+    /// `Int(1e30)` takes the process down with it. That used to be theoretical: every caller read
+    /// a file this repository's own code had written. `claudeContext` reads one written by a
+    /// different project, whose format may drift without anybody here hearing about it, so a
+    /// number this reader cannot represent is now an absent number rather than a dead server.
     private static func int(_ value: Any?) -> Int? {
         if let n = value as? Int { return n }
-        if let n = value as? Double { return Int(n) }
+        if let n = value as? Double {
+            guard n.isFinite, n >= Double(Int.min), n <= Double(Int.max) else { return nil }
+            return Int(n)
+        }
         if let s = value as? String { return Int(s) }
         return nil
     }

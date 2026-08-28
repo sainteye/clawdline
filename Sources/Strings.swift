@@ -303,8 +303,25 @@ protocol Copy {
     func pushChildWaiting(minutes: Int?) -> String
     /// A whole fan-out has come back — every task under one root, counted once.
     func pushBatchDone(done: Int, failed: Int) -> String
+    /// Several finishes that arrived together, delivered as one push instead of one each.
+    func pushCoalesced(count: Int) -> String
     var settingsPushFinish: String { get }
     var settingsPushFinishHint: String { get }
+    var settingsSmartNotifications: String { get }
+    var settingsSmartNotificationsHint: String { get }
+    // The health card under the smart-notifications switch. It exists because the feature once
+    // failed 784 times in three hours with the only evidence in a log nobody opens: the card says
+    // what was attempted, what produced a model sentence, and — in words — why the last attempt
+    // fell back. The reason strings are sentences a person can act on, and the timeout one names
+    // the deadline, because "the model is timing out" is what tells somebody to raise it.
+    var settingsSmartHealthIdle: String { get }
+    func settingsSmartHealth(attempts: Int, successes: Int) -> String
+    func settingsSmartHealthFailure(reason: String, time: String) -> String
+    func settingsSmartTimeout(seconds: Int) -> String
+    var settingsSmartQueueFull: String { get }
+    var settingsSmartModelFailed: String { get }
+    var settingsSmartNoSource: String { get }
+    var settingsSmartMissing: String { get }
     var settingsPushDeploy: String { get }
     var settingsPushDeployHint: String { get }
     var settingsAgentNotify: String { get }
@@ -463,8 +480,16 @@ protocol Copy {
     var webStateWorking: String { get }
     /// Quiet Session work-state labels and the accessible descriptions behind one/two checks.
     /// They are server copy, even though the fallback bundle repeats English for old/offline pages.
+    /// The vocabulary contract — what a person should do on seeing each state — is
+    /// docs/session-states.md; `unknown` in particular is an absence, and its copy must never
+    /// read as an instruction.
     var sessionWorkReady: String { get }
-    var sessionWorkNeedsTriage: String { get }
+    var sessionWorkUnknown: String { get }
+    var sessionWorkHolding: String { get }
+    var sessionWorkOwed: String { get }
+    /// The small marker after a self-declared state, so a stated state never dresses as a
+    /// proven one.
+    var sessionWorkSelfStated: String { get }
     var sessionWorkMilestone: String { get }
     var sessionWorkComplete: String { get }
 
@@ -501,6 +526,103 @@ protocol Copy {
     var webConfirmActionSay: String { get }
     var webConfirmEndTitle: String { get }
     var webConfirmEndSay: String { get }
+    /// The line above the list of what a close would take with it — live children, stranded
+    /// waiters — shown at the moment of the confirming press, never as a list column.
+    var webConfirmEndLoses: String { get }
+    /// Turning a chosen session into this Mac's Clawdfather.
+    ///
+    /// The browser cannot register a coordinator — that needs the orchestrator token, and a
+    /// paired device does not have one. So the item does not do it: it types
+    /// `webClawdfatherAsk` into the session through the ordinary send route, and the session,
+    /// which is a local process that *can* read the token, carries out the recipe itself.
+    /// `{name}` in `webClawdfatherIs` is the label from the authenticated `session.coordinator`
+    /// projection; `{id}` in `webClawdfatherAsk` is that session's terminal-neutral id, which the
+    /// page already holds and hands over rather than leaving it to be worked out at the far end.
+    var webMakeClawdfather: String { get }
+    var webClawdfatherIs: String { get }
+    var webConfirmClawdfatherTitle: String { get }
+    var webConfirmClawdfatherSay: String { get }
+    var webClawdfatherAsk: String { get }
+    var webClawdfatherAsked: String { get }
+    /// The Clawdfather controls panel — `input/coordinator-actions.js`.
+    ///
+    /// The commands table is closed on the client on purpose: labels, placement and safety
+    /// meaning come from shipped code, never from a payload — so every label and summary ships
+    /// here rather than riding the `commands` record. `{name}` is the coordinator's advertised
+    /// label ("Clawdfather" today), handed through `fill` like every other hole.
+    var webCoordSectionObserve: String { get }
+    var webCoordSectionCoordinate: String { get }
+    var webCoordSectionPresence: String { get }
+    var webCoordSectionAdmin: String { get }
+    var webCoordCmdStatusReport: String { get }
+    var webCoordCmdStatusReportSay: String { get }
+    var webCoordCmdSinceAway: String { get }
+    var webCoordCmdSinceAwaySay: String { get }
+    var webCoordCmdDuplicates: String { get }
+    var webCoordCmdDuplicatesSay: String { get }
+    var webCoordCmdLandingClosure: String { get }
+    var webCoordCmdLandingClosureSay: String { get }
+    var webCoordCmdCoordinateWork: String { get }
+    var webCoordCmdCoordinateWorkSay: String { get }
+    var webCoordCmdDispatch: String { get }
+    var webCoordCmdDispatchSay: String { get }
+    var webCoordCmdAsk: String { get }
+    var webCoordCmdAskSay: String { get }
+    var webCoordCmdQuietWatch: String { get }
+    var webCoordCmdQuietWatchSay: String { get }
+    var webCoordCmdScope: String { get }
+    var webCoordCmdScopeSay: String { get }
+    var webCoordCmdStop: String { get }
+    var webCoordCmdStopSay: String { get }
+    var webCoordCmdReconnect: String { get }
+    var webCoordCmdReconnectSay: String { get }
+    /// The safety meaning under each command, and the state word beside its name.
+    var webCoordEffectRead: String { get }
+    var webCoordEffectAdvisory: String { get }
+    var webCoordEffectSpawns: String { get }
+    var webCoordEffectMutation: String { get }
+    var webCoordStateAvailable: String { get }
+    var webCoordStateDraft: String { get }
+    var webCoordStateUnavailable: String { get }
+    var webCoordStatePreview: String { get }
+    var webCoordStateDisabled: String { get }
+    var webCoordOnline: String { get }
+    var webCoordOffline: String { get }
+    var webCoordControlsTitle: String { get }
+    var webCoordOpenControls: String { get }
+    var webCoordEmpty: String { get }
+    var webCoordDisabledFallback: String { get }
+    /// The preview receipt for anything that is not a connected read. Every one of these has to
+    /// keep saying that nothing was sent — the same rule as dictation, for the same reason.
+    var webCoordPreviewTitle: String { get }
+    var webCoordPreviewNone: String { get }
+    var webCoordPreviewMutation: String { get }
+    var webCoordPreviewDraft: String { get }
+    var webCoordPreviewSpawn: String { get }
+    var webCoordPreviewContract: String { get }
+    /// Why a disabled command is disabled, keyed by the server's closed `reason` code — a code
+    /// cannot drift out of the client's vocabulary the way a sentence can. The prose `why` field
+    /// stays on the wire for older pages; a page that knows the code says it in its own language.
+    var webCoordWhyNoCommandRoute: String { get }
+    var webCoordWhyNoReturnLedger: String { get }
+    var webCoordWhyDeviceCannotSpawn: String { get }
+    var webCoordWhyMachineTokenOnly: String { get }
+    /// Rendering the answer of the four connected read-only commands, fed by the
+    /// device-readable Bearings projection at `GET /v1/orchestrator/coordinator/bearings`.
+    var webCoordReadFailed: String { get }
+    var webCoordActiveTasks: String { get }
+    var webCoordPendingLandings: String { get }
+    var webCoordOpenWaits: String { get }
+    var webCoordCountUnknown: String { get }
+    var webCoordStaleSessions: String { get }
+    var webCoordUnknown: String { get }
+    var webCoordWaitingList: String { get }
+    var webCoordBlockingList: String { get }
+    var webCoordAllQuiet: String { get }
+    var webCoordNoLandings: String { get }
+    var webCoordUnregistered: String { get }
+    var webCoordScopeLine: String { get }
+    var webCoordScopeDevice: String { get }
     /// The session after its close was confirmed, while the Mac is still carrying it out.
     var webClosing: String { get }
     var webCancel: String { get }
@@ -966,6 +1088,13 @@ protocol Copy {
     // the wrong answer that changes what somebody does next.
     var webSessionInfo: String { get }
     var webInfoTitle: String { get }
+    var webInfoEditTitle: String { get }
+    var webInfoCopyTitle: String { get }
+    var webInfoTitleSaved: String { get }
+    var webInfoTitleLocal: String { get }
+    var webInfoTitleQueued: String { get }
+    var webInfoTitleNotDurable: String { get }
+    var webInfoTitleCloud: String { get }
     var webInfoSession: String { get }
     var webInfoAssistant: String { get }
     var webInfoModel: String { get }

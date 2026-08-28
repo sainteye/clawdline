@@ -96,6 +96,7 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/places/:id/resume/:session` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/places/:id/resume/:assistant/:session` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/send` | token + key | `send` **and** the write switch |
+| `POST` | `/v1/sessions/:id/title` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/key` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/focus` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/sessions/:id/end` | token + key | `send` **and** the write switch |
@@ -116,18 +117,23 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/orchestrator/tasks/:id/notify` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/complete` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/completion/ack` | orchestrator token | — |
-| `POST` | `/v1/orchestrator/tasks/:id/landing` | task secret for pending/abandoned; **orchestrator token only for landed** | — |
+| `POST` | `/v1/orchestrator/tasks/:id/landing` | task secret **or** orchestrator token for pending/abandoned; **orchestrator token only for landed** | — |
 | `POST` | `/v1/orchestrator/tasks/:id/progress` | that task's secret | — |
 | `GET` | `/v1/orchestrator/tasks/:id/inflight` | that task's secret | — |
+| `POST` | `/v1/orchestrator/tasks/:id/respawn` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/tasks/:id/cancel` | orchestrator token, **or** token + key | `send` **and** the write switch |
 | `GET` | `/v1/orchestrator/assistants` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/landings` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/storage` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/inflight` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/sessions` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/messages` | orchestrator token + key | — |
+| `POST` | `/v1/orchestrator/sessions/:id/complete` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/sessions/:id/state` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/register` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/rebind` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/coordinator` | orchestrator token | — |
+| `GET` | `/v1/orchestrator/coordinator/bearings` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/waits` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/waits` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/waits/:id/release` | orchestrator token | — |
@@ -193,7 +199,7 @@ $ curl -s http://127.0.0.1:7717/v1/sessions -H "Authorization: Bearer $TOKEN" \
       "id": "35D87610-E7F4-4A9A-95A0-11947CF5115C",
       "label": "設計基本問題和股票相關聊天內容",
       "state": "idle",
-      "work_state": "needs_triage",
+      "work_state": "unknown",
       "cwd": "/Users/you/code/cairn"
     },
     {
@@ -236,7 +242,7 @@ kept after the tab is gone.
 ```console
 $ curl -s http://127.0.0.1:7717/v1/sessions/27439AEE-3736-4AC3-BF80-CE63280B5CCD \
     -H "Authorization: Bearer $TOKEN"
-{"session":{"id":"27439AEE-3736-4AC3-BF80-CE63280B5CCD","isClaude":true,"state":"idle","work_state":"needs_triage","icon":{"accent":"#5CBBA1","cells":[["#2F6B5E","#EEF6F4","#EEF6F4","#EEF6F4","#EEF6F4","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#2F6B5E","#2F6B5E","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#EEF6F4","#2F6B5E","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#2F6B5E","#2F6B5E","#EEF6F4","#2F6B5E"]]},"tty":"ttys006","backend":"iterm","label":"IG 設定指引改進","sessionId":"841cbb8d-58b1-4765-9a71-bcdba19bcfef","cwd":"/Users/you/code/atrium"}}
+{"session":{"id":"27439AEE-3736-4AC3-BF80-CE63280B5CCD","isClaude":true,"state":"idle","work_state":"unknown","icon":{"accent":"#5CBBA1","cells":[["#2F6B5E","#EEF6F4","#EEF6F4","#EEF6F4","#EEF6F4","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#2F6B5E","#2F6B5E","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#EEF6F4","#2F6B5E","#EEF6F4","#2F6B5E"],["#2F6B5E","#EEF6F4","#2F6B5E","#2F6B5E","#2F6B5E","#EEF6F4","#2F6B5E"]]},"tty":"ttys006","backend":"iterm","label":"IG 設定指引改進","sessionId":"841cbb8d-58b1-4765-9a71-bcdba19bcfef","cwd":"/Users/you/code/atrium"}}
 ```
 
 Key order is not stable between replies — it comes out of a dictionary. Read by name.
@@ -408,8 +414,8 @@ $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/info
 |---|---|
 | `session` | `id` and `assistant` always; `sessionId` when the current process can be bound to its exact Claude transcript or Codex rollout; `model` when a transcript has named one — the **last** model the transcript names, so a session that switched mid-way shows what it is on now; `cwd`, `startedAt` and `seconds` (its age, as of this answer) when the process could be found |
 | `permission` | Claude Code's current permission mode and the Shift-Tab cycle order. `current` is `auto`, `manual`, `acceptEdits`, `plan`, or `unknown`; `manual` specifically means the screen was readable and showed no mode line, while `unknown` means the screen capture was absent or empty. **Absent for Codex sessions**, which do not have this mode cycle |
-| `usage` | the transcript's token totals — `input`, `output`, `cacheRead`, `cacheWrite`, `total` — with `model` and, for Claude, `costUsd` at list price. **Absent** when no transcript has been found, which is not the same as zero |
-| `context` | the current conversation against its model window: `usedPercent`, plus `usedTokens` and `windowTokens` for the exact ratio. Codex records all three together on each `token_count`; **absent** when the assistant did not record both sides of that ratio. This is per-turn context, not cumulative `usage` |
+| `usage` | the transcript's token totals — `input`, `output`, `cacheRead`, `cacheWrite`, `total` — with `model` and, for Claude, `costUsd`. Claude Code's own `total_cost_usd` replaces the list-price estimate when its session cache has it — **on this route only**: the task records under `/v1/orchestrator/tasks` still publish the estimate, so the same session can be quoted two different figures. **Absent** when no transcript has been found, which is not the same as zero |
+| `context` | the current conversation against its model window: `usedPercent`, plus `usedTokens`, plus `windowTokens` **only when the window is a stated fact rather than a guess**. Codex records all three together; Claude combines the last parent assistant turn's transcript usage with its cached window, falling back to a model-window table when that cache is absent — and a table row is a guess, so it moves the percentage but never appears as `windowTokens`. **Absent** when no source supplies a window, and when one does but neither the newest parent turn nor the cache supplies a used figure. This is per-turn context, not cumulative `usage` |
 | `limits` | `windows`: each `name` (`5h`, `7d` — the status line's names), `usedPercent`, `resetsAt`, and `hit` when the provider refused the last request on it; `at` is when the record it came from was written. **An empty `windows` means nobody said**, and a client must draw that as unknown rather than as 0% |
 | `files` | the working tree **counted**, not listed: `branch` (empty when detached), `head`, `ahead`, `behind`, `staged`, `unstaged`, `untracked`, `conflict`. A partially added file is under both `staged` and `unstaged`, as `git status` lists it. **Absent** when the directory is not a repository or `git` did not answer in time — and those are the same answer on purpose, because a card that said *clean* about a tree it could not read would be wrong in the direction that matters. The files themselves are `/git` |
 | `deploy` | the `deploy` and `ci` rows of `/links`, unchanged, so a `state` means here what it means there |
@@ -428,11 +434,25 @@ the windows go back to *unknown* — which is the word for it.
 
 **Context is not token spend.** Codex's same `token_count` event carries
 `last_token_usage.total_tokens` and `model_context_window`; their ratio is the optional `context`
-object. The cumulative `total_token_usage` remains under `usage` for the expanded card, but the
-compact status line shows `context.usedPercent`, because that is what determines whether this
-conversation is about to compact. Claude's transcript records current usage but not the model
-window that its status-line input received, so its `context` stays absent rather than guessing a
-percentage from a hard-coded model limit.
+object. **Claude Code states its window nowhere a reader can reach** — not in the transcript, not
+in `~/.claude/sessions/<pid>.json`; it hands `context_window` to the status-line command on stdin
+and to nothing else. So the window comes from a file that command writes, `session-<session-id>.json`
+in the same directory as `rate-limits.json` above (`status_dir`, defaulting to
+`~/.claude/statusline-cache`), shaped as
+`{"context_window":{"context_window_size":…,"total_input_tokens":…,"used_percentage":…},
+"cost":{"total_cost_usd":…}}`.
+
+That stable window size is combined with the last non-sidechain assistant turn's current
+input/cache usage — the size never moves during a session, while the transcript is always
+current, so the reading is live and needs no staleness rule. `<synthetic>` turns are stepped
+over: Claude Code writes one when the provider refuses, with an all-zero `usage` that would
+otherwise read as an empty context at the exact moment the window is full. Before the first
+assistant turn the cached totals stand alone. Without the file, known Claude models fall back to a
+prefix-matched window table and unknown models stay absent — that table is a guess and is
+published as one, moving `usedPercent` without ever appearing as `windowTokens`. The same file's
+`total_cost_usd`, when present, is preferred over the computed `usage` price. Cumulative token
+totals remain under `usage`; the compact row shows `context.usedPercent`, because that is what
+determines whether this conversation is about to compact.
 
 **A route rather than a field on the session**, for the reason `/links` gives and one more: on
 top of that route's `git`, this one reads the transcript, which can be fifty megabytes. Free when
@@ -755,8 +775,12 @@ $ curl -s -X POST \
 **There is no request body here either**, and the conversation is a path segment for exactly the
 reason the assistant is one above. It is checked twice before it becomes part of a command line:
 once for shape — a lowercase UUID as Claude Code writes them, and nothing else — and once against
-the selected assistant's listing for that directory at that moment. An id nobody was handed is
-`404 not_found`, never a string on a command line.
+one of two exact Mac-owned records. The ordinary case is the selected assistant's project listing
+at that moment. A terminal schedule run is the narrow exception: its id must be the proven
+child-conversation id returned by that schedule's detail response, and the retained task must also
+match the selected project and assistant. This does not put dispatched children back into the
+general project-history picker. An id neither source handed out is `404 not_found`, never a string
+on a command line.
 
 The shape check is exact rather than merely shell-safe. This is especially important for Claude:
 `--resume` takes an **optional** value, so a value the CLI cannot read as an id becomes a search
@@ -877,8 +901,87 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/send \
 ```
 
 With the switch on it answers `{"ok":true,"at":<unix seconds>}`. `text` must be a non-empty string;
-anything else is `400 bad_request`. Failure to reach the terminal is `502` with code `internal` and
-whatever the terminal said as the message.
+anything else is `400 bad_request`.
+
+Authentication, the write-origin check, session lookup, body validation and the idempotency
+reservation all happen on the server's serial state queue. The terminal handoff then moves to a
+separate serial command queue shared with `/key`, `/focus`, `/end`, `/start`, `/resume`, background
+shell kill and automatic child close, plus manual/timer schedule dispatch, serialized promotion and
+terminal-bearing orchestrator task/handoff/wait delivery. That one admission domain is bounded at
+eight operations globally and two per terminal session; coordination fan-out reserves every known
+recipient, and nested inline work inherits or adds its real terminal channel. Health replies, SSE heartbeats
+and slow-read completions therefore continue while iTerm2 is waiting on an Apple event. A concurrent
+request with the same in-flight `Idempotency-Key` joins the first one and both connections receive
+the same final response. This is an in-flight same-key guarantee, not terminal exactly-once: after
+an Apple Event timeout, late execution is unknown and a new key may execute again. A ninth admitted
+operation is `429 busy` and is not filed under its key.
+
+Terminal failures are `502 terminal_io_failed`. Failure kind is bound to the operation that returned
+it; a later global circuit sample cannot relabel an unrelated `ps` or backend failure. If an iTerm Apple Event times out or its list
+response is malformed, the circuit fails closed with `502 iterm_attention_required`, `app: "iTerm2"` and
+`action: "answer_dialog"`. Do not retry in a loop and do not click anything automatically: a person
+must inspect the Mac. Automation resumes after a later well-formed list response proves that iTerm2
+is accepting Apple events again; an incomplete `ps` scan does not arm the circuit.
+
+### `POST /v1/sessions/:id/title`
+
+Gives one live session a local display title. It is trimmed, folded to one line and limited to 200
+characters.
+
+**The name belongs to that conversation, not to the tab it is in.** A terminal outlives what runs
+in it — leaving `claude` and starting it again keeps the same session id — so the stored name is
+matched back by Claude's hook session id where there is one, and otherwise by the start time of the
+assistant process that was in the tab when the name was chosen. The next conversation in the same
+tab is a different conversation and gets the automatic label, which is also what keeps a person's
+old name from covering the task title of a session this app opens for a dispatch.
+
+An empty or whitespace-only `title` clears the local choice, and the label falls back to whatever
+the automatic sources say *now*: the task this session was dispatched for, the Codex thread name, or
+the terminal's own title. Clearing also drops Clawdline's own memory of a Codex thread's name, so
+the label goes back to the automatic one rather than to the name that was just cleared. **What it
+cannot do is un-name the thread.** `thread/name/set` has no undo and Clawdline does not know what
+Codex would have called it, so the name a person typed stays in Codex's own metadata: `codex resume`
+still lists the thread under it, and a later reading of that metadata puts it back on the label. The
+terminal's own title is never changed by this local step.
+
+**For Claude, the newer of the two human names wins.** Naming a session here does not stop a person
+from typing `/rename` straight into that terminal afterward — and when they do, the name they just
+typed is the more recent one, so it is what the label shows from then on. Clawdline notices this by
+comparing the transcript's own `customTitle` against what it was at the moment this route ran, not by
+timestamp: an old rename in a transcript that gets named here today must not look newer than it is.
+Naming it here again, or clearing it, makes this route's name current again. This applies only to
+Claude — Codex has no `/rename` — and only when a transcript already existed to compare against; a
+name set before Claude Code has written its first byte has nothing to compare against and simply
+wins, the way it always did.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/title \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: 97707bb0-0274' \
+    -d '{"title":"Release room"}'
+{"ok":true,"title":"Release room","display_title":"Release room","local_applied":true,"downstream":"synced","downstream_synced":true}
+```
+
+`local_applied` says whether the durable Clawdline name is durable: it is the result of writing
+this Mac's config, not a constant. `false` means the name is in use on every surface right now and
+will be gone when the app restarts — a full disk or an unwritable `~/.config/clawdline` — and it is
+answered `200` rather than `500` because the name really did take effect. `downstream` separately
+says what happened to the assistant's own name: `synced` for an idle Claude `/rename`, `queued` for
+a Codex thread update, `busy` when Claude was anything other than idle — working, asking a question,
+**on a screen this Mac could not read**, or showing a menu when the screen was read again just
+before typing — `unavailable` when no Codex thread could be identified, `failed` when the terminal
+handoff failed, and `local_only` for a clear or a non-assistant shell.
+`busy` is therefore "not typed into", not "seen to be working". The reading it starts from is the
+session list's, up to twenty seconds old while the app is in the background; a session that reading
+calls idle is then captured once more before anything is typed, because a slash command sent to a
+menu is not typed at all — the picker discards it and acts on the Return that follows, confirming
+whichever row is highlighted. `downstream_synced` is true only after a synchronous downstream
+handoff succeeded. Busy Claude sessions are deliberately not queued: a local title is durable,
+while replaying a slash command after an app restart would need a second durable command protocol.
+
+The body must contain a string `title`; a different type or an overlong normalized title is `400
+bad_request`, and an unknown session is `404 not_found`. Like `/send`, this is an authenticated,
+idempotency-keyed write and is refused while remote writing is switched off.
 
 ### `POST /v1/sessions/:id/key`
 
@@ -890,8 +993,9 @@ allowlist is checked before anything goes looking for a terminal.
 `submit` is the one that is a name rather than a key, and it is valid only on a menu whose `submit`
 field is present. The button a multi-select draws under its rows has no keystroke of its own, so
 the Mac walks the highlight onto it and presses Return there — reading the screen back at each
-step, and stopping with the dialog untouched if the highlight will not land. It answers `502` with
-code `internal` when the menu on screen turns out not to have one.
+step, and stopping with the dialog untouched if the highlight will not land. A backend failure is
+`502 terminal_io_failed`; an operation-bound iTerm modal refusal is
+`502 iterm_attention_required`.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/key \
@@ -915,6 +1019,9 @@ character into whatever replaced it.
 ### `POST /v1/sessions/:id/focus`
 
 Brings that session's window to the front. No body.
+It enters the same bounded terminal broker as the other mutations. A focus Apple Event that is
+refused by the open iTerm circuit answers `502 iterm_attention_required`; focus never reports 200
+after discarding a backend failure.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/focus \
@@ -956,13 +1063,27 @@ thing that happens when a command is stopped from the Mac.
 
 ### `POST /v1/sessions/:id/end`
 
-Ends the session and closes the terminal tab it occupied. No body.
+Ends the session and closes the terminal tab it occupied.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/end \
     -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 3d9b7c14-55e2' -d '{}'
 {"ok":true}
 ```
+
+**The close gate.** At the moment of the press the broker computes `lost_if_closed` — the live
+descendant tasks this close would cancel and the open waits whose waiters it would strand. When
+that list is non-empty and the body does not carry `"accept_loss": true`, the route refuses:
+
+```json
+{"error":{"code":"would_lose_work","message":"…","lost":[
+  {"task":"…","title":"review the patch","state":"briefed"},
+  {"wait":"…","release_condition":"the docs are committed","waiters":1}]}}
+```
+
+Show the list, then repeat the same request with `accept_loss: true`. A close with nothing at
+stake is unchanged — one press, empty body. This is deliberately a gate at the close and not a
+list column: a label read earlier does not stop a close (docs/session-states.md#lost_if_closed).
 
 **Not a capability of its own.** A device that may type into a session can already send `/exit` and
 then `exit`; this is the same power with the two steps joined and named. What it adds is that the
@@ -1112,9 +1233,11 @@ order:
 
 ### `POST /v1/orchestrator/tasks`
 
-**Dispatch.** One session asks for a task to be run by another one: Clawdline opens a terminal tab
-in the task's directory, starts the assistant the task named, types a first message into it, and
-watches for the answer. The concept, the trust model and the file formats are
+**Dispatch.** One session asks for a task to be run by another one: normally Clawdline opens a
+terminal tab in the task's directory, starts the assistant the task named, types a first message
+into it, and watches for the answer. Optional `task.json` field `attach_session` instead names an
+existing assistant Session from `GET /v1/orchestrator/sessions`; the same complete task is typed
+there without opening a tab. The concept, the trust model and the file formats are
 [`docs/orchestrator.md`](orchestrator.md); what follows is the request.
 
 The body is two fields and neither of them is the work:
@@ -1156,11 +1279,19 @@ already carried by `task_id`, which is the caller's own identifier for the work 
 per-attempt header. Send the same `task_id` twice and the second call answers `200` with the
 existing record, having opened nothing.
 
-Ten refusals, and a client should branch on all of them:
+Seventeen refusals, checked in the order they are listed, and a client should branch on every
+applicable code:
 
 | `code` | status | |
 |---|---|---|
 | `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
+| `attach_session_not_found` | 404 | no watched session has that id. The resolver sees every session this Mac watches, which is wider than what `GET /v1/orchestrator/sessions` publishes: naming a plain shell resolves and is then refused `attach_unsupported`, not `404`. No task is created |
+| `attach_unsupported` | 409 | the named Session is a plain shell with no assistant to read a briefing |
+| `attach_not_managed` | 409 | the Session has no task role, or its recorded launch grant covers only the earlier task's own directory rather than `/tmp/.clawdline`. Both a user-opened session and a Clawdline-opened leaf fail this check: neither can read a new follow-up task's sibling `CHILD.md`, and `--add-dir` cannot be added to a running process. Only a task role whose persisted launch-time grant covers the whole task root can be attached to |
+| `attach_assistant_mismatch` | 409 | the task's `assistant` differs from the assistant resident in the named Session |
+| `attach_session_occupied` | 409 | the Session already has one live Clawdline task; attached sessions are single-flight |
+| `attach_session_busy` | 409 | its cached state is `waiting` and `Targets.isChoosing` confirms a menu; nothing was typed and retrying the same task body is safe |
+| `attach_delivery_failed` | 502 | validation and registration succeeded but the first line could not be typed. The task record exists in `spawn_failed` |
 | `bad_task` | 422 | `task.json` is missing, unparseable, or a field is out of range — including an `isolation` other than `none` or `worktree`, an invalid `isolation_base`, `model`, `reasoning_effort`, `permission_mode`, `plan`, `claims`, or `serialize`. `reasoning_effort` is Codex-only and exactly `high` or `xhigh`; omission inherits Codex/user defaults. `claims` is 0…32 unique relative POSIX paths of 1…1024 characters with no `/` prefix or `..` component; `message` names every invalid item |
 | `root_identity_is_terminal` | 422 | positive active-terminal or durable-Coordinator evidence proves `root.session_id` is a physical terminal id. The evidence is collected independently of caller-declared `root.assistant`; the error returns the actual `canonical_root_session_id` and `canonical_root_assistant`. Conflicting/unknown evidence remains nullable rather than guessed. The task is not registered and the provisional dispatch-rate ticket is refunded |
 | `assistant_exhausted` | 409 | the named assistant's own account-level quota reads `exhausted` — see [`GET /v1/orchestrator/assistants`](#get-v1orchestratorassistants). The error object carries `assistant`, `availability`, `source`, `observed_at`, `age_seconds`, `resets_at`, `retry_after` (`min(resets_at - now, 3600)`), and `alternatives` — every other assistant's own `id`/`availability`/`detail`, so a client can dispatch to one of those instead of retrying the same one blind. `task.json`'s `"ignore_quota": true` sends it anyway; the message names that field outright. Checked after capacity and depth, before any git subprocess — cheaper than either, and the reply's own `message` says why. This is a fact about the account, not the task: it fires whether or not the failing session sits in this Mac's own tree |
@@ -1204,12 +1335,37 @@ hashes to the same `root_key`; two roots that share a label do not share a `root
 A `200` means *registered and being opened*, not *running*. `state` is `queued` or `spawning` when
 this answers and the child has typed nothing yet; watch the record, or wait to be told.
 
+At registration, a non-null `root.session_id` may be either the watched terminal id or the
+assistant's process-bound conversation id. The broker resolves both against `root.assistant` and
+stores only the conversation id, so completion notification, grouping, per-root capacity and the
+root-close cascade use one key. If it cannot resolve exactly one live owner, dispatch remains
+compatible but the response includes `warnings:[{"code":"root_unresolved",…}]`; callers must
+poll and must not assume that owner grouping or cascade is available.
+
 `"isolation":"worktree"` asks for a clean private checkout and a delivery branch named
 `clawdline/task/<complete-task-id>`. Optional `isolation_base` is resolved to a commit; without it,
 the base is `HEAD`. A dirty base succeeds with a warning because its uncommitted files are absent
 from the isolated checkout. Unknown isolation values are refused rather than silently sharing the
 tree. The checkout lives under `~/Library/Application Support/Clawdline/worktrees/`; `dir` remains
 the task protocol directory under `/tmp/.clawdline`.
+
+**What the broker reclaims when the task ends, and when.** Two directories are heavyweight,
+reproducible and task-owned, and each has its own registry-internal deadline. These housekeeping
+fields are persisted in the broker registry; they are deliberately absent from the public task
+shape returned by dispatch and `GET /v1/orchestrator/tasks`:
+`<dir>/work/` — the scratch directory a child is told to build in — falls due at
+`work_cleanup_at`, and the isolated child's `<worktree.cwd>/.build` falls due at
+`build_cleanup_at`. Both deadlines are set the same way from their own setting in
+`~/.config/clawdline/config.json`: `orchestrator_work_grace_minutes` and
+`orchestrator_build_grace_minutes`, each defaulting to `60`, each accepting `-1…1440`. A `success`
+reclaims immediately whatever the setting says; `0` does the same for every terminal outcome; a
+positive number is minutes of diagnostic grace, so the failing build log outlives the child that
+wrote it; `-1` leaves that directory to the ordinary sweep. A directory that is already gone
+settles its deadline as a success, and a removal the filesystem refuses keeps it, so the next beat
+tries again. In the registry, `build_cleanup_at` is absent on every task without a worktree of its
+own — a shared checkout's build output belongs to whoever is working in it — and, unlike
+whole-checkout disposal, it is **not** deferred by `landing.state == pending`: a landing under
+review needs the source and the delivery branch, both of which this leaves exactly as they were.
 
 An optional `serialize` array in `task.json` makes named operations machine-global mutexes. A task
 leaves `queued` only when it can acquire every name together; shared names are FIFO across roots,
@@ -1273,10 +1429,25 @@ The wire field has three distinct states, preserved through the registry and all
 |---|---|---|
 | one or more paths | declared write scopes | freezes and holds those lease keys |
 | `[]` | explicit read-only declaration | holds no lease, never conflicts or receives claims `409`, and participates in L1 silence |
-| field absent | unknown write scope | holds no lease and retains L1 directory warnings |
+| field absent | unknown write scope | holds no lease, retains L1 directory warnings, and the dispatch reply carries a `claims_missing` warning |
 
 `[]` gives read-only work a proactive, harmless way to say so. Silence now has only one meaning:
 both sides supplied declarations whose frozen scopes do not intersect; omission says nothing.
+
+**An absent field is answered with a warning, and only an absent one.** 60.7% of the dispatches
+measured on one machine declared nothing at all; declaring costs the root about twenty output
+tokens, and a collision costs a whole task — three to eighteen million on that same record. So the
+reply carries
+
+```json
+{"warnings":[{"code":"claims_missing",
+              "message":"This task declared no claims, so nothing reserves the paths it is about to write…"}]}
+```
+
+on the first dispatch and on the idempotent retry alike. It is never a refusal: a root that has
+not worked out its write set yet must still be able to dispatch. **`"claims": []` does not warn** —
+it is a positive declaration that the task writes nothing, and warning about it would teach callers
+that the field is noise, which is how omission reached 60.7% in the first place.
 
 If either task's root cannot be resolved, the dispatch is also admitted and the warning has the
 same fields and message with `code: "claims_overlap_unknown_root"`. An unknown root never has the
@@ -1387,6 +1558,124 @@ Two older ways of finding an id still work and are worth knowing, because neithe
 session's *own* terminal-neutral id is the UUID after the colon in `$ITERM_SESSION_ID` — that
 answers "who am I" and nothing else. [`GET /v1/orchestrator/waits`](#coordination-waits) names the
 ids already inside a wait — which is no help to the first session that needs to wait on somebody.
+
+### `POST /v1/orchestrator/messages`
+
+Relay one assistant session's message to another without attributing it to the person. It requires
+`X-Clawdline-Orchestrator` and an `Idempotency-Key`; a paired device gets `403 forbidden` even when
+it has the `send` capability. The closed body is:
+
+```console
+$ curl -sS -X POST http://127.0.0.1:7717/v1/orchestrator/messages \
+    -H "X-Clawdline-Orchestrator: $ORCH" \
+    -H "Idempotency-Key: $(uuidgen)" \
+    -H 'Content-Type: application/json' \
+    -d '{"from_session":"A0939BAC-569B-4B87-9DF4-DE493EC327EA",
+         "to_session":"509F54A8-356E-420D-9EAC-73D676C9580E",
+         "text":"The correction is in the same round.\n\n## Status\n\nStill running."}'
+{"ok":true,"accepted_at":1787896806,"at":1787896806}
+```
+
+`from_session` is either the source's exact terminal-neutral id or its process-bound conversation
+id. `to_session` is the target's exact terminal-neutral id. Both must resolve to current Claude or
+Codex sessions; titles, prefixes and tty names are never matched, ambiguous source identity fails
+closed, and source and target must differ. `text` is 1…100000 characters. A target showing a menu
+returns `409 target_busy`, because typing would answer the menu rather than deliver the message.
+
+The route types one version-1 `<clawdline-message>` envelope. Both transcript readers normalize it
+to `role: "message"`, preserve the body's Markdown and expose only the resolved source label and
+assistant. The complete type inventory and wire schema are in [`messages.md`](messages.md).
+`ok` means the terminal transport accepted one typing attempt. It is not a transcript-observed or
+assistant-acknowledged receipt; the idempotency key prevents a network retry from becoming a
+second prompt.
+
+| `code` | status | meaning |
+|---|---:|---|
+| `unauthorized` | 401 | neither a valid machine credential nor paired-device credential was supplied |
+| `forbidden` | 403 | a paired device reached the route without the machine credential |
+| `bad_request` | 400 | missing idempotency key, malformed/extra body field, empty or oversized text |
+| `source_not_found` | 404 | no unique current source matches the exact terminal/conversation id |
+| `target_not_found` | 404 | the target terminal id is not a current assistant session |
+| `same_session` | 409 | source and target resolve to the same terminal |
+| `target_busy` | 409 | the target is showing a picker/menu |
+| `delivery_failed` | 502 | terminal automation could not type the envelope |
+| `encoding_failed` | 500 | the closed envelope could not be serialized |
+
+### `POST /v1/orchestrator/sessions/:id/complete`
+
+A root calls this immediately before its final completion response, after the work it claims is
+delivered and after any repository-required verification and commit. `:id` is the terminal-neutral
+id from the session index above—not a Claude session id or Codex thread id—and the closed request
+body contains one bounded sentence:
+
+```console
+$ terminal_id="${ITERM_SESSION_ID##*:}"   # use "$TMUX_PANE" inside tmux
+$ jq -n --arg summary "Implemented, verified and committed the requested change." \
+    '{summary:$summary}' \
+  | curl -sS -X POST \
+      "http://127.0.0.1:7717/v1/orchestrator/sessions/$terminal_id/complete" \
+      -H "X-Clawdline-Orchestrator: $ORCH" \
+      -H 'Content-Type: application/json' --data-binary @-
+{"ok":true,"created":true,"disposition":{"scope":"session",
+ "evidence":"authenticated_session_delivery","receiptAt":1787900400,
+ "title":"Implemented, verified and committed the requested change."}}
+```
+
+The app resolves the named live target itself and binds the receipt to the exact terminal,
+assistant, tty, pid/process start and process-proved conversation. None of those private identity
+facts is accepted from JSON or returned. The route is valid only while that root's current turn is
+observably `working`; this lets a report made during the last tool call become visible when the
+prompt returns to idle without allowing an idle script to mint completion later. An identical
+retry is idempotent (`created:false` with the original timestamp).
+
+This produces `milestone_complete`: one check and **delivered, awaiting approval**. Its
+`disposition` has `scope:"session"` and `evidence:"authenticated_session_delivery"`. It does not
+claim that every descendant, review, landing or deployment obligation in a root's graph is closed,
+and it can never produce `work_complete`; two checks still require the task-scoped,
+machine-authenticated Git landing receipt. A child tab is refused because its authenticated
+`result.json` remains the only completion signal for that assignment.
+
+The first observed idle after the report settles it. When the same terminal next enters `working`
+or `waiting`, Clawdline consumes the receipt; current activity already outranks it in that frame,
+and a later idle without another report becomes `unknown`. Restarting the app preserves this
+lifecycle. A terminal reused by another process cannot borrow the receipt even before cleanup.
+
+Typed refusals are `400 bad_request` for any body other than one string `summary` of 1…500
+characters; `401 unauthorized` without a recognised credential and `403 forbidden` when a paired
+device reaches this machine-only handler; `404 session_not_found` when
+`:id` is not a current assistant target; `409 session_not_working` outside an active turn;
+`409 session_unbound` when the complete process/conversation tuple cannot be proved; and
+`409 child_session` when the target already has a matching Clawdline task receipt path. A refusal
+must be reported honestly; prose does not substitute for the missing receipt.
+
+### `POST /v1/orchestrator/sessions/:id/state`
+
+The `self` half of the work-state provenance boundary ([docs/session-states.md](session-states.md)):
+a session's bounded declaration about its own quiet state, bound to the exact current process the
+same way `/complete` is, and accepted only while the declaring turn is observably `working`.
+
+```console
+$ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$SID/state" \
+    -H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)" \
+    -H 'Content-Type: application/json' \
+    -d '{"state":"ready","note":"fix landed; can take new work",
+         "owed":{"note":"the schedules trade-off is still your call","moved_by":"the user"}}'
+{"ok":true,"state":"ready","owed":{"note":"…","since":1787903000}}
+```
+
+The body may contain only `state`, `note`, `moved_by`, `person_needed`, and `owed`. `state` may
+be **only** `"ready"` or `"holding"`; `"milestone_complete"`/`"work_complete"` are refused
+`403 self_completion_refused` — the check states stay evidence-only — and anything else is
+`400 bad_request`. A `holding` claim additionally requires `note`, `moved_by`, and
+`person_needed: false` (`422 holding_needs_evidence`): holding is never a default, and a mover
+who is a person or a session makes the truth a wait. Notes are one line of at most 200
+characters.
+
+The `ready`/`holding` claim follows the delivery-receipt lifecycle — settled at the first idle,
+consumed when the terminal next enters `working` or `waiting`. The `owed` debt does not: it
+survives turns until this route clears it with `"owed": null`, and re-declaring the same debt
+note keeps the original `since`. Refusals `401/403/404/409 session_not_working/409
+session_unbound` match `/complete`.
 
 ### Machine coordinator identity and Bearings
 
@@ -1531,12 +1820,12 @@ This returns durable presence and deterministic read-only Bearings:
     "observed_at": 1787832060,
     "coordinator_lifecycle": "standby",
     "work_state_counts": {
-      "ready": 0, "working": 3, "waiting_human": 1, "waiting_session": 1,
-      "needs_triage": 2, "milestone_complete": 1, "work_complete": 0
+      "ready": 0, "working": 3, "waiting_you": 1, "waiting_session": 1,
+      "unknown": 2, "milestone_complete": 1, "work_complete": 0
     },
     "active_task_count": 2, "pending_landing_count": 1, "open_wait_count": 1,
-    "needs_triage": [{"id":"…","assistant":"claude","label":"…","cwd":"…",
-                       "work_state":"needs_triage"}],
+    "unknown": [{"id":"…","assistant":"claude","label":"…","cwd":"…",
+                       "work_state":"unknown"}],
     "waiting": [{"id":"…","assistant":"codex","label":"…","cwd":"…",
                   "work_state":"waiting_session"}],
     "blocking": [{"id":"…","assistant":"claude","label":"…","cwd":"…",
@@ -1552,10 +1841,10 @@ This returns durable presence and deterministic read-only Bearings:
 }
 ```
 
-All seven `work_state_counts` keys are always present. Active tasks are non-terminal task records;
+All eight `work_state_counts` keys are always present. Active tasks are non-terminal task records;
 pending landings are task landings in `pending`; open waits count durable wait groups with at least
-one unreleased waiter. `needs_triage` selects that work state, `waiting` selects
-`waiting_human`/`waiting_session`, and `blocking` selects live owner sessions with waiters. Each
+one unreleased waiter. `unknown` selects that work state, `waiting` selects
+`waiting_you`/`waiting_session`, and `blocking` selects live owner sessions with waiters. Each
 named row is limited to terminal-neutral `id`, assistant, cwd, label and `work_state`. These are
 independent filters, not a partition: a session that is both waiting on a peer and owns another
 peer's wait appears in both `waiting` and `blocking`.
@@ -1572,15 +1861,40 @@ to no live Session row. An absent, corrupt or unsupported record produces
 replacement. No response contains a transcript, transcript path, assistant conversation id, tty,
 pid or process start.
 
+#### `GET /v1/orchestrator/coordinator/bearings`
+
+The device-readable half of the same answer. It accepts ordinary device auth (the orchestrator
+token also works), because it exists for exactly one caller: the Clawdfather controls panel on a
+paired phone, whose four read-only commands are answered from it. The full inspection above stays
+machine-token-only.
+
+The body is a strict subset of the full inspection, built as an allowlist — a field added to the
+full answer never reaches this one by omission. What survives: `version`, `observed_at`;
+`coordinator` reduced to `configured`, `label`, `scope`, `status`, `lifecycle` and the safe
+`session` row (`id`, `assistant`, `label`, `cwd`, `work_state`); `bearings` with its
+`observed_at`, `coordinator_lifecycle`, `work_state_counts`, the three counts, the
+`unknown`/`waiting`/`blocking` rows (same five session fields), and `sources` reduced to
+`observed_at` and `freshness` per source. Everything in it is either an aggregate count or a
+session fact a paired device can already read from `GET /v1/sessions`.
+
+Deliberately withheld, beyond Bearings' own exclusions (tty, pid, process start, conversation
+ids): the durable coordinator UUID, `generation`, `registered_at` and `rebound_at` — the
+compare-and-swap bookkeeping of the machine-token rebind flow, which a device cannot use —
+plus `store` health, source `provenance` names and the session-watch `generation` counter.
+
 The optional `session.coordinator` record is projected on both `GET /v1/sessions` and
 `GET /v1/orchestrator/sessions` for the exact bound row only. It advertises
-`status_report`, `duplicates_conflicts_ownership`, `landing_closure` and `scope_permissions`, but
-all four have `enabled:false`: Bearings exists at the authenticated
-`GET /v1/orchestrator/coordinator` route, while these web actions are preview-only and not connected
-to that route. `since_away`, coordination/judgement commands, dispatch, quiet watch, stop and
-reconnect are likewise disabled. A2's reconnect is deliberately machine-token-only; it is not the
-web menu command. The renderer therefore says Disabled/Preview, never Available. The record is
-absent from every ordinary row, preserving their old JSON behavior.
+`status_report`, `duplicates_conflicts_ownership`, `landing_closure` and `scope_permissions` with
+`enabled:true`: the panel answers them from `GET /v1/orchestrator/coordinator/bearings` above.
+Every command that would send, spawn or mutate stays `enabled:false` and carries two fields:
+`reason`, a closed code the client says in its own language — `no_return_ledger` (since_away),
+`no_command_route` (coordinate_work, ask_coordinator, quiet_watch, stop), `device_cannot_spawn`
+(dispatch_independent_work) and `machine_token_only` (reconnect) — and `why`, honest English
+prose kept for pages that predate the codes. A client that knows the code ignores the prose; one
+that does not still shows a true sentence. Reconnect is deliberately machine-token-only; it is
+not the web menu command. Dispatch would start a session from a device, which is the one thing
+the device/orchestrator credential split exists to prevent. The record is absent from every
+ordinary row, preserving their old JSON behavior.
 
 #### Proposed observer provenance for any future liveness action
 
@@ -1707,11 +2021,12 @@ rewritten wholesale by `PATCH` rather than key by key.
 ### `GET /v1/orchestrator/schedules/:id`
 
 One schedule in full, under `schedule`. Everything the list row carries, plus `file`, `when` in the
-file's own spelling, `close_tab`, `catch_up_hours`, `notify_on_failure`, and the whole `task`
-template — `project_dir`, `instructions` and all. The list deliberately exposes none of that, which
-is the right amount for a row and the wrong amount for the only screen where somebody can check
-what a schedule actually does. Same door as the list: `read` is enough, and the orchestrator token
-works too. `404 not_found` for an id that is unknown, invalid, or not an id at all.
+file's own spelling, `close_tab`, `catch_up_hours`, `notify_on_failure`, the whole `task` template —
+`project_dir`, `instructions` and all — and retained `runs`, newest first. The list deliberately
+exposes none of that, which is the right amount for a row and the wrong amount for the only screen
+where somebody can check what a schedule actually does. Same door as the list: `read` is enough,
+and the orchestrator token works too. `404 not_found` for an id that is unknown, invalid, or not an
+id at all.
 
 ```json
 {"schedule":{"id":"4d2f54ce-…","title":"Publish the next post","enabled":true,
@@ -1719,8 +2034,23 @@ works too. `404 not_found` for an id that is unknown, invalid, or not an id at a
              "when":{"at":"09:30","days":["mon","wed","fri"]},
              "close_tab":"on_success","catch_up_hours":6,"notify_on_failure":true,
              "task":{"assistant":"codex","project_dir":"/Users/me/code/blog",
-                     "instructions":"Publish the next ready post."}}}
+                     "instructions":"Publish the next ready post."},
+             "runs":[{"task_id":"8ef0…","state":"success","assistant":"codex",
+                      "project_dir":"/Users/me/code/blog","created":1787794200,
+                      "finished_at":1787794322,"summary":"Published post 42.",
+                      "terminal_id":"9A1F…","session_id":"105344fb-c769-4b37-b766-403b410897eb"}]}}
 ```
+
+Every run remains visible while its task record is retained. `terminal_id` names the tab Clawdline
+opened and lets a client go to it if it is still on `/v1/sessions`. `session_id` is stricter: it is
+present only for terminal work whose transcript or rollout still exists and is proved to belong to
+that exact task. A run that was dispatched into a standing session instead of a tab of its own
+carries `attached: true` and `attach_session`, the terminal-neutral id it was typed into — the
+same pair the task record calls `attached` and `attachSession`, spelled the way the rest of a run
+record is spelled. It may be sent to the place resume route above; a run without it is readable but
+not resumable. `runs_may_be_truncated: true` appears when the machine-wide registry has reached its
+200-record retention boundary, because older occurrences may already have lost their schedule
+association.
 
 ### `POST /v1/orchestrator/schedules`
 
@@ -1974,8 +2304,16 @@ The record:
   "root":  {"sessionId": "841cbb8d-…", "assistant": "claude", "label": "clawdline main", "terminalId": "27439AEE-…",
             "taskId": "a70c5e11-…"},   // the parent task — depth 2 only, and only when it said so
   "child": {"terminalId": "9A1F…", "backend": "iterm", "sessionId": "0f2b91ac-…"},
+  "terminal_intervention": {       // absent unless automatic cleanup is deliberately pending
+    "code": "iterm_attention_required", "app": "iTerm2",
+    "action": "answer_dialog", "message": "iTerm2 needs attention…"
+  },
+  "attached": true,                 // present only for an attached follow-up task
+  "attachSession": "9A1F…",       // terminal-neutral standing Session id
   "summary": "…",               // finished tasks; the child's own sentence
   "artifacts": ["artifacts/project-portrait.svg"],
+  "verification": {"runs": 2, "seconds": 940, "last": "pass",
+                   "scope": "swift suite + web-schedules"},
   "claims": ["Sources/Orchestrator.swift"],   // present (maybe []) only when task.json declared it
   "released_claims": [                        // absent unless something was given back early
     {"path": "/Users/you/code/clawdline/Sources/Orchestrator.swift", "released_at": 1787100090}
@@ -2018,12 +2356,27 @@ omitted the way they are everywhere else on this API — read by name, and treat
 `waiting_on` follows the same rule: it is present only on a queued serialized task with blockers,
 and it may name a current holder or an older FIFO waiter.
 
+`terminal_intervention` means the task's terminal cleanup is still pending, not that its tab was
+closed. Clawdline retains the close deadline and will not pile up another close while the inventory
+is incomplete or iTerm's circuit is open. A modal case uses `iterm_attention_required` and
+`answer_dialog`; a process still present or a failed exact-tty scan uses
+`terminal_intervention_required` and `inspect_terminal` without inventing an iTerm dialog. After a
+well-formed iTerm list response, a modal intervention gets one next safe cleanup attempt and
+success removes this field. A non-modal intervention has no timer-driven retry: another five-second
+beat never sends `/exit`, TERM or KILL again; a new explicit close action or a person inspecting the
+terminal is required.
+
 `projectDir` never changes meaning: it is the repository/subdirectory the task concerns.
 `worktree.path` is the isolated checkout root, while `dir` is still the unrelated protocol and
 artifact directory. The broker, not the child, reads `head`, `commits`, and `dirty` from git. A
 serialized isolated task names `isolation: "worktree"` while queued but omits the `worktree`
 object until its tab exists: its base is resolved only when it acquires its mutex, so no preliminary
 SHA is presented as the receipt for what the child actually started from.
+
+`verification` is absent unless the child supplied a well-formed optional object in `result.json`.
+Its `runs` and `seconds` are non-negative integers, `last` is `pass`, `fail`, or `skipped`, and
+`scope` is a short free-text description. Missing or malformed verification metadata never changes
+the authenticated task outcome.
 
 For Codex dispatches, `reasoning_effort` accepts only `high` and `xhigh`; use `high` for coding and
 `xhigh` for planning. Empty, non-string, unknown values (including `max` and `ultra`), and the field
@@ -2229,6 +2582,72 @@ sentence and one curl: a session that has to stop and compose a status report wi
 appear as `progress` on the task record and on every `inflight` row. Sending the same sentence as
 the newest one is accepted and ignored — a loop is not news, and refusing it would only cost the
 caller a retry. A terminal task is refused with `409 not_live`: what it did belongs in its summary.
+
+**The file half of the same channel.** Most children cannot make this call at all: a Codex child's
+sandbox sets `CODEX_SANDBOX_NETWORK_DISABLED=1`, `curl` to loopback exits 7 after 0 ms, DNS itself
+is off, and no approval prompt ever appears — measured on the machine this came from (task
+be9a54c0), where 133 codex children were briefed to send this curl and 0 notes ever arrived.
+`result.json` never had the problem, because it is a file the broker picks up. So progress has a
+file twin with the same authentication: the child writes `progress.json` in its own task directory,
+
+```json
+{"task_secret": "<TASK_SECRET>", "note": "<one sentence, at most 300 characters>"}
+```
+
+replacing the whole file each time, and the watch beat collects it within seconds. Only the latest
+sentence is collected — the file is current status, not a log; history is the transcript's job — and
+the collected note joins the same `progress` list with the collection time as its `at`. The same
+sentence through both channels is recorded once, by the same newest-note rule, and a sentence the
+file already delivered is never replayed, even across a restart: `progress_file_note` on the stored
+record is the collected-marker. A file with the wrong secret is ignored and audited once
+(`orchestrator.progress` with `via=file`), and a half-written file simply fails to parse and is read
+again on the next beat. The HTTP route above stays the fast path for a child that can reach it — a
+curl lands immediately, the file on the next beat.
+
+### `POST /v1/orchestrator/tasks/:id/respawn`
+
+**Retry a dispatch whose tab never opened**, without writing the task out again. Orchestrator-token
+only, like dispatch itself: this opens a session.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/respawn \
+    -H "X-Clawdline-Orchestrator: $ORCH"
+{"ok":true,"secret":"9f2c…","respawn_of":"3f9a21bc-…","original_task":"3f9a21bc-…",
+ "task":{"id":"7c41e0aa-…","state":"spawning","title":"Project portrait",
+         "respawn_of":"3f9a21bc-…","respawn_generation":1,…}}
+```
+
+`spawn_failed` was 34 of 206 dispatches on the machine this was measured on — 33 of them Codex —
+and until this route existed the answer was that the root writes the whole `task.json` out again
+under a fresh id, which is thirty-four rewrites by the most context-loaded session in the tree.
+The broker already holds everything the original said, so it does the copying.
+
+The new task is an **ordinary dispatch**: a fresh id, a fresh directory, and every capacity, depth,
+claims, quota and serialization gate applied again, with the same refusals. What it inherits is the
+original `task.json` with `task_id` swapped — `instructions`, `plan`, `claims`, `serialize`,
+`assistant`, `model`, `reasoning_effort`, `permission_mode`, `project_dir`, `isolation` and the
+`root` binding. `instructions` is the field that makes this a file copy rather than a record copy:
+the registry never held it.
+
+The secret is fresh too, because the old id is finished. Send `{"secret":"<64 hex>"}` to choose it
+exactly as an ordinary dispatch does; omit the body and the broker mints one and returns it as
+`secret` at the top level of the reply. The reply's `respawn_of` and `original_task` are also on the
+task record itself (`respawn_of`, `respawn_generation`), so the chain is visible in
+`GET /v1/orchestrator/tasks` instead of looking like three unrelated tasks with the same title.
+
+| `code` | status | |
+|---|---|---|
+| `forbidden` | 403 | the orchestrator token is missing or wrong |
+| `orchestrator_disabled` | 403 | `orchestrator_enabled` is off |
+| `not_found` | 404 | no task with that id |
+| `not_respawnable` | 409 | the task is not `spawn_failed`. Only the one terminal state meaning *nothing ran* may be retried: a `failure` is an answer, a `timeout` had a session that read the briefing, a `cancelled` was somebody's decision, and a live task has a tab. The error object carries `state` |
+| `respawn_exhausted` | 409 | **at most two respawns descend from one original.** What is counted is the whole family the registry still holds below that original, whatever shape it took: a retry of a retry cannot launder the cap by being "the first from *its* parent", and asking the original again cannot launder it either — that one matters, because the id a root has in hand is the one that failed. The error object carries `original_task`, `respawns` and `limit` |
+| `bad_task` | 422 | the id is not a lowercase UUID, a supplied `secret` is not 64 hex characters, or the original `task.json` is gone and there is nothing to copy |
+
+Everything `POST /v1/orchestrator/tasks` can refuse, this can refuse too, at the moment it
+dispatches the copy — `over_capacity`, `workspace_busy`, `assistant_exhausted`, `rate_limited`.
+A refusal there leaves the new directory behind for the ordinary sweep, exactly as a root's own
+abandoned attempt does.
 
 ### `POST /v1/orchestrator/tasks/:id/claims/release`
 
@@ -2513,8 +2932,9 @@ app, and an open-ended size is an open-ended cache.
     "label": "Clawdfather", "status": "online", "commands": [ … ]
   },
   "disposition": {                                 // only with either completion work_state
-    "scope": "task", "taskId": "…",
-    "evidence": "authenticated_task_delivery",   // or broker_verified_target_landing
+    "scope": "task", "taskId": "…",             // root reports use scope:"session"
+    "evidence": "authenticated_task_delivery",   // or authenticated_session_delivery,
+                                                    // or broker_verified_target_landing
     "receiptAt": 1787049596, "title": "review the delivery"
   },
   "agents": [ … ],                               // only when this session has agents out
@@ -2529,14 +2949,34 @@ app, and an open-ended size is an open-ended cache.
 question is on screen. `unknown` means the terminal did not answer, which is not the same as idle
 and is deliberately not flattened into it.
 
-`work_state` is present exactly once and is one of `ready`, `working`, `waiting_human`,
-`waiting_session`, `needs_triage`, `milestone_complete`, or `work_complete`. It is a broker
-projection over separate terminal, task, landing, handoff, and coordination axes; clients must
-not infer it from `idle`. Precedence is: a human question, a durable peer/owed wait, unreadable or
-missing evidence, current activity, authenticated delivery, then verified target landing. Current
-activity outranks an older receipt. `ready` requires positive proof that no assistant assignment
-exists; an idle assistant without that proof is `needs_triage`. Only `waiting_human` asks the
+`work_state` is present exactly once and is one of `ready`, `working`, `holding`,
+`waiting_you`, `waiting_session`, `unknown`, `milestone_complete`, or `work_complete`. (The
+retired spellings `waiting_human` and `needs_triage` are these first two renamed; the per-state
+reading contract is [`docs/session-states.md`](session-states.md).) It is a broker
+projection over separate terminal, task, landing, handoff, coordination, and self-declaration
+axes; clients must
+not infer it from `idle`. Precedence is: a question stopped on you, a durable peer/owed wait,
+unreadable or
+missing evidence, current activity, an idle root's live child, the finished task receipt,
+authenticated delivery, the session's own `ready`/`holding` claim, then an assistant-free
+prompt's `ready`. Current
+activity outranks an older receipt. `ready` requires positive evidence — an assistant-free
+prompt, or the session's own authenticated declaration (provenance `self`); an idle assistant
+without either is `unknown`, which asks nothing of the reader. Only `waiting_you` asks the
 person to act.
+
+Beside it ride `work_provenance` ("broker" or "self"), and — when a declaration supplied them —
+`work_note` (one line, the session's own words), `work_since`, `work_moved_by`,
+`work_person_needed`, plus the independent second axis `owed`
+(`{note, since, person_needed, moved_by?, provenance}`), a debt that survives turns until the
+session clears it. `holding` appears only with `self` provenance — it has no broker entrance and
+is never a fallback — and a self-declaration can never produce either check state.
+
+An idle root with a live task resolved to its exact current process is `waiting_session`: the
+broker already knows it has an outstanding ChildSession. If the root works beside that child it is
+`working`; if the child finishes, the wait evidence ends and the root needs its own delivery
+receipt after integration. The web client checks the same live `root.terminalId` relationship and
+draws `⏳` with the child task title rather than falling back to triage.
 
 `milestone_complete` is one check: the task bound to this exact current assistant process has an
 authenticated success result and finish receipt. The binding requires the exact assistant,
@@ -2546,12 +2986,19 @@ therefore gets no check. An unresolved handoff may name its source in either of 
 namespaces—exact terminal id or exact process-bound conversation id—and each is compared only in
 its own namespace; no prefix/title/tty guessing occurs.
 
+An ordinary root may produce the same one-check milestone for its current turn through
+[`POST /v1/orchestrator/sessions/:id/complete`](#post-v1orchestratorsessionsidcomplete). That
+receipt is also bound to the exact current process, carries `scope:"session"` and
+`evidence:"authenticated_session_delivery"`, and is consumed when the terminal begins its next
+observed turn. It is the root's authenticated delivery claim, not independent review or closure of
+every obligation in its graph.
+
 `work_complete` is two checks and means only **broker-verified target landing for that task**. The
 same task must carry a new-format `landed` receipt whose machine-authenticated git verification
 proved its canonical commit is contained by the named local target branch. Legacy landed data,
 arbitrary commit text, the task secret alone, or missing verification fields stay at one check.
 This does not claim that a whole multi-task graph or its tests are complete. `disposition` names
-the task scope and typed evidence; for the double check it also carries canonical `commit`,
+the receipt scope and typed evidence; for the double check it also carries canonical `commit`,
 `target`, `targetCommit`, and `landedAt`. It is output only: agent prose and coordinator advice
 cannot write either check.
 
@@ -2685,12 +3132,13 @@ counts only when it was announced **and** has no ending under it.
 
 ```jsonc
 {
-  "role": "user",                  // "user" | "assistant" | "peer" | "notice" | "tool"
+  "role": "user",                  // "user" | "assistant" | "peer" | "message" | "notice" | "tool"
   "text": "請幫我在網頁加入 favicon",
   "tool": "Bash",                  // present only on a tool call, absent on its result
   "at": 1787049580,                // absent if the record carried no timestamp
   "source": "release-room",        // human-readable session name; peer only
-  "sourceMode": "prompting"        // peer sender mode; peer only
+  "sourceMode": "prompting",       // peer sender mode, or "clawdline" for message
+  "sourceAssistant": "claude"      // "claude" | "codex"; message only
 }
 ```
 
@@ -2702,10 +3150,14 @@ For a `peer` entry, `source` is the other session's human-readable name, never i
 transport path. `sourceMode` is the mode that session used to send the message. Either field is
 absent when the transcript did not carry a non-empty value.
 
-`peer` and `notice` are two different things and never stand in for one another: a `peer` entry is
-what another assistant session said to this one, a `notice` entry is what Clawdline said to it
-about a task. A row carries at most one of the two, so `source`/`sourceMode` never appear beside
-`notice`.
+For a `message` entry, `source` is the live source session's resolved display label,
+`sourceMode` is `clawdline`, and `sourceAssistant` is `claude` or `codex`. The envelope's terminal
+id does not become a link or action. The body is session-authored Markdown, unlike an inert
+`notice` card.
+
+`peer`, `message` and `notice` never stand in for one another: `peer` is Claude Code's native
+session-to-session transport, `message` is a session-to-session relay through Clawdline, and
+`notice` is Clawdline reporting a broker fact. `source` metadata never appears beside `notice`.
 
 `role: "notice"` is a versioned, single-line Clawdline envelope that either transcript reader
 recognized as a whole message. The wire wrapper contains no LF or CR. Its `text` is the
@@ -2759,7 +3211,8 @@ both versions non-clickable. Malformed, partial, unknown-version, extra-field, a
 are never dropped and never partly
 interpreted: they keep their full visible text and stay whatever the row they arrived in already
 was. In an ordinary turn that is `role: "user"`; quoted inside a cross-session envelope it is
-`role: "peer"`, because who sent a message is a stronger fact than what its text looks like.
+`role: "peer"`, and quoted inside a Clawdline session-message body it is `role: "message"`, because
+who sent a message is a stronger fact than what its text looks like.
 
 `tool` is whatever the assistant calls it, so the vocabularies differ: Claude Code's are `Bash`,
 `Edit`, `Read` and the rest; Codex's are `shell` for a command, `edit` for a file change,
@@ -2796,9 +3249,11 @@ it draws them, and that is a drawing decision which does not travel over the wir
 | `already_done` | 409 | that task has already reported; the first report wins |
 | `bad_task` | 422 | a `task.json` that is missing, unparseable, or out of range. `message` names the field |
 | `rate_limited` | 429 | a sliding window of counted attempts is full — pairing attempts, dispatches per ten minutes, schedules written per ten minutes, agent notifications per hour. What was counted ages out of the window on its own; nothing is draining, which is what separates this from `busy` |
-| `busy` | 429 | a queue on this Mac is full — something is already in hand and will drain in seconds. On `/v1/voice`, one recording is being read and one is waiting. On `/v1/sessions/:id/info` and `/v1/places`, eight slow reads are already in hand — `/v1/sessions/:id/transcript` stands in that same queue but is never refused by this number. All of them drain on their own, and none is filed under an `Idempotency-Key` |
+| `busy` | 429 | a queue on this Mac is full — something is already in hand and will drain in seconds. On `/v1/voice`, one recording is being read and one is waiting. On `/v1/sessions/:id/info` and `/v1/places`, eight slow reads are already in hand — `/v1/sessions/:id/transcript` stands in that same queue but is never refused by this number. The terminal broker admits eight operations globally and two per terminal session, shared by remote terminal mutations, terminal-bearing orchestrator writes and automatic child close; a same-key in-flight retry joins without consuming another place. These refusals are not filed under an `Idempotency-Key` |
 | `over_capacity` | 429 | the dispatcher's child slots are full — `orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child — or the whole Mac's are. `retry_after` is seconds. (`rate_limited` covers the other orchestrator limit: dispatches per ten minutes) |
-| `internal` | 500, 502 | a tab that would not open; a terminal that would not take the text |
+| `terminal_io_failed` | 502 | a terminal mutation reached its isolated command queue but the selected backend did not complete the handoff; this includes a bounded tmux subprocess timeout after cleanup |
+| `iterm_attention_required` | 502 | an iTerm Apple Event timed out or returned a malformed list; `app` is `iTerm2`, `action` is `answer_dialog`, and a well-formed later list response re-enables automation. The timed-out event may still execute later |
+| `internal` | 500, 502 | another internal operation failed, including a tab that would not open |
 | `no_whisper` | 503 | `/v1/voice` only: this Mac has nothing to transcribe with. `reason` is `no_binary` or `no_model` |
 
 A client that has handled one of these has handled all of them. Branch on `code` — the status is
