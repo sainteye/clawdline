@@ -1864,6 +1864,24 @@ be what Clawdline sees rather than only what it started.
   free, so it runs on every launch rather than once and picks up whatever finished while the app
   was not running.
 
+**"Free" is a promise with three parts, and it is the ledger's to keep rather than the caller's.**
+`./build.sh` closes and reopens the app, so anything the backfill does twice it does once per
+launch, for as long as that row exists.
+
+- A record already attributed contributes a delta of zero, which is the cursor doing its job.
+- **A record that has never had a session produces no row at all.** Nothing was observed — no
+  transcript, no counters, not even empty ones — so a row would describe work that was
+  *anticipated*, and the real row would join it the moment the task actually ran. It is not
+  harmless to write one anyway: the queued half of the registry became permanent unmeasured rows,
+  and five of those beside one genuinely unreadable session read as six coverage gaps, which
+  buries the only real one.
+- **An import whose content equals what is already recorded writes nothing**, corrections
+  included. A correction is compared against both the sealed row's own object *and* the
+  corrections already standing against it, because a sealed row's `usage_raw` is deliberately
+  frozen — rewriting it would destroy the evidence of what was sealed — so a comparison against
+  that column alone can never converge. Without the second half, four identical imports wrote
+  four corrections and `corrections` became a count of launches rather than of disagreements.
+
 **Neither collector can double-count the other.** Every measurement any of them takes is a
 *session cumulative* — both transcript readers sum a file from the top, and a task's stored
 `usage` is the whole session rather than that task's slice — so the store attributes the
@@ -1879,8 +1897,12 @@ counted once, by whichever collector reached it first.
   reproducible.
 - **A source that cannot be read is a state, never a zero and never a missing row.** Unknown token
   counts are SQL NULL, the row is sealed `source_missing`, and neither the route nor the export
-  may render it as `0`. Rows with unknown usage sort to the top of every view, because the
-  sessions most likely to go missing are the long ones — which biases every total downward.
+  may render it as `0`. Rows with unknown usage sort to the top of every view — any part unknown,
+  not only all four — because the sessions most likely to go missing are the long ones, which
+  biases every total downward. A cumulative counter that goes **backwards** is the same kind of
+  event: the reading is never subtracted, the cursor re-anchors to the replacement rather than
+  measuring for ever against a high-water mark that source will not reach again, and the row is
+  marked `source_regressed` so that every reader knows the number was measured across a seam.
 - **Every number carries what kind of number it is.** Not one `costUsd` but `cost_value`,
   `cost_unit`, `cost_basis` and `price_snapshot_id`, and where there is no cost a `missing_reason`
   naming which kind of unavailable it is.
@@ -1914,11 +1936,48 @@ assistant's name**: Codex's cumulative `input_tokens` includes its cached input 
 `input + output`, Claude's does not and its total is the sum of four, so both readings are
 computed and the one that reconciles with the source's own stated total wins.
 
+**That decision is recorded, in `input_basis`, every time it is made** — including the benign case.
+It reshapes the stored parts, and without the column the only way to tell "the cache was taken out
+of input" from "input never included it" was to re-derive the arithmetic from `usage_raw`; a
+determination nobody can audit later is the same shape as the unknowns this store exists to keep
+visible. The words are `excludes_cache`, `includes_cache`, `readings_agree` (both readings are the
+same number, which happens exactly when there is no cache read to move), `includes_cache_assumed`
+(no stated total, decided on the assistant's known shape — the weakest of them, and it says so),
+`unstated`, `unreconciled`, and `includes_cache_unreconciled`. The last exists because a Codex row
+can be reshaped *and* fail to reconcile, and `parts_do_not_sum` on its own reads as "these parts
+are wrong" rather than "they still do not sum after I removed the cache". `reconciliation` keeps
+its own meaning — something did not add up — and stays NULL when everything did.
+
 Checking any of this is **per row, on a fixed task id, never aggregate against aggregate**. The
 same task's usage must match on all three surfaces — the registry file, the HTTP record, the
 ledger. Comparing totals, or comparing "the first row with usage" from two places, is how a
 wrong conclusion about these two spellings was reached and then corrected in one afternoon: an
 unaligned comparison looks like an experiment and is not one.
+
+### One seam where a row becomes a number
+
+**Every reader of this store goes through `UsageLedger.Row.measurement`, and none of them reads
+the token columns directly.** The aggregate, the wire payload and the CSV export all ask it.
+
+That is a structural answer to a defect that was found three times in one review, in three
+different readers: the store marks a row — a part it never measured, a coverage reason, a session
+identity it had to invent — and a reader turns the mark back into an ordinary number. An aggregate
+that coalesced a NULL part to `0` and then dropped that row's *measured* tokens out of its own
+total. A wire payload with no field a coverage reason could travel in, so `session_unresolved` and
+`source_regressed` reached the route looking like healthy sessions. Three guards would have fixed
+three symptoms; one seam is what stops the fourth reader from doing it again.
+
+What that means for a number the route hands back:
+
+- A part **no** row in the group measured is `null`, never `0`.
+- A part **some** row could not measure is summed over the rows that did, and
+  `tokenPartsUnknown` says which column is short and on how many rows.
+- `total` is the sum of what was measured, so a row three-quarters known contributes its three
+  quarters rather than vanishing; `tokenRowsUnknown` counts every row that could not measure
+  *something*, not only the rows that measured nothing at all.
+- `coverageReasons` carries the store's own words for why rows are marked. `coverage` says how
+  much of a source was read; it says nothing about a session filed under an invented identity or
+  a number measured across a replaced transcript.
 
 ### Reserved, and honest about it
 
@@ -1928,14 +1987,29 @@ does not exist yet; a NULL the API names as unavailable is honest where a value 
 root session is a guess wearing a column name. The aggregate refuses to draw a whole-tree view on
 these rows rather than infer one.
 
-Two known gaps, written down rather than left to be discovered:
+Four known gaps, written down rather than left to be discovered:
 
 - A task record whose child session was never identified is filed under a synthetic
   `unresolved-session:<task-id>` and marked `session_unresolved`. Whichever collector saw the task
-  first defines its session identity, so this only happens when neither ever knew one.
+  first defines its session identity, so this only happens when neither ever knew one — but say
+  what it costs when it does happen, because the earlier wording did not: the invented identity
+  gets a **cursor of its own**, so a session that was already being watched has its cumulative
+  counters attributed a second time and that group's total doubles. The row says so
+  (`coverageReasons.session_unresolved` on the route, `coverage_reason` in the CSV); nothing
+  repairs it, and a later reading under the real session id does not merge the two.
 - A Claude session whose transcript cannot be named by Claude Code's own session registry is not
   checkpointed at all. Usage is accounting, and a ranked guess at which transcript belongs to a
   tab is how a sibling's tokens get charged to the wrong session.
+- **A terminal the inventory cannot enumerate is never checkpointed either**, for the same reason
+  and with a different cause: `SessionWatch` can only offer what the backend reports, so a session
+  running in a terminal this app cannot read contributes nothing until it is dispatched work,
+  which files it through the other collector. It is absent rather than wrong, and absence has no
+  row to carry a reason.
+- **A checkpoint is throttled to one per session per five minutes**, so up to five minutes of a
+  standing session's spend can be attributed to whichever side of a boundary the next reading
+  lands on — the increment is filed against the boundary the reading describes, and the cadence
+  is what bounds how much can be misfiled either way. Making it finer costs a transcript read
+  every 1.2 seconds, which is the rate the panel reads at.
 
 ---
 

@@ -2525,10 +2525,12 @@ Both take the same range and neither starts anything:
      "coverage":{"complete":40,"partial":2}},
     {"key":"gpt-5.6-sol","rows":57,
      "tokens":{"inputNew":21403110,"output":1188420,"cacheRead":641309880,"cacheWrite":0},
+     "tokenPartsUnknown":{"inputNew":3,"output":3,"cacheRead":3,"cacheWrite":3},
      "total":663901410,"tokenRowsUnknown":3,
      "cost":null,
      "unpriced":{"rows":57,"reasons":{"plan_billed":57}},
-     "coverage":{"complete":52,"partial":2,"source_missing":3}}],
+     "coverage":{"complete":52,"partial":2,"source_missing":3},
+     "coverageReasons":{"source_unreadable_at_close":3}}],
   "totals":{"…":"the same shape over every row in the range"},
   "corrections":0,
   "schemaVersion":1,
@@ -2545,6 +2547,19 @@ counted in `tokenRowsUnknown` rather than summed as `0`. That is the point of th
 summing absent costs as zero once produced **1137M tokens, $0.00**, which is a month-end that
 looks entirely normal and is wrong in the direction nobody checks.
 
+**A partly measured row is a marked row too, and it arrives marked.** `tokenRowsUnknown` counts
+every row that could not measure *something*, not only the rows that measured nothing at all, and
+`tokenPartsUnknown` names which column is short and on how many rows — a summed column with no
+entry there is one every row measured. `total` is the sum of what was measured, so a row with
+three parts known and one NULL contributes its three rather than dropping out of the range.
+
+`coverageReasons` carries the store's own words for why rows are marked: `session_unresolved` (a
+task whose session neither collector ever knew, filed under an invented identity that gets a
+cursor of its own — so that group's total may count one session's counters twice),
+`source_regressed` (a cumulative counter that went backwards, so the number spans a replaced
+transcript), `source_unreadable_at_close`, `no_usage_recorded`. `coverage` says only how much of a
+source was read and says nothing about any of these.
+
 `cost` is `byUnit` rather than one number because Codex has no per-session dollar figure in any
 login mode — its rows carry credits or nothing, never `0` — and adding credits to dollars is a
 number with no meaning. `unpriced.reasons` names *which* kind of unavailable each missing cost is:
@@ -2556,8 +2571,12 @@ identity need plumbing that does not exist yet, so the aggregate names them rath
 view it cannot support.
 
 `.csv` answers `text/csv; charset=utf-8` with one header row and one line per interval, over the
-same range. **Rows whose usage is unknown come first**, because the sessions most likely to go
-missing are the long ones and a total nobody scrolls past would otherwise hide its own bias.
+same range. **Rows that could not measure something come first** — any part unknown, not only all
+four — because the sessions most likely to go missing are the long ones and a total nobody scrolls
+past would otherwise hide its own bias. It carries one column the aggregate has no place for:
+`input_basis`, which records whether the source's `input` already included its cached input and on
+what evidence that was decided — see
+[`docs/orchestrator.md`](orchestrator.md#spelling-and-why-the-object-is-copied-rather-than-picked-apart).
 Every reserved column is present and empty, so a reader can see what is reserved rather than
 wonder where it went.
 
