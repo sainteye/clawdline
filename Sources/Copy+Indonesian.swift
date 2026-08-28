@@ -529,6 +529,7 @@ struct Indonesian: Copy {
     let webSessionInfo = "Info sesi"
     let webInfoTitle = "Tentang sesi ini"
     let webInfoEditTitle = "Edit judul sesi"
+    let webInfoCopyTitle = "Salin nama ini"
     let webInfoTitleSaved = "Judul disimpan."
     let webInfoTitleLocal = "Judul disimpan di Clawdline; nama hilir tidak diubah."
     let webInfoTitleQueued = "Judul disimpan di Clawdline; pembaruan Codex mengantre."

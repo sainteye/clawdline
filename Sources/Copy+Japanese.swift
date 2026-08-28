@@ -527,6 +527,7 @@ struct Japanese: Copy {
     let webSessionInfo = "セッション情報"
     let webInfoTitle = "このセッションについて"
     let webInfoEditTitle = "セッション名を編集"
+    let webInfoCopyTitle = "この名前をコピー"
     let webInfoTitleSaved = "タイトルを保存しました。"
     let webInfoTitleLocal = "Clawdline に保存しました。下流の名前は未変更です。"
     let webInfoTitleQueued = "Clawdline に保存しました。Codex の更新は待機中です。"

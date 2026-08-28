@@ -3979,6 +3979,7 @@ final class RemoteServer: @unchecked Sendable {
             "webSessionInfo": t.webSessionInfo,
             "webInfoTitle": t.webInfoTitle,
             "webInfoEditTitle": t.webInfoEditTitle,
+            "webInfoCopyTitle": t.webInfoCopyTitle,
             "webInfoTitleSaved": t.webInfoTitleSaved,
             "webInfoTitleLocal": t.webInfoTitleLocal,
             "webInfoTitleQueued": t.webInfoTitleQueued,

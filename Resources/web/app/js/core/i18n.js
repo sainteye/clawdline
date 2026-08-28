@@ -388,6 +388,7 @@ export var T = {
     webSessionInfo: "Session info",
     webInfoTitle: "About this session",
     webInfoEditTitle: "Edit session title",
+    webInfoCopyTitle: "Copy this name",
     webInfoTitleSaved: "Title saved.",
     webInfoTitleLocal: "Title saved in Clawdline; the downstream name was not changed.",
     webInfoTitleQueued: "Title saved in Clawdline; the Codex update is queued.",

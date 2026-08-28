@@ -984,6 +984,7 @@ protocol Copy {
     var webSessionInfo: String { get }
     var webInfoTitle: String { get }
     var webInfoEditTitle: String { get }
+    var webInfoCopyTitle: String { get }
     var webInfoTitleSaved: String { get }
     var webInfoTitleLocal: String { get }
     var webInfoTitleQueued: String { get }

@@ -122,6 +122,22 @@ export var Info = (function () {
     /** The row the session is on. By prefix, so `claude-haiku-4-5-20251001` finds `claude-haiku-4-5`. */
     function onModel(current, m) { return !!current && (current === m.id || current.indexOf(m.id) === 0); }
 
+    /** The name on its own, for pasting somewhere else. Icon only, as asked, and **drawn rather
+     *  than typed**: the glyphs for "copy" live in a Unicode block a phone's system font need not
+     *  carry, and a tofu box in the one place this card names the session is worse than no button
+     *  at all. Read-only, so unlike the pencil beside it this stays live when sending is off.
+     *
+     *  The toast is `webLinksCopied` — "Copied." — rather than the session-id one this shares its
+     *  handler with, because what went to the clipboard here is a name, not an id. */
+    function copyTitle(title) {
+        return '<button type="button" class="title-copy" data-copy="' + esc(title) +
+            '" data-copy-said="' + esc(T.webLinksCopied) + '" title="' + esc(T.webInfoCopyTitle) +
+            '" aria-label="' + esc(T.webInfoCopyTitle) + '">' +
+            '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
+            '<rect x="5.25" y="1.75" width="9" height="9" rx="2"></rect>' +
+            '<rect x="1.75" y="5.25" width="9" height="9" rx="2"></rect></svg></button>';
+    }
+
     function hero(s, u) {
         var model = s.model || (u && u.model) || "";
         // The model used to be the headline, which meant the one identity the Session list was
@@ -151,9 +167,10 @@ export var Info = (function () {
             // the headline of this card — the one thing it is about — stopped being readable at
             // all and a screen reader announced only "Edit session title". As a `title` the same
             // words arrive as the button's description, after the session's own name.
-            : '<button type="button" class="session-title" data-title-edit="1" title="' +
+            : '<div class="title-row"><button type="button" class="session-title" data-title-edit="1" title="' +
                 esc(T.webInfoEditTitle) + '"' + (!S.write || busy ? " disabled" : "") + '><span>' +
-                esc(title) + '</span><i aria-hidden="true">✎</i></button>';
+                esc(title) + '</span><i aria-hidden="true">✎</i></button>' +
+                (s.title ? copyTitle(s.title) : "") + '</div>';
         return '<div class="hero">' +
             '<div class="who">' + assistantLogo(s.assistant) + '<span class="assistant-name">' +
                 esc(s.assistant || T.webInfoUnknown) + "</span>" + modelMeta + "</div>" +
@@ -614,9 +631,11 @@ export var Info = (function () {
             });
         },
 
-        copy: function (text) {
+        /** `said` lets one clipboard path serve two different things: the session id, whose
+         *  toast names it, and the session's own name, whose toast just says it was copied. */
+        copy: function (text, said) {
             if (!text || !navigator.clipboard) return;
-            navigator.clipboard.writeText(text).then(function () { toast(T.webInfoCopied); }).catch(function () {});
+            navigator.clipboard.writeText(text).then(function () { toast(said || T.webInfoCopied); }).catch(function () {});
         }
     };
 })();
@@ -632,7 +651,7 @@ els["info-body"].addEventListener("click", function (ev) {
     var permission = t.closest ? t.closest("button[data-permission]") : null;
     if (permission) { if (!permission.disabled) Info.switchPermission(permission.dataset.permission); return; }
     var sid = t.closest ? t.closest("button[data-copy]") : null;
-    if (sid) { Info.copy(sid.dataset.copy); return; }
+    if (sid) { Info.copy(sid.dataset.copy, sid.dataset.copySaid); return; }
     var editTitle = t.closest ? t.closest("button[data-title-edit]") : null;
     if (editTitle) { if (!editTitle.disabled) Info.editTitle(); return; }
     var cancelTitle = t.closest ? t.closest("button[data-title-cancel]") : null;

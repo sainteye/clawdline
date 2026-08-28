@@ -533,6 +533,7 @@ struct Hindi: Copy {
     let webSessionInfo = "session की जानकारी"
     let webInfoTitle = "इस session के बारे में"
     let webInfoEditTitle = "session शीर्षक बदलें"
+    let webInfoCopyTitle = "यह नाम कॉपी करें"
     let webInfoTitleSaved = "शीर्षक सहेजा गया।"
     let webInfoTitleLocal = "शीर्षक Clawdline में सहेजा गया; अगला नाम नहीं बदला।"
     let webInfoTitleQueued = "शीर्षक Clawdline में सहेजा गया; Codex अपडेट कतार में है।"

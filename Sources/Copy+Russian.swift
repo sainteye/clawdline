@@ -529,6 +529,7 @@ struct Russian: Copy {
     let webSessionInfo = "О сессии"
     let webInfoTitle = "Об этой сессии"
     let webInfoEditTitle = "Изменить название сессии"
+    let webInfoCopyTitle = "Скопировать это имя"
     let webInfoTitleSaved = "Название сохранено."
     let webInfoTitleLocal = "Название сохранено в Clawdline; нижестоящее имя не изменено."
     let webInfoTitleQueued = "Название сохранено в Clawdline; обновление Codex в очереди."

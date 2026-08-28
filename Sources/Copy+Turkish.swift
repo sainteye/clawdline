@@ -529,6 +529,7 @@ struct Turkish: Copy {
     let webSessionInfo = "Oturum bilgisi"
     let webInfoTitle = "Bu oturum hakkında"
     let webInfoEditTitle = "Oturum başlığını düzenle"
+    let webInfoCopyTitle = "Bu adı kopyala"
     let webInfoTitleSaved = "Başlık kaydedildi."
     let webInfoTitleLocal = "Başlık Clawdline’a kaydedildi; alt ad değişmedi."
     let webInfoTitleQueued = "Başlık Clawdline’a kaydedildi; Codex güncellemesi sırada."

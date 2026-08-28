@@ -256,6 +256,25 @@
 .info-sheet .hero .who .assistant-logo { width: 14px; height: 14px; }
 .info-sheet .hero .who .dot { color: var(--line); }
 .info-sheet .hero .who .model-name { min-width: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+.info-sheet .hero .title-row { display: flex; align-items: center; gap: 4px; }
+.info-sheet .hero .title-row .session-title { width: auto; flex: 1 1 auto; min-width: 0; }
+/* Read-only, so it is never disabled with the pencil, and never hover-gated: this card is mostly
+   read on a phone, where a control that appears on hover is a control that does not appear. */
+.info-sheet .hero .title-copy {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+    width: 44px; min-height: 44px; padding: 0; border: 0; background: none;
+    color: var(--faint); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.info-sheet .hero .title-copy svg {
+    width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.4;
+}
+.info-sheet .hero .title-copy:hover, .info-sheet .hero .title-copy:focus-visible { color: var(--accent); }
+.info-sheet .hero .title-copy:active { transform: scale(0.92); }
+/* Same reason as above, for the pencil: with no pointer to hover, it was never drawn at all and
+   the one way into renaming was invisible on the device this card is opened on most. */
+@media (hover: none) {
+    .info-sheet .hero .session-title i { opacity: 0.55; }
+}
 .info-sheet .hero .session-title {
     display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; margin: 1px 0 0 0;
     padding: 6px 0; border: 0; background: none; text-align: left;

@@ -527,6 +527,7 @@ struct Korean: Copy {
     let webSessionInfo = "세션 정보"
     let webInfoTitle = "이 세션에 대하여"
     let webInfoEditTitle = "세션 제목 편집"
+    let webInfoCopyTitle = "이 이름 복사"
     let webInfoTitleSaved = "제목을 저장했습니다."
     let webInfoTitleLocal = "Clawdline에 저장했습니다. 하위 이름은 바뀌지 않았습니다."
     let webInfoTitleQueued = "Clawdline에 저장했습니다. Codex 업데이트가 대기 중입니다."

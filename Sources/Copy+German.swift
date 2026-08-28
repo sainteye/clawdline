@@ -529,6 +529,7 @@ struct German: Copy {
     let webSessionInfo = "Sitzungsinfo"
     let webInfoTitle = "Über diese Sitzung"
     let webInfoEditTitle = "Sitzungstitel bearbeiten"
+    let webInfoCopyTitle = "Diesen Namen kopieren"
     let webInfoTitleSaved = "Titel gespeichert."
     let webInfoTitleLocal = "Titel in Clawdline gespeichert; nachgelagerter Name unverändert."
     let webInfoTitleQueued = "Titel in Clawdline gespeichert; Codex-Aktualisierung vorgemerkt."
