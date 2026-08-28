@@ -9670,6 +9670,78 @@ group("renaming never changes the terminal label used to locate transcripts") {
            Transcript.locate(in: directory, tabTitle: display), impostor)
 }
 
+group("a person's session title belongs to the conversation, not to the tab") {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-title-conversation-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let config = Config(directoryForTesting: directory)
+    let now = Date()
+    let started = Date(timeIntervalSince1970: 1_700_000_000)
+    let restarted = started.addingTimeInterval(3_600)
+
+    // The failure this exists for: iTerm2 keeps a tab's session UUID when the assistant inside it
+    // exits, so a name stored against the terminal alone was handed to the next conversation for
+    // up to ninety days — and, being a person's name, it outranked the task title of a tab this
+    // app had opened for a dispatch.
+    config.setSessionTitle("Release room", sessionID: "claude-one", terminalID: "terminal-one",
+                           startedAt: started, now: now)
+    expect("the conversation that chose the name still reads it",
+           config.sessionTitle(sessionID: "claude-one", terminalID: "terminal-one",
+                               conversationStart: { started }),
+           "Release room")
+    check("the next conversation in that tab does not inherit it",
+          config.sessionTitle(sessionID: "claude-two", terminalID: "terminal-one",
+                              conversationStart: { restarted }) == nil)
+    expect("and a resumed conversation keeps it wherever it is resumed",
+           config.sessionTitle(sessionID: "claude-one", terminalID: "terminal-two",
+                               conversationStart: { nil }),
+           "Release room")
+
+    // Codex and a Claude without hooks have no conversation id to offer, so the fallback has to
+    // stand on the process instead of on the tab.
+    config.setSessionTitle("Night shift", sessionID: nil, terminalID: "terminal-codex",
+                           startedAt: started, now: now)
+    expect("a session with no conversation id is matched by the process in its tab",
+           config.sessionTitle(sessionID: nil, terminalID: "terminal-codex",
+                               conversationStart: { started.addingTimeInterval(2) }),
+           "Night shift")
+    check("the next assistant started in that tab is not that session",
+          config.sessionTitle(sessionID: nil, terminalID: "terminal-codex",
+                              conversationStart: { restarted }) == nil)
+    check("and a tab with nothing running in it cannot claim an assistant's name",
+          config.sessionTitle(sessionID: nil, terminalID: "terminal-codex",
+                              conversationStart: { nil }) == nil)
+
+    // A name can be chosen in the moment before the hook note arrives, so a row carrying no
+    // conversation id is still this conversation's when the process agrees.
+    config.setSessionTitle("Before the hook arrived", sessionID: nil, terminalID: "terminal-late",
+                           startedAt: started, now: now)
+    expect("a name chosen before the hook note arrived still belongs to that process",
+           config.sessionTitle(sessionID: "claude-late", terminalID: "terminal-late",
+                               conversationStart: { started }),
+           "Before the hook arrived")
+
+    check("two readings of one process may disagree by a second or two",
+          Config.sameConversation(started, started.addingTimeInterval(2)))
+    check("but not by an hour", !Config.sameConversation(started, restarted))
+    check("nothing running is the same fact on both sides", Config.sameConversation(nil, nil))
+    check("and it is not the same fact as a running process",
+          !Config.sameConversation(nil, started))
+    check("nor the other way round", !Config.sameConversation(started, nil))
+
+    config.save()
+    let loaded = Config(directoryForTesting: directory)
+    expect("the credential survives a config round trip",
+           loaded.sessionTitle(sessionID: nil, terminalID: "terminal-codex",
+                               conversationStart: { started }),
+           "Night shift")
+    check("and it is still the credential after loading, not just a stored field",
+          loaded.sessionTitle(sessionID: nil, terminalID: "terminal-codex",
+                              conversationStart: { restarted }) == nil)
+}
+
 group("session-title downstream synchronization never interrupts Claude") {
     expect("an idle Claude session receives its rename",
            SessionTitleSync.action(assistant: .claude, state: .idle,

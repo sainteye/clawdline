@@ -886,12 +886,21 @@ whatever the terminal said as the message.
 ### `POST /v1/sessions/:id/title`
 
 Gives one live session a local display title. It is trimmed, folded to one line and limited to 200
-characters. An empty or whitespace-only `title` clears the local choice, and the label falls back to
-whatever the automatic sources say *now*: the task this session was dispatched for, the Codex thread
-name, or the terminal's own title. **On a Codex session that is not the name it had before** —
-naming a thread has no undo, so the thread keeps the name a person gave it and clearing the local
-choice reveals that rather than the label the session started with. The terminal's own title is
-never changed by this local step.
+characters.
+
+**The name belongs to that conversation, not to the tab it is in.** A terminal outlives what runs
+in it — leaving `claude` and starting it again keeps the same session id — so the stored name is
+matched back by Claude's hook session id where there is one, and otherwise by the start time of the
+assistant process that was in the tab when the name was chosen. The next conversation in the same
+tab is a different conversation and gets the automatic label, which is also what keeps a person's
+old name from covering the task title of a session this app opens for a dispatch.
+
+An empty or whitespace-only `title` clears the local choice, and the label falls back to whatever
+the automatic sources say *now*: the task this session was dispatched for, the Codex thread name, or
+the terminal's own title. **On a Codex session that is not the name it had before** — naming a
+thread has no undo, so the thread keeps the name a person gave it and clearing the local choice
+reveals that rather than the label the session started with. The terminal's own title is never
+changed by this local step.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/title \

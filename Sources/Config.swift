@@ -309,13 +309,19 @@ final class Config {
     var lastTargetID: String?
     var history: [String] = []
 
-    /// Names explicitly chosen by a person. Each row carries both identities we may know:
-    /// Claude's hook session id survives a reopened terminal, while the terminal id covers
-    /// Codex, shells and Claude installations without hooks.
+    /// Names explicitly chosen by a person. Each row carries every identity we may know:
+    /// Claude's hook session id survives a reopened terminal, the terminal id covers Codex,
+    /// shells and Claude installations without hooks, and `startedAt` is what tells the second
+    /// conversation in a reused tab apart from the first — see
+    /// ``sessionTitle(sessionID:terminalID:conversationStart:)``.
     struct SessionTitle: Equatable {
         let title: String
         let sessionID: String?
         let terminalID: String
+        /// When the assistant process in that tab started, or nil for a tab with no assistant
+        /// in it. Nil is a value here, not a missing one: a shell has no conversation to
+        /// outlive, so "there was no process" has to match "there is no process" exactly.
+        let startedAt: Date?
         let updatedAt: Date
     }
     /// **The one part of this file that is touched from two threads.** Every other setting here is
@@ -571,7 +577,11 @@ final class Config {
     }
 
     func sessionTitle(for target: TargetSession) -> String? {
-        sessionTitle(sessionID: hookSessionID(of: target), terminalID: target.id)
+        // The credential is a closure so the `ps` behind it is only paid when there is a row
+        // that would otherwise be returned. Most tabs have no title at all, and this is asked
+        // once per session on every redraw.
+        sessionTitle(sessionID: hookSessionID(of: target), terminalID: target.id,
+                     conversationStart: { Targets.processStart(of: target) })
     }
 
     /// `HookBridge`'s tty table is replaced wholesale on the main thread, so it is read there or
@@ -583,14 +593,58 @@ final class Config {
         return DispatchQueue.main.sync { HookBridge.note(for: target)?.session }
     }
 
-    func sessionTitle(sessionID: String?, terminalID: String) -> String? {
+    /// The name a person gave **this conversation**, not the name somebody once gave this tab.
+    ///
+    /// A terminal outlives what runs in it: leaving `claude` and starting it again in the same
+    /// iTerm2 tab keeps the session UUID, so a row keyed on the terminal alone would hand the
+    /// next conversation the previous one's name — for up to ``sessionTitleLifetime`` — and,
+    /// because a person's title outranks everything, it would do so on top of the task title a
+    /// dispatched tab was opened with. The repository already had a name for this shape one file
+    /// over: *a note is keyed on a tty and can outlive the session that left it*.
+    ///
+    /// So the terminal is a fallback that has to prove itself, and there are two proofs:
+    ///
+    /// - The hook session id, when there is one. It is the conversation, so a row carrying a
+    ///   *different* one is somebody else's row whatever tab it is in, and one carrying the same
+    ///   one is this conversation even if the tab has changed. `--resume` keeps it, which is
+    ///   right: a resumed conversation is the same conversation.
+    /// - Otherwise the assistant process in the tab, by start time. Codex and a Claude without
+    ///   hooks have no conversation id to offer, and the process is the conversation for exactly
+    ///   as long as it runs. Compared with ``SessionRegistry/startTolerance`` because both ends
+    ///   are derived from whole-second `ps` output — see ``ITerm/processStart(ofPID:)``.
+    func sessionTitle(sessionID: String?, terminalID: String,
+                      conversationStart: () -> Date? = { nil }) -> String? {
         sessionTitleLock.lock()
-        defer { sessionTitleLock.unlock() }
         if let sessionID,
            let row = sessionTitles.last(where: { $0.sessionID == sessionID }) {
+            sessionTitleLock.unlock()
             return row.title
         }
-        return sessionTitles.last(where: { $0.terminalID == terminalID })?.title
+        // A row that names a conversation this is not stays out of the fallback entirely. A row
+        // that names none is still a candidate: a title can be set in the moment before the hook
+        // note arrives, and the start time below is what decides it either way.
+        let candidate = sessionTitles.last { row in
+            row.terminalID == terminalID
+                && (sessionID == nil || row.sessionID == nil || row.sessionID == sessionID)
+        }
+        sessionTitleLock.unlock()
+        guard let candidate,
+              Self.sameConversation(candidate.startedAt, conversationStart())
+        else { return nil }
+        return candidate.title
+    }
+
+    /// Whether two readings of "the assistant process in that tab" are the same process.
+    ///
+    /// Nil on both sides is a match, and that is deliberate: a tab with no assistant in it has
+    /// no conversation that could end, so its own name is the tab's for as long as the tab is
+    /// there. Nil on one side only is a mismatch — a name chosen in a shell is not a name for
+    /// the assistant somebody later started there, and a name chosen for an assistant is not a
+    /// name for the shell left behind when it exited.
+    static func sameConversation(_ stored: Date?, _ current: Date?) -> Bool {
+        guard let stored else { return current == nil }
+        guard let current else { return false }
+        return abs(stored.timeIntervalSince(current)) <= SessionRegistry.startTolerance
     }
 
     /// The rows as `save` writes them. Under the lock, because `serialised` is read on whichever
@@ -605,6 +659,9 @@ final class Config {
                 "updated_at": row.updatedAt.timeIntervalSince1970,
             ]
             if let sessionID = row.sessionID { out["session_id"] = sessionID }
+            if let startedAt = row.startedAt {
+                out["started_at"] = startedAt.timeIntervalSince1970
+            }
             return out
         }
     }
@@ -620,7 +677,7 @@ final class Config {
     /// the Mac-side entry point this feature is heading for would not have.
     @discardableResult
     func setSessionTitle(_ raw: String, sessionID: String?, terminalID: String,
-                         now: Date = Date()) -> String? {
+                         startedAt: Date? = nil, now: Date = Date()) -> String? {
         let normalized = Self.normalizedSessionTitle(raw)
         if let normalized, normalized.count > Self.sessionTitleLimit { return nil }
         sessionTitleLock.lock()
@@ -630,7 +687,8 @@ final class Config {
         }
         if let normalized {
             sessionTitles.append(SessionTitle(title: normalized, sessionID: sessionID,
-                                              terminalID: terminalID, updatedAt: now))
+                                              terminalID: terminalID, startedAt: startedAt,
+                                              updatedAt: now))
         }
         pruneSessionTitlesLocked(now: now)
         sessionTitleLock.unlock()
@@ -639,8 +697,11 @@ final class Config {
 
     @discardableResult
     func setSessionTitle(_ raw: String, for target: TargetSession, now: Date = Date()) -> String? {
-        setSessionTitle(raw, sessionID: hookSessionID(of: target),
-                        terminalID: target.id, now: now)
+        // Read here, at the moment the name is chosen, because that is the conversation the
+        // person is naming. Asking again later would only ever describe whatever is in the tab
+        // by then.
+        setSessionTitle(raw, sessionID: hookSessionID(of: target), terminalID: target.id,
+                        startedAt: Targets.processStart(of: target), now: now)
     }
 
     private static func sessionTitle(from row: [String: Any]) -> SessionTitle? {
@@ -649,7 +710,12 @@ final class Config {
               let terminalID = row["terminal_id"] as? String, !terminalID.isEmpty,
               let timestamp = row["updated_at"] as? Double else { return nil }
         let sessionID = (row["session_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        // Absent in rows written before a title had to prove which conversation it belonged to.
+        // Those rows keep working through their session id and stop working through the terminal
+        // alone, which is the whole point of the field.
+        let startedAt = (row["started_at"] as? Double).map { Date(timeIntervalSince1970: $0) }
         return SessionTitle(title: title, sessionID: sessionID, terminalID: terminalID,
+                            startedAt: startedAt,
                             updatedAt: Date(timeIntervalSince1970: timestamp))
     }
 
