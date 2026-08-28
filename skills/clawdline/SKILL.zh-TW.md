@@ -44,13 +44,17 @@ last-updated: 2026-08-26
 - 你讀過、或被要求去讀 `/tmp/.clawdline/<id>/CHILD.md`
 - 你手上有一個 `TASK_SECRET=`
 
-**你是 child 的話，依據不是這份 skill，是 `CHILD.md`。** 去讀它的「Handing work on」那一段：
+**你是 child 的話，依據不是這份 skill，是 `CHILD.md`。** 決定你能不能往下派的，是它旁邊那個檔案
+`/tmp/.clawdline/<id>/DISPATCHING.md`：
 
-- **那一段在** → 照它做就好。它已經把整份指令寫死給你了，包括 `root.parent_task` 要填你自己那件
-  task 的 id——那是這裡唯一沒有人會替你填的欄位。下面的 §1–§6 只是同一件事的長版，可以參考，
-  但衝突時以 `CHILD.md` 為準。
-- **那一段不在** → 你這一層已經是底。**立刻停止**，告訴使用者「這個 session 已經在最底層，
+- **那個檔在** → 讀它、照它做。broker 只有在你有配額時才會寫這個檔，所以「它存在」本身就是配額；
+  整份指令都在裡面，包括 `root.parent_task` 要填你自己那件 task 的 id——那是唯一沒有人會替你填的
+  欄位。下面的 §1–§6 只是同一件事的長版，可以參考，但衝突時以 `DISPATCHING.md` 和 `CHILD.md` 為準。
+- **那個檔不在** → 你這一層已經是底。**立刻停止**，告訴使用者「這個 session 已經在最底層，
   不能再往下派」，然後自己把事情做掉。
+
+要找的是那個檔，不是 `CHILD.md` 裡的某一段：派工教學以前寫在 briefing 裡，現在搬走了，
+所以「briefing 沒教怎麼派工」這件事，已經完全不代表你在哪一層。
 
 這棵樹只有兩層：使用者的 session 派 child，child 再派一層，就沒有了。沒有底的話，
 一件事變五件變二十五件，一台 Mac 開到爆。app 端有擋（dispatch 會回 `depth_exceeded`），

@@ -800,11 +800,12 @@ into every direct child's briefing — about 7,081 tokens each — and not one o
 ever dispatched anything. The teaching is not wrong, it is addressed to the rare child that will
 use it, and it was being charged to all of them.
 
-The pointer is un-skippable rather than merely polite, and that is deliberate: **the credential
-path, the `root.parent_task` rule and the `curl` appear only in `DISPATCHING.md`.** A child that
-did not open the file does not know how to authenticate, so it cannot dispatch without reading. A
-convenience summary back in `CHILD.md` — enough to act on without following the pointer — would
-undo the whole mechanism, and is the thing not to add. The file costs nothing when it is not read:
+The pointer is worth following rather than merely polite, and that is deliberate: **the credential
+path, the `root.parent_task` rule and the `curl` appear only in `DISPATCHING.md`.** The briefing no
+longer hands the credential over, so a child that skips the file has to go and find one. That is a
+strong pointer and not a lock — the `clawdline` skill carries the same recipe, credential path
+included — but a convenience summary back in `CHILD.md`, enough to act on without following the
+pointer, would undo even the pointer, and is the thing not to add. The file costs nothing when it is not read:
 it lands in the task directory the child already has `--add-dir` access to, and is reclaimed with
 the rest of that directory.
 

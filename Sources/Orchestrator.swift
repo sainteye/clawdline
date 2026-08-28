@@ -7768,10 +7768,12 @@ enum Orchestrator {
     ///
     /// So it moved beside `CHILD.md`, in the same task directory the child already has access
     /// to, and `CHILD.md` keeps one line naming it. **The credential path, the `parent_task`
-    /// rule and the `curl` live only here**, which is what makes that line un-skippable rather
-    /// than merely polite: a child that did not open this file does not know how to
-    /// authenticate, so it cannot dispatch without reading. A convenience summary back in
-    /// `CHILD.md` would undo the whole mechanism, and is the thing not to add.
+    /// rule and the `curl` live only here**, which is what makes that line worth following
+    /// rather than merely polite: **the briefing no longer hands the credential over**, so a
+    /// child that skips this file has to go and find one. That is a strong pointer and not a
+    /// lock — the `clawdline` skill teaches the same recipe, credential path included — but a
+    /// convenience summary back in `CHILD.md` would undo even the pointer, and is the thing not
+    /// to add.
     static func dispatchingBrief(for task: Task) -> String? {
         let allowance = handOnAllowance(for: task)
         guard allowance > 0 else { return nil }
