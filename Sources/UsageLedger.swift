@@ -722,23 +722,8 @@ final class UsageLedger {
         }
         var openKey = current.openKey
         let openIsSealed = openKey.map { isSealed(db, key: $0) } ?? false
-        var attributed = false
 
-        // 1. Attribute the difference to the segment that was open when it was spent, before any
-        //    cut. Tokens spent before a model switch was noticed belong to the model that spent
-        //    them, and the checkpoint cadence is what bounds how much of that can be misfiled.
-        if let key = openKey, !openIsSealed, let reading {
-            let delta = Self.delta(from: current, to: reading)
-            if delta.regressed {
-                note(db, key: key, coverageReason: "source_regressed")
-            } else {
-                write(db, key: key, delta: delta, sample: sample, reading: reading)
-                current = Self.advance(current, by: reading)
-                attributed = true
-            }
-        }
-
-        // 2. Cut where the work boundary, the model or the local day changed — and after a seal,
+        // 1. Cut where the work boundary, the model or the local day changed — and after a seal,
         //    because a sealed row's numbers never move again.
         let boundaryChanged = current.boundaryKind != sample.boundaryKind.rawValue
             || current.boundaryID != sample.boundaryID
@@ -769,19 +754,25 @@ final class UsageLedger {
             current.boundaryID = sample.boundaryID
             current.segmentNo = segment
             current.localDay = day
-            // 3. Whatever step 1 could not attribute — because there was no open segment, or the
-            //    one there was had been sealed — belongs to the segment just opened.
-            if !attributed, let reading {
-                let delta = Self.delta(from: current, to: reading)
-                if delta.regressed {
-                    note(db, key: key, coverageReason: "source_regressed")
-                } else {
-                    write(db, key: key, delta: delta, sample: sample, reading: reading)
-                    current = Self.advance(current, by: reading)
-                }
-            }
         }
         guard let key = openKey else { return nil }
+
+        // 2. Attribute the difference **after** the cut, to the segment the reading itself
+        //    describes. The caller's boundary is a statement about this measurement — "these
+        //    counters are what task T has left behind" — so a follow-up attached to a standing
+        //    session is charged its own increment and the session keeps what it had spent before
+        //    it arrived. The same rule on a model switch puts the increment on the model that
+        //    reported it; the checkpoint cadence is what bounds how much of a shared window can
+        //    be misfiled either way.
+        if let reading {
+            let delta = Self.delta(from: current, to: reading)
+            if delta.regressed {
+                note(db, key: key, coverageReason: "source_regressed")
+            } else {
+                write(db, key: key, delta: delta, sample: sample, reading: reading)
+                current = Self.advance(current, by: reading)
+            }
+        }
         current.model = sample.model ?? current.model
         current.localDay = day
         if let bytes = sample.sourceBytes { current.sourceBytes = bytes }

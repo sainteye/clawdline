@@ -70,6 +70,12 @@ runRemoteDirectoryIsolationProbeIfRequested()
 Orchestrator.storeURLOverrideForTesting = isolatedTestStoreDirectory
     .appendingPathComponent("orchestrator.json")
 
+// The usage ledger is a durable store of its own, deliberately outside the remote directory —
+// see `UsageLedger.storeURL`. Point it inside the same process-owned boundary, so no test run
+// can write a row into the ledger somebody is going to quote a month's total from.
+UsageLedger.storeURLOverrideForTesting = isolatedTestStoreDirectory
+    .appendingPathComponent("usage.sqlite3")
+
 // A test binary rather than XCTest, for the same reason the app has no Xcode project:
 // `swiftc` and nothing else. Run it with ./test.sh.
 //
@@ -21807,6 +21813,534 @@ group("a settings tab taller than the screen is capped, and the overflow goes to
     let squeezed = SettingsWindow.contentFit(natural: 2000, ceiling: 60, chrome: chrome)
     check("a ceiling below the chrome itself never asks for a negative viewport",
           squeezed.viewport == 0, "got \(squeezed.viewport)")
+}
+
+// MARK: - The usage ledger
+
+/// A store of its own per group, so one group's rows can never explain another's totals.
+func freshUsageLedger() -> URL {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-usage-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    UsageLedger.shared.closeForTesting()
+    UsageLedger.storeURLOverrideForTesting = directory.appendingPathComponent("usage.sqlite3")
+    return directory
+}
+
+func forgetUsageLedger(_ directory: URL) {
+    UsageLedger.shared.closeForTesting()
+    UsageLedger.storeURLOverrideForTesting = isolatedTestStoreDirectory
+        .appendingPathComponent("usage.sqlite3")
+    try? FileManager.default.removeItem(at: directory)
+}
+
+func ledgerSample(_ assistant: Assistant, session: String,
+                  boundary: UsageLedger.BoundaryKind = .session, id: String? = nil,
+                  origin: UsageLedger.Origin = .manual,
+                  usage: [String: Any]? = nil, model: String? = nil,
+                  at: Date = Date()) -> UsageLedger.Sample {
+    var sample = UsageLedger.Sample(assistant: assistant, sessionID: session,
+                                    boundaryKind: boundary, boundaryID: id ?? session,
+                                    origin: origin)
+    sample.rawUsage = usage
+    sample.model = model
+    sample.observedAt = at
+    return sample
+}
+
+group("the ledger reads every usage spelling and decides the shape by arithmetic") {
+    // The same numbers, in the four spellings this machine has actually been observed to write.
+    // The registry writes one on disk and the HTTP record writes another for the same row; a
+    // collector that knows only one silently reads 0 for the field that is 96.6% of all tokens.
+    let onDisk: [String: Any] = ["input": 10, "output": 20, "cache_read": 30,
+                                 "cache_write": 40, "total": 100, "cost_usd": 5.469]
+    let overHTTP: [String: Any] = ["input": 10, "output": 20, "cacheRead": 30,
+                                   "cacheWrite": 40, "total": 100, "costUsd": 5.469]
+    let claudeTranscript: [String: Any] = ["input_tokens": 10, "output_tokens": 20,
+                                           "cache_read_input_tokens": 30,
+                                           "cache_creation_input_tokens": 40]
+    let disk = UsageLedger.normalize(raw: onDisk, assistant: .claude)
+    let http = UsageLedger.normalize(raw: overHTTP, assistant: .claude)
+    let transcript = UsageLedger.normalize(raw: claudeTranscript, assistant: .claude)
+    expect("the disk spelling reads the cache", disk.counts.cacheRead, 30)
+    expect("and the HTTP spelling reads the same one", http.counts, disk.counts)
+    expect("and so does the transcript's", transcript.counts, disk.counts)
+    expect("the recorded cost is copied, not recomputed", disk.cost, 5.469)
+    expect("under either spelling", http.cost, 5.469)
+    expect("the normalized parts sum back to the source's own total",
+           disk.counts.total, disk.sourceTotal)
+
+    // Codex's cumulative input *includes* its cached input, and its total is input + output.
+    // Measured from a real rollout on this machine.
+    let codex: [String: Any] = ["input": 8_190_546, "output": 16_956,
+                                "cache_read": 7_978_752, "cache_write": 0,
+                                "total": 8_207_502]
+    let read = UsageLedger.normalize(raw: codex, assistant: .codex)
+    expect("Codex cached input never lands in new input", read.counts.inputNew, 211_794)
+    expect("and the cache read is kept whole", read.counts.cacheRead, 7_978_752)
+    expect("and the normalized parts sum back to the total", read.counts.total, 8_207_502)
+    check("nothing about that reading is unreconciled", read.reconciliation == nil,
+          read.reconciliation ?? "")
+
+    // The shape is decided by the arithmetic rather than by the assistant's name: the same
+    // numbers under a total that says the parts are already disjoint keep the input they came
+    // with, even when the writer is Codex.
+    let disjointCodex: [String: Any] = ["input": 100, "output": 10, "cache_read": 30,
+                                        "cache_write": 0, "total": 140]
+    expect("a total that already excludes the cache leaves input alone",
+           UsageLedger.normalize(raw: disjointCodex, assistant: .codex).counts.inputNew, 100)
+
+    let nothing = UsageLedger.normalize(raw: ["model": "claude-opus-5"], assistant: .claude)
+    check("an object with no usage keys yields no counts at all", nothing.counts.isEmpty)
+    check("and no total invented from them", nothing.counts.total == nil)
+    check("and no cost invented either", nothing.cost == nil)
+    expect("and it says why", nothing.reconciliation, "no_recognised_usage_keys")
+
+    let partial = UsageLedger.normalize(raw: ["input": 5, "output": 6], assistant: .claude)
+    expect("a partial object keeps what it carried", partial.counts.inputNew, 5)
+    check("and leaves what it did not as unknown", partial.counts.cacheRead == nil)
+    check("and refuses a total it cannot compute", partial.counts.total == nil)
+
+    expect("Codex has no per-session dollar figure in any login mode",
+           UsageLedger.missingCostReason(assistant: .codex, model: "gpt-5.6-sol"), .planBilled)
+    expect("a model with no published price says so",
+           UsageLedger.missingCostReason(assistant: .claude, model: "gpt-5.6"), .noPriceForModel)
+    expect("a source that did not name a model says that instead",
+           UsageLedger.missingCostReason(assistant: .claude, model: nil), .unknownModel)
+    expect("and a price-able model with no cost key is a fourth thing",
+           UsageLedger.missingCostReason(assistant: .claude, model: "claude-opus-5"),
+           .noCostRecorded)
+
+    expect("the interval key is deterministic",
+           UsageLedger.intervalKey(assistant: .claude, sessionID: "s", boundaryKind: .task,
+                                   boundaryID: "t", segmentNo: 0),
+           UsageLedger.intervalKey(assistant: .claude, sessionID: "s", boundaryKind: .task,
+                                   boundaryID: "t", segmentNo: 0))
+    var keys: Set<String> = []
+    keys.insert(UsageLedger.intervalKey(assistant: .claude, sessionID: "s", boundaryKind: .task,
+                                        boundaryID: "t", segmentNo: 0))
+    keys.insert(UsageLedger.intervalKey(assistant: .codex, sessionID: "s", boundaryKind: .task,
+                                        boundaryID: "t", segmentNo: 0))
+    keys.insert(UsageLedger.intervalKey(assistant: .claude, sessionID: "s2", boundaryKind: .task,
+                                        boundaryID: "t", segmentNo: 0))
+    keys.insert(UsageLedger.intervalKey(assistant: .claude, sessionID: "s", boundaryKind: .session,
+                                        boundaryID: "t", segmentNo: 0))
+    keys.insert(UsageLedger.intervalKey(assistant: .claude, sessionID: "s", boundaryKind: .task,
+                                        boundaryID: "t2", segmentNo: 0))
+    keys.insert(UsageLedger.intervalKey(assistant: .claude, sessionID: "s", boundaryKind: .task,
+                                        boundaryID: "t", segmentNo: 1))
+    keys.insert(UsageLedger.intervalKey(assistant: .claude, sessionID: "s", boundaryKind: .task,
+                                        boundaryID: "t", segmentNo: 0, schemaVersion: 2))
+    expect("and every part of it changes the key", keys.count, 7)
+
+    check("a range bound must be a local day", UsageLedger.isLocalDay("2026-08-28")
+            && !UsageLedger.isLocalDay("2026-8-28") && !UsageLedger.isLocalDay("yesterday")
+            && !UsageLedger.isLocalDay("2026-13-01"))
+}
+
+group("re-reading a source never double-counts, and a boundary cuts a segment") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    func usage(_ input: Int, _ output: Int, _ cacheRead: Int, cost: Double? = nil)
+        -> [String: Any] {
+        var out: [String: Any] = ["input": input, "output": output, "cache_read": cacheRead,
+                                  "cache_write": 0,
+                                  "total": input + output + cacheRead]
+        if let cost { out["cost_usd"] = cost }
+        return out
+    }
+
+    let session = "session-a"
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: session,
+                                               usage: usage(10, 5, 85, cost: 0.5),
+                                               model: "claude-opus-5"))
+    expect("the first reading of a session opens one row",
+           UsageLedger.shared.rows().count, 1)
+    expect("carrying what it measured", UsageLedger.shared.rows().first?.total, 100)
+
+    // The same file, read again. Every measurement this store takes is a session cumulative, so
+    // the second reading of an unchanged transcript must attribute nothing.
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: session,
+                                               usage: usage(10, 5, 85, cost: 0.5),
+                                               model: "claude-opus-5"))
+    expect("reading the same source again adds no row", UsageLedger.shared.rows().count, 1)
+    expect("and adds no tokens", UsageLedger.shared.rows().first?.total, 100)
+    expect("and adds no money", UsageLedger.shared.rows().first?.costValue, 0.5)
+
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: session,
+                                               usage: usage(20, 10, 120, cost: 0.9),
+                                               model: "claude-opus-5"))
+    expect("a grown source contributes only its increment",
+           UsageLedger.shared.rows().first?.total, 150)
+    expectClose("and only its increment of money",
+                CGFloat(UsageLedger.shared.rows().first?.costValue ?? 0), 0.9, 0.0001)
+
+    // A task begins inside the session somebody was already using. The session segment is sealed
+    // where it stood; the task is charged its own increment and nothing before it.
+    UsageLedger.shared.observeNow(ledgerSample(
+        .claude, session: session, boundary: .task, id: "task-1", origin: .followUp,
+        usage: usage(30, 20, 250, cost: 1.4), model: "claude-opus-5"))
+    let rows = UsageLedger.shared.rows()
+    let sessionRow = rows.first { $0.boundaryKind == "session" }
+    let taskRow = rows.first { $0.boundaryKind == "task" }
+    expect("the boundary cuts a second row", rows.count, 2)
+    expect("the session keeps what it had spent", sessionRow?.total, 150)
+    check("and is sealed at that number", sessionRow?.sealed == true)
+    expect("and the task is charged only its own increment", taskRow?.total, 150)
+    expect("which is where the whole session's spend still adds up",
+           (sessionRow?.total ?? 0) + (taskRow?.total ?? 0), 300)
+    expect("the follow-up says where it came from", taskRow?.origin, "follow_up")
+    expect("and why it was cut", taskRow?.segmentReason, "boundary")
+
+    // A model switch is its own boundary, so a per-model figure is reproducible.
+    UsageLedger.shared.observeNow(ledgerSample(
+        .claude, session: session, boundary: .task, id: "task-1", origin: .followUp,
+        usage: usage(40, 30, 330, cost: 1.9), model: "claude-haiku-4-5"))
+    let afterSwitch = UsageLedger.shared.rows().filter { $0.boundaryID == "task-1" }
+    expect("a model switch produces a second segment", afterSwitch.count, 2)
+    expect("the first priced under the model that spent it",
+           afterSwitch.first { $0.segmentNo == 0 }?.model, "claude-opus-5")
+    expect("the second under the one that took over",
+           afterSwitch.first { $0.segmentNo == 1 }?.model, "claude-haiku-4-5")
+    expect("and each carries the price snapshot its number was made under",
+           afterSwitch.compactMap(\.priceSnapshotID).count, 2)
+    expect("with the increment on the newer segment only",
+           afterSwitch.first { $0.segmentNo == 1 }?.total, 100)
+    expect("and the cut named", afterSwitch.first { $0.segmentNo == 1 }?.segmentReason,
+           "model_switch")
+
+    // A cumulative counter that goes backwards means the source was replaced, not that tokens
+    // were refunded.
+    UsageLedger.shared.observeNow(ledgerSample(
+        .claude, session: session, boundary: .task, id: "task-1", origin: .followUp,
+        usage: usage(1, 1, 1), model: "claude-haiku-4-5"))
+    let afterRegression = UsageLedger.shared.rows().first { $0.segmentNo == 1 }
+    expect("a source that shrank never subtracts", afterRegression?.total, 100)
+    expect("and says what happened", afterRegression?.coverageReason, "source_regressed")
+}
+
+group("a source that cannot be read is a state, and nothing renders it as zero") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    var missing = ledgerSample(.claude, session: "gone", boundary: .task, id: "task-gone",
+                               origin: .dispatch, usage: nil, model: "claude-opus-5")
+    missing.seal = true
+    missing.sealCoverage = .sourceMissing
+    missing.coverageReason = "source_unreadable_at_close"
+    UsageLedger.shared.observeNow(missing)
+
+    let row = UsageLedger.shared.rows().first
+    expect("a transcript that was never readable still leaves a row",
+           UsageLedger.shared.rows().count, 1)
+    expect("sealed as source_missing", row?.coverage, "source_missing")
+    check("with unknown tokens left unknown", row?.counts.isEmpty == true)
+    check("and no total standing in for them", row?.total == nil)
+    check("which is what makes it sort to the top of a coverage view",
+          row?.usageUnknown == true)
+
+    // The line most likely to be quietly removed by somebody who finds a NULL inconvenient to
+    // format. Asserted on every reader this slice ships.
+    let csv = UsageLedger.shared.exportCSV()
+    let header = csv.split(separator: "\n").first.map(String.init) ?? ""
+    let body = csv.split(separator: "\n").dropFirst().first.map(String.init) ?? ""
+    let columns = header.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+    let values = body.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+    func field(_ name: String) -> String? {
+        guard let index = columns.firstIndex(of: name), index < values.count else { return nil }
+        return values[index]
+    }
+    expect("the export leaves an unknown token count empty", field("total"), "")
+    expect("and an unknown cache read empty", field("cache_read"), "")
+    expect("never the zero that would read as a measurement", field("input_new"), "")
+    expect("and it says which kind of unavailable the cost is",
+           field("missing_reason"), "plan_billed" == field("missing_reason")
+            ? field("missing_reason") : "no_cost_recorded")
+    check("every reserved column is present and empty",
+          UsageLedger.reservedColumns.allSatisfy { columns.contains($0) && field($0) == "" })
+
+    // The other way a row reaches `source_missing`: it was seen, it had been counted at zero
+    // because nothing had happened yet, and then the source went. Zeros already on the row are
+    // not a measurement and must go back to NULL with it.
+    let counted = ledgerSample(.claude, session: "empty", usage: ["input": 0, "output": 0,
+                                                                 "cache_read": 0,
+                                                                 "cache_write": 0, "total": 0],
+                               model: "claude-opus-5")
+    UsageLedger.shared.observeNow(counted)
+    expect("a session that has spent nothing yet is still a row",
+           UsageLedger.shared.rows().count, 2)
+    check("counted at zero while it is readable",
+          UsageLedger.shared.rows().first { $0.sessionID == "empty" }?.total == 0)
+    UsageLedger.shared.sealSession(assistant: .claude, sessionID: "empty",
+                                   coverage: .sourceMissing, reason: "gone")
+    check("and unknown once the source has gone, never left reading as a measured zero",
+          eventually {
+              let sealed = UsageLedger.shared.rows().first { $0.sessionID == "empty" }
+              return sealed?.coverage == "source_missing" && sealed?.total == nil
+                  && sealed?.counts.isEmpty == true
+          })
+
+    let aggregate = UsageLedger.shared.aggregate(groupBy: .model)
+    check("the aggregate refuses to draw tokens for a group that has none",
+          aggregate.totals.tokens == nil && aggregate.totals.total == nil)
+    expect("and reports how many rows it could not count", aggregate.totals.tokenRowsUnknown, 2)
+    expect("beside the row count it does have", aggregate.totals.rows, 2)
+    let payload = UsageLedger.payload(of: aggregate)
+    let totals = payload["totals"] as? [String: Any]
+    check("the route renders that as null rather than zero",
+          totals?["tokens"] is NSNull && totals?["total"] is NSNull)
+    check("and names the columns it cannot answer for",
+          ((payload["unavailable"] as? [String: Any])?["columns"] as? [String])
+            == UsageLedger.reservedColumns)
+}
+
+group("a cost is copied where it exists and never invented where it does not") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    let priced: [String: Any] = ["id": "task-priced", "assistant": "claude", "state": "success",
+                                 "kind": "code", "project_dir": "/tmp/project",
+                                 "timeout_minutes": 30, "depth": 1, "child_session": "sess-1",
+                                 "claims": ["a.swift", "b.swift"],
+                                 "usage": ["input": 2, "output": 3, "cache_read": 160_655,
+                                           "cache_write": 5, "total": 160_665,
+                                           "model": "claude-opus-5", "cost_usd": 5.469]]
+    let unpriced: [String: Any] = ["id": "task-unpriced", "assistant": "codex",
+                                   "state": "success", "kind": "code",
+                                   "project_dir": "/tmp/project", "timeout_minutes": 30,
+                                   "depth": 1, "child_session": "sess-2",
+                                   "usage": ["input": 900_000, "output": 1_000,
+                                             "cache_read": 800_000, "cache_write": 0,
+                                             "total": 901_000, "model": "gpt-5.6-sol"]]
+    expect("both records import", UsageLedger.shared.importTaskRecords([priced, unpriced]), 2)
+
+    let pricedRow = UsageLedger.shared.rows(taskID: "task-priced").first
+    expectClose("the recorded cost is copied through unchanged",
+                CGFloat(pricedRow?.costValue ?? 0), 5.469, 0.0001)
+    expect("stamped with what kind of number it is", pricedRow?.costBasis, "list_price_estimate")
+    expect("and in what unit", pricedRow?.costUnit, "USD")
+    expect("and under which price version", pricedRow?.priceSnapshotID,
+           UsageLedger.priceSnapshotID)
+    check("with nothing claiming it is missing", pricedRow?.missingReason == nil)
+    expect("the columns describing the work are populated", pricedRow?.claimCount, 2)
+    expect("including its kind", pricedRow?.kindRaw, "code")
+    expect("and its origin", pricedRow?.origin, "dispatch")
+
+    let unpricedRow = UsageLedger.shared.rows(taskID: "task-unpriced").first
+    check("a source with no cost gets none invented", unpricedRow?.costValue == nil)
+    expect("not from a price table", unpricedRow?.costBasis, "unknown")
+    expect("and it names which kind of unavailable it is", unpricedRow?.missingReason,
+           "plan_billed")
+    expect("its tokens are still counted", unpricedRow?.total, 901_000)
+    expect("with the cached input kept out of the new input", unpricedRow?.counts.inputNew,
+           100_000)
+
+    let aggregate = UsageLedger.shared.aggregate(groupBy: .assistant)
+    expectClose("the total sums only the money that exists",
+                CGFloat(aggregate.totals.costByUnit["USD"] ?? 0), 5.469, 0.0001)
+    expect("and reports the rows it could not price beside it",
+           aggregate.totals.unpricedRows, 1)
+    expect("with the reason attached", aggregate.totals.missingReasons["plan_billed"], 1)
+    let codex = aggregate.groups.first { $0.key == "codex" }?.bucket
+    check("a group with no cost at all renders as absent, never as $0.00",
+          codex?.costByUnit.isEmpty == true)
+    check("which is what the wire says too",
+          (UsageLedger.payload(of: codex ?? UsageLedger.Bucket())["cost"]) is NSNull)
+}
+
+group("the ledger agrees with the registry and the route, row by row on one task id") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    Orchestrator.forget()
+    defer { Orchestrator.forget() }
+    let id = "01999e7f-aaaa-4bbb-8ccc-dddddddddddd"
+    var task = Orchestrator.Task(id: id, state: .success, kind: "code",
+                                 title: "reconciliation fixture", assistant: .claude,
+                                 projectDir: "/tmp/project", timeoutMinutes: 30, created: Date(),
+                                 secretHash: String(repeating: "0", count: 64))
+    task.childSessionId = "sess-reconcile"
+    task.finishedAt = Date()
+    var usage = Orchestrator.Usage()
+    usage.input = 2
+    usage.output = 3
+    usage.cacheRead = 160_655
+    usage.cacheWrite = 5
+    usage.total = 160_665
+    usage.model = "claude-opus-5"
+    usage.costUsd = 5.469
+    task.usage = usage
+    Orchestrator.holdScheduleTaskForTesting(task)
+
+    // Three surfaces, one fixed task id. Comparing totals, or comparing "the first row with
+    // usage" from two places, is how both the disk-versus-HTTP mechanism and its correction were
+    // got wrong in one afternoon: an unaligned comparison looks like an experiment and is not one.
+    let onDisk = Orchestrator.stored(task)["usage"] as? [String: Any] ?? [:]
+    let overHTTP = Orchestrator.recordForTesting(task)["usage"] as? [String: Any] ?? [:]
+    check("the two surfaces really do spell this differently",
+          onDisk["cache_read"] != nil && overHTTP["cacheRead"] != nil
+            && onDisk["cacheRead"] == nil && overHTTP["cache_read"] == nil)
+
+    expect("the record imports", UsageLedger.shared.importTaskRecord(Orchestrator.stored(task)),
+           true)
+    let rows = UsageLedger.shared.rows(taskID: id)
+    expect("as exactly one row", rows.count, 1)
+    let stored = (rows.first?.rawUsage).flatMap {
+        (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
+    } ?? [:]
+    let fromDisk = UsageLedger.normalize(raw: onDisk, assistant: .claude)
+    let fromHTTP = UsageLedger.normalize(raw: overHTTP, assistant: .claude)
+    let fromLedger = UsageLedger.normalize(raw: stored, assistant: .claude)
+    expect("this task's usage is the same on disk and in the ledger",
+           fromLedger.counts, fromDisk.counts)
+    expect("and the same over HTTP", fromLedger.counts, fromHTTP.counts)
+    expect("with the cache read intact rather than dropped by a spelling",
+           fromLedger.counts.cacheRead, 160_655)
+    expect("and the stored row holding the same number", rows.first?.counts.cacheRead, 160_655)
+    expect("and the same cost on all three", [fromDisk.cost, fromHTTP.cost, fromLedger.cost],
+           [5.469, 5.469, 5.469])
+    expect("and the row's own copy of it", rows.first?.costValue, 5.469)
+}
+
+group("a sealed row is corrected rather than rewritten") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    let record: [String: Any] = ["id": "task-sealed", "assistant": "claude", "state": "success",
+                                 "kind": "code", "project_dir": "/tmp", "timeout_minutes": 30,
+                                 "depth": 1, "child_session": "sess-sealed",
+                                 "usage": ["input": 1, "output": 2, "cache_read": 3,
+                                           "cache_write": 4, "total": 10,
+                                           "model": "claude-opus-5"]]
+    UsageLedger.shared.importTaskRecord(record)
+    expect("the finished task is sealed", UsageLedger.shared.rows().first?.sealed, true)
+    expect("importing the identical record again changes nothing",
+           UsageLedger.shared.importTaskRecord(record), false)
+    expect("and leaves one row", UsageLedger.shared.rows().count, 1)
+
+    var later = record
+    later["usage"] = ["input": 1, "output": 2, "cache_read": 3_000, "cache_write": 4,
+                      "total": 3_007, "model": "claude-opus-5"]
+    expect("a disagreeing re-measurement is accepted",
+           UsageLedger.shared.importTaskRecord(later), true)
+    expect("as new metadata", UsageLedger.shared.correctionCount(), 1)
+    expect("and never as a rewrite of a number a month's total may already carry",
+           UsageLedger.shared.rows().first?.total, 10)
+    expect("the aggregate reports that a correction is outstanding",
+           UsageLedger.shared.aggregate().corrections, 1)
+}
+
+group("each kind of work is counted exactly once, and the routes answer for the range") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    Orchestrator.forget()
+    defer { Orchestrator.forget() }
+    func usage(_ total: Int, model: String = "claude-opus-5") -> [String: Any] {
+        ["input": total, "output": 0, "cache_read": 0, "cache_write": 0, "total": total,
+         "model": model]
+    }
+
+    // A hand-opened session, watched.
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: "hand", usage: usage(100),
+                                               model: "claude-opus-5"))
+    // An ordinary task in a tab this app opened, seen by the watcher first and then finalized.
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: "sess-ordinary",
+                                               boundary: .task, id: "task-ordinary",
+                                               origin: .dispatch, usage: usage(300),
+                                               model: "claude-opus-5"))
+    UsageLedger.shared.importTaskRecord([
+        "id": "task-ordinary", "assistant": "claude", "state": "success", "kind": "code",
+        "project_dir": "/tmp", "timeout_minutes": 30, "depth": 1,
+        "child_session": "sess-ordinary",
+        "usage": usage(300),
+    ])
+    // A scheduled task.
+    UsageLedger.shared.importTaskRecord([
+        "id": "task-scheduled", "assistant": "claude", "state": "success", "kind": "custom",
+        "project_dir": "/tmp", "timeout_minutes": 30, "depth": 1,
+        "child_session": "sess-scheduled", "schedule_id": "nightly",
+        "usage": usage(50),
+    ])
+    // A follow-up attached into a session that was already being watched.
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: "hand", boundary: .task,
+                                               id: "task-attached", origin: .followUp,
+                                               usage: usage(180), model: "claude-opus-5"))
+    UsageLedger.shared.importTaskRecord([
+        "id": "task-attached", "assistant": "claude", "state": "success", "kind": "code",
+        "project_dir": "/tmp", "timeout_minutes": 30, "depth": 1, "child_session": "hand",
+        "attach_session": "standing-tab",
+        "usage": usage(180),
+    ])
+
+    let byOrigin = UsageLedger.shared.aggregate(groupBy: .origin)
+    func total(_ origin: String) -> Int? {
+        byOrigin.groups.first { $0.key == origin }?.bucket.total
+    }
+    expect("the hand-opened session is counted once", total("manual"), 100)
+    expect("the ordinary task once, by whichever collector saw it first",
+           total("dispatch"), 300)
+    expect("the scheduled task once", total("schedule"), 50)
+    expect("and the attached follow-up only its own increment", total("follow_up"), 80)
+    expect("so the whole machine's spend is the sum of them and nothing more",
+           byOrigin.totals.total, 530)
+
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()]
+    let answered = RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/usage?group=origin", headers: auth))
+    expect("the aggregate route answers", answered.status, 200)
+    let body = ((try? JSONSerialization.jsonObject(with: answered.body)) as? [String: Any])?[
+        "usage"] as? [String: Any]
+    expect("under the grouping it was asked for", body?["groupBy"] as? String, "origin")
+    expect("with the same totals", ((body?["totals"] as? [String: Any])?["total"]) as? Int, 530)
+    check("and it names the columns it has no answer for",
+          ((body?["unavailable"] as? [String: Any])?["columns"] as? [String])
+            == UsageLedger.reservedColumns)
+    expect("the export answers as CSV",
+           RemoteServer.shared.route(
+            remoteRequest("GET", "/v1/orchestrator/usage.csv", headers: auth))
+            .headers["Content-Type"], "text/csv; charset=utf-8")
+    let exported = String(decoding: RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/usage.csv", headers: auth)).body, as: UTF8.self)
+    expect("one header and one line per row",
+           exported.split(separator: "\n").count, 1 + UsageLedger.shared.rows().count)
+    expect("a range outside every row is empty rather than wrong",
+           UsageLedger.shared.aggregate(from: "2001-01-01", to: "2001-01-02").totals.rows, 0)
+    expect("a group nobody defined is refused", RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/usage?group=nonsense", headers: auth)).status, 400)
+    expect("and so is a range bound that is not a local day", RemoteServer.shared.route(
+        remoteRequest("GET", "/v1/orchestrator/usage?from=yesterday", headers: auth)).status, 400)
+    expect("an unpaired caller with no orchestrator token is refused",
+           RemoteServer.shared.route(remoteRequest("GET", "/v1/orchestrator/usage")).status, 401)
+}
+
+group("finalize files a task in the ledger without being told anybody heard about it") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    Orchestrator.forget()
+    defer { Orchestrator.forget() }
+    let id = "77779e7f-1111-4222-8333-444444444444"
+    var task = Orchestrator.Task(id: id, state: .briefed, kind: "code", title: "finalize fixture",
+                                 assistant: .codex, projectDir: "/tmp/project",
+                                 timeoutMinutes: 30, created: Date(),
+                                 secretHash: String(repeating: "0", count: 64))
+    task.childSessionId = "sess-finalize"
+    var usage = Orchestrator.Usage()
+    usage.input = 8_190_546
+    usage.output = 16_956
+    usage.cacheRead = 7_978_752
+    usage.total = 8_207_502
+    usage.model = "gpt-5.6-sol"
+    task.usage = usage
+    Orchestrator.holdScheduleTaskForTesting(task)
+    Orchestrator.finalize(id, as: .success, summary: "done")
+
+    check("the ledger has the row shortly after the task ends",
+          eventually { UsageLedger.shared.rows(taskID: id).count == 1 })
+    let row = UsageLedger.shared.rows(taskID: id).first
+    expect("with the state it ended in", row?.taskState, "success")
+    expect("sealed, because the work is over", row?.sealed, true)
+    expect("and the Codex cache kept out of the new input", row?.counts.inputNew, 211_794)
+    expect("with the parts summing back to the source's total", row?.total, 8_207_502)
+    check("and no dollar figure invented for a plan-billed assistant", row?.costValue == nil)
+    expect("naming that as the reason", row?.missingReason, "plan_billed")
+    expect("the ledger's own copy is a task boundary", row?.boundaryKind, "task")
+    expect("filed under the session the work ran in", row?.sessionID, "sess-finalize")
 }
 
 // MARK: - Schedule session resume
