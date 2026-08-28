@@ -383,16 +383,18 @@ enum SmartNotification {
         return .success(made)
     }
 
+    /// The working directory every one of these runs shares — see ``Scratch`` for why it must not
+    /// be a fresh one per call. This feature now succeeds rather than timing out, so a per-call
+    /// directory was producing a permanent `~/.claude/projects` folder several times an hour.
+    static var scratchDirectory: URL { Scratch.directory(for: "smart-notification") }
+
     private static func run(executable: URL, arguments: [String],
                             stdin: String) -> (output: String?, failure: FallbackReason?) {
         let fm = FileManager.default
-        let directory = fm.temporaryDirectory
-            .appendingPathComponent("clawdline-smart-notification-\(UUID().uuidString)",
-                                    isDirectory: true)
-        guard (try? fm.createDirectory(at: directory, withIntermediateDirectories: true)) != nil
+        let directory = scratchDirectory
+        guard let output = Scratch.prepare(directory, output: "output", extension: "json")
         else { return (nil, .modelFailed) }
-        defer { try? fm.removeItem(at: directory) }
-        let output = directory.appendingPathComponent("output.json")
+        defer { try? fm.removeItem(at: output) }
         guard fm.createFile(atPath: output.path, contents: nil),
               let sink = try? FileHandle(forWritingTo: output) else { return (nil, .modelFailed) }
         defer { try? sink.close() }
