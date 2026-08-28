@@ -252,15 +252,21 @@ enum StartPoints {
         }
         switch plan(scope: Config.shared.scopeApp, running: runningApps(), hasTmux: tmuxIsUp()) {
         case .iterm:
-            guard let made = ITerm.newTab(line: itermLine(cwd: place.path,
-                                                          assistant: assistant,
-                                                          model: model,
-                                                          reasoningEffort: reasoningEffort,
-                                                          permission: permission,
-                                                          addDir: addDir,
-                                                          resume: resume)) else {
-                return .refused(status: 502, code: "internal",
-                                message: "iTerm2 would not open a tab.", app: nil)
+            let opened = ITerm.newTabResult(line: itermLine(cwd: place.path,
+                                                             assistant: assistant,
+                                                             model: model,
+                                                             reasoningEffort: reasoningEffort,
+                                                             permission: permission,
+                                                             addDir: addDir,
+                                                             resume: resume))
+            guard case .success(let made) = opened else {
+                let failure: TerminalFailure
+                if case .failure(let problem) = opened { failure = problem }
+                else { fatalError("unreachable terminal result") }
+                let modal = failure.kind == .iTermAttention
+                return .refused(status: 502,
+                                code: modal ? "iterm_attention_required" : "terminal_io_failed",
+                                message: failure.message, app: modal ? "iTerm2" : nil)
             }
             return .started(id: made.id, backend: .iterm)
 
@@ -270,14 +276,19 @@ enum StartPoints {
             // directory name to break out of. The command reaching a shell one level down is why
             // `modelName` is a closed alphabet rather than an escaping rule — there is nothing
             // in a name it admits for that shell to read.
-            guard let pane = Tmux.newWindow(cwd: place.path,
-                                            command: assistant.command(model: modelName(model),
-                                                                       reasoningEffort: reasoningEffort,
-                                                                       permission: permission,
-                                                                       addDir: extraDir(addDir),
-                                                                       resume: sessionName(resume))) else {
-                return .refused(status: 502, code: "internal",
-                                message: "tmux would not open a window.", app: nil)
+            let opened = Tmux.newWindowResult(
+                cwd: place.path,
+                command: assistant.command(model: modelName(model),
+                                             reasoningEffort: reasoningEffort,
+                                             permission: permission,
+                                             addDir: extraDir(addDir),
+                                             resume: sessionName(resume)))
+            guard case .success(let pane) = opened else {
+                let message: String
+                if case .failure(let failure) = opened { message = failure.message }
+                else { message = "tmux would not open a window." }
+                return .refused(status: 502, code: "terminal_io_failed",
+                                message: message, app: nil)
             }
             return .started(id: pane, backend: .tmux)
 

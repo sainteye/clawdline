@@ -15,6 +15,19 @@ yours. On an address a stranger can reach it is an index of somebody's private w
 `POST /v1/sessions/:id/send` types a line into Claude Code and presses Return, and Claude Code
 runs `bash`. Anything that can send to your sessions can run programs on this Mac, as you.
 
+The dangerous wait is isolated as well as authorized. `/send` reserves its idempotency key on the
+server queue, then performs the terminal handoff on a separate serial broker shared with `/key`,
+`/focus`, `/end`, `/start`, `/resume`, background shell kill, automatic child close, schedule fire,
+serialized promotion and terminal-bearing orchestrator delivery. The global bound is eight admitted
+operations and one real recipient terminal session may hold at most two places; coordination
+fan-out and nested inline cascades preserve that accounting. A retry with the same key while the first is in flight joins it and receives
+the same answer. This does not make terminal input exactly-once: an Apple Event that times out may
+still execute later, and a new key is a new
+operation. The wait cannot hold health checks, event-stream heartbeats, or completed slow reads.
+tmux commands have a bounded subprocess deadline with TERM/SIGKILL cleanup. iTerm errors carry the
+kind returned by that operation, so `/focus` cannot say 200 after an ignored failure and an
+unrelated process error cannot borrow a later global modal state.
+
 So these are not two positions on one dial. They are two features at two risk levels, and they are
 **two separate switches** — both off in a fresh install, and turning the first on does not turn the
 second on. Everything below follows from that one decision.
@@ -174,6 +187,19 @@ five of them were in flight. The gates still run on the serial queue, where the 
 lives; only the waiting moved. The queue it goes to instead is serial too: two whispers at once
 on one Mac are slower than two in a row, so the queue **is** the concurrency limit, and the only
 thing left to choose was how long a line is worth standing in. Two.
+
+Terminal writes use the same isolation principle with a different bound: one serial iTerm/tmux
+handoff at a time, eight admitted broker operations. A blocked iTerm Apple event settles the request
+as `502`; terminal execution after that timeout remains unknown.
+
+When an iTerm Apple Event times out or returns a malformed list, Clawdline opens a fail-closed automation
+circuit. It does not click or accept the modal, does not enqueue more automatic terminal/close
+commands while the circuit is open, and does not record a failed close as completed. The affected task keeps its cleanup
+deadline and exposes `terminal_intervention` with `action: "answer_dialog"`. A well-formed later
+iTerm list response closes the circuit and permits one cleanup retry; `ps` failure or a
+cross-backend process contradiction only lowers inventory authority and never invents a modal.
+Those non-modal failures, including tmux failures, remain stopped for inspection instead of
+repeating terminal input or signals on every timer beat.
 
 The language is not the phone's to name. `voice_language` on this Mac decides, exactly as it does
 for the bar, and what comes back is put through `voice_vocabulary` the same way — same binary, same

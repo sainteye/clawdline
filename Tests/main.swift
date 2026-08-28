@@ -169,6 +169,12 @@ print("Clawdline tests")
 
 // MARK: - Scheduled dispatches
 
+// An empty *complete* inventory: `closeStep` answers `.wait` on it — an inventory with no
+// terminals in it at all proves nothing — so a background beat that finds one of this suite's
+// fixtures due decides nothing, writes nothing, and above all asks nobody's real terminal.
+// Individual groups still install their own walk over this one.
+Targets.safeCloseInventoryFallbackForTesting = { Targets.Snapshot() }
+
 group("schedule files are strict and carry an ordinary task template") {
     let id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
     let base: [String: Any] = [
@@ -2115,6 +2121,11 @@ group("ps output picks out real assistant processes") {
     check("an argument that mentions claude does not count", found["ttys055"] == nil)
     expect("exactly two matches", found.count, 2)
     expect("the pid comes back with it", found["ttys013"]?.pid, 102)
+    let identified = Assistant.reading(
+        ofPS: "ttys013 102 1 Wed Aug 27 12:34:56 2026 /opt/homebrew/bin/claude")
+    expect("production ps carries authoritative process start into the identity",
+           identified["ttys013"]?.processStart,
+           Assistant.parseProcessStart(["Wed", "Aug", "27", "12:34:56", "2026"]))
 }
 
 group("assistant process scans distinguish absence from failure") {
@@ -2142,6 +2153,82 @@ group("assistant process scans distinguish absence from failure") {
           !ITerm.stoppedTerminalContradictsProcesses(appRunning: true, processScan: found))
     check("a genuinely empty process list agrees that iTerm may be stopped",
           !ITerm.stoppedTerminalContradictsProcesses(appRunning: false, processScan: noAssistant))
+    check("an Apple Event timeout is circuit evidence",
+          ITerm.automationCircuitEvidence(appleEventTimedOut: true, listRowsMalformed: false))
+    check("a malformed list is circuit evidence",
+          ITerm.automationCircuitEvidence(appleEventTimedOut: false, listRowsMalformed: true))
+    check("ps incompleteness is not iTerm modal evidence",
+          !ITerm.automationCircuitEvidence(appleEventTimedOut: false, listRowsMalformed: false))
+    check("a stopped-iTerm cross-backend contradiction is not modal evidence",
+          ITerm.stoppedTerminalContradictsProcesses(appRunning: false, processScan: found)
+              && !ITerm.automationCircuitEvidence(appleEventTimedOut: false,
+                                                  listRowsMalformed: false))
+    let ttyGone = ITerm.parseTTYAssistantObservation("?? 1 0 /sbin/launchd", tty: "ttys006",
+                                                     timedOut: false, exitStatus: 0)
+    check("an exact tty scan can positively prove the assistant gone",
+          ttyGone.isComplete && ttyGone.running == nil)
+    let ttyFailed = ITerm.parseTTYAssistantObservation("", tty: "ttys006", timedOut: false,
+                                                       exitStatus: nil)
+    check("a failed exact tty scan never masquerades as absence", !ttyFailed.isComplete)
+    let ttyBusy = ITerm.parseTTYAssistantObservation("ttys006 101 1 claude", tty: "ttys006",
+                                                     timedOut: false, exitStatus: 0)
+    expect("an exact tty scan preserves the process that blocks close", ttyBusy.running?.pid, 101)
+}
+
+group("safe close consumes a fresh exact-tty observation and fails closed") {
+    defer {
+        ITerm.ttyAssistantObservationForTesting = nil
+        Targets.terminalCloseForTesting = nil
+        Targets.safeCloseInventoryForTesting = nil
+    }
+    let session = TargetSession(backend: .iterm, id: "TAB", name: "x",
+                                tty: "/dev/ttys006", windowIndex: 0, tabIndex: 0,
+                                assistant: nil)
+    var readings = [
+        ITerm.TTYAssistantObservation(running: nil, error: "ps failed"),
+        ITerm.TTYAssistantObservation(
+            running: Assistant.Running(assistant: .codex, pid: 101), error: nil),
+        ITerm.TTYAssistantObservation(running: nil, error: nil),
+    ]
+    var observedTTYs: [String] = []
+    var closes = 0
+    Targets.safeCloseInventoryForTesting = {
+        var snapshot = Targets.Snapshot()
+        snapshot.sessions = [session]
+        return snapshot
+    }
+    ITerm.ttyAssistantObservationForTesting = { tty in
+        observedTTYs.append(tty)
+        // A scripted reading per decision. Running out means production asked more often than
+        // this scenario allows, which is a failed assertion below — not a crashed suite, which
+        // is what it was, and which hides every check after it.
+        return readings.isEmpty
+            ? ITerm.TTYAssistantObservation(running: nil, error: "no reading was scripted")
+            : readings.removeFirst()
+    }
+    Targets.terminalCloseForTesting = { _ in closes += 1; return nil }
+
+    check("an incomplete fresh scan refuses close", Targets.closeIfAssistantGone(session) != nil)
+    expect("scan failure never reaches the backend close", closes, 0)
+    check("a positively running assistant refuses close", Targets.closeIfAssistantGone(session) != nil)
+    expect("a running guard never reaches the backend close", closes, 0)
+    check("only proved absence permits close", Targets.closeIfAssistantGone(session) == nil)
+    expect("proved absence closes exactly once", closes, 1)
+    expect("each decision performed its own exact-tty scan", observedTTYs,
+           ["ttys006", "ttys006", "ttys006"])
+
+    var incomplete = Targets.Snapshot()
+    incomplete.sessions = [session]
+    incomplete.isComplete = false
+    incomplete.error = "inventory failed"
+    // The scripted reading below positively proves the assistant gone, so the inventory gate is
+    // the only thing left that can refuse. Without it the check passed on the exact-tty guard
+    // behind it, and the gate could be deleted with every check in this file still green.
+    readings = [ITerm.TTYAssistantObservation(running: nil, error: nil)]
+    Targets.safeCloseInventoryForTesting = { incomplete }
+    check("an explicit close refuses an incomplete fresh terminal inventory",
+          Targets.closeIfAssistantGone(session) != nil)
+    expect("incomplete inventory never reaches the backend close", closes, 1)
 }
 
 group("incomplete session inventories merge but complete ones replace") {
@@ -2305,6 +2392,26 @@ group("tmux pane listing parses") {
                             .joined(separator: sep))[0].assistant, .codex)
 }
 
+group("a hung tmux subprocess times out and is cleaned up") {
+    defer {
+        Tmux.binaryForTesting = nil
+        Tmux.subprocessTimeoutForTesting = nil
+    }
+    Tmux.binaryForTesting = "/bin/sleep"
+    let started = Date()
+    let receipt = Tmux.runForTesting(["5"], timeout: 0.05)
+    check("the real subprocess call returns inside its bound",
+          Date().timeIntervalSince(started) < 1)
+    expect("a hung tmux command carries a typed timeout", receipt.failure?.kind, .timeout)
+    check("the hung command is not reported as successful", !receipt.ok)
+    if let pid = Tmux.lastTimedOutPIDForTesting {
+        check("the timed-out tmux subprocess was reaped",
+              kill(pid, 0) == -1 && errno == ESRCH)
+    } else {
+        check("the timeout records which subprocess it cleaned up", false)
+    }
+}
+
 group("ending a session waits for the process before it takes the tab") {
     typealias Step = Targets.Farewell.Step
     func step(_ elapsed: TimeInterval, pid: pid_t? = 42,
@@ -2328,11 +2435,75 @@ group("ending a session waits for the process before it takes the tab") {
     expect("told once as well",
            step(polite + Targets.Farewell.afterTerm + 0.2, termed: true, killed: true), .wait)
 
-    // Past a SIGKILL there is nothing left to try, and waiting forever would be the same freeze
-    // by a slower road. The tab goes — which is what the old code did to every session.
+    // Past a SIGKILL there is nothing left to try, but elapsed time still is not proof that the
+    // tty is empty. Safe-close preserves the tab for intervention.
     let exhausted = polite + Targets.Farewell.afterTerm + Targets.Farewell.afterKill
-    expect("a process that survives SIGKILL stops the waiting",
-           step(exhausted, termed: true, killed: true), .close)
+    expect("a process that survives SIGKILL is never force-closed",
+           step(exhausted, termed: true, killed: true), .refuse)
+}
+
+group("TERM and KILL rungs stay bound to one process identity") {
+    typealias Identity = Targets.Farewell.ProcessIdentity
+    let first = Identity(pid: 42, processStart: Date(timeIntervalSince1970: 1_800_100_000))
+    let differentPID = Identity(pid: 99,
+                                processStart: Date(timeIntervalSince1970: 1_800_100_000))
+    let reusedPID = Identity(pid: 42,
+                             processStart: Date(timeIntervalSince1970: 1_800_100_001))
+    let atKill = Targets.Farewell.polite + Targets.Farewell.afterTerm
+    expect("the identity that received TERM may advance to KILL",
+           Targets.Farewell.step(elapsed: atKill, identity: first,
+                                 termed: first, killed: nil), .kill(42))
+    expect("a different PID after TERM fails closed",
+           Targets.Farewell.step(elapsed: atKill, identity: differentPID,
+                                 termed: first, killed: nil), .refuse)
+    expect("the same PID with a new process start after TERM fails closed",
+           Targets.Farewell.step(elapsed: atKill, identity: reusedPID,
+                                 termed: first, killed: nil), .refuse)
+}
+
+group("the sacrificial safe-close lifecycle never signals a replacement process") {
+    defer {
+        ITerm.ttyAssistantObservationForTesting = nil
+        Targets.safeCloseSignalForTesting = nil
+        Targets.safeCloseSleepForTesting = nil
+        Targets.safeCloseNowForTesting = nil
+    }
+    let session = TargetSession(backend: .iterm, id: "FAKE-CLOSE", name: "fake",
+                                tty: "/dev/ttys199", windowIndex: 0, tabIndex: 0,
+                                assistant: .codex)
+    let first = Assistant.Running(
+        assistant: .codex, pid: 42,
+        processStart: Date(timeIntervalSince1970: 1_800_200_000))
+
+    func lifecycle(replacement: Assistant.Running?) -> (String?, [(pid_t, Int32)]) {
+        var clock = Date(timeIntervalSince1970: 1_800_200_100)
+        var signals: [(pid_t, Int32)] = []
+        Targets.safeCloseNowForTesting = { clock }
+        Targets.safeCloseSleepForTesting = { clock.addTimeInterval($0) }
+        Targets.safeCloseSignalForTesting = { signals.append(($0, $1)) }
+        ITerm.ttyAssistantObservationForTesting = { _ in
+            ITerm.TTYAssistantObservation(running: signals.isEmpty ? first : replacement,
+                                           error: nil)
+        }
+        return (Targets.waitToBeGoneForTesting(session), signals)
+    }
+
+    let otherPID = lifecycle(replacement: Assistant.Running(
+        assistant: .codex, pid: 99,
+        processStart: Date(timeIntervalSince1970: 1_800_200_000)))
+    check("a different PID after TERM is refused", otherPID.0 != nil)
+    expect("only the original identity received a signal", otherPID.1.map(\.0), [42])
+    expect("that one signal was TERM", otherPID.1.map(\.1), [SIGTERM])
+
+    let reused = lifecycle(replacement: Assistant.Running(
+        assistant: .codex, pid: 42,
+        processStart: Date(timeIntervalSince1970: 1_800_200_001)))
+    check("same PID with a new start after TERM is refused", reused.0 != nil)
+    expect("PID reuse never advances to KILL", reused.1.map(\.1), [SIGTERM])
+
+    let gone = lifecycle(replacement: nil)
+    check("proved absence after TERM completes the wait", gone.0 == nil)
+    expect("the successful seam still sent no KILL", gone.1.map(\.1), [SIGTERM])
 }
 
 // MARK: - Terminal escapes
@@ -2988,7 +3159,8 @@ group("both completion notices still carry the untouched-claims reminder") {
         .components(separatedBy: "private static func notifyRoot(_ task: Task) {")
         .dropFirst().first?.components(separatedBy: "\n    }\n").first ?? ""
     check("notifyRoot's body was located, so the checks below cannot pass on an empty string",
-          notifyRootBody.contains("task.rootSessionId") && notifyRootBody.contains("Targets.send("))
+          notifyRootBody.contains("task.rootSessionId")
+              && notifyRootBody.contains("deliverTerminalNotice("))
     check("neither call site hand-builds a completion line of its own",
           !notifyRootBody.contains("[clawdline]"))
     check("both call sites compose their notice through taskFinishedNotice",
@@ -2997,7 +3169,8 @@ group("both completion notices still carry the untouched-claims reminder") {
         .map { $0.components(separatedBy: "\n").first ?? "" }
     check("and type nothing but what ClawdlineMessage.encode returned for it",
           typed.count == 2 && typed.allSatisfy { $0 == "ClawdlineMessage.encode(notice)" }
-              && notifyRootBody.components(separatedBy: "Targets.send(line,").count - 1 == 2)
+              && notifyRootBody.components(separatedBy:
+                  "deliverTerminalNotice(line,").count - 1 == 2)
 }
 
 group("file-wait and handoff deliveries type only the versioned envelope") {
@@ -3006,10 +3179,10 @@ group("file-wait and handoff deliveries type only the versioned envelope") {
     let settle = source.components(separatedBy: "static func settleHandoff(")
         .dropFirst().first?.components(separatedBy: "/// Watch a briefed child").first ?? ""
     check("the handoff settlement source was located",
-          settle.contains("handoffReceipt(") && settle.contains("Targets.send("))
+          settle.contains("handoffReceipt(") && settle.contains("deliverTerminalNotice("))
     check("handoff settlement sends only the encoded semantic receipt",
-          settle.contains("Targets.send(ClawdlineMessage.encode(receipt), to: sender)")
-              && !settle.contains("Targets.send(receipt, to: sender)"))
+          settle.contains("deliverTerminalNotice(ClawdlineMessage.encode(receipt), to: sender")
+              && !settle.contains("deliverTerminalNotice(receipt, to: sender"))
 
     let receiptComposer = source.components(separatedBy: "static func handoffReceipt(")
         .dropFirst().first?.components(separatedBy: "private static func successfulHandoffReply")
@@ -6869,6 +7042,320 @@ group("the slow-reading depth is paired on every exit") {
         transcript.finish("/v1/sessions/ABC/transcript")
     }
     expect("transcript never changes the bounded count", transcript.count, 0)
+}
+
+group("terminal writes cannot hold the remote server queue") {
+    let wasWriting = Config.shared.remoteWrite
+    defer {
+        Config.shared.remoteWrite = wasWriting
+        RemoteServer.sessionPayloadForTesting = nil
+        RemoteServer.terminalSendForTesting = nil
+        RemoteServer.terminalRouteForTesting = nil
+        ITerm.completeInventoryForTesting()
+    }
+    Config.shared.remoteWrite = true
+    let writer = RemoteAuth.addDevice(name: "terminal queue test", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: writer.id) }
+
+    let session = TargetSession(backend: .iterm, id: "BLOCKED-TERMINAL", name: "x",
+                                tty: "/dev/ttys77", windowIndex: 0, tabIndex: 0,
+                                assistant: .codex)
+    RemoteServer.sessionPayloadForTesting = ([session], [:])
+
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    let responses = DispatchSemaphore(value: 0)
+    let responseLock = NSLock()
+    let sentLock = NSLock()
+    var sent = 0
+    var received: [RemoteServer.Response] = []
+    RemoteServer.terminalSendForTesting = { _, _ in
+        sentLock.lock(); sent += 1; sentLock.unlock()
+        entered.signal()
+        _ = release.wait(timeout: .now() + 2)
+        return nil
+    }
+
+    let key = UUID().uuidString
+    let request = remoteRequest(
+        "POST", "/v1/sessions/\(session.id)/send",
+        headers: ["Authorization": "Bearer \(writer.token)", "Idempotency-Key": key],
+        body: "{\"text\":\"once\"}")
+    for _ in 0..<2 {
+        RemoteServer.shared.sendTerminalForTesting(request) { response in
+            responseLock.lock(); received.append(response); responseLock.unlock()
+            responses.signal()
+        }
+    }
+    check("the first terminal command actually entered its isolated queue",
+          entered.wait(timeout: .now() + 1) == .success)
+
+    let health = DispatchSemaphore(value: 0)
+    let heartbeat = DispatchSemaphore(value: 0)
+    let slowRead = DispatchSemaphore(value: 0)
+    let started = Date()
+    RemoteServer.shared.routeOnServerQueueForTesting(remoteRequest("GET", "/v1/health")) {
+        if $0.status == 200 { health.signal() }
+    }
+    RemoteServer.shared.heartbeatTurnForTesting { heartbeat.signal() }
+    RemoteServer.shared.readingTurnForTesting { slowRead.signal() }
+    check("health finishes while terminal I/O is blocked",
+          health.wait(timeout: .now() + 0.25) == .success)
+    check("the heartbeat queue turn finishes while terminal I/O is blocked",
+          heartbeat.wait(timeout: .now() + 0.25) == .success)
+    check("a slow-read worker turn finishes while terminal I/O is blocked",
+          slowRead.wait(timeout: .now() + 0.25) == .success)
+    check("the three unrelated turns stayed inside the small bound",
+          Date().timeIntervalSince(started) < 0.5)
+
+    release.signal()
+    check("the original request settles", responses.wait(timeout: .now() + 1) == .success)
+    check("the concurrent retry settles with it", responses.wait(timeout: .now() + 1) == .success)
+    responseLock.lock(); let settled = received; responseLock.unlock()
+    sentLock.lock(); let sentCount = sent; sentLock.unlock()
+    expect("the same in-flight key executes terminal input exactly once", sentCount, 1)
+    expect("both waiters receive an answer", settled.count, 2)
+    check("both waiters receive the same final response",
+          settled.count == 2 && settled[0].status == settled[1].status
+              && settled[0].body == settled[1].body)
+
+    RemoteServer.terminalSendForTesting = { _, _ in
+        ITerm.blockAutomationForTesting("iTerm2 is waiting for a dialog")
+        return ITerm.automationAttention
+    }
+    let failed = DispatchSemaphore(value: 0)
+    var failure: RemoteServer.Response?
+    let failedRequest = remoteRequest(
+        "POST", "/v1/sessions/\(session.id)/send",
+        headers: ["Authorization": "Bearer \(writer.token)",
+                  "Idempotency-Key": UUID().uuidString],
+        body: "{\"text\":\"timeout\"}")
+    RemoteServer.shared.sendTerminalForTesting(failedRequest) {
+        failure = $0; failed.signal()
+    }
+    check("a 15-second-equivalent terminal failure settles",
+          failed.wait(timeout: .now() + 1) == .success)
+    expect("the terminal failure is a bad-gateway response", failure?.status, 502)
+    expect("with an actionable typed code", failure.map(remoteErrorCode),
+           "iterm_attention_required")
+
+    let tmux = TargetSession(backend: .tmux, id: "%88", name: "tmux",
+                             tty: "/dev/ttys88", windowIndex: 0, tabIndex: 0,
+                             assistant: .codex)
+    RemoteServer.sessionPayloadForTesting = ([session, tmux], [:])
+    RemoteServer.terminalSendForTesting = { _, _ in "tmux pane disappeared" }
+    let tmuxFailed = DispatchSemaphore(value: 0)
+    var tmuxFailure: RemoteServer.Response?
+    let validTmuxRequest = remoteRequest(
+        "POST", "/v1/sessions/%2588/send",
+        headers: ["Authorization": "Bearer \(writer.token)",
+                  "Idempotency-Key": UUID().uuidString], body: "{\"text\":\"hello\"}")
+    RemoteServer.shared.sendTerminalForTesting(validTmuxRequest) {
+        tmuxFailure = $0; tmuxFailed.signal()
+    }
+    check("a tmux failure settles while the iTerm circuit is open",
+          tmuxFailed.wait(timeout: .now() + 1) == .success)
+    expect("tmux keeps its backend-aware error", tmuxFailure.map(remoteErrorCode),
+           "terminal_io_failed")
+
+    ITerm.completeInventoryForTesting()
+    RemoteServer.terminalSendForTesting = { _, _ in
+        ITerm.blockAutomationForTesting("an unrelated iTerm operation opened a dialog")
+        return "ps failed while inspecting the tty"
+    }
+    let unrelatedFailed = DispatchSemaphore(value: 0)
+    var unrelatedFailure: RemoteServer.Response?
+    let unrelatedRequest = remoteRequest(
+        "POST", "/v1/sessions/\(session.id)/send",
+        headers: ["Authorization": "Bearer \(writer.token)",
+                  "Idempotency-Key": UUID().uuidString], body: "{\"text\":\"inspect\"}")
+    RemoteServer.shared.sendTerminalForTesting(unrelatedRequest) {
+        unrelatedFailure = $0; unrelatedFailed.signal()
+    }
+    check("an unrelated terminal failure settles while the iTerm circuit is open",
+          unrelatedFailed.wait(timeout: .now() + 1) == .success)
+    expect("an operation does not borrow an unrelated global modal failure",
+           unrelatedFailure.map(remoteErrorCode), "terminal_io_failed")
+    RemoteServer.sessionPayloadForTesting = ([session], [:])
+
+    // Keep the worker occupied: an already-open circuit must answer before admission, and must
+    // not consume one of the remaining seven places.
+    let blockerEntered = DispatchSemaphore(value: 0)
+    let blockerRelease = DispatchSemaphore(value: 0)
+    check("a deterministic broker blocker is admitted",
+          RemoteServer.shared.enqueueTerminalCommand {
+              blockerEntered.signal(); _ = blockerRelease.wait(timeout: .now() + 2)
+          })
+    check("the blocker entered", blockerEntered.wait(timeout: .now() + 1) == .success)
+    let refused = DispatchSemaphore(value: 0)
+    var preflight: RemoteServer.Response?
+    let refusedRequest = remoteRequest(
+        "POST", "/v1/sessions/\(session.id)/send",
+        headers: ["Authorization": "Bearer \(writer.token)",
+                  "Idempotency-Key": UUID().uuidString], body: "{\"text\":\"no\"}")
+    RemoteServer.shared.sendTerminalForTesting(refusedRequest) {
+        preflight = $0; refused.signal()
+    }
+    check("an open circuit refuses without waiting behind the broker",
+          refused.wait(timeout: .now() + 1) == .success)
+    expect("the preflight refusal is typed", preflight.map(remoteErrorCode),
+           "iterm_attention_required")
+    let drained = DispatchSemaphore(value: 0)
+    for index in 0..<7 {
+        check("preflight refusal did not consume broker slot \(index + 2)",
+              RemoteServer.shared.enqueueTerminalCommand { if index == 6 { drained.signal() } })
+    }
+    check("the bounded ninth command is refused",
+          !RemoteServer.shared.enqueueTerminalCommand {})
+    blockerRelease.signal()
+    check("the bounded broker drains", drained.wait(timeout: .now() + 1) == .success)
+
+    let channelRelease = DispatchSemaphore(value: 0)
+    let channelDrained = DispatchSemaphore(value: 0)
+    check("one session may enter its fair-share channel",
+          RemoteServer.shared.enqueueTerminalCommand(channel: "same-session") {
+              _ = channelRelease.wait(timeout: .now() + 2)
+          })
+    check("one session may queue one trailing operation",
+          RemoteServer.shared.enqueueTerminalCommand(channel: "same-session") {
+              channelDrained.signal()
+          })
+    check("one session cannot monopolise a third broker slot",
+          !RemoteServer.shared.enqueueTerminalCommand(channel: "same-session") {})
+    channelRelease.signal()
+    check("the per-session channel drains", channelDrained.wait(timeout: .now() + 1) == .success)
+
+    let nestedFinished = DispatchSemaphore(value: 0)
+    var nestedRuns = 0
+    var nestedAdmitted = false
+    let nestedLock = NSLock()
+    check("a terminal cascade enters the production broker",
+          RemoteServer.shared.enqueueTerminalCommand(channel: "cascade") {
+              let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: "cascade") {
+                  nestedLock.lock(); nestedRuns += 1; nestedLock.unlock()
+              }
+              nestedLock.lock(); nestedAdmitted = admitted; nestedLock.unlock()
+              nestedFinished.signal()
+          })
+    check("the nested terminal cascade finishes",
+          nestedFinished.wait(timeout: .now() + 1) == .success)
+    check("broker counters return to zero after nested work", eventually {
+        let outstanding = RemoteServer.shared.terminalOutstandingForTesting()
+        return outstanding.total == 0 && outstanding.channels == 0
+    })
+    nestedLock.lock()
+    let completedNestedRuns = nestedRuns
+    let completedNestedAdmission = nestedAdmitted
+    nestedLock.unlock()
+    check("nested cascade work runs inline instead of deadlocking", completedNestedAdmission)
+    expect("the nested command executes exactly once", completedNestedRuns, 1)
+}
+
+group("key and end terminal mutations leave health and SSE turns responsive") {
+    let wasWriting = Config.shared.remoteWrite
+    defer {
+        Config.shared.remoteWrite = wasWriting
+        RemoteServer.sessionPayloadForTesting = nil
+        RemoteServer.terminalRouteForTesting = nil
+    }
+    Config.shared.remoteWrite = true
+    ITerm.completeInventoryForTesting()
+    let writer = RemoteAuth.addDevice(name: "terminal mutation test", caps: [.read, .send])
+    defer { RemoteAuth.revoke(id: writer.id) }
+    let session = TargetSession(backend: .tmux, id: "%77", name: "x",
+                                tty: "/dev/ttys77", windowIndex: 0, tabIndex: 0,
+                                assistant: .codex)
+    RemoteServer.sessionPayloadForTesting = ([session], [:])
+
+    for (path, body) in [("/v1/sessions/%2577/key", "{\"key\":\"1\"}"),
+                         ("/v1/sessions/%2577/end", "{}") ] {
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let finished = DispatchSemaphore(value: 0)
+        RemoteServer.terminalRouteForTesting = { _ in
+            entered.signal(); _ = release.wait(timeout: .now() + 2)
+            return .json(["ok": true])
+        }
+        let request = remoteRequest(
+            "POST", path,
+            headers: ["Authorization": "Bearer \(writer.token)",
+                      "Idempotency-Key": UUID().uuidString], body: body)
+        RemoteServer.shared.terminalMutationForTesting(request) { response in
+            if response.status == 200 { finished.signal() }
+        }
+        check("\(path) entered the bounded terminal worker",
+              entered.wait(timeout: .now() + 1) == .success)
+        let health = DispatchSemaphore(value: 0)
+        let heartbeat = DispatchSemaphore(value: 0)
+        RemoteServer.shared.routeOnServerQueueForTesting(remoteRequest("GET", "/v1/health")) {
+            if $0.status == 200 { health.signal() }
+        }
+        RemoteServer.shared.heartbeatTurnForTesting { heartbeat.signal() }
+        check("health remains responsive during \(path)",
+              health.wait(timeout: .now() + 1) == .success)
+        check("the SSE queue turn remains responsive during \(path)",
+              heartbeat.wait(timeout: .now() + 1) == .success)
+        release.signal()
+        check("\(path) settles", finished.wait(timeout: .now() + 1) == .success)
+    }
+    check("place start is classified as a terminal worker route",
+          RemoteServer.isTerminalWorkerRoute("/v1/places/project/start/codex"))
+    check("legacy place resume is classified as a terminal worker route",
+          RemoteServer.isTerminalWorkerRoute(
+            "/v1/places/project/resume/11111111-1111-4111-8111-111111111111"))
+    check("assistant-qualified place resume is classified as a terminal worker route",
+          RemoteServer.isTerminalWorkerRoute(
+            "/v1/places/project/resume/codex/11111111-1111-4111-8111-111111111111"))
+    check("session focus is classified as a terminal worker route",
+          RemoteServer.isTerminalWorkerRoute("/v1/sessions/TAB/focus"))
+    check("manual schedule run is classified as an orchestrator terminal worker route",
+          RemoteServer.isOrchestratorTerminalWorkerRoute(
+            "/v1/orchestrator/schedules/11111111-1111-4111-8111-111111111111/run"))
+    check("task cancel is classified as an orchestrator terminal worker route",
+          RemoteServer.isOrchestratorTerminalWorkerRoute(
+            "/v1/orchestrator/tasks/11111111-1111-4111-8111-111111111111"))
+    check("background shell kill is classified as a terminal worker route",
+          RemoteServer.isTerminalWorkerRoute("/v1/sessions/TAB/shells/build/kill"))
+    let coordinationRequest = remoteRequest(
+        "POST", "/v1/orchestrator/waits",
+        body: "{\"owner_session_id\":\"OWNER-TERMINAL\","
+            + "\"waiter_session_id\":\"WAITER-TERMINAL\"}")
+    expect("coordination registration accounts the terminal that receives its delivery",
+           RemoteServer.terminalChannelsForTesting(coordinationRequest), ["OWNER-TERMINAL"])
+
+    let coordinationRelease = DispatchSemaphore(value: 0)
+    check("the first production-mapped coordination delivery is admitted",
+          RemoteServer.shared.enqueueTerminalCommand(
+            channels: RemoteServer.terminalChannelsForTesting(coordinationRequest)) {
+                _ = coordinationRelease.wait(timeout: .now() + 2)
+            })
+    check("one trailing coordination delivery to that session is admitted",
+          RemoteServer.shared.enqueueTerminalCommand(
+            channels: RemoteServer.terminalChannelsForTesting(coordinationRequest)) {})
+    check("a third coordination delivery to the same session is refused",
+          !RemoteServer.shared.enqueueTerminalCommand(
+            channels: RemoteServer.terminalChannelsForTesting(coordinationRequest)) {})
+    coordinationRelease.signal()
+
+    let focusSession = TargetSession(backend: .iterm, id: "FOCUS-TAB", name: "focus",
+                                     tty: "/dev/ttys78", windowIndex: 0, tabIndex: 0,
+                                     assistant: .codex)
+    RemoteServer.sessionPayloadForTesting = ([focusSession], [:])
+    ITerm.blockAutomationForTesting("iTerm focus dialog")
+    let focusFinished = DispatchSemaphore(value: 0)
+    var focusResponse: RemoteServer.Response?
+    let focusRequest = remoteRequest(
+        "POST", "/v1/sessions/FOCUS-TAB/focus",
+        headers: ["Authorization": "Bearer \(writer.token)",
+                  "Idempotency-Key": UUID().uuidString], body: "{}")
+    RemoteServer.shared.terminalMutationForTesting(focusRequest) {
+        focusResponse = $0; focusFinished.signal()
+    }
+    check("focus settles while the iTerm circuit is open",
+          focusFinished.wait(timeout: .now() + 1) == .success)
+    expect("focus reports its own circuit refusal", focusResponse?.status, 502)
+    expect("focus circuit refusal is typed", focusResponse.map(remoteErrorCode),
+           "iterm_attention_required")
 }
 
 group("a project folder says which directory it is, and is not taken at its word") {
@@ -15565,10 +16052,18 @@ group("what a linger running out decides, one instant at a time") {
         TargetSession(backend: .iterm, id: "TAB", name: "x", tty: tty,
                       windowIndex: 0, tabIndex: 0, assistant: assistant)
     }
-    func step(now: Date, sawTerminals: Bool = true, child: TargetSession?,
-              tty: String? = "/dev/ttys7", busy: Bool = false) -> Orchestrator.CloseStep {
-        Orchestrator.closeStep(now: now, closeAt: due, sawTerminals: sawTerminals,
-                               child: child, assistant: .codex, tty: tty, busy: { busy })
+    func step(now: Date, inventoryComplete: Bool = true,
+              inventoryEmpty: Bool = true,
+              emptyInventoryAuthoritative: Bool = false, automationReady: Bool = true,
+              intervention: Orchestrator.TerminalIntervention? = nil,
+              child: TargetSession?, tty: String? = "/dev/ttys7",
+              busy: Bool = false) -> Orchestrator.CloseStep {
+        Orchestrator.closeStep(now: now, closeAt: due, inventoryComplete: inventoryComplete,
+                               inventoryEmpty: inventoryEmpty,
+                               emptyInventoryAuthoritative: emptyInventoryAuthoritative,
+                               automationReady: automationReady, intervention: intervention,
+                               child: child,
+                               assistant: .codex, tty: tty, busy: { busy })
     }
 
     expect("before the deadline, nothing happens",
@@ -15579,26 +16074,251 @@ group("what a linger running out decides, one instant at a time") {
            step(now: due, child: child(nil)), .close(justTheTab: true))
     expect("a child mid-turn is left alone",
            step(now: due.addingTimeInterval(60), child: child(.codex), busy: true), .wait)
-    expect("but not for longer than ten minutes",
+    expect("elapsed time never turns a busy assistant into a safe close",
            step(now: due.addingTimeInterval(601), child: child(.codex), busy: true),
-           .close(justTheTab: true))
+           .wait)
     expect("a tab that is somebody else's assistant now is not ours to close",
            step(now: due, child: child(.claude)), .forget)
     expect("nor is one whose tty moved under it",
            step(now: due, child: child(.codex, tty: "/dev/ttys9")), .forget)
-    expect("a reading that found the tab gone ends the linger",
-           step(now: due, child: nil), .forget)
+    expect("an ordinary empty reading cannot forget the tab",
+           step(now: due, child: nil), .wait)
+    expect("only an authoritative empty inventory may forget the tab",
+           step(now: due, emptyInventoryAuthoritative: true, child: nil), .forget)
+    expect("a complete non-empty inventory may prove this one tab absent",
+           step(now: due, inventoryEmpty: false, child: nil), .forget)
 
     // **The one branch that cannot be taken back.** `forget` is permanent — nothing sets the
     // deadline a second time — so it may only be reached from a reading that actually happened.
     // A reading with no terminals in it at all is what the first seconds after launch look like,
     // and what iTerm2 not answering looks like; deciding on one closed nothing and left every
     // finished child's tab standing for the rest of the day.
-    expect("a reading that found no terminals at all decides nothing",
-           step(now: due, sawTerminals: false, child: nil), .wait)
+    expect("an incomplete inventory cannot forget an omitted tab",
+           step(now: due, inventoryComplete: false, child: nil), .wait)
+    expect("an incomplete inventory cannot repeat an automatic close",
+           step(now: due, inventoryComplete: false, child: child(.codex)), .wait)
+    expect("a modal-open automation circuit cannot repeat an automatic close",
+           step(now: due, automationReady: false, child: child(.codex)), .wait)
+    let processFailure = Orchestrator.TerminalIntervention(
+        kind: .terminal, message: "Could not read ps")
+    expect("a non-modal exact-tty failure cannot retry on a later beat",
+           step(now: due, intervention: processFailure, child: child(.codex)), .wait)
+    let modalFailure = Orchestrator.TerminalIntervention(
+        kind: .iTermModal, message: "iTerm2 needs attention")
+    expect("a modal intervention still waits while its circuit is open",
+           step(now: due, automationReady: false, intervention: modalFailure,
+                child: child(.codex)), .wait)
+    expect("a modal intervention gets one decision after fresh inventory recovery",
+           step(now: due, automationReady: true, intervention: modalFailure,
+                child: child(.codex)), .close(justTheTab: false))
+    expect("a later complete inventory re-enables the safe close decision",
+           step(now: due, inventoryComplete: true, automationReady: true,
+                child: child(.codex)), .close(justTheTab: false))
+    expect("unknown capture state never becomes permission to force-close",
+           Orchestrator.closeStep(
+            now: due, closeAt: due, inventoryComplete: true,
+            automationReady: true, child: child(.codex), assistant: .codex,
+            tty: "/dev/ttys7", activity: { .unknown }), .wait)
+}
+
+group("safe-close activity keeps capture failure distinct from idle") {
+    defer { Targets.safeCloseCaptureForTesting = nil }
+    let child = TargetSession(backend: .iterm, id: "ACTIVITY-TAB", name: "x",
+                              tty: "/dev/ttys79", windowIndex: 0, tabIndex: 0,
+                              assistant: .codex)
+    Targets.safeCloseCaptureForTesting = { _ in nil }
+    expect("capture failure is unknown", Targets.safeCloseActivity(of: child), .unknown)
+    Targets.safeCloseCaptureForTesting = { _ in "❯ " }
+    expect("a proved prompt is idle", Targets.safeCloseActivity(of: child), .idle)
+    Targets.safeCloseCaptureForTesting = { _ in "• Working (3s • esc to interrupt)" }
+    expect("a live line is busy", Targets.safeCloseActivity(of: child), .busy)
+}
+
+group("linger expiry and explicit root close share one closing admission") {
+    let id = "simultaneous-terminal-close"
+    defer { Orchestrator.finishTerminalCloseForTesting(id) }
+    let resultLock = NSLock()
+    var admissions: [Bool] = []
+    DispatchQueue.concurrentPerform(iterations: 2) { _ in
+        let admitted = Orchestrator.beginTerminalCloseForTesting(id)
+        resultLock.lock(); admissions.append(admitted); resultLock.unlock()
+    }
+    expect("the two simultaneous close paths admit exactly one terminal operation",
+           admissions.filter { $0 }.count, 1)
+    expect("only one terminal close is in flight",
+           Orchestrator.terminalClosesInFlightForTesting(), 1)
+    Orchestrator.finishTerminalCloseForTesting(id)
+    expect("the closing guard returns to zero", Orchestrator.terminalClosesInFlightForTesting(), 0)
+}
+
+group("the automatic close runs closeStep against an inventory it took itself") {
+    // The decision table above is only worth having if the close that runs on this Mac is the
+    // thing that consults it. It was not: `closeStep` had no production caller at all, and the
+    // whole busy/idle/unknown table could be deleted with every check in this file still green.
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    defer {
+        Targets.safeCloseInventoryForTesting = nil
+        Targets.safeCloseCaptureForTesting = nil
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    let child = TargetSession(backend: .iterm, id: "LINGER-TAB", name: "child",
+                              tty: "/dev/ttys81", windowIndex: 0, tabIndex: 0,
+                              assistant: .codex, cwd: "/tmp")
+
+    struct Outcome {
+        var ends: [Bool] = []
+        var closeAt: Date?
+        var intervention: String?
+    }
+
+    /// One whole automatic close, from the beat's nomination to the record it leaves behind.
+    func close(inventory: Targets.Snapshot, screen: String?,
+               failure: String? = nil) -> Outcome {
+        Orchestrator.forget()
+        var task = Orchestrator.Task(
+            id: UUID().uuidString.lowercased(), state: .success, kind: "custom",
+            title: "linger close", assistant: .codex, projectDir: "/tmp",
+            timeoutMinutes: 30, created: Date(),
+            secretHash: String(repeating: "0", count: 64))
+        task.finishedAt = Date()
+        task.childTerminalId = child.id
+        task.childTTY = child.tty
+        task.closeAt = Date().addingTimeInterval(-1)
+        Orchestrator.holdScheduleTaskForTesting(task)
+        // Another group may have left the automation circuit open; this one is about the
+        // inventory and the screen, and `closeStep` refuses everything while a modal is up.
+        ITerm.completeInventoryForTesting()
+        Targets.safeCloseInventoryForTesting = { inventory }
+        Targets.safeCloseCaptureForTesting = { _ in screen }
+        var ends: [Bool] = []
+        _ = Orchestrator.takeChildTab(for: task, childID: child.id,
+                                      closeAt: task.closeAt ?? Date(),
+                                      end: { _, justTheTab in
+                                          ends.append(justTheTab); return failure
+                                      })
+        check("the close settles", eventually {
+            Orchestrator.terminalClosesInFlightForTesting() == 0
+        })
+        let record = Orchestrator.record(id: task.id)
+        let kind = (record?["terminal_intervention"] as? [String: Any])?["code"] as? String
+        return Outcome(ends: ends, closeAt: Orchestrator.closeAtForTesting(task.id),
+                       intervention: kind)
+    }
+
+    var present = Targets.Snapshot()
+    present.sessions = [child]
+    var incomplete = present
+    incomplete.isComplete = false
+    incomplete.error = "iTerm would not answer"
+    var replaced = Targets.Snapshot()
+    replaced.sessions = [TargetSession(backend: .iterm, id: "SOMEBODY-ELSE", name: "other",
+                                       tty: "/dev/ttys82", windowIndex: 0, tabIndex: 0,
+                                       assistant: .claude, cwd: "/tmp")]
+    let emptyButComplete = Targets.Snapshot()
+
+    let busy = close(inventory: present, screen: "• Working (3s • esc to interrupt)")
+    check("a child mid-turn is never closed by its own linger", busy.ends.isEmpty)
+    check("and its deadline is left standing for a later beat", busy.closeAt != nil)
+
+    let unknown = close(inventory: present, screen: nil)
+    check("an unreadable screen is not idle and never reaches the close", unknown.ends.isEmpty)
+    check("an unreadable screen leaves the deadline alone", unknown.closeAt != nil)
+
+    let degraded = close(inventory: incomplete, screen: "❯ ")
+    check("an incomplete inventory never reaches the close", degraded.ends.isEmpty)
+    check("and cannot drop the deadline either", degraded.closeAt != nil)
+
+    let blank = close(inventory: emptyButComplete, screen: "❯ ")
+    check("an inventory with no terminals at all proves nothing", blank.ends.isEmpty)
+    check("so the tab is not forgotten on it", blank.closeAt != nil)
+
+    let gone = close(inventory: replaced, screen: "❯ ")
+    check("a tab absent from a complete inventory is nobody's to close", gone.ends.isEmpty)
+    check("and its deadline is dropped rather than retried forever", gone.closeAt == nil)
+
+    let idle = close(inventory: present, screen: "❯ ")
+    expect("only a proved idle prompt is closed, and with the quit word", idle.ends, [false])
+    check("a successful close clears the deadline exactly then", idle.closeAt == nil)
+
+    let refused = close(inventory: present, screen: "❯ ",
+                        failure: "The assistant is still running on /dev/ttys81")
+    expect("a refused close still happened once", refused.ends, [false])
+    check("a failed close keeps its deadline visible", refused.closeAt != nil)
+    expect("and records why a person has to look", refused.intervention,
+           "terminal_intervention_required")
+}
+
+group("a beat with several lingering children takes one terminal walk, not one each") {
+    // The decision has to be fresh, which means a walk; it does not have to be one walk per
+    // task. Per task, eight children finishing together was eight iTerm lists plus eight
+    // `list-panes` every five seconds, all on the single serial terminal lane a phone's `/send`
+    // queues in — the lane this whole change exists to keep clear.
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    defer {
+        Targets.safeCloseInventoryForTesting = nil
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    ITerm.completeInventoryForTesting()
+    var lingering: [Orchestrator.Task] = []
+    for index in 0..<4 {
+        var task = Orchestrator.Task(
+            id: UUID().uuidString.lowercased(), state: .success, kind: "custom",
+            title: "batched linger", assistant: .codex, projectDir: "/tmp",
+            timeoutMinutes: 30, created: Date(), secretHash: String(repeating: "0", count: 64))
+        task.finishedAt = Date()
+        task.childTerminalId = "BATCH-TAB-\(index)"
+        task.closeAt = Date().addingTimeInterval(-1)
+        Orchestrator.holdScheduleTaskForTesting(task)
+        lingering.append(task)
+    }
+    // A complete inventory holding somebody else's tab and none of theirs: every one of them is
+    // decided, none of them touches a terminal, and the count below is the whole point.
+    var elsewhere = Targets.Snapshot()
+    elsewhere.sessions = [TargetSession(backend: .iterm, id: "NOT-OURS", name: "other",
+                                        tty: "/dev/ttys95", windowIndex: 0, tabIndex: 0,
+                                        assistant: .claude, cwd: "/tmp")]
+    let walkLock = NSLock()
+    var walks = 0
+    Targets.safeCloseInventoryForTesting = {
+        walkLock.lock(); walks += 1; walkLock.unlock()
+        return elsewhere
+    }
+    Orchestrator.closeDueChildren(lingering)
+    check("every lingering child is decided", eventually {
+        Orchestrator.terminalClosesInFlightForTesting() == 0
+            && lingering.allSatisfy { Orchestrator.closeAtForTesting($0.id) == nil }
+    })
+    walkLock.lock(); let taken = walks; walkLock.unlock()
+    expect("four due children cost one terminal inventory, not four", taken, 1)
+}
+
+group("terminal intervention type follows the returned failure, not unrelated global state") {
+    defer { ITerm.completeInventoryForTesting() }
+    ITerm.blockAutomationForTesting("iTerm modal timeout")
+    let attention = ITerm.automationAttention!
+    expect("the actual iTerm circuit refusal is modal",
+           Orchestrator.terminalIntervention(for: attention, backend: .iterm).kind,
+           .iTermModal)
+    expect("a ps failure stays non-modal even while the iTerm circuit is open",
+           Orchestrator.terminalIntervention(for: "ps failed", backend: .iterm).kind,
+           .terminal)
+    expect("a tmux failure never borrows iTerm modal state",
+           Orchestrator.terminalIntervention(for: attention, backend: .tmux).kind,
+           .terminal)
 }
 
 group("a linger survives the restart that lands in the middle of it") {
+    let originalLinger = Config.shared.orchestratorChildLinger
+    Config.shared.orchestratorChildLinger = 180
     Orchestrator.forget()
     let store = Orchestrator.storeURL
     let before = try? Data(contentsOf: store)
@@ -15611,6 +16331,7 @@ group("a linger survives the restart that lands in the middle of it") {
         } else {
             try? FileManager.default.removeItem(at: store)
         }
+        Config.shared.orchestratorChildLinger = originalLinger
         Orchestrator.forget()
     }
 
@@ -15627,6 +16348,9 @@ group("a linger survives the restart that lands in the middle of it") {
         "child_terminal": "TAB", "child_tty": "/dev/ttys7",
         "finished_at": Date().timeIntervalSince1970,
         "close_at": soon.timeIntervalSince1970,
+        "terminal_intervention": [
+            "kind": "iterm_modal", "message": "iTerm2 needs attention before safe close",
+        ],
     ]
     let data = try! JSONSerialization.data(withJSONObject: ["version": 1, "tasks": [row]])
     try! data.write(to: store, options: .atomic)
@@ -15638,6 +16362,30 @@ group("a linger survives the restart that lands in the middle of it") {
     expect("and a deadline this process sets is written down for the next one",
            Orchestrator.stored(Orchestrator.task(from: row)!)["close_at"] as? Double,
            soon.timeIntervalSince1970)
+    let storedIntervention = Orchestrator.stored(
+        Orchestrator.task(from: row)!
+    )["terminal_intervention"] as? [String: Any]
+    expect("terminal intervention kind survives its stored-row round trip",
+           storedIntervention?["kind"] as? String, "iterm_modal")
+    expect("terminal intervention reason survives its stored-row round trip",
+           storedIntervention?["message"] as? String,
+           "iTerm2 needs attention before safe close")
+    let intervention = (Orchestrator.record(id: id)?["terminal_intervention"]
+                        as? [String: Any])?["message"] as? String
+    expect("terminal intervention survives restart into the API record", intervention,
+           "iTerm2 needs attention before safe close")
+    var tmuxRow = row
+    tmuxRow["child_backend"] = "tmux"
+    tmuxRow["terminal_intervention"] = [
+        "kind": "terminal",
+        "message": "The assistant is still running; the pane was left open.",
+    ]
+    let tmuxIntervention = (Orchestrator.recordForTesting(
+        Orchestrator.task(from: tmuxRow)!
+    )["terminal_intervention"]) as! [String: Any]
+    expect("a tmux safe-close failure never names an iTerm dialog",
+           tmuxIntervention["code"] as? String, "terminal_intervention_required")
+    check("and carries no iTerm app field", tmuxIntervention["app"] == nil)
 
     // The other half: a deadline that ran out while the app was away. It is not acted on the
     // instant this process starts, because nothing has been read yet — and a tab closed on the
@@ -15679,13 +16427,14 @@ group("a linger survives the restart that lands in the middle of it") {
     Orchestrator.resumeAfterRestart()
     check("an explicit schedule deadline survives the opposite global preference",
           Orchestrator.closeAtForTesting(id) != nil)
+    Config.shared.orchestratorChildLinger = 180
 
     // And the tab is still only closed on what *this* process can see: the record carries the
     // deadline across, never the belief that the tab is still there.
     let task = Orchestrator.task(from: staleRow)!
     expect("the restored deadline still waits on a reading",
            Orchestrator.closeStep(now: Date(), closeAt: Date().addingTimeInterval(-1),
-                                  sawTerminals: false, child: nil,
+                                  inventoryComplete: false, automationReady: true, child: nil,
                                   assistant: task.assistant, tty: task.childTTY, busy: { false }),
            .wait)
 }
@@ -18255,13 +19004,33 @@ group("every terminal path keeps the reclaim contract at its real filesystem bou
     check("the reclaim half of a beat settles both deadlines",
           Orchestrator.reclaimTaskWorkIfDue(staleID)
             && Orchestrator.reclaimTaskBuildIfDue(staleID))
-    let unrelated = TargetSession(backend: .iterm, id: "OTHER-TAB", name: "other",
-                                  tty: "/dev/ttys099", windowIndex: 0, tabIndex: 0,
-                                  assistant: .codex, cwd: "/tmp")
+    // Safe close no longer acts on a cached inventory at all: what a beat holds may nominate a
+    // task, and absence, identity and activity are all decided on a fresh walk inside the
+    // terminal broker. So the walk is seamed from here on — a nomination that reaches the broker
+    // must never take a real inventory of this Mac from inside the suite — and the circuit is
+    // cleared, because `closeStep` refuses everything while an iTerm modal is up.
+    var inventory = Targets.Snapshot()
+    inventory.sessions = [TargetSession(backend: .iterm, id: "OTHER-TAB", name: "other",
+                                        tty: "/dev/ttys099", windowIndex: 0, tabIndex: 0,
+                                        assistant: .codex, cwd: "/tmp")]
+    // Degraded for the first half: the nomination reaches the broker and the walk it takes there
+    // proves nothing, so this half is exactly "a close that decided nothing wrote nothing".
+    inventory.isComplete = false
+    inventory.error = "the walk was degraded"
+    Targets.safeCloseInventoryForTesting = { inventory }
+    defer { Targets.safeCloseInventoryForTesting = nil }
+    ITerm.completeInventoryForTesting()
+    // The deadline guard the reclaim needs is unchanged: a nomination must not write the stale
+    // record back.
     check("and closeChild's stale snapshot cannot resurrect either deadline",
-          Orchestrator.closeChild(stale, seen: [unrelated])
+          !Orchestrator.closeChild(stale)
             && Orchestrator.workCleanupAtForTesting(staleID) == nil
             && Orchestrator.buildCleanupAtForTesting(staleID) == nil)
+    // Whether it entered the broker depends on whether a terminal scan has completed in this
+    // process yet, and both halves of this test name the same task. One close at a time is the
+    // whole point of the closing guard, so wait for it rather than racing it.
+    check("the nomination settles before the next half takes the same task id",
+          eventually { Orchestrator.terminalClosesInFlightForTesting() == 0 })
 
     var staleTake = stale
     staleTake.closeAt = Date().addingTimeInterval(-1)
@@ -18271,13 +19040,28 @@ group("every terminal path keeps the reclaim contract at its real filesystem bou
     check("the second reclaim settles both deadlines before takeChildTab",
           Orchestrator.reclaimTaskWorkIfDue(staleID)
             && Orchestrator.reclaimTaskBuildIfDue(staleID))
+    // A shell-only tab: `safeCloseActivity` answers idle without a screen capture, so what this
+    // exercises is the record write and nothing else.
     let child = TargetSession(backend: .iterm, id: "TAB", name: "child",
                               tty: "/dev/ttys098", windowIndex: 0, tabIndex: 0,
-                              assistant: .codex, cwd: "/tmp")
+                              assistant: nil, cwd: "/tmp")
+    inventory.sessions = [child]
+    inventory.isComplete = true
+    inventory.error = nil
+    // The close is asynchronous now — it is admitted to the terminal broker and settles on main
+    // — so the synchronous answer is false and the record is read again before it is written.
+    // Only the record question is asked here. A beat fired by a real terminal scan nominates the
+    // same task, and whichever of the two reaches the broker first is the one that closes — so
+    // what the close *decides* is asserted in its own group, on tasks nothing else can see, and
+    // what is left for this one is that neither writer puts the stale snapshot back.
+    Orchestrator.takeChildTab(for: staleTake, childID: child.id,
+                              closeAt: staleTake.closeAt ?? Date(),
+                              end: { _, _ in nil })
+    check("the close settles", eventually {
+        Orchestrator.terminalClosesInFlightForTesting() == 0
+    })
     check("and takeChildTab's stale snapshot cannot resurrect either deadline",
-          Orchestrator.takeChildTab(child, justTheTab: true, for: staleTake,
-                                    end: { _, _ in nil })
-            && Orchestrator.workCleanupAtForTesting(staleID) == nil
+          Orchestrator.workCleanupAtForTesting(staleID) == nil
             && Orchestrator.buildCleanupAtForTesting(staleID) == nil)
 }
 
@@ -19235,6 +20019,33 @@ group("an attached briefing is delivered work, not a tab still trying to open") 
     Orchestrator.beat(fromTimer: true)
     expect("the same deadline still rejects a fresh tab that never reached a prompt",
            Orchestrator.record(id: opening.id)?["state"] as? String, "spawn_failed")
+
+    // Both deadlines are record decisions and must not travel with the briefing, which reads a
+    // screen and types and therefore belongs in the terminal broker. An iTerm sheet nobody has
+    // answered fills every lane; if expiry queued behind that, a task nobody can brief would hold
+    // its claims and a slot on this Mac for as long as the dialog stayed up.
+    let heldLane = DispatchSemaphore(value: 0)
+    var lanes = 0
+    while RemoteServer.shared.enqueueTerminalCommand(channel: "expiry-lane-\(lanes)", {
+        _ = heldLane.wait(timeout: .now() + 5)
+    }) { lanes += 1 }
+    // Counted rather than asserted at eight: another group's terminal work may still be in
+    // flight, and what this needs is only that the broker is full at the moment of the beat.
+    check("no terminal lane is left for a briefing", lanes > 0
+            && !RemoteServer.shared.enqueueTerminalCommand(channel: "expiry-probe") {})
+    let blocked = oldSpawning(attached: true)
+    Orchestrator.holdScheduleTaskForTesting(blocked)
+    Orchestrator.beat(fromTimer: true)
+    expect("a task still expires while every terminal lane is blocked",
+           Orchestrator.record(id: blocked.id)?["state"] as? String, "timeout")
+    let blockedTab = oldSpawning(attached: false)
+    Orchestrator.holdScheduleTaskForTesting(blockedTab)
+    Orchestrator.beat(fromTimer: true)
+    expect("and a tab that never reached a prompt is refused on the same blocked beat",
+           Orchestrator.record(id: blockedTab.id)?["state"] as? String, "spawn_failed")
+    for _ in 0..<lanes { heldLane.signal() }
+    check("the broker drains again",
+          eventually { RemoteServer.shared.terminalOutstandingForTesting().total == 0 })
 }
 
 group("owned storage is visible through the read-only orchestrator route") {

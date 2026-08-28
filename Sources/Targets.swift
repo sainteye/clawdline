@@ -7,6 +7,24 @@ enum Backend: String {
     case tmux
 }
 
+/// A failure returned by the terminal operation that produced it. The kind travels with the
+/// message so an HTTP response or orchestrator record never has to sample unrelated global state
+/// later and guess whether this particular operation met an iTerm modal, a timeout, or ordinary
+/// terminal I/O failure.
+struct TerminalFailure: Error, Equatable {
+    enum Kind: Equatable {
+        case io
+        case timeout
+        case iTermAttention
+        case incompleteInventory
+        case identityChanged
+        case unknownActivity
+    }
+
+    let kind: Kind
+    let message: String
+}
+
 /// The one list the panel works from, merged out of every backend.
 ///
 /// The two rarely collide in practice. When Claude Code runs inside tmux, the iTerm2 session
@@ -14,6 +32,22 @@ enum Backend: String {
 /// gets flagged, and the same session does not show up twice. The dedupe below is a belt for
 /// the cases where it would.
 enum Targets {
+    /// Replaces only the irreversible backend close in exact-tty guard tests.
+    static var terminalCloseForTesting: ((TargetSession) -> String?)?
+    /// Replaces the complete terminal inventory used by irreversible close tests. Production
+    /// always takes a new combined iTerm/tmux snapshot inside the terminal broker.
+    static var safeCloseInventoryForTesting: (() -> Snapshot)?
+    /// Replaces only the capture behind safe-close activity classification.
+    static var safeCloseCaptureForTesting: ((TargetSession) -> String?)?
+    static var safeCloseSignalForTesting: ((pid_t, Int32) -> Void)?
+    static var safeCloseSleepForTesting: ((TimeInterval) -> Void)?
+    static var safeCloseNowForTesting: (() -> Date)?
+
+    enum SafeCloseActivity: Equatable {
+        case busy
+        case idle
+        case unknown
+    }
 
     struct Snapshot {
         var sessions: [TargetSession] = []
@@ -83,7 +117,12 @@ enum Targets {
         var seenTTYs = Set<String>()
         // Asked once. Walking it twice was two `list-panes` subprocesses per scan for one answer
         // that cannot have changed between them.
-        let panes = Tmux.panes()
+        let tmux = Tmux.paneObservation()
+        let panes = tmux.sessions
+        if !tmux.isComplete {
+            snap.isComplete = false
+            snap.error = tmux.error?.message ?? "Could not enumerate tmux panes."
+        }
         // tmux first: when a pane and its host terminal both appear, the pane is the one that
         // can actually receive text, so it should win the tty.
         for pane in panes where pane.isAssistant {
@@ -103,6 +142,58 @@ enum Targets {
         // caller may publish those rows, but it must not remove older iTerm rows by omission.
         if let e = iterm.error { snap.error = e }
         return snap
+    }
+
+    /// Consulted only when nothing else has replaced the walk. The suite installs it once, for
+    /// the whole run: safe close is asynchronous and beat-driven, so a fixture left holding a due
+    /// deadline can reach this from a background scan long after the group that made it ended —
+    /// and a unit run must never take a real inventory of the machine it is running on.
+    /// Production never sets either of these.
+    static var safeCloseInventoryFallbackForTesting: (() -> Snapshot)?
+
+    static func safeCloseInventory() -> Snapshot {
+        safeCloseInventoryForTesting?() ?? safeCloseInventoryFallbackForTesting?() ?? snapshot()
+    }
+
+    /// Require a fresh, complete inventory to preserve the exact terminal id/backend/tty tuple.
+    /// The assistant label is included too: a tab now occupied by another assistant is not the
+    /// terminal operation the caller admitted.
+    static func stableTerminal(_ expected: TargetSession,
+                               in snapshot: Snapshot,
+                               allowAssistantGone: Bool = false)
+        -> Result<TargetSession, TerminalFailure> {
+        guard snapshot.isComplete else {
+            return .failure(TerminalFailure(
+                kind: .incompleteInventory,
+                message: snapshot.error ?? "The terminal inventory was incomplete; nothing was closed."))
+        }
+        guard let observed = snapshot.sessions.first(where: { $0.id == expected.id }) else {
+            return .failure(TerminalFailure(
+                kind: .incompleteInventory,
+                message: "The terminal is no longer present in the fresh inventory; nothing was closed."))
+        }
+        let assistantStable = observed.assistant == expected.assistant
+            || (allowAssistantGone && expected.assistant != nil && observed.assistant == nil)
+        guard observed.backend == expected.backend, observed.tty == expected.tty,
+              assistantStable else {
+            return .failure(TerminalFailure(
+                kind: .identityChanged,
+                message: "The terminal identity changed before close; nothing was closed."))
+        }
+        return .success(observed)
+    }
+
+    /// Fresh screen classification performed in the broker immediately before an automatic
+    /// linger decision. Capture failure is `unknown`, never idle and never permission to close.
+    static func safeCloseActivity(of session: TargetSession) -> SafeCloseActivity {
+        guard session.assistant != nil else { return .idle }
+        let screen = safeCloseCaptureForTesting?(session) ?? capture(session)
+        switch SessionState.read(screen, assistant: session.assistant ?? .claude,
+                                 hookWaiting: true) {
+        case .working, .waiting: return .busy
+        case .idle: return .idle
+        case .unknown: return .unknown
+        }
     }
 
     static func send(_ text: String, to session: TargetSession) -> String? {
@@ -379,23 +470,40 @@ enum Targets {
     /// got faster too: `/exit` at an idle prompt is done in a few hundred milliseconds, and this
     /// no longer sits out the rest of the second and a bit.
     ///
-    /// **It still ends the session.** A session that will not leave on the word is asked with a
-    /// signal and then told, which is the same outcome the sheet was offering and none of the
-    /// waiting. Worst case is a shade over five seconds rather than forever, and that number
-    /// matters: this runs on the one queue that answers every remote request, so it is a ceiling
-    /// on how long a phone can be left looking at a page that has stopped moving. This is
-    /// documented as ending a session, not as saving one.
+    /// A deadline never becomes permission to close a busy tab. After the polite word and bounded
+    /// TERM/KILL attempts, a fresh exact-tty scan must positively prove the assistant absent.
+    /// If the process remains, or that scan fails, the tab stays open and the caller records a
+    /// terminal intervention.
     static func end(_ session: TargetSession) -> String? {
+        let current: TargetSession
+        switch stableTerminal(session, in: safeCloseInventory()) {
+        case .success(let observed): current = observed
+        case .failure(let failure): return failure.message
+        }
         // Typed as a line, not as a keystroke: the word is text at a prompt, and `send` already
         // knows how to put text in front of an assistant and press Return. Which word depends on
         // which assistant — Claude Code leaves on `/exit`, Codex on `/quit`, and each refuses the
         // other's, which would leave the session open with the tab closing under it.
-        let word = (session.assistant ?? .claude).quitLine
-        if let failure = send(word, to: session) { return failure }
-        waitToBeGone(session)
-        switch session.backend {
-        case .iterm: return ITerm.close(session.id)
-        case .tmux:  return Tmux.close(session.id)
+        let word = (current.assistant ?? .claude).quitLine
+        if let failure = send(word, to: current) { return failure }
+        if let failure = waitToBeGone(current) { return failure }
+        switch stableTerminal(current, in: safeCloseInventory(), allowAssistantGone: true) {
+        case .failure(let failure): return failure.message
+        case .success(let closing):
+            // The inventory and exact-tty process observation are independent proofs. Ask the
+            // tty once more after the final inventory so a process that appeared during the quit
+            // sequence cannot be hung up by the backend close.
+            let observation = ITerm.assistantObservation(onTTY: closing.tty)
+            guard observation.isComplete else {
+                return observation.error ?? "Could not verify whether the assistant left the tty."
+            }
+            guard observation.running == nil else {
+                return "An assistant appeared on \(closing.tty); the tab was left open."
+            }
+            switch closing.backend {
+            case .iterm: return ITerm.close(closing.id)
+            case .tmux:  return Tmux.close(closing.id)
+            }
         }
     }
 
@@ -407,6 +515,11 @@ enum Targets {
     /// about *when to stop being polite* is here, and is checked against a clock that is passed
     /// in rather than one that has to pass.
     enum Farewell {
+        struct ProcessIdentity: Equatable {
+            let pid: pid_t
+            let processStart: Date
+        }
+
         enum Step: Equatable {
             /// Still leaving on its own. Look again in a moment.
             case wait
@@ -416,6 +529,8 @@ enum Targets {
             case kill(pid_t)
             /// Nothing is holding the tab. Take it.
             case close
+            /// The bounded attempts are over, but a process is still positively present.
+            case refuse
         }
 
         /// How long the word gets before anything harsher happens.
@@ -446,10 +561,23 @@ enum Targets {
             if elapsed < polite + afterTerm { return .wait }
             if !killed { return .kill(pid) }
             if elapsed < polite + afterTerm + afterKill { return .wait }
-            // Past a `SIGKILL` and still on the tty means a process the kernel cannot reap
-            // either, and no amount of further waiting changes that. Closing is what is left,
-            // and it is what the old code did to every session unconditionally.
-            return .close
+            // A process still visible after SIGKILL is exactly the case where a tab close is not
+            // safe. Preserve it for a person; elapsed time is never evidence of absence.
+            return .refuse
+        }
+
+        /// Identity-bearing form used by production safe close. Kept as its own seam so tests
+        /// can replace a process between TERM and KILL without signalling a real process.
+        static func step(elapsed: TimeInterval, identity: ProcessIdentity?,
+                         termed: ProcessIdentity?, killed: ProcessIdentity?) -> Step {
+            // Once a signal has been sent, the next rung belongs only to the same kernel
+            // process. A different PID is plainly different; the same PID with a different
+            // start instant is PID reuse and is just as different. In either case fail closed —
+            // a new process must never inherit the old one's TERM/KILL history.
+            if let identity, let termed, identity != termed { return .refuse }
+            if let identity, let killed, identity != killed { return .refuse }
+            return step(elapsed: elapsed, pid: identity?.pid,
+                        termed: termed != nil, killed: killed != nil)
         }
     }
 
@@ -459,26 +587,86 @@ enum Targets {
     /// idea of a session is not one. It works the same for a tmux pane, which is why it is here
     /// rather than in ``ITerm``: `kill-pane` does not put up a sheet, but it does send a `SIGHUP`
     /// to whatever is still running, and a transcript half-written is no better on that side.
-    private static func waitToBeGone(_ session: TargetSession) {
-        let started = Date()
-        var termed = false, killed = false
+    private static func waitToBeGone(_ session: TargetSession) -> String? {
+        let now = { safeCloseNowForTesting?() ?? Date() }
+        let pause: (TimeInterval) -> Void = { seconds in
+            if let seam = safeCloseSleepForTesting { seam(seconds) }
+            else { Thread.sleep(forTimeInterval: seconds) }
+        }
+        let signal: (pid_t, Int32) -> Void = { pid, value in
+            if let seam = safeCloseSignalForTesting { seam(pid, value) }
+            else { kill(pid, value) }
+        }
+        let started = now()
+        var termed: Farewell.ProcessIdentity?
+        var killed: Farewell.ProcessIdentity?
         while true {
-            let running = ITerm.assistant(onTTY: session.tty)
-            let elapsed = Date().timeIntervalSince(started)
-            switch Farewell.step(elapsed: elapsed, pid: running?.pid,
+            let observation = ITerm.assistantObservation(onTTY: session.tty)
+            guard observation.isComplete else {
+                return observation.error ?? "Could not verify whether the assistant left the tty."
+            }
+            let running = observation.running
+            let identity = running.flatMap { running -> Farewell.ProcessIdentity? in
+                guard let processStart = running.processStart else { return nil }
+                return Farewell.ProcessIdentity(pid: running.pid, processStart: processStart)
+            }
+            guard running == nil || identity != nil else {
+                return "Could not verify the assistant process start on \(session.tty)."
+            }
+            let elapsed = now().timeIntervalSince(started)
+            switch Farewell.step(elapsed: elapsed, identity: identity,
                                  termed: termed, killed: killed) {
             case .close:
-                return
+                return nil
+            case .refuse:
+                return "The assistant is still running on \(session.tty); the tab was left open."
             case .wait:
-                Thread.sleep(forTimeInterval: 0.2)
+                pause(0.2)
             case .term(let pid):
-                termed = true
-                kill(pid, SIGTERM)
-                Thread.sleep(forTimeInterval: 0.2)
+                guard let identity, identity.pid == pid else {
+                    return "The assistant identity changed before TERM; the tab was left open."
+                }
+                termed = identity
+                signal(pid, SIGTERM)
+                pause(0.2)
             case .kill(let pid):
-                killed = true
-                kill(pid, SIGKILL)
-                Thread.sleep(forTimeInterval: 0.2)
+                guard let identity, identity == termed, identity.pid == pid else {
+                    return "The assistant identity changed after TERM; the tab was left open."
+                }
+                killed = identity
+                signal(pid, SIGKILL)
+                pause(0.2)
+            }
+        }
+    }
+
+    static func waitToBeGoneForTesting(_ session: TargetSession) -> String? {
+        waitToBeGone(session)
+    }
+
+    /// Close a shell-only tab only after a fresh exact-tty process observation proves there is no
+    /// assistant left in it. Inventory labels can be nil while a scan is degraded; they are not
+    /// authority to hang up a tty.
+    static func closeIfAssistantGone(_ session: TargetSession) -> String? {
+        let current: TargetSession
+        switch stableTerminal(session, in: safeCloseInventory(), allowAssistantGone: true) {
+        case .success(let observed): current = observed
+        case .failure(let failure): return failure.message
+        }
+        let observation = ITerm.assistantObservation(onTTY: current.tty)
+        guard observation.isComplete else {
+            return observation.error ?? "Could not verify whether the assistant left the tty."
+        }
+        guard observation.running == nil else {
+            return "An assistant is still running on \(current.tty); the tab was left open."
+        }
+        switch stableTerminal(current, in: safeCloseInventory(), allowAssistantGone: true) {
+        case .failure(let failure): return failure.message
+        case .success(let closing):
+            if let seam = terminalCloseForTesting { return seam(closing) }
+            switch closing.backend {
+            case .iterm: return ITerm.close(closing.id)
+            case .tmux:  return Tmux.close(closing.id)
             }
         }
     }
@@ -720,10 +908,11 @@ enum Targets {
     /// Put this session in front of you — or, with `activate: false`, merely make it the one its
     /// terminal is showing. tmux is always the second kind: selecting a pane moves nothing to the
     /// front, because tmux is not an application and has no front to move to.
-    static func reveal(_ session: TargetSession, activate: Bool = true) {
+    @discardableResult
+    static func reveal(_ session: TargetSession, activate: Bool = true) -> TerminalFailure? {
         switch session.backend {
-        case .iterm: ITerm.reveal(session.id, activate: activate)
-        case .tmux:  Tmux.reveal(session.id)
+        case .iterm: return ITerm.reveal(session.id, activate: activate)
+        case .tmux:  return Tmux.reveal(session.id)
         }
     }
 }
