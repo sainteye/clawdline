@@ -1641,6 +1641,13 @@ final class RemoteServer: @unchecked Sendable {
         // `source_missing` row is never a zero on either. That is not a nicety. Summing absent
         // costs as zero once produced "1137M tokens, $0.00", which is a month-end that looks
         // entirely normal and is wrong in the direction nobody checks.
+        //
+        // **And a row the store marked arrives here still marked.** `tokenPartsUnknown` says
+        // which part a summed column is short of and on how many rows, and `coverageReasons`
+        // carries the store's own words — `session_unresolved` for a session identity that had
+        // to be invented, `source_regressed` for a number measured across a replaced transcript.
+        // Neither is visible in `coverage`, which says only how much of a source was read; both
+        // came back from review as rows that reached this route looking perfectly healthy.
         case ("GET", "/v1/orchestrator/usage"), ("GET", "/v1/orchestrator/usage.csv"):
             let group = UsageLedger.GroupBy(rawValue: request.query["group"] ?? "")
             if request.query["group"] != nil, group == nil {

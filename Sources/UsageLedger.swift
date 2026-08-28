@@ -51,6 +51,12 @@ final class UsageLedger {
     /// rows written under two schemas can never collide or be silently merged.
     static let schemaVersion = 1
 
+    /// The store's own migration counter, and deliberately **not** ``schemaVersion``: that one is
+    /// part of every interval key, so bumping it to add a column would orphan every row ever
+    /// written from the key its own collector will compute next time. Adding a column or an index
+    /// changes neither an identity nor a meaning, and needs a number of its own.
+    static let storeVersion = 2
+
     /// Which published price table produced a `list_price_estimate`. This is **not** protection
     /// against a historical month being re-priced — recorded costs are recorded and do not move.
     /// It is so the rows that have *no* cost can be priced later with a permanent record of which
@@ -125,6 +131,45 @@ final class UsageLedger {
         case plan, metered, unknown
     }
 
+    /// **Which reading of `input` the arithmetic chose, and why.**
+    ///
+    /// ``normalize(raw:assistant:)`` decides whether a source's `input` already includes its
+    /// cached input by computing both readings and keeping the one that reconciles with the
+    /// source's own total. That decision reshapes the stored parts, and until this column existed
+    /// the only way to tell "the cache was taken out of input" from "input never included it" was
+    /// to re-derive the arithmetic from `usage_raw` — a determination nobody can audit later,
+    /// which is the same shape as the unknowns this whole store exists to keep visible. So the
+    /// decision is recorded on the row, including the benign case where both readings agree.
+    ///
+    /// `reconciliation` keeps its own meaning — *something did not add up* — and stays NULL when
+    /// everything did. These are two different facts and they are two columns.
+    enum InputBasis: String {
+        /// The parts as they came reconcile with the stated total: input excludes the cache.
+        case excludesCache = "excludes_cache"
+        /// The total only reconciles once the cache is taken out of input, so it was.
+        case includesCache = "includes_cache"
+        /// Both readings reconcile, which happens exactly when the cache read (or the input) is
+        /// zero and the two are therefore the same number. Benign, and worth saying so.
+        case readingsAgree = "readings_agree"
+        /// No stated total to check against; the cache was taken out of input on the assistant's
+        /// known shape alone. The weakest determination here, and it says which one it is.
+        case includesCacheAssumed = "includes_cache_assumed"
+        /// No stated total, and no reason to reshape the parts.
+        case unstated
+        /// Neither reading reconciles. The parts are kept exactly as they came.
+        case unreconciled
+        /// Neither reading reconciles **and** the cache was still taken out of input on the
+        /// assistant's shape. Without this word, `parts_do_not_sum` on such a row reads as "the
+        /// parts are wrong" when what happened is "they still do not sum after I removed the
+        /// cache" — two different things to whoever reads the row next.
+        case includesCacheUnreconciled = "includes_cache_unreconciled"
+    }
+
+    /// The prefix of an identity the store had to invent because neither collector ever knew the
+    /// session a task ran in. It is a mark on the row, and ``Row/measurement`` is where that mark
+    /// is turned back into something a reader can see.
+    static let unresolvedSessionPrefix = "unresolved-session:"
+
     /// The six columns slice 1 reserves and always leaves NULL. Whole-tree and retry identity
     /// need plumbing that does not exist yet, and a NULL the API names as unavailable is honest
     /// where a value derived from the root session is a guess wearing a column name.
@@ -138,6 +183,12 @@ final class UsageLedger {
 
     // MARK: - Token counts, every part optional
 
+    /// The four token parts, named. Spelled the way the wire spells them, because a part's name
+    /// is what a reader is told when the store could not measure it.
+    enum Part: String, CaseIterable {
+        case inputNew, output, cacheRead, cacheWrite
+    }
+
     /// Normalized token counts. **Every field is optional on purpose**: a key the source did not
     /// carry is nil, and nil is written to SQL as NULL. There is no path in this type that turns
     /// an absent count into `0`.
@@ -149,6 +200,28 @@ final class UsageLedger {
 
         var isEmpty: Bool {
             inputNew == nil && output == nil && cacheRead == nil && cacheWrite == nil
+        }
+
+        /// One of the four, by name. The readers below need to say *which* part a row could not
+        /// measure, and a name is what travels to a consumer; four hand-written branches in each
+        /// of them is how one of them ends up disagreeing with the others.
+        subscript(part: Part) -> Int? {
+            get {
+                switch part {
+                case .inputNew: return inputNew
+                case .output: return output
+                case .cacheRead: return cacheRead
+                case .cacheWrite: return cacheWrite
+                }
+            }
+            set {
+                switch part {
+                case .inputNew: inputNew = newValue
+                case .output: output = newValue
+                case .cacheRead: cacheRead = newValue
+                case .cacheWrite: cacheWrite = newValue
+                }
+            }
         }
 
         /// The parts, summed — and only when every part is known, so a partial object cannot
@@ -168,6 +241,9 @@ final class UsageLedger {
         var cost: Double?
         /// Set when the parts and the source's own total do not reconcile.
         var reconciliation: String?
+        /// Which reading of `input` won, and on what evidence — see ``InputBasis``. Nil only
+        /// when the arithmetic never ran, because the source did not carry all four parts.
+        var inputBasis: InputBasis?
     }
 
     /// Every spelling of a usage key this machine has been observed to write.
@@ -242,18 +318,33 @@ final class UsageLedger {
         let overlapped = max(0, input - cacheRead) + output + cacheRead + cacheWrite
         guard let stated = reading.sourceTotal else {
             // No total to check against. Fall back to the shape each assistant is known to
-            // write, which is the only remaining evidence.
+            // write, which is the only remaining evidence — and say that that is what happened,
+            // because it is the weakest of these determinations.
             if assistant == .codex, input >= cacheRead {
                 reading.counts.inputNew = input - cacheRead
+                reading.inputBasis = .includesCacheAssumed
+            } else {
+                reading.inputBasis = .unstated
             }
             return reading
         }
-        if stated == disjoint { return reading }
-        if stated == overlapped, input >= cacheRead {
-            reading.counts.inputNew = input - cacheRead
+        if stated == disjoint {
+            // The two readings are the same number exactly when there is no cache read to move
+            // (or no input to move it out of), so nothing was decided and nothing is at stake.
+            reading.inputBasis = disjoint == overlapped ? .readingsAgree : .excludesCache
             return reading
         }
-        if assistant == .codex, input >= cacheRead { reading.counts.inputNew = input - cacheRead }
+        if stated == overlapped, input >= cacheRead {
+            reading.counts.inputNew = input - cacheRead
+            reading.inputBasis = .includesCache
+            return reading
+        }
+        if assistant == .codex, input >= cacheRead {
+            reading.counts.inputNew = input - cacheRead
+            reading.inputBasis = .includesCacheUnreconciled
+        } else {
+            reading.inputBasis = .unreconciled
+        }
         reading.reconciliation = "parts_do_not_sum"
         return reading
     }
@@ -382,6 +473,7 @@ final class UsageLedger {
         var total: Int?
         var sourceTotal: Int?
         var reconciliation: String?
+        var inputBasis: String?
         var costValue: Double?
         var costUnit: String?
         var costBasis = ""
@@ -400,6 +492,62 @@ final class UsageLedger {
         /// view because the sessions most likely to go missing are the long ones, which biases
         /// every total downward.
         var usageUnknown: Bool { counts.isEmpty }
+
+        /// **The one seam where a stored row becomes a number for a consumer.** See
+        /// ``Measurement``; every reader in this file asks for this and none of them reads the
+        /// token columns directly.
+        var measurement: Measurement {
+            var out = Measurement()
+            out.counts = counts
+            out.total = counts.total
+            for part in Part.allCases {
+                if let value = counts[part] { out.measured += value }
+                else { out.unknownParts.append(part) }
+            }
+            out.reason = coverageReason
+            // A synthetic identity is a mark the row carries in its own session id, so it is read
+            // off the row here rather than trusted to whichever writer was supposed to note it.
+            // The mark has to survive at the reader; that is the whole point of this type.
+            if out.reason == nil, sessionID.hasPrefix(UsageLedger.unresolvedSessionPrefix) {
+                out.reason = "session_unresolved"
+            }
+            return out
+        }
+    }
+
+    /// What a reader may render for one stored row, and what it must carry alongside.
+    ///
+    /// **The defect this type exists to make unrepresentable** was found three times in one
+    /// review, in three different readers: the store marks a row — a part it never measured, a
+    /// coverage reason, an identity it had to invent — and a reader turns it back into an
+    /// ordinary number. `COALESCE(cache_read, 0)` in an aggregate, a row silently dropped out of
+    /// a total, a `coverage_reason` the wire payload had no field to carry. Three patches would
+    /// have fixed three symptoms; one seam is what stops the fourth reader from doing it again.
+    ///
+    /// So: the aggregate, the wire payload and the CSV export all read a row through this and
+    /// nothing else, and every one of them is handed the marks along with the numbers.
+    struct Measurement: Equatable {
+        /// The parts, each still nil where the source measured nothing. Never coalesced.
+        var counts = Counts()
+        /// The four parts summed, and nil the moment any one of them is unknown — the same rule
+        /// ``Counts/total`` and `recomputeTotal` follow, so the three can never drift apart.
+        var total: Int?
+        /// What *was* measured, summed. A floor rather than a total: a row with three known
+        /// parts and one unknown still spent the three, and dropping it out of a range's total
+        /// understates the range as surely as counting its unknown part as zero overstates it.
+        /// It is never presented without ``unknownParts`` beside it.
+        var measured = 0
+        /// Which of the four this row could not measure.
+        var unknownParts: [Part] = []
+        /// Why the store marked this row, when it did — `session_unresolved`,
+        /// `source_regressed`, `source_unreadable_at_close`, `no_usage_recorded`.
+        var reason: String?
+
+        /// Nothing at all was measured: the row that must never be rendered as a number.
+        var unknown: Bool { unknownParts.count == Part.allCases.count }
+        /// Something was not. The weaker condition, and the one the readers count, because a row
+        /// three-quarters measured is exactly the shape that used to arrive looking whole.
+        var incomplete: Bool { !unknownParts.isEmpty }
     }
 
     // MARK: - Where it lives
@@ -484,7 +632,7 @@ final class UsageLedger {
             version = Int(sqlite3_column_int64(statement, 0))
         }
         sqlite3_finalize(statement)
-        guard version < UsageLedger.schemaVersion else { return }
+        guard version < UsageLedger.storeVersion else { return }
         if version < 1 {
             exec(db, """
                 CREATE TABLE IF NOT EXISTS usage_intervals (
@@ -549,7 +697,26 @@ final class UsageLedger {
                 );
                 """)
         }
-        exec(db, "PRAGMA user_version=\(UsageLedger.schemaVersion);")
+        if version < 2 {
+            // Added here rather than in the CREATE above so that a store written by store
+            // version 1 and a store created today end up with exactly the same columns, by the
+            // same statement. Neither addition rewrites a stored value.
+            exec(db, "ALTER TABLE usage_intervals ADD COLUMN input_basis TEXT;")
+            // **Re-importing the same evidence has to change nothing.** A correction is a note
+            // that something disagrees with a sealed row; four identical imports wrote four of
+            // them, which turned the count the route publishes as "a correction is outstanding"
+            // into a count of app launches. The duplicates are removed once, the constraint
+            // stops them coming back, and `COALESCE` is there because SQLite treats two NULLs as
+            // distinct in a unique index — which would have left the same door open.
+            exec(db, """
+                DELETE FROM usage_corrections WHERE id NOT IN (
+                  SELECT MIN(id) FROM usage_corrections
+                   GROUP BY interval_key, reason, COALESCE(proposed, ''));
+                CREATE UNIQUE INDEX IF NOT EXISTS usage_corrections_once
+                  ON usage_corrections (interval_key, reason, COALESCE(proposed, ''));
+                """)
+        }
+        exec(db, "PRAGMA user_version=\(UsageLedger.storeVersion);")
         recordPriceSnapshot(db)
     }
 
@@ -770,12 +937,18 @@ final class UsageLedger {
         //    be misfiled either way.
         if let reading {
             let delta = Self.delta(from: current, to: reading)
-            if delta.regressed {
-                note(db, key: key, coverageReason: "source_regressed")
-            } else {
-                write(db, key: key, delta: delta, sample: sample, reading: reading)
-                current = Self.advance(current, by: reading)
-            }
+            // A cumulative counter that went backwards means the source was replaced, rotated or
+            // truncated under the same session id. The reading is never subtracted and never
+            // attributed — but the cursor **re-anchors to it**, because leaving the anchor at a
+            // high-water mark the replacement will not reach again silently deletes everything
+            // that source goes on to record below it, and reports the result as a healthy row.
+            // The trade is deliberate and it is the reason the mark is written first: a source
+            // that dipped and recovered can now be counted twice across the dip, and
+            // `source_regressed` is what tells every reader that this row's number was measured
+            // across a seam rather than read off one continuous counter.
+            if delta.regressed { note(db, key: key, coverageReason: "source_regressed") }
+            else { write(db, key: key, delta: delta, sample: sample, reading: reading) }
+            current = Self.advance(current, by: reading)
         }
         current.model = sample.model ?? current.model
         current.localDay = day
@@ -988,13 +1161,15 @@ final class UsageLedger {
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(db, """
-            UPDATE usage_intervals SET usage_raw = ?, source_total = ?, reconciliation = ?
+            UPDATE usage_intervals SET usage_raw = ?, source_total = ?, reconciliation = ?,
+                   input_basis = ?
             WHERE interval_key = ? AND sealed = 0;
             """, -1, &statement, nil) == SQLITE_OK else { return }
         bind(statement, 1, String(decoding: data, as: UTF8.self))
         bind(statement, 2, reading.sourceTotal)
         bind(statement, 3, reading.reconciliation)
-        bind(statement, 4, key)
+        bind(statement, 4, reading.inputBasis?.rawValue)
+        bind(statement, 5, key)
         sqlite3_step(statement)
     }
 
@@ -1110,8 +1285,23 @@ final class UsageLedger {
 
     /// A measurement that disagrees with a sealed row. Written as new metadata, because a value
     /// that may already have appeared in a month's total is never silently rewritten.
-    private func correction(intervalKey: String, reason: String, proposed: [String: Any]) {
-        guard let db = database() else { return }
+    ///
+    /// **Idempotent, and that is load-bearing.** The backfill re-reads the whole registry on
+    /// every launch, so a correction that is written again each time it is proposed turns
+    /// `corrections` — which the route publishes as *something disagrees with a sealed row* —
+    /// into a count of how often the app has been started. Four identical imports wrote four of
+    /// these. So an identical note already on the row is not written twice, in code because the
+    /// answer is wanted here, and in the unique index because a second writer will not remember.
+    @discardableResult
+    private func correction(intervalKey: String, reason: String,
+                            proposed: [String: Any]) -> Bool {
+        guard let db = database(),
+              let proposedData = try? JSONSerialization.data(withJSONObject: proposed,
+                                                             options: [.sortedKeys])
+        else { return false }
+        let proposedJSON = String(decoding: proposedData, as: UTF8.self)
+        guard !hasCorrection(db, intervalKey: intervalKey, reason: reason,
+                             proposed: proposedJSON) else { return false }
         let was = row(db, key: intervalKey).map { row -> [String: Any] in
             ["input_new": row.counts.inputNew as Any? ?? NSNull(),
              "output": row.counts.output as Any? ?? NSNull(),
@@ -1122,9 +1312,10 @@ final class UsageLedger {
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(db, """
-            INSERT INTO usage_corrections (interval_key, reason, was, proposed, written_at)
+            INSERT OR IGNORE INTO usage_corrections
+                   (interval_key, reason, was, proposed, written_at)
             VALUES (?,?,?,?,?);
-            """, -1, &statement, nil) == SQLITE_OK else { return }
+            """, -1, &statement, nil) == SQLITE_OK else { return false }
         func json(_ object: [String: Any]?) -> String? {
             guard let object,
                   let data = try? JSONSerialization.data(withJSONObject: object,
@@ -1135,9 +1326,26 @@ final class UsageLedger {
         bind(statement, 1, intervalKey)
         bind(statement, 2, reason)
         bind(statement, 3, json(was))
-        bind(statement, 4, json(proposed))
+        bind(statement, 4, proposedJSON)
         sqlite3_bind_double(statement, 5, Date().timeIntervalSince1970)
-        sqlite3_step(statement)
+        guard sqlite3_step(statement) == SQLITE_DONE else { return false }
+        return sqlite3_changes(db) > 0
+    }
+
+    /// Whether this exact note is already on the row. On the ledger's own queue, like everything
+    /// else that touches the handle.
+    private func hasCorrection(_ db: OpaquePointer, intervalKey: String, reason: String,
+                               proposed: String) -> Bool {
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, """
+            SELECT 1 FROM usage_corrections
+             WHERE interval_key = ? AND reason = ? AND COALESCE(proposed, '') = ? LIMIT 1;
+            """, -1, &statement, nil) == SQLITE_OK else { return false }
+        bind(statement, 1, intervalKey)
+        bind(statement, 2, reason)
+        bind(statement, 3, proposed)
+        return sqlite3_step(statement) == SQLITE_ROW
     }
 
     func correctionCount(from: String? = nil, to: String? = nil) -> Int {
@@ -1167,7 +1375,7 @@ final class UsageLedger {
                reasoning_effort, billing_mode, usage_raw, input_new, output, cache_read,
                cache_write, total, source_total, reconciliation, cost_value, cost_unit,
                cost_basis, price_snapshot_id, missing_reason, coverage, coverage_reason, sealed,
-               source_bytes, started_at, ended_at, local_day, updated_at
+               source_bytes, started_at, ended_at, local_day, updated_at, input_basis
           FROM usage_intervals
         """
 
@@ -1213,6 +1421,7 @@ final class UsageLedger {
         row.endedAt = double(statement, 39).map { Date(timeIntervalSince1970: $0) }
         row.localDay = text(statement, 40) ?? ""
         row.updatedAt = Date(timeIntervalSince1970: double(statement, 41) ?? 0)
+        row.inputBasis = text(statement, 42)
         return row
     }
 
@@ -1243,9 +1452,11 @@ final class UsageLedger {
         }
     }
 
-    /// Rows inside a local-day range. **Rows whose usage is unknown come first**, because the
-    /// sessions most likely to go missing are the long ones and a reader who never scrolls would
-    /// otherwise never see the bias in the totals below them.
+    /// Rows inside a local-day range. **Rows that could not measure something come first** —
+    /// any part unknown, not only all four — because the sessions most likely to go missing are
+    /// the long ones and a reader who never scrolls would otherwise never see the bias in the
+    /// totals below them. A row three-quarters measured biases a total exactly as a row nobody
+    /// could read does, only by less.
     func rows(from: String? = nil, to: String? = nil) -> [Row] {
         queue.sync {
             guard let db = database() else { return [] }
@@ -1253,8 +1464,8 @@ final class UsageLedger {
             defer { sqlite3_finalize(statement) }
             guard sqlite3_prepare_v2(db, Self.selection + """
                  WHERE (? IS NULL OR local_day >= ?) AND (? IS NULL OR local_day <= ?)
-                 ORDER BY (input_new IS NULL AND output IS NULL AND cache_read IS NULL
-                           AND cache_write IS NULL) DESC,
+                 ORDER BY (input_new IS NULL OR output IS NULL OR cache_read IS NULL
+                           OR cache_write IS NULL) DESC,
                           local_day, started_at, segment_no;
                 """, -1, &statement, nil) == SQLITE_OK else { return [] }
             bind(statement, 1, from); bind(statement, 2, from)
@@ -1278,8 +1489,22 @@ final class UsageLedger {
         var rows = 0
         var tokens: Counts?
         var total: Int?
-        /// Rows counted in `rows` whose tokens are unknown and are therefore not in `tokens`.
+        /// Rows counted in `rows` that could not measure **something** — not only the rows that
+        /// measured nothing at all. A row with three parts known and one NULL used to take the
+        /// same path as a fully measured one, which rendered the unknown part as `0` and left
+        /// this count at zero: the aggregate said "nothing missing here" about the exact row it
+        /// had just guessed at.
         var tokenRowsUnknown = 0
+        /// Per part, how many rows could not measure it — so a summed column that is short says
+        /// so beside itself rather than in a footnote. A part **no** row measured stays nil in
+        /// `tokens` and is never a zero.
+        var partsUnknown: [String: Int] = [:]
+        /// Why rows in this bucket are marked, counted — `session_unresolved`,
+        /// `source_regressed`, `source_unreadable_at_close`. Until this existed the route had no
+        /// field that could carry a coverage reason at all, so a session filed under an invented
+        /// identity and a session read across a rotated transcript both arrived at a consumer
+        /// looking exactly like a healthy one.
+        var coverageReasons: [String: Int] = [:]
         /// Money summed **per unit**, never across them. Codex rows can only ever carry credits
         /// or nothing, and adding credits to dollars would be a number with no meaning.
         var costByUnit: [String: Double] = [:]
@@ -1289,19 +1514,30 @@ final class UsageLedger {
         var missingReasons: [String: Int] = [:]
         var coverage: [String: Int] = [:]
 
+        /// **Every row enters this bucket through ``Row/measurement`` and nothing else.** A part
+        /// is summed over the rows that measured it and stays nil where none did; a part some row
+        /// could not measure is counted in `partsUnknown` beside its own column; and the total is
+        /// the sum of what was measured, so a row three-quarters known contributes its three
+        /// quarters instead of either inventing a zero or vanishing out of the range.
         mutating func add(_ row: Row) {
             rows += 1
             coverage[row.coverage, default: 0] += 1
-            if row.usageUnknown {
-                tokenRowsUnknown += 1
-            } else {
-                var counts = tokens ?? Counts(inputNew: 0, output: 0, cacheRead: 0, cacheWrite: 0)
-                counts.inputNew = (counts.inputNew ?? 0) + (row.counts.inputNew ?? 0)
-                counts.output = (counts.output ?? 0) + (row.counts.output ?? 0)
-                counts.cacheRead = (counts.cacheRead ?? 0) + (row.counts.cacheRead ?? 0)
-                counts.cacheWrite = (counts.cacheWrite ?? 0) + (row.counts.cacheWrite ?? 0)
+            let measurement = row.measurement
+            if let reason = measurement.reason { coverageReasons[reason, default: 0] += 1 }
+            if measurement.incomplete { tokenRowsUnknown += 1 }
+            var counts = tokens ?? Counts()
+            var measured = false
+            for part in Part.allCases {
+                guard let value = measurement.counts[part] else {
+                    partsUnknown[part.rawValue, default: 0] += 1
+                    continue
+                }
+                counts[part] = (counts[part] ?? 0) + value
+                measured = true
+            }
+            if measured {
                 tokens = counts
-                total = (total ?? 0) + (row.total ?? row.counts.total ?? 0)
+                total = (total ?? 0) + measurement.measured
             }
             if let cost = row.costValue {
                 costByUnit[row.costUnit ?? CostUnit.usd.rawValue, default: 0] += cost
@@ -1379,11 +1615,20 @@ final class UsageLedger {
         }
         return ["rows": bucket.rows,
                 "tokens": tokens,
+                // Which part was short, and on how many rows. A summed column with no such note
+                // beside it is a column every row measured.
+                "tokenPartsUnknown": bucket.partsUnknown,
                 "total": bucket.total as Any? ?? NSNull(),
                 "tokenRowsUnknown": bucket.tokenRowsUnknown,
                 "cost": cost,
                 "unpriced": ["rows": bucket.unpricedRows, "reasons": bucket.missingReasons],
-                "coverage": bucket.coverage]
+                "coverage": bucket.coverage,
+                // The marks the store put on these rows, reaching the wire. `session_unresolved`
+                // means a session's cumulative counters may have been attributed twice under an
+                // invented identity, and `source_regressed` means a number was measured across a
+                // replaced source — neither is visible in `coverage`, which says only how much
+                // of the source was read.
+                "coverageReasons": bucket.coverageReasons]
     }
 
     static func payload(of aggregate: Aggregate) -> [String: Any] {
@@ -1415,9 +1660,9 @@ final class UsageLedger {
         "segment_no", "segment_reason", "origin", "task_id", "schedule_id", "project_key",
         "working_dir", "kind_raw", "isolation", "depth", "claim_count", "timeout_seconds",
         "task_state", "model", "reasoning_effort", "billing_mode", "input_new", "output",
-        "cache_read", "cache_write", "total", "source_total", "reconciliation", "cost_value",
-        "cost_unit", "cost_basis", "price_snapshot_id", "missing_reason", "coverage",
-        "coverage_reason", "sealed", "started_at", "ended_at",
+        "cache_read", "cache_write", "total", "source_total", "reconciliation", "input_basis",
+        "cost_value", "cost_unit", "cost_basis", "price_snapshot_id", "missing_reason",
+        "coverage", "coverage_reason", "sealed", "started_at", "ended_at",
     ] + reservedColumns
 
     /// The whole range as CSV. **An unknown is an empty field, never `0`** — including every
@@ -1435,6 +1680,10 @@ final class UsageLedger {
         let formatter = ISO8601DateFormatter()
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         for row in rows(from: from, to: to) {
+            // The same seam the aggregate reads through, for the same reason: the export was
+            // already honest about a NULL, and it stays honest because it is asking the one type
+            // that cannot hand out a coalesced zero rather than because it remembers to.
+            let measurement = row.measurement
             var fields: [String] = []
             fields.append(row.intervalKey)
             fields.append(row.localDay)
@@ -1458,20 +1707,21 @@ final class UsageLedger {
             fields.append(row.model ?? "")
             fields.append(row.reasoningEffort ?? "")
             fields.append(row.billingMode)
-            fields.append(number(row.counts.inputNew))
-            fields.append(number(row.counts.output))
-            fields.append(number(row.counts.cacheRead))
-            fields.append(number(row.counts.cacheWrite))
-            fields.append(number(row.total))
+            fields.append(number(measurement.counts.inputNew))
+            fields.append(number(measurement.counts.output))
+            fields.append(number(measurement.counts.cacheRead))
+            fields.append(number(measurement.counts.cacheWrite))
+            fields.append(number(measurement.total))
             fields.append(number(row.sourceTotal))
             fields.append(row.reconciliation ?? "")
+            fields.append(row.inputBasis ?? "")
             fields.append(row.costValue.map { String($0) } ?? "")
             fields.append(row.costUnit ?? "")
             fields.append(row.costBasis)
             fields.append(row.priceSnapshotID ?? "")
             fields.append(row.missingReason ?? "")
             fields.append(row.coverage)
-            fields.append(row.coverageReason ?? "")
+            fields.append(measurement.reason ?? "")
             fields.append(row.sealed ? "1" : "0")
             fields.append(formatter.string(from: row.startedAt))
             fields.append(row.endedAt.map { formatter.string(from: $0) } ?? "")
@@ -1536,8 +1786,19 @@ final class UsageLedger {
         // would lose real evidence while pretending it is somebody else's session is worse.
         let named = (record["child_session"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         let known = named ?? sessionID(forTask: id)
+        let usage = record["usage"] as? [String: Any]
+
+        // **A record that has never had a session is not a session.** Nothing was observed: no
+        // transcript, no counters, not even empty ones — so a row here would describe work that
+        // was *anticipated* rather than work that happened, and it would be joined by a second,
+        // real row the moment the task actually ran. The backfill runs over the whole registry
+        // on every launch, so without this the queued half of the registry became permanent
+        // unmeasured rows: five queued tasks beside one genuinely unreadable session read as six
+        // unmeasured rows, which buries the one gap that was real under five that never were.
+        guard known != nil || usage != nil else { return false }
+
         var sample = Sample(assistant: assistant,
-                            sessionID: known ?? "unresolved-session:\(id)",
+                            sessionID: known ?? "\(UsageLedger.unresolvedSessionPrefix)\(id)",
                             boundaryKind: .task, boundaryID: id, origin: origin)
         if known == nil { sample.coverageReason = "session_unresolved" }
         sample.observedAt = (record["finished_at"] as? Double).map {
@@ -1556,7 +1817,6 @@ final class UsageLedger {
         sample.timeoutSeconds = (record["timeout_minutes"] as? Int).map { $0 * 60 }
         sample.taskState = state
         sample.reasoningEffort = record["reasoning_effort"] as? String
-        let usage = record["usage"] as? [String: Any]
         sample.rawUsage = usage
         sample.model = (usage?["model"] as? String) ?? (record["model"] as? String)
         // `Orchestrator.cost(of:)` is arithmetic on published per-million prices. Copying it
@@ -1573,6 +1833,14 @@ final class UsageLedger {
 
         // A row that is already sealed and disagrees with this reading is a correction, never a
         // rewrite: the earlier number may already have been quoted in a month's total.
+        //
+        // **An import whose content equals what is already recorded is a no-op**, and "already
+        // recorded" means both halves of the record: the sealed row's own object, and the
+        // corrections already standing against it. The second half is not decoration — a sealed
+        // row's `usage_raw` is deliberately frozen, because rewriting it would destroy the
+        // evidence of what was actually sealed, so a comparison against that column alone can
+        // never converge. A row sealed `source_missing` has no object at all to compare with,
+        // and every launch would find it "changed" and file another note.
         let key = UsageLedger.intervalKey(assistant: assistant, sessionID: sample.sessionID,
                                           boundaryKind: .task, boundaryID: id, segmentNo: 0)
         if let db = database(), let existing = row(db, key: key), existing.sealed {
@@ -1581,8 +1849,8 @@ final class UsageLedger {
                                                          options: [.sortedKeys]),
                   String(decoding: data, as: UTF8.self) != (existing.rawUsage ?? "")
             else { return false }
-            correction(intervalKey: key, reason: "source_changed_after_seal", proposed: usage)
-            return true
+            return correction(intervalKey: key, reason: "source_changed_after_seal",
+                              proposed: usage)
         }
         return apply(sample) != nil
     }
@@ -1594,10 +1862,11 @@ final class UsageLedger {
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(db, """
             SELECT session_id FROM usage_intervals
-             WHERE task_id = ? AND session_id NOT LIKE 'unresolved-session:%'
+             WHERE task_id = ? AND session_id NOT LIKE ? || '%'
              ORDER BY started_at LIMIT 1;
             """, -1, &statement, nil) == SQLITE_OK else { return nil }
         bind(statement, 1, id)
+        bind(statement, 2, UsageLedger.unresolvedSessionPrefix)
         guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
         return Self.text(statement, 0)
     }
@@ -1645,6 +1914,37 @@ extension UsageLedger {
         watchLock.lock(); watchedSessions = [:]; watchLock.unlock()
     }
 
+    /// Whether this terminal was checkpointed too recently to be worth opening anything for.
+    ///
+    /// Asked **before** the record is resolved, because resolving one can cost a working-
+    /// directory lookup and the panel takes this reading every 1.2 seconds. Split out from
+    /// ``checkpoint(sessions:now:)`` so the rule can be exercised without a live terminal: it is
+    /// the difference between a store that gains one row per session per five minutes and one
+    /// that gains three hundred an hour.
+    static func checkpointThrottled(since last: Date?, now: Date) -> Bool {
+        guard let last else { return false }
+        return now.timeIntervalSince(last) < checkpointInterval
+    }
+
+    /// Whether a resolved reading says anything the previous one did not. A file that has not
+    /// moved has nothing to attribute, and a **different** session id behind the same terminal
+    /// is always something new — a tab reused for a second conversation must not be skipped
+    /// because the two files happen to be the same length.
+    static func checkpointUnchanged(lastSessionID: String?, lastBytes: Int?,
+                                    sessionID: String, bytes: Int?) -> Bool {
+        lastSessionID == sessionID && lastBytes != nil && lastBytes == bytes
+    }
+
+    /// Remember what is behind a terminal, which is what makes a later disappearance mean
+    /// something. ``checkpoint(sessions:now:)`` is the production caller.
+    static func remember(terminalID: String, assistant: Assistant, sessionID: String,
+                         record: URL, bytes: Int?, at: Date) {
+        watchLock.lock()
+        watchedSessions[terminalID] = Watched(assistant: assistant, sessionID: sessionID,
+                                              record: record, at: at, bytes: bytes)
+        watchLock.unlock()
+    }
+
     /// The parsed struct, back in the registry's own spelling.
     ///
     /// The one place in the app that turns `Orchestrator.Usage` into a source object, and it uses
@@ -1669,20 +1969,18 @@ extension UsageLedger {
             watchLock.lock()
             let previous = watchedSessions[session.id]
             watchLock.unlock()
-            if let previous, now.timeIntervalSince(previous.at) < checkpointInterval { continue }
+            if checkpointThrottled(since: previous?.at, now: now) { continue }
             guard let record = Transcript.record(of: session),
                   let sessionID = Transcript.sessionID(in: record.url,
                                                        assistant: record.assistant)
             else { continue }
             let bytes = (try? FileManager.default
                 .attributesOfItem(atPath: record.url.path)[.size] as? Int) ?? nil
-            let unchanged = previous?.sessionID == sessionID && previous?.bytes != nil
-                && previous?.bytes == bytes
-            watchLock.lock()
-            watchedSessions[session.id] = Watched(assistant: record.assistant,
-                                                  sessionID: sessionID, record: record.url,
-                                                  at: now, bytes: bytes)
-            watchLock.unlock()
+            let unchanged = checkpointUnchanged(lastSessionID: previous?.sessionID,
+                                                lastBytes: previous?.bytes,
+                                                sessionID: sessionID, bytes: bytes)
+            remember(terminalID: session.id, assistant: record.assistant, sessionID: sessionID,
+                     record: record.url, bytes: bytes, at: now)
             if unchanged { continue }
             shared.observe(sample(assistant: record.assistant, sessionID: sessionID,
                                   record: record.url, terminalID: session.id, cwd: session.cwd,

@@ -2625,9 +2625,13 @@ enum Orchestrator {
     /// Every task the registry still holds, in its own spelling, for the ledger's backfill.
     ///
     /// The registry keeps 200 rows and task directories are swept a day after they finish, so
-    /// this is free evidence that would otherwise age out. Running it again is safe: the ledger
-    /// attributes the difference against what it has already recorded for that session, and a
-    /// record it has seen before therefore contributes nothing the second time.
+    /// this is free evidence that would otherwise age out. Running it again is safe, and every
+    /// word of that is the ledger's side of the bargain rather than this function's: the delta
+    /// against a session's cursor is zero for a record already attributed, a record that has
+    /// never had a session produces no row at all, and a correction that says nothing new is not
+    /// written. Handing over the queued half of the registry is therefore not a mistake here —
+    /// `UsageLedger.importTaskRecords(_:)` is where "was anything actually observed" is decided,
+    /// once, for both this and the finalize collector.
     static func ledgerBackfillRecords() -> [[String: Any]] {
         load()
         lock.lock(); defer { lock.unlock() }

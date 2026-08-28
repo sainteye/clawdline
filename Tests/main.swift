@@ -22345,6 +22345,503 @@ group("finalize files a task in the ledger without being told anybody heard abou
     expect("filed under the session the work ran in", row?.sessionID, "sess-finalize")
 }
 
+// A row the store marked reaches every reader still marked. One seam — `Row.measurement` — and
+// three readers that all go through it, because the review found the same defect in three
+// different places: an aggregate that coalesced a NULL part to `0` and then dropped the row out
+// of its own total, a wire payload with no field a coverage reason could travel in, and an
+// under-count that came back looking like a healthy session.
+group("a row with one part unknown keeps its unknown through every reader") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+
+    // Three parts measured, one absent. Not reachable through today's two collectors — both hand
+    // over an `Orchestrator.Usage` whose four fields are non-optional — and reachable the moment
+    // anything hands `normalize` a source object directly, which is what the archived registry
+    // snapshot does. This is the `1137M tokens, $0.00` shape with a different field in it.
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: "partial",
+                                               usage: ["input": 500, "output": 250],
+                                               model: "claude-opus-5"))
+    let row = UsageLedger.shared.rows().first
+    let measurement = row?.measurement
+    expect("the seam keeps the parts that were measured", measurement?.counts.inputNew, 500)
+    check("and leaves the one that was not unknown", measurement?.counts.cacheRead == nil)
+    check("it refuses a total it cannot compute", measurement?.total == nil)
+    expect("while still saying what was measured", measurement?.measured, 750)
+    check("it is not the same thing as a row nobody could read",
+          measurement?.unknown == false && measurement?.incomplete == true)
+    expect("and it names which parts are missing", measurement?.unknownParts,
+           [UsageLedger.Part.cacheRead, .cacheWrite])
+
+    let aggregate = UsageLedger.shared.aggregate()
+    check("the aggregate never renders the unknown part as a zero",
+          aggregate.totals.tokens?.cacheRead == nil,
+          "got \(String(describing: aggregate.totals.tokens?.cacheRead))")
+    expect("it keeps the parts that were measured", aggregate.totals.tokens?.inputNew, 500)
+    expect("it does not drop the row's measured tokens out of the total",
+           aggregate.totals.total, 750)
+    expect("and it says the row could not be fully counted",
+           aggregate.totals.tokenRowsUnknown, 1)
+    expect("naming the column that is short, and on how many rows",
+           aggregate.totals.partsUnknown["cacheRead"], 1)
+
+    let totals = UsageLedger.payload(of: aggregate)["totals"] as? [String: Any]
+    let tokens = totals?["tokens"] as? [String: Any]
+    check("the wire says null where nothing was measured", tokens?["cacheRead"] is NSNull,
+          "got \(String(describing: tokens?["cacheRead"]))")
+    expect("and carries the measured part beside it", tokens?["inputNew"] as? Int, 500)
+    expect("with the short column named on the wire too",
+           (totals?["tokenPartsUnknown"] as? [String: Int])?["cacheWrite"], 1)
+
+    // The CSV was already honest here. It stays honest because it asks the same type, not
+    // because it remembers to.
+    let csv = UsageLedger.shared.exportCSV()
+    let columns = (csv.split(separator: "\n").first.map(String.init) ?? "")
+        .split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+    let values = (csv.split(separator: "\n").dropFirst().first.map(String.init) ?? "")
+        .split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+    func field(_ name: String) -> String? {
+        guard let index = columns.firstIndex(of: name), index < values.count else { return nil }
+        return values[index]
+    }
+    expect("the export leaves the unknown part empty", field("cache_read"), "")
+    expect("keeps the measured one", field("input_new"), "500")
+    expect("and refuses the total, exactly as the aggregate does", field("total"), "")
+
+    // Sorting is a reader too: a row three-quarters measured biases a total the same way a row
+    // nobody could read does, only by less.
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: "whole",
+                                               usage: ["input": 1, "output": 1, "cache_read": 1,
+                                                       "cache_write": 1, "total": 4],
+                                               model: "claude-opus-5"))
+    expect("a partly measured row still sorts above a fully measured one",
+           UsageLedger.shared.rows().first?.sessionID, "partial")
+}
+
+group("a session the store had to name for itself says so on the wire") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    func usage(_ input: Int, _ output: Int, _ cacheRead: Int) -> [String: Any] {
+        ["input": input, "output": output, "cache_read": cacheRead, "cache_write": 0,
+         "total": input + output + cacheRead]
+    }
+
+    // A session already being watched, and then a task record that ran inside it without ever
+    // naming it. The synthetic identity gets its own cursor, so the same cumulative counters are
+    // attributed a second time — a bounded gap the delivery documented, and one that reached the
+    // route as an ordinary, healthy-looking number because `payload(of:)` had no field for it.
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: "real", usage: usage(100, 100, 800),
+                                               model: "claude-opus-5"))
+    UsageLedger.shared.importTaskRecord([
+        "id": "orphan", "assistant": "claude", "state": "success", "kind": "code",
+        "project_dir": "/tmp", "timeout_minutes": 30, "depth": 1,
+        "usage": usage(100, 100, 800), "model": "claude-opus-5",
+        "finished_at": Date().timeIntervalSince1970,
+    ])
+    let invented = UsageLedger.shared.rows(taskID: "orphan").first
+    check("a task whose session nobody knew is filed under an invented identity",
+          invented?.sessionID.hasPrefix(UsageLedger.unresolvedSessionPrefix) == true,
+          invented?.sessionID ?? "no row")
+    let aggregate = UsageLedger.shared.aggregate()
+    expect("which the aggregate reports as a reason, not as a healthy row",
+           aggregate.totals.coverageReasons["session_unresolved"], 1)
+    let payload = UsageLedger.payload(of: aggregate)
+    let json = String(decoding: (try? JSONSerialization.data(withJSONObject: payload,
+                                                            options: [.sortedKeys])) ?? Data(),
+                      as: UTF8.self)
+    check("and which is therefore visible to whoever reads the route",
+          json.contains("session_unresolved"), json.prefix(400).description)
+
+    // Read off the row rather than trusted to whoever wrote it: the mark has to survive at the
+    // reader, which is the only place every consumer passes through.
+    var unwritten = UsageLedger.Row()
+    unwritten.sessionID = UsageLedger.unresolvedSessionPrefix + "task-x"
+    unwritten.counts = UsageLedger.Counts(inputNew: 1, output: 1, cacheRead: 1, cacheWrite: 1)
+    expect("even a row nobody remembered to annotate reports the invented identity",
+           unwritten.measurement.reason, "session_unresolved")
+}
+
+group("a source that went backwards re-anchors instead of quietly under-counting") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    func usage(_ input: Int, _ output: Int, _ cacheRead: Int) -> [String: Any] {
+        ["input": input, "output": output, "cache_read": cacheRead, "cache_write": 0,
+         "total": input + output + cacheRead]
+    }
+
+    // 950 on one transcript; then the same session id answering out of a rotated or rewritten
+    // file that starts near zero; then that replacement genuinely growing to 1300. Never
+    // subtract — but never keep measuring against a high-water mark the new source will not
+    // reach, because everything it records below that mark simply disappears.
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: "rot", usage: usage(100, 50, 800),
+                                               model: "claude-opus-5"))
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: "rot", usage: usage(1, 1, 1),
+                                               model: "claude-opus-5"))
+    expect("the reading that went backwards is never subtracted",
+           UsageLedger.shared.rows().first?.total, 950)
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: "rot",
+                                               usage: usage(200, 100, 1000),
+                                               model: "claude-opus-5"))
+    expect("and the replacement's growth is counted from where it was re-anchored",
+           UsageLedger.shared.rows().first?.total, 950 + 1_297)
+    expect("the row says the number was measured across a seam",
+           UsageLedger.shared.rows().first?.coverageReason, "source_regressed")
+    let aggregate = UsageLedger.shared.aggregate()
+    expect("and so does the aggregate, which used to report it as an ordinary session",
+           aggregate.totals.coverageReasons["source_regressed"], 1)
+    let totals = UsageLedger.payload(of: aggregate)["totals"] as? [String: Any]
+    expect("on the wire, beside the coverage that says nothing about it",
+           (totals?["coverageReasons"] as? [String: Int])?["source_regressed"], 1)
+}
+
+// The backfill runs over the whole registry on every launch, and `./build.sh` closes and reopens
+// the app. So "running it again is free" is not a nicety about a startup path: anything it does
+// twice, it does once per launch for as long as the row survives.
+group("the backfill files work that happened, and re-importing it changes nothing") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    func usage(_ input: Int, _ output: Int, _ cacheRead: Int) -> [String: Any] {
+        ["input": input, "output": output, "cache_read": cacheRead, "cache_write": 0,
+         "total": input + output + cacheRead]
+    }
+
+    // A queued task: no session, no counters, nothing observed. A row for it describes work that
+    // was *anticipated*, and it does not stay harmless — it is a permanent unmeasured row that
+    // the real row later joins, and it drowns the coverage view it pollutes. Five queued tasks
+    // beside one genuinely unreadable session read as six unmeasured rows.
+    var record: [String: Any] = ["id": "task-q", "assistant": "claude", "state": "queued",
+                                 "kind": "code", "project_dir": "/tmp", "timeout_minutes": 30,
+                                 "depth": 1]
+    for _ in 1...3 { UsageLedger.shared.importTaskRecord(record) }
+    check("a task that has never run leaves no row at all",
+          UsageLedger.shared.rows().isEmpty,
+          "\(UsageLedger.shared.rows().map(\.sessionID))")
+    expect("and the import says it wrote nothing", UsageLedger.shared.importTaskRecord(record),
+           false)
+
+    record["state"] = "success"
+    record["child_session"] = "sess-q"
+    record["usage"] = usage(10, 10, 480)
+    record["finished_at"] = Date().timeIntervalSince1970
+    expect("the same task, once it has actually run, is one row",
+           UsageLedger.shared.importTaskRecord(record), true)
+    expect("and only one", UsageLedger.shared.rows(taskID: "task-q").count, 1)
+    expect("with no phantom left to explain on the coverage view",
+           UsageLedger.shared.aggregate().totals.tokenRowsUnknown, 0)
+
+    // A record that has a session but no counters yet is a different thing: something was
+    // observed, so the skeleton row the spec asks for is exactly right.
+    UsageLedger.shared.importTaskRecord(["id": "task-live", "assistant": "claude",
+                                         "state": "briefed", "kind": "code",
+                                         "project_dir": "/tmp", "timeout_minutes": 30,
+                                         "depth": 1, "child_session": "sess-live"])
+    expect("a running task whose session is known still opens its row",
+           UsageLedger.shared.rows(taskID: "task-live").count, 1)
+}
+
+group("a correction is written once, however many times the evidence is re-read") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    func usage(_ input: Int, _ output: Int, _ cacheRead: Int) -> [String: Any] {
+        ["input": input, "output": output, "cache_read": cacheRead, "cache_write": 0,
+         "total": input + output + cacheRead]
+    }
+
+    // Sealed at one number by whichever collector closed it, and the registry's own harvest read
+    // one round more. An ordinary interleaving, not a corner: `SessionWatch` seals on process
+    // disappearance while finalize is still reading.
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: "sess-i", boundary: .task,
+                                               id: "task-i", origin: .dispatch,
+                                               usage: usage(10, 10, 480),
+                                               model: "claude-opus-5"))
+    var close = ledgerSample(.claude, session: "sess-i", boundary: .task, id: "task-i",
+                             origin: .dispatch, usage: usage(20, 20, 960),
+                             model: "claude-opus-5")
+    close.seal = true
+    close.sealCoverage = .complete
+    UsageLedger.shared.observeNow(close)
+    let record: [String: Any] = ["id": "task-i", "assistant": "claude", "state": "success",
+                                 "kind": "code", "project_dir": "/tmp", "timeout_minutes": 30,
+                                 "depth": 1, "child_session": "sess-i",
+                                 "usage": usage(21, 21, 990),
+                                 "finished_at": Date().timeIntervalSince1970]
+    expect("the first re-measurement that disagrees is a correction",
+           UsageLedger.shared.importTaskRecord(record), true)
+    for _ in 1...3 { UsageLedger.shared.importTaskRecord(record) }
+    expect("and four identical passes leave exactly one",
+           UsageLedger.shared.correctionCount(), 1)
+    expect("which is what the route publishes as a correction outstanding",
+           UsageLedger.shared.aggregate().corrections, 1)
+    expect("a later pass says it wrote nothing", UsageLedger.shared.importTaskRecord(record),
+           false)
+
+    // The case that could never converge: a row sealed with no readable source has no stored
+    // object to compare against, so every launch found it changed.
+    var gone = ledgerSample(.claude, session: "sess-gone", boundary: .task, id: "task-gone",
+                            origin: .dispatch, usage: nil, model: "claude-opus-5")
+    gone.seal = true
+    gone.sealCoverage = .sourceMissing
+    UsageLedger.shared.observeNow(gone)
+    let recovered: [String: Any] = ["id": "task-gone", "assistant": "claude", "state": "success",
+                                    "kind": "code", "project_dir": "/tmp",
+                                    "timeout_minutes": 30, "depth": 1,
+                                    "child_session": "sess-gone", "usage": usage(1, 2, 3),
+                                    "finished_at": Date().timeIntervalSince1970]
+    for _ in 1...4 { UsageLedger.shared.importTaskRecord(recovered) }
+    expect("a sealed source_missing row is corrected once, not once per launch",
+           UsageLedger.shared.correctionCount() - 1, 1)
+
+    // A genuinely different measurement is still a new fact and still lands.
+    var later = recovered
+    later["usage"] = usage(1, 2, 4)
+    expect("and a re-measurement that says something new is still accepted",
+           UsageLedger.shared.importTaskRecord(later), true)
+    expect("as its own note", UsageLedger.shared.correctionCount(), 3)
+}
+
+group("which reading of input won is a stored fact, not one to be re-derived") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+
+    // Codex's cumulative input includes its cached input; Claude's does not. The shape is decided
+    // by arithmetic — both readings are computed and the one that reconciles with the source's
+    // own total wins — and until this column existed the only way to tell which had happened was
+    // to re-derive it from `usage_raw`. A determination nobody can audit is the same shape as the
+    // unknowns this store exists to keep visible.
+    let overlapped = UsageLedger.normalize(raw: ["input": 1000, "output": 10, "cache_read": 900,
+                                                 "cache_write": 0, "total": 1010],
+                                           assistant: .codex)
+    let disjoint = UsageLedger.normalize(raw: ["input": 100, "output": 10, "cache_read": 30,
+                                               "cache_write": 0, "total": 140],
+                                         assistant: .codex)
+    expect("the reading that took the cache out of input says so",
+           overlapped.inputBasis, .includesCache)
+    expect("and it is the one that reshaped the parts", overlapped.counts.inputNew, 100)
+    expect("the reading that left input alone says that instead",
+           disjoint.inputBasis, .excludesCache)
+    check("the two decisions are distinguishable on the row",
+          overlapped.inputBasis != disjoint.inputBasis)
+    check("without either being called unreconciled, because both reconciled",
+          overlapped.reconciliation == nil && disjoint.reconciliation == nil)
+
+    let benign = UsageLedger.normalize(raw: ["input": 100, "output": 10, "cache_read": 0,
+                                             "cache_write": 0, "total": 110], assistant: .codex)
+    expect("and where there is no cache to move, both readings agree and it is recorded",
+           benign.inputBasis, .readingsAgree)
+
+    let assumed = UsageLedger.normalize(raw: ["input": 100, "output": 10, "cache_read": 30,
+                                              "cache_write": 0], assistant: .codex)
+    expect("a source with no total is decided on the assistant's shape, and says which",
+           assumed.inputBasis, .includesCacheAssumed)
+    let unstated = UsageLedger.normalize(raw: ["input": 100, "output": 10, "cache_read": 30,
+                                               "cache_write": 0], assistant: .claude)
+    expect("and where nothing was reshaped, that is a different word",
+           unstated.inputBasis, .unstated)
+
+    let broken = UsageLedger.normalize(raw: ["input": 100, "output": 10, "cache_read": 30,
+                                             "cache_write": 0, "total": 999], assistant: .codex)
+    expect("a Codex row that still does not sum after the cache came out says both halves",
+           broken.inputBasis, .includesCacheUnreconciled)
+    expect("beside the reconciliation flag it always had", broken.reconciliation,
+           "parts_do_not_sum")
+    let brokenClaude = UsageLedger.normalize(raw: ["input": 100, "output": 10, "cache_read": 30,
+                                                   "cache_write": 0, "total": 999],
+                                             assistant: .claude)
+    expect("and a row nothing reshaped is the other word", brokenClaude.inputBasis, .unreconciled)
+
+    UsageLedger.shared.importTaskRecord(["id": "task-basis", "assistant": "codex",
+                                         "state": "success", "kind": "code",
+                                         "project_dir": "/tmp", "timeout_minutes": 30,
+                                         "depth": 1, "child_session": "sess-basis",
+                                         "usage": ["input": 1000, "output": 10,
+                                                   "cache_read": 900, "cache_write": 0,
+                                                   "total": 1010],
+                                         "finished_at": Date().timeIntervalSince1970])
+    expect("the determination is on the stored row",
+           UsageLedger.shared.rows(taskID: "task-basis").first?.inputBasis, "includes_cache")
+    let csv = UsageLedger.shared.exportCSV()
+    let columns = (csv.split(separator: "\n").first.map(String.init) ?? "")
+        .split(separator: ",").map(String.init)
+    let values = (csv.split(separator: "\n").dropFirst().first.map(String.init) ?? "")
+        .split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+    check("and in the export, where a month of rows can be audited against it",
+          columns.firstIndex(of: "input_basis").map { values[$0] } == "includes_cache",
+          values.joined(separator: ","))
+}
+
+// The half of the ledger that watches sessions nobody dispatched. Its two decisions bound what
+// the store costs and what it can miss, and its close is the moment that decides whether a row
+// is `complete` or `source_missing` — and none of it was covered.
+group("the watcher decides when to read, and what a session leaves behind when it goes") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    Orchestrator.forget()
+    defer { Orchestrator.forget() }
+    UsageLedger.forgetWatchedForTesting()
+    let now = Date()
+
+    // Asked before anything is opened, because the panel takes this reading every 1.2 seconds
+    // and resolving a record can cost a working-directory lookup.
+    check("a session read a moment ago is not opened again",
+          UsageLedger.checkpointThrottled(since: now.addingTimeInterval(-10), now: now))
+    check("one last read longer ago than the interval is",
+          !UsageLedger.checkpointThrottled(
+            since: now.addingTimeInterval(-UsageLedger.checkpointInterval - 1), now: now))
+    check("and one nothing has ever read is taken immediately",
+          !UsageLedger.checkpointThrottled(since: nil, now: now))
+
+    check("a file that has not moved since the last checkpoint says nothing new",
+          UsageLedger.checkpointUnchanged(lastSessionID: "s", lastBytes: 100,
+                                          sessionID: "s", bytes: 100))
+    check("a file that grew does",
+          !UsageLedger.checkpointUnchanged(lastSessionID: "s", lastBytes: 100,
+                                           sessionID: "s", bytes: 140))
+    check("and a second conversation in the same tab is never skipped for being the same length",
+          !UsageLedger.checkpointUnchanged(lastSessionID: "s", lastBytes: 100,
+                                           sessionID: "s2", bytes: 100))
+    check("a reading with no size to compare is taken rather than assumed unchanged",
+          !UsageLedger.checkpointUnchanged(lastSessionID: "s", lastBytes: nil,
+                                           sessionID: "s", bytes: nil))
+
+    // A tab with no assistant in it is not a session anything spends in: nothing is opened and
+    // nothing is remembered, which is what makes its later disappearance mean nothing either.
+    let shell = TargetSession(backend: .iterm, id: "TERM-SHELL", name: "zsh",
+                              tty: "/dev/ttys099", windowIndex: 0, tabIndex: 0, assistant: nil,
+                              cwd: store.path)
+    UsageLedger.checkpoint(sessions: [shell], now: now)
+    UsageLedger.departed([shell.id], now: now)
+    check("an ordinary shell leaves the ledger alone",
+          !eventually(timeout: 0.4) { !UsageLedger.shared.rows().isEmpty })
+
+    // An assistant tab whose record cannot be found is the documented blind spot: no ranked
+    // guess at which transcript belongs to it, so no row rather than somebody else's tokens.
+    let unfindable = TargetSession(backend: .iterm, id: "TERM-UNFINDABLE", name: "claude",
+                                   tty: "/dev/ttys098", windowIndex: 0, tabIndex: 1,
+                                   assistant: .claude,
+                                   cwd: store.appendingPathComponent("nowhere").path)
+    UsageLedger.checkpoint(sessions: [unfindable], now: now)
+    UsageLedger.departed([unfindable.id], now: now)
+    check("and neither does a session whose transcript nothing can name",
+          !eventually(timeout: 0.4) { !UsageLedger.shared.rows().isEmpty })
+
+    // The close. A process that has gone is one of the three forced checkpoints, and it is the
+    // one that decides `complete` against `source_missing` — so the record is read once more.
+    let transcript = store.appendingPathComponent("sess-departed.jsonl")
+    let turn = """
+        {"type":"assistant","message":{"model":"claude-opus-5","usage":{"input_tokens":10,\
+        "output_tokens":5,"cache_read_input_tokens":85,"cache_creation_input_tokens":0}}}
+        """
+    try! Data(turn.utf8).write(to: transcript)
+    UsageLedger.remember(terminalID: "TERM-DEPARTED", assistant: .claude,
+                         sessionID: "sess-departed", record: transcript, bytes: turn.count,
+                         at: now)
+    UsageLedger.departed(["TERM-DEPARTED"], now: now)
+    check("a session whose process disappears is read once more and sealed",
+          eventually { UsageLedger.shared.rows().first { $0.sessionID == "sess-departed" }?
+              .sealed == true })
+    let departed = UsageLedger.shared.rows().first { $0.sessionID == "sess-departed" }
+    expect("with what the transcript held at the end", departed?.total, 100)
+    expect("sealed complete, because the source was still readable", departed?.coverage,
+           "complete")
+    expect("and filed as a session a person opened", departed?.origin, "manual")
+    UsageLedger.departed(["TERM-DEPARTED"], now: now)
+    check("a terminal that has already gone is not read a second time",
+          !eventually(timeout: 0.4) {
+              UsageLedger.shared.rows().filter { $0.sessionID == "sess-departed" }.count > 1
+          })
+
+    // The other outcome of the same moment: the record is unreadable by the time it closes.
+    UsageLedger.remember(terminalID: "TERM-VANISHED", assistant: .claude,
+                         sessionID: "sess-vanished",
+                         record: store.appendingPathComponent("gone.jsonl"), bytes: nil, at: now)
+    UsageLedger.departed(["TERM-VANISHED"], now: now)
+    check("a session whose record has gone is a state, never a zero",
+          eventually {
+              let row = UsageLedger.shared.rows().first { $0.sessionID == "sess-vanished" }
+              return row?.coverage == "source_missing" && row?.counts.isEmpty == true
+                  && row?.total == nil
+          })
+    expect("saying which kind of unavailable it is",
+           UsageLedger.shared.rows().first { $0.sessionID == "sess-vanished" }?.coverageReason,
+           "source_unreadable_at_close")
+}
+
+group("what a terminal's spend is filed under, and what the backfill hands over") {
+    Orchestrator.forget()
+    defer { Orchestrator.forget() }
+
+    // The one place in the app that turns an `Orchestrator.Usage` back into a source object. A
+    // misspelled key here drops a field in production and nowhere else — and the field most
+    // likely to be dropped is the cache read, which is 96.6% of every token on this machine.
+    var usage = Orchestrator.Usage()
+    usage.input = 2
+    usage.output = 3
+    usage.cacheRead = 160_655
+    usage.cacheWrite = 5
+    usage.total = 160_665
+    usage.model = "claude-opus-5"
+    usage.costUsd = 5.469
+    let raw = UsageLedger.rawUsage(of: usage)
+    expect("the usage object goes back out in the registry's own spelling",
+           Set(raw.keys), Set(["input", "output", "cache_read", "cache_write", "total", "model",
+                               "cost_usd"]))
+    expect("with the cache read under the key the ledger reads", raw["cache_read"] as? Int,
+           160_655)
+    expect("and the recorded cost under its own", raw["cost_usd"] as? Double, 5.469)
+    let read = UsageLedger.normalize(raw: raw, assistant: .claude)
+    expect("so a round trip through it loses nothing", read.counts.cacheRead, 160_655)
+    expect("and the parts still sum back to the total", read.counts.total, 160_665)
+    var bare = Orchestrator.Usage()
+    bare.total = 0
+    check("a usage with no model and no cost invents neither",
+          UsageLedger.rawUsage(of: bare)["model"] == nil
+            && UsageLedger.rawUsage(of: bare)["cost_usd"] == nil)
+
+    // Which task a watched terminal's spend belongs to. A live task owns the tab; an attached
+    // task is a guest and owns nothing once it ends, because a standing session wearing a
+    // finished task's name is the one shape this must not have.
+    func task(_ id: String, _ state: Orchestrator.State, terminal: String,
+              created: Date, attached: String? = nil) -> Orchestrator.Task {
+        var task = Orchestrator.Task(id: id, state: state, kind: "code", title: "fixture",
+                                     assistant: .claude, projectDir: "/tmp/project",
+                                     timeoutMinutes: 30, created: created,
+                                     secretHash: String(repeating: "0", count: 64))
+        task.childTerminalId = terminal
+        task.attachSessionId = attached
+        return task
+    }
+    let old = task("aaaaaaaa-0000-4000-8000-000000000001", .success, terminal: "TERM-1",
+                   created: Date(timeIntervalSince1970: 1_000))
+    let recent = task("aaaaaaaa-0000-4000-8000-000000000002", .success, terminal: "TERM-1",
+                      created: Date(timeIntervalSince1970: 2_000))
+    let live = task("aaaaaaaa-0000-4000-8000-000000000003", .briefed, terminal: "TERM-1",
+                    created: Date(timeIntervalSince1970: 500))
+    let guest = task("aaaaaaaa-0000-4000-8000-000000000004", .success, terminal: "TERM-2",
+                     created: Date(timeIntervalSince1970: 3_000), attached: "standing-tab")
+    for held in [old, recent, guest] { Orchestrator.holdScheduleTaskForTesting(held) }
+    expect("the newest task that owned the tab, when none is live",
+           Orchestrator.ledgerTaskRecord(forTerminal: "TERM-1")?["id"] as? String, recent.id)
+    Orchestrator.holdScheduleTaskForTesting(live)
+    expect("and the live one whenever there is one, however old",
+           Orchestrator.ledgerTaskRecord(forTerminal: "TERM-1")?["id"] as? String, live.id)
+    check("a finished guest never claims the session it was a guest in",
+          Orchestrator.ledgerTaskRecord(forTerminal: "TERM-2") == nil)
+    check("and a terminal this app never opened is nobody's",
+          Orchestrator.ledgerTaskRecord(forTerminal: "TERM-NOBODY") == nil)
+    check("what is handed to the ledger carries no credential",
+          Orchestrator.ledgerTaskRecord(forTerminal: "TERM-1")?["secret_hash"] == nil
+            && Orchestrator.ledgerTaskRecord(forTerminal: "TERM-1")?["queued_secret"] == nil)
+
+    // And the backfill's own door: every row the registry still holds, oldest first, so that a
+    // session's segments are opened in the order the work actually happened.
+    let backfill = Orchestrator.ledgerBackfillRecords()
+    expect("the backfill hands over every record the registry holds", backfill.count, 4)
+    expect("oldest first, so a session's segments open in the order the work happened",
+           backfill.compactMap { $0["created"] as? Double },
+           [500, 1_000, 2_000, 3_000])
+    check("and none of them carries a credential",
+          backfill.allSatisfy { $0["secret_hash"] == nil && $0["queued_secret"] == nil })
+}
+
 // MARK: - Schedule session resume
 
 checks += 1
