@@ -22442,6 +22442,17 @@ group("a row with one part unknown keeps its unknown through every reader") {
     expect("every row that measured something says how much", exportedMeasured.count, 2)
     expect("and the export sums to exactly the total the route publishes",
            exportedMeasured.reduce(0, +), UsageLedger.shared.aggregate().totals.total)
+
+    // **The ranking has to move a row for this to be a guard at all.** With the incomplete rows
+    // arriving first, any reader that returned them in the order the store holds them would pass
+    // — which is what happened when the ordering stopped being decided in the `ORDER BY` and the
+    // assertion above went on passing. So: one more row that could not measure everything,
+    // arriving last, which has to be lifted over the row that measured all four.
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: "partial-late",
+                                               usage: ["input": 7, "output": 3],
+                                               model: "claude-opus-5"))
+    expect("a row that measured less is lifted over one that measured all four, whenever it came",
+           UsageLedger.shared.rows().map(\.sessionID), ["partial", "partial-late", "whole"])
 }
 
 group("a session the store had to name for itself says so on the wire") {
@@ -22485,6 +22496,14 @@ group("a session the store had to name for itself says so on the wire") {
     unwritten.counts = UsageLedger.Counts(inputNew: 1, output: 1, cacheRead: 1, cacheWrite: 1)
     expect("even a row nobody remembered to annotate reports the invented identity",
            unwritten.measurement.reasons, ["session_unresolved"])
+
+    // And it is *added* to what the row already says. Reading it back only for an otherwise
+    // unmarked row is how the mark underneath disappeared: the number spans a replaced source
+    // and the session was invented, and a consumer needs both to know what it is holding.
+    var alsoRotated = unwritten
+    alsoRotated.coverageReasons = ["source_regressed"]
+    expect("without displacing the mark the row already carried",
+           alsoRotated.measurement.reasons, ["source_regressed", "session_unresolved"])
 }
 
 group("a source that went backwards re-anchors instead of quietly under-counting") {
