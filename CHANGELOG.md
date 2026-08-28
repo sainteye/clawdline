@@ -26,6 +26,11 @@ the point: leaving `claude` and starting it again in the same window keeps the w
 next conversation gets its own automatic name instead of inheriting the one you chose for the
 last one.
 
+`/rename` in the terminal is the same person speaking, so the newer of the two wins: name a session
+here, rename it there, and the terminal's name is what shows. What is compared is what the
+transcript's last `/rename` said at the moment you chose the name — a rename that happened before
+that changes nothing, and a rename after it takes over.
+
 Downstream is told when it can be, and the answer says which happened. Codex takes the name on its
 thread straight away. Claude is sent `/rename` only when it is idle and not showing a menu — a
 slash command typed into a running turn interrupts it, and one typed into a question answers the
