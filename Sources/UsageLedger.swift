@@ -117,6 +117,10 @@ final class UsageLedger {
         case noCostRecorded = "no_cost_recorded"
     }
 
+    /// How the spend is billed. `unknown` is the answer for Claude and it is a real one: a
+    /// transcript does not record whether the session ran against a subscription or an API key,
+    /// and `metered` exists so that saying `unknown` means something rather than being the only
+    /// word available.
     enum BillingMode: String {
         case plan, metered, unknown
     }
@@ -1106,10 +1110,6 @@ final class UsageLedger {
 
     /// A measurement that disagrees with a sealed row. Written as new metadata, because a value
     /// that may already have appeared in a month's total is never silently rewritten.
-    func recordCorrection(intervalKey: String, reason: String, proposed: [String: Any]) {
-        queue.sync { correction(intervalKey: intervalKey, reason: reason, proposed: proposed) }
-    }
-
     private func correction(intervalKey: String, reason: String, proposed: [String: Any]) {
         guard let db = database() else { return }
         let was = row(db, key: intervalKey).map { row -> [String: Any] in
@@ -1224,10 +1224,6 @@ final class UsageLedger {
         bind(statement, 1, key)
         guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
         return Self.row(from: statement)
-    }
-
-    func row(intervalKey: String) -> Row? {
-        queue.sync { database().flatMap { row($0, key: intervalKey) } }
     }
 
     /// Every row a task produced, newest segment last. The per-row reconciliation check uses
