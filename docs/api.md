@@ -128,6 +128,7 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/orchestrator/coordinator/register` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/rebind` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/coordinator` | orchestrator token | — |
+| `GET` | `/v1/orchestrator/coordinator/bearings` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/waits` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/waits` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/waits/:id/release` | orchestrator token | — |
@@ -1767,15 +1768,40 @@ to no live Session row. An absent, corrupt or unsupported record produces
 replacement. No response contains a transcript, transcript path, assistant conversation id, tty,
 pid or process start.
 
+#### `GET /v1/orchestrator/coordinator/bearings`
+
+The device-readable half of the same answer. It accepts ordinary device auth (the orchestrator
+token also works), because it exists for exactly one caller: the Clawdfather controls panel on a
+paired phone, whose four read-only commands are answered from it. The full inspection above stays
+machine-token-only.
+
+The body is a strict subset of the full inspection, built as an allowlist — a field added to the
+full answer never reaches this one by omission. What survives: `version`, `observed_at`;
+`coordinator` reduced to `configured`, `label`, `scope`, `status`, `lifecycle` and the safe
+`session` row (`id`, `assistant`, `label`, `cwd`, `work_state`); `bearings` with its
+`observed_at`, `coordinator_lifecycle`, `work_state_counts`, the three counts, the
+`needs_triage`/`waiting`/`blocking` rows (same five session fields), and `sources` reduced to
+`observed_at` and `freshness` per source. Everything in it is either an aggregate count or a
+session fact a paired device can already read from `GET /v1/sessions`.
+
+Deliberately withheld, beyond Bearings' own exclusions (tty, pid, process start, conversation
+ids): the durable coordinator UUID, `generation`, `registered_at` and `rebound_at` — the
+compare-and-swap bookkeeping of the machine-token rebind flow, which a device cannot use —
+plus `store` health, source `provenance` names and the session-watch `generation` counter.
+
 The optional `session.coordinator` record is projected on both `GET /v1/sessions` and
 `GET /v1/orchestrator/sessions` for the exact bound row only. It advertises
-`status_report`, `duplicates_conflicts_ownership`, `landing_closure` and `scope_permissions`, but
-all four have `enabled:false`: Bearings exists at the authenticated
-`GET /v1/orchestrator/coordinator` route, while these web actions are preview-only and not connected
-to that route. `since_away`, coordination/judgement commands, dispatch, quiet watch, stop and
-reconnect are likewise disabled. A2's reconnect is deliberately machine-token-only; it is not the
-web menu command. The renderer therefore says Disabled/Preview, never Available. The record is
-absent from every ordinary row, preserving their old JSON behavior.
+`status_report`, `duplicates_conflicts_ownership`, `landing_closure` and `scope_permissions` with
+`enabled:true`: the panel answers them from `GET /v1/orchestrator/coordinator/bearings` above.
+Every command that would send, spawn or mutate stays `enabled:false` and carries two fields:
+`reason`, a closed code the client says in its own language — `no_return_ledger` (since_away),
+`no_command_route` (coordinate_work, ask_coordinator, quiet_watch, stop), `device_cannot_spawn`
+(dispatch_independent_work) and `machine_token_only` (reconnect) — and `why`, honest English
+prose kept for pages that predate the codes. A client that knows the code ignores the prose; one
+that does not still shows a true sentence. Reconnect is deliberately machine-token-only; it is
+not the web menu command. Dispatch would start a session from a device, which is the one thing
+the device/orchestrator credential split exists to prevent. The record is absent from every
+ordinary row, preserving their old JSON behavior.
 
 #### Proposed observer provenance for any future liveness action
 

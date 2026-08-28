@@ -1123,6 +1123,27 @@ final class RemoteServer: @unchecked Sendable {
                     registryObservedAt: registry.observedAt,
                     sessionsGeneration: observation.sessionsGeneration)))
 
+        // The device-readable half of Bearings. No `orchestratorAuthed` guard on purpose: an
+        // orchestrator read without the machine token falls through to ordinary device auth at
+        // the top gate, which is exactly who this projection is for — the Clawdfather panel's
+        // four read-only commands, on a page that holds a device token. What it answers is an
+        // allowlist built in `Coordinator.deviceBearings`: aggregate counts plus session facts
+        // a paired device can already read from `GET /v1/sessions`, and never the durable
+        // coordinator UUID, lifecycle bookkeeping, store health, tty, pid or conversation ids.
+        case ("GET", "/v1/orchestrator/coordinator/bearings"):
+            let observation = coordinatorObservation()
+            let registry = observation.registry
+            return .json(Coordinator.deviceBearings(
+                liveSessions: observation.sessions,
+                bearings: .init(
+                    sessionsFresh: observation.sessionsFresh,
+                    activeTaskCount: registry.activeTasks,
+                    pendingLandingCount: registry.pendingLandings,
+                    openWaitCount: registry.openWaits,
+                    sessionsObservedAt: observation.sessionsObservedAt,
+                    registryObservedAt: registry.observedAt,
+                    sessionsGeneration: observation.sessionsGeneration)))
+
         case ("GET", "/v1/orchestrator/waits"):
             return .json(["waits": Orchestrator.coordinationWaitRecords(),
                           "at": Int(Date().timeIntervalSince1970)])
@@ -4163,6 +4184,76 @@ final class RemoteServer: @unchecked Sendable {
             "webConfirmClawdfatherSay": t.webConfirmClawdfatherSay,
             "webClawdfatherAsk": t.webClawdfatherAsk,
             "webClawdfatherAsked": t.webClawdfatherAsked,
+        ])
+
+        // The Clawdfather controls panel — sections, the closed commands table, effect and state
+        // words, disabled reasons by code, and the rendering of the four connected reads.
+        add([
+            "webCoordSectionObserve": t.webCoordSectionObserve,
+            "webCoordSectionCoordinate": t.webCoordSectionCoordinate,
+            "webCoordSectionPresence": t.webCoordSectionPresence,
+            "webCoordSectionAdmin": t.webCoordSectionAdmin,
+            "webCoordCmdStatusReport": t.webCoordCmdStatusReport,
+            "webCoordCmdStatusReportSay": t.webCoordCmdStatusReportSay,
+            "webCoordCmdSinceAway": t.webCoordCmdSinceAway,
+            "webCoordCmdSinceAwaySay": t.webCoordCmdSinceAwaySay,
+            "webCoordCmdDuplicates": t.webCoordCmdDuplicates,
+            "webCoordCmdDuplicatesSay": t.webCoordCmdDuplicatesSay,
+            "webCoordCmdLandingClosure": t.webCoordCmdLandingClosure,
+            "webCoordCmdLandingClosureSay": t.webCoordCmdLandingClosureSay,
+            "webCoordCmdCoordinateWork": t.webCoordCmdCoordinateWork,
+            "webCoordCmdCoordinateWorkSay": t.webCoordCmdCoordinateWorkSay,
+            "webCoordCmdDispatch": t.webCoordCmdDispatch,
+            "webCoordCmdDispatchSay": t.webCoordCmdDispatchSay,
+            "webCoordCmdAsk": t.webCoordCmdAsk,
+            "webCoordCmdAskSay": t.webCoordCmdAskSay,
+            "webCoordCmdQuietWatch": t.webCoordCmdQuietWatch,
+            "webCoordCmdQuietWatchSay": t.webCoordCmdQuietWatchSay,
+            "webCoordCmdScope": t.webCoordCmdScope,
+            "webCoordCmdScopeSay": t.webCoordCmdScopeSay,
+            "webCoordCmdStop": t.webCoordCmdStop,
+            "webCoordCmdStopSay": t.webCoordCmdStopSay,
+            "webCoordCmdReconnect": t.webCoordCmdReconnect,
+            "webCoordCmdReconnectSay": t.webCoordCmdReconnectSay,
+            "webCoordEffectRead": t.webCoordEffectRead,
+            "webCoordEffectAdvisory": t.webCoordEffectAdvisory,
+            "webCoordEffectSpawns": t.webCoordEffectSpawns,
+            "webCoordEffectMutation": t.webCoordEffectMutation,
+            "webCoordStateAvailable": t.webCoordStateAvailable,
+            "webCoordStateDraft": t.webCoordStateDraft,
+            "webCoordStateUnavailable": t.webCoordStateUnavailable,
+            "webCoordStatePreview": t.webCoordStatePreview,
+            "webCoordStateDisabled": t.webCoordStateDisabled,
+            "webCoordOnline": t.webCoordOnline,
+            "webCoordOffline": t.webCoordOffline,
+            "webCoordControlsTitle": t.webCoordControlsTitle,
+            "webCoordOpenControls": t.webCoordOpenControls,
+            "webCoordEmpty": t.webCoordEmpty,
+            "webCoordDisabledFallback": t.webCoordDisabledFallback,
+            "webCoordPreviewTitle": t.webCoordPreviewTitle,
+            "webCoordPreviewNone": t.webCoordPreviewNone,
+            "webCoordPreviewMutation": t.webCoordPreviewMutation,
+            "webCoordPreviewDraft": t.webCoordPreviewDraft,
+            "webCoordPreviewSpawn": t.webCoordPreviewSpawn,
+            "webCoordPreviewContract": t.webCoordPreviewContract,
+            "webCoordWhyNoCommandRoute": t.webCoordWhyNoCommandRoute,
+            "webCoordWhyNoReturnLedger": t.webCoordWhyNoReturnLedger,
+            "webCoordWhyDeviceCannotSpawn": t.webCoordWhyDeviceCannotSpawn,
+            "webCoordWhyMachineTokenOnly": t.webCoordWhyMachineTokenOnly,
+            "webCoordReadFailed": t.webCoordReadFailed,
+            "webCoordActiveTasks": t.webCoordActiveTasks,
+            "webCoordPendingLandings": t.webCoordPendingLandings,
+            "webCoordOpenWaits": t.webCoordOpenWaits,
+            "webCoordCountTriage": t.webCoordCountTriage,
+            "webCoordStaleSessions": t.webCoordStaleSessions,
+            "webCoordNeedsTriage": t.webCoordNeedsTriage,
+            "webCoordWaitingList": t.webCoordWaitingList,
+            "webCoordBlockingList": t.webCoordBlockingList,
+            "webCoordAllQuiet": t.webCoordAllQuiet,
+            "webCoordNoLandings": t.webCoordNoLandings,
+            "webCoordUnregistered": t.webCoordUnregistered,
+            "webCoordScopeLine": t.webCoordScopeLine,
+            "webCoordScopeDevice": t.webCoordScopeDevice,
         ])
 
         var response = Response.json(out)
