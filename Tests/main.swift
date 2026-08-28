@@ -20743,6 +20743,115 @@ group("an attached briefing is delivered work, not a tab still trying to open") 
           eventually { RemoteServer.shared.terminalOutstandingForTesting().total == 0 })
 }
 
+// A task that has said what it is doing has, by definition, read the line typed at it: the
+// progress route authenticates with the task secret, and the secret is in that line and nowhere
+// else on disk. Calling such a task `spawn_failed` is a record that contradicts its own contents
+// — and on 2026-08-28 it was worse than a wrong record, because `finalize` reads an unbriefed
+// `spawn_failed` as "nothing was ever done here" and disposes the checkout. One child lost its
+// worktree and its delivery branch while its tab was still working inside the deleted directory.
+group("a task that has posted progress is not a tab that never opened") {
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    var made: [URL] = []
+    defer {
+        for directory in made { try? manager.removeItem(at: directory) }
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+
+    /// A tab this app opened, past the four-minute deadline for reaching a prompt.
+    func pastTheDeadline(secret: String = "unused") -> Orchestrator.Task {
+        let id = UUID().uuidString.lowercased()
+        let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
+        made.append(directory)
+        try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        var task = Orchestrator.Task(
+            id: id, state: .spawning, kind: "custom", title: "working, and saying so",
+            assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+            secretHash: Orchestrator.hash(ofSecret: secret))
+        task.spawnedAt = Date().addingTimeInterval(-(Orchestrator.readyLimit + 1))
+        return task
+    }
+    func directory(of task: Orchestrator.Task) -> URL {
+        Orchestrator.root.appendingPathComponent(task.id, isDirectory: true)
+    }
+
+    // The control, first: without a receipt the deadline still ends the task. If this ever goes
+    // green for the wrong reason the two assertions below prove nothing.
+    let silent = pastTheDeadline()
+    Orchestrator.holdScheduleTaskForTesting(silent)
+    Orchestrator.beat(fromTimer: true)
+    expect("a tab that never said anything still fails the deadline",
+           Orchestrator.record(id: silent.id)?["state"] as? String, "spawn_failed")
+
+    let noteAt = Date().addingTimeInterval(-120)
+    var overHTTP = pastTheDeadline()
+    overHTTP.progress = [Orchestrator.ProgressNote(note: "reading the briefing now", at: noteAt)]
+    Orchestrator.holdScheduleTaskForTesting(overHTTP)
+    Orchestrator.beat(fromTimer: true)
+    expect("a task that posted a note is briefed rather than spawn_failed",
+           Orchestrator.record(id: overHTTP.id)?["state"] as? String, "briefed")
+    // Without this the promotion would be half done: `briefedAt == nil` is the second half of
+    // what `finalize` reads as an empty checkout, and it is what starts the task's own timeout.
+    expect("and its briefing is dated by the receipt, not by the deadline",
+           Orchestrator.record(id: overHTTP.id)?["briefedAt"] as? Int,
+           Int(noteAt.timeIntervalSince1970))
+
+    // The file half of the channel exists for a child whose sandbox has no loopback, and no beat
+    // collects it while the task is `spawning`. Without a collection at the deadline its note is
+    // invisible for exactly the window in which it is needed.
+    let sandboxedSecret = String(repeating: "e5", count: 32)
+    let sandboxed = pastTheDeadline(secret: sandboxedSecret)
+    try! JSONSerialization.data(withJSONObject: [
+        "task_secret": sandboxedSecret, "note": "no loopback here, so this is the only channel",
+    ]).write(to: directory(of: sandboxed).appendingPathComponent(Orchestrator.progressFileName),
+             options: .atomic)
+    Orchestrator.holdScheduleTaskForTesting(sandboxed)
+    Orchestrator.beat(fromTimer: true)
+    expect("a note that could only arrive as a file is collected before the deadline fires",
+           Orchestrator.record(id: sandboxed.id)?["state"] as? String, "briefed")
+
+    // The receipt dates the briefing at the earlier of the two moments that bound it: the line
+    // was on the tty by `lastInjectAt`, and had certainly been read by the first note.
+    var typedThenAnswered = pastTheDeadline()
+    typedThenAnswered.lastInjectAt = noteAt.addingTimeInterval(-30)
+    typedThenAnswered.progress = [Orchestrator.ProgressNote(note: "started", at: noteAt)]
+    expect("the briefing is dated from when the line was typed when that is known",
+           Orchestrator.briefingProvenByProgress(typedThenAnswered),
+           noteAt.addingTimeInterval(-30) as Date?)
+    check("and nothing is proven by a task that has said nothing",
+          Orchestrator.briefingProvenByProgress(pastTheDeadline()) == nil)
+
+    // The disposal half. `worktreeDisposal` already refuses to erase commits or dirty bytes; the
+    // window it cannot see is a child that is working and has not written a byte yet.
+    var spokenTo = pastTheDeadline()
+    spokenTo.childTerminalId = "TAB"
+    spokenTo.progress = [Orchestrator.ProgressNote(note: "working", at: noteAt)]
+    check("a checkout is not reclaimed as empty when its child answered",
+          !Orchestrator.reclaimsEmptyWorktree(spokenTo, outcome: .spawnFailed))
+    var typedAt = pastTheDeadline()
+    typedAt.childTerminalId = "TAB"
+    typedAt.injectAttempts = 1
+    check("nor when the first line was typed at a composer this app saw was ready",
+          !Orchestrator.reclaimsEmptyWorktree(typedAt, outcome: .spawnFailed))
+    // Liveness is deliberately not the test: the tab is alive in both readings, because a session
+    // that never reached a prompt is also a live assistant sitting at a fresh composer.
+    var neverSpokenTo = pastTheDeadline()
+    neverSpokenTo.childTerminalId = "TAB"
+    check("a tab that was never spoken to is still reclaimed",
+          Orchestrator.reclaimsEmptyWorktree(neverSpokenTo, outcome: .spawnFailed))
+    check("and so is a task whose tab was never opened at all",
+          Orchestrator.reclaimsEmptyWorktree(pastTheDeadline(), outcome: .cancelled))
+    var briefed = pastTheDeadline()
+    briefed.childTerminalId = "TAB"
+    briefed.briefedAt = noteAt
+    check("an ending that is not an unbriefed spawn failure never reclaims",
+          !Orchestrator.reclaimsEmptyWorktree(briefed, outcome: .timeout))
+}
+
 group("owned storage is visible through the read-only orchestrator route") {
     let manager = FileManager.default
     let base = manager.temporaryDirectory
