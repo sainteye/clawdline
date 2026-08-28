@@ -1370,8 +1370,8 @@ migrates to a matching label or the most recently active assistant.
 
 `GET /v1/orchestrator/coordinator`, also orchestrator-token-only, returns safe durable presence and
 **Bearings**: one deterministic snapshot over existing Session metadata, active task records,
-pending landing records and open coordination-wait groups. It always counts the seven closed
-`work_state` values and names safe metadata for `needs_triage`, human/peer `waiting`, and owners
+pending landing records and open coordination-wait groups. It always counts the eight closed
+`work_state` values and names safe metadata for `unknown`, human/peer `waiting`, and owners
 `blocking` peers. Named lists are independent filters and may honestly overlap when a session is
 both owner and waiter. RemoteServer takes one SessionWatch observation and then one Orchestrator
 snapshot; every Orchestrator-derived row flag plus task, landing and open-wait total is computed in
@@ -1514,7 +1514,7 @@ $ curl -s "http://127.0.0.1:$PORT/v1/orchestrator/coordinator" \
    "rebound_at":1787882803,"status":"online","lifecycle":"standby",
    "session":{"id":"509F54A8-356E-420D-9EAC-73D676C9580E","assistant":"claude",
               "label":"Clawdfather 新增介面","cwd":"/Users/you/code/clawdline",
-              "work_state":"needs_triage"}},
+              "work_state":"unknown"}},
  "bearings":{…}}
 ```
 
@@ -1630,7 +1630,7 @@ git-verified target landing fields above and the terminal has no unresolved coor
 handoff. Legacy landed rows without those fields remain a milestone. Neither unstructured
 assistant prose, progress notes nor Clawdfather advisory can write either check. Clawdfather
 explains which receipt
-is missing, coordinates its owner, and prioritizes `needs_triage`; it is not a status-truth writer.
+is missing, coordinates its owner, and prioritizes `unknown` rows; it is not a status-truth writer.
 
 The existing task result remains a child's typed, durable Session report: `success` maps to
 delivered milestone evidence, while `failure`, `timeout`, cancellation, or a missing finish receipt
@@ -1646,9 +1646,11 @@ review, landing, and handoff obligation belonging to a human root's whole graph.
 broader completion would be invented global truth, so neither scope calls a root graph complete.
 The typed double-check evidence remains `broker_verified_target_landing`, not “task closure”: the
 broker verified local git containment, not the root's complete test/review graph. `ready` is
-likewise not inferred for an idle assistant: without positive evidence
-that no assignment exists, its stopped state is `needs_triage` (the health target for this queue is
-zero). Plain non-assistant prompts can be `ready` because their absence of an assistant assignment
+likewise never inferred for an idle assistant: without positive evidence, its stopped state is
+`unknown` — an absence that asks nothing of the reader. The positive evidence can now also be the
+session's own authenticated declaration (`POST /v1/orchestrator/sessions/:id/state`, provenance
+`self`, docs/session-states.md), which is how an idle assistant honestly reaches `ready`. Plain
+non-assistant prompts can be `ready` because their absence of an assistant assignment
 is directly observable.
 
 ### The protocol has a living Claude Code Artifact
