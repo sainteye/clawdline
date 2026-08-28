@@ -7943,7 +7943,7 @@ enum Orchestrator {
     /// What one root's fan-out has come to, accumulated as its tasks end.
     ///
     /// **A phone hears about a batch and never about a task, and the arithmetic is the argument.**
-    /// Five children with three of their own is twenty sessions, every one of them a terminal
+    /// Four roots with five children each is twenty sessions, every one of them a terminal
     /// that goes idle when it is done — so before this existed a fan-out was up to twenty
     /// identical "finished a long run" notifications, none of which said which tree it belonged
     /// to or whether anything was still outstanding. That is the same mistake ``StateHook``'s own

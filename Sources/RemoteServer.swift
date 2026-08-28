@@ -3671,12 +3671,16 @@ final class RemoteServer: @unchecked Sendable {
     ///
     /// **Where the line falls.** Everything here is something the caller has to know before it
     /// can write a wait down — which session, running what, in which checkout, and whether
-    /// anybody is home. `label` is the only field that is not purely structural: it is the
-    /// Clawdline task title when this app opened the tab, and otherwise the tab's own title,
-    /// which an assistant sets to what it is working on. That is a phrase; it is already drawn on
-    /// the window, in the Dock's window menu and in every switcher on this Mac; and without it
-    /// two sessions in one checkout cannot be told apart, which is exactly the case waits exist
-    /// for. Everything past a phrase stays out — no `line`, no `menu`, no `agents`, no `shells`,
+    /// anybody is home. `label` is the only field that is not purely structural: it is what
+    /// Clawdline calls the session — a name a person typed for it, else the Clawdline task title
+    /// when this app opened the tab, else what the conversation calls itself in the assistant's
+    /// own records, else the coordinate `⌘<window>-<tab>` — and **never the tab's own title**,
+    /// which is a place a name is displayed and not a place one is kept. ``SessionNaming`` states
+    /// that rule and the incident behind it; `docs/api.md` documents this row from here, so an
+    /// edit that softens it here is the one the next reader will copy. That is still a phrase,
+    /// and without it two sessions in one checkout cannot be told apart, which is exactly the
+    /// case waits exist for. Everything past a phrase stays out — no `line`, no `menu`, no
+    /// `agents`, no `shells`,
     /// and in particular no `sessionId`, which is the name of the assistant's own transcript
     /// file and would turn a dispatch credential into a reading one.
     ///
