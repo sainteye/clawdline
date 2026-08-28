@@ -15,11 +15,11 @@ import Security
 /// **Two credentials, deliberately not one.** Dispatching is gated by a token in a `0600` file —
 /// the same boundary `remote-token` uses, and for the same reason: through a tunnel every request
 /// arrives from 127.0.0.1, so "local" is a thing only the filesystem can prove, and a paired
-/// phone must never be able to start sessions. A child allowed to dispatch can read that token;
-/// it still cannot exchange it for another task's secret. Every child gets its own per-task
-/// secret, typed into its first message and good for finishing its own task or sending one of its
-/// tightly limited timely notifications. Only the secret's SHA-256 is kept once the child has
-/// been briefed.
+/// phone must never be able to start sessions. Nothing this app opens may dispatch, so no child
+/// is handed that token at all, and one that found it could still not exchange it for another
+/// task's secret. Every child gets its own per-task secret, typed into its first message and good
+/// for finishing its own task or sending one of its tightly limited timely notifications. Only
+/// the secret's SHA-256 is kept once the child has been briefed.
 enum Orchestrator {
 
     // MARK: - Scheduled dispatches
@@ -1228,6 +1228,39 @@ enum Orchestrator {
             return headOnBranch == true ? .removeAll : .keepEverything
         }
         return .removeTreeKeepBranch
+    }
+
+    /// Whether an ending may reclaim this task's checkout as one nothing was ever done in.
+    ///
+    /// ``worktreeDisposal(commits:dirty:headOnBranch:branchExists:)`` already refuses to erase
+    /// commits or dirty bytes. This is the guard for the window it cannot see: a child working in
+    /// the directory right now that has not written a byte yet. Measured on 2026-08-28 — one
+    /// child had committed a minute in and kept everything; its sibling had not, and lost the
+    /// checkout *and* the delivery branch while its tab was still `working` inside the deleted
+    /// directory.
+    ///
+    /// **Liveness cannot answer this question**, which is why neither the tab nor the child
+    /// process appears below. A session that never reached a prompt is also a live assistant in a
+    /// live tab — that *is* the case this reclaim exists for. What separates the two readings is
+    /// whether this task's own first message was ever put in front of that session.
+    ///
+    /// A checkout kept by mistake costs a directory until `cleanup` sweeps it a day later. A
+    /// checkout deleted by mistake costs the work inside it, and this app has no copy.
+    static func reclaimsEmptyWorktree(_ task: Task, outcome: State) -> Bool {
+        guard !childWasSpokenTo(task) else { return false }
+        if task.childTerminalId == nil { return true }
+        return outcome == .spawnFailed && task.briefedAt == nil
+    }
+
+    /// Any receipt that this task's first message and a child ever met, in either direction:
+    /// the briefing was accepted, its marker was proved in a transcript, the child answered with
+    /// a note, or the line was typed at a composer this app had already seen was ready.
+    static func childWasSpokenTo(_ task: Task) -> Bool {
+        task.briefedAt != nil
+            || task.transcriptProven
+            || !task.progress.isEmpty
+            || task.progressFileNote != nil
+            || task.injectAttempts > 0
     }
 
     /// A stale value copy may add fields, but it may never move a task backwards or resurrect it.
@@ -2675,17 +2708,23 @@ enum Orchestrator {
     }
 
     /// What a terminal this app opened for a task is called. Nil for every other session.
+    ///
+    /// `load()` first, like ``role(forTerminal:)`` below. It used not to, and the comment there
+    /// explained the asymmetry: *a title that is briefly missing is a row drawn with the tab's
+    /// own name*. That sentence stopped being true when ``TargetSession/displayLabel`` stopped
+    /// reading tab titles — a title missing because nothing had loaded the records yet is now a
+    /// row that has quietly dropped a rung, which is the same shape as the defect that change
+    /// was made for. It costs a flag check after the first call.
     static func title(forTerminal id: String) -> String? {
+        load()
         lock.lock(); defer { lock.unlock() }
         return titlesByTerminal[id]
     }
 
     /// Where that terminal sits in the tree. Nil for every session a person opened themselves.
     ///
-    /// `load()` first, unlike ``title(forTerminal:)`` beside it, and the asymmetry is deliberate:
-    /// a title that is briefly missing is a row drawn with the tab's own name, while a role that
-    /// is briefly missing is a child mistaken for a person — which is the one wrong answer this
-    /// whole arrangement exists to avoid. It costs a flag check after the first call.
+    /// `load()` first, because a role that is briefly missing is a child mistaken for a person —
+    /// which is the one wrong answer this whole arrangement exists to avoid.
     static func role(forTerminal id: String) -> Role? {
         load()
         lock.lock(); defer { lock.unlock() }
@@ -4228,15 +4267,13 @@ enum Orchestrator {
         // `orchestratorMaxDescendants` sits over the whole machine either way.
         let depth = attachedDepth
             ?? depthOfNew(parentTask: made.parentTaskId, rootSession: made.rootSessionId)
-        let floor = depthFloor
-        if attachedSession == nil, depth > floor {
+        if attachedSession == nil, !depthIsAllowed(depth) {
             return .refused(409, "depth_exceeded",
-                            floor == 1
-                            ? "A child session cannot dispatch tasks of its own."
-                            : "Tasks go two levels deep; a child of a child cannot dispatch.")
+                            "A child session cannot dispatch tasks of its own. Work that needs "
+                          + "to run in parallel belongs to your assistant's own subagents.")
         }
-        let cap = depth == 1 ? Config.shared.orchestratorMaxChildren
-                             : Config.shared.orchestratorMaxGrandchildren
+        // One level, so the only dispatcher a new tab can hang under is a root.
+        let cap = Config.shared.orchestratorMaxChildren
         if attachedSession == nil,
            activeCount(dispatchedBy: made.rootSessionId, parentTask: made.parentTaskId) >= cap {
             return .refused(status: 429, code: "over_capacity",
@@ -4662,16 +4699,16 @@ enum Orchestrator {
         // so without this the first question is where the task stops — and the first question is
         // *"may I read my own instructions?"*, before a single line of the work.
         //
-        // **How much of it depends on whether this one may dispatch.** A leaf only ever touches
-        // its own directory, so that is all it is given. A child that may hand work on has to
-        // make, brief and read back directories that do not exist yet and whose names it invents,
-        // which no per-task grant can name in advance — so it gets the parent. That is the whole
-        // of the difference, and it is why the second level felt so much worse than the first:
-        // every grandchild was another question nobody was there to answer.
-        let mayDispatch = task.depth < depthFloor
-            && Config.shared.orchestratorMaxGrandchildren > 0
+        // **How much of it is the launch-time grant that decides whether this tab can ever be
+        // handed a second task.** A child dispatches nothing now, so the wider grant is no
+        // longer about opening sessions: it is what lets a standing session read the sibling
+        // `CHILD.md` of a follow-up task whose directory did not exist when this tab opened —
+        // see `attachmentDecision`, which refuses a session that was launched without it, and
+        // `--add-dir` cannot be added to a running process. A task deeper than the floor never
+        // opens a tab at all, so it never reaches this line with anything to grant.
+        let taskRootGrant = depthIsAllowed(task.depth)
         switch start(place, task.assistant, task.model, task.reasoningEffort, task.permission,
-                     mayDispatch ? root.path : task.dir.path) {
+                     taskRootGrant ? root.path : task.dir.path) {
         case .refused(_, let code, let message, _):
             task.state = .spawnFailed
             task.summary = "\(code): \(message)"
@@ -4684,7 +4721,7 @@ enum Orchestrator {
             task.spawnedAt = Date()
             task.childTerminalId = id
             task.childBackend = backend
-            task.childTaskRootAccess = mayDispatch
+            task.childTaskRootAccess = taskRootGrant
         }
         return task
     }
@@ -6164,15 +6201,16 @@ enum Orchestrator {
     /// reading" is also true of a terminal that lost its accessibility permission for a moment,
     /// and being wrong about that would kill somebody's work mid-turn.
     ///
-    /// **Two levels, deepest first.** A child may dispatch in turn, so a root's leaving has to
-    /// reach the tasks its children asked for as well. They are collected before anything is
-    /// cancelled — a grandchild is found through its parent's `child_session`, which stops being
-    /// a useful thing to match on the moment that parent's tab goes — and ended from the bottom
-    /// up, so no tab is closed while something it is still holding open is being read for.
+    /// **Deepest first, even though the tree is one level deep.** A root's children are the
+    /// bottom — nothing this app opens may dispatch — so in an ordinary tree this walks one
+    /// level and stops. The collection is still done before anything is cancelled and still ends
+    /// from the bottom up, because a task below a task is a shape a stored record from an older
+    /// build can still have, and closing a tab while something it is holding open is being read
+    /// for is the failure this order exists to avoid.
     ///
-    /// The level below is gathered from the finished children too, not only the live ones: a
-    /// child that reported while the work it handed on is still running leaves a grandchild that
-    /// belongs to nobody otherwise.
+    /// What is below is gathered from the finished children too, not only the live ones: a child
+    /// that reported while something it opened is still running would otherwise leave that task
+    /// belonging to nobody.
     ///
     /// A busy child gets `cancel`'s decisiveness rather than `closeChild`'s ten minutes of
     /// patience. Those are different moments: one is tidying up after work that finished, this is
@@ -6622,6 +6660,18 @@ enum Orchestrator {
             return true // finalize saved and broadcast already
         }
         if task.attachSessionId == nil && spawningAge > readyLimit {
+            // A task that has already said what it is doing cannot be a tab that never reached a
+            // prompt. Give the file half of the progress channel its last chance to land — a
+            // sandboxed child's note arrives only when a beat collects it, and no beat collects
+            // it while the task is still `spawning` — and then take whatever receipt is there.
+            var refreshed = task
+            _ = collectProgressFile(of: &refreshed)
+            if let provenAt = briefingProvenByProgress(refreshed),
+               acceptProgressAsBriefing(refreshed, provenAt: provenAt) {
+                save()
+                RemoteServer.shared.broadcastOrchestrator()
+                return true
+            }
             guard replaceTask(task, expecting: .spawning) else { return false }
             finalize(task.id, as: .spawnFailed,
                      summary: "The child session did not reach a prompt within "
@@ -6630,6 +6680,54 @@ enum Orchestrator {
             return true // finalize saved and broadcast already
         }
         return false
+    }
+
+    /// When a `spawning` task's own progress proves the briefing arrived, or nil when nothing
+    /// does.
+    ///
+    /// A progress note is authenticated with the task secret, and that secret reaches the child
+    /// in exactly one place: the line typed into its composer. `task.json` does not carry it and
+    /// `CHILD.md` only names it. So a note is a delivery receipt through a second channel — the
+    /// same fact ``briefingDecision(screen:assistant:transcript:transcriptKnown:taskID:attempts:secondsSinceAttempt:)``
+    /// looks for in the transcript, arriving by a route that does not depend on finding the
+    /// transcript file at all. That independence is the whole point: this is the guard for
+    /// failures nobody has diagnosed yet, including ones in transcript resolution itself.
+    ///
+    /// **What it prevents is not a cosmetic record error.** `finalize` reads `spawn_failed` with
+    /// no `briefedAt` as "nothing was ever done here" and disposes the checkout with
+    /// `allowCommitted: false`. On 2026-08-28 that deleted a live child's worktree *and* its
+    /// delivery branch while the child was still working in the directory; the sibling task that
+    /// had committed once survived the same misjudgement untouched.
+    ///
+    /// Proven at the earlier of the two moments that bound it, because `briefedAt` starts the
+    /// task's own timeout: the line was on the tty by `lastInjectAt`, and had certainly been read
+    /// by the first note.
+    static func briefingProvenByProgress(_ task: Task) -> Date? {
+        guard let firstNote = task.progress.first?.at else { return nil }
+        guard let injected = task.lastInjectAt else { return firstNote }
+        return min(injected, firstNote)
+    }
+
+    /// Cross `spawning` → `briefed` on a progress receipt rather than a transcript one. True when
+    /// the record moved. Deliberately mutates the caller's snapshot instead of re-reading, so a
+    /// briefing step does not lose the identity fields it just filled in.
+    ///
+    /// The transcript stays unproven: this receipt says the child read the line, not which file
+    /// it is writing. `watch` keeps looking, and `applyTranscriptOwnership` still gets to reject
+    /// a wrong candidate afterwards.
+    private static func acceptProgressAsBriefing(_ snapshot: Task, provenAt: Date) -> Bool {
+        var task = snapshot
+        guard task.state == .spawning else { return false }
+        task.state = .briefed
+        task.briefedAt = provenAt
+        task.lastSeenChild = Date()
+        guard replaceTask(task, expecting: .spawning, discardSecret: true) else { return false }
+        RemoteAuth.audit("orchestrator.brief.progress", [
+            "task": task.id,
+            "child": task.childTerminalId ?? "?",
+            "notes": String(task.progress.count),
+        ])
+        return true
     }
 
     static func expireSpawningIfDueForTesting(_ task: Task) -> Bool { expireSpawningIfDue(task) }
@@ -6666,6 +6764,14 @@ enum Orchestrator {
             RemoteAuth.audit("orchestrator.menu.left",
                              ["task": task.id, "session": childID])
             return true
+        }
+
+        // The other delivery receipt, read before the transcript one and before another copy of
+        // the first line can be typed into a child that is already working from the first. See
+        // ``briefingProvenByProgress(_:)``; the acceptance standard in `briefingDecision` is
+        // untouched, because this is a different proof and not a weaker version of that one.
+        if let provenAt = briefingProvenByProgress(task) {
+            return acceptProgressAsBriefing(task, provenAt: provenAt)
         }
 
         let transcript: String?
@@ -7549,8 +7655,7 @@ enum Orchestrator {
         // notification, cascade, or serialize pump. Merge only the worktree field back when its
         // best-effort receipt arrives, so a simultaneous closeStep cannot have its closeAt
         // decision resurrected by this older snapshot.
-        let removeEmpty = task.childTerminalId == nil
-            || (outcome == .spawnFailed && task.briefedAt == nil)
+        let removeEmpty = reclaimsEmptyWorktree(task, outcome: outcome)
         worktreeQueue.async {
             let refreshed = refreshedWorktree(worktree)
             if removeEmpty {
@@ -7696,12 +7801,13 @@ enum Orchestrator {
 
     /// A finished task takes whatever it handed on with it.
     ///
-    /// The briefing tells a child to wait for its own children before reporting, and a child that
-    /// followed it leaves nothing here to do. This is for the other endings: a `timeout`, a
-    /// `failure`, a child that reported early. What those leave behind is a grandchild still
-    /// running for a session that no longer exists — nobody is waiting for its answer, nobody is
-    /// watching its tab, and on the list it sits at the top level with a `Child` chip and no row
-    /// above it, which is the shape somebody reported as a bug in the grouping.
+    /// A child hands nothing on now — the tree is one level deep — so in a live tree this finds
+    /// nothing, and that is the point: it is the cleanup that keeps a record from an older build,
+    /// or a task that somehow named a parent below the floor, from outliving whoever was waiting
+    /// for it. What that leaves behind otherwise is a session running for a task that no longer
+    /// exists — nobody waiting for its answer, nobody watching its tab, and a row on the list at
+    /// the top level with a `Child` chip and nothing above it, which is the shape somebody
+    /// reported as a bug in the grouping.
     ///
     /// Queued descendants are finalized on main before the serialize pump can open them. Running
     /// descendants move off the main thread because `cancelInPlace` types a quit word and waits
@@ -8552,8 +8658,8 @@ enum Orchestrator {
     /// than saying nothing.
     private static var batches: [String: Batch] = [:]
 
-    /// Under the lock. The session a whole tree hangs from, so a grandchild is counted in the
-    /// same batch as the child that dispatched it.
+    /// Under the lock. The session a whole tree hangs from, so every task in one fan-out is
+    /// counted in the same batch however it was filed.
     ///
     /// A task that named nobody gets a key of its own rather than sharing one with every other
     /// anonymous dispatch — the alternative is two unrelated fan-outs waiting for each other.
@@ -8580,9 +8686,10 @@ enum Orchestrator {
     }
 
     /// Announce any batch that has nothing left running. Called from the beat rather than from
-    /// `finalize`, and that is a correctness point rather than tidiness: `finalize` cancels the
-    /// work its task handed on **asynchronously**, so at the moment it ends, a grandchild about
-    /// to be taken down still counts as live. Asking again a beat later is asking after the dust
+    /// `finalize`, and that is a correctness point rather than tidiness: `finalize` cancels
+    /// anything still filed under its task **asynchronously**, so at the moment it ends, a task
+    /// about to be taken down still counts as live. Asking again a beat later is asking after
+    /// the dust
     /// has settled, and it covers the same ground for cancellation, timeouts, and a tab somebody
     /// closed by hand.
     private static func sweepBatches() {
@@ -8658,19 +8765,23 @@ enum Orchestrator {
         return english == native ? english : "\(english) (\(native))"
     }
 
-    /// How many levels of dispatch this Mac is set up for: 1 when a child may not dispatch at
-    /// all, 2 when it may. There is no third stop, and that is a decision rather than an
-    /// oversight — the numbers multiply, and a tree deeper than one somebody can hold in their
-    /// head is a tree nobody can be asked to supervise.
-    static var depthFloor: Int { Config.shared.orchestratorMaxGrandchildren > 0 ? 2 : 1 }
+    /// How many levels of dispatch this Mac has: one. A root opens children, and a child is the
+    /// bottom — it opens nothing.
+    ///
+    /// **A constant rather than a setting, and that is the whole point.** This used to be read
+    /// out of `orchestrator_max_grandchildren`, which meant the depth of the tree was a number
+    /// in a file. Two things are wrong with that. `config.json` is seeded once and never
+    /// migrated, so changing the default would have left every Mac that had already run this app
+    /// dispatching grandchildren for ever; and a rule that a hand-edit can undo is not a rule,
+    /// it is a preference. What a child needs when a job is too big for one session is its own
+    /// assistant's subagents — Claude Code's Task tool, Codex's subagents — which cost no
+    /// terminal tab, no broker capacity and no second level of supervision.
+    static let depthFloor = 1
 
-    /// How many sessions this task may open in turn: the configured allowance while there is a
-    /// level below it, nothing at all once it is standing on the floor. One function because two
-    /// files now depend on the answer — the briefing that mentions it, and the teaching that only
-    /// exists when it is above zero.
-    static func handOnAllowance(for task: Task) -> Int {
-        task.depth < depthFloor ? Config.shared.orchestratorMaxGrandchildren : 0
-    }
+    /// Whether a task at this depth may exist at all. `depth` is the new task's own level: 1 for
+    /// a root's child, 2 for anything a child tries to open. Pure, so the one-level rule can be
+    /// checked without a broker, a terminal or a config file.
+    static func depthIsAllowed(_ depth: Int) -> Bool { depth <= depthFloor }
 
     static func childBrief(for task: Task) -> String {
         let dir = "/tmp/.clawdline/\(task.id)"
@@ -8719,17 +8830,20 @@ enum Orchestrator {
                 + "\(dir)/artifacts/\n  (create the directory if it is missing)."
             isolationSection = ""
         }
-        // What this one may hand on in turn, and where the recipe for doing it lives. Written
-        // into the briefing rather than left to be discovered, because a child that finds out by
-        // being refused has already spent a turn on it — but the recipe itself is one line away
-        // in `DISPATCHING.md` rather than here. See `dispatchingBrief(for:)`.
-        let allowance = handOnAllowance(for: task)
-        let handOnRule = allowance > 0
-            ? "You may hand parts of this on to at most \(allowance) child sessions of your own, "
-                + "which cannot hand anything on further. How — the credential, the fields, the "
-                + "refusals and this Mac's house rules — is in \(dir)/DISPATCHING.md, and it is "
-                + "nowhere else: read that file before you hand anything on."
-            : "Do not dispatch Clawdline tasks of your own."
+        // Where this one stands, said plainly and once. Written into the briefing rather than
+        // left to be discovered, because a child that finds out by being refused has already
+        // spent a turn on it — and one that assumes it may dispatch spends several. The second
+        // sentence is the part that changes behaviour rather than only forbidding it: the work
+        // that used to be handed to a grandchild is work an assistant's own subagents do,
+        // without a terminal tab, a briefing or a level of supervision under this one.
+        let handOnRule = "**You are the bottom of this tree: you cannot dispatch Clawdline tasks "
+            + "of your own, and a request to open one is refused.** When part of this needs to "
+            + "run in parallel or wants a context of its own, use your own assistant's built-in "
+            + "subagents (Claude Code's Task tool, Codex's subagents). They cost no terminal tab "
+            + "and no broker capacity, and their answers come back to you rather than to a file."
+        // What this Mac has said about itself, for every child rather than for a dispatcher.
+        // See `policySection()`; it is empty when nobody has written anything.
+        let houseRules = policySection()
         let verificationMinutes = task.timeoutMinutes % 3 == 0
             ? String(task.timeoutMinutes / 3)
             : String(format: "%.1f", Double(task.timeoutMinutes) / 3.0)
@@ -8896,13 +9010,13 @@ enum Orchestrator {
           period otherwise — so copy any log or diff worth keeping into `artifacts/` **before**
           writing `result.json`.
         - \(handOnRule)
-        - Do not read any directory under /tmp/.clawdline/ except your own, any you dispatched,
-          and any your instructions name explicitly. That last one is how a reviewing node works:
-          it is sent to read what other nodes produced, so its instructions list those paths.
+        - Do not read any directory under /tmp/.clawdline/ except your own and any your
+          instructions name explicitly. That second one is how a reviewing node works: it is sent
+          to read what other nodes produced, so its instructions list those paths.
         - Landing records belong to the root after delivery; by protocol convention, a child does
           not call its task's `/landing` route itself even though it holds that task's secret.
         - Do not do work the task did not ask for.
-        - You have \(task.timeoutMinutes) minutes before the task is marked timed out.\(isolationSection)
+        - You have \(task.timeoutMinutes) minutes before the task is marked timed out.\(isolationSection)\(houseRules)
 
         ## Verification budget
 
@@ -8970,12 +9084,12 @@ enum Orchestrator {
         Names, not descriptions. A wrong or missing list costs somebody an hour; it costs you a
         minute.
 
-        **If you handed work on and it did not arrive, say so in the summary.** Doing it yourself
-        instead is usually right — the answer is what was asked for, not who produced it. What is
-        not right is a summary that reads as though the sessions you dispatched did the work when
-        they never started. Whoever reads this is deciding how much to trust the result, and
-        "both halves came back" and "both halves failed and I did it myself" are different amounts
-        of evidence behind the same answer.
+        **If you gave part of this to your own subagents and it did not come back, say so in the
+        summary.** Doing it yourself instead is usually right — the answer is what was asked for,
+        not who produced it. What is not right is a summary that reads as though those subagents
+        did the work when they never finished. Whoever reads this is deciding how much to trust
+        the result, and "both halves came back" and "both halves failed and I did it myself" are
+        different amounts of evidence behind the same answer.
 
         **Write it with your file-writing tool, not with a shell command.** A shell line that
         builds JSON and moves it into place gets refused by command screening on its own shape —
@@ -9162,178 +9276,44 @@ enum Orchestrator {
         """
     }
 
-    /// This Mac's house rules for handing work out, when there are any.
+    /// What this Mac has said about itself, for every child briefing.
     ///
-    /// Only for a child that may dispatch, because that is what the rules are about — a leaf
-    /// reading somebody's model-selection policy is reading noise it has no decision to spend it
-    /// on. Read from disk at briefing time, so an edit reaches the next child rather than the
-    /// next launch.
-    private static func policySection(allowance: Int) -> String {
-        guard allowance > 0, let policy = policy() else { return "" }
+    /// **This travelled with the dispatch recipe once, and that was the wrong home for it.**
+    /// The file was reasoned about as rules for *handing work out*, so when the tree lost its
+    /// second level the section read as dead weight and was deleted with the recipe. It is not
+    /// dead weight: the same file is where a person writes down what is true of this machine,
+    /// and one of those sentences — that a Codex child's sandbox has no network — is measurably
+    /// what stops a Codex child spending a turn on a `curl` that cannot connect. A leaf reads it
+    /// and behaves differently, which is the whole test of whether a paragraph belongs in a
+    /// briefing. So it goes to every child, dispatcher or not, and there is no longer any such
+    /// thing as the second kind.
+    ///
+    /// Read from disk at briefing time, so an edit reaches the next child rather than the next
+    /// launch. Empty when nobody has written anything, rather than a heading with nothing under
+    /// it.
+    private static func policySection() -> String {
+        guard let policy = policy() else { return "" }
         return """
 
 
-        ## What this Mac says about handing work out
+        ## What this Mac says
 
-        House rules, from \(policyURL.path) and its optional local sibling at
+        House rules and machine facts, from \(policyURL.path) and its optional local sibling at
         \(localPolicyURL.path). They are the person's, not this app's; where they and your own
         judgement disagree, follow them and say so in your summary.
 
         \(policy)
-
-        """
-    }
-
-    /// The paragraph that makes a child a dispatcher, or nothing at all when it is not one.
-    ///
-    /// Spelled out in full rather than pointed at a skill, because half the sessions this is
-    /// written for are Codex and Codex has no skills — and because the one field that matters,
-    /// `root.parent_task`, is the one nothing else would tell it. A child knows its own task id
-    /// from the first line it was ever sent, so naming its parent is the one identification it
-    /// can always make correctly, whatever this app has managed to work out about it.
-    private static func handOnSection(for task: Task, allowance: Int) -> String {
-        guard allowance > 0 else { return "" }
-        return """
-
-        ## Handing work on
-
-        Parts of this task that stand entirely on their own may go to child sessions of yours —
-        at most \(allowance) alive at once. They are the last level: nothing opens under what
-        they open. Only do it where a part really is separate work, since briefing a session
-        costs more than most of what you would hand it, and never for something you could do in
-        the time it takes to write the instructions.
-
-        For each one, a fresh id, a fresh secret and its own directory:
-
-        ```bash
-        TOKEN=$(cat ~/.config/clawdline/orchestrator-token)
-        sub=$(uuidgen | tr '[:upper:]' '[:lower:]'); sub_secret=$(openssl rand -hex 32)
-        umask 077 && mkdir -p "/tmp/.clawdline/$sub/artifacts"
-        cat > /tmp/.clawdline/$sub/task.json <<JSON
-        {"clawdline_protocol": 1,
-         "task_id": "$sub",
-         "assistant": "claude",
-         "model": "haiku",
-         "permission_mode": "edits",
-         "project_dir": "\(task.projectDir)",
-         "title": "<short title>",
-         "timeout_minutes": 30,
-         "instructions": "<the instructions, as one JSON string>",
-         "plan": "<the whole graph, the same text for every one of them>",
-         "root": {"parent_task": "\(task.id)"}}
-        JSON
-        curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks \\
-          -H "X-Clawdline-Orchestrator: $TOKEN" -H 'Content-Type: application/json' \\
-          -d "{\\"task_id\\":\\"$sub\\",\\"secret\\":\\"$sub_secret\\"}"
-        ```
-
-        - `root.parent_task` must be exactly `\(task.id)` — your own task id. It is how the app
-          knows where the new task sits; get it wrong and the dispatch is refused or filed under
-          somebody else.
-        - `assistant` is `claude` or `codex`; `model` is optional and takes lower-case letters,
-          digits and `. _ -` only. Pick both against the rules below, and say in the plan why.
-        - `reasoning_effort` is Codex-only and optional: use `high` for coding.
-          Use `xhigh` for planning or review. Leave it out to inherit Codex and user defaults;
-          never put it on a Claude task. Other values, including `max` and `ultra`, are not part
-          of this protocol.
-        - `permission_mode` is `ask`, `edits` or `full`, and leaving it out is right almost always
-          — it takes this Mac's own setting, which is `\(Config.shared.orchestratorPermission)`.
-          Nobody watches a child's tab, so `ask` is a session that stops until it times out.
-        - `plan` is the graph, not this leaf's job — the same text in every task you dispatch,
-          extended with what you have added to it. It is how a leaf knows what its answer feeds.
-        - The instructions have to stand on their own. That session cannot see this one, so
-          "as described above" reaches it as an empty file.
-        - Branch on the reply's `code`: `over_capacity` means wait or ask for fewer,
-          `depth_exceeded` means this Mac goes no deeper and the work is yours to do.
-        - Before dispatching, `curl -s http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/assistants`
-          (same `X-Clawdline-Orchestrator` header) says whether claude or codex has any quota left
-          right now — a fact this Mac already has, not a guess worth spending a dispatch on.
-        - A dispatch can also come back `409 assistant_exhausted`: the assistant you named is out,
-          and its `alternatives` array names who to send instead — read that rather than retrying
-          the same one. `assistant_low` inside `warnings` is not a refusal; it means a long task
-          there may not finish before the quota runs out. If you have a real reason to send it
-          anyway — the account resets before your timeout, or nobody else is free — set
-          `"ignore_quota": true` in `task.json` and it dispatches with a warning instead of a 409.
-        - The orchestrator token is this Mac's credential, not yours to pass on. Do not write it
-          into a file, do not put it in /tmp, do not hand it to anything you dispatch.
-        - Its answer arrives as `/tmp/.clawdline/$sub/result.json`. The file appearing is the
-          completion signal — poll for it, then read it. Those directories are the only ones
-          besides your own you may look inside.
-        - **Build that task.json with a heredoc, as above, not with `jq -n` and a quoted filter.**
-          A brace next to a quote reads as obfuscation to command screening, which stops with a
-          prompt that has no "always allow" — and there is nobody on this tab to answer it.
-        - Wait for everything you handed on before writing your own result.json. Yours finishing
-          is what ends theirs.
-        - A dispatch that comes back `spawn_failed` can be retried, but **only with a fresh id and
-          a fresh secret** — that task id is finished, and re-sending it just returns the record.
-          If it fails again, do the work yourself and say in your summary that you did.
-
-        """
-    }
-
-    /// Everything about handing work on, in its own file — or nil for a child that may not.
-    ///
-    /// **This used to be two sections of `CHILD.md`, and every child paid for them.** Measured
-    /// across 206 dispatches on one machine: 28,323 characters of instructions on how to
-    /// dispatch went into every direct child's briefing, and not one of those 206 ever
-    /// dispatched anything. It is not that the teaching is wrong; it is that it is addressed to
-    /// the rare child that will actually use it, and was being charged to all of them.
-    ///
-    /// So it moved beside `CHILD.md`, in the same task directory the child already has access
-    /// to, and `CHILD.md` keeps one line naming it. **The credential path, the `parent_task`
-    /// rule and the `curl` live only here**, which is what makes that line worth following
-    /// rather than merely polite: **the briefing no longer hands the credential over**, so a
-    /// child that skips this file has to go and find one. That is a strong pointer and not a
-    /// lock — the `clawdline` skill teaches the same recipe, credential path included — but a
-    /// convenience summary back in `CHILD.md` would undo even the pointer, and is the thing not
-    /// to add.
-    static func dispatchingBrief(for task: Task) -> String? {
-        let allowance = handOnAllowance(for: task)
-        guard allowance > 0 else { return nil }
-        // Every recipe in this file is a loopback HTTP call, and a Codex child usually cannot
-        // make one — the measurement lives beside `collectProgressFile`. A child that finds
-        // out by dispatching has already spent the turn, so the warning rides at the top.
-        let reach = task.assistant == .codex
-            ? """
-
-
-              **Check your reach before you spend a turn on this.** Every step below is a
-              loopback HTTP call. A Codex sandbox with `CODEX_SANDBOX_NETWORK_DISABLED=1` — the
-              way Codex children run on this Mac today — cannot make any of them: `curl` exits
-              7 immediately, and no approval prompt will appear. If that is your sandbox, do
-              not dispatch and do not retry the refusal into being; do the work yourself and
-              say in your summary that you did.
-              """
-            : ""
-        let sections = handOnSection(for: task, allowance: allowance)
-            + policySection(allowance: allowance)
-        return """
-        # Handing work on — task \(task.id)
-
-        You are reading this because \(task.dir.path)/CHILD.md said to, and it said to because you
-        are about to hand part of your task to a session of your own. Your own job is in
-        `CHILD.md` and in `task.json`; this file is only about opening somebody else.
-
-        Nothing here is repeated in `CHILD.md`. If you dispatch from memory instead of from this
-        file you will get the credential or the parent field wrong, and a dispatch with the parent
-        field wrong is filed under somebody else.\(reach)
-
-        \(sections.trimmingCharacters(in: .newlines))
         """
     }
 
     private static func writeChildBrief(for task: Task) {
         let url = task.dir.appendingPathComponent("CHILD.md")
         try? Data(childBrief(for: task).utf8).write(to: url, options: .atomic)
-        // Beside it, and only for a child that may use it. Removed rather than left when the
-        // allowance is nothing, so a re-brief after the setting changed cannot leave a child
-        // reading a recipe it is no longer allowed to follow.
-        let teaching = task.dir.appendingPathComponent("DISPATCHING.md")
-        if let text = dispatchingBrief(for: task) {
-            try? Data(text.utf8).write(to: teaching, options: .atomic)
-        } else {
-            try? FileManager.default.removeItem(at: teaching)
-        }
+        // No `DISPATCHING.md` beside it any more: nothing this app opens may dispatch, so there
+        // is no recipe to write. Removed rather than merely not written, because a task briefed
+        // by an older build and re-briefed by this one would otherwise leave a child reading a
+        // recipe it is no longer allowed to follow.
+        try? FileManager.default.removeItem(at: task.dir.appendingPathComponent("DISPATCHING.md"))
     }
 
     // MARK: - Usage and cost

@@ -138,9 +138,11 @@ Codex has an image model built in, so what comes back is a PNG rather than a des
 Dispatching is a plain local HTTP route, so anything running as you can ask for a child; the skill
 that writes the task down is [in this repository](skills/clawdline/), for Claude Code.
 
-**How work gets handed out is a file you edit.** `~/.config/clawdline/dispatch-policy.md` — read
-on every dispatch, copied into the briefing of every child that may dispatch in turn. Which
-assistant for which kind of work, which model deserves which job, how big one task should be, when
+**How work gets handed out is a file you edit** — two of them, if this machine has something to
+say about itself. `~/.config/clawdline/dispatch-policy.md` is the base, and the optional
+`dispatch-policy.local.md` beside it holds what is true only here; both are read on every dispatch
+and composed into the briefing of **every** child, with the local one last so that its more
+specific rules win. Which assistant for which kind of work, which model deserves which job, how big one task should be, when
 small work is batched instead of dispatched, what shape the graph should be. The default it arrives
 with is [`Resources/dispatch-policy.md`](Resources/dispatch-policy.md) in this repository, so it can
 be read and argued with before you install anything; your machine's copy is yours to edit, and
@@ -157,10 +159,11 @@ model has a published price, in dollars.
 
 **Dispatching has a door of its own.** It sits behind a `0600` file only a local process can read,
 so a paired phone can watch the tasks and never start one — typing into a session and spawning
-five more are not the same right. And **the tree has a bottom**: a session may have five children
-out at once and each of those may have three, but what *they* open, nothing opens under. Five and
-three is twenty terminals at full stretch, which is already more than anybody wants to audit;
-without a floor it is a fork bomb with a language model in it.
+five more are not the same right. And **the tree has a bottom, one level down**: a session may have five
+children out at once, and a child opens nothing — work inside it that wants to run in parallel goes
+to that assistant's own subagents, which cost no tab and pass through no broker. Twenty dispatched
+terminals across the whole Mac is already more than anybody wants to audit; without a floor it is a
+fork bomb with a language model in it.
 
 **[docs/clawdline-protocol.html](docs/clawdline-protocol.html)** is the whole protocol on one
 page, written for somebody who just installed this: how a task is dispatched, what claims and file
@@ -599,7 +602,7 @@ itself.
 | `smart_notifications` | `false` | let Haiku replace a generic finish notice with one sentence about what the work did |
 | `orchestrator_enabled` | `true` | may a session hand work to another |
 | `orchestrator_max_children` | `5` | child sessions one session may have out, 1–10 |
-| `orchestrator_max_grandchildren` | `3` | and what each of those may have out, 0–10; `0` stops the tree one level up |
+| `orchestrator_max_grandchildren` | — | no longer read. The tree is one level deep as a fact of the code, not of this file; an old config keeps the key and nothing looks at it |
 | `orchestrator_permission` | `full` | how far a child goes before it asks: `ask` · `edits` · `full`. Also the ceiling — a task cannot ask for more |
 | `orchestrator_notify_root` | `true` | type a line back into the session that asked |
 | `orchestrator_child_linger` | `180` | seconds a reported child's tab stays open; `0` closes it at once, `-1` never |

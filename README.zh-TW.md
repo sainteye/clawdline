@@ -129,12 +129,14 @@ Clawdline 會開一個終端機分頁，把任務指定的那種助理啟動起�
 
 **派工有自己的一道門。** 它擋在一個只有本機行程讀得到的 `0600` 檔案後面，所以配對過的手機看得到
 這些任務、卻永遠開不了新的——往一個 session 打字，跟再生出五個 session 來，本來就不是同一種
-權限。而且**這棵樹有底**：一個 session 同時可以派五個，那五個各自還能再派三個，但**它們派出來
-的那些，底下就沒有了**。五乘三，全開也就二十個終端機，這數字已經是一個人盯得完的上限；沒有這個
-底，它就是一顆裝了語言模型的 fork bomb。
+權限。而且**這棵樹只有一層**：一個 session 同時可以派五個，而**子 session 一個都不能再派**——它裡面
+想並行的工作交給那個助理自己的 subagent，不佔分頁、不經過 broker。整台 Mac 同時二十個派出去的
+終端機，已經是一個人盯得完的上限；沒有這個底，它就是一顆裝了語言模型的 fork bomb。
 
-**派工的規矩是一份你自己改的檔案。** `~/.config/clawdline/dispatch-policy.md`——每次派工都會重讀，
-而且會抄進每一個「還能再往下派」的子 session 的指示裡：哪種工作給哪個助理、哪種工作值得用哪個
+**派工的規矩是你自己改的檔案——如果這台機器有話要說，那就是兩份。**
+`~/.config/clawdline/dispatch-policy.md` 是 base，旁邊選用的 `dispatch-policy.local.md` 寫的是
+只有這裡成立的事；兩份每次派工都會重讀，合成之後進到**每一個**子 session 的指示裡，local 排在
+最後，所以更具體的那些規則會贏：哪種工作給哪個助理、哪種工作值得用哪個
 模型、一件任務該切多大、小事什麼時候該累積成一批而不是各派各的、整張圖希望長什麼形狀。出廠的
 那一份就是這個 repo 裡的 [`Resources/dispatch-policy.md`](Resources/dispatch-policy.md)，所以你
 可以先讀、先不同意，再決定要不要裝；裝上之後那份是你的，內容刪光就等於沒有規矩。每一件任務還會帶著
@@ -520,7 +522,7 @@ claude
 | `smart_notifications` | `false` | 用 Haiku 把籠統的完成通知換成一句「剛完成了什麼」 |
 | `orchestrator_enabled` | `true` | 能不能讓一個 session 把工作派給另一個 |
 | `orchestrator_max_children` | `5` | 一個 session 同時最多派幾個子 session，1–10 |
-| `orchestrator_max_grandchildren` | `3` | 每個子 session 自己又能派幾個，0–10；`0` ＝ 只有一層 |
+| `orchestrator_max_grandchildren` | — | 已經不再讀取。樹只有一層是程式碼的事實，不是這個檔案的；舊設定檔留著這個 key，沒有任何地方會看它 |
 | `orchestrator_permission` | `full` | 子 session 走多遠才停下來問：`ask`／`edits`／`full`。這同時是上限，任務要不到比它更多 |
 | `orchestrator_notify_root` | `true` | 做完之後往發派的 session 打一行字 |
 | `orchestrator_child_linger` | `180` | 回報過的子 session，分頁再留幾秒；`0` 馬上關，`-1` 不關 |

@@ -42,6 +42,17 @@ func runCoordinatorRegistrationWorkerIfRequested() {
 
 runCoordinatorRegistrationWorkerIfRequested()
 
+// **Line buffering, so that where the output stops is where the suite stopped.**
+//
+// `print` to a pipe is 4096-byte block buffered, and a trap writes to stderr and dies without
+// flushing stdout — so up to a block of ticks that were genuinely printed never reach the log, and
+// the last line standing is some distance before the crash. On this machine that turned one
+// `exit 133` into days of argument about whether the truncation point named a test or a buffer.
+// It cost one line to end: with `_IOLBF` the last tick in the log is the last group that finished,
+// and the group after it in a green run of the same tree is the one that died. `group()` prints
+// after its body, so it is always that next one — not the name you can see.
+setvbuf(stdout, nil, _IOLBF, 0)
+
 // Do this in the test binary itself, not only in `test.sh`. Contributors sometimes run the
 // already-compiled binary while narrowing a failure; without an in-process boundary that reads
 // the installed app's real push subscriptions and schedule fixtures can notify a real phone.
@@ -52,6 +63,26 @@ try! FileManager.default.createDirectory(at: isolatedTestStoreDirectory,
 guard setenv("CLAWDLINE_REMOTE_DIR", isolatedTestStoreDirectory.path, 1) == 0 else {
     fatalError("could not isolate the test remote store")
 }
+
+// The same boundary for the drop cache, and the same reasoning one step further on: this suite
+// writes *files* there — `Drop.paths` writes one for a pasted image, `RemoteServer.pieces` one per
+// upload — and every one of those writes calls `Drop.prune(keeping:)`, which deletes the oldest
+// entries by name until the count is back under the limit. Unisolated, a run does not merely leave
+// litter in somebody's cache; once that cache is near its limit the run deletes pictures the person
+// dropped into the bar. Measured when this was added: 37 files against a limit of 40.
+let isolatedTestDropsDirectory = isolatedTestStoreDirectory
+    .appendingPathComponent("drops", isDirectory: true)
+guard setenv("CLAWDLINE_DROPS_DIR", isolatedTestDropsDirectory.path, 1) == 0 else {
+    fatalError("could not isolate the test drop cache")
+}
+
+/// The drop cache the app itself would use — what this suite must never write into.
+///
+/// Spelled out rather than read from `Drop.directory`, which is the thing under test: asking the
+/// code under test where the live directory is would make the assertion agree with any answer.
+let liveDropDirectory = (FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+    ?? FileManager.default.temporaryDirectory)
+    .appendingPathComponent("dev.sainteye.clawdline/drops", isDirectory: true)
 
 /// A subprocess-only entry used to prove that the test binary protects the live remote store
 /// even when somebody runs the compiled binary directly instead of entering through `test.sh`.
@@ -65,10 +96,30 @@ func runRemoteDirectoryIsolationProbeIfRequested() {
 
 runRemoteDirectoryIsolationProbeIfRequested()
 
+/// The same probe for the drop cache, run the same way and for the same reason.
+func runDropDirectoryIsolationProbeIfRequested() {
+    guard ProcessInfo.processInfo.environment["CLAWDLINE_TEST_DROPS_DIRECTORY_PROBE"] == "1"
+    else { return }
+    print(Drop.directory.path)
+    try? FileManager.default.removeItem(at: isolatedTestStoreDirectory)
+    exit(0)
+}
+
+runDropDirectoryIsolationProbeIfRequested()
+
 // The suite exercises persistence and deliberate corruption repeatedly. Keep those fixtures in
 // the same process-owned boundary as RemoteAuth and WebPush.
 Orchestrator.storeURLOverrideForTesting = isolatedTestStoreDirectory
     .appendingPathComponent("orchestrator.json")
+
+// ``SessionNaming`` reads this Mac's live sessions to name them — a `ps`, whatever is in
+// `~/.claude/sessions/`, and somebody's real transcripts. A suite must not: a `TargetSession`
+// invented here says `tty: "/dev/ttys004"`, and on a developer's machine that is a real terminal
+// with a real conversation in it, so the same assertion would read `Ledger reader layer` on one
+// machine and `⌘1-1` on the next. Silent by default; the groups that are about naming install
+// their own answer and put this one back.
+let noSessionNames: (TargetSession) -> SessionNaming.Name = { _ in .none }
+SessionNaming.lookForTesting = noSessionNames
 
 // A test binary rather than XCTest, for the same reason the app has no Xcode project:
 // `swiftc` and nothing else. Run it with ./test.sh.
@@ -157,6 +208,37 @@ group("the test binary isolates push state even when it is launched directly") {
                 && output.hasPrefix(FileManager.default.temporaryDirectory.path), output)
     } catch {
         check("the direct-process isolation probe starts", false, "\(error)")
+    }
+}
+
+group("the test binary isolates the drop cache even when it is launched directly") {
+    // The drop cache is the one shared resource here whose ordinary use *deletes*: every write
+    // prunes. So this is not only about litter — an unisolated run throws away the person's own
+    // dropped images once their cache is near the limit.
+    check("this process resolves the drop cache inside its own boundary",
+          Drop.directory.path == isolatedTestDropsDirectory.path
+            && Drop.directory.path != liveDropDirectory.path, Drop.directory.path)
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    process.arguments = Array(CommandLine.arguments.dropFirst())
+    var environment = ProcessInfo.processInfo.environment
+    environment.removeValue(forKey: "CLAWDLINE_DROPS_DIR")
+    environment["CLAWDLINE_TEST_DROPS_DIRECTORY_PROBE"] = "1"
+    process.environment = environment
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+    do {
+        try process.run()
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        process.waitQuietly()
+        check("a direct test process never writes into the live drop cache",
+              process.terminationStatus == 0 && output != liveDropDirectory.path
+                && output.hasPrefix(FileManager.default.temporaryDirectory.path), output)
+    } catch {
+        check("the direct-process drop-cache isolation probe starts", false, "\(error)")
     }
 }
 
@@ -4696,6 +4778,11 @@ group("remote images survive the terminal handoff") {
     expect("same-millisecond uploads keep distinct paths", Set(made.stored).count, 2)
     check("the cached uploads exist before handoff",
           made.stored.allSatisfy { FileManager.default.fileExists(atPath: $0) })
+    // Two real files, and each `Drop.store` prunes. Unisolated this group alone is two of the
+    // three writes that stood between the live cache and deleting somebody's oldest picture.
+    check("and none of them landed in the live drop cache",
+          made.stored.allSatisfy { !$0.hasPrefix(liveDropDirectory.path) },
+          made.stored.joined(separator: " "))
     RemoteServer.finishUploads(made.stored, sent: true)
     check("a successful handoff keeps them for Codex",
           made.stored.allSatisfy { FileManager.default.fileExists(atPath: $0) })
@@ -4718,9 +4805,13 @@ group("remote images survive the terminal handoff") {
 /// touched here, so nobody pressing ⌘C could have caused it. It was one suite reading another's
 /// board, at about one run in three, and the failures it produced (`got nil, want …`, `got [], want
 /// …`) are the shape a reader gets when somebody else has just cleared what it wrote.
+/// A UUID and not the process id, for the reason `isolatedTestStoreDirectory` above already uses
+/// one: two live processes cannot share a pid *today*, but that is an operating-system property
+/// this file would be leaning on, and the same file solving the same problem two different ways is
+/// the next thing somebody trips over. A UUID needs no such argument and costs nothing.
+let pasteboardRun = UUID().uuidString
 func exclusivePasteboard(_ role: String) -> NSPasteboard {
-    NSPasteboard(name: NSPasteboard.Name(
-        "dev.sainteye.clawdline.tests.\(role).\(ProcessInfo.processInfo.processIdentifier)"))
+    NSPasteboard(name: NSPasteboard.Name("dev.sainteye.clawdline.tests.\(role).\(pasteboardRun)"))
 }
 
 group("giving the pasteboard back") {
@@ -4982,6 +5073,29 @@ group("every Session work-state string crosses the typed localization contract")
     }
 }
 
+group("the code-block copy button's words cross the typed localization contract") {
+    // Three names, three boundaries each: the protocol (which the compiler enforces), the
+    // browser's English fallback, and the `/v1/strings` payload. The compiler covers exactly one
+    // of the three, and the other two fail quietly — a missing fallback is a blank button on a
+    // page whose request for the real words did not arrive, and a missing payload entry is that
+    // button staying in English in thirteen languages.
+    let keys = ["webCodeCopy", "webCodeCopied", "webCodeCopyFailed"]
+    let fallback = try! String(contentsOfFile: "Resources/web/app/js/core/i18n.js")
+    let server = try! String(contentsOfFile: "Sources/RemoteServer.swift")
+    for key in keys {
+        check("the browser fallback and /v1/strings payload both name \(key)",
+              fallback.contains("\(key):") && server.contains("\"\(key)\":"))
+    }
+    // The failure sentence is the one that cannot go missing. Both branches that reach it — a
+    // browser with no clipboard API and a write the browser refused — are silent everywhere else
+    // on this page, and a language that left this blank would put that silence back.
+    for (tag, copy) in L.catalog {
+        check("\(tag) says what a failed copy did",
+              !copy.webCodeCopyFailed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        check("\(tag) tells the two answers apart", copy.webCodeCopied != copy.webCodeCopyFailed)
+    }
+}
+
 group("dictation starts where the caret is") {
     // Speech is not a different kind of input: it goes where typing would have gone. This used
     // to append to the end regardless, so going back to add a sentence in the middle put it at
@@ -5086,6 +5200,10 @@ group("files and images dropped on the bar") {
           written.first.map { FileManager.default.fileExists(atPath: $0) } == true)
     check("and it can be read back",
           written.first.flatMap { NSImage(contentsOfFile: $0) } != nil)
+    // The file this assertion just proved exists had to be written somewhere, and unisolated that
+    // somewhere is the person's own drop cache — which prunes on every write.
+    check("and it was written outside the live drop cache",
+          written.allSatisfy { !$0.hasPrefix(liveDropDirectory.path) }, written.joined(separator: " "))
     written.forEach { try? FileManager.default.removeItem(atPath: $0) }
 }
 
@@ -6571,7 +6689,15 @@ group("state hook: the words a hook reads") {
 }
 
 group("state hook: what a hook is told") {
-    let session = hookTarget("A9F3", title: "✳ fix the webhook (claude)",
+    // A hook is told the display label, and a display label comes from the conversation's own
+    // record rather than from the tab it is sitting in — so the record is what is stubbed here,
+    // and the tab is given the worst title it could have.
+    defer { SessionNaming.lookForTesting = noSessionNames; SessionNaming.forgetForTesting() }
+    SessionNaming.forgetForTesting()
+    SessionNaming.lookForTesting = { _ in
+        SessionNaming.Name(title: "fix the webhook", handle: nil)
+    }
+    let session = hookTarget("A9F3", title: "Default (python)",
                              cwd: "/Users/x/code/clawdline")
     let env = StateHook.environment(
         for: StateHook.Change(session: session, from: .working("Cogitating… (7s)"), to: .waiting),
@@ -6582,9 +6708,11 @@ group("state hook: what a hook is told") {
     expect("the one it came from", env["CLAWDLINE_PREV_STATE"], "working")
     expect("the session id", env["CLAWDLINE_SESSION_ID"], "A9F3")
     expect("the tty", env["CLAWDLINE_TTY"], "/dev/ttys004")
-    // The label, not the raw title: the glyph on the front is a frame of an animation and the
-    // job name in brackets is iTerm2's, and neither is worth putting in a notification.
+    // The display label, not the tab title: a title is a place a name is shown, and a tab whose
+    // title has been emptied still reads `Default` on every row that trusted it.
     expect("the label as a person reads it", env["CLAWDLINE_LABEL"], "fix the webhook")
+    check("and nothing the terminal is called reaches the hook",
+          env["CLAWDLINE_LABEL"] != session.label && env["CLAWDLINE_LABEL"] != session.name)
     expect("where it is working", env["CLAWDLINE_CWD"], "/Users/x/code/clawdline")
     expect("and Claude Code's own id, which names the transcript",
            env["CLAWDLINE_CLAUDE_SESSION"], "3f6a1c2e-7b4d-4a9e-8c15-2d0e9f7b6a34")
@@ -6619,11 +6747,18 @@ group("state hook: what a hook is told") {
 }
 
 group("push notifications identify the session and its project") {
-    let session = hookTarget("A9F3", title: "✳ fix the webhook (claude)")
+    defer { SessionNaming.lookForTesting = noSessionNames; SessionNaming.forgetForTesting() }
+    SessionNaming.forgetForTesting()
+    SessionNaming.lookForTesting = { _ in
+        SessionNaming.Name(title: "fix the webhook", handle: nil)
+    }
+    // A notification reaching a phone saying `Default` is the same defect one surface further
+    // out, so the tab here is titled the way the eleven on 2026-08-28 were.
+    let session = hookTarget("A9F3", title: "Default (python)")
     let waiting = StateHook.pushMessage(
         for: session, project: "clawdline", event: "is waiting for an answer")
 
-    expect("the cleaned session task is the title", waiting.title, "fix the webhook")
+    expect("the session's own name is the title", waiting.title, "fix the webhook")
     expect("the project and event are the body", waiting.body,
            "clawdline is waiting for an answer")
 
@@ -7589,14 +7724,20 @@ group("the line a new tab is given, before anything types it") {
     // The list these come from is derived from the filesystem, which is to say from names the
     // person at the Mac did not necessarily choose. A quote in one of them must not be able to
     // end the quoting and start a command.
+    // Every line this app types now opens with `env -u …` between the `&&` and the program
+    // name. What that prefix is exactly is pinned in "a new tab is not handed the identity of
+    // whatever launched the terminal"; here it is composed, so these stay assertions about
+    // the thing they were written for.
+    let starts = "&& " + Assistant.claude.dropInheritedIdentity + "claude"
     expect("an ordinary path is still quoted",
-           StartPoints.itermLine(cwd: "/Users/me/code/notebook"), "cd '/Users/me/code/notebook' && claude")
+           StartPoints.itermLine(cwd: "/Users/me/code/notebook"),
+           "cd '/Users/me/code/notebook' " + starts)
     expect("a space changes nothing about it",
-           StartPoints.itermLine(cwd: "/a/My Work"), "cd '/a/My Work' && claude")
+           StartPoints.itermLine(cwd: "/a/My Work"), "cd '/a/My Work' " + starts)
     expect("a quote cannot close the quoting",
-           StartPoints.itermLine(cwd: "/a/it's here"), "cd '/a/it'\\''s here' && claude")
+           StartPoints.itermLine(cwd: "/a/it's here"), "cd '/a/it'\\''s here' " + starts)
     expect("a backslash is a backslash inside single quotes",
-           StartPoints.itermLine(cwd: "/a/back\\slash"), "cd '/a/back\\slash' && claude")
+           StartPoints.itermLine(cwd: "/a/back\\slash"), "cd '/a/back\\slash' " + starts)
     check("and nothing a client sent is anywhere in it",
           !StartPoints.itermLine(cwd: "/a/b").contains(";"))
 
@@ -10472,18 +10613,44 @@ group("a person-named session title outranks every automatic label") {
     expect("a person's title outranks the orchestrator task",
            TargetSession.preferredDisplayLabel(
                manualTitle: "My release room", orchestratorTitle: "automatic handoff",
-               threadName: "Codex thread", terminalLabel: "terminal tab"),
+               conversationTitle: "Ledger reader layer", threadName: "Codex thread",
+               handle: "clawdline-cb", coordinate: "⌘1-1"),
            "My release room")
-    expect("the orchestrator task still outranks Codex metadata",
+    expect("the orchestrator task still outranks what the conversation calls itself",
            TargetSession.preferredDisplayLabel(
                manualTitle: nil, orchestratorTitle: "automatic handoff",
-               threadName: "Codex thread", terminalLabel: "terminal tab"),
+               conversationTitle: "Ledger reader layer", threadName: "Codex thread",
+               handle: "clawdline-cb", coordinate: "⌘1-1"),
            "automatic handoff")
-    expect("Codex metadata still outranks the terminal label",
+    expect("the conversation's own title outranks Codex metadata and the derived handle",
            TargetSession.preferredDisplayLabel(
                manualTitle: nil, orchestratorTitle: nil,
-               threadName: "Codex thread", terminalLabel: "terminal tab"),
+               conversationTitle: "Ledger reader layer", threadName: "Codex thread",
+               handle: "clawdline-cb", coordinate: "⌘1-1"),
+           "Ledger reader layer")
+    expect("Codex metadata still outranks the derived handle",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: nil, orchestratorTitle: nil, conversationTitle: nil,
+               threadName: "Codex thread", handle: "clawdline-cb", coordinate: "⌘1-1"),
            "Codex thread")
+    // `clawdline-cb` is not a description of anything, which is exactly why it sits here: every
+    // registry file read on 2026-08-28 said `nameSource: "derived"`. It still names the project
+    // and the conversation, and a coordinate names neither.
+    expect("a derived handle is preferred to a coordinate",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: nil, orchestratorTitle: nil, conversationTitle: nil,
+               threadName: nil, handle: "clawdline-cb", coordinate: "⌘1-1"),
+           "clawdline-cb")
+    expect("and with nothing to go on, where the tab is",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: nil, orchestratorTitle: nil, conversationTitle: nil,
+               threadName: nil, handle: nil, coordinate: "⌘1-1"),
+           "⌘1-1")
+    expect("a source that answers with blanks is a source that did not answer",
+           TargetSession.preferredDisplayLabel(
+               manualTitle: "   ", orchestratorTitle: " \n ", conversationTitle: "",
+               threadName: nil, handle: nil, coordinate: "⌘1-1"),
+           "⌘1-1")
     // Clearing, through the store rather than by passing `nil` in by hand. Handing the function a
     // literal `nil` restates the check above it and proves nothing about what happens when a
     // person empties the box: the interesting half is that `Config` stops answering.
@@ -10495,14 +10662,117 @@ group("a person-named session title outranks every automatic label") {
     func labelForStoredTitle() -> String {
         TargetSession.preferredDisplayLabel(
             manualTitle: store.sessionTitle(sessionID: nil, terminalID: "terminal-clearing"),
-            orchestratorTitle: "automatic handoff", threadName: "Codex thread",
-            terminalLabel: "terminal tab")
+            orchestratorTitle: "automatic handoff", conversationTitle: nil,
+            threadName: "Codex thread", handle: nil, coordinate: "⌘1-1")
     }
     store.setSessionTitle("Release room", sessionID: nil, terminalID: "terminal-clearing")
     expect("a stored title is what the display prefers", labelForStoredTitle(), "Release room")
     store.setSessionTitle("   \n  ", sessionID: nil, terminalID: "terminal-clearing")
     expect("clearing a person's title restores the automatic label",
            labelForStoredTitle(), "automatic handoff")
+}
+
+// The defect: after an iTerm2 restart eleven of fifteen rows read `Default` — the profile name
+// iTerm2 reports for a tab nobody has titled. `osascript` confirmed the tab titles really did
+// say `Default (python)`, and every one of those sessions had its name in Claude Code's own
+// files the whole time. So the terminal is not a place a name is kept, and nothing below may
+// read one from it.
+group("a session's name never comes from its terminal's tab title") {
+    defer { SessionNaming.lookForTesting = noSessionNames; SessionNaming.forgetForTesting() }
+    func tab(_ title: String, id: String = UUID().uuidString,
+             assistant: Assistant? = .claude, tab index: Int = 0) -> TargetSession {
+        TargetSession(backend: .iterm, id: id, name: title, tty: "/dev/ttys900",
+                      windowIndex: 0, tabIndex: index, assistant: assistant)
+    }
+
+    // Each of these is a tab title that used to decide a row. None of them may now.
+    SessionNaming.forgetForTesting()
+    SessionNaming.lookForTesting = { _ in
+        SessionNaming.Name(title: "Ledger reader layer", handle: "clawdline-cb")
+    }
+    for hostile in ["Default (python)", "WRONG", "◐ somebody else's task", ""] {
+        SessionNaming.forgetForTesting()
+        expect("a tab titled \(hostile.isEmpty ? "nothing" : hostile) still shows its own name",
+               tab(hostile).displayLabel, "Ledger reader layer")
+    }
+
+    // And with nothing to go on the answer is where the tab is, never what it is called: a
+    // profile name is the same on every tab that has one, so it tells two rows apart from
+    // nothing at all.
+    SessionNaming.forgetForTesting()
+    SessionNaming.lookForTesting = { _ in .none }
+    expect("a tab nothing can name says where it is, not what its profile is called",
+           tab("Default (python)", tab: 4).displayLabel, "⌘1-5")
+
+    // A tab with no assistant in it has no conversation to name — and must not go on wearing the
+    // name of the one that has left.
+    SessionNaming.forgetForTesting()
+    SessionNaming.lookForTesting = { _ in SessionNaming.Name(title: "gone", handle: nil) }
+    expect("a shell is not called after the session that used to be in it",
+           tab("Default (-zsh)", assistant: nil, tab: 2).displayLabel, "⌘1-3")
+}
+
+// The second half of the brief, and the one that outlives this incident: one source going quiet
+// must not blank a name. The rung above was added because a source disappeared; a rung that
+// disappears the same way has bought nothing.
+group("a name survives its source going quiet") {
+    defer { SessionNaming.lookForTesting = noSessionNames; SessionNaming.forgetForTesting() }
+    let session = TargetSession(backend: .iterm, id: UUID().uuidString, name: "Default (python)",
+                                tty: "/dev/ttys901", windowIndex: 0, tabIndex: 0,
+                                assistant: .claude)
+    SessionNaming.forgetForTesting()
+    SessionNaming.lookForTesting = { _ in
+        SessionNaming.Name(title: "Ledger reader layer", handle: "clawdline-cb")
+    }
+    expect("first look", session.displayLabel, "Ledger reader layer")
+
+    SessionNaming.lookForTesting = { _ in .none }
+    SessionNaming.expireForTesting()
+    expect("a look that finds nothing at all leaves the name where it was",
+           session.displayLabel, "Ledger reader layer")
+
+    // The half that a whole-record merge would get wrong: the registry answered and the
+    // transcript did not, so replacing the descriptive name with `clawdline-cb` would be this
+    // fix reintroducing its own bug one rung down.
+    SessionNaming.lookForTesting = { _ in SessionNaming.Name(title: nil, handle: "clawdline-cb") }
+    SessionNaming.expireForTesting()
+    expect("a handle arriving without a title does not demote the title",
+           session.displayLabel, "Ledger reader layer")
+
+    // A newer answer is still an answer.
+    SessionNaming.lookForTesting = { _ in SessionNaming.Name(title: "renamed", handle: nil) }
+    SessionNaming.expireForTesting()
+    expect("a fresh title replaces the remembered one", session.displayLabel, "renamed")
+}
+
+group("a remembered name belongs to a conversation, not to a tab") {
+    let started = Date(timeIntervalSince1970: 1_787_900_000)
+    let now = Date(timeIntervalSince1970: 1_787_900_500)
+    let remembered = SessionNaming.Remembered(
+        at: Date(timeIntervalSince1970: 1_787_900_100), startedAt: started,
+        name: SessionNaming.Name(title: "Ledger reader layer", handle: "clawdline-cb"))
+    check("a start time that has not moved keeps the name",
+          SessionNaming.reconcile(remembered: remembered, found: .none,
+                                  startedAt: started, now: now)?.name.title
+              == "Ledger reader layer")
+    check("a start time nothing could measure is not evidence of a change",
+          SessionNaming.reconcile(remembered: remembered, found: .none,
+                                  startedAt: nil, now: now)?.name.title == "Ledger reader layer")
+    check("but that look still leaves the last start time to compare against",
+          SessionNaming.reconcile(remembered: remembered, found: .none,
+                                  startedAt: nil, now: now)?.startedAt == started)
+    check("a different process in the same tab is a different conversation",
+          SessionNaming.reconcile(remembered: remembered, found: .none,
+                                  startedAt: started.addingTimeInterval(600), now: now) == nil)
+    check("and it is named by what is there now, not by what was",
+          SessionNaming.reconcile(remembered: remembered,
+                                  found: SessionNaming.Name(title: nil, handle: "clawdline-fa"),
+                                  startedAt: started.addingTimeInterval(600),
+                                  now: now)?.name == SessionNaming.Name(title: nil,
+                                                                        handle: "clawdline-fa"))
+    check("nothing remembered and nothing found is nothing kept",
+          SessionNaming.reconcile(remembered: nil, found: .none,
+                                  startedAt: started, now: now) == nil)
 }
 
 group("session titles are normalized, persisted and bounded") {
@@ -10579,8 +10849,8 @@ group("renaming never changes the terminal label used to locate transcripts") {
                                name: "Claude Code", tty: "/dev/ttys099",
                                windowIndex: 0, tabIndex: 0, assistant: .claude)
     let display = TargetSession.preferredDisplayLabel(
-        manualTitle: "Human title", orchestratorTitle: nil,
-        threadName: nil, terminalLabel: target.label)
+        manualTitle: "Human title", orchestratorTitle: nil, conversationTitle: nil,
+        threadName: nil, handle: nil, coordinate: target.coordinate)
     expect("the display calculation can change independently", display, "Human title")
 
     let directory = FileManager.default.temporaryDirectory
@@ -10806,8 +11076,9 @@ group("clearing a title takes the Codex name off Clawdline's surfaces too") {
     // not, which is a check that passes for every possible edit to this repository.
     func label() -> String {
         TargetSession.preferredDisplayLabel(
-            manualTitle: nil, orchestratorTitle: nil,
-            threadName: CodexNaming.shared.title(for: target), terminalLabel: target.label)
+            manualTitle: nil, orchestratorTitle: nil, conversationTitle: nil,
+            threadName: CodexNaming.shared.title(for: target), handle: nil,
+            coordinate: target.coordinate)
     }
     CodexNaming.shared.rememberForTesting("Release room", threadID: "thread-clear",
                                           targetID: target.id)
@@ -10817,8 +11088,10 @@ group("clearing a title takes the Codex name off Clawdline's surfaces too") {
           CodexNaming.shared.title(for: target) == nil)
     // The half that stays: the thread keeps the name in Codex's own metadata, because
     // `thread/name/set` has no undo and this app does not know what Codex would have called it.
-    // What has to come back here is the automatic label, not the name that was just cleared.
-    expect("so the label falls back to the terminal's own", label(), "codex")
+    // What has to come back here is the automatic label, not the name that was just cleared —
+    // and the automatic label is no longer the tab's title, which for this tab reads `codex`.
+    expect("so the label falls back to where the tab is", label(), target.coordinate)
+    check("and not to what the terminal calls itself", label() != target.label)
 }
 
 group("a rename is not typed into a session that is showing a menu") {
@@ -10903,16 +11176,20 @@ group("assistant product marks load at row size") {
 }
 
 group("the line a new tab is given names the assistant") {
+    // Every line this app types now opens with `env -u …` between the `&&` and the program
+    // name. What that prefix is exactly is pinned in "a new tab is not handed the identity of
+    // whatever launched the terminal"; here it is composed, so these stay assertions about
+    // the thing they were written for.
     expect("Claude Code, as it always was",
            StartPoints.itermLine(cwd: "/Users/me/code/thing"),
-           "cd '/Users/me/code/thing' && claude")
+           "cd '/Users/me/code/thing' && " + Assistant.claude.dropInheritedIdentity + "claude")
     expect("Codex, by the same route",
            StartPoints.itermLine(cwd: "/Users/me/code/thing", assistant: .codex),
-           "cd '/Users/me/code/thing' && codex")
+           "cd '/Users/me/code/thing' && " + Assistant.codex.dropInheritedIdentity + "codex")
     // The quoting is the same quoting, which is the point of it being one function.
     expect("and a directory with a quote in it survives",
            StartPoints.itermLine(cwd: "/Users/me/it's", assistant: .codex),
-           "cd '/Users/me/it'\\''s' && codex")
+           "cd '/Users/me/it'\\''s' && " + Assistant.codex.dropInheritedIdentity + "codex")
 }
 
 // MARK: - Picking a recorded conversation back up
@@ -10949,17 +11226,20 @@ group("the line that picks a conversation back up") {
     expect("Claude Code takes a flag, and it comes before everything else",
            StartPoints.itermLine(cwd: "/Users/me/code/thing",
                                  resume: "105344fb-c769-4b37-b766-403b410897eb"),
-           "cd '/Users/me/code/thing' && claude --resume 105344fb-c769-4b37-b766-403b410897eb")
+           "cd '/Users/me/code/thing' && " + Assistant.claude.dropInheritedIdentity
+             + "claude --resume 105344fb-c769-4b37-b766-403b410897eb")
     // The route selects this spelling from the assistant segment rather than accepting a command.
     expect("Codex spells it as a subcommand",
            StartPoints.itermLine(cwd: "/a/b", assistant: .codex,
                                  resume: "105344fb-c769-4b37-b766-403b410897eb"),
-           "cd '/a/b' && codex resume 105344fb-c769-4b37-b766-403b410897eb")
+           "cd '/a/b' && " + Assistant.codex.dropInheritedIdentity
+             + "codex resume 105344fb-c769-4b37-b766-403b410897eb")
     expect("an id that is not one leaves no flag behind rather than a bare `--resume`",
            StartPoints.itermLine(cwd: "/a/b", resume: "not-an-id"),
-           "cd '/a/b' && claude")
+           "cd '/a/b' && " + Assistant.claude.dropInheritedIdentity + "claude")
     expect("and the ordinary line is exactly what it was",
-           StartPoints.itermLine(cwd: "/a/b"), "cd '/a/b' && claude")
+           StartPoints.itermLine(cwd: "/a/b"),
+           "cd '/a/b' && " + Assistant.claude.dropInheritedIdentity + "claude")
     check("nothing a client sent is anywhere in it",
           !StartPoints.itermLine(cwd: "/a/b", resume: "$(id)").contains("$"))
 }
@@ -11518,31 +11798,107 @@ group("a model name is a name, not a fragment of a command line") {
     check("64 characters is a name", StartPoints.modelName(String(repeating: "a", count: 64)) != nil)
     check("65 is not", StartPoints.modelName(String(repeating: "a", count: 65)) == nil)
 
+    // Every line this app types now opens with `env -u …` between the `&&` and the program
+    // name. What that prefix is exactly is pinned in "a new tab is not handed the identity of
+    // whatever launched the terminal"; here it is composed, so these stay assertions about
+    // the thing they were written for.
+    let claudeRuns = Assistant.claude.dropInheritedIdentity
+    let codexRuns = Assistant.codex.dropInheritedIdentity
     expect("the flag is written once", Assistant.claude.command(model: "haiku"),
-           "claude --model haiku")
+           claudeRuns + "claude --model haiku")
     check("and the permission flags land after it, not instead of it",
           Assistant.claude.command(model: "haiku", permission: .edits)
-              .hasPrefix("claude --model haiku "))
+              .hasPrefix(claudeRuns + "claude --model haiku "))
     expect("and not written at all when nothing was named", Assistant.claude.command(model: nil),
-           "claude")
+           claudeRuns + "claude")
     expect("Codex reasoning effort follows the model and precedes reach and permission",
            Assistant.codex.command(model: "gpt-5.6-sol", reasoningEffort: .xhigh,
                                    permission: .edits, addDir: "/tmp/.clawdline"),
-           "codex --model gpt-5.6-sol --config model_reasoning_effort=xhigh "
+           codexRuns + "codex --model gpt-5.6-sol --config model_reasoning_effort=xhigh "
              + "--add-dir /tmp/.clawdline --ask-for-approval on-request --sandbox workspace-write")
     expect("omitted reasoning effort adds no Codex override",
            Assistant.codex.command(model: "gpt-5.6-sol"),
-           "codex --model gpt-5.6-sol")
+           codexRuns + "codex --model gpt-5.6-sol")
     expect("StartPoints carries the typed override to the same command builder",
            StartPoints.itermLine(cwd: "/tmp/x", assistant: .codex,
                                  model: "gpt-5.6-sol", reasoningEffort: .high),
-           "cd '/tmp/x' && codex --model gpt-5.6-sol --config model_reasoning_effort=high")
+           "cd '/tmp/x' && " + codexRuns
+             + "codex --model gpt-5.6-sol --config model_reasoning_effort=high")
     check("the line a tab is opened with is still one command",
           StartPoints.itermLine(cwd: "/tmp/x", assistant: .codex, model: "gpt-5.1-codex")
-              .hasSuffix("&& codex --model gpt-5.1-codex"))
+              .hasSuffix("&& " + codexRuns + "codex --model gpt-5.1-codex"))
     check("and a refused name reaches that line as no flag rather than as an argument",
           StartPoints.itermLine(cwd: "/tmp/x", assistant: .claude, model: "haiku; id")
-              .hasSuffix("&& claude"))
+              .hasSuffix("&& " + claudeRuns + "claude"))
+}
+
+/// A tab this app opens is a new session, and nothing in its environment may say otherwise.
+///
+/// iTerm2 launched once from a shell inside a Claude Code session keeps that session's identity
+/// variables for as long as it runs and hands them to every tab afterwards. Measured on
+/// 2026-08-28: `ps -Ewww` on the iTerm2 process held `CLAUDE_PID`, `CLAUDE_CODE_SESSION_ID` and
+/// `CLAUDE_CODE_CHILD_SESSION=1` from a session in another window, and the children dispatched
+/// into it wrote neither a `~/.claude/sessions/<pid>.json` nor a transcript, because the CLI had
+/// been told it was already somebody's nested session. Nothing downstream could then prove a
+/// briefing had arrived, and the spawn-failure path that follows deletes an uncommitted checkout.
+///
+/// So this is not a cosmetic test about a command line. It is the one place the list itself is
+/// spelled out; every other assertion in this file composes the prefix from the property, and a
+/// list that quietly emptied would leave all of those passing.
+group("a new tab is not handed the identity of whatever launched the terminal") {
+    expect("Claude Code's line drops the session identity before it names the program",
+           Assistant.claude.command(model: nil),
+           "env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_CHILD_SESSION "
+             + "-u CLAUDE_PID -u CLAUDE_CODE_MESSAGING_SOCKET -u CLAUDE_CODE_MESSAGING_TOKEN "
+             + "-u CLAUDE_CODE_BRIDGE_SESSION_ID claude")
+    expect("and Codex's drops the rollout id it exports, under both its spellings",
+           Assistant.codex.command(model: nil),
+           "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CODEX_SANDBOX "
+             + "-u CODEX_SANDBOX_NETWORK_DISABLED codex")
+
+    // The three read off the terminal that caused this. They are the ones that did the damage,
+    // and a future version renaming one of them has to come back through this test.
+    for measured in ["CLAUDE_PID", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION"] {
+        check("\(measured), read off the polluted iTerm2 itself, is dropped",
+              Assistant.claude.inheritedIdentityVariables.contains(measured))
+    }
+    // And what a session exports about the *installation* stays, because it is still true in the
+    // tab being opened: `claude` typed at a prompt really is the `cli` entrypoint, the exec path
+    // names the program rather than a conversation, and the subagent cap is a number this Mac
+    // sets in its own settings.
+    for kept in ["CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_EXECPATH",
+                 "CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION"] {
+        check("\(kept) is not swept up with them",
+              !Assistant.claude.inheritedIdentityVariables.contains(kept))
+    }
+
+    // `env` execs the program, so a tty still lists `claude --model haiku` with no wrapper in
+    // front of it — which is what `Assistant.reading(ofPS:)` reads a session out of. Checked on
+    // a real process rather than assumed: `env -u CLAUDECODE sleep 3` lists as `sleep 3`.
+    check("the program is the last word of the prefix, so `ps` reads as it always did",
+          Assistant.claude.command(model: "haiku").hasSuffix(" claude --model haiku"))
+
+    // Every route that types a command builds it here, so there is no second one left to forget.
+    check("the line an iTerm2 tab is opened with carries it",
+          StartPoints.itermLine(cwd: "/a/b").hasPrefix("cd '/a/b' && env -u "))
+    check("and so does the line that picks a conversation back up",
+          StartPoints.itermLine(cwd: "/a/b", assistant: .codex,
+                                resume: "105344fb-c769-4b37-b766-403b410897eb")
+              .hasPrefix("cd '/a/b' && env -u CODEX_THREAD_ID "))
+
+    // The prefix is part of a line this app promises holds nothing a shell reads. A name that is
+    // anything but an environment name would be the way that promise breaks.
+    for assistant in Assistant.allCases {
+        check("\(assistant.rawValue) drops plain environment names and nothing else",
+              assistant.inheritedIdentityVariables.allSatisfy { name in
+                  !name.isEmpty && name.allSatisfy {
+                      ("A"..."Z").contains($0) || ("0"..."9").contains($0) || $0 == "_"
+                  }
+              })
+        check("\(assistant.rawValue) names each of them once",
+              Set(assistant.inheritedIdentityVariables).count
+                  == assistant.inheritedIdentityVariables.count)
+    }
 }
 
 group("a child row resolves only to its current parent session") {
@@ -11740,7 +12096,8 @@ group("how far a child may go is this Mac's answer, not the asking session's") {
     expect("files-without-asking is spelled acceptEdits for Claude Code",
            Permission.edits.flags(for: .claude), "--permission-mode acceptEdits")
     check("a bare command is still what an unasked-for permission produces",
-          Assistant.claude.command(model: nil, permission: .ask) == "claude")
+          Assistant.claude.command(model: nil, permission: .ask)
+              == Assistant.claude.dropInheritedIdentity + "claude")
 }
 
 group("the directory a child is given reach over is a path, not a fragment of one") {
@@ -11765,18 +12122,19 @@ group("the directory a child is given reach over is a path, not a fragment of on
           StartPoints.extraDir("/tmp/" + String(repeating: "a", count: 256)) == nil)
 
     // Both CLIs spell it the same, which is the only reason the flag is not a switch.
+    let claudeRuns = Assistant.claude.dropInheritedIdentity
     expect("claude is given it by name", Assistant.claude.command(model: nil, addDir: "/tmp/.clawdline"),
-           "claude --add-dir /tmp/.clawdline")
+           claudeRuns + "claude --add-dir /tmp/.clawdline")
     expect("and so is codex", Assistant.codex.command(model: nil, addDir: "/tmp/.clawdline"),
-           "codex --add-dir /tmp/.clawdline")
+           Assistant.codex.dropInheritedIdentity + "codex --add-dir /tmp/.clawdline")
     expect("with the model in front of it when there is one",
            Assistant.claude.command(model: "haiku", addDir: "/tmp/.clawdline"),
-           "claude --model haiku --add-dir /tmp/.clawdline")
+           claudeRuns + "claude --model haiku --add-dir /tmp/.clawdline")
     check("a refused path reaches the line as no flag rather than as an argument",
           StartPoints.itermLine(cwd: "/tmp/x", assistant: .claude, addDir: "/tmp/a b")
-              .hasSuffix("&& claude"))
+              .hasSuffix("&& " + claudeRuns + "claude"))
     expect("and nothing at all is still the bare command",
-           Assistant.claude.command(model: nil, addDir: nil), "claude")
+           Assistant.claude.command(model: nil, addDir: nil), claudeRuns + "claude")
 }
 
 group("a task id is the name of a directory, so it may not be a path") {
@@ -11917,9 +12275,6 @@ group("worktree task records, briefings and shared-tree coordination stay distin
           Orchestrator.task(from: legacy)?.isolation == Orchestrator.Isolation.none
               && Orchestrator.task(from: legacy)?.worktree == nil)
 
-    let savedGrandchildren = Config.shared.orchestratorMaxGrandchildren
-    Config.shared.orchestratorMaxGrandchildren = 0
-    defer { Config.shared.orchestratorMaxGrandchildren = savedGrandchildren }
     let sharedBrief = Orchestrator.childBrief(for: shared)
     let isolatedBrief = Orchestrator.childBrief(for: isolated)
     check("a shared-tree child keeps the existing briefing without worktree rules",
@@ -14669,118 +15024,111 @@ group("the one line a child is given") {
     check("and it is one line, because it is typed into a prompt", !line.contains("\n"))
 }
 
-group("a child is told whether it may hand work on, and never has to find out by being refused") {
-    // CHILD.md is the whole of a child's instructions, so the level it is standing on has to be
-    // written into it. A child that discovers the rule by dispatching and being refused has
-    // already spent a turn on it, and one that assumes the old rule never tries at all.
-    let saved = Config.shared.orchestratorMaxGrandchildren
-    defer { Config.shared.orchestratorMaxGrandchildren = saved }
-    func task(depth: Int, allowance: Int) -> Orchestrator.Task {
-        Config.shared.orchestratorMaxGrandchildren = allowance
-        return Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
-                                 assistant: .claude, projectDir: "/Users/me/code/thing",
-                                 timeoutMinutes: 30, created: Date(), depth: depth,
-                                 secretHash: String(repeating: "0", count: 64))
+group("a child briefing carries the whole of what a child needs, and none of what it must not") {
+    // CHILD.md is the whole of a child's instructions: it is read once, by a session nobody is
+    // watching, and anything not in it does not happen. The tree is one level deep, so every
+    // child is a leaf and there is only one briefing to get right — the level a child stands on
+    // is asserted in the group below this one.
+    func task(depth: Int = 1) -> Orchestrator.Task {
+        Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
+                          assistant: .claude, projectDir: "/Users/me/code/thing",
+                          timeoutMinutes: 30, created: Date(), depth: depth,
+                          secretHash: String(repeating: "0", count: 64))
     }
-    func brief(depth: Int, allowance: Int) -> String {
-        Orchestrator.childBrief(for: task(depth: depth, allowance: allowance))
-    }
-    func teaching(depth: Int, allowance: Int) -> String? {
-        Orchestrator.dispatchingBrief(for: task(depth: depth, allowance: allowance))
-    }
+    let brief = Orchestrator.childBrief(for: task())
 
-    let allowed = brief(depth: 1, allowance: 3)
-    check("a child with a level under it is told how many it may open",
-          allowed.contains("at most 3 child sessions of your own"))
-    // The measured finding this split came from: 28,323 characters of dispatch teaching went
-    // into every one of 206 direct children's briefings, and not one of the 206 ever dispatched
-    // anything. So CHILD.md points at the recipe instead of carrying it, and the pointer is
-    // un-skippable because the credential is only on the other side of it.
-    check("and is pointed at the file that teaches it, by full path",
-          allowed.contains("/tmp/.clawdline/\(taskID)/DISPATCHING.md")
-            && allowed.contains("read that file before you hand anything on"))
-    check("but the teaching itself is no longer in the briefing every child pays for",
-          !allowed.contains("## Handing work on")
-            && !allowed.contains("cat > /tmp/.clawdline/$sub/task.json <<JSON"))
-    check("and no convenience summary of the credential either, which is what makes the pointer bite",
-          !allowed.contains("orchestrator-token") && !allowed.contains("X-Clawdline-Orchestrator"))
+    // The measured finding the dispatch teaching was split out over: 28,323 characters of it
+    // went into every one of 206 direct children's briefings, and not one of the 206 ever
+    // dispatched anything. None of it comes back now that nothing may dispatch at all.
+    check("the dispatch recipe is in no briefing any more",
+          !brief.contains("## Handing work on")
+            && !brief.contains("cat > /tmp/.clawdline/$sub/task.json <<JSON"))
+    check("nor a convenience summary of the credential",
+          !brief.contains("orchestrator-token") && !brief.contains("X-Clawdline-Orchestrator"))
     check("nor the one field nothing else would tell a dispatcher",
-          !allowed.contains("parent_task"))
+          !brief.contains("parent_task"))
     check("and reporting says to use the file tool rather than a shell line",
-          allowed.contains("Write it with your file-writing tool, not with a shell command"))
+          brief.contains("Write it with your file-writing tool, not with a shell command"))
     check("and it learns the narrow push opening without needing a skill",
-          allowed.contains("/v1/orchestrator/tasks/\(taskID)/notify")
-              && allowed.contains("The value of push is rarity")
-              && allowed.contains("Routine results belong in `result.json`")
-              && allowed.contains("at most 5 notifications")
-              && allowed.contains("at most 30 per hour"))
+          brief.contains("/v1/orchestrator/tasks/\(taskID)/notify")
+              && brief.contains("The value of push is rarity")
+              && brief.contains("Routine results belong in `result.json`")
+              && brief.contains("at most 5 notifications")
+              && brief.contains("at most 30 per hour"))
     check("and it is told where the answer will appear",
-          allowed.contains("result.json"))
+          brief.contains("result.json"))
     // The ask nothing was making: AGENTS.md, docs/dispatching.md and the dispatch policy all
     // require a first progress note, and the briefing — the only thing a child actually reads —
     // asked only for one when the work drifted. A note at minute three is what lets a wrong
     // direction be cancelled before it has spent a session.
     check("a child is asked for one progress note before it starts, not only when it drifts",
-          allowed.contains("within about three minutes of starting")
-            && allowed.contains("before you begin the work"))
+          brief.contains("within about three minutes of starting")
+            && brief.contains("before you begin the work"))
     check("and told why, because a child that knows why will actually send it",
-          allowed.contains("cancelled at minute three instead of minute twenty-six")
-            && allowed.contains("18.5M and 16.5M tokens"))
+          brief.contains("cancelled at minute three instead of minute twenty-six")
+            && brief.contains("18.5M and 16.5M tokens"))
     check("the at-rest archive key is never named in a child briefing",
-          !allowed.contains("orchestrator-archive-key") && !allowed.contains("archive key"))
+          !brief.contains("orchestrator-archive-key") && !brief.contains("archive key"))
+}
 
-    let recipe = teaching(depth: 1, allowance: 3)
-    check("the recipe is written, rather than pointed at a skill — half of them are Codex",
-          recipe?.contains("## Handing work on") == true
-            && recipe?.contains("/v1/orchestrator/tasks") == true)
-    check("and it carries the credential path, which is what CHILD.md deliberately does not",
-          recipe?.contains("~/.config/clawdline/orchestrator-token") == true)
-    check("and the recipe teaches Codex's closed reasoning override",
-          recipe?.contains("`reasoning_effort` is Codex-only") == true
-            && recipe?.contains("`high` for coding") == true
-            && recipe?.contains("`xhigh` for planning or review") == true)
-    check("and names only permission values the task parser accepts",
-          recipe?.contains("`permission_mode` is `ask`, `edits` or `full`") == true
-            && recipe?.contains("`ask`, `auto` or `full`") == false)
-    check("with its own task id already filled in as the parent, since that is the field nothing else would tell it",
-          recipe?.contains("\"root\": {\"parent_task\": \"\(taskID)\"}") == true)
-    check("and the task file is built with a heredoc, since screening refuses a quoted jq filter",
-          recipe?.contains("cat > /tmp/.clawdline/$sub/task.json <<JSON") == true)
-    check("with the reason stated, so a child does not helpfully rewrite it as one",
-          recipe?.contains("not with `jq -n` and a quoted filter") == true)
-    check("the token stays this Mac's, not something to pass down",
-          recipe?.contains("do not hand it to anything you dispatch") == true)
-    check("and it names the task whose CHILD.md sent the child here",
-          recipe?.contains("task \(taskID)") == true)
+group("a child is the bottom of the tree, and no setting can put a level under it") {
+    // The tree is one level deep as a structural fact rather than as a default, and the reason
+    // is the shape of `config.json`: it is seeded once and never migrated, so a changed default
+    // reaches only Macs that have never run this app. Every machine that has one already carries
+    // `orchestrator_max_grandchildren: 3`, and if the floor were still read out of that key, all
+    // of them would have gone on dispatching grandchildren after the default moved under them.
+    // So the floor is a constant, the setting is gone from `Config`, and an old file that still
+    // names the key is read by nothing.
+    func child(depth: Int) -> Orchestrator.Task {
+        Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
+                          assistant: .claude, projectDir: "/Users/me/code/thing",
+                          timeoutMinutes: 30, created: Date(), depth: depth,
+                          secretHash: String(repeating: "0", count: 64))
+    }
 
-    let floor = brief(depth: 2, allowance: 3)
-    check("a child already on the floor is told not to dispatch",
-          floor.contains("Do not dispatch Clawdline tasks of your own."))
-    check("and is given no recipe to ignore", !floor.contains("## Handing work on"))
-    check("and no file to read it out of either", teaching(depth: 2, allowance: 3) == nil)
+    expect("the floor is one level", Orchestrator.depthFloor, 1)
+    check("a root's child is allowed to exist", Orchestrator.depthIsAllowed(1))
+    check("and the task that child would have opened is not",
+          !Orchestrator.depthIsAllowed(2))
 
-    let off = brief(depth: 1, allowance: 0)
-    check("nor is one on a Mac where the level is switched off",
-          off.contains("Do not dispatch Clawdline tasks of your own.")
-              && !off.contains("## Handing work on"))
-    check("and that Mac writes no teaching file at all", teaching(depth: 1, allowance: 0) == nil)
-    check("the first-progress ask reaches a leaf too, which is where most of the tokens are",
-          off.contains("within about three minutes of starting"))
+    // The nail. A Mac that has run any earlier version of this app has the old key in its config
+    // file saying `3`; this is that machine, and the answer has to be the same one.
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-config-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let legacy = """
+    {"orchestrator_max_grandchildren": 3, "orchestrator_max_children": 4}
+    """
+    try? Data(legacy.utf8).write(to: directory.appendingPathComponent("config.json"))
+    let stale = Config(directoryForTesting: directory)
+    expect("an old config naming the removed key still loads its neighbours",
+           stale.orchestratorMaxChildren, 4)
+    check("and the key it still names is read by nothing",
+          !Mirror(reflecting: stale).children.contains {
+              ($0.label ?? "").lowercased().contains("grandchild")
+          })
+    expect("the floor is unmoved by a file that says three", Orchestrator.depthFloor, 1)
+    check("so a child on that Mac still may not open a task",
+          !Orchestrator.depthIsAllowed(2))
+    check("and the machine-wide ceiling is not quietly tightened by the key going away",
+          stale.orchestratorMaxDescendants == 16
+              && Config.shared.orchestratorMaxDescendants == 20,
+          "\(stale.orchestratorMaxDescendants) and \(Config.shared.orchestratorMaxDescendants)")
 
-    // What the split is worth, stated as an arithmetic somebody can break: a child that may
-    // dispatch and one that may not are now briefed with almost the same file. Before this,
-    // they differed by the whole recipe.
-    check("a child that may dispatch is briefed with barely more than one that may not",
-          allowed.count - off.count < 500,
-          "difference of \(allowed.count - off.count) characters")
-
-    Config.shared.orchestratorMaxGrandchildren = 0
-    expect("zero grandchildren is the rule this app had before the level existed",
-           Orchestrator.depthFloor, 1)
-    Config.shared.orchestratorMaxGrandchildren = 1
-    expect("and one is enough to make the floor two", Orchestrator.depthFloor, 2)
-    Config.shared.orchestratorMaxGrandchildren = 10
-    expect("ten does not make it three — there is no third", Orchestrator.depthFloor, 2)
+    let brief = Orchestrator.childBrief(for: child(depth: 1))
+    check("CHILD.md tells a child plainly that it is the bottom",
+          brief.contains("You are the bottom of this tree: you cannot dispatch Clawdline tasks"))
+    check("and sends it to its own assistant's subagents for anything parallel",
+          brief.contains("subagent"))
+    check("no child is pointed at a dispatch recipe any more",
+          !brief.contains("DISPATCHING.md") && !brief.contains("child sessions of your own"))
+    // Two sentences elsewhere in the briefing were written for a child that could dispatch, and
+    // survived the level going away because neither says "dispatch" in a way a grep for the
+    // recipe would find. The reading rule let a child open a task directory it had opened
+    // itself, and the honesty rule asked it to account for sessions it can no longer start.
+    check("and nothing else in the briefing assumes it has tasks of its own",
+          !brief.contains("any you dispatched") && !brief.contains("sessions you dispatched"))
 }
 
 group("a codex child is briefed with channels it can actually reach") {
@@ -14790,14 +15138,11 @@ group("a codex child is briefed with channels it can actually reach") {
     // arrived. The group above asserts the progress section is *present*; nothing asserted it
     // was *reachable* for the assistant being briefed, which is how the impossible ask stayed
     // green — so every reachability claim here is made against the codex briefing itself.
-    let saved = Config.shared.orchestratorMaxGrandchildren
-    defer { Config.shared.orchestratorMaxGrandchildren = saved }
-    func fixture(_ assistant: Assistant, allowance: Int = 0) -> Orchestrator.Task {
-        Config.shared.orchestratorMaxGrandchildren = allowance
-        return Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
-                                 assistant: assistant, projectDir: "/Users/me/code/thing",
-                                 timeoutMinutes: 30, created: Date(), depth: 1,
-                                 secretHash: String(repeating: "0", count: 64))
+    func fixture(_ assistant: Assistant) -> Orchestrator.Task {
+        Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
+                          assistant: assistant, projectDir: "/Users/me/code/thing",
+                          timeoutMinutes: 30, created: Date(), depth: 1,
+                          secretHash: String(repeating: "0", count: 64))
     }
     let codex = Orchestrator.childBrief(for: fixture(.codex))
     let claude = Orchestrator.childBrief(for: fixture(.claude))
@@ -14829,26 +15174,24 @@ group("a codex child is briefed with channels it can actually reach") {
             && claude.contains("/v1/orchestrator/tasks/\(taskID)/complete"))
     check("and is told about the file fallback, not left to meet a sandbox the hard way",
           claude.contains("/tmp/.clawdline/\(taskID)/progress.json"))
-
-    let codexTeaching = Orchestrator.dispatchingBrief(for: fixture(.codex, allowance: 3))
-    check("the dispatch recipe warns a codex sandbox before its first dead curl",
-          codexTeaching?.contains("CODEX_SANDBOX_NETWORK_DISABLED") == true)
-    let claudeTeaching = Orchestrator.dispatchingBrief(for: fixture(.claude, allowance: 3))
-    check("without burdening a claude child that can actually dispatch",
-          claudeTeaching?.contains("CODEX_SANDBOX_NETWORK_DISABLED") == false)
 }
 
-group("the graph and the house rules reach the child that needs them") {
+group("the graph and this Mac's own rules reach every child's briefing") {
     // Two paragraphs a briefing grows, and they are governed differently: the plan comes from
     // whoever dispatched (per task), the policy from whoever owns this Mac (per machine). What
     // they have in common is that a child reading neither writes an essay instead of an answer.
-    let savedGrandchildren = Config.shared.orchestratorMaxGrandchildren
+    //
+    // **The policy half was once delivered only to a child that could dispatch**, on the reading
+    // that house rules are rules about handing work out. That reading is wrong, and the evidence
+    // is behavioural: the sentence in this Mac's own file saying a Codex sandbox has no network
+    // is what stops a Codex leaf spending a turn on a `curl` that cannot connect. The file
+    // carries facts about the machine and not only rules about dispatching, so it goes to every
+    // child — which, the tree being one level deep, is now the only kind there is.
     let policyFile = Orchestrator.policyURL
     let localPolicyFile = Orchestrator.localPolicyURL
     let policyBefore = try? Data(contentsOf: policyFile)
     let localPolicyBefore = try? Data(contentsOf: localPolicyFile)
     defer {
-        Config.shared.orchestratorMaxGrandchildren = savedGrandchildren
         if let policyBefore {
             try? policyBefore.write(to: policyFile, options: .atomic)
         } else {
@@ -14860,55 +15203,61 @@ group("the graph and the house rules reach the child that needs them") {
             try? FileManager.default.removeItem(at: localPolicyFile)
         }
     }
-    func fixture(plan: String?, allowance: Int) -> Orchestrator.Task {
-        Config.shared.orchestratorMaxGrandchildren = allowance
+    func fixture(plan: String?, assistant: Assistant = .claude) -> Orchestrator.Task {
         var task = Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
-                                     assistant: .claude, projectDir: "/Users/me/code/thing",
+                                     assistant: assistant, projectDir: "/Users/me/code/thing",
                                      timeoutMinutes: 30, created: Date(), depth: 1,
                                      secretHash: String(repeating: "0", count: 64))
         task.plan = plan
         return task
     }
-    func brief(plan: String?, allowance: Int) -> String {
-        Orchestrator.childBrief(for: fixture(plan: plan, allowance: allowance))
-    }
-    func rules(plan: String?, allowance: Int) -> String? {
-        Orchestrator.dispatchingBrief(for: fixture(plan: plan, allowance: allowance))
+    func brief(plan: String?, assistant: Assistant = .claude) -> String {
+        Orchestrator.childBrief(for: fixture(plan: plan, assistant: assistant))
     }
     try? FileManager.default.createDirectory(at: policyFile.deletingLastPathComponent(),
                                              withIntermediateDirectories: true)
     try? FileManager.default.removeItem(at: localPolicyFile)
     try? Data("Review runs on opus. Breadth before depth.".utf8).write(to: policyFile, options: .atomic)
 
-    let both = brief(plan: "root → 3 searchers → this one joins them up", allowance: 3)
+    let both = brief(plan: "root → 3 searchers → this one joins them up")
     check("the plan is in the briefing, in the dispatcher's own words",
           both.contains("root → 3 searchers → this one joins them up"))
     check("above the rules, because it is what the rules are read in the light of",
           both.range(of: "## The plan this is part of")!.lowerBound
               < both.range(of: "## Rules")!.lowerBound)
-    // The house rules travel with the recipe rather than with the briefing: they are about a
-    // decision only a dispatching child makes, and they used to be pasted beside the task's own
-    // instructions in every child's CHILD.md.
-    let handOn = rules(plan: "root → 3 searchers → this one joins them up", allowance: 3)
-    check("and this Mac's house rules are there for a child that may dispatch",
-          handOn?.contains("Review runs on opus.") == true)
-    check("named by path, so a child can say where a rule it followed came from",
-          handOn?.contains(Orchestrator.policyURL.path) == true)
-    check("and they are not also copied into the briefing every child pays for",
-          !both.contains("Review runs on opus."))
+    // The house rules used to travel in `DISPATCHING.md`, which only a dispatching child was
+    // given. There is no dispatching child now, and deleting the section with the recipe would
+    // have left this Mac unable to tell any child anything about itself.
+    check("and this Mac's house rules are in the briefing of a child that cannot dispatch",
+          both.contains("Review runs on opus."))
+    check("named by path, both files, so a child can say where a rule it followed came from",
+          both.contains(Orchestrator.policyURL.path)
+            && both.contains(Orchestrator.localPolicyURL.path))
+    check("a codex leaf is told them too, and it is the one the machine facts are written for",
+          brief(plan: nil, assistant: .codex).contains("Review runs on opus."))
 
-    let leaf = brief(plan: "root → 3 searchers → this one", allowance: 0)
+    // The nail this group carries. The machine-local file exists so facts about *this* Mac
+    // survive edits and syncs of the shipped rules; composing it is worth nothing if the
+    // composed text has no consumer, and the briefing is the consumer.
+    try? Data("Codex children here have no network.".utf8)
+        .write(to: localPolicyFile, options: .atomic)
+    let composedBrief = brief(plan: nil)
+    check("the machine-local file reaches the child too, last and under its own heading",
+          composedBrief.contains(Orchestrator.localPolicyHeading)
+            && composedBrief.contains("Codex children here have no network.")
+            && composedBrief.range(of: "Review runs on opus.")!.lowerBound
+                < composedBrief.range(of: Orchestrator.localPolicyHeading)!.lowerBound)
+    try? FileManager.default.removeItem(at: localPolicyFile)
+
+    let leaf = brief(plan: "root → 3 searchers → this one")
     check("a leaf is told the plan too — it is what makes its answer joinable",
           leaf.contains("root → 3 searchers → this one"))
-    check("but not the rules for handing work out, which it has no decision to spend them on",
-          !leaf.contains("Review runs on opus.")
-            && rules(plan: nil, allowance: 0) == nil)
 
     try? FileManager.default.removeItem(at: policyFile)
     check("no file at all is no paragraph, rather than an empty heading",
-          rules(plan: nil, allowance: 3)?.contains("What this Mac says") == false)
+          !brief(plan: nil).contains("## What this Mac says"))
     check("and no plan is no paragraph either",
-          !brief(plan: nil, allowance: 3).contains("## The plan this is part of"))
+          !brief(plan: nil).contains("## The plan this is part of"))
     try? Data("   \n\n  ".utf8).write(to: policyFile, options: .atomic)
     check("a file of nothing but whitespace counts as nobody having said anything",
           Orchestrator.policy() == nil)
@@ -15571,7 +15920,12 @@ group("the wait session index says what a wait must name, and nothing off the sc
         Orchestrator.forget()
     }
 
-    let claude = TargetSession(backend: .iterm, id: "SESSION-A", name: "✳ fix the webhook",
+    defer { SessionNaming.lookForTesting = noSessionNames; SessionNaming.forgetForTesting() }
+    SessionNaming.forgetForTesting()
+    SessionNaming.lookForTesting = { _ in
+        SessionNaming.Name(title: "fix the webhook", handle: nil)
+    }
+    let claude = TargetSession(backend: .iterm, id: "SESSION-A", name: "Default (python)",
                                tty: "/dev/ttys004", windowIndex: 0, tabIndex: 0,
                                assistant: .claude, cwd: "/Users/me/code/clawdline")
     let codex = TargetSession(backend: .tmux, id: "%codex", name: "envelope work",
@@ -15597,8 +15951,10 @@ group("the wait session index says what a wait must name, and nothing off the sc
     expect("it names which assistant is in there", first["assistant"] as? String, "claude")
     expect("and the checkout the wait is about", first["cwd"] as? String,
            "/Users/me/code/clawdline")
-    expect("the label is the tab's own, without the spinner frame in front of it",
+    expect("the label is the conversation's own, not the tab's",
            first["label"] as? String, "fix the webhook")
+    check("a tab titled Default does not put Default on a wait",
+          first["label"] as? String != claude.label)
     expect("and the terminal state, so a caller knows whether anybody is home",
            first["state"] as? String, "working")
     expect("and every row has exactly one closed work-state projection",
@@ -20728,6 +21084,115 @@ group("an attached briefing is delivered work, not a tab still trying to open") 
     for _ in 0..<lanes { heldLane.signal() }
     check("the broker drains again",
           eventually { RemoteServer.shared.terminalOutstandingForTesting().total == 0 })
+}
+
+// A task that has said what it is doing has, by definition, read the line typed at it: the
+// progress route authenticates with the task secret, and the secret is in that line and nowhere
+// else on disk. Calling such a task `spawn_failed` is a record that contradicts its own contents
+// — and on 2026-08-28 it was worse than a wrong record, because `finalize` reads an unbriefed
+// `spawn_failed` as "nothing was ever done here" and disposes the checkout. One child lost its
+// worktree and its delivery branch while its tab was still working inside the deleted directory.
+group("a task that has posted progress is not a tab that never opened") {
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    var made: [URL] = []
+    defer {
+        for directory in made { try? manager.removeItem(at: directory) }
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+
+    /// A tab this app opened, past the four-minute deadline for reaching a prompt.
+    func pastTheDeadline(secret: String = "unused") -> Orchestrator.Task {
+        let id = UUID().uuidString.lowercased()
+        let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
+        made.append(directory)
+        try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        var task = Orchestrator.Task(
+            id: id, state: .spawning, kind: "custom", title: "working, and saying so",
+            assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+            secretHash: Orchestrator.hash(ofSecret: secret))
+        task.spawnedAt = Date().addingTimeInterval(-(Orchestrator.readyLimit + 1))
+        return task
+    }
+    func directory(of task: Orchestrator.Task) -> URL {
+        Orchestrator.root.appendingPathComponent(task.id, isDirectory: true)
+    }
+
+    // The control, first: without a receipt the deadline still ends the task. If this ever goes
+    // green for the wrong reason the two assertions below prove nothing.
+    let silent = pastTheDeadline()
+    Orchestrator.holdScheduleTaskForTesting(silent)
+    Orchestrator.beat(fromTimer: true)
+    expect("a tab that never said anything still fails the deadline",
+           Orchestrator.record(id: silent.id)?["state"] as? String, "spawn_failed")
+
+    let noteAt = Date().addingTimeInterval(-120)
+    var overHTTP = pastTheDeadline()
+    overHTTP.progress = [Orchestrator.ProgressNote(note: "reading the briefing now", at: noteAt)]
+    Orchestrator.holdScheduleTaskForTesting(overHTTP)
+    Orchestrator.beat(fromTimer: true)
+    expect("a task that posted a note is briefed rather than spawn_failed",
+           Orchestrator.record(id: overHTTP.id)?["state"] as? String, "briefed")
+    // Without this the promotion would be half done: `briefedAt == nil` is the second half of
+    // what `finalize` reads as an empty checkout, and it is what starts the task's own timeout.
+    expect("and its briefing is dated by the receipt, not by the deadline",
+           Orchestrator.record(id: overHTTP.id)?["briefedAt"] as? Int,
+           Int(noteAt.timeIntervalSince1970))
+
+    // The file half of the channel exists for a child whose sandbox has no loopback, and no beat
+    // collects it while the task is `spawning`. Without a collection at the deadline its note is
+    // invisible for exactly the window in which it is needed.
+    let sandboxedSecret = String(repeating: "e5", count: 32)
+    let sandboxed = pastTheDeadline(secret: sandboxedSecret)
+    try! JSONSerialization.data(withJSONObject: [
+        "task_secret": sandboxedSecret, "note": "no loopback here, so this is the only channel",
+    ]).write(to: directory(of: sandboxed).appendingPathComponent(Orchestrator.progressFileName),
+             options: .atomic)
+    Orchestrator.holdScheduleTaskForTesting(sandboxed)
+    Orchestrator.beat(fromTimer: true)
+    expect("a note that could only arrive as a file is collected before the deadline fires",
+           Orchestrator.record(id: sandboxed.id)?["state"] as? String, "briefed")
+
+    // The receipt dates the briefing at the earlier of the two moments that bound it: the line
+    // was on the tty by `lastInjectAt`, and had certainly been read by the first note.
+    var typedThenAnswered = pastTheDeadline()
+    typedThenAnswered.lastInjectAt = noteAt.addingTimeInterval(-30)
+    typedThenAnswered.progress = [Orchestrator.ProgressNote(note: "started", at: noteAt)]
+    expect("the briefing is dated from when the line was typed when that is known",
+           Orchestrator.briefingProvenByProgress(typedThenAnswered),
+           noteAt.addingTimeInterval(-30) as Date?)
+    check("and nothing is proven by a task that has said nothing",
+          Orchestrator.briefingProvenByProgress(pastTheDeadline()) == nil)
+
+    // The disposal half. `worktreeDisposal` already refuses to erase commits or dirty bytes; the
+    // window it cannot see is a child that is working and has not written a byte yet.
+    var spokenTo = pastTheDeadline()
+    spokenTo.childTerminalId = "TAB"
+    spokenTo.progress = [Orchestrator.ProgressNote(note: "working", at: noteAt)]
+    check("a checkout is not reclaimed as empty when its child answered",
+          !Orchestrator.reclaimsEmptyWorktree(spokenTo, outcome: .spawnFailed))
+    var typedAt = pastTheDeadline()
+    typedAt.childTerminalId = "TAB"
+    typedAt.injectAttempts = 1
+    check("nor when the first line was typed at a composer this app saw was ready",
+          !Orchestrator.reclaimsEmptyWorktree(typedAt, outcome: .spawnFailed))
+    // Liveness is deliberately not the test: the tab is alive in both readings, because a session
+    // that never reached a prompt is also a live assistant sitting at a fresh composer.
+    var neverSpokenTo = pastTheDeadline()
+    neverSpokenTo.childTerminalId = "TAB"
+    check("a tab that was never spoken to is still reclaimed",
+          Orchestrator.reclaimsEmptyWorktree(neverSpokenTo, outcome: .spawnFailed))
+    check("and so is a task whose tab was never opened at all",
+          Orchestrator.reclaimsEmptyWorktree(pastTheDeadline(), outcome: .cancelled))
+    var briefed = pastTheDeadline()
+    briefed.childTerminalId = "TAB"
+    briefed.briefedAt = noteAt
+    check("an ending that is not an unbriefed spawn failure never reclaims",
+          !Orchestrator.reclaimsEmptyWorktree(briefed, outcome: .timeout))
 }
 
 group("owned storage is visible through the read-only orchestrator route") {

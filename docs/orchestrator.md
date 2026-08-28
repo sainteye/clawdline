@@ -19,11 +19,11 @@ be told when it is done.
 - **Broker** — Clawdline. It checks the ask, records it, opens a terminal tab, types the first
   message into it, watches for the answer, adds up what it cost, and tells the root.
 - **Child** — the session the broker opened. It does exactly one task and writes down what
-  happened. It may hand parts of that task to children of its own; those may not.
+  happened. It is the bottom of the tree: it dispatches nothing.
 
 The root never touches a terminal and never learns the child's id until the broker tells it. The
-child never learns who asked. Neither of them can dispatch on the other's behalf, and a child may
-dispatch only one level further — [that is a rule with teeth](#depth-stops-at-two-and-the-floor-is-what-has-teeth).
+child never learns who asked. Neither of them can dispatch on the other's behalf, and a child
+cannot dispatch at all — [that is a rule with teeth](#the-tree-is-one-level-deep-and-that-is-structural).
 
 **The transcripts on this page are written to the protocol rather than pasted out of a run.** Every
 route, field and code below is the contract; where a reply is shown it is what a correct
@@ -90,26 +90,32 @@ outside this threat model. The separation above protects the narrower capability
 child following its briefing and reading only the orchestrator token, not hostile code already
 running with unrestricted access to the account.
 
-### Depth stops at two, and the floor is what has teeth
+### The tree is one level deep, and that is structural
 
 Dispatch without a floor is a fork bomb with a language model in it. One task becomes five becomes
 twenty-five, each one a real terminal tab running a real assistant against a real API bill, and the
 failure mode is not "it got slow" — it is a Mac with sixty tabs open and no obvious way to tell
 which of them started it.
 
-So the tree has a bottom, and it is close to the top. **A root's children may dispatch. Their
-children may not.** That is not a number picked to be safe; it is where the arithmetic stops being
-something a person can hold in their head. Five and three is twenty at full stretch, which is
-already more terminals than anybody wants to audit. Five, three and three would be sixty-five.
+So the tree has a bottom, and it is directly under the top. **A root opens children. A child opens
+nothing.** Work inside one child that wants to run in parallel goes to that assistant's own
+subagents — Claude Code's Task tool, Codex's subagents — which open no terminal tab, pass through
+no broker, and hand their answers back into the session that asked instead of into a file somebody
+has to wait for.
+
+**The floor is a constant in the code, not a setting.** `Orchestrator.depthFloor` is `1` and there
+is nothing to edit. It used to be read out of `orchestrator_max_grandchildren`, and that is exactly
+the shape this project has a name for: `config.json` is seeded once and never migrated, so every
+Mac that had already run the app kept its own copy of the old number and a changed default reached
+none of them. A depth that a hand-edit can restore is not a rule; it is a preference. The key is
+still accepted in an old file — reading it is not an error — and it is read by nothing.
 
 The floor is enforced twice, and the two fail differently.
 
-**The briefing says so.** `CHILD.md` tells every child which level it is on: one with room under it
-is given one line naming `DISPATCHING.md`, the file beside it that holds the whole recipe —
-including `root.parent_task`, the field that says where the new task hangs — and one standing on
-the floor is told plainly not to dispatch at all.
-[`skills/clawdline/SKILL.md`](../skills/clawdline/SKILL.md) carries the same rule for a root. A child that follows its instructions never has to find the limit
-by hitting it.
+**The briefing says so.** `CHILD.md` tells every child, in the same paragraph for all of them, that
+it is the bottom of the tree, that a dispatch it attempts is refused, and what to use instead.
+[`skills/clawdline/SKILL.md`](../skills/clawdline/SKILL.md) carries the same rule for a root. A
+child that follows its instructions never has to find the limit by hitting it.
 
 **The app refuses.** A dispatch names who is asking — the task it hangs under, the session id, or
 both — and the new task lands one level below whatever that turns out to be. Past the floor it is
@@ -128,14 +134,13 @@ session's bucket rather than out of everybody's. The ceiling below is what close
   `~/.config/clawdline/config.json`, valid 1…10. Counted per dispatcher rather than per Mac: what
   the number bounds is how much work one conversation can have out at a time. A sixth is
   `429 over_capacity`, carrying `retry_after` so a client waits instead of spinning.
-- **Three of those, for a child** — `orchestrator_max_grandchildren`, valid 0…10. `0` is the rule
-  this app had before the second level existed: a child that tries is refused at the door. It is a
-  stop on the same list rather than a switch of its own, because "how many" and "whether" are the
-  same question asked twice.
-- **One full tree, for the Mac** — `orchestrator_max_children × (1 + orchestrator_max_grandchildren)`,
-  twenty by default, and not a setting because it is not a choice separate from the two it is made
-  of. The per-session caps are the ones a caller could sidestep by claiming to be somebody else;
-  this is the one that still holds when it does.
+- **Nothing at all, for a child.** There is no second cap because there is no second level, and
+  no setting either: a child that tries is refused at the door by `409 depth_exceeded`.
+- **Twenty dispatched sessions, for the Mac** — `orchestrator_max_children × 4`, four roots'
+  worth, and not a setting because it is not a choice separate from the number it is made of.
+  Several root sessions share one Mac, so it is deliberately more than one root's cap. The
+  per-session cap is the one a caller could sidestep by claiming to be somebody else; this is the
+  one that still holds when it does.
 - **Ten dispatches per ten minutes**, the same rolling window the pairing route uses, or one full
   tree's worth if that is more — a brake on a loop should not refuse the work the caps just
   permitted. `429 rate_limited` after that.
@@ -236,12 +241,19 @@ quota it describes is the provider's, shared by everything running under that lo
 
 ### House rules
 
-Two files beside the registry say **how** work should be handed out, as opposed to how much of it.
-`~/.config/clawdline/dispatch-policy.md` is the editable base; the optional sibling
-`dispatch-policy.local.md` holds facts true only on this machine. Both are read fresh on every
-dispatch — an edit reaches the next task, not the next launch — and composed into the
-`DISPATCHING.md` of every child allowed to dispatch in turn. A leaf never sees them: rules about
-choosing a model are noise to a session with no such choice to make.
+Two files beside the registry say **how** work should be handed out, and what is true of this
+machine. `~/.config/clawdline/dispatch-policy.md` is the editable base; the optional sibling
+`dispatch-policy.local.md` holds facts true only here. Both are read fresh on every dispatch — an
+edit reaches the next task, not the next launch — and composed into the `CHILD.md` of **every**
+child.
+
+Every child, and not only a dispatcher, because the file carries more than rules about handing
+work out. The sentence in this Mac's own policy saying a Codex sandbox has no network is what
+stops a Codex leaf spending a turn on a `curl` that cannot connect: a leaf reads it and behaves
+differently, which is the test of whether a paragraph belongs in a briefing at all. When the tree
+lost its second level the section was briefly deleted along with the dispatch recipe it travelled
+with, on the reading that house rules are rules about dispatching. They are not, and this Mac
+would have lost its only channel for telling a child anything about itself.
 
 It ships with opinions rather than a comment saying "put your rules here", because a file with
 defensible rules already in it is one somebody edits and an empty one is a feature nobody finds.
@@ -306,7 +318,6 @@ having a good day.
   <task-id>/                     # 0700 — lowercase UUID
     task.json                    # the root writes this, before dispatching
     CHILD.md                     # the app writes this, just before injection
-    DISPATCHING.md               # …and this, only for a child that may hand work on
     result.json                  # the child writes this, when it is done
     artifacts/                   # whatever the child was asked to produce
 ```
@@ -465,7 +476,7 @@ in that tab calls itself. It is the strongest answer for every child because the
 owns that task-to-terminal link; it also works before either assistant's transcript identity is
 observable. Naming it is what gets a task filed under its actual parent on the first try instead
 of being counted as a root's. Getting it wrong costs capacity and never buys any — [the two names
-are combined by taking the deeper answer](#depth-stops-at-two-and-the-floor-is-what-has-teeth).
+are combined by taking the deeper answer](#the-tree-is-one-level-deep-and-that-is-structural).
 
 ### Attached follow-up tasks
 
@@ -476,13 +487,14 @@ difference is that Clawdline types the ordinary first line into the named existi
 of opening a terminal tab. The public task record carries `attached: true` and `attachSession`.
 
 **The session needs a recorded task role and the right launch-time grant.** Clawdline gives the
-whole `/tmp/.clawdline` task root only to a child that may dispatch; a leaf gets only
-`/tmp/.clawdline/<its-original-task-id>`. The latter cannot read a new follow-up's sibling
-`CHILD.md`, even though Clawdline opened its tab. A user-opened assistant likewise has no recorded
-task-root grant. Because `--add-dir` cannot be added to a running process, either shape is
-`409 attach_not_managed`, refused before anything is typed. The registry persists the actual grant
-used at launch rather than inferring it from depth, since dispatch settings may change while a tab
-remains standing.
+whole `/tmp/.clawdline` task root to a session it opened for a task at or above the floor; a task
+below it opens no tab at all, and a user-opened assistant has no recorded task-root grant. A
+session holding only `/tmp/.clawdline/<its-original-task-id>` cannot read a new follow-up's sibling
+`CHILD.md`, even though Clawdline opened its tab. Because `--add-dir` cannot be added to a running
+process, either shape is `409 attach_not_managed`, refused before anything is typed. This grant is
+now what the wider add-dir is *for*: a child dispatches nothing, so the only directory it cannot
+name in advance is the one a later follow-up task will be given. The registry persists the actual
+grant used at launch rather than inferring it from depth.
 
 The id is resolved against every terminal session Clawdline can see, which is wider than the
 assistant-only rows `GET /v1/orchestrator/sessions` publishes — a plain shell resolves and is then
@@ -497,9 +509,9 @@ coordination-wait delivery; a confirmed menu refuses the dispatch before any lin
 record is created.
 
 An attached task keeps the standing session's existing depth — the depth of the task that session
-was opened for. Acceptance depends on the persisted task-root grant, not that number: a leaf that
-was launched with only its own task directory is refused. It opens no tab and therefore spends no
-child, grandchild, or machine tab-opening capacity, although it remains a live task, passes through
+was opened for. Acceptance depends on the persisted task-root grant, not that number: a session
+launched with only its own task directory is refused. It opens no tab and therefore spends no
+child or machine tab-opening capacity, although it remains a live task, passes through
 the dispatch rate limiter and quota gate, and holds its ordinary claims and serialize reservations.
 If terminal delivery itself fails, the registered task finalizes as `spawn_failed` and the request
 returns `502 attach_delivery_failed`.
@@ -739,8 +751,8 @@ A queued response and every GET record include `"waiting_on":["<task-id>",…]` 
 exist; the field is absent when there are none. It can name a current holder or an older queued
 waiter entitled to a shared name first. Cancelling a queued task is immediate, opens no tab, and
 pumps the next eligible waiter. Every other terminal outcome pumps the same queue, and startup
-pumps it once as well. A queued task already occupies its dispatcher's children/grandchildren
-slot and the machine-wide descendants slot; counting registration rather than open tabs prevents
+pumps it once as well. A queued task already occupies its dispatcher's child slot and the
+machine-wide descendants slot; counting registration rather than open tabs prevents
 an unbounded queue from bypassing the capacity limits.
 
 To make that startup handoff possible, only a serialized task still waiting has an encrypted copy
@@ -777,7 +789,7 @@ by component, so `/a/b` contains `/a/b/c` but has no relationship to
 even on the usual case-insensitive APFS volume. The `dir` field and the path in `message` both name
 the shared writable descendant: if an active task uses `/Users/you/code` and the new task uses
 `/Users/you/code/clawdline`, both say `/Users/you/code/clawdline`. Tree identity follows
-`parent_task` links back to the same root, so a depth-two task does not warn about its parent or
+`parent_task` links back to the same root, so a task does not warn about its parent or its
 siblings. Without such a link, a null root session id is unknown and the overlap is reported.
 
 There is one deliberate silence rule for a directory-overlapping pair: when both tasks have a
@@ -803,8 +815,9 @@ You are a Clawdline CHILD agent for task 3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234. R
 
 One line, because it is typed into a terminal and Return ends it. Everything that would not fit is
 in `CHILD.md`, which the app writes immediately before injecting: where the task is, where the
-outputs go, how long it has, the graph it is one node of, whether it may dispatch and how many,
-that it must not read other task directories, and exactly what `result.json` has to look like.
+outputs go, how long it has, the graph it is one node of, that it is the bottom of the tree and
+what to use instead of dispatching, that it must not read other task directories, and exactly what
+`result.json` has to look like.
 
 **It asks for one progress note before the work starts.** `AGENTS.md`, `docs/dispatching.md` and
 the dispatch policy have all required it for a while; the briefing — the only thing a child
@@ -828,24 +841,18 @@ whole-file-replace, task-secret-inside shape that has always made `result.json` 
 told its network is off rather than left to discover the failure by trying. The notify recipe, the
 `inflight` self-check and the optional completion announce are loopback calls too, so a codex
 briefing replaces each with what is true for it: nothing pushes, the plan it was dispatched with
-is what it has, and the file alone is the completion signal. `DISPATCHING.md` carries the same
-warning above its dispatch curls.
+is what it has, and the file alone is the completion signal.
 
-**How to dispatch is not in there.** It is in `DISPATCHING.md`, written beside it and only when the
-allowance is above zero; `CHILD.md` keeps one line naming that file. The reason is a measurement:
-across 206 dispatches on one machine, 28,323 characters of instructions on how to dispatch went
-into every direct child's briefing — about 7,081 tokens each — and not one of those 206 children
-ever dispatched anything. The teaching is not wrong, it is addressed to the rare child that will
-use it, and it was being charged to all of them.
-
-The pointer is worth following rather than merely polite, and that is deliberate: **the credential
-path, the `root.parent_task` rule and the `curl` appear only in `DISPATCHING.md`.** The briefing no
-longer hands the credential over, so a child that skips the file has to go and find one. That is a
-strong pointer and not a lock — the `clawdline` skill carries the same recipe, credential path
-included — but a convenience summary back in `CHILD.md`, enough to act on without following the
-pointer, would undo even the pointer, and is the thing not to add. The file costs nothing when it is not read:
-it lands in the task directory the child already has `--add-dir` access to, and is reclaimed with
-the rest of that directory.
+**How to dispatch is in no briefing at all.** There was a `DISPATCHING.md` beside `CHILD.md`,
+holding the credential path, the `root.parent_task` rule and the `curl`, written for the children
+that were allowed to hand work on. Nothing is allowed to now, so nothing is written; the app
+deletes the file if a re-brief finds one an older build left behind. What the measurement behind
+that file said is still the reason the briefing stays short: across 206 dispatches on one machine,
+28,323 characters of instructions on how to dispatch went into every direct child's briefing —
+about 7,081 tokens each — and not one of those 206 children ever dispatched anything. **A
+convenience summary of the dispatch recipe back in `CHILD.md` is the thing not to add**: the
+credential path appearing in a briefing is what makes a rule that is otherwise structural look
+negotiable.
 
 It also says what language to speak. The briefing itself is English so every assistant reads it
 the same way, but the person watching the tab is whoever set Clawdline's language — so the file
@@ -1043,13 +1050,13 @@ for signs of death, because "not in this reading" is a sentence that is also tru
 lost its accessibility permission for a moment, and the cost of being wrong there is somebody's work
 killed mid-turn. A busy child gets no grace period either; somebody pressed a button that says close.
 
-**The cascade reaches both levels, deepest first.** A child's own children go before it does — the
-level below is found through the session id its parent goes by, and that stops being a useful thing
-to match on the moment that parent's tab is gone. It is gathered from the *finished* children too,
-not only the live ones: a child that reported while the work it handed on is still running would
-otherwise leave a grandchild belonging to nobody. Cancelling a single task does the same thing on a
-smaller scale — what that task handed on goes with it, since it is work nobody is waiting for any
-more.
+**The cascade goes deepest first, even though the tree is one level deep.** Anything filed under a
+child goes before that child does — what is below is found through the session id its parent goes
+by, and that stops being a useful thing to match on the moment that parent's tab is gone. It is
+gathered from the *finished* children too, not only the live ones. In a live tree this walks one
+level and stops, because nothing a child opens exists; the order and the finished-parent sweep are
+kept for a stored record from an older build, where a task below a task can still be found.
+Cancelling a single task does the same thing on a smaller scale.
 
 **None of that is a decision the app makes for you, and describing it as a mechanism was not
 enough.** On 2026-08-27, 23:20:37–:51 — fourteen seconds, one close — four briefed tasks under root
@@ -1819,7 +1826,7 @@ they are not yours to keep** — if a child produced something worth having, cop
 directory going away after a day is the same promise `/tmp` always made, made explicitly.
 
 Heavyweight `work/` storage has a shorter, separate life. It is removed during a successful
-finalize, or when the non-success grace deadline expires; `artifacts/`, `task.json`, `CHILD.md`, `DISPATCHING.md` and
+finalize, or when the non-success grace deadline expires; `artifacts/`, `task.json`, `CHILD.md` and
 `result.json` remain untouched until the whole task-root sweep above. Reclaiming a missing `work/`
 is success, and a filesystem refusal never delays or reverses the terminal task state.
 
@@ -1902,9 +1909,9 @@ one of them, not both — they declare the same `name:`. Seven sections:
    `~/.claude/projects/<slug>/*.jsonl` finds which file it landed in. The basename is the id. Not
    found is `null` and the task still runs.
 5. **Dispatch**, and branch on `code`: `over_capacity` waits or asks for fewer, `bad_task` is a file
-   to fix and re-send under the same id, and **`depth_exceeded` means this session is already as
-   deep as this Mac goes** — the work is its own to do, not something to find another way to hand
-   on.
+   to fix and re-send under the same id, and **`depth_exceeded` means this session is a child and
+   children do not dispatch** — the work is its own to do, with its assistant's own subagents if it
+   needs several at once, not something to find another way to hand on.
 6. **Report, wait, then close the root obligation.** No polling loop. The notification arrives on
    its own, and `GET /v1/orchestrator/tasks/:id` answers when somebody asks. A child `success` and
    `SAFE TO LAND` remain delivered/reviewed facts; for code, root integrates on the named target,
@@ -1923,10 +1930,10 @@ briefing has to tell the child to copy it into the task's `artifacts/` afterward
 finishes with a picture nobody can reach. Vector is still the right ask for diagrams, icons, and
 anything that has to stay editable.
 
-The one rule stated before any of them: **a child dispatches only if its briefing said it could,
-and what it opens opens nothing.** `CHILD.md` is where a child reads that, and `DISPATCHING.md`
-beside it carries the same dispatch steps in miniature — spelled out rather than pointed at the
-skill, because half of these sessions are Codex and Codex has no skills.
+The one rule stated before any of them: **only a root dispatches, and what it opens opens
+nothing.** `CHILD.md` is where a child reads that, in the same words for every child, together
+with what to use instead — its own assistant's subagents, which need no broker and no skill, which
+matters because half of these sessions are Codex and Codex has no skills.
 
 ---
 

@@ -31,8 +31,8 @@ around it.
 | root stops to ask | you | push | Unconditional, ahead of every preference. The one interruption in the app that earns itself. |
 | root ends a long turn | you | push | Only past `finishThreshold` (120s), and only with `push_on_finish` on. With `smart_notifications`, Haiku gets the bounded last request and answer and replaces the generic body with one sentence. |
 | child stops to ask | you, and only you | push | Louder than a root asking, and it carries the clock. |
-| child finishes (depth 1) | the root session | durable typed line, no push | The id, state, `result.json`, stable notice id and ACK route. |
-| grandchild finishes (depth 2) | the child that dispatched it | durable typed line, no push | The same, plus how many of that child's own tasks are still running. |
+| child finishes (depth 1) | the root session | durable typed line, no push | The id, the state, the path to `result.json`, a stable notice id and the ACK route. |
+| a task below a task finishes (depth 2) | the task that dispatched it | durable typed line, no push | The same, plus how many of that task's own children are still running. Unreachable in a live tree, where a child dispatches nothing; kept for a stored record an older build left behind. |
 | the last of a fan-out ends | you | push | One notification for the whole subtree, with a count and how many failed. With `smart_notifications`, the task titles, states and authored summaries become one sentence instead. |
 | an agent has timely content you are waiting for | you | push | The task-secret or root `/notify` route, only with `orchestrator_agent_notify` on. When it is off, `409 agent_notify_disabled` spends no allowance; the agent does not retry and keeps the content in `result.json`. |
 | a tab whose task is over | nobody | silent | A child's terminal lingers for `orchestrator_child_linger` (180s) after the work ends. |
@@ -43,9 +43,9 @@ no terminal, no clock and no phone, so the whole policy is checkable in a test.
 
 ## Why a child that finishes says nothing to your phone
 
-Five children with three of their own is twenty sessions, and every one of them is a terminal that
-goes idle when it is done. Before the role table existed, a single fan-out was therefore up to
-twenty identical *finished a long run* notifications — none of which said which tree it belonged
+Four roots with five children each is twenty sessions, and every one of them is a terminal that
+goes idle when it is done. Before the role table existed, a busy Mac was therefore up to twenty
+identical *finished a long run* notifications — none of which said which tree it belonged
 to, or whether anything was still outstanding.
 
 That is the same mistake `StateHook.react` already argues against for root sessions, made one level
@@ -65,11 +65,19 @@ on a lock screen reads as a number somebody forgot to fill in.
 
 ## Two things that are easy to get wrong
 
-**The batch is swept from the beat, not from `finalize`.** A task that ends cancels the work it
-handed on *asynchronously*, so at the instant it finishes, a grandchild about to be taken down
-still counts as live and the count never reaches zero. `Orchestrator.sweepBatches` asks again a
-beat later, after the dust has settled, which also covers cancellation, timeouts, and a tab
-somebody closed by hand.
+**The batch is swept from the beat, not from `finalize`.** Cancellation runs *asynchronously*, so
+at the instant a task finishes, something already on its way out still counts as live and the count
+never reaches zero. `Orchestrator.sweepBatches` asks again a beat later, after the dust has settled,
+which also covers cancellation, timeouts, and a tab somebody closed by hand.
+
+**The parent-task lane in `notifyRoot` outlived the level it was written for.** A root writes
+`root.session_id` into the task it dispatches, so a depth-1 task can be traced back to a tab
+through the hook notes. When the tree still had two levels a child dispatched with
+`root.parent_task` and nothing else — deliberately, because a Codex child has no hook note to be
+found by — and the first guard in `notifyRoot` failed at depth 2, so the line was dropped in
+silence; the fix was the parent task's own terminal, which `record(of:)` had been resolving all
+along. Nothing reaches that lane now, because a child dispatches nothing. It is kept because a
+stored record from an older build still can.
 
 **The line to a grandchild's parent had never fired.** A root writes `root.session_id` into the
 task it dispatches, so a depth-1 task can be traced back to a tab through the hook notes. The

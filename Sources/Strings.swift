@@ -340,15 +340,6 @@ protocol Copy {
     /// about whether it is the one that was chosen for you.
     var settingsOrchestratorMax: String { get }
     var settingsOrchestratorMaxHint: String { get }
-    /// The second cap, 0 to 10: what a session that is itself doing somebody's errand may hand
-    /// on in turn. Zero is a real setting rather than a disabled one — it is the rule this app
-    /// had before the level existed, and the hint has to say so, because "none" in a list of
-    /// numbers looks like something broken rather than something chosen.
-    var settingsOrchestratorSubMax: String { get }
-    var settingsOrchestratorSubMaxHint: String { get }
-    /// The `0` stop, which is a sentence and not a digit: what is off is a whole level, not a
-    /// count of anything.
-    var settingsOrchestratorSubMaxNone: String { get }
     /// How far a dispatched child may go before stopping to ask. Three stops, and the hint has
     /// to carry the reason the middle one is the default — that a tab nobody is watching does
     /// not stop for approval, it stops for good.
@@ -666,6 +657,14 @@ protocol Copy {
     var webSteps: String { get }
     var webJustNow: String { get }
     var webMinutesAgo: String { get }
+    /// The copy button on a fenced code block, and the two answers a press can have.
+    ///
+    /// The failure is a sentence rather than silence on purpose. `navigator.clipboard` is absent
+    /// on any page served over plain http — which is how this one is read on a home network —
+    /// and a button that does nothing at all reads as a page that has stopped working.
+    var webCodeCopy: String { get }
+    var webCodeCopied: String { get }
+    var webCodeCopyFailed: String { get }
 
     var webSend: String { get }
     var webAttach: String { get }
