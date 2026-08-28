@@ -206,15 +206,17 @@ A new test must be seen red before the change that makes it green. A test born g
 nothing: reviews here have repeatedly found suites that stayed green after the guarded logic was
 replaced with a stub — or deleted outright. Break the thing once, watch the test catch it, then fix it.
 
-**Assert on the check count, not on the exit code.** The reason is measured on this repository's own
-guard: `Tests/test-sh-streaming.mjs` says it proves `test.sh` "reports the binary's status", but the
-block it lifts out ends at `set -e`, and the line that actually reports that status — `exit
-"$status"` — is on the far side of it. Delete that line and all five of its checks stay green, while
-the `test.sh` it just approved would report a red suite as `exit 0`. Nothing is broken today, the
-line is still there and I read it; what the day's green lights actually rest on is the check counts
-in the logs, not exit codes. An empty snapshot produces no check count and a trapped log produces no
-check count, which is exactly the difference a status of 0 cannot show you. **This stands even after
-that guard is repaired.**
+**Assert on the check count, not on the exit code.** The reason was measured on this repository's
+own guard, and the gap it was measured in is now closed. `Tests/test-sh-streaming.mjs` said it
+proved `test.sh` "reports the binary's status", but the block it lifted out ended at `set -e`, and
+the line that actually reports that status — `exit "$status"` — sat on the far side of it: deleting
+that line left all five of its checks green, while the `test.sh` they had just approved would
+report a red suite as `exit 0`. **`9487dce8` repaired it** — the extraction now walks forward to
+the last `fi` of the status branches, `exit "$status"` is inside the block it runs, and a sixth
+check reads the run's own status — so read that paragraph as history, not as a live hole in the
+guard. **The rule it bought is not history.** What a day's green lights actually rest on is the
+check counts in the logs, not exit codes: an empty snapshot produces no check count and a trapped
+log produces no check count, which is exactly the difference a status of 0 cannot show you.
 
 Do not build from the live working tree, because it may contain another session's partial edits or
 untracked files.
@@ -384,9 +386,22 @@ goes quiet; `/usr/bin/grep` is BSD grep 2.6.0-FreeBSD and answered correctly in 
 above. Written as a fact about `grep` it is a fact about one shell on one machine, and whoever
 checks it from another shell will report that it does not reproduce.
 
-The prescription is unchanged and still worth following: always pass `-a` when grepping a log that
-may be truncated, which costs nothing; and **never read grep's silence as evidence that a log was
-truncated.** For that, use `file` or the byte count.
+The prescription's first half is unchanged and still worth following: always pass `-a` when grepping
+a log that may be truncated, which costs nothing; and **never read grep's silence as evidence that a
+log was truncated.**
+
+**Its second half — *for that, use `file` or the byte count* — had never been measured, and neither
+tool detects truncation on its own.** `file -b --mime-encoding` answers `unknown-8bit` only when
+something follows the invalid bytes: a newline behind them, or more of the line after them, which is
+rows two and three of the table above. Row one — the bytes simply stop there, which is the shape a
+crashed run usually leaves, and the row this section already calls the common case — comes back
+`utf-8`, the same answer it gives for a log that was never cut at all. And a byte count is not
+readable without the destination stdout had: measured on this Mac, `st_blksize` is **4096 for a
+regular file and 16384 for a pipe**, so one number is a filled buffer on one destination and a
+fraction of one on the other. (That is the stdio buffer for a destination, not the page size two
+sections down; the two are separate constants that happen to share a value on pipes here.) So read
+the last bytes themselves — `tail -c` — and if a size is going to carry an argument, record where
+stdout was pointed when it was taken.
 
 ### A sample taken along one path measures that path
 

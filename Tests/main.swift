@@ -10841,6 +10841,18 @@ group("a name survives its source going quiet") {
     SessionNaming.lookForTesting = { _ in SessionNaming.Name(title: "renamed", handle: nil) }
     SessionNaming.expireForTesting()
     expect("a fresh title replaces the remembered one", session.displayLabel, "renamed")
+
+    // A closed tab is never asked about again, so the only thing that can drop its name is a
+    // reading of what is still on screen. `Orchestrator.pruneClosedHandoffTitles(visible:)` is
+    // next door for the same reason, and states the sharper half: a terminal id is reusable, so
+    // a name left under a closed tab's id is a name waiting to be handed to a later session.
+    SessionNaming.forget(closedFrom: [session.id])
+    SessionNaming.lookForTesting = { _ in .none }
+    SessionNaming.expireForTesting()
+    expect("a visible tab keeps its remembered name", session.displayLabel, "renamed")
+    SessionNaming.forget(closedFrom: [])
+    check("a closed tab's reusable id does not carry its name into a later session",
+          SessionNaming.title(of: session) == nil)
 }
 
 group("a remembered name belongs to a conversation, not to a tab") {
