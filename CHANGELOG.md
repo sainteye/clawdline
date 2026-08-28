@@ -9,6 +9,29 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: a session can be called what you called it
+
+What a session was called was decided entirely by machines: the task title this app pinned on a
+tab it opened, the name Codex keeps on a thread, or whatever Claude Code last wrote into the
+terminal title. `/rename` reaches that last one and nothing else, and on a tab opened for a
+dispatch or a handoff it could not be seen at all, because the task title sat in front of it.
+
+The title on the Session info card is something you can press now. Type a name, send it, and that
+is what the list, the panel and every notification call it. Empty the field and the automatic name
+comes back. `POST /v1/sessions/:id/title` is the same thing over HTTP, behind the same switch as
+sending, and an empty title clears it there too.
+
+A name belongs to the conversation rather than to the tab, which is narrower than it sounds and is
+the point: leaving `claude` and starting it again in the same window keeps the window, and the
+next conversation gets its own automatic name instead of inheriting the one you chose for the
+last one.
+
+Downstream is told when it can be, and the answer says which happened. Codex takes the name on its
+thread straight away. Claude is sent `/rename` only when it is idle and not showing a menu — a
+slash command typed into a running turn interrupts it, and one typed into a question answers the
+question — so a session that is busy keeps the name here and says the downstream name did not
+change, rather than implying it will catch up later.
+
 ### Added: schedules you can make, instead of only read
 
 A schedule — "every weekday at nine, open a session in this project and tell it to do this" —
