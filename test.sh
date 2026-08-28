@@ -28,6 +28,10 @@ tools/build-compatibility.py --check
 tools/check-web-strings.py
 tools/check-web-ids.py
 
+# The checked-in protocol fixture is the cross-runtime byte authority. Generate the expected
+# bytes in memory and compare through the generator's read-only mode so hand edits fail closed.
+swift tools/generate-protocol-vectors.swift --check Tests/protocol-vectors.json
+
 # Keep the small browser-independent renderer contracts beside the Swift suite. The web app's
 # scoped package.json marks its shipped files as ESM, matching the browser's module entry.
 node Tests/web-schedules.mjs
