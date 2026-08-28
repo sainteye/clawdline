@@ -432,3 +432,31 @@ items:
     who_hurts: user
     trigger: A Codex task binds to a rollout from a replaced process or reused tty.
     opened: 2026-08-26
+
+  - id: B-ATTACH-GRANT-TIED-TO-TAB
+    title: The attach grant is recorded against a terminal id, not the process that actually holds it
+    problem: >-
+      `attach_not_managed` exists to stop a follow-up being typed into a session that was never
+      given `--add-dir /tmp/.clawdline`, because such a child's first act — reading its own
+      `CHILD.md` — raises a permission question on a tab nobody is watching for it, and the menu
+      answerer would press the first option. The guard now rests on a grant persisted when the
+      process started, which is right, but the grant is keyed on the terminal id rather than on the
+      process that received it. A person who restarts the assistant in that same tab gets a new
+      process with no such grant, while the role and the recorded grant both survive, so the guard
+      goes on saying yes to a session that can no longer read the directory. The failure is silent
+      and lands exactly where the guard was built to protect.
+    evidence: >-
+      Independent review `3cbbb7b7` of `eda0fa76`, 2026-08-28, raised this as MEDIUM and explicitly
+      marked it not a landing blocker because closing it is a design decision rather than a repair.
+      The materials are already in `Sources/Orchestrator.swift` and used daily by `brief()`:
+      `childPID`, `childProcStart`, and `identityStep`'s `refuseForeignProcess`, which is how child
+      delivery already refuses a tty whose process was replaced.
+    severity: degrades
+    cost: hours
+    who_hurts: user
+    trigger: >-
+      Restart an assistant in a standing session's tab, then dispatch a follow-up with
+      `attach_session` naming it, and watch whether the child stops on a permission question. If it
+      does, extend the persisted grant to carry pid and process start and compare them the way
+      `refuseForeignProcess` already does.
+    opened: 2026-08-28
