@@ -42,13 +42,32 @@ func runCoordinatorRegistrationWorkerIfRequested() {
 
 runCoordinatorRegistrationWorkerIfRequested()
 
-// The suite exercises persistence and deliberate corruption repeatedly. Keep those fixtures out
-// of the installed app's live registry even when the test binary is run outside a sandbox.
-let orchestratorTestStoreDirectory = FileManager.default.temporaryDirectory
-    .appendingPathComponent("clawdline-orchestrator-tests-\(UUID().uuidString)", isDirectory: true)
-try! FileManager.default.createDirectory(at: orchestratorTestStoreDirectory,
+// Do this in the test binary itself, not only in `test.sh`. Contributors sometimes run the
+// already-compiled binary while narrowing a failure; without an in-process boundary that reads
+// the installed app's real push subscriptions and schedule fixtures can notify a real phone.
+let isolatedTestStoreDirectory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("clawdline-test-store-\(UUID().uuidString)", isDirectory: true)
+try! FileManager.default.createDirectory(at: isolatedTestStoreDirectory,
                                          withIntermediateDirectories: true)
-Orchestrator.storeURLOverrideForTesting = orchestratorTestStoreDirectory
+guard setenv("CLAWDLINE_REMOTE_DIR", isolatedTestStoreDirectory.path, 1) == 0 else {
+    fatalError("could not isolate the test remote store")
+}
+
+/// A subprocess-only entry used to prove that the test binary protects the live remote store
+/// even when somebody runs the compiled binary directly instead of entering through `test.sh`.
+func runRemoteDirectoryIsolationProbeIfRequested() {
+    guard ProcessInfo.processInfo.environment["CLAWDLINE_TEST_REMOTE_DIRECTORY_PROBE"] == "1"
+    else { return }
+    print(RemoteAuth.directory.path)
+    try? FileManager.default.removeItem(at: isolatedTestStoreDirectory)
+    exit(0)
+}
+
+runRemoteDirectoryIsolationProbeIfRequested()
+
+// The suite exercises persistence and deliberate corruption repeatedly. Keep those fixtures in
+// the same process-owned boundary as RemoteAuth and WebPush.
+Orchestrator.storeURLOverrideForTesting = isolatedTestStoreDirectory
     .appendingPathComponent("orchestrator.json")
 
 // A test binary rather than XCTest, for the same reason the app has no Xcode project:
@@ -113,6 +132,32 @@ func group(_ title: String, _ body: () -> Void) {
     body()
     let mark = failures.count == before ? "✓" : "✗"
     print("  \(mark) \(title)")
+}
+
+group("the test binary isolates push state even when it is launched directly") {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    process.arguments = Array(CommandLine.arguments.dropFirst())
+    var environment = ProcessInfo.processInfo.environment
+    environment.removeValue(forKey: "CLAWDLINE_REMOTE_DIR")
+    environment["CLAWDLINE_TEST_REMOTE_DIRECTORY_PROBE"] = "1"
+    process.environment = environment
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+    do {
+        try process.run()
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        process.waitQuietly()
+        let live = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/clawdline", isDirectory: true).path
+        check("a direct test process never opens the live remote and push store",
+              process.terminationStatus == 0 && output != live
+                && output.hasPrefix(FileManager.default.temporaryDirectory.path), output)
+    } catch {
+        check("the direct-process isolation probe starts", false, "\(error)")
+    }
 }
 
 /// Keep main available to background work that completes with `DispatchQueue.main.sync`, while
@@ -21860,7 +21905,7 @@ Task {
 
     cloudRunnerWatchdog.cancel()
     Orchestrator.storeURLOverrideForTesting = nil
-    try? FileManager.default.removeItem(at: orchestratorTestStoreDirectory)
+    try? FileManager.default.removeItem(at: isolatedTestStoreDirectory)
     print("")
     let finalStatus: Int32
     if failures.isEmpty {
