@@ -409,6 +409,9 @@ struct Hindi: Copy {
     let webSteps = "{n} चरण"
     let webJustNow = "अभी-अभी"
     let webMinutesAgo = "{n} मिनट पहले"
+    let webCodeCopy = "यह कोड कॉपी करें"
+    let webCodeCopied = "कोड कॉपी हो गया।"
+    let webCodeCopyFailed = "कॉपी नहीं हो सका — टेक्स्ट चुनें।"
 
     let webSend = "भेजें"
     let webAttach = "तस्वीर लगाएँ"

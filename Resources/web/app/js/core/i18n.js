@@ -180,6 +180,9 @@ export var T = {
     webSteps: "{n} steps",
     webJustNow: "just now",
     webMinutesAgo: "{n}m ago",
+    webCodeCopy: "Copy this code",
+    webCodeCopied: "Code copied.",
+    webCodeCopyFailed: "Could not copy — select the text instead.",
 
     // A question Claude stopped to ask, and the state of a session that is still on one.
     webAskLabel: "asked",

@@ -43,6 +43,7 @@ node Tests/web-viewport.mjs
 node Tests/web-layout-diagnostics.mjs
 node Tests/web-session-disposition.mjs
 node Tests/web-title-transport.mjs
+node Tests/web-code-copy.mjs
 # Two suites that existed and that nothing ran: neither was in this list, and CI only runs
 # this script. A test nobody runs is a test that passes.
 node Tests/web-user-messages.mjs

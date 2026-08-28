@@ -405,6 +405,9 @@ struct Spanish: Copy {
     let webSteps = "{n} pasos"
     let webJustNow = "ahora mismo"
     let webMinutesAgo = "hace {n} min"
+    let webCodeCopy = "Copiar este código"
+    let webCodeCopied = "Código copiado."
+    let webCodeCopyFailed = "No se pudo copiar; selecciona el texto."
 
     let webSend = "Enviar"
     let webAttach = "Adjuntar una imagen"

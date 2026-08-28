@@ -1,4 +1,6 @@
 import { esc } from "../core/esc.js";
+import { T } from "../core/i18n.js";
+import { toast } from "../core/util.js";
 
 /* --------------------------------------------------------------------------
    Markdown, to the same depth the bar's own pane reads it
@@ -32,7 +34,7 @@ export function richText(text) {
             i += 1;
             while (i < lines.length && lines[i].trim().indexOf("```") !== 0) { body.push(lines[i]); i += 1; }
             i += 1;
-            out.push('<pre class="code">' + esc(body.join("\n")) + "</pre>");
+            out.push(codeBlockHTML(body.join("\n")));
             continue;
         }
 
@@ -92,6 +94,63 @@ export function richText(text) {
         out.push("<p>" + inlineMd(paragraph.join(" ")) + "</p>");
     }
     return out.join("");
+}
+
+/**
+ * A fenced block, and the button that puts it on the clipboard.
+ *
+ * A command in a transcript is there to be run somewhere else, and until this existed the only
+ * way to get one out of the page was to select it by hand — inside a box that scrolls sideways,
+ * on a phone. So the block gets a wrapper, and the button is a child of the *wrapper* rather
+ * than of the `<pre>`: inside the `<pre>` it would scroll away with the code it belongs to.
+ *
+ * The text is carried a second time in `data-code-copy`, which is the shape the info card's
+ * copy buttons already have (`data-copy`, `input/info.js`). What reaches the clipboard is
+ * therefore this string — the code as it arrived, before a character was escaped — and never
+ * the markup. That distinction is invisible on screen, which is why `Tests/web-code-copy.mjs`
+ * pins it: a block renders identically whether the button carries `&` or `&amp;`, and the
+ * difference only appears in whatever the reader pastes it into.
+ *
+ * Newlines are written as `&#10;` deliberately. A raw newline inside an attribute does survive
+ * the HTML parser, but it survives by a rule about attribute-value normalisation that nothing
+ * else on this page depends on — and a four-line snippet arriving as one long line would be a
+ * wrong answer nobody sees until it is in a shell.
+ *
+ * An empty block has nothing to copy, and gets exactly the markup it had before.
+ */
+export function codeBlockHTML(code) {
+    var text = String(code == null ? "" : code);
+    var block = '<pre class="code">' + esc(text) + "</pre>";
+    if (!text) return block;
+    return '<div class="codeblock">' + block +
+        '<button type="button" class="codecopy" data-code-copy="' +
+        esc(text).replace(/\n/g, "&#10;") + '" title="' + esc(T.webCodeCopy) +
+        '" aria-label="' + esc(T.webCodeCopy) + '">' +
+        // Drawn rather than typed, for the reason `input/info.js` gives beside the same two
+        // rectangles: the glyphs for "copy" live in a Unicode block a phone's system font need
+        // not carry, and a tofu box on the only button over a command is worse than no button.
+        '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
+        '<rect x="5.25" y="1.75" width="9" height="9" rx="2"></rect>' +
+        '<rect x="1.75" y="5.25" width="9" height="9" rx="2"></rect></svg></button></div>';
+}
+
+/**
+ * The clipboard, reached the way `input/info.js` reaches it — with one deliberate difference.
+ *
+ * There, a browser with no `navigator.clipboard` and a rejected write are both silent. Here
+ * they say so. This button is the whole of the answer to "how do I get this command out of the
+ * page", and a press that produces nothing at all cannot be told apart from a page that has
+ * stopped working. The absent-clipboard branch is not hypothetical: the object is missing on
+ * any page served over plain http, which is how this one is read on a home network.
+ *
+ * Returns the promise so a test can wait for the answer; nothing in the page awaits it.
+ */
+export function copyCodeBlock(text) {
+    if (typeof text !== "string" || !text) return Promise.resolve();
+    if (!navigator.clipboard) { toast(T.webCodeCopyFailed, true); return Promise.resolve(); }
+    return navigator.clipboard.writeText(text).then(function () {
+        toast(T.webCodeCopied);
+    }).catch(function () { toast(T.webCodeCopyFailed, true); });
 }
 
 function isBlockStart(line) {

@@ -404,6 +404,9 @@ struct English: Copy {
     let webSteps = "{n} steps"
     let webJustNow = "just now"
     let webMinutesAgo = "{n}m ago"
+    let webCodeCopy = "Copy this code"
+    let webCodeCopied = "Code copied."
+    let webCodeCopyFailed = "Could not copy — select the text instead."
 
     let webSend = "Send"
     let webAttach = "Attach a picture"

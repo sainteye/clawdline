@@ -4245,6 +4245,9 @@ final class RemoteServer: @unchecked Sendable {
             "webSteps": t.webSteps,
             "webJustNow": t.webJustNow,
             "webMinutesAgo": t.webMinutesAgo,
+            "webCodeCopy": t.webCodeCopy,
+            "webCodeCopied": t.webCodeCopied,
+            "webCodeCopyFailed": t.webCodeCopyFailed,
         ])
 
         // The composer, and what it refuses.

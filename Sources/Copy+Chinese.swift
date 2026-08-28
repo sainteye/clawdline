@@ -404,6 +404,9 @@ struct TraditionalChinese: Copy {
     let webSteps = "{n} 個動作"
     let webJustNow = "剛剛"
     let webMinutesAgo = "{n} 分鐘前"
+    let webCodeCopy = "複製這段程式碼"
+    let webCodeCopied = "已複製程式碼。"
+    let webCodeCopyFailed = "複製失敗，請改用手動選取。"
 
     let webSend = "送出"
     let webAttach = "附一張圖"
@@ -1126,6 +1129,9 @@ struct SimplifiedChinese: Copy {
     let webSteps = "{n} 个动作"
     let webJustNow = "刚刚"
     let webMinutesAgo = "{n} 分钟前"
+    let webCodeCopy = "复制这段代码"
+    let webCodeCopied = "已复制代码。"
+    let webCodeCopyFailed = "复制失败，请改用手动选取。"
 
     let webSend = "发送"
     let webAttach = "附一张图"

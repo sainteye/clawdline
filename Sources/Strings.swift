@@ -657,6 +657,14 @@ protocol Copy {
     var webSteps: String { get }
     var webJustNow: String { get }
     var webMinutesAgo: String { get }
+    /// The copy button on a fenced code block, and the two answers a press can have.
+    ///
+    /// The failure is a sentence rather than silence on purpose. `navigator.clipboard` is absent
+    /// on any page served over plain http — which is how this one is read on a home network —
+    /// and a button that does nothing at all reads as a page that has stopped working.
+    var webCodeCopy: String { get }
+    var webCodeCopied: String { get }
+    var webCodeCopyFailed: String { get }
 
     var webSend: String { get }
     var webAttach: String { get }

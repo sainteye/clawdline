@@ -405,6 +405,9 @@ struct Indonesian: Copy {
     let webSteps = "{n} langkah"
     let webJustNow = "barusan"
     let webMinutesAgo = "{n} menit lalu"
+    let webCodeCopy = "Salin kode ini"
+    let webCodeCopied = "Kode disalin."
+    let webCodeCopyFailed = "Tidak bisa menyalin; pilih teksnya."
 
     let webSend = "Kirim"
     let webAttach = "Lampirkan gambar"
