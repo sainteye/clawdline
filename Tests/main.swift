@@ -81,6 +81,15 @@ runRemoteDirectoryIsolationProbeIfRequested()
 Orchestrator.storeURLOverrideForTesting = isolatedTestStoreDirectory
     .appendingPathComponent("orchestrator.json")
 
+// ``SessionNaming`` reads this Mac's live sessions to name them — a `ps`, whatever is in
+// `~/.claude/sessions/`, and somebody's real transcripts. A suite must not: a `TargetSession`
+// invented here says `tty: "/dev/ttys004"`, and on a developer's machine that is a real terminal
+// with a real conversation in it, so the same assertion would read `Ledger reader layer` on one
+// machine and `⌘1-1` on the next. Silent by default; the groups that are about naming install
+// their own answer and put this one back.
+let noSessionNames: (TargetSession) -> SessionNaming.Name = { _ in .none }
+SessionNaming.lookForTesting = noSessionNames
+
 // A test binary rather than XCTest, for the same reason the app has no Xcode project:
 // `swiftc` and nothing else. Run it with ./test.sh.
 //
@@ -6599,7 +6608,15 @@ group("state hook: the words a hook reads") {
 }
 
 group("state hook: what a hook is told") {
-    let session = hookTarget("A9F3", title: "✳ fix the webhook (claude)",
+    // A hook is told the display label, and a display label comes from the conversation's own
+    // record rather than from the tab it is sitting in — so the record is what is stubbed here,
+    // and the tab is given the worst title it could have.
+    defer { SessionNaming.lookForTesting = noSessionNames; SessionNaming.forgetForTesting() }
+    SessionNaming.forgetForTesting()
+    SessionNaming.lookForTesting = { _ in
+        SessionNaming.Name(title: "fix the webhook", handle: nil)
+    }
+    let session = hookTarget("A9F3", title: "Default (python)",
                              cwd: "/Users/x/code/clawdline")
     let env = StateHook.environment(
         for: StateHook.Change(session: session, from: .working("Cogitating… (7s)"), to: .waiting),
@@ -6610,9 +6627,11 @@ group("state hook: what a hook is told") {
     expect("the one it came from", env["CLAWDLINE_PREV_STATE"], "working")
     expect("the session id", env["CLAWDLINE_SESSION_ID"], "A9F3")
     expect("the tty", env["CLAWDLINE_TTY"], "/dev/ttys004")
-    // The label, not the raw title: the glyph on the front is a frame of an animation and the
-    // job name in brackets is iTerm2's, and neither is worth putting in a notification.
+    // The display label, not the tab title: a title is a place a name is shown, and a tab whose
+    // title has been emptied still reads `Default` on every row that trusted it.
     expect("the label as a person reads it", env["CLAWDLINE_LABEL"], "fix the webhook")
+    check("and nothing the terminal is called reaches the hook",
+          env["CLAWDLINE_LABEL"] != session.label && env["CLAWDLINE_LABEL"] != session.name)
     expect("where it is working", env["CLAWDLINE_CWD"], "/Users/x/code/clawdline")
     expect("and Claude Code's own id, which names the transcript",
            env["CLAWDLINE_CLAUDE_SESSION"], "3f6a1c2e-7b4d-4a9e-8c15-2d0e9f7b6a34")
@@ -6647,11 +6666,18 @@ group("state hook: what a hook is told") {
 }
 
 group("push notifications identify the session and its project") {
-    let session = hookTarget("A9F3", title: "✳ fix the webhook (claude)")
+    defer { SessionNaming.lookForTesting = noSessionNames; SessionNaming.forgetForTesting() }
+    SessionNaming.forgetForTesting()
+    SessionNaming.lookForTesting = { _ in
+        SessionNaming.Name(title: "fix the webhook", handle: nil)
+    }
+    // A notification reaching a phone saying `Default` is the same defect one surface further
+    // out, so the tab here is titled the way the eleven on 2026-08-28 were.
+    let session = hookTarget("A9F3", title: "Default (python)")
     let waiting = StateHook.pushMessage(
         for: session, project: "clawdline", event: "is waiting for an answer")
 
-    expect("the cleaned session task is the title", waiting.title, "fix the webhook")
+    expect("the session's own name is the title", waiting.title, "fix the webhook")
     expect("the project and event are the body", waiting.body,
            "clawdline is waiting for an answer")
 
@@ -10565,7 +10591,7 @@ group("a person-named session title outranks every automatic label") {
 // files the whole time. So the terminal is not a place a name is kept, and nothing below may
 // read one from it.
 group("a session's name never comes from its terminal's tab title") {
-    defer { SessionNaming.lookForTesting = nil; SessionNaming.forgetForTesting() }
+    defer { SessionNaming.lookForTesting = noSessionNames; SessionNaming.forgetForTesting() }
     func tab(_ title: String, id: String = UUID().uuidString,
              assistant: Assistant? = .claude, tab index: Int = 0) -> TargetSession {
         TargetSession(backend: .iterm, id: id, name: title, tty: "/dev/ttys900",
@@ -10603,7 +10629,7 @@ group("a session's name never comes from its terminal's tab title") {
 // must not blank a name. The rung above was added because a source disappeared; a rung that
 // disappears the same way has bought nothing.
 group("a name survives its source going quiet") {
-    defer { SessionNaming.lookForTesting = nil; SessionNaming.forgetForTesting() }
+    defer { SessionNaming.lookForTesting = noSessionNames; SessionNaming.forgetForTesting() }
     let session = TargetSession(backend: .iterm, id: UUID().uuidString, name: "Default (python)",
                                 tty: "/dev/ttys901", windowIndex: 0, tabIndex: 0,
                                 assistant: .claude)
@@ -10736,8 +10762,8 @@ group("renaming never changes the terminal label used to locate transcripts") {
                                name: "Claude Code", tty: "/dev/ttys099",
                                windowIndex: 0, tabIndex: 0, assistant: .claude)
     let display = TargetSession.preferredDisplayLabel(
-        manualTitle: "Human title", orchestratorTitle: nil,
-        threadName: nil, terminalLabel: target.label)
+        manualTitle: "Human title", orchestratorTitle: nil, conversationTitle: nil,
+        threadName: nil, handle: nil, coordinate: target.coordinate)
     expect("the display calculation can change independently", display, "Human title")
 
     let directory = FileManager.default.temporaryDirectory
@@ -10963,8 +10989,9 @@ group("clearing a title takes the Codex name off Clawdline's surfaces too") {
     // not, which is a check that passes for every possible edit to this repository.
     func label() -> String {
         TargetSession.preferredDisplayLabel(
-            manualTitle: nil, orchestratorTitle: nil,
-            threadName: CodexNaming.shared.title(for: target), terminalLabel: target.label)
+            manualTitle: nil, orchestratorTitle: nil, conversationTitle: nil,
+            threadName: CodexNaming.shared.title(for: target), handle: nil,
+            coordinate: target.coordinate)
     }
     CodexNaming.shared.rememberForTesting("Release room", threadID: "thread-clear",
                                           targetID: target.id)
@@ -10974,8 +11001,10 @@ group("clearing a title takes the Codex name off Clawdline's surfaces too") {
           CodexNaming.shared.title(for: target) == nil)
     // The half that stays: the thread keeps the name in Codex's own metadata, because
     // `thread/name/set` has no undo and this app does not know what Codex would have called it.
-    // What has to come back here is the automatic label, not the name that was just cleared.
-    expect("so the label falls back to the terminal's own", label(), "codex")
+    // What has to come back here is the automatic label, not the name that was just cleared —
+    // and the automatic label is no longer the tab's title, which for this tab reads `codex`.
+    expect("so the label falls back to where the tab is", label(), target.coordinate)
+    check("and not to what the terminal calls itself", label() != target.label)
 }
 
 group("a rename is not typed into a session that is showing a menu") {
@@ -15713,7 +15742,12 @@ group("the wait session index says what a wait must name, and nothing off the sc
         Orchestrator.forget()
     }
 
-    let claude = TargetSession(backend: .iterm, id: "SESSION-A", name: "✳ fix the webhook",
+    defer { SessionNaming.lookForTesting = noSessionNames; SessionNaming.forgetForTesting() }
+    SessionNaming.forgetForTesting()
+    SessionNaming.lookForTesting = { _ in
+        SessionNaming.Name(title: "fix the webhook", handle: nil)
+    }
+    let claude = TargetSession(backend: .iterm, id: "SESSION-A", name: "Default (python)",
                                tty: "/dev/ttys004", windowIndex: 0, tabIndex: 0,
                                assistant: .claude, cwd: "/Users/me/code/clawdline")
     let codex = TargetSession(backend: .tmux, id: "%codex", name: "envelope work",
@@ -15739,8 +15773,10 @@ group("the wait session index says what a wait must name, and nothing off the sc
     expect("it names which assistant is in there", first["assistant"] as? String, "claude")
     expect("and the checkout the wait is about", first["cwd"] as? String,
            "/Users/me/code/clawdline")
-    expect("the label is the tab's own, without the spinner frame in front of it",
+    expect("the label is the conversation's own, not the tab's",
            first["label"] as? String, "fix the webhook")
+    check("a tab titled Default does not put Default on a wait",
+          first["label"] as? String != claude.label)
     expect("and the terminal state, so a caller knows whether anybody is home",
            first["state"] as? String, "working")
     expect("and every row has exactly one closed work-state projection",
