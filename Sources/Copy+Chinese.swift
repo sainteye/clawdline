@@ -176,6 +176,8 @@ struct TraditionalChinese: Copy {
     }
     let settingsPushFinish = "一段長工作跑完時通知我"
     let settingsPushFinishHint = "只有跑超過兩分鐘的才算。"
+    let settingsSmartNotifications = "智慧通知"
+    let settingsSmartNotificationsHint = "用 Haiku 說明剛完成了什麼；產生失敗時仍會送出原本的通知。"
     let settingsPushDeploy = "deploy 結束時通知我"
     let settingsPushDeployHint = "成功和失敗都會通知。"
     let settingsAgentNotify = "允許 agent 主動推播"
@@ -804,6 +806,8 @@ struct SimplifiedChinese: Copy {
     }
     let settingsPushFinish = "一段长任务跑完时通知我"
     let settingsPushFinishHint = "只有跑超过两分钟的才算。"
+    let settingsSmartNotifications = "智能通知"
+    let settingsSmartNotificationsHint = "用 Haiku 说明刚完成了什么；生成失败时仍会发送原来的通知。"
     let settingsPushDeploy = "deploy 结束时通知我"
     let settingsPushDeployHint = "成功和失败都会通知。"
     let settingsAgentNotify = "允许 agent 主动推送"

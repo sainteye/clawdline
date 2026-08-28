@@ -175,6 +175,8 @@ struct German: Copy {
     }
     let settingsPushFinish = "Bescheid sagen, wenn ein langer Durchlauf fertig ist"
     let settingsPushFinishHint = "Nur ab zwei Minuten."
+    let settingsSmartNotifications = "Intelligente Benachrichtigungen"
+    let settingsSmartNotificationsHint = "Haiku beschreibt die fertige Arbeit in einem Satz. Bei Fehlern bleibt die normale Meldung."
     let settingsPushDeploy = "Bescheid sagen, wenn ein Deploy endet"
     let settingsPushDeployHint = "Erfolg wie Fehlschlag."
     let settingsAgentNotify = "Agenten eigene Mitteilungen senden lassen"

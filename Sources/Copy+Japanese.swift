@@ -173,6 +173,8 @@ struct Japanese: Copy {
     }
     let settingsPushFinish = "長い作業が終わったら知らせる"
     let settingsPushFinishHint = "2 分を超えたものだけです。"
+    let settingsSmartNotifications = "スマート通知"
+    let settingsSmartNotificationsHint = "Haiku が完了した内容を一文で伝えます。失敗時は通常の通知に戻ります。"
     let settingsPushDeploy = "デプロイが終わったら知らせる"
     let settingsPushDeployHint = "成功も失敗も知らせます。"
     let settingsAgentNotify = "エージェントからの通知を許可する"

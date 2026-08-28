@@ -175,6 +175,8 @@ struct French: Copy {
     }
     let settingsPushFinish = "Prévenir quand une longue tâche se termine"
     let settingsPushFinishHint = "Seulement au-delà de deux minutes."
+    let settingsSmartNotifications = "Notifications intelligentes"
+    let settingsSmartNotificationsHint = "Haiku résume en une phrase le travail terminé. En cas d’échec, la notification normale est envoyée."
     let settingsPushDeploy = "Prévenir quand un déploiement se termine"
     let settingsPushDeployHint = "Réussite comme échec."
     let settingsAgentNotify = "Autoriser les agents à envoyer leurs propres notifications"

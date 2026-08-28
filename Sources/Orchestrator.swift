@@ -6336,6 +6336,7 @@ enum Orchestrator {
         var failed = 0
         var rootLabel: String?
         var projectDir: String?
+        var tasks: [SmartNotification.TaskLine] = []
     }
 
     /// Root key → tally. In memory only: a process that restarts in the middle of a fan-out has
@@ -6363,6 +6364,8 @@ enum Orchestrator {
         if task.state != .success { batch.failed += 1 }
         if batch.projectDir == nil { batch.projectDir = task.projectDir }
         if batch.rootLabel == nil { batch.rootLabel = task.rootLabel }
+        batch.tasks.append(.init(title: task.title, state: task.state.rawValue,
+                                 summary: task.summary))
         batches[key] = batch
         lock.unlock()
     }
@@ -6406,12 +6409,17 @@ enum Orchestrator {
                              sessionID: Transcript.sessionID(of:)) {
             url = "/#session=\(root.id)"
         }
-        WebPush.send(title: message.title, body: message.body, url: url,
-                     // Keyed on the root and not on a task, so a second fan-out from the same
-                     // session replaces the first rather than stacking under it.
-                     tag: "batch-\(key)",
-                     icon: RemoteIcon.projectPath(
-                        for: batch.projectDir.flatMap { ProjectIcon.grid(forCwd: $0) }))
+        // Keyed on the root and not on a task, so a second fan-out from the same session replaces
+        // the first rather than stacking under it. Smart output and the ordinary count share the
+        // same one-shot delivery boundary.
+        let delivery = SmartNotification.Delivery(
+            title: message.title, project: project, fallbackBody: message.body,
+            url: url, tag: "batch-\(key)",
+            icon: RemoteIcon.projectPath(
+                for: batch.projectDir.flatMap { ProjectIcon.grid(forCwd: $0) }))
+        SmartNotification.send(delivery) {
+            SmartNotification.source(for: batch.tasks)
+        }
     }
 
     /// Pure, so the wording can be checked without a terminal, a phone or a clock.

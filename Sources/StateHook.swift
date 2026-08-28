@@ -389,6 +389,22 @@ enum StateHook {
                      icon: RemoteIcon.projectPath(for: projectMark(for: session)))
     }
 
+    /// A completed turn may wait a few seconds for one better sentence. The transcript identity is
+    /// resolved on the state-reading thread, while the bounded file read and model turn happen on
+    /// `SmartNotification`'s queue. Its fallback sends this exact ordinary message once.
+    private static func sendFinishedPush(for session: TargetSession, event: String) {
+        let project = projectName(for: session)
+        let message = pushMessage(for: session, project: project, event: event)
+        let delivery = SmartNotification.Delivery(
+            title: message.title, project: project, fallbackBody: message.body,
+            url: "/#session=\(session.id)", tag: session.id,
+            icon: RemoteIcon.projectPath(for: projectMark(for: session)))
+        let record = Transcript.record(of: session)
+        SmartNotification.send(delivery) {
+            record.flatMap(SmartNotification.source(from:))
+        }
+    }
+
     private static func react() {
         let states = SessionWatch.shared.states
         let sessions = SessionWatch.shared.targets
@@ -428,7 +444,7 @@ enum StateHook {
             for session in finished {
                 let role = Orchestrator.role(forTerminal: session.id)
                 if case .send(let event) = pushDecision(.finished, role: role, minutesLeft: nil) {
-                    sendPush(for: session, event: event)
+                    sendFinishedPush(for: session, event: event)
                 }
             }
         }

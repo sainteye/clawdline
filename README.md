@@ -573,6 +573,7 @@ itself.
 | `remote_tunnel_name` · `remote_hostname` | `""` | both required for a named tunnel |
 | `cloudflared_path` | `""` | empty looks where package managers put it |
 | `push_on_finish` · `push_on_deploy` | `true` · `false` | when a phone should buzz |
+| `smart_notifications` | `false` | let Haiku replace a generic finish notice with one sentence about what the work did |
 | `orchestrator_enabled` | `true` | may a session hand work to another |
 | `orchestrator_max_children` | `5` | child sessions one session may have out, 1–10 |
 | `orchestrator_max_grandchildren` | `3` | and what each of those may have out, 0–10; `0` stops the tree one level up |

@@ -175,6 +175,8 @@ struct Indonesian: Copy {
     }
     let settingsPushFinish = "Beri tahu kalau pekerjaan panjang selesai"
     let settingsPushFinishHint = "Hanya yang lebih dari dua menit."
+    let settingsSmartNotifications = "Notifikasi pintar"
+    let settingsSmartNotificationsHint = "Haiku merangkum pekerjaan yang selesai dalam satu kalimat. Jika gagal, notifikasi biasa tetap dikirim."
     let settingsPushDeploy = "Beri tahu kalau deploy selesai"
     let settingsPushDeployHint = "Baik berhasil maupun gagal."
     let settingsAgentNotify = "Izinkan agen mengirim notifikasinya sendiri"

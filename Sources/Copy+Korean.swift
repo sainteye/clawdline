@@ -173,6 +173,8 @@ struct Korean: Copy {
     }
     let settingsPushFinish = "긴 작업이 끝나면 알리기"
     let settingsPushFinishHint = "2분이 넘는 작업만입니다."
+    let settingsSmartNotifications = "스마트 알림"
+    let settingsSmartNotificationsHint = "Haiku가 완료한 내용을 한 문장으로 알려 줍니다. 실패하면 일반 알림을 보냅니다."
     let settingsPushDeploy = "배포가 끝나면 알리기"
     let settingsPushDeployHint = "성공도 실패도 알립니다."
     let settingsAgentNotify = "에이전트가 직접 알림을 보내도록 허용"

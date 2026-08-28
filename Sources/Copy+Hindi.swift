@@ -179,6 +179,8 @@ struct Hindi: Copy {
     }
     let settingsPushFinish = "लंबा काम पूरा होने पर बताएँ"
     let settingsPushFinishHint = "सिर्फ़ दो मिनट से लंबे कामों के लिए।"
+    let settingsSmartNotifications = "स्मार्ट सूचनाएँ"
+    let settingsSmartNotificationsHint = "Haiku पूरे हुए काम को एक वाक्य में बताएगा। विफल होने पर सामान्य सूचना भेजी जाएगी।"
     let settingsPushDeploy = "deploy ख़त्म होने पर बताएँ"
     let settingsPushDeployHint = "सफल हो या फ़ेल, दोनों पर।"
     let settingsAgentNotify = "agents को अपनी सूचनाएँ भेजने दें"

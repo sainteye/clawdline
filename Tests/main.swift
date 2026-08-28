@@ -6332,6 +6332,49 @@ group("a fan-out is one sentence, whatever it cost") {
            StateHook.projectName(forDirectory: "/", fallback: "Clawdline"), "Clawdline")
 }
 
+group("smart notifications describe the completed work, not its machinery") {
+    let entries = [
+        Transcript.Entry(kind: .user, text: "old request", tool: nil, time: nil),
+        Transcript.Entry(kind: .assistant, text: "old answer", tool: nil, time: nil),
+        Transcript.Entry(kind: .user, text: "fix reconnect delivery", tool: nil, time: nil),
+        Transcript.Entry(kind: .tool, text: "Tests/main.swift", tool: "Read", time: nil),
+        Transcript.Entry(kind: .toolResult, text: "thousands of noisy bytes", tool: nil,
+                         time: nil),
+        Transcript.Entry(kind: .assistant,
+                         text: "Fixed SSE resume and added a lost-event regression test.",
+                         tool: nil, time: nil),
+    ]
+    expect("only the last request and answer become summary material",
+           SmartNotification.context(from: entries),
+           SmartNotification.Context(
+            request: "fix reconnect delivery",
+            outcome: "Fixed SSE resume and added a lost-event regression test."))
+    check("a tool result cannot stand in for a completed answer",
+          SmartNotification.context(from: Array(entries.dropLast())) == nil)
+
+    let tasks = [
+        SmartNotification.TaskLine(title: "resume", state: "success",
+                                   summary: "Added SSE replay."),
+        SmartNotification.TaskLine(title: "receipts", state: "failure",
+                                   summary: "The terminal bridge stayed blocked."),
+    ]
+    let source = SmartNotification.source(for: tasks) ?? ""
+    check("a fan-out names each task, state and authored summary",
+          source.contains("resume") && source.contains("success")
+            && source.contains("Added SSE replay.") && source.contains("failure")
+            && source.contains("The terminal bridge stayed blocked."))
+
+    let envelope = #"{"structured_output":{"summary":"  修好 SSE 重連\n並補上測試。  "}}"#
+    expect("structured model output becomes one lock-screen sentence",
+           SmartNotification.summary(fromClaudeOutput: envelope), "修好 SSE 重連 並補上測試。")
+    check("an empty model answer is a failure, so the ordinary notice can take over",
+          SmartNotification.summary(fromClaudeOutput:
+            #"{"structured_output":{"summary":"   "}}"#) == nil)
+    expect("the project remains visible beside the generated account",
+           SmartNotification.body(project: "clawdline", summary: "修好重連。"),
+           "clawdline · 修好重連。")
+}
+
 group("a push payload keeps the beginning of a sentence that does not fit") {
     let beginning = "KEEP THE FORECAST: "
     let ending = " THROW THIS TAIL AWAY"
@@ -13963,6 +14006,32 @@ group("the agent-notification preference defaults on, including for old config f
         .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
     expect("saving uses the orchestrator_agent_notify key",
            written?["orchestrator_agent_notify"] as? Bool, true)
+}
+
+group("smart notifications are an explicit quota-spending preference") {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-smart-notify-config-\(UUID().uuidString)",
+                                isDirectory: true)
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let absent = Config(directoryForTesting: directory)
+    expect("smart notifications default off", absent.smartNotifications, false)
+
+    try! Data("{}".utf8).write(to: directory.appendingPathComponent("config.json"))
+    let missing = Config(directoryForTesting: directory)
+    expect("an old config does not silently start spending assistant quota",
+           missing.smartNotifications, false)
+
+    try! Data("{\"smart_notifications\":true}".utf8)
+        .write(to: directory.appendingPathComponent("config.json"))
+    let enabled = Config(directoryForTesting: directory)
+    expect("the explicit on value is loaded", enabled.smartNotifications, true)
+    enabled.save()
+    let written = (try? Data(contentsOf: enabled.fileURL))
+        .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    expect("saving uses the smart_notifications key",
+           written?["smart_notifications"] as? Bool, true)
 }
 
 group("an agent notification is narrow, scarce and audited") {

@@ -511,6 +511,7 @@ claude
 | `remote_tunnel_name` · `remote_hostname` | `""` | named tunnel 兩個都必填 |
 | `cloudflared_path` | `""` | 空的 ＝ 去套件管理器慣用的位置找 |
 | `push_on_finish` · `push_on_deploy` | `true` · `false` | 手機什麼時候該震 |
+| `smart_notifications` | `false` | 用 Haiku 把籠統的完成通知換成一句「剛完成了什麼」 |
 | `orchestrator_enabled` | `true` | 能不能讓一個 session 把工作派給另一個 |
 | `orchestrator_max_children` | `5` | 一個 session 同時最多派幾個子 session，1–10 |
 | `orchestrator_max_grandchildren` | `3` | 每個子 session 自己又能派幾個，0–10；`0` ＝ 只有一層 |

@@ -175,6 +175,8 @@ struct Turkish: Copy {
     }
     let settingsPushFinish = "Uzun bir iş bitince haber ver"
     let settingsPushFinishHint = "Yalnızca iki dakikayı geçenler."
+    let settingsSmartNotifications = "Akıllı bildirimler"
+    let settingsSmartNotificationsHint = "Haiku biten işi tek cümlede anlatır. Başarısız olursa normal bildirim gönderilir."
     let settingsPushDeploy = "Deploy bitince haber ver"
     let settingsPushDeployHint = "Başarı da hata da."
     let settingsAgentNotify = "Ajanların kendi bildirimlerini göndermesine izin ver"

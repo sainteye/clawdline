@@ -305,6 +305,8 @@ protocol Copy {
     func pushBatchDone(done: Int, failed: Int) -> String
     var settingsPushFinish: String { get }
     var settingsPushFinishHint: String { get }
+    var settingsSmartNotifications: String { get }
+    var settingsSmartNotificationsHint: String { get }
     var settingsPushDeploy: String { get }
     var settingsPushDeployHint: String { get }
     var settingsAgentNotify: String { get }

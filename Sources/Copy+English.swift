@@ -174,6 +174,8 @@ struct English: Copy {
     }
     let settingsPushFinish = "Notify when a long turn finishes"
     let settingsPushFinishHint = "Only for turns over two minutes."
+    let settingsSmartNotifications = "Smart notifications"
+    let settingsSmartNotificationsHint = "Use Haiku to say what the finished work did. Falls back to the ordinary notice."
     let settingsPushDeploy = "Notify when a deploy ends"
     let settingsPushDeployHint = "Both success and failure."
     let settingsAgentNotify = "Let agents send their own notifications"

@@ -29,11 +29,11 @@ around it.
 | what happened | who is blocked on it | channel | what it says |
 | --- | --- | --- | --- |
 | root stops to ask | you | push | Unconditional, ahead of every preference. The one interruption in the app that earns itself. |
-| root ends a long turn | you | push | Only past `finishThreshold` (120s), and only with `push_on_finish` on. Under that you were still looking at the screen. |
+| root ends a long turn | you | push | Only past `finishThreshold` (120s), and only with `push_on_finish` on. With `smart_notifications`, Haiku gets the bounded last request and answer and replaces the generic body with one sentence. |
 | child stops to ask | you, and only you | push | Louder than a root asking, and it carries the clock. |
 | child finishes (depth 1) | the root session | typed line, no push | The id, the state, the path to `result.json`. |
 | grandchild finishes (depth 2) | the child that dispatched it | typed line, no push | The same, plus how many of that child's own tasks are still running. |
-| the last of a fan-out ends | you | push | One notification for the whole subtree, with a count and how many failed. |
+| the last of a fan-out ends | you | push | One notification for the whole subtree, with a count and how many failed. With `smart_notifications`, the task titles, states and authored summaries become one sentence instead. |
 | an agent has timely content you are waiting for | you | push | The task-secret or root `/notify` route, only with `orchestrator_agent_notify` on. When it is off, `409 agent_notify_disabled` spends no allowance; the agent does not retry and keeps the content in `result.json`. |
 | a tab whose task is over | nobody | silent | A child's terminal lingers for `orchestrator_child_linger` (180s) after the work ends. |
 
@@ -128,10 +128,17 @@ like the treatment is not a test.
 | `WebPush.maxPayload` | 3993 octets. If a title and body crowd out the mark, the mark is dropped and the message still goes. |
 | `orchestrator_max_descendants` | 20 — five children with three of their own. The arithmetic that made per-tab pushes untenable. |
 | `orchestrator_child_linger` | 180s. How long a finished child's tab is kept before it is closed for you. |
+| `SmartNotification.timeout` | 8s. The most a completion waits for Haiku before the ordinary wording wins. |
+| `SmartNotification.maxPending` | 4. Past the bounded queue, the ordinary notification is sent immediately. |
 
-## The four switches
+## The five switches
 
 `push_on_finish` covers the whole *it finished* class — root turns and fan-outs alike.
+`smart_notifications` changes only the wording of that class. It is off by default; when enabled,
+the last request and answer or the task result summaries are sent through a tool-free, low-effort
+`haiku` turn.
+It never sends a second notification: missing input, queue pressure, timeout and malformed output
+all choose the ordinary wording before the one push is handed off.
 `push_on_deploy` covers the separate deploy-finished push, on success and failure.
 `orchestrator_notify_root` covers the typed line, in both directions.
 `orchestrator_agent_notify` covers content an agent proactively sends through either `/notify`

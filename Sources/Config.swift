@@ -176,6 +176,11 @@ final class Config {
     /// redundant ones is a rule nobody can debug when it goes quiet**. A feature that is off by
     /// default is also a feature most people never find.
     var pushOnFinish = true
+    /// Replace the generic long-turn and fan-out wording with one bounded Haiku summary.
+    ///
+    /// Off by default because it spends assistant quota and puts authored work detail on the
+    /// lock screen. The ordinary completion notification remains the fallback in every case.
+    var smartNotifications = false
     /// Buzz when a deploy stops running.
     ///
     /// A better candidate than the one above and for the opposite reason: deploys are rare, and
@@ -340,6 +345,7 @@ final class Config {
         if let v = obj["remote"] as? Bool { remote = v }
         if let v = obj["remote_port"] as? Int, v > 0, v < 65536 { remotePort = v }
         if let v = obj["push_on_finish"] as? Bool { pushOnFinish = v }
+        if let v = obj["smart_notifications"] as? Bool { smartNotifications = v }
         if let v = obj["push_on_deploy"] as? Bool { pushOnDeploy = v }
         if let v = obj["on_state_change"] as? [String] { onStateChange = v }
         if let v = obj["remote_write"] as? Bool { remoteWrite = v }
@@ -413,6 +419,7 @@ final class Config {
             "remote": remote,
             "remote_port": remotePort,
             "push_on_finish": pushOnFinish,
+            "smart_notifications": smartNotifications,
             "push_on_deploy": pushOnDeploy,
             "on_state_change": onStateChange,
             "remote_write": remoteWrite,

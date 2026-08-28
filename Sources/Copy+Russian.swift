@@ -175,6 +175,8 @@ struct Russian: Copy {
     }
     let settingsPushFinish = "Сообщать, когда долгая работа закончится"
     let settingsPushFinishHint = "Только дольше двух минут."
+    let settingsSmartNotifications = "Умные уведомления"
+    let settingsSmartNotificationsHint = "Haiku одним предложением опишет результат. При ошибке придёт обычное уведомление."
     let settingsPushDeploy = "Сообщать, когда закончится деплой"
     let settingsPushDeployHint = "И об успехе, и об ошибке."
     let settingsAgentNotify = "Разрешить агентам отправлять свои уведомления"

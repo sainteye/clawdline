@@ -434,6 +434,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                       switchFor({ Config.shared.pushOnFinish },
                                 { Config.shared.pushOnFinish = $0 }),
                       hint: L.t.settingsPushFinishHint)
+        pane.left.row(L.t.settingsSmartNotifications,
+                      switchFor({ Config.shared.smartNotifications },
+                                { Config.shared.smartNotifications = $0 }),
+                      hint: L.t.settingsSmartNotificationsHint)
         pane.left.row(L.t.settingsPushDeploy,
                       switchFor({ Config.shared.pushOnDeploy },
                                 { Config.shared.pushOnDeploy = $0 }),
