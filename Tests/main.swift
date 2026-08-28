@@ -9547,11 +9547,25 @@ group("a person-named session title outranks every automatic label") {
                manualTitle: nil, orchestratorTitle: nil,
                threadName: "Codex thread", terminalLabel: "terminal tab"),
            "Codex thread")
+    // Clearing, through the store rather than by passing `nil` in by hand. Handing the function a
+    // literal `nil` restates the check above it and proves nothing about what happens when a
+    // person empties the box: the interesting half is that `Config` stops answering.
+    let clearingDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-title-clearing-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: clearingDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: clearingDir) }
+    let store = Config(directoryForTesting: clearingDir)
+    func labelForStoredTitle() -> String {
+        TargetSession.preferredDisplayLabel(
+            manualTitle: store.sessionTitle(sessionID: nil, terminalID: "terminal-clearing"),
+            orchestratorTitle: "automatic handoff", threadName: "Codex thread",
+            terminalLabel: "terminal tab")
+    }
+    store.setSessionTitle("Release room", sessionID: nil, terminalID: "terminal-clearing")
+    expect("a stored title is what the display prefers", labelForStoredTitle(), "Release room")
+    store.setSessionTitle("   \n  ", sessionID: nil, terminalID: "terminal-clearing")
     expect("clearing a person's title restores the automatic label",
-           TargetSession.preferredDisplayLabel(
-               manualTitle: nil, orchestratorTitle: "automatic handoff",
-               threadName: "Codex thread", terminalLabel: "terminal tab"),
-           "automatic handoff")
+           labelForStoredTitle(), "automatic handoff")
 }
 
 group("session titles are normalized, persisted and bounded") {
@@ -9586,6 +9600,15 @@ group("session titles are normalized, persisted and bounded") {
     expect("a saved title makes a config round trip",
            loaded.sessionTitle(sessionID: "claude-one", terminalID: "terminal-two"),
            "release room")
+    // Overlong before cleared, because the two used to be the same outcome: the removal ran first
+    // and only the append was bounded, so a title too long to store took the stored one with it —
+    // a name silently lost to a request that was answered `400`.
+    let tooLong = String(repeating: "x", count: Config.sessionTitleLimit + 1)
+    check("an overlong title is refused without taking the stored one with it",
+          loaded.setSessionTitle(tooLong, sessionID: "claude-one",
+                                 terminalID: "terminal-one", now: now) == nil
+              && loaded.sessionTitle(sessionID: "claude-one",
+                                     terminalID: "terminal-one") == "release room")
     check("clearing removes both lookup keys",
           loaded.setSessionTitle(" \n ", sessionID: "claude-one",
                                  terminalID: "terminal-one", now: now) == nil
@@ -9618,14 +9641,10 @@ group("renaming never changes the terminal label used to locate transcripts") {
     let target = TargetSession(backend: .iterm, id: "terminal-name-test",
                                name: "Claude Code", tty: "/dev/ttys099",
                                windowIndex: 0, tabIndex: 0, assistant: .claude)
-    let original = target.label
-    expect("a manual display title leaves the raw terminal label alone",
-           target.label, original)
-    expect("the display calculation can change independently",
-           TargetSession.preferredDisplayLabel(
-               manualTitle: "Human title", orchestratorTitle: nil,
-               threadName: nil, terminalLabel: target.label),
-           "Human title")
+    let display = TargetSession.preferredDisplayLabel(
+        manualTitle: "Human title", orchestratorTitle: nil,
+        threadName: nil, terminalLabel: target.label)
+    expect("the display calculation can change independently", display, "Human title")
 
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("clawdline-title-transcript-\(UUID().uuidString)",
@@ -9634,8 +9653,21 @@ group("renaming never changes the terminal label used to locate transcripts") {
     defer { try? FileManager.default.removeItem(at: directory) }
     let transcript = directory.appendingPathComponent("matching.jsonl")
     try! Data("{\"customTitle\":\"Claude Code\"}\n".utf8).write(to: transcript)
+    // A second conversation in the same project, named what this session is *displayed* as. It is
+    // what makes the check below a regression rather than a restatement: comparing `target.label`
+    // with a copy of itself passes for every possible edit to this repository, and matching on the
+    // terminal title passed before any of this existed. What has to stay true is that the two
+    // strings have come apart and that the lookup is still given the terminal one — because the
+    // day a rename feeds back into `label`, or a caller hands `displayLabel` to `locate`, this
+    // session gets attached to somebody else's file, confidently.
+    let impostor = directory.appendingPathComponent("named-like-the-display.jsonl")
+    try! Data("{\"customTitle\":\"Human title\"}\n".utf8).write(to: impostor)
     expect("transcript matching still receives the unchanged terminal title",
            Transcript.locate(in: directory, tabTitle: target.label), transcript)
+    check("the display title and the terminal label really have come apart",
+          display != target.label)
+    expect("and looking one up by the display title would land on the other conversation",
+           Transcript.locate(in: directory, tabTitle: display), impostor)
 }
 
 group("session-title downstream synchronization never interrupts Claude") {
@@ -9651,10 +9683,25 @@ group("session-title downstream synchronization never interrupts Claude") {
            SessionTitleSync.action(assistant: .claude, state: .waiting,
                                    clearing: false, codexThreadID: nil),
            .busy)
+    // A screen this app could not read is not a session it may type into. Same answer as `busy`,
+    // and the reason it is asserted separately is that the two are different facts — `docs/api.md`
+    // has to describe this one as well, or `busy` becomes the word for "we did not look".
+    expect("a session whose screen could not be read is not typed into either",
+           SessionTitleSync.action(assistant: .claude, state: .unknown,
+                                   clearing: false, codexThreadID: nil),
+           .busy)
     expect("Codex metadata may be renamed without waiting for idle",
            SessionTitleSync.action(assistant: .codex, state: .working("turn"),
                                    clearing: false, codexThreadID: "thread-one"),
            .renameCodex(threadID: "thread-one"))
+    expect("a Codex session with no thread to name says so rather than reporting success",
+           SessionTitleSync.action(assistant: .codex, state: .idle,
+                                   clearing: false, codexThreadID: nil),
+           .unavailable)
+    expect("a plain shell keeps the name locally and claims nothing downstream",
+           SessionTitleSync.action(assistant: nil, state: .idle,
+                                   clearing: false, codexThreadID: nil),
+           .localOnly)
     expect("clearing is local-only for every assistant",
            SessionTitleSync.action(assistant: .claude, state: .idle,
                                    clearing: true, codexThreadID: nil),
