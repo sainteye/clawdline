@@ -10,7 +10,7 @@ import SQLite3
 /// one-off export and a session of its own, and could not be repeated. This is the durable copy
 /// that makes the same question answerable next month without either.
 ///
-/// **Four invariants, and they are the whole design.** Each one is stated here because the
+/// **Five invariants, and they are the whole design.** Each one is stated here because the
 /// mechanism underneath is replaceable and the invariant is not:
 ///
 /// 1. *Re-reading a source can never double-count.* Every measurement this store accepts is a
@@ -34,6 +34,12 @@ import SQLite3
 ///    ``missing_reason`` naming *which* kind of unavailable it is. 134 of this machine's 165
 ///    rows with usage carry no cost, and summing those as zero produced "1137M tokens, $0.00" —
 ///    a month-end that looks entirely normal and is wrong.
+/// 5. *A row's coverage marks accumulate; they do not overwrite.* If two things are true about a
+///    row's coverage, both reach every reader. ``coverage_reasons`` is a set and every writer
+///    unions into it, because one slot with a last writer loses the earlier mark in silence —
+///    and the earlier mark was always ``CoverageReason/sourceRegressed``, on precisely the rows
+///    whose number was measured across a seam. This is invariant 3's defect wearing the writer's
+///    clothes: a mark that never reaches a reader is a mark that was never made.
 ///
 /// **Append and seal.** A sealed row's numbers never move. Work that arrives after a seal opens
 /// the next segment; a re-measurement that disagrees with a sealed row is written to
@@ -53,9 +59,10 @@ final class UsageLedger {
 
     /// The store's own migration counter, and deliberately **not** ``schemaVersion``: that one is
     /// part of every interval key, so bumping it to add a column would orphan every row ever
-    /// written from the key its own collector will compute next time. Adding a column or an index
-    /// changes neither an identity nor a meaning, and needs a number of its own.
-    static let storeVersion = 2
+    /// written from the key its own collector will compute next time. Adding a column, an index
+    /// or a column *name* changes neither an identity nor the meaning of a stored value, and
+    /// needs a number of its own.
+    static let storeVersion = 3
 
     /// Which published price table produced a `list_price_estimate`. This is **not** protection
     /// against a historical month being re-priced — recorded costs are recorded and do not move.
@@ -84,6 +91,42 @@ final class UsageLedger {
         case modelSwitch = "model_switch"
         case localMidnight = "local_midnight"
         case afterSeal = "after_seal"
+    }
+
+    /// **Why a row is marked — and a row may be marked more than once.**
+    ///
+    /// These are the store's own words for *something is true of this row's coverage that its
+    /// numbers do not show*. They are not exclusive and they never were: a task filed under an
+    /// invented identity can also be read across a replaced transcript, and a session that
+    /// rotated can also be unreadable by the time it closes. Both of those are reachable today.
+    ///
+    /// The column that holds them is therefore a **set** (``coverageReasons(stored:)``), and
+    /// every writer adds to it rather than assigning it. One slot with a last writer was the
+    /// same defect the reader seam was built to stop, arriving from the other side: the mark
+    /// that loses is always the earlier one — `source_regressed` — and every reader is then told
+    /// only half of what the store knew.
+    enum CoverageReason: String, CaseIterable {
+        /// Neither collector ever knew the session this task ran in, so the store invented one.
+        case sessionUnresolved = "session_unresolved"
+        /// A cumulative counter went backwards: this row's number spans a replaced source.
+        case sourceRegressed = "source_regressed"
+        /// The source could not be read at the moment the segment was sealed.
+        case sourceUnreadableAtClose = "source_unreadable_at_close"
+        /// The work reached a terminal state carrying no usage object at all.
+        case noUsageRecorded = "no_usage_recorded"
+    }
+
+    /// The marks on one row, read out of the column that holds them.
+    ///
+    /// Stored **space-separated** rather than comma-separated on purpose: the export is the
+    /// surface a month gets audited from, and a comma inside a CSV field is correct, quoted, and
+    /// the exact thing that a `cut -d,` or a hand-rolled splitter gets wrong. Every mark this
+    /// store writes is one ``CoverageReason``, so a separator can never appear inside one.
+    ///
+    /// Unknown words are kept rather than dropped. A mark this build does not recognise is still
+    /// a mark, and a reader that silently discarded it would be the defect, one release later.
+    static func coverageReasons(stored: String?) -> [String] {
+        (stored ?? "").split(separator: " ").map(String.init)
     }
 
     /// How much of this segment's source was actually read.
@@ -433,7 +476,11 @@ final class UsageLedger {
         var seal = false
         /// What the seal should record. Ignored unless `seal` is set.
         var sealCoverage = Coverage.complete
-        var coverageReason: String?
+        /// What this reading has to say about the row's coverage, in the order it was decided.
+        /// A list rather than a slot, and ``mark(_:)`` rather than an assignment, because a
+        /// reading can be true of two of these at once — a task with no known session whose
+        /// source also carried no usage is both, and used to arrive as one.
+        var coverageReasons: [CoverageReason] = []
 
         init(assistant: Assistant, sessionID: String, boundaryKind: BoundaryKind,
              boundaryID: String, origin: Origin) {
@@ -442,6 +489,13 @@ final class UsageLedger {
             self.boundaryKind = boundaryKind
             self.boundaryID = boundaryID
             self.origin = origin
+        }
+
+        /// Add a mark. Adding one never removes another, and adding the same one twice is one
+        /// mark — the store's copy is a set and this is where that starts.
+        mutating func mark(_ reason: CoverageReason) {
+            guard !coverageReasons.contains(reason) else { return }
+            coverageReasons.append(reason)
         }
     }
 
@@ -480,7 +534,9 @@ final class UsageLedger {
         var priceSnapshotID: String?
         var missingReason: String?
         var coverage = ""
-        var coverageReason: String?
+        /// Every mark the store put on this row, in the order they were written. See
+        /// ``CoverageReason``: this is a set, and the column behind it is one too.
+        var coverageReasons: [String] = []
         var sealed = false
         var sourceBytes: Int?
         var startedAt = Date.distantPast
@@ -495,7 +551,9 @@ final class UsageLedger {
 
         /// **The one seam where a stored row becomes a number for a consumer.** See
         /// ``Measurement``; every reader in this file asks for this and none of them reads the
-        /// token columns directly.
+        /// token columns directly — including the two that used to: the range's ordering, which
+        /// asks ``Measurement/incomplete`` instead of re-deciding "incomplete" in SQL, and the
+        /// `was` snapshot a correction records.
         var measurement: Measurement {
             var out = Measurement()
             out.counts = counts
@@ -504,12 +562,19 @@ final class UsageLedger {
                 if let value = counts[part] { out.measured += value }
                 else { out.unknownParts.append(part) }
             }
-            out.reason = coverageReason
+            out.reasons = coverageReasons
             // A synthetic identity is a mark the row carries in its own session id, so it is read
             // off the row here rather than trusted to whichever writer was supposed to note it.
             // The mark has to survive at the reader; that is the whole point of this type.
-            if out.reason == nil, sessionID.hasPrefix(UsageLedger.unresolvedSessionPrefix) {
-                out.reason = "session_unresolved"
+            //
+            // **Added to what the row already says, never instead of it.** Reading it back only
+            // when the row was otherwise unmarked is how `source_regressed` disappeared from
+            // every reader of a row that was both: the number spans a replaced source *and* the
+            // session was invented, and a consumer needs both to know what it is holding.
+            let invented = UsageLedger.CoverageReason.sessionUnresolved.rawValue
+            if sessionID.hasPrefix(UsageLedger.unresolvedSessionPrefix),
+               !out.reasons.contains(invented) {
+                out.reasons.append(invented)
             }
             return out
         }
@@ -526,6 +591,12 @@ final class UsageLedger {
     ///
     /// So: the aggregate, the wire payload and the CSV export all read a row through this and
     /// nothing else, and every one of them is handed the marks along with the numbers.
+    ///
+    /// **And the marks are a set, because the same defect came back from the writer side.** With
+    /// one slot and a last writer, a row that was both filed under an invented identity and
+    /// measured across a replaced source reached every reader carrying one of those facts —
+    /// always the earlier one lost, which was always `source_regressed`. A seam that faithfully
+    /// reports a column somebody else already overwrote is not a seam. See ``CoverageReason``.
     struct Measurement: Equatable {
         /// The parts, each still nil where the source measured nothing. Never coalesced.
         var counts = Counts()
@@ -539,9 +610,11 @@ final class UsageLedger {
         var measured = 0
         /// Which of the four this row could not measure.
         var unknownParts: [Part] = []
-        /// Why the store marked this row, when it did — `session_unresolved`,
-        /// `source_regressed`, `source_unreadable_at_close`, `no_usage_recorded`.
-        var reason: String?
+        /// **Every** mark the store put on this row — `session_unresolved`, `source_regressed`,
+        /// `source_unreadable_at_close`, `no_usage_recorded` — not the last one written. Two of
+        /// these can be true of one row, and when they are, both travel: a reader handed only
+        /// the newer mark is being told the row is one kind of doubtful when it is two.
+        var reasons: [String] = []
 
         /// Nothing at all was measured: the row that must never be rendered as a number.
         var unknown: Bool { unknownParts.count == Part.allCases.count }
@@ -716,6 +789,21 @@ final class UsageLedger {
                   ON usage_corrections (interval_key, reason, COALESCE(proposed, ''));
                 """)
         }
+        if version < 3 {
+            // One name, because the column now holds a **set** of marks rather than the last one
+            // written — see ``CoverageReason``. A rename, not a new column: every value already
+            // stored is a valid one-element set, so nothing is rewritten and nothing is lost,
+            // and leaving the old column behind would leave a second place a future reader could
+            // ask for a row's coverage and be told half of it. `schema_version` is deliberately
+            // untouched: it is part of every interval key, and no stored *value* changed meaning.
+            exec(db, """
+                ALTER TABLE usage_intervals
+                RENAME COLUMN coverage_reason TO coverage_reasons;
+                """)
+        }
+        // Each statement above is independent of the ones before it, which is what makes a
+        // half-applied migration self-heal: a crash between the ALTER and this line leaves the
+        // next launch re-running an ALTER that fails harmlessly (logged) and then finishing.
         exec(db, "PRAGMA user_version=\(UsageLedger.storeVersion);")
         recordPriceSnapshot(db)
     }
@@ -946,7 +1034,7 @@ final class UsageLedger {
             // that dipped and recovered can now be counted twice across the dip, and
             // `source_regressed` is what tells every reader that this row's number was measured
             // across a seam rather than read off one continuous counter.
-            if delta.regressed { note(db, key: key, coverageReason: "source_regressed") }
+            if delta.regressed { mark(db, key: key, reason: .sourceRegressed) }
             else { write(db, key: key, delta: delta, sample: sample, reading: reading) }
             current = Self.advance(current, by: reading)
         }
@@ -954,7 +1042,9 @@ final class UsageLedger {
         current.localDay = day
         if let bytes = sample.sourceBytes { current.sourceBytes = bytes }
         updateFacts(db, key: key, sample: sample, reading: reading)
-        if let reason = sample.coverageReason { note(db, key: key, coverageReason: reason) }
+        // Added to whatever this call has already put on the row — the regression above included.
+        // Both are true of it, and both are what the row is for.
+        for reason in sample.coverageReasons { mark(db, key: key, reason: reason) }
         if sample.seal { sealRow(db, key: key, coverage: sample.sealCoverage, at: sample.observedAt) }
         write(db, cursor: current, assistant: assistant, session: sample.sessionID,
               at: sample.observedAt)
@@ -1214,14 +1304,29 @@ final class UsageLedger {
         return Self.double(statement, 0)
     }
 
-    private func note(_ db: OpaquePointer, key: String, coverageReason: String) {
+    /// Add one mark to a row's coverage. **A union, never an assignment.**
+    ///
+    /// The `instr` is the union: a mark already in the set leaves the column exactly as it was,
+    /// and a new one is appended. It is `instr` rather than `LIKE` so that no character in a
+    /// mark can be read as a wildcard, and the separators around both sides are what stop
+    /// `source_regressed` from matching inside a longer word.
+    ///
+    /// This being an assignment is the whole of the defect this round exists to close: `apply()`
+    /// writes `source_regressed` and then the sample's own mark in the same call, so with one
+    /// slot the first was never once observable by anything.
+    private func mark(_ db: OpaquePointer, key: String, reason: CoverageReason) {
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(db, """
-            UPDATE usage_intervals SET coverage_reason = ?, updated_at = ?
-            WHERE interval_key = ? AND sealed = 0;
+            UPDATE usage_intervals SET coverage_reasons = CASE
+                WHEN coverage_reasons IS NULL OR coverage_reasons = '' THEN ?1
+                WHEN instr(' ' || coverage_reasons || ' ', ' ' || ?1 || ' ') > 0
+                     THEN coverage_reasons
+                ELSE coverage_reasons || ' ' || ?1 END,
+              updated_at = ?2
+            WHERE interval_key = ?3 AND sealed = 0;
             """, -1, &statement, nil) == SQLITE_OK else { return }
-        bind(statement, 1, coverageReason)
+        bind(statement, 1, reason.rawValue)
         sqlite3_bind_double(statement, 2, Date().timeIntervalSince1970)
         bind(statement, 3, key)
         sqlite3_step(statement)
@@ -1270,13 +1375,13 @@ final class UsageLedger {
     /// Seal every open segment of a session, for a source that has gone. The row stays, its usage
     /// is NULL, and nothing downstream may render it as zero.
     func sealSession(assistant: Assistant, sessionID: String, coverage: Coverage,
-                     reason: String? = nil, at: Date = Date()) {
+                     reason: CoverageReason? = nil, at: Date = Date()) {
         queue.async { [weak self] in
             guard let self, let db = self.database() else { return }
             guard let current = self.cursor(db, assistant: assistant.rawValue,
                                             session: sessionID),
                   let key = current.openKey else { return }
-            if let reason { self.note(db, key: key, coverageReason: reason) }
+            if let reason { self.mark(db, key: key, reason: reason) }
             self.sealRow(db, key: key, coverage: coverage, at: at)
         }
     }
@@ -1302,12 +1407,18 @@ final class UsageLedger {
         let proposedJSON = String(decoding: proposedData, as: UTF8.self)
         guard !hasCorrection(db, intervalKey: intervalKey, reason: reason,
                              proposed: proposedJSON) else { return false }
+        // Through the seam like every other reader, rather than off the columns. It is honest
+        // either way today — the nils are already written as `NSNull` — but "honest today and
+        // nothing enforces it" is what the seam exists to replace: this snapshot is what a
+        // person compares a disputed month against, and it now cannot disagree with the numbers
+        // the route and the export gave them.
         let was = row(db, key: intervalKey).map { row -> [String: Any] in
-            ["input_new": row.counts.inputNew as Any? ?? NSNull(),
-             "output": row.counts.output as Any? ?? NSNull(),
-             "cache_read": row.counts.cacheRead as Any? ?? NSNull(),
-             "cache_write": row.counts.cacheWrite as Any? ?? NSNull(),
-             "cost_value": row.costValue as Any? ?? NSNull()]
+            let measurement = row.measurement
+            return ["input_new": measurement.counts.inputNew as Any? ?? NSNull(),
+                    "output": measurement.counts.output as Any? ?? NSNull(),
+                    "cache_read": measurement.counts.cacheRead as Any? ?? NSNull(),
+                    "cache_write": measurement.counts.cacheWrite as Any? ?? NSNull(),
+                    "cost_value": row.costValue as Any? ?? NSNull()]
         }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
@@ -1374,7 +1485,7 @@ final class UsageLedger {
                isolation, depth, claim_count, timeout_seconds, task_state, model,
                reasoning_effort, billing_mode, usage_raw, input_new, output, cache_read,
                cache_write, total, source_total, reconciliation, cost_value, cost_unit,
-               cost_basis, price_snapshot_id, missing_reason, coverage, coverage_reason, sealed,
+               cost_basis, price_snapshot_id, missing_reason, coverage, coverage_reasons, sealed,
                source_bytes, started_at, ended_at, local_day, updated_at, input_basis
           FROM usage_intervals
         """
@@ -1414,7 +1525,7 @@ final class UsageLedger {
         row.priceSnapshotID = text(statement, 32)
         row.missingReason = text(statement, 33)
         row.coverage = text(statement, 34) ?? ""
-        row.coverageReason = text(statement, 35)
+        row.coverageReasons = coverageReasons(stored: text(statement, 35))
         row.sealed = (integer(statement, 36) ?? 0) == 1
         row.sourceBytes = integer(statement, 37)
         row.startedAt = Date(timeIntervalSince1970: double(statement, 38) ?? 0)
@@ -1457,6 +1568,13 @@ final class UsageLedger {
     /// the long ones and a reader who never scrolls would otherwise never see the bias in the
     /// totals below them. A row three-quarters measured biases a total exactly as a row nobody
     /// could read does, only by less.
+    ///
+    /// **Which rows those are is the seam's to say, not SQL's.** The order used to be decided by
+    /// a `NULL` test written out in the `ORDER BY`, which agreed with ``Measurement/incomplete``
+    /// only for as long as nobody widened one of them; the day the seam counts a marked row as
+    /// incomplete, a sort that never asked it would quietly disagree — and this ordering is the
+    /// bias protection the whole surface rests on. SQL puts the range in a stable order and the
+    /// partition below is a stable one, so rows equal on the seam keep it.
     func rows(from: String? = nil, to: String? = nil) -> [Row] {
         queue.sync {
             guard let db = database() else { return [] }
@@ -1464,15 +1582,14 @@ final class UsageLedger {
             defer { sqlite3_finalize(statement) }
             guard sqlite3_prepare_v2(db, Self.selection + """
                  WHERE (? IS NULL OR local_day >= ?) AND (? IS NULL OR local_day <= ?)
-                 ORDER BY (input_new IS NULL OR output IS NULL OR cache_read IS NULL
-                           OR cache_write IS NULL) DESC,
-                          local_day, started_at, segment_no;
+                 ORDER BY local_day, started_at, segment_no;
                 """, -1, &statement, nil) == SQLITE_OK else { return [] }
             bind(statement, 1, from); bind(statement, 2, from)
             bind(statement, 3, to); bind(statement, 4, to)
             var out: [Row] = []
             while sqlite3_step(statement) == SQLITE_ROW { out.append(Self.row(from: statement)) }
-            return out
+            return out.filter { $0.measurement.incomplete }
+                + out.filter { !$0.measurement.incomplete }
         }
     }
 
@@ -1504,6 +1621,11 @@ final class UsageLedger {
         /// field that could carry a coverage reason at all, so a session filed under an invented
         /// identity and a session read across a rotated transcript both arrived at a consumer
         /// looking exactly like a healthy one.
+        ///
+        /// **A row marked twice is counted under both**, so these counts can sum to more than
+        /// `rows` and that is the correct reading of them: they answer *how many rows carry this
+        /// mark*, never *how many rows are marked*, which is what `coverage` and
+        /// `tokenRowsUnknown` are for.
         var coverageReasons: [String: Int] = [:]
         /// Money summed **per unit**, never across them. Codex rows can only ever carry credits
         /// or nothing, and adding credits to dollars would be a number with no meaning.
@@ -1523,7 +1645,7 @@ final class UsageLedger {
             rows += 1
             coverage[row.coverage, default: 0] += 1
             let measurement = row.measurement
-            if let reason = measurement.reason { coverageReasons[reason, default: 0] += 1 }
+            for reason in measurement.reasons { coverageReasons[reason, default: 0] += 1 }
             if measurement.incomplete { tokenRowsUnknown += 1 }
             var counts = tokens ?? Counts()
             var measured = false
@@ -1627,7 +1749,8 @@ final class UsageLedger {
                 // means a session's cumulative counters may have been attributed twice under an
                 // invented identity, and `source_regressed` means a number was measured across a
                 // replaced source — neither is visible in `coverage`, which says only how much
-                // of the source was read.
+                // of the source was read. A row that is both is counted under both, so these
+                // can sum past `rows`.
                 "coverageReasons": bucket.coverageReasons]
     }
 
@@ -1660,14 +1783,23 @@ final class UsageLedger {
         "segment_no", "segment_reason", "origin", "task_id", "schedule_id", "project_key",
         "working_dir", "kind_raw", "isolation", "depth", "claim_count", "timeout_seconds",
         "task_state", "model", "reasoning_effort", "billing_mode", "input_new", "output",
-        "cache_read", "cache_write", "total", "source_total", "reconciliation", "input_basis",
-        "cost_value", "cost_unit", "cost_basis", "price_snapshot_id", "missing_reason",
-        "coverage", "coverage_reason", "sealed", "started_at", "ended_at",
+        "cache_read", "cache_write", "total", "measured", "source_total", "reconciliation",
+        "input_basis", "cost_value", "cost_unit", "cost_basis", "price_snapshot_id",
+        "missing_reason", "coverage", "coverage_reasons", "sealed", "started_at", "ended_at",
     ] + reservedColumns
 
     /// The whole range as CSV. **An unknown is an empty field, never `0`** — including every
     /// reserved column, which is empty in every row of schema 1 and is present so that a reader
     /// can see it is reserved rather than wonder where it went.
+    ///
+    /// **`total` and `measured` are two different quantities and the file carries both.** `total`
+    /// is strict — empty the moment any one part is unknown — and `measured` is the sum of what
+    /// was actually measured, which is the quantity the route's `total` sums. With only the
+    /// strict column here, an export of a range containing one partly measured row could no
+    /// longer be added up to the number the route had just given for the same range, and a
+    /// figure that cannot be reconciled with the figure beside it is the thing this store exists
+    /// to stop. `measured` is empty, not `0`, for a row that measured nothing at all — the same
+    /// rule the aggregate follows, so the two agree on every range including that one.
     func exportCSV(from: String? = nil, to: String? = nil) -> String {
         func escape(_ value: String?) -> String {
             guard let value else { return "" }
@@ -1712,6 +1844,7 @@ final class UsageLedger {
             fields.append(number(measurement.counts.cacheRead))
             fields.append(number(measurement.counts.cacheWrite))
             fields.append(number(measurement.total))
+            fields.append(measurement.unknown ? "" : String(measurement.measured))
             fields.append(number(row.sourceTotal))
             fields.append(row.reconciliation ?? "")
             fields.append(row.inputBasis ?? "")
@@ -1721,7 +1854,8 @@ final class UsageLedger {
             fields.append(row.priceSnapshotID ?? "")
             fields.append(row.missingReason ?? "")
             fields.append(row.coverage)
-            fields.append(measurement.reason ?? "")
+            // Every mark, space-separated, and never only the newest one.
+            fields.append(measurement.reasons.joined(separator: " "))
             fields.append(row.sealed ? "1" : "0")
             fields.append(formatter.string(from: row.startedAt))
             fields.append(row.endedAt.map { formatter.string(from: $0) } ?? "")
@@ -1800,7 +1934,7 @@ final class UsageLedger {
         var sample = Sample(assistant: assistant,
                             sessionID: known ?? "\(UsageLedger.unresolvedSessionPrefix)\(id)",
                             boundaryKind: .task, boundaryID: id, origin: origin)
-        if known == nil { sample.coverageReason = "session_unresolved" }
+        if known == nil { sample.mark(.sessionUnresolved) }
         sample.observedAt = (record["finished_at"] as? Double).map {
             Date(timeIntervalSince1970: $0)
         } ?? now
@@ -1827,9 +1961,9 @@ final class UsageLedger {
         sample.costUnit = .usd
         sample.seal = terminal
         sample.sealCoverage = usage == nil ? .sourceMissing : .complete
-        if usage == nil && terminal {
-            sample.coverageReason = sample.coverageReason ?? "no_usage_recorded"
-        }
+        // Added, not defaulted: a task whose session nobody ever knew *and* whose record carried
+        // no usage is two different holes in the same row, and `??` reported only the first.
+        if usage == nil && terminal { sample.mark(.noUsageRecorded) }
 
         // A row that is already sealed and disagrees with this reading is a correction, never a
         // rewrite: the earlier number may already have been quoted in a month's total.
@@ -2008,7 +2142,9 @@ extension UsageLedger {
                                    now: now)
                 final.seal = true
                 final.sealCoverage = final.rawUsage == nil ? .sourceMissing : .complete
-                if final.rawUsage == nil { final.coverageReason = "source_unreadable_at_close" }
+                // A mark added to whatever this row already carries. A session that rotated
+                // earlier and is unreadable now is both, and the close used to erase the first.
+                if final.rawUsage == nil { final.mark(.sourceUnreadableAtClose) }
                 shared.observe(final)
             }
         }

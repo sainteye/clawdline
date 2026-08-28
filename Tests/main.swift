@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import Foundation
+import SQLite3
 
 /// A subprocess-only entry used by the coordinator singleton race test near the end of this
 /// file. Both workers deliberately cache initial absence before the parent releases them; the
@@ -22016,7 +22017,7 @@ group("re-reading a source never double-counts, and a boundary cuts a segment") 
         usage: usage(1, 1, 1), model: "claude-haiku-4-5"))
     let afterRegression = UsageLedger.shared.rows().first { $0.segmentNo == 1 }
     expect("a source that shrank never subtracts", afterRegression?.total, 100)
-    expect("and says what happened", afterRegression?.coverageReason, "source_regressed")
+    expect("and says what happened", afterRegression?.coverageReasons, ["source_regressed"])
 }
 
 group("a source that cannot be read is a state, and nothing renders it as zero") {
@@ -22026,7 +22027,7 @@ group("a source that cannot be read is a state, and nothing renders it as zero")
                                origin: .dispatch, usage: nil, model: "claude-opus-5")
     missing.seal = true
     missing.sealCoverage = .sourceMissing
-    missing.coverageReason = "source_unreadable_at_close"
+    missing.mark(.sourceUnreadableAtClose)
     UsageLedger.shared.observeNow(missing)
 
     let row = UsageLedger.shared.rows().first
@@ -22050,6 +22051,11 @@ group("a source that cannot be read is a state, and nothing renders it as zero")
         return values[index]
     }
     expect("the export leaves an unknown token count empty", field("total"), "")
+    // The lower bound is a number and it is still not `0` here: nothing was measured, so the
+    // quantity is unknown, and the aggregate leaves the same range's `total` nil for the same
+    // reason. A `0` in this column would be the 1137M-tokens-$0.00 shape in a new field.
+    expect("and the measured lower bound empty too, because nothing was measured",
+           field("measured"), "")
     expect("and an unknown cache read empty", field("cache_read"), "")
     expect("never the zero that would read as a measurement", field("input_new"), "")
     expect("and it says which kind of unavailable the cost is",
@@ -22074,7 +22080,7 @@ group("a source that cannot be read is a state, and nothing renders it as zero")
     check("counted at zero while it is readable",
           UsageLedger.shared.rows().first { $0.sessionID == "empty" }?.total == 0)
     UsageLedger.shared.sealSession(assistant: .claude, sessionID: "empty",
-                                   coverage: .sourceMissing, reason: "gone")
+                                   coverage: .sourceMissing, reason: .sourceUnreadableAtClose)
     check("and unknown once the source has gone, never left reading as a measured zero",
           eventually {
               let sealed = UsageLedger.shared.rows().first { $0.sessionID == "empty" }
@@ -22406,6 +22412,8 @@ group("a row with one part unknown keeps its unknown through every reader") {
     expect("the export leaves the unknown part empty", field("cache_read"), "")
     expect("keeps the measured one", field("input_new"), "500")
     expect("and refuses the total, exactly as the aggregate does", field("total"), "")
+    expect("while carrying the lower bound the route reports, which the strict total is not",
+           field("measured"), "750")
 
     // Sorting is a reader too: a row three-quarters measured biases a total the same way a row
     // nobody could read does, only by less.
@@ -22415,6 +22423,25 @@ group("a row with one part unknown keeps its unknown through every reader") {
                                                model: "claude-opus-5"))
     expect("a partly measured row still sorts above a fully measured one",
            UsageLedger.shared.rows().first?.sessionID, "partial")
+
+    // **An export has to add up to the number the route gave for the same range.** The seam
+    // made the aggregate's total a measured lower bound and left the CSV's strict — one range,
+    // two quantities, and no column in the file that could reproduce the other. A figure that
+    // cannot be reconciled with the figure beside it is what this store exists to stop, so the
+    // export carries both and this is the arithmetic that says so.
+    let whole = UsageLedger.shared.exportCSV()
+    let wholeColumns = (whole.split(separator: "\n").first.map(String.init) ?? "")
+        .split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+    let measuredColumn = wholeColumns.firstIndex(of: "measured")
+    let exportedMeasured = whole.split(separator: "\n").dropFirst().compactMap { line -> Int? in
+        guard let measuredColumn else { return nil }
+        let cells = line.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+        guard measuredColumn < cells.count else { return nil }
+        return Int(cells[measuredColumn])
+    }
+    expect("every row that measured something says how much", exportedMeasured.count, 2)
+    expect("and the export sums to exactly the total the route publishes",
+           exportedMeasured.reduce(0, +), UsageLedger.shared.aggregate().totals.total)
 }
 
 group("a session the store had to name for itself says so on the wire") {
@@ -22457,7 +22484,7 @@ group("a session the store had to name for itself says so on the wire") {
     unwritten.sessionID = UsageLedger.unresolvedSessionPrefix + "task-x"
     unwritten.counts = UsageLedger.Counts(inputNew: 1, output: 1, cacheRead: 1, cacheWrite: 1)
     expect("even a row nobody remembered to annotate reports the invented identity",
-           unwritten.measurement.reason, "session_unresolved")
+           unwritten.measurement.reasons, ["session_unresolved"])
 }
 
 group("a source that went backwards re-anchors instead of quietly under-counting") {
@@ -22484,13 +22511,325 @@ group("a source that went backwards re-anchors instead of quietly under-counting
     expect("and the replacement's growth is counted from where it was re-anchored",
            UsageLedger.shared.rows().first?.total, 950 + 1_297)
     expect("the row says the number was measured across a seam",
-           UsageLedger.shared.rows().first?.coverageReason, "source_regressed")
+           UsageLedger.shared.rows().first?.coverageReasons, ["source_regressed"])
     let aggregate = UsageLedger.shared.aggregate()
     expect("and so does the aggregate, which used to report it as an ordinary session",
            aggregate.totals.coverageReasons["source_regressed"], 1)
     let totals = UsageLedger.payload(of: aggregate)["totals"] as? [String: Any]
     expect("on the wire, beside the coverage that says nothing about it",
            (totals?["coverageReasons"] as? [String: Int])?["source_regressed"], 1)
+}
+
+// The reader seam turned "a marked row reaches every reader marked" into a structural fact. The
+// same defect then arrived from the writer's side: `coverage_reason` was one slot with a last
+// writer, so a row that was true of two things reached every reader carrying one of them — and
+// the mark that lost was always `source_regressed`, on exactly the rows whose number was measured
+// across a replaced source. Both reachable paths are here, and neither had a guard.
+group("a row marked twice keeps both marks, and both reach every reader") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    Orchestrator.forget()
+    defer { Orchestrator.forget() }
+    UsageLedger.forgetWatchedForTesting()
+    func usage(_ input: Int, _ output: Int, _ cacheRead: Int) -> [String: Any] {
+        ["input": input, "output": output, "cache_read": cacheRead, "cache_write": 0,
+         "total": input + output + cacheRead]
+    }
+
+    // A. A task neither collector could name a session for, whose source is then replaced. Every
+    // import of it is marked `session_unresolved`, in the same call that marks the regression —
+    // so with one slot `source_regressed` never survived its own `apply()` even once. The total
+    // below spans a source that was swapped out, and nothing anywhere said so.
+    func orphan(_ raw: [String: Any]) -> [String: Any] {
+        ["id": "orphan-rotated", "assistant": "claude", "state": "briefed", "kind": "code",
+         "project_dir": "/tmp", "timeout_minutes": 30, "depth": 1, "usage": raw,
+         "model": "claude-opus-5"]
+    }
+    UsageLedger.shared.importTaskRecord(orphan(usage(100, 100, 800)))
+    UsageLedger.shared.importTaskRecord(orphan(usage(1, 1, 1)))
+    UsageLedger.shared.importTaskRecord(orphan(usage(200, 100, 1_200)))
+    let rotated = UsageLedger.shared.rows(taskID: "orphan-rotated").first
+    check("the invented identity is on the row",
+          rotated?.sessionID.hasPrefix(UsageLedger.unresolvedSessionPrefix) == true,
+          rotated?.sessionID ?? "no row")
+    expect("and its number spans the source that was replaced", rotated?.total, 1_000 + 1_497)
+    expect("so the row carries both marks, in the order they were decided",
+           rotated?.coverageReasons, ["session_unresolved", "source_regressed"])
+    expect("and the seam hands a reader both of them",
+           rotated?.measurement.reasons, ["session_unresolved", "source_regressed"])
+
+    let aggregate = UsageLedger.shared.aggregate()
+    expect("the aggregate counts the invented identity",
+           aggregate.totals.coverageReasons["session_unresolved"], 1)
+    expect("and the replaced source, on that same one row",
+           aggregate.totals.coverageReasons["source_regressed"], 1)
+    expect("which is one row counted under two marks, never two rows", aggregate.totals.rows, 1)
+    let wire = (UsageLedger.payload(of: aggregate)["totals"] as? [String: Any])?["coverageReasons"]
+        as? [String: Int]
+    check("and both travel to whoever reads the route",
+          wire?["session_unresolved"] == 1 && wire?["source_regressed"] == 1,
+          "\(wire ?? [:])")
+
+    let csv = UsageLedger.shared.exportCSV()
+    let columns = (csv.split(separator: "\n").first.map(String.init) ?? "")
+        .split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+    let values = (csv.split(separator: "\n").dropFirst().first.map(String.init) ?? "")
+        .split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+    func field(_ name: String) -> String? {
+        guard let index = columns.firstIndex(of: name), index < values.count else { return nil }
+        return values[index]
+    }
+    expect("and the export carries both in one field, never only the newest",
+           field("coverage_reasons"), "session_unresolved source_regressed")
+
+    // B. A watched session that rotated, and then could not be read at the moment it closed.
+    // Two stages of one accident: the close used to overwrite the rotation with its own word,
+    // and a row read across a seam went back to looking like an ordinary unreadable session.
+    let now = Date()
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: "rot-closed",
+                                               usage: usage(100, 50, 800),
+                                               model: "claude-opus-5"))
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: "rot-closed",
+                                               usage: usage(1, 1, 1), model: "claude-opus-5"))
+    expect("the rotation is on the row first",
+           UsageLedger.shared.rows().first { $0.sessionID == "rot-closed" }?.coverageReasons,
+           ["source_regressed"])
+    UsageLedger.remember(terminalID: "TERM-ROT-CLOSED", assistant: .claude,
+                         sessionID: "rot-closed",
+                         record: store.appendingPathComponent("rot-closed.jsonl"),
+                         bytes: nil, at: now)
+    UsageLedger.departed(["TERM-ROT-CLOSED"], now: now)
+    check("and the close adds its own mark rather than replacing it",
+          eventually {
+              UsageLedger.shared.rows().first { $0.sessionID == "rot-closed" }?.coverageReasons
+                  == ["source_regressed", "source_unreadable_at_close"]
+          },
+          "\(UsageLedger.shared.rows().first { $0.sessionID == "rot-closed" }?.coverageReasons ?? [])")
+    let closed = UsageLedger.shared.rows().first { $0.sessionID == "rot-closed" }
+    expect("sealed with no readable source", closed?.coverage, "source_missing")
+    expect("keeping the number it had measured before that source went", closed?.total, 950)
+    expect("and the aggregate reports both stages of it",
+           UsageLedger.shared.aggregate().totals
+               .coverageReasons["source_unreadable_at_close"], 1)
+    expect("beside the rotation it used to erase", UsageLedger.shared.aggregate().totals
+               .coverageReasons["source_regressed"], 2)
+}
+
+/// Run SQL against a usage store directly, around the ledger rather than through it. Only the
+/// migration group needs this: everywhere else, asking the store something through anything but
+/// `Row.measurement` is the defect the seam exists to stop.
+@discardableResult
+func usageStoreExec(_ url: URL, _ sql: String) -> Bool {
+    var db: OpaquePointer?
+    guard sqlite3_open_v2(url.path, &db,
+                          SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) == SQLITE_OK
+    else { sqlite3_close(db); return false }
+    defer { sqlite3_close(db) }
+    var error: UnsafeMutablePointer<CChar>?
+    let ok = sqlite3_exec(db, sql, nil, nil, &error) == SQLITE_OK
+    if let error { print("      sqlite: \(String(cString: error))"); sqlite3_free(error) }
+    return ok
+}
+
+/// The first column of the first row, as text. Enough to ask a store what shape it is in.
+func usageStoreScalar(_ url: URL, _ sql: String) -> String? {
+    var db: OpaquePointer?
+    guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK
+    else { sqlite3_close(db); return nil }
+    defer { sqlite3_close(db) }
+    var statement: OpaquePointer?
+    defer { sqlite3_finalize(statement) }
+    guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK,
+          sqlite3_step(statement) == SQLITE_ROW,
+          sqlite3_column_type(statement, 0) != SQLITE_NULL,
+          let raw = sqlite3_column_text(statement, 0) else { return nil }
+    return String(cString: raw)
+}
+
+/// A store exactly as store version 1 wrote one: that migration's `CREATE` statements verbatim —
+/// no `input_basis`, `coverage_reason` singular, no unique index on the corrections — and
+/// `PRAGMA user_version = 1`.
+///
+/// **Nothing in this suite had ever built one.** Every other ledger test starts from an empty
+/// file, which runs every branch of `migrate` in a single pass and therefore exercises the
+/// creation path rather than the upgrade path: the `ALTER`s, the de-duplication and the rename
+/// had zero coverage, on a store that already exists on this machine and holds the only copy of
+/// evidence nothing else keeps.
+func writeVersionOneUsageStore(at url: URL, today: String) {
+    usageStoreExec(url, """
+        CREATE TABLE IF NOT EXISTS usage_intervals (
+          interval_key TEXT PRIMARY KEY,
+          schema_version INTEGER NOT NULL,
+          assistant TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          boundary_kind TEXT NOT NULL,
+          boundary_id TEXT NOT NULL,
+          segment_no INTEGER NOT NULL,
+          segment_reason TEXT NOT NULL,
+          origin TEXT NOT NULL,
+          task_id TEXT, schedule_id TEXT,
+          project_key TEXT, working_dir TEXT,
+          kind_raw TEXT, isolation TEXT,
+          depth INTEGER, claim_count INTEGER, timeout_seconds INTEGER,
+          task_state TEXT,
+          model TEXT, reasoning_effort TEXT, billing_mode TEXT NOT NULL,
+          usage_raw TEXT,
+          input_new INTEGER, output INTEGER,
+          cache_read INTEGER, cache_write INTEGER, total INTEGER,
+          source_total INTEGER, reconciliation TEXT,
+          cost_value REAL, cost_unit TEXT, cost_basis TEXT NOT NULL,
+          price_snapshot_id TEXT, missing_reason TEXT,
+          coverage TEXT NOT NULL, coverage_reason TEXT,
+          sealed INTEGER NOT NULL DEFAULT 0,
+          source_bytes INTEGER,
+          started_at REAL NOT NULL, ended_at REAL,
+          local_day TEXT NOT NULL,
+          observed_at REAL NOT NULL, updated_at REAL NOT NULL,
+          graph_id TEXT, parent_task_id TEXT, retry_of TEXT, attempt INTEGER,
+          landing_state TEXT, disposition TEXT,
+          UNIQUE (assistant, session_id, boundary_kind, boundary_id,
+                  segment_no, schema_version)
+        );
+        CREATE INDEX IF NOT EXISTS usage_intervals_day ON usage_intervals (local_day);
+        CREATE INDEX IF NOT EXISTS usage_intervals_task ON usage_intervals (task_id);
+        CREATE TABLE IF NOT EXISTS usage_cursors (
+          assistant TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          attributed_input INTEGER, attributed_output INTEGER,
+          attributed_cache_read INTEGER, attributed_cache_write INTEGER,
+          attributed_cost REAL,
+          open_key TEXT, boundary_kind TEXT, boundary_id TEXT, segment_no INTEGER,
+          model TEXT, local_day TEXT, source_bytes INTEGER,
+          updated_at REAL NOT NULL,
+          PRIMARY KEY (assistant, session_id)
+        );
+        CREATE TABLE IF NOT EXISTS usage_corrections (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          interval_key TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          was TEXT, proposed TEXT,
+          written_at REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS price_snapshots (
+          id TEXT PRIMARY KEY,
+          captured_at REAL NOT NULL,
+          rates TEXT NOT NULL
+        );
+        PRAGMA user_version=1;
+        """)
+
+    // One row a v1 store measured and marked, and one it sealed with nothing to measure. The
+    // keys are written out rather than computed so that a change to the key recipe fails here
+    // instead of orphaning every row on the machine and looking like an empty month.
+    usageStoreExec(url, """
+        INSERT INTO usage_intervals
+          (interval_key, schema_version, assistant, session_id, boundary_kind, boundary_id,
+           segment_no, segment_reason, origin, task_id, model, billing_mode,
+           input_new, output, cache_read, cache_write, total,
+           cost_basis, coverage, coverage_reason, sealed,
+           started_at, local_day, observed_at, updated_at)
+        VALUES
+          ('\(versionOneMarkedKey)', 1, 'claude', 'sess-v1', 'task', 'task-v1', 0, 'start',
+           'dispatch', 'task-v1', 'claude-opus-5', 'unknown',
+           10, 10, 980, 0, 1000,
+           'unknown', 'partial', 'source_regressed', 0,
+           1787000000.0, '\(today)', 1787000000.0, 1787000000.0),
+          ('\(versionOneUnknownKey)', 1, 'claude', 'sess-v1-gone', 'task', 'task-v1-gone', 0,
+           'start', 'dispatch', 'task-v1-gone', 'claude-opus-5', 'unknown',
+           NULL, NULL, NULL, NULL, NULL,
+           'unknown', 'source_missing', NULL, 1,
+           1787000000.0, '\(today)', 1787000000.0, 1787000000.0);
+
+        INSERT INTO usage_cursors
+          (assistant, session_id, attributed_input, attributed_output, attributed_cache_read,
+           attributed_cache_write, open_key, boundary_kind, boundary_id, segment_no, model,
+           local_day, updated_at)
+        VALUES ('claude', 'sess-v1', 10, 10, 980, 0, '\(versionOneMarkedKey)', 'task',
+                'task-v1', 0, 'claude-opus-5', '\(today)', 1787000000.0);
+
+        INSERT INTO usage_corrections (interval_key, reason, was, proposed, written_at) VALUES
+          ('\(versionOneMarkedKey)', 'source_changed_after_seal', NULL, '{"a":1}', 1787000001.0),
+          ('\(versionOneMarkedKey)', 'source_changed_after_seal', NULL, '{"a":1}', 1787000002.0),
+          ('\(versionOneMarkedKey)', 'source_changed_after_seal', NULL, '{"a":1}', 1787000003.0),
+          ('\(versionOneMarkedKey)', 'source_changed_after_seal', NULL, '{"a":2}', 1787000004.0),
+          ('\(versionOneMarkedKey)', 'source_changed_after_seal', NULL, NULL, 1787000005.0),
+          ('\(versionOneMarkedKey)', 'source_changed_after_seal', NULL, NULL, 1787000006.0);
+        """)
+}
+
+/// `SHA256(claude, sess-v1, task, task-v1, 0, 1)`, written down. See `writeVersionOneUsageStore`.
+let versionOneMarkedKey = "17bf4de916dc66318782e55de585df82064f02e4af31b7f7de50c85b1edaa362"
+let versionOneUnknownKey = "6f1e1418f8240a682ef82431d9437a18404f6b0ee7ab5cf953f7f495a7dfffa5"
+
+// A migration is the one piece of this store that runs against data nobody can replace. The
+// review that asked for this had to build a version-1 store by hand to check it at all.
+group("a store written under version 1 is upgraded in place, and never orphaned") {
+    let store = freshUsageLedger()
+    defer { forgetUsageLedger(store) }
+    let url = store.appendingPathComponent("usage.sqlite3")
+    let today = UsageLedger.localDay(of: Date())
+    writeVersionOneUsageStore(at: url, today: today)
+    expect("the fixture is a version 1 store before anything opens it",
+           usageStoreScalar(url, "PRAGMA user_version;"), "1")
+
+    // Opening it through the ledger's own door is what runs the migration.
+    let rows = UsageLedger.shared.rows()
+    expect("both stored rows survive the upgrade", rows.count, 2)
+    expect("and the store says which version it is now",
+           usageStoreScalar(url, "PRAGMA user_version;"), String(UsageLedger.storeVersion))
+
+    let marked = UsageLedger.shared.rows(taskID: "task-v1").first
+    expect("a v1 row keeps the number it was written with", marked?.total, 1000)
+    expect("under the key it was written with", marked?.intervalKey, versionOneMarkedKey)
+    expect("which is still the key today's code computes for that identity",
+           UsageLedger.intervalKey(assistant: .claude, sessionID: "sess-v1", boundaryKind: .task,
+                                   boundaryID: "task-v1", segmentNo: 0),
+           versionOneMarkedKey)
+    expect("and the mark it was written with reaches every reader as a set of one",
+           marked?.coverageReasons, ["source_regressed"])
+    check("the column added by the upgrade is NULL on a row written before it existed",
+          marked?.inputBasis == nil, marked?.inputBasis ?? "not nil")
+    expect("a v1 row that measured nothing still measures nothing",
+           UsageLedger.shared.rows(taskID: "task-v1-gone").first?.counts,
+           UsageLedger.Counts())
+    expect("and carries no mark it never had",
+           UsageLedger.shared.rows(taskID: "task-v1-gone").first?.coverageReasons, [])
+
+    expect("the single-mark column is gone rather than left behind to be read",
+           usageStoreScalar(url, """
+               SELECT COUNT(*) FROM pragma_table_info('usage_intervals')
+                WHERE name = 'coverage_reason';
+               """), "0")
+    expect("replaced by the set that carries the same values",
+           usageStoreScalar(url, """
+               SELECT COUNT(*) FROM pragma_table_info('usage_intervals')
+                WHERE name = 'coverage_reasons';
+               """), "1")
+
+    expect("six identical corrections written under v1 are de-duplicated to three",
+           UsageLedger.shared.correctionCount(), 3)
+    expect("and the index that stops them coming back exists",
+           usageStoreScalar(url, """
+               SELECT name FROM sqlite_master
+                WHERE type = 'index' AND name = 'usage_corrections_once';
+               """), "usage_corrections_once")
+
+    // The upgraded store is still a store: the next reading lands on the row that was already
+    // there rather than opening a second one beside it, which is what a changed key recipe or a
+    // lost cursor would look like — and it looks like a quiet doubling, not like an error.
+    UsageLedger.shared.observeNow(ledgerSample(.claude, session: "sess-v1", boundary: .task,
+                                               id: "task-v1", origin: .dispatch,
+                                               usage: ["input": 20, "output": 20,
+                                                       "cache_read": 1_960, "cache_write": 0,
+                                                       "total": 2_000],
+                                               model: "claude-opus-5"))
+    expect("a later reading lands on the v1 row rather than beside it",
+           UsageLedger.shared.rows(taskID: "task-v1").count, 1)
+    expect("carrying its increment and nothing else",
+           UsageLedger.shared.rows(taskID: "task-v1").first?.total, 2_000)
+    expect("with the mark it was migrated with still on it",
+           UsageLedger.shared.rows(taskID: "task-v1").first?.coverageReasons,
+           ["source_regressed"])
 }
 
 // The backfill runs over the whole registry on every launch, and `./build.sh` closes and reopens
@@ -22761,8 +23100,8 @@ group("the watcher decides when to read, and what a session leaves behind when i
                   && row?.total == nil
           })
     expect("saying which kind of unavailable it is",
-           UsageLedger.shared.rows().first { $0.sessionID == "sess-vanished" }?.coverageReason,
-           "source_unreadable_at_close")
+           UsageLedger.shared.rows().first { $0.sessionID == "sess-vanished" }?.coverageReasons,
+           ["source_unreadable_at_close"])
 }
 
 group("what a terminal's spend is filed under, and what the backfill hands over") {

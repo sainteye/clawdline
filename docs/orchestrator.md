@@ -1833,6 +1833,15 @@ from `/tmp/.clawdline` and from the transcript archive, so neither the 200-row c
 24-hour sweep can reach it. About 2 KB a row, which is roughly 115 MB a year at this machine's
 pace, so detail is kept and nothing is deleted to save space.
 
+**Two version numbers, and they are not interchangeable.** `schema_version` is part of every
+interval key, so bumping it to add a column would orphan every row ever written from the key its
+own collector computes next time; the store's `user_version` is the migration counter, and adding
+a column, an index or a column *name* moves that one alone. Each migration statement is
+independent of the ones before it, so a crash part-way through leaves the next launch re-running a
+statement that fails harmlessly and then finishing — which is deliberate rather than lucky, and is
+covered by a test that builds a version-1 store rather than starting, as every other test does,
+from an empty file that runs the creation path instead of the upgrade.
+
 Read it through [`GET /v1/orchestrator/usage`](api.md#get-v1orchestratorusage-get-v1orchestratorusagecsv)
 and its `.csv`. There is deliberately no page and no chart: the data is the asset, and what a page
 should show is a question a month of real rows will answer better than a guess made today.
@@ -1889,7 +1898,7 @@ difference against a per-session cursor and never the number it was handed. Read
 transcript twice attributes zero the second time; a task that ran inside a watched session is
 counted once, by whichever collector reached it first.
 
-### Four invariants, and why each one is there
+### Five invariants, and why each one is there
 
 - **Re-reading a source can never double-count.** The cursor above; the deterministic interval key
   and its unique constraint are the second belt, not the first.
@@ -1906,6 +1915,14 @@ counted once, by whichever collector reached it first.
 - **Every number carries what kind of number it is.** Not one `costUsd` but `cost_value`,
   `cost_unit`, `cost_basis` and `price_snapshot_id`, and where there is no cost a `missing_reason`
   naming which kind of unavailable it is.
+- **A row's coverage marks accumulate; they do not overwrite.** If two things are true about a
+  row's coverage, both reach every reader. `coverage_reasons` is a **set** and every writer unions
+  into it. It was one slot with a last writer, and the two facts that collide are reachable: a
+  task filed under an invented identity whose transcript is then replaced, and a watched session
+  that rotated and was unreadable by the time it closed. The mark that lost was always the earlier
+  one — `source_regressed` — so the rows whose number was measured across a seam were exactly the
+  rows that stopped saying so. This is the invariant above wearing the writer's clothes: a mark
+  that never reaches a reader is a mark that was never made.
 
 ### Money, and the failure this exists to stop
 
@@ -1957,7 +1974,13 @@ unaligned comparison looks like an experiment and is not one.
 ### One seam where a row becomes a number
 
 **Every reader of this store goes through `UsageLedger.Row.measurement`, and none of them reads
-the token columns directly.** The aggregate, the wire payload and the CSV export all ask it.
+the token columns directly.** The aggregate, the wire payload and the CSV export all ask it — and
+so do the two that used to be exceptions to that sentence, because "true today and nothing enforces
+it" is the state this seam replaces. The range's **ordering** asks `Measurement.incomplete` rather
+than re-deciding "incomplete" in an `ORDER BY`, so the day the seam widens what counts as
+incomplete the sort cannot quietly disagree with it; and the `was` snapshot a correction records —
+the object somebody compares a disputed month against — is taken through the seam like everything
+else.
 
 That is a structural answer to a defect that was found three times in one review, in three
 different readers: the store marks a row — a part it never measured, a coverage reason, a session
@@ -1978,6 +2001,19 @@ What that means for a number the route hands back:
 - `coverageReasons` carries the store's own words for why rows are marked. `coverage` says how
   much of a source was read; it says nothing about a session filed under an invented identity or
   a number measured across a replaced transcript.
+- **A row can carry more than one of those marks, and it is counted under each.** So these counts
+  can sum to more than `rows`, deliberately: they answer *how many rows carry this mark*, never
+  *how many rows are marked*. In the CSV they arrive in one `coverage_reasons` field,
+  space-separated — space rather than comma because the export is what a month gets audited from
+  and an embedded comma is exactly what a hand-rolled splitter gets wrong.
+- **`total` and the CSV's `measured` are the same quantity, and the CSV's `total` is not.** The
+  route's `total` is the sum of what was measured; the export's `total` column is strict and
+  empty the moment one part of a row is unknown. Adding up an export therefore has to use
+  `measured`, which is why that column exists: with only the strict one, a range holding a single
+  partly measured row could no longer be reconciled against the number the route had just given
+  for the same range, and a figure that cannot be checked against the figure beside it is what
+  this store is for. `measured` is empty rather than `0` for a row that measured nothing at all,
+  the same rule the aggregate follows.
 
 ### Reserved, and honest about it
 
@@ -1995,7 +2031,7 @@ Four known gaps, written down rather than left to be discovered:
   what it costs when it does happen, because the earlier wording did not: the invented identity
   gets a **cursor of its own**, so a session that was already being watched has its cumulative
   counters attributed a second time and that group's total doubles. The row says so
-  (`coverageReasons.session_unresolved` on the route, `coverage_reason` in the CSV); nothing
+  (`coverageReasons.session_unresolved` on the route, `coverage_reasons` in the CSV); nothing
   repairs it, and a later reading under the real session id does not merge the two.
 - A Claude session whose transcript cannot be named by Claude Code's own session registry is not
   checkpointed at all. Usage is accounting, and a ranked guess at which transcript belongs to a
