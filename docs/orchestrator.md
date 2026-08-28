@@ -534,7 +534,7 @@ The field has three states, and the registry and every GET record preserve the d
 |---|---|---|
 | one or more paths | the task declares exactly these write scopes | reserves their frozen keys; disjoint declarations can silence L1 |
 | `[]` | the task positively declares that it is read-only | reserves no lease, never conflicts or receives `409 workspace_busy`, and can silence L1 |
-| absent | the task's write set is unknown | reserves no lease; L1 keeps its directory warning |
+| absent | the task's write set is unknown | reserves no lease; L1 keeps its directory warning, and the dispatch reply carries `claims_missing` |
 
 An empty array gives a read-only task an active, harmless declaration. Silence therefore has only
 one meaning: both tasks supplied enough scope information to prove their frozen claim sets do not
@@ -551,6 +551,15 @@ does announce itself: an over-wide claim blocks other trees whether or not the t
 [the terminal audit](#the-terminal-claims-audit) names every claimed path the task never touched.
 One failure mode is reported after the fact and the other is not reported at all, which is why the
 absent field is the more expensive of the two to leave alone.
+
+**So the quiet one is answered out loud.** 60.7% of the dispatches measured on this machine
+declared nothing at all. Declaring costs the root about twenty output tokens, and a collision costs
+a whole task — three to eighteen million on that same record — so an absent field puts a
+`claims_missing` item in the dispatch reply's `warnings`, on the first request and on the
+idempotent retry alike. It is never a refusal: a root that has not worked its write set out yet
+must still be able to dispatch. **`"claims": []` does not warn**, and that difference is the whole
+point — warning about a positive read-only declaration would teach callers that the field is noise,
+which is how omission reached 60.7% in the first place.
 
 The check and registration happen atomically as soon as the dispatch has validated. A serialized
 task reserves its claims for its entire time in `queued`; promotion is not a second gap where

@@ -18646,6 +18646,93 @@ group("a tab that never opened is retried from its own task file, twice and no f
            refusal(Orchestrator.respawn(taskID: chosenID, secret: "too-short"))?.1, "bad_task")
 }
 
+// 60.7% of the dispatches measured on this machine declared no claims at all. Twenty output
+// tokens against a collision that costs a whole task — three to eighteen million on that same
+// record — so the reply says something. It says it about absence only: `"claims": []` is a
+// positive declaration that the task writes nothing.
+group("a dispatch that never said what it writes is warned, and one that said nothing is not") {
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    var made: [URL] = []
+    defer {
+        for directory in made { try? manager.removeItem(at: directory) }
+        AssistantQuota.clearOverridesForTesting()
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    AssistantQuota.setOverrideForTesting(
+        AssistantQuota(assistant: .claude, installed: true, loggedIn: true, plan: nil,
+                       availability: .ok, source: .observed,
+                       observedAt: Int(Date().timeIntervalSince1970), resetsAt: nil,
+                       detail: "plenty", windows: []),
+        for: .claude)
+    Orchestrator.workspaceOverlapObserverForTesting = { _, _ in }
+    Orchestrator.taskStarterForTesting = { _, _, _, _, _, _ in
+        .started(id: "TAB-\(UUID().uuidString)", backend: .iterm)
+    }
+
+    func dispatch(claims: [String]?, secret pair: String) -> [String: Any]? {
+        let id = UUID().uuidString.lowercased()
+        let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
+        made.append(directory)
+        try? manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        var obj: [String: Any] = [
+            "clawdline_protocol": 1, "task_id": id, "kind": "code", "assistant": "claude",
+            "project_dir": "/tmp", "title": "writes something, or says it does not",
+            "instructions": "do the work", "timeout_minutes": 30,
+        ]
+        if let claims { obj["claims"] = claims }
+        try! JSONSerialization.data(withJSONObject: obj)
+            .write(to: directory.appendingPathComponent("task.json"), options: .atomic)
+        guard case .ok(let payload) = Orchestrator.dispatch(taskID: id,
+                                                           secret: String(repeating: pair, count: 32))
+        else { return nil }
+        return payload
+    }
+    func warns(_ payload: [String: Any]?) -> Bool {
+        (payload?["warnings"] as? [[String: Any]] ?? [])
+            .contains { $0["code"] as? String == "claims_missing" }
+    }
+
+    let silent = dispatch(claims: nil, secret: "a1")
+    check("a task.json with no claims field at all is warned about",
+          warns(silent))
+    check("and it is a warning: the task was still dispatched",
+          (silent?["task"] as? [String: Any])?["state"] as? String == "spawning")
+    check("the warning says what to add, since the point is to change what the next one sends",
+          ((silent?["warnings"] as? [[String: Any]] ?? [])
+            .first { $0["code"] as? String == "claims_missing" }?["message"] as? String)?
+            .contains("\"claims\": []") == true)
+    // The difference between the two is the whole point: warning about an empty list would teach
+    // callers that the field is noise, which is how it got to 60.7% in the first place.
+    check("a task that declared it writes nothing is not warned about",
+          !warns(dispatch(claims: [], secret: "b2")))
+    check("nor is one that declared what it writes",
+          !warns(dispatch(claims: ["Sources/Declared.swift"], secret: "c3")))
+
+    // The idempotent retry answers with the same record, and the same task is still the one that
+    // did not say what it writes.
+    let repeatedID = UUID().uuidString.lowercased()
+    let repeatedDirectory = Orchestrator.root.appendingPathComponent(repeatedID, isDirectory: true)
+    made.append(repeatedDirectory)
+    try? manager.createDirectory(at: repeatedDirectory, withIntermediateDirectories: true)
+    try! JSONSerialization.data(withJSONObject: [
+        "clawdline_protocol": 1, "task_id": repeatedID, "kind": "code", "assistant": "claude",
+        "project_dir": "/tmp", "title": "asked for twice", "instructions": "do the work",
+        "timeout_minutes": 30,
+    ]).write(to: repeatedDirectory.appendingPathComponent("task.json"), options: .atomic)
+    let secret = String(repeating: "d4", count: 32)
+    _ = Orchestrator.dispatch(taskID: repeatedID, secret: secret)
+    guard case .ok(let again) = Orchestrator.dispatch(taskID: repeatedID, secret: secret) else {
+        check("a repeated dispatch answers with the existing record", false)
+        return
+    }
+    check("and the retry of an undeclared task is warned about too", warns(again))
+}
+
 group("an attached briefing is delivered work, not a tab still trying to open") {
     let manager = FileManager.default
     let store = Orchestrator.storeURL

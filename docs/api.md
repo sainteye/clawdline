@@ -1361,10 +1361,25 @@ The wire field has three distinct states, preserved through the registry and all
 |---|---|---|
 | one or more paths | declared write scopes | freezes and holds those lease keys |
 | `[]` | explicit read-only declaration | holds no lease, never conflicts or receives claims `409`, and participates in L1 silence |
-| field absent | unknown write scope | holds no lease and retains L1 directory warnings |
+| field absent | unknown write scope | holds no lease, retains L1 directory warnings, and the dispatch reply carries a `claims_missing` warning |
 
 `[]` gives read-only work a proactive, harmless way to say so. Silence now has only one meaning:
 both sides supplied declarations whose frozen scopes do not intersect; omission says nothing.
+
+**An absent field is answered with a warning, and only an absent one.** 60.7% of the dispatches
+measured on one machine declared nothing at all; declaring costs the root about twenty output
+tokens, and a collision costs a whole task — three to eighteen million on that same record. So the
+reply carries
+
+```json
+{"warnings":[{"code":"claims_missing",
+              "message":"This task declared no claims, so nothing reserves the paths it is about to write…"}]}
+```
+
+on the first dispatch and on the idempotent retry alike. It is never a refusal: a root that has
+not worked out its write set yet must still be able to dispatch. **`"claims": []` does not warn** —
+it is a positive declaration that the task writes nothing, and warning about it would teach callers
+that the field is noise, which is how omission reached 60.7% in the first place.
 
 If either task's root cannot be resolved, the dispatch is also admitted and the warning has the
 same fields and message with `code: "claims_overlap_unknown_root"`. An unknown root never has the

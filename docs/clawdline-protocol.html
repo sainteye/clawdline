@@ -649,12 +649,14 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
     <tbody>
       <tr><td>one or more paths</td><td>the task declares exactly these write scopes</td><td>reserves their frozen keys; two disjoint declarations can silence the directory-level warning</td></tr>
       <tr><td><code>[]</code></td><td>the task positively declares that it is read-only</td><td>reserves no lease, never conflicts, never receives <code>409 workspace_busy</code>, and still participates in that silence</td></tr>
-      <tr><td>absent</td><td>the write set is unknown</td><td>reserves no lease, and keeps the directory-level warning about every pair sharing a <code>project_dir</code></td></tr>
+      <tr><td>absent</td><td>the write set is unknown</td><td>reserves no lease, keeps the directory-level warning about every pair sharing a <code>project_dir</code>, and the dispatch reply carries a <code>claims_missing</code> warning</td></tr>
     </tbody>
   </table>
   </div>
 
   <p>An empty array gives read-only work an active, harmless declaration. Silence therefore has exactly one meaning: <strong>both tasks supplied enough scope information to prove their claim sets do not intersect.</strong> Merely omitting the field never makes that assertion.</p>
+
+  <p><strong>An absent field is answered out loud, and only an absent one.</strong> 60.7% of the dispatches measured on one machine declared nothing at all. Declaring costs the root about twenty output tokens; a collision costs a whole task, which on that record is three to eighteen million — so the dispatch reply carries <code>warnings:[{"code":"claims_missing",…}]</code>, on the first request and on the idempotent retry alike. It is never a refusal: a root that has not worked its write set out yet must still be able to dispatch. <code>"claims": []</code> does not warn, and that difference is the point — warning about a positive read-only declaration would teach callers that the field is noise, which is how omission reached 60.7% in the first place.</p>
 
   <div class="note bad">
     <span class="tag">There are two ways to get this wrong, and only one of them is loud</span>
