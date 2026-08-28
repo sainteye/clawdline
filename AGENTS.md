@@ -131,6 +131,9 @@ A new test must be seen red before the change that makes it green. A test born g
 nothing: reviews here have repeatedly found suites that stayed green after the guarded logic was
 replaced with a stub — or deleted outright. Break the thing once, watch the test catch it, then fix it.
 
+Do not build from the live working tree, because it may contain another session's partial edits or
+untracked files.
+
 ### To compare two surfaces, hold the observed thing still
 
 Two sessions asked the same question: is a task's cost a stored fact, or something computed at the
@@ -150,8 +153,6 @@ This is the sister of the rule about saying what you actually read before claimi
 confirmed something, and it is the harder of the two to catch: that one stops an assertion with no
 source, and this one stops an assertion whose sources are real but not aligned. The second kind
 arrives wearing the shape of an experiment, so nobody thinks to question it.
-Do not build from the live working tree, because it may contain another session's partial edits or
-untracked files.
 
 ## Dispatching substantial work with Clawdline
 
