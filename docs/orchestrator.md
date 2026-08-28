@@ -569,6 +569,10 @@ must still be able to dispatch. **`"claims": []` does not warn**, and that diffe
 point — warning about a positive read-only declaration would teach callers that the field is noise,
 which is how omission reached 60.7% in the first place.
 
+The best evidence for the warning is not an argument. The root session that specified it dispatched
+the review of its own delivery without `claims`, and drew the `workspace_overlap` notice that
+`claims_missing` exists to prevent — on the day it implemented the guard.
+
 The check and registration happen atomically as soon as the dispatch has validated. A serialized
 task reserves its claims for its entire time in `queued`; promotion is not a second gap where
 another root can enter. A live claim from a different root refuses the new dispatch immediately

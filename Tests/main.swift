@@ -13599,24 +13599,20 @@ group("the graph and the house rules reach the child that needs them") {
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     check("the starting rules are the file this repository ships, character for character",
           !shipped.isEmpty && Orchestrator.defaultPolicy == shipped)
-    check("which says something about models and something about shape",
-          Orchestrator.defaultPolicy.contains("haiku")
-              && Orchestrator.defaultPolicy.contains("Breadth before depth"))
-    // The two halves a dispatcher needs before it picks anything: whether to dispatch, and what
-    // shape to use. Both were added after a graph was dispatched to research them.
-    check("and it decides whether to dispatch before it decides how",
-          Orchestrator.defaultPolicy.contains("Should this be dispatched at all"))
-    // A judgement the person can overrule. The first draft told a dispatcher to decline and do
-    // the work itself, which turns a useful check into a veto over somebody else's call — and
-    // "I want Codex to take this one" is a reason no policy file can see.
-    check("and a no there asks rather than refuses",
-          Orchestrator.defaultPolicy.contains("a recommendation and not a refusal")
-              && Orchestrator.defaultPolicy.contains("their yes settles it"))
-    check("and offers named shapes rather than leaving the graph improvised",
-          Orchestrator.defaultPolicy.contains("Split and join")
-              && Orchestrator.defaultPolicy.contains("Build then read"))
-    check("and the whole of it fits inside what a briefing will carry",
-          Orchestrator.defaultPolicy.count <= Orchestrator.policyLimit)
+    // Nothing below quotes the rules themselves. This file is the house's opinion and is meant to
+    // be rewritten; a suite that pins its sentences goes red for a reason that has nothing to do
+    // with the code, and the person who reworded a paragraph is left reading a compiler.
+    // What is the code's business is that the document arrives whole and usable.
+    let policyLines = Orchestrator.defaultPolicy.split(separator: "\n", omittingEmptySubsequences: false)
+    check("it arrives as the whole document rather than a first paragraph of it",
+          policyLines.count > 1 && policyLines.first?.hasPrefix("# ") == true
+              && policyLines.filter { $0.hasPrefix("## ") }.count >= 2)
+    // Not merely under the limit: what a briefing would actually carry is the same document,
+    // unshortened. Shipping rules that trip the app's own truncation notice would be the house
+    // arguing with itself, and asked this way the assertion quotes neither the rules nor the notice.
+    check("and what a briefing carries is the whole of it, uncut",
+          Orchestrator.defaultPolicy.count <= Orchestrator.policyLimit
+              && Orchestrator.policy(reading: Orchestrator.defaultPolicy) == Orchestrator.defaultPolicy)
 
     // A missing resource means no house rules, which is exactly what an empty policy file has
     // always meant. Nothing is invented to fill the gap.
