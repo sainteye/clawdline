@@ -105,8 +105,9 @@ already more terminals than anybody wants to audit. Five, three and three would 
 The floor is enforced twice, and the two fail differently.
 
 **The briefing says so.** `CHILD.md` tells every child which level it is on: one with room under it
-gets the whole recipe for dispatching — including `root.parent_task`, the field that says where the
-new task hangs — and one standing on the floor is told plainly not to.
+is given one line naming `DISPATCHING.md`, the file beside it that holds the whole recipe —
+including `root.parent_task`, the field that says where the new task hangs — and one standing on
+the floor is told plainly not to dispatch at all.
 [`skills/clawdline/SKILL.md`](../skills/clawdline/SKILL.md) carries the same rule for a root. A child that follows its instructions never has to find the limit
 by hitting it.
 
@@ -237,12 +238,20 @@ quota it describes is the provider's, shared by everything running under that lo
 
 `~/.config/clawdline/dispatch-policy.md` is what this Mac says about **how** work should be
 handed out, as opposed to how much of it. It is read fresh on every dispatch — an edit reaches
-the next task, not the next launch — and copied into the briefing of every child that is allowed
-to dispatch in turn. A leaf never sees it: rules about choosing a model are noise to a session
-with no such choice to make.
+the next task, not the next launch — and copied into the `DISPATCHING.md` of every child that is
+allowed to dispatch in turn. A leaf never sees it: rules about choosing a model are noise to a
+session with no such choice to make.
 
 It ships with opinions rather than a comment saying "put your rules here", because a file with
 defensible rules already in it is one somebody edits and an empty one is a feature nobody finds.
+**What ships is `Resources/dispatch-policy.md`** — the file this repository edits, copied into the
+app bundle by `build.sh` and read from there when a machine has no policy of its own. It used to be
+a Swift string literal holding an older draft of the same rules, which is worse than it sounds:
+`ensurePolicyFile` writes that copy, so it is exactly what a fresh install receives, and a machine
+could start life with rules nobody had read for months. If the resource is missing there are no
+house rules, which is what an empty policy file has always meant — and no file is written at all,
+because this function never overwrites and an empty one created by a bad read would be permanent.
+
 It opens with the two decisions that come before any of the others:
 
 **Whether to dispatch at all.** The measurement is sharp in both directions — work that splits
@@ -289,6 +298,7 @@ having a good day.
   <task-id>/                     # 0700 — lowercase UUID
     task.json                    # the root writes this, before dispatching
     CHILD.md                     # the app writes this, just before injection
+    DISPATCHING.md               # …and this, only for a child that may hand work on
     result.json                  # the child writes this, when it is done
     artifacts/                   # whatever the child was asked to produce
 ```
@@ -532,7 +542,7 @@ The field has three states, and the registry and every GET record preserve the d
 |---|---|---|
 | one or more paths | the task declares exactly these write scopes | reserves their frozen keys; disjoint declarations can silence L1 |
 | `[]` | the task positively declares that it is read-only | reserves no lease, never conflicts or receives `409 workspace_busy`, and can silence L1 |
-| absent | the task's write set is unknown | reserves no lease; L1 keeps its directory warning |
+| absent | the task's write set is unknown | reserves no lease; L1 keeps its directory warning, and the dispatch reply carries `claims_missing` |
 
 An empty array gives a read-only task an active, harmless declaration. Silence therefore has only
 one meaning: both tasks supplied enough scope information to prove their frozen claim sets do not
@@ -549,6 +559,19 @@ does announce itself: an over-wide claim blocks other trees whether or not the t
 [the terminal audit](#the-terminal-claims-audit) names every claimed path the task never touched.
 One failure mode is reported after the fact and the other is not reported at all, which is why the
 absent field is the more expensive of the two to leave alone.
+
+**So the quiet one is answered out loud.** 60.7% of the dispatches measured on this machine
+declared nothing at all. Declaring costs the root about twenty output tokens, and a collision costs
+a whole task — three to eighteen million on that same record — so an absent field puts a
+`claims_missing` item in the dispatch reply's `warnings`, on the first request and on the
+idempotent retry alike. It is never a refusal: a root that has not worked its write set out yet
+must still be able to dispatch. **`"claims": []` does not warn**, and that difference is the whole
+point — warning about a positive read-only declaration would teach callers that the field is noise,
+which is how omission reached 60.7% in the first place.
+
+The best evidence for the warning is not an argument. The root session that specified it dispatched
+the review of its own delivery without `claims`, and drew the `workspace_overlap` notice that
+`claims_missing` exists to prevent — on the day it implemented the guard.
 
 The check and registration happen atomically as soon as the dispatch has validated. A serialized
 task reserves its claims for its entire time in `queued`; promotion is not a second gap where
@@ -762,8 +785,33 @@ You are a Clawdline CHILD agent for task 3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234. R
 One line, because it is typed into a terminal and Return ends it. Everything that would not fit is
 in `CHILD.md`, which the app writes immediately before injecting: where the task is, where the
 outputs go, how long it has, the graph it is one node of, whether it may dispatch and how many,
-this Mac's house rules if it may, that it must not read other task directories, and exactly what
-`result.json` has to look like.
+that it must not read other task directories, and exactly what `result.json` has to look like.
+
+**It asks for one progress note before the work starts.** `AGENTS.md`, `docs/dispatching.md` and
+the dispatch policy have all required it for a while; the briefing — the only thing a child
+actually reads — asked only for a note when the work drifted. So `CHILD.md` now asks for the first
+one within about three minutes: one sentence saying what the child has decided to do now that it
+has read the briefing and `task.json`, before the work rather than during it. The reason is in the
+briefing too, because a child that knows why will actually send it — it is the only thing that lets
+a wrong direction be cancelled at minute three instead of minute twenty-six, and the two dearest
+cancelled tasks on this machine burned 18.5M and 16.5M tokens before anybody could tell what they
+had set off to do.
+
+**How to dispatch is not in there.** It is in `DISPATCHING.md`, written beside it and only when the
+allowance is above zero; `CHILD.md` keeps one line naming that file. The reason is a measurement:
+across 206 dispatches on one machine, 28,323 characters of instructions on how to dispatch went
+into every direct child's briefing — about 7,081 tokens each — and not one of those 206 children
+ever dispatched anything. The teaching is not wrong, it is addressed to the rare child that will
+use it, and it was being charged to all of them.
+
+The pointer is worth following rather than merely polite, and that is deliberate: **the credential
+path, the `root.parent_task` rule and the `curl` appear only in `DISPATCHING.md`.** The briefing no
+longer hands the credential over, so a child that skips the file has to go and find one. That is a
+strong pointer and not a lock — the `clawdline` skill carries the same recipe, credential path
+included — but a convenience summary back in `CHILD.md`, enough to act on without following the
+pointer, would undo even the pointer, and is the thing not to add. The file costs nothing when it is not read:
+it lands in the task directory the child already has `--add-dir` access to, and is reclaimed with
+the rest of that directory.
 
 It also says what language to speak. The briefing itself is English so every assistant reads it
 the same way, but the person watching the tab is whoever set Clawdline's language — so the file
@@ -984,6 +1032,27 @@ into five times without the child ever recording the message, or the app was res
 task was in `spawning`. That last one is not a bug: once a task starts opening, the recoverable
 queued secret is gone, so the app fails closed rather than risk opening the same global operation
 twice. A serialized task that was still `queued` is recovered and pumped instead.
+
+**A `spawn_failed` task can be retried by the broker rather than by the root.** It was 16.5% of
+every dispatch on the machine this was measured on — 34 of 206, 33 of them Codex — and the answer
+used to be that the root writes the whole `task.json` out again under a fresh id, because that id
+is finished and re-sending it just returns the terminal record. That is thirty-four rewrites by
+the most context-loaded session in the tree, and every one of them is a chance to drop a field.
+
+[`POST /v1/orchestrator/tasks/:id/respawn`](api.md#post-v1orchestratortasksidrespawn) copies the
+original `task.json` with a fresh `task_id`, mints a fresh secret unless the caller supplies one,
+and dispatches it through the ordinary gate — same capacity, depth, claims, quota and
+serialization rules, same refusals. `instructions` is why it is a file copy rather than a record
+copy: the registry never held it.
+
+Only `spawn_failed` may be retried, because it is the one terminal state that means *nothing ran*;
+anything else is `409 not_respawnable`. **At most two respawns descend from one original**, counted
+over the whole family below it rather than along any one chain — a retry of a retry cannot launder
+the cap by being the first from its own immediate parent, and neither can asking the original
+again, which is the shape a caller actually falls into because the id it has in hand is the one
+that failed — and the third is `409 respawn_exhausted`. Each new task records
+`respawn_of` and `respawn_generation`, so a chain reads as a chain in the registry instead of as
+three unrelated tasks with the same title.
 
 **A briefed task survives a restart.** Its secret is on disk as a hash, `result.json` is on disk as
 a file, and the timeout is arithmetic on a stored timestamp. So the app comes back up, reads the
@@ -1648,7 +1717,7 @@ they are not yours to keep** — if a child produced something worth having, cop
 directory going away after a day is the same promise `/tmp` always made, made explicitly.
 
 Heavyweight `work/` storage has a shorter, separate life. It is removed during a successful
-finalize, or when the non-success grace deadline expires; `artifacts/`, `task.json`, `CHILD.md` and
+finalize, or when the non-success grace deadline expires; `artifacts/`, `task.json`, `CHILD.md`, `DISPATCHING.md` and
 `result.json` remain untouched until the whole task-root sweep above. Reclaiming a missing `work/`
 is success, and a filesystem refusal never delays or reverses the terminal task state.
 
@@ -1753,9 +1822,9 @@ finishes with a picture nobody can reach. Vector is still the right ask for diag
 anything that has to stay editable.
 
 The one rule stated before any of them: **a child dispatches only if its briefing said it could,
-and what it opens opens nothing.** `CHILD.md` is where a child reads that, and it carries the same
-dispatch steps in miniature — spelled out rather than pointed at the skill, because half of these
-sessions are Codex and Codex has no skills.
+and what it opens opens nothing.** `CHILD.md` is where a child reads that, and `DISPATCHING.md`
+beside it carries the same dispatch steps in miniature — spelled out rather than pointed at the
+skill, because half of these sessions are Codex and Codex has no skills.
 
 ---
 

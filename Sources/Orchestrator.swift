@@ -928,7 +928,9 @@ enum Orchestrator {
         tasks.values.contains { $0.scheduleID == id && !$0.state.isTerminal }
     }
 
-    private static func scheduleSecret() -> String? {
+    /// 32 random bytes as hex. Every task secret this app mints itself comes from here — the
+    /// scheduled dispatch below, and a respawn retrying a tab that would not open.
+    private static func freshTaskSecret() -> String? {
         var bytes = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
             return nil
@@ -940,7 +942,7 @@ enum Orchestrator {
     /// gate as every root request. No claims, capacity, trust or serialization rule is duplicated.
     private static func dispatch(_ schedule: Schedule) -> Reply {
         let id = UUID().uuidString.lowercased()
-        guard let secret = scheduleSecret() else {
+        guard let secret = freshTaskSecret() else {
             return .refused(500, "internal", "Could not create the scheduled task secret.")
         }
         var obj = schedule.taskTemplate
@@ -1291,6 +1293,16 @@ enum Orchestrator {
         /// The task whose child dispatched this one, when it said so. Nil at depth 1, and nil at
         /// depth 2 when the parent was recognised by session id instead.
         var parentTaskId: String?
+        /// The `spawn_failed` task this one was retried from, when it was. Nil for every
+        /// ordinary dispatch. Recorded so the chain is visible in the registry rather than being
+        /// three unrelated-looking tasks with the same title.
+        var respawnOf: String?
+        /// How far down a respawn chain this task sits: `0` for an original, `1` for the retry of
+        /// one, `2` for the retry of that. It is a description of where this task came from and
+        /// nothing more: ``Orchestrator/respawnLimit`` is enforced over the whole family
+        /// descending from one original, by ``Orchestrator/respawnFamily(of:)``, because a depth
+        /// held on the retried task is a number no respawn ever updates.
+        var respawnGeneration = 0
         /// The whole graph this task is one node of, in the dispatcher's own words. Carried into
         /// the briefing so a leaf knows what its output feeds — which is the difference between
         /// a usable answer and an essay.
@@ -2754,6 +2766,12 @@ enum Orchestrator {
         return id.allSatisfy { ("a"..."f").contains($0) || $0.isNumber || $0 == "-" }
     }
 
+    /// 32 bytes written as lower-case hex, which is what every task secret on this Mac is —
+    /// `openssl rand -hex 32` in the briefing, `freshTaskSecret()` when the broker mints one.
+    static func isTaskSecret(_ secret: String) -> Bool {
+        secret.count == 64 && secret.allSatisfy { ("a"..."f").contains($0) || $0.isNumber }
+    }
+
     static func validIsolationBase(_ value: String) -> Bool {
         guard !value.isEmpty, value.count <= 200, !value.hasPrefix("-"), !value.contains("..")
         else { return false }
@@ -3692,7 +3710,16 @@ enum Orchestrator {
 
     /// Runs on the server queue. Everything filesystem- and process-shaped is safe there — the
     /// `/start` route has always called `StartPoints.start` from it.
-    static func dispatch(taskID: String, secret: String, schedule: Schedule? = nil) -> Reply {
+    /// Where a respawned task came from, handed to `dispatch` rather than read out of
+    /// `task.json`. Deliberately not a public field: the chain position is the broker's own
+    /// count, and a caller writing it into a task file could reset it to zero.
+    struct RespawnOrigin: Equatable {
+        let taskID: String
+        let generation: Int
+    }
+
+    static func dispatch(taskID: String, secret: String, schedule: Schedule? = nil,
+                         respawn: RespawnOrigin? = nil) -> Reply {
         guard Config.shared.orchestratorEnabled else {
             return .refused(403, "orchestrator_disabled", "Task dispatch is switched off in Settings.")
         }
@@ -3702,7 +3729,7 @@ enum Orchestrator {
         // Same task again is the same answer again: the root retrying a dispatch that already
         // landed must not spawn a second child.
         if let existing = held(taskID) { return successfulDispatchReply(for: existing) }
-        guard secret.count == 64, secret.allSatisfy({ ("a"..."f").contains($0) || $0.isNumber }) else {
+        guard isTaskSecret(secret) else {
             return .refused(422, "bad_task", "secret must be 64 hex characters.")
         }
         guard let rateTicket = takeDispatchRate() else {
@@ -3835,6 +3862,8 @@ enum Orchestrator {
         task.scheduleID = schedule?.id
         task.scheduleCloseTab = schedule?.closeTab ?? .onSuccess
         task.scheduleNotifyFailure = schedule?.notifyOnFailure ?? true
+        task.respawnOf = respawn?.taskID
+        task.respawnGeneration = respawn?.generation ?? 0
         task.isolation = made.isolation
         task.worktree = preparedWorktree
         task.attachSessionId = made.attachSessionId
@@ -3952,14 +3981,173 @@ enum Orchestrator {
         return reply
     }
 
+    /// How many retries may descend from one original dispatch.
+    ///
+    /// `spawn_failed` was 16.5% of every dispatch on the machine this was measured on — 34 of
+    /// 206, and 33 of those were Codex — and until this route existed the protocol's answer was
+    /// that the root must write the whole `task.json` out again under a fresh id. That is
+    /// thirty-four rewrites by the most context-loaded session in the tree. Two is enough to get
+    /// past a terminal that would not open, and few enough that a tab failing for a real reason
+    /// stops being retried instead of looping.
+    static let respawnLimit = 2
+
+    /// Retry a dispatch whose tab never opened, without making the root write the task out again.
+    ///
+    /// A fresh id and a fresh secret, because the old id is finished — re-sending it returns the
+    /// terminal record and opens nothing. Everything else comes from the original `task.json`,
+    /// which is the only place `instructions` was ever written down: it is copied with the id
+    /// swapped, so plan, claims, serialize, assistant, model, project directory, isolation and
+    /// the root binding all arrive unchanged.
+    ///
+    /// `secret` may be supplied by the caller exactly as it is for an ordinary dispatch; when it
+    /// is not, the broker mints one and the reply carries it.
+    static func respawn(taskID: String, secret supplied: String? = nil) -> Reply {
+        guard Config.shared.orchestratorEnabled else {
+            return .refused(403, "orchestrator_disabled", "Task dispatch is switched off in Settings.")
+        }
+        guard isTaskID(taskID) else {
+            return .refused(422, "bad_task", "task_id must be a lowercase UUID.")
+        }
+        guard let origin = held(taskID) else {
+            return .refused(404, "not_found", "No task named that")
+        }
+        // Only the one terminal state that means "nothing ran". A `failure` is an answer, a
+        // `timeout` had a session that read the briefing, and a `cancelled` was somebody's
+        // decision — copying any of those into a new tab would be re-running work, not retrying
+        // a dispatch.
+        guard origin.state == .spawnFailed else {
+            return .refused(status: 409, code: "not_respawnable",
+                            message: "Only a spawn_failed task may be respawned; task \(taskID) "
+                                   + "is \(origin.state.rawValue).",
+                            extra: ["state": origin.state.rawValue])
+        }
+        let family = respawnFamily(of: origin)
+        guard family.descendants < respawnLimit else {
+            return .refused(status: 409, code: "respawn_exhausted",
+                            message: "Task \(family.original) has already been respawned "
+                                   + "\(family.descendants) times; the limit is "
+                                   + "\(respawnLimit). Dispatch a new task, or find out why the "
+                                   + "tab will not open.",
+                            extra: ["original_task": family.original,
+                                    "respawns": family.descendants,
+                                    "limit": respawnLimit])
+        }
+        if let supplied, !isTaskSecret(supplied) {
+            return .refused(422, "bad_task", "secret must be 64 hex characters.")
+        }
+        guard let data = try? Data(contentsOf: origin.dir.appendingPathComponent("task.json")),
+              var obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return .refused(422, "bad_task",
+                            "The original task.json is gone, so there is nothing to respawn from; "
+                            + "write a new one.")
+        }
+        guard let secret = supplied ?? freshTaskSecret() else {
+            return .refused(500, "internal", "Could not create the respawned task secret.")
+        }
+        let fresh = UUID().uuidString.lowercased()
+        obj["task_id"] = fresh
+        let directory = root.appendingPathComponent(fresh, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: directory.appendingPathComponent("artifacts", isDirectory: true),
+                withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                                  ofItemAtPath: directory.path)
+            let file = directory.appendingPathComponent("task.json")
+            try JSONSerialization.data(withJSONObject: obj,
+                                       options: [.prettyPrinted, .sortedKeys,
+                                                 .withoutEscapingSlashes]).write(to: file,
+                                                                                 options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                  ofItemAtPath: file.path)
+        } catch {
+            return .refused(500, "internal", "Could not write the respawned task file.")
+        }
+        let reply = dispatch(taskID: fresh, secret: secret,
+                             respawn: RespawnOrigin(taskID: taskID,
+                                                    generation: origin.respawnGeneration + 1))
+        // The caller needs the secret it did not choose. A dispatch that was refused leaves the
+        // directory behind for the ordinary sweep, exactly as a root's own abandoned attempt does.
+        guard case .ok(var payload) = reply else { return reply }
+        // Audited after the dispatch rather than before it. Written first, the line records
+        // retries that never happened — an `over_capacity` refusal opens no tab — and an audit
+        // that reads bigger than the thing it audits is worse than none.
+        RemoteAuth.audit("orchestrator.respawn", ["task": fresh, "from": taskID,
+                                                  "original": family.original,
+                                                  "generation": String(origin.respawnGeneration + 1)])
+        payload["secret"] = secret
+        payload["respawn_of"] = taskID
+        payload["original_task"] = family.original
+        return .ok(payload)
+    }
+
+    /// The first task in `task`'s respawn chain, and how many tasks the registry holds that
+    /// descend from it.
+    ///
+    /// The cap is on the family, not on any one chain: *at most two respawns descend from one
+    /// original*. A chain depth cannot enforce that, because `respawn` writes nothing back to the
+    /// task it retried — a `spawn_failed` original stays at generation zero however many times it
+    /// is respawned, so counting its own depth lets the same original be retried for ever. That
+    /// is also the shape the caller falls into, since the id a root has in hand is the one that
+    /// failed: `curl …/$FAILED_ID/respawn`, again, and again.
+    ///
+    /// Both walks stop at a record the registry no longer holds and at a cycle it should never
+    /// contain, so a swept ancestor shortens the chain rather than hanging the walk, and a swept
+    /// retry is not counted — the count is over what is still known, exactly as the chain is.
+    private static func respawnFamily(of task: Task) -> (original: String, descendants: Int) {
+        load()
+        lock.lock()
+        let parents = tasks.mapValues(\.respawnOf)
+        lock.unlock()
+        // `parents[id]` is doubly optional on purpose: `.some(nil)` is a held original, `nil` is a
+        // task the registry has forgotten, and only the first may be walked through.
+        func originOf(_ id: String) -> String {
+            var current = id
+            var seen: Set<String> = [current]
+            while let previous = parents[current] ?? nil, !seen.contains(previous),
+                  parents[previous] != nil {
+                seen.insert(previous)
+                current = previous
+            }
+            return current
+        }
+        let original = originOf(task.id)
+        let descendants = parents.keys.filter { $0 != original && originOf($0) == original }.count
+        return (original, descendants)
+    }
+
     /// One response builder for both the first request and an idempotent retry. The scan happens
     /// after spawn so a task that failed to open is already terminal and produces no warning.
+    /// Said when `claims` was absent from `task.json` — never when it was present and empty.
+    ///
+    /// 60.7% of the dispatches measured on this machine declared nothing at all. Declaring costs
+    /// the root about twenty output tokens; a collision costs a whole task, which on that same
+    /// record is three to eighteen million. **The difference between absent and `[]` is the
+    /// whole point**: an empty list is a positive declaration that the task writes nothing, and
+    /// warning about it would teach callers that the field is noise. A warning either way, never
+    /// a refusal — a root that has not worked out its write set yet should still be able to
+    /// dispatch.
+    static func claimsMissingWarning() -> [String: Any] {
+        [
+            "code": "claims_missing",
+            "message": "This task declared no claims, so nothing reserves the paths it is about "
+                + "to write and no other root can be told to stay off them. Add \"claims\" to "
+                + "task.json — the relative paths this task may write — or \"claims\": [] to say "
+                + "it writes nothing.",
+        ]
+    }
+
     private static func successfulDispatchReply(for task: Task, notify: Bool = false,
                                                 claimsOverlaps: [ClaimsOverlap]? = nil,
                                                 additionalWarnings: [[String: Any]] = []) -> Reply {
         guard let record = existingRecord(task.id) else {
             return .refused(500, "internal", "The task was lost while being made.")
         }
+        // On the idempotent retry as well as the first request: the same task is still the one
+        // that did not say what it writes.
+        let additionalWarnings = task.claimsDeclared
+            ? additionalWarnings
+            : additionalWarnings + [claimsMissingWarning()]
         let overlaps = workspaceOverlaps(for: task)
         if notify { notifyWorkspaceOverlaps(newTask: task, overlaps: overlaps) }
         let claimWarnings: [ClaimsOverlap]
@@ -7111,6 +7299,14 @@ enum Orchestrator {
     /// head is a tree nobody can be asked to supervise.
     static var depthFloor: Int { Config.shared.orchestratorMaxGrandchildren > 0 ? 2 : 1 }
 
+    /// How many sessions this task may open in turn: the configured allowance while there is a
+    /// level below it, nothing at all once it is standing on the floor. One function because two
+    /// files now depend on the answer — the briefing that mentions it, and the teaching that only
+    /// exists when it is above zero.
+    static func handOnAllowance(for task: Task) -> Int {
+        task.depth < depthFloor ? Config.shared.orchestratorMaxGrandchildren : 0
+    }
+
     static func childBrief(for task: Task) -> String {
         let dir = "/tmp/.clawdline/\(task.id)"
         let workspaceRule: String
@@ -7158,14 +7354,16 @@ enum Orchestrator {
                 + "\(dir)/artifacts/\n  (create the directory if it is missing)."
             isolationSection = ""
         }
-        // What this one may hand on in turn: the configured allowance while there is a level
-        // below it, and nothing at all once it is standing on the floor. Written into the
-        // briefing rather than left to be discovered, because a child that finds out by being
-        // refused has already spent a turn on it.
-        let allowance = task.depth < depthFloor ? Config.shared.orchestratorMaxGrandchildren : 0
+        // What this one may hand on in turn, and where the recipe for doing it lives. Written
+        // into the briefing rather than left to be discovered, because a child that finds out by
+        // being refused has already spent a turn on it — but the recipe itself is one line away
+        // in `DISPATCHING.md` rather than here. See `dispatchingBrief(for:)`.
+        let allowance = handOnAllowance(for: task)
         let handOnRule = allowance > 0
             ? "You may hand parts of this on to at most \(allowance) child sessions of your own, "
-                + "which cannot hand anything on further — see \"Handing work on\" below."
+                + "which cannot hand anything on further. How — the credential, the fields, the "
+                + "refusals and this Mac's house rules — is in \(dir)/DISPATCHING.md, and it is "
+                + "nowhere else: read that file before you hand anything on."
             : "Do not dispatch Clawdline tasks of your own."
         let verificationMinutes = task.timeoutMinutes % 3 == 0
             ? String(task.timeoutMinutes / 3)
@@ -7256,11 +7454,18 @@ enum Orchestrator {
         The user may turn agent notifications off. A `409 agent_notify_disabled` response is not
         your fault: leave the content in `result.json`, report failure honestly, and do not retry.
 
-        ## Say what you are doing, when it stops being what you were sent to do
+        ## Say what you are doing — once at the start, and again when it changes
 
-        Your title was fixed before you started. When what you are actually doing stops matching
-        it — you decide to rewrite the fixture too, the real problem turns out to be somewhere
-        else, you have moved on to the second half — say so in one line:
+        **Send the first one within about three minutes of starting**, before you begin the work
+        rather than during it: one sentence saying what you have decided to do now that you have
+        read this file and `task.json`. It is the only thing that lets a wrong direction be
+        cancelled at minute three instead of minute twenty-six — the two most expensive cancelled
+        tasks on this Mac burned 18.5M and 16.5M tokens before anybody could tell what they had
+        set off to do. Nobody can read your screen; this note is the whole of what they have.
+
+        After that, your title was fixed before you started. When what you are actually doing
+        stops matching it — you decide to rewrite the fixture too, the real problem turns out to
+        be somewhere else, you have moved on to the second half — say so the same way:
 
         ```bash
         curl -s -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/progress \\
@@ -7289,7 +7494,7 @@ enum Orchestrator {
         is in, what files it claimed, and for isolated ones the branch and head where its code
         actually lives. Read it before you build something you think nobody has built. If a row
         looks like your job, say so in your result rather than doing it twice.
-        \(handOnSection(for: task, allowance: allowance))\(policySection(allowance: allowance))
+
         ## Reporting — this is the completion signal, do it exactly
 
         When the work is done (or has failed for good), write \(dir)/result.json:
@@ -7396,164 +7601,47 @@ enum Orchestrator {
     static func ensurePolicyFile() -> URL {
         let url = policyURL
         guard !FileManager.default.fileExists(atPath: url.path) else { return url }
+        // Nothing to write is not the same as writing nothing. This function never overwrites, so
+        // an empty file created because the bundled resource could not be read would be permanent:
+        // the machine would keep the empty rules for good, and a later launch that can read the
+        // resource would leave them alone. Leaving no file at all behaves identically today and
+        // stays fixable tomorrow.
+        let starting = defaultPolicy
+        guard !starting.isEmpty else { return url }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
-        try? Data(defaultPolicy.utf8).write(to: url, options: .atomic)
+        try? Data(starting.utf8).write(to: url, options: .atomic)
         return url
     }
 
-    /// Opinionated on purpose. An empty file with a comment saying "put your rules here" is a
-    /// feature nobody uses; a file with defensible rules already in it is one somebody edits.
-    /// English because it is copied into a briefing every other line of which is English, and
-    /// because it is read by an assistant before it is read by a person — but nothing stops it
-    /// being rewritten in any language, and a child will follow it just the same.
-    static let defaultPolicy = """
-    # How work is handed out on this Mac
+    /// Where the starting policy ships: `Resources/dispatch-policy.md`, which `build.sh` copies
+    /// into the app bundle beside the hook script and the mascots.
+    ///
+    /// The override is for the test binary, which is a bare `swiftc` executable with no bundle to
+    /// ask — and it is also how "the resource is missing" is tested, by pointing it at a path
+    /// that is not there.
+    static var bundledPolicyURLOverrideForTesting: URL?
+    static var bundledPolicyURL: URL? {
+        bundledPolicyURLOverrideForTesting
+            ?? Bundle.main.url(forResource: "dispatch-policy", withExtension: "md")
+    }
 
-    Clawdline reads this file every time a task is dispatched and copies it into the briefing of every
-    child that is allowed to dispatch in turn. Edit it freely. Delete everything and the feature
-    switches itself off — an empty file means there are no house rules.
-
-    ## First: should this be dispatched at all?
-
-    There is a measurement behind this and it is sharp in both directions: on work that splits into
-    independent pieces, coordinating several agents beat a single one by **80.9%**; on work where
-    every step depends on the one before it, *every* multi-agent arrangement tested was **39–70%
-    worse** than a single agent, because the handoffs break a chain that needed to stay whole.
-
-    So the question is one sentence: **can this be cut into pieces that do not need to talk to each
-    other, and joined at the end?**
-
-    **When the answer is no, that is a recommendation and not a refusal.** Say so, give the reason in
-    a sentence, and ask — then do whatever they answer. The person has reasons this file cannot see:
-    they may want Codex to take this one, or their own context left free for something else, or
-    simply to watch it happen in a tab they can step into. **Their yes settles it**, and does not need
-    to be argued with or hedged. What is owed is the reason, once, before the work starts — not after
-    it went badly.
-
-    These are the shapes that look dispatchable and are not, and the ones worth saying it about:
-
-    - **Diagnosis and debugging.** Every step is chosen because of what the last step found. Handing
-      that to a fresh session throws away the reasoning that made the next step obvious.
-    - **Anything needing dozens of small parallel jobs.** Every node is a real assistant cold-starting
-      and holding a terminal tab. A hundred of them is slower and dearer than the batch tool for it,
-      and nobody can read a hundred tabs.
-    - **Anything on a path where somebody is waiting.** A node takes tens of seconds to reach a prompt.
-    - **Agents that need to talk back and forth.** Dispatch is one-way: brief, wait, collect. Every
-      round trip means a whole new task.
-    - **Output that has to be typed data for a program to consume.** What comes back is a paragraph
-      and some file paths.
-    - **Work smaller than its own briefing.** If writing the instructions takes longer than doing it,
-      that is the answer.
-
-    ## Then: should it use an isolated worktree?
-
-    Use `"isolation":"worktree"` for a code-producing child whose tracked-file edits can be
-    reviewed and landed as a branch. Its checkout starts from a commit, so uncommitted base-tree
-    work and gitignored dependencies are absent. The child commits only on its own branch; it does
-    not push, switch branches, or run `git worktree` itself.
-
-    Do not choose it for a running app or port, shared databases/devices/caches, work that needs
-    the base checkout's untracked state, artifact-only or review tasks, or ordinary reading. Those
-    either are not isolated by a worktree or produce no branch worth landing. This is a judgement,
-    not a refusal: say what does not fit and let the person decide. `serialize` remains available
-    for machine-global resources, and may be combined with isolation.
-
-    ## Then: pick a shape
-
-    Named shapes, so a graph is chosen rather than improvised. Every one of them ends the same way —
-    see the last section.
-
-    - **Split and join** — one question, several independent pieces. Leaves gather (`haiku`), one node
-      joins and judges (`sonnet`+). The default for research, audits, and surveys.
-    - **Build then read** — anything producing code or a decision somebody acts on. Workers build;
-      a separate node reads what they built and reports what is wrong. Never the same node, never the
-      same session.
-    - **Decide then do** — one node reads and writes the plan without touching anything; a person
-      passes it; a second node (usually Codex) implements it. The value is the gap in the middle,
-      where a person can still say no cheaply.
-    - **Batch with takeover** — the same mechanical change across independent modules, one node each.
-      When one dies its tab survives with its state on screen, and a person finishes it by typing.
-    - **Candidates** — the same problem to several nodes with different instructions, each producing a
-      complete working answer. A person picks. No judging node: what is being compared is taste, and a
-      judge model has its own.
-
-    ## Which assistant
-
-    - **Codex** for *making* something you can then look at: writing code, drawing an image with
-      the image model it has built in, hand-writing an SVG, running a build until it goes green,
-      mechanical edits across many files. It cannot be told where to save a drawing, so a task
-      that wants one has to say: generate it, then copy the file into the task's `artifacts/`.
-    - **Claude** for reading and judging: reviewing a diff, working out why something behaves the
-      way it does, searching and weighing what it found, writing prose somebody will read.
-
-    ## Which model
-
-    Name one when the default is the wrong size for the job, and say why in the plan.
-
-    - `haiku` — mechanical, single-source work. Fetch a page and pull three facts out of it.
-      Reformat a list. Anything where being wrong is obvious.
-    - `sonnet` — ordinary work with judgement in it, and the default choice for a leaf.
-    - `opus` — a decision somebody will act on without checking, and any synthesis of several
-      children's answers.
-
-    **A verdict runs on a model at least as strong as what produced what it is judging.** A
-    review by something smaller than the thing reviewed is a rubber stamp with a token cost.
-
-    ## The shape of the graph
-
-    - Plan the whole graph before dispatching any of it: what each leaf produces, who joins those
-      answers together, and what the top hands back.
-    - **Breadth before depth.** Two children splitting a job beat one child that will hand half
-      of it on. Go a level deeper only when the second level's work cannot be named until the
-      first level has answered.
-    - **Every node is told the whole graph**, not just its own job — that is what `plan` in
-      task.json is for. A leaf that knows what its output feeds writes a usable output; one that
-      does not writes an essay.
-    - Leaves are narrow enough to state in a sentence. If a child's instructions need three
-      paragraphs to say what "done" means, it is two children.
-
-    ## Dispatching itself
-
-    - **Stagger them.** Wait 30–45 seconds between one dispatch and the next. Every child is a
-      real assistant cold-starting on this Mac, and started together they compete — a tab that
-      has not reached a prompt in four minutes is `spawn_failed`. A minute of waiting buys the
-      whole batch.
-    - **A `spawn_failed` retry needs a fresh id and a fresh secret.** That task id is terminal.
-    - **Say when you did it yourself.** If a dispatch failed twice and you did the work instead,
-      that is usually right — but the summary has to say so.
-
-    ## Somebody has to check the work
-
-    Every graph that produces code, or a decision anybody will act on, ends with a node whose only
-    job is to find what is wrong with it. Not a fifth worker — a reader.
-
-    - **It produces nothing.** It reads the other nodes' artifacts and writes findings. Fixing is
-      the next round's job, or a person's — and that holds even when it is sure it knows the fix,
-      because a repair is a fast way to bury the judgement somebody needed to see.
-    - **It did not help build the thing.** Self-review is measurably bad at this: a model judging
-      its own output misses about a third of its own semantic drift, and the mechanism is
-      structural rather than a capability gap — a judge favours low-perplexity text, and a
-      model's own output is low-perplexity to it by construction. (Giving it the outputs rather
-      than the conversation behind them is the same idea extended one step; that half is
-      reasoning, not a measured result.)
-    - **A different assistant helps, and does not solve it.** Codex wrote it, Claude reads it —
-      but do not mistake that for independence. A panel of nine frontier models was measured to
-      carry only about two votes' worth of independent information, because different models get
-      the same items wrong. Where a review really matters, use *several* reviewers and take the
-      majority, and pick them for being complementary rather than merely different.
-    - **Opus-class, always.** Not "no weaker than what it judges" — an absolute floor. A review is
-      worth exactly what the reviewer's judgement is worth, and a missed finding travels all the
-      way to the end. Measured here: a Sonnet reviewer, in the middle of correctly explaining that
-      judging is prone to hallucination, invented a specific citation — it claimed a document
-      disputed a term the document never mentions.
-    - **Name the paths it may read.** List the exact `/tmp/.clawdline/<id>/artifacts/`
-      directories. This is how the rule above is enforced rather than merely stated: without it a
-      reviewer can wander into the production conversation it was supposed to be kept out of.
-    - **A verdict, with its receipts.** "What is wrong, worst first, is it safe to ship" — and
-      every finding names the artifact and the passage it rests on. A verdict without sources is
-      the exact shape a hallucinating judge produces, and it costs nothing to require.
-    """
+    /// The rules a machine with no policy file of its own starts with.
+    ///
+    /// **This was a string literal, and the literal went stale.** The live rules are
+    /// `Resources/dispatch-policy.md` — the file this repository edits, and the one `build.sh`
+    /// already copies into the bundle — while the copy compiled into the app kept an older draft
+    /// of them. That copy is not a curiosity: `ensurePolicyFile` writes it, so it is exactly what
+    /// a fresh install receives, and a machine could start life with rules nobody had read for
+    /// months.
+    ///
+    /// A missing resource means no house rules at all, which is what an empty policy file has
+    /// always meant. Nothing is invented to fill the gap.
+    static var defaultPolicy: String {
+        guard let url = bundledPolicyURL,
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return "" }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     /// The graph this task is one node of, when the dispatcher wrote one down.
     ///
@@ -7684,9 +7772,54 @@ enum Orchestrator {
         """
     }
 
+    /// Everything about handing work on, in its own file — or nil for a child that may not.
+    ///
+    /// **This used to be two sections of `CHILD.md`, and every child paid for them.** Measured
+    /// across 206 dispatches on one machine: 28,323 characters of instructions on how to
+    /// dispatch went into every direct child's briefing, and not one of those 206 ever
+    /// dispatched anything. It is not that the teaching is wrong; it is that it is addressed to
+    /// the rare child that will actually use it, and was being charged to all of them.
+    ///
+    /// So it moved beside `CHILD.md`, in the same task directory the child already has access
+    /// to, and `CHILD.md` keeps one line naming it. **The credential path, the `parent_task`
+    /// rule and the `curl` live only here**, which is what makes that line worth following
+    /// rather than merely polite: **the briefing no longer hands the credential over**, so a
+    /// child that skips this file has to go and find one. That is a strong pointer and not a
+    /// lock — the `clawdline` skill teaches the same recipe, credential path included — but a
+    /// convenience summary back in `CHILD.md` would undo even the pointer, and is the thing not
+    /// to add.
+    static func dispatchingBrief(for task: Task) -> String? {
+        let allowance = handOnAllowance(for: task)
+        guard allowance > 0 else { return nil }
+        let sections = handOnSection(for: task, allowance: allowance)
+            + policySection(allowance: allowance)
+        return """
+        # Handing work on — task \(task.id)
+
+        You are reading this because \(task.dir.path)/CHILD.md said to, and it said to because you
+        are about to hand part of your task to a session of your own. Your own job is in
+        `CHILD.md` and in `task.json`; this file is only about opening somebody else.
+
+        Nothing here is repeated in `CHILD.md`. If you dispatch from memory instead of from this
+        file you will get the credential or the parent field wrong, and a dispatch with the parent
+        field wrong is filed under somebody else.
+
+        \(sections.trimmingCharacters(in: .newlines))
+        """
+    }
+
     private static func writeChildBrief(for task: Task) {
         let url = task.dir.appendingPathComponent("CHILD.md")
         try? Data(childBrief(for: task).utf8).write(to: url, options: .atomic)
+        // Beside it, and only for a child that may use it. Removed rather than left when the
+        // allowance is nothing, so a re-brief after the setting changed cannot leave a child
+        // reading a recipe it is no longer allowed to follow.
+        let teaching = task.dir.appendingPathComponent("DISPATCHING.md")
+        if let text = dispatchingBrief(for: task) {
+            try? Data(text.utf8).write(to: teaching, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: teaching)
+        }
     }
 
     // MARK: - Usage and cost
@@ -7903,6 +8036,10 @@ enum Orchestrator {
         if let terminal = rootTerminal { root["terminalId"] = terminal }
         if let parent = task.parentTaskId { root["taskId"] = parent }
         if !root.isEmpty { out["root"] = root }
+        if let from = task.respawnOf {
+            out["respawn_of"] = from
+            out["respawn_generation"] = task.respawnGeneration
+        }
         var child: [String: Any] = [:]
         if let id = task.childTerminalId { child["terminalId"] = id }
         if let backend = task.childBackend { child["backend"] = backend.rawValue }
@@ -8465,6 +8602,10 @@ enum Orchestrator {
         if let v = task.rootAssistant { out["root_assistant"] = v.rawValue }
         if let v = task.rootLabel { out["root_label"] = v }
         if let v = task.parentTaskId { out["parent_task"] = v }
+        if let v = task.respawnOf {
+            out["respawn_of"] = v
+            out["respawn_generation"] = task.respawnGeneration
+        }
         if let v = task.model { out["model"] = v }
         if let v = task.reasoningEffort { out["reasoning_effort"] = v.rawValue }
         out["permission"] = task.permission.rawValue
@@ -8719,6 +8860,13 @@ enum Orchestrator {
         task.rootAssistant = (obj["root_assistant"] as? String).flatMap(Assistant.init(rawValue:))
         task.rootLabel = obj["root_label"] as? String
         task.parentTaskId = obj["parent_task"] as? String
+        // A chain position is only meaningful beside the task it descends from, so a row missing
+        // one is missing both: a generation with no origin would count against a cap for a chain
+        // nothing can name.
+        task.respawnOf = (obj["respawn_of"] as? String).flatMap { isTaskID($0) ? $0 : nil }
+        task.respawnGeneration = task.respawnOf == nil
+            ? 0
+            : min(max(obj["respawn_generation"] as? Int ?? 1, 1), respawnLimit)
         task.model = StartPoints.modelName(obj["model"] as? String)
         task.reasoningEffort = assistant == .codex
             ? (obj["reasoning_effort"] as? String).flatMap(ReasoningEffort.init(rawValue:))

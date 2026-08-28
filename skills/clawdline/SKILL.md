@@ -46,15 +46,23 @@ to a session that continues it — is a different move with different rules, and
 - You have read, or been asked to read, `/tmp/.clawdline/<id>/CHILD.md`
 - You are holding a `TASK_SECRET=`
 
-**If you are a child, this skill is not what governs you — `CHILD.md` is.** Read its "Handing work
-on" section:
+**If you are a child, this skill is not what governs you — `CHILD.md` is.** It says in one sentence
+which of these you are, and you do not have to work it out:
 
-- **The section is there** → follow it. It already spells the whole thing out for you, including
-  the one field nobody else can fill in: `root.parent_task`, which is the id of your own task.
-  §1–§6 below are the long version of the same thing and are fine to consult, but where they
-  disagree, `CHILD.md` wins.
-- **The section is not there** → you are the floor. **Stop.** Tell the user this session is at the
-  bottom of the tree and cannot dispatch any further, then do the work yourself.
+- **"You may hand parts of this on to at most N child sessions of your own…"** → you may dispatch,
+  and the same sentence names `DISPATCHING.md` in your own task directory. **That file is the
+  recipe, and it is nowhere else** — the credential, the fields, the refusals and this Mac's house
+  rules, including the one field nobody else can fill in: `root.parent_task`, the id of your own
+  task. Read it before you hand anything on. §1–§6 below are the long version and are fine to
+  consult, but where they disagree, `CHILD.md` and `DISPATCHING.md` win.
+- **"Do not dispatch Clawdline tasks of your own."** → you are the floor. **Stop.** Tell the user
+  this session is at the bottom of the tree and cannot dispatch any further, then do the work
+  yourself.
+
+Until 2026-08-28 that teaching lived inside `CHILD.md` under a heading, and this section told you
+to look for the heading and stop if it was absent. It now lives in its own file, so a child that
+never dispatches no longer pays 28,323 characters for it — and looking for the old heading would
+now tell every child on earth to stop.
 
 The tree is two levels deep: the user's session opens children, those children open one more
 level, and that is the end of it. Without a floor, one job becomes five becomes twenty-five and a

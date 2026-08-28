@@ -117,6 +117,7 @@ stream being the one that stays open, which is its whole job.
 | `POST` | `/v1/orchestrator/tasks/:id/landing` | task secret **or** orchestrator token for pending/abandoned; **orchestrator token only for landed** | — |
 | `POST` | `/v1/orchestrator/tasks/:id/progress` | that task's secret | — |
 | `GET` | `/v1/orchestrator/tasks/:id/inflight` | that task's secret | — |
+| `POST` | `/v1/orchestrator/tasks/:id/respawn` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/tasks/:id/cancel` | orchestrator token, **or** token + key | `send` **and** the write switch |
 | `GET` | `/v1/orchestrator/assistants` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/landings` | orchestrator token, **or** token | `read` |
@@ -1386,10 +1387,25 @@ The wire field has three distinct states, preserved through the registry and all
 |---|---|---|
 | one or more paths | declared write scopes | freezes and holds those lease keys |
 | `[]` | explicit read-only declaration | holds no lease, never conflicts or receives claims `409`, and participates in L1 silence |
-| field absent | unknown write scope | holds no lease and retains L1 directory warnings |
+| field absent | unknown write scope | holds no lease, retains L1 directory warnings, and the dispatch reply carries a `claims_missing` warning |
 
 `[]` gives read-only work a proactive, harmless way to say so. Silence now has only one meaning:
 both sides supplied declarations whose frozen scopes do not intersect; omission says nothing.
+
+**An absent field is answered with a warning, and only an absent one.** 60.7% of the dispatches
+measured on one machine declared nothing at all; declaring costs the root about twenty output
+tokens, and a collision costs a whole task — three to eighteen million on that same record. So the
+reply carries
+
+```json
+{"warnings":[{"code":"claims_missing",
+              "message":"This task declared no claims, so nothing reserves the paths it is about to write…"}]}
+```
+
+on the first dispatch and on the idempotent retry alike. It is never a refusal: a root that has
+not worked out its write set yet must still be able to dispatch. **`"claims": []` does not warn** —
+it is a positive declaration that the task writes nothing, and warning about it would teach callers
+that the field is noise, which is how omission reached 60.7% in the first place.
 
 If either task's root cannot be resolved, the dispatch is also admitted and the warning has the
 same fields and message with `code: "claims_overlap_unknown_root"`. An unknown root never has the
@@ -2475,6 +2491,51 @@ sentence and one curl: a session that has to stop and compose a status report wi
 appear as `progress` on the task record and on every `inflight` row. Sending the same sentence as
 the newest one is accepted and ignored — a loop is not news, and refusing it would only cost the
 caller a retry. A terminal task is refused with `409 not_live`: what it did belongs in its summary.
+
+### `POST /v1/orchestrator/tasks/:id/respawn`
+
+**Retry a dispatch whose tab never opened**, without writing the task out again. Orchestrator-token
+only, like dispatch itself: this opens a session.
+
+```console
+$ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks/$TASK/respawn \
+    -H "X-Clawdline-Orchestrator: $ORCH"
+{"ok":true,"secret":"9f2c…","respawn_of":"3f9a21bc-…","original_task":"3f9a21bc-…",
+ "task":{"id":"7c41e0aa-…","state":"spawning","title":"Project portrait",
+         "respawn_of":"3f9a21bc-…","respawn_generation":1,…}}
+```
+
+`spawn_failed` was 34 of 206 dispatches on the machine this was measured on — 33 of them Codex —
+and until this route existed the answer was that the root writes the whole `task.json` out again
+under a fresh id, which is thirty-four rewrites by the most context-loaded session in the tree.
+The broker already holds everything the original said, so it does the copying.
+
+The new task is an **ordinary dispatch**: a fresh id, a fresh directory, and every capacity, depth,
+claims, quota and serialization gate applied again, with the same refusals. What it inherits is the
+original `task.json` with `task_id` swapped — `instructions`, `plan`, `claims`, `serialize`,
+`assistant`, `model`, `reasoning_effort`, `permission_mode`, `project_dir`, `isolation` and the
+`root` binding. `instructions` is the field that makes this a file copy rather than a record copy:
+the registry never held it.
+
+The secret is fresh too, because the old id is finished. Send `{"secret":"<64 hex>"}` to choose it
+exactly as an ordinary dispatch does; omit the body and the broker mints one and returns it as
+`secret` at the top level of the reply. The reply's `respawn_of` and `original_task` are also on the
+task record itself (`respawn_of`, `respawn_generation`), so the chain is visible in
+`GET /v1/orchestrator/tasks` instead of looking like three unrelated tasks with the same title.
+
+| `code` | status | |
+|---|---|---|
+| `forbidden` | 403 | the orchestrator token is missing or wrong |
+| `orchestrator_disabled` | 403 | `orchestrator_enabled` is off |
+| `not_found` | 404 | no task with that id |
+| `not_respawnable` | 409 | the task is not `spawn_failed`. Only the one terminal state meaning *nothing ran* may be retried: a `failure` is an answer, a `timeout` had a session that read the briefing, a `cancelled` was somebody's decision, and a live task has a tab. The error object carries `state` |
+| `respawn_exhausted` | 409 | **at most two respawns descend from one original.** What is counted is the whole family the registry still holds below that original, whatever shape it took: a retry of a retry cannot launder the cap by being "the first from *its* parent", and asking the original again cannot launder it either — that one matters, because the id a root has in hand is the one that failed. The error object carries `original_task`, `respawns` and `limit` |
+| `bad_task` | 422 | the id is not a lowercase UUID, a supplied `secret` is not 64 hex characters, or the original `task.json` is gone and there is nothing to copy |
+
+Everything `POST /v1/orchestrator/tasks` can refuse, this can refuse too, at the moment it
+dispatches the copy — `over_capacity`, `workspace_busy`, `assistant_exhausted`, `rate_limited`.
+A refusal there leaves the new directory behind for the ordinary sweep, exactly as a root's own
+abandoned attempt does.
 
 ### `POST /v1/orchestrator/tasks/:id/claims/release`
 

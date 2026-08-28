@@ -320,6 +320,7 @@
   &lt;task-id&gt;/                     <span class="c"># 0700 — lowercase UUID</span>
     task.json                    <span class="c"># the root writes this, before dispatching</span>
     CHILD.md                     <span class="c"># the app writes this, just before injection</span>
+    DISPATCHING.md               <span class="c"># …and this, only for a child that may hand work on</span>
     result.json                  <span class="c"># the child writes this, when it is done</span>
     artifacts/                   <span class="c"># whatever the child was asked to produce</span>
     work/                        <span class="c"># heavyweight scratch; reclaimed with the task</span></code></pre>
@@ -512,7 +513,7 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
     <dt>queued</dt>
     <dd>Registered: the file validated, the secret's hash stored, the caps checked. A task without <code>serialize</code> is here only until a tab is asked for. A serialized task stays here until every operation it named is free, and <code>waiting_on</code> says which older tasks stand ahead of it. Waiting does not consume <code>timeout_minutes</code>.</dd>
     <dt>spawning</dt>
-    <dd>Mutexes acquired, a tab opening. For an isolated task this is when the private checkout is created — queued tasks hold no idle checkout. Failure here is <code>spawn_failed</code>, and the next attempt needs a fresh task id.</dd>
+    <dd>Mutexes acquired, a tab opening. For an isolated task this is when the private checkout is created — queued tasks hold no idle checkout. Failure here is <code>spawn_failed</code>, and the next attempt needs a fresh task id — which the respawn route mints for you.</dd>
     <dt>briefed</dt>
     <dd>The child's own record shows the first message as a turn it received. This is the fiddly part, and it is worth knowing what the app waits for.</dd>
     <dt>success · failure</dt>
@@ -524,6 +525,10 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
     <dt>spawn_failed</dt>
     <dd>The tab never happened, or never got briefed inside four minutes, or was typed into five times without the child ever recording the message, or the app restarted while the task was <code>spawning</code>.</dd>
   </dl>
+
+  <p><strong>A <code>spawn_failed</code> task is retried by the broker, not rewritten by the root.</strong> It was 34 of 206 dispatches on the machine this was measured on — 33 of them Codex — and the old answer was that the root writes the whole <code>task.json</code> out again under a fresh id, because that id is finished and re-sending it just returns the terminal record. <code>POST /v1/orchestrator/tasks/:id/respawn</code> copies the original file with a fresh <code>task_id</code>, mints a fresh secret unless the caller supplies one, and dispatches it through the ordinary gate with every capacity, depth, claims, quota and serialization rule applied again. <code>instructions</code> is why it copies the file rather than the record: the registry never held it.</p>
+
+  <p>Only <code>spawn_failed</code> may be retried, because it is the one terminal state meaning <em>nothing ran</em>; anything else is <code>409 not_respawnable</code>. <strong>At most two respawns descend from one original</strong>, counted over the whole family below it rather than along any one chain — so a retry of a retry cannot launder the cap by being the first from its own immediate parent, and neither can asking the original a third time, which is the shape a caller actually falls into because the id it has in hand is the one that failed — and the third is <code>409 respawn_exhausted</code>. Each new task records <code>respawn_of</code> and <code>respawn_generation</code>, so a chain reads as a chain in the registry instead of as three unrelated tasks with the same title.</p>
 
   <h3>Why briefing takes as long as it does</h3>
 
@@ -551,7 +556,9 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
 <pre><code>You are a Clawdline CHILD agent for task 3f9a21bc-… . Read
 /tmp/.clawdline/3f9a21bc-…/CHILD.md and follow it exactly. TASK_SECRET=…</code></pre>
 
-  <p>One line, because it is typed into a terminal and Return ends it. <code>CHILD.md</code> — written by the app immediately before injection — carries the rest: where the task is, where the outputs go, how long it has, the graph it is one node of, whether it may dispatch and how many, the machine's house rules if it may, that it must not read other task directories, and exactly what <code>result.json</code> has to look like.</p>
+  <p>One line, because it is typed into a terminal and Return ends it. <code>CHILD.md</code> — written by the app immediately before injection — carries the rest: where the task is, where the outputs go, how long it has, the graph it is one node of, whether it may dispatch and how many, that it must not read other task directories, and exactly what <code>result.json</code> has to look like.</p>
+
+  <p><strong>How to dispatch is not in there.</strong> It is in <code>DISPATCHING.md</code>, written beside it and only when the allowance is above zero, with the machine's house rules appended; <code>CHILD.md</code> keeps one line naming that file. Measured across 206 dispatches on one machine, 28,323 characters of instructions on how to dispatch went into every direct child's briefing and not one of those 206 ever dispatched anything. The pointer is worth following rather than merely polite: <strong>the credential path, the <code>root.parent_task</code> rule and the <code>curl</code> appear only in <code>DISPATCHING.md</code></strong>, so the briefing no longer hands the credential over and a child that skips the file has to go and find one. A strong pointer, not a lock — the <code>clawdline</code> skill carries the same recipe — but a convenience summary back in <code>CHILD.md</code> would undo even that.</p>
 
   <p>It also says what language to speak. The briefing itself is English so that every assistant reads it the same way, but the person watching the tab reads whatever Clawdline is set to — so the file names that language and asks for the summary in it. The one fixed line the child says before anything else rides in the typed message, ahead of “read CHILD.md”: an assistant answers the line before it opens the file, and the first thing on the screen should be what the tab was sent to do. A tab that opens and starts working in silence is a tab nobody can tell apart from a stray one.</p>
 
@@ -565,6 +572,8 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
   <p>Two narrow channels exist so that a child does not have to stay silent until it is finished.</p>
 
   <p><strong>A progress note</strong> — <code>POST /v1/orchestrator/tasks/:id/progress</code>, authenticated by the task secret — is one sentence of at most 300 characters. The title was fixed at dispatch, and by the time a result exists somebody else may have spent an hour on the same thing; this is the seam between those two moments. The newest five are kept and appear on the task record and on every <a href="#inflight">outstanding-work row</a>. Repeating the newest sentence is accepted and ignored, because a loop is not news. A terminal task is refused with <code>409 not_live</code>.</p>
+
+  <p><strong>The briefing asks for the first one inside three minutes</strong>, before the work rather than during it: one sentence saying what the child has decided to do now that it has read the briefing and <code>task.json</code>. That is the only thing that lets a wrong direction be cancelled at minute three instead of minute twenty-six — the two dearest cancelled tasks measured on one machine burned 18.5M and 16.5M tokens before anybody could tell what they had set off to do. Every later note is the ordinary one: sent when what the session is doing stops matching the title it was given.</p>
 
   <p><strong>An agent notification</strong> — <code>POST /v1/orchestrator/tasks/:id/notify</code> — pushes <em>content</em> rather than <em>state</em>: today's forecast, the URL somebody was waiting for, the one answer whose value is arriving on time. It is scarce by construction: 80 title characters, 500 body characters, five per task, thirty per machine in a sliding hour, and valid only while the task is live or for 60 seconds after it finished. A local root or script can send the same kind of thing with the machine token at <code>POST /v1/orchestrator/notify</code>. If the person has turned agent notifications off, both routes answer <code>409 agent_notify_disabled</code> without attempting delivery or spending an allowance — <strong>and the right response to that is not a retry.</strong> Leave the content in <code>result.json</code>, and say honestly that the notification was refused.</p>
 
@@ -642,12 +651,14 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
     <tbody>
       <tr><td>one or more paths</td><td>the task declares exactly these write scopes</td><td>reserves their frozen keys; two disjoint declarations can silence the directory-level warning</td></tr>
       <tr><td><code>[]</code></td><td>the task positively declares that it is read-only</td><td>reserves no lease, never conflicts, never receives <code>409 workspace_busy</code>, and still participates in that silence</td></tr>
-      <tr><td>absent</td><td>the write set is unknown</td><td>reserves no lease, and keeps the directory-level warning about every pair sharing a <code>project_dir</code></td></tr>
+      <tr><td>absent</td><td>the write set is unknown</td><td>reserves no lease, keeps the directory-level warning about every pair sharing a <code>project_dir</code>, and the dispatch reply carries a <code>claims_missing</code> warning</td></tr>
     </tbody>
   </table>
   </div>
 
   <p>An empty array gives read-only work an active, harmless declaration. Silence therefore has exactly one meaning: <strong>both tasks supplied enough scope information to prove their claim sets do not intersect.</strong> Merely omitting the field never makes that assertion.</p>
+
+  <p><strong>An absent field is answered out loud, and only an absent one.</strong> 60.7% of the dispatches measured on one machine declared nothing at all. Declaring costs the root about twenty output tokens; a collision costs a whole task, which on that record is three to eighteen million — so the dispatch reply carries <code>warnings:[{"code":"claims_missing",…}]</code>, on the first request and on the idempotent retry alike. It is never a refusal: a root that has not worked its write set out yet must still be able to dispatch. <code>"claims": []</code> does not warn, and that difference is the point — warning about a positive read-only declaration would teach callers that the field is noise, which is how omission reached 60.7% in the first place. The best evidence for the warning is not an argument: the root session that specified it dispatched the review of its own delivery without <code>claims</code>, and drew the <code>workspace_overlap</code> notice that <code>claims_missing</code> exists to prevent — on the day it implemented the guard.</p>
 
   <div class="note bad">
     <span class="tag">There are two ways to get this wrong, and only one of them is loud</span>
@@ -833,7 +844,7 @@ git -C &lt;project_dir&gt; branch -d clawdline/task/&lt;id&gt;       <span class
   <ul>
     <li><strong><code>work/</code> is reclaimed as part of finalizing the task</strong> — immediately on <code>success</code>, and after a grace period for every other terminal state.</li>
     <li>The grace period is a setting: 60 minutes by default, <code>0</code> to reclaim immediately whatever the outcome, and <code>-1</code> to leave the directory to the ordinary sweep. The default exists because a task that failed is the one whose leftovers somebody may still want to read.</li>
-    <li><strong><code>artifacts/</code>, <code>task.json</code>, <code>CHILD.md</code> and <code>result.json</code> are untouched</strong> by this and live until the whole task directory is swept.</li>
+    <li><strong><code>artifacts/</code>, <code>task.json</code>, <code>CHILD.md</code>, <code>DISPATCHING.md</code> and <code>result.json</code> are untouched</strong> by this and live until the whole task directory is swept.</li>
     <li>Reclaiming a <code>work/</code> that is not there counts as success, and a filesystem refusal never delays or reverses the terminal state of the task. Accounting is not allowed to hold up a finalize.</li>
   </ul>
 
@@ -1099,7 +1110,7 @@ git -C &lt;project_dir&gt; branch -d clawdline/task/&lt;id&gt;       <span class
   <h2 id="sizing"><span class="n">21</span>How big one task should be</h2>
   <p class="sub">The broker enforces limits. Sizing is a policy file, and it is meant to be edited.</p>
 
-  <p><code>~/.config/clawdline/dispatch-policy.md</code> is what a machine says about <em>how</em> work should be handed out, as opposed to how much of it. It is read fresh on every dispatch — an edit reaches the next task, not the next launch — and copied into the briefing of every child that is allowed to dispatch in turn. A leaf never sees it, because rules about choosing a model are noise to a session with no such choice to make. It is truncated at a generous length, and <strong>an empty file means there are no house rules</strong>, which is a position rather than a broken setting. It ships with opinions already in it, because a file with defensible rules is one somebody edits and an empty one is a feature nobody finds.</p>
+  <p><code>~/.config/clawdline/dispatch-policy.md</code> is what a machine says about <em>how</em> work should be handed out, as opposed to how much of it. It is read fresh on every dispatch — an edit reaches the next task, not the next launch — and copied into the <code>DISPATCHING.md</code> of every child that is allowed to dispatch in turn. A leaf never sees it, because rules about choosing a model are noise to a session with no such choice to make. It is truncated at a generous length, and <strong>an empty file means there are no house rules</strong>, which is a position rather than a broken setting. It ships with opinions already in it, because a file with defensible rules is one somebody edits and an empty one is a feature nobody finds — and what ships is the app's own bundled copy of that file, read when a machine has no policy of its own, rather than a second draft of the rules compiled into the binary. A missing resource means no house rules and no file written, because the first-run write never overwrites and an empty file created by a bad read would be permanent.</p>
 
   <p>What the shipped file says, and why:</p>
 

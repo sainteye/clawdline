@@ -44,13 +44,20 @@ last-updated: 2026-08-26
 - 你讀過、或被要求去讀 `/tmp/.clawdline/<id>/CHILD.md`
 - 你手上有一個 `TASK_SECRET=`
 
-**你是 child 的話，依據不是這份 skill，是 `CHILD.md`。** 去讀它的「Handing work on」那一段：
+**你是 child 的話，依據不是這份 skill，是 `CHILD.md`。** 它會用一句話直接告訴你是哪一種，
+你不用自己推敲：
 
-- **那一段在** → 照它做就好。它已經把整份指令寫死給你了，包括 `root.parent_task` 要填你自己那件
-  task 的 id——那是這裡唯一沒有人會替你填的欄位。下面的 §1–§6 只是同一件事的長版，可以參考，
-  但衝突時以 `CHILD.md` 為準。
-- **那一段不在** → 你這一層已經是底。**立刻停止**，告訴使用者「這個 session 已經在最底層，
-  不能再往下派」，然後自己把事情做掉。
+- **「You may hand parts of this on to at most N child sessions of your own…」** → 你可以派工，
+  而同一句話會指出你自己任務目錄裡的 `DISPATCHING.md`。**那個檔案就是全部的做法，而且只在那裡**
+  ——憑證、欄位、拒絕碼、這台機器的家規，包括 `root.parent_task` 要填你自己那件 task 的 id，
+  那是唯一沒有人會替你填的欄位。派工前先讀它。下面的 §1–§6 只是長版，可以參考，
+  但衝突時以 `CHILD.md` 與 `DISPATCHING.md` 為準。
+- **「Do not dispatch Clawdline tasks of your own.」** → 你這一層已經是底。**立刻停止**，
+  告訴使用者「這個 session 已經在最底層，不能再往下派」，然後自己把事情做掉。
+
+2026-08-28 以前那份教學寫在 `CHILD.md` 裡的一個標題底下，而這一節本來是叫你去找那個標題、
+找不到就停。現在它搬到自己的檔案，所以不派工的 child 不用再為它付 28,323 個字元——
+而如果還照舊去找那個標題，**每一個 child 都會被告知停止**。
 
 這棵樹只有兩層：使用者的 session 派 child，child 再派一層，就沒有了。沒有底的話，
 一件事變五件變二十五件，一台 Mac 開到爆。app 端有擋（dispatch 會回 `depth_exceeded`），

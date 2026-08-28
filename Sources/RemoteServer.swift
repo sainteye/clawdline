@@ -1515,6 +1515,20 @@ final class RemoteServer: @unchecked Sendable {
             return answer(Orchestrator.releaseClaims(taskID: id.removingPercentEncoding ?? id,
                                                       paths: paths))
 
+        // Retrying a tab that never opened, without making the root write the task out again.
+        // Local-credential only, like dispatch itself: this opens a session.
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
+            && path.hasSuffix("/respawn"):
+            guard orchestratorAuthed else {
+                return .error(403, "forbidden", "Respawning a task needs the orchestrator token.")
+            }
+            let id = String(path.dropFirst("/v1/orchestrator/tasks/".count)
+                .dropLast("/respawn".count))
+            let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+                ?? [:]
+            return answer(Orchestrator.respawn(taskID: id.removingPercentEncoding ?? id,
+                                                secret: body["secret"] as? String))
+
         // Before the single-task read below, which would otherwise swallow this path.
         case ("GET", let path) where path.hasPrefix("/v1/orchestrator/tasks/")
             && path.hasSuffix("/inflight"):

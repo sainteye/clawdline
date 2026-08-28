@@ -13643,33 +13643,37 @@ group("a child is told whether it may hand work on, and never has to find out by
     // already spent a turn on it, and one that assumes the old rule never tries at all.
     let saved = Config.shared.orchestratorMaxGrandchildren
     defer { Config.shared.orchestratorMaxGrandchildren = saved }
-    func brief(depth: Int, allowance: Int) -> String {
+    func task(depth: Int, allowance: Int) -> Orchestrator.Task {
         Config.shared.orchestratorMaxGrandchildren = allowance
-        let task = Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
-                                     assistant: .claude, projectDir: "/Users/me/code/thing",
-                                     timeoutMinutes: 30, created: Date(), depth: depth,
-                                     secretHash: String(repeating: "0", count: 64))
-        return Orchestrator.childBrief(for: task)
+        return Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
+                                 assistant: .claude, projectDir: "/Users/me/code/thing",
+                                 timeoutMinutes: 30, created: Date(), depth: depth,
+                                 secretHash: String(repeating: "0", count: 64))
+    }
+    func brief(depth: Int, allowance: Int) -> String {
+        Orchestrator.childBrief(for: task(depth: depth, allowance: allowance))
+    }
+    func teaching(depth: Int, allowance: Int) -> String? {
+        Orchestrator.dispatchingBrief(for: task(depth: depth, allowance: allowance))
     }
 
     let allowed = brief(depth: 1, allowance: 3)
     check("a child with a level under it is told how many it may open",
           allowed.contains("at most 3 child sessions of your own"))
-    check("and gets the recipe rather than a pointer to a skill — half of them are Codex",
-          allowed.contains("## Handing work on") && allowed.contains("/v1/orchestrator/tasks"))
-    check("and the recipe teaches Codex's closed reasoning override",
-          allowed.contains("`reasoning_effort` is Codex-only")
-            && allowed.contains("`high` for coding")
-            && allowed.contains("`xhigh` for planning or review"))
-    check("and names only permission values the task parser accepts",
-          allowed.contains("`permission_mode` is `ask`, `edits` or `full`")
-            && !allowed.contains("`ask`, `auto` or `full`"))
-    check("with its own task id already filled in as the parent, since that is the field nothing else would tell it",
-          allowed.contains("\"root\": {\"parent_task\": \"\(taskID)\"}"))
-    check("and the task file is built with a heredoc, since screening refuses a quoted jq filter",
-          allowed.contains("cat > /tmp/.clawdline/$sub/task.json <<JSON"))
-    check("with the reason stated, so a child does not helpfully rewrite it as one",
-          allowed.contains("not with `jq -n` and a quoted filter"))
+    // The measured finding this split came from: 28,323 characters of dispatch teaching went
+    // into every one of 206 direct children's briefings, and not one of the 206 ever dispatched
+    // anything. So CHILD.md points at the recipe instead of carrying it, and the pointer is
+    // un-skippable because the credential is only on the other side of it.
+    check("and is pointed at the file that teaches it, by full path",
+          allowed.contains("/tmp/.clawdline/\(taskID)/DISPATCHING.md")
+            && allowed.contains("read that file before you hand anything on"))
+    check("but the teaching itself is no longer in the briefing every child pays for",
+          !allowed.contains("## Handing work on")
+            && !allowed.contains("cat > /tmp/.clawdline/$sub/task.json <<JSON"))
+    check("and no convenience summary of the credential either, which is what makes the pointer bite",
+          !allowed.contains("orchestrator-token") && !allowed.contains("X-Clawdline-Orchestrator"))
+    check("nor the one field nothing else would tell a dispatcher",
+          !allowed.contains("parent_task"))
     check("and reporting says to use the file tool rather than a shell line",
           allowed.contains("Write it with your file-writing tool, not with a shell command"))
     check("and it learns the narrow push opening without needing a skill",
@@ -13680,20 +13684,63 @@ group("a child is told whether it may hand work on, and never has to find out by
               && allowed.contains("at most 30 per hour"))
     check("and it is told where the answer will appear",
           allowed.contains("result.json"))
-    check("the token stays this Mac's, not something to pass down",
-          allowed.contains("do not hand it to anything you dispatch"))
+    // The ask nothing was making: AGENTS.md, docs/dispatching.md and the dispatch policy all
+    // require a first progress note, and the briefing — the only thing a child actually reads —
+    // asked only for one when the work drifted. A note at minute three is what lets a wrong
+    // direction be cancelled before it has spent a session.
+    check("a child is asked for one progress note before it starts, not only when it drifts",
+          allowed.contains("within about three minutes of starting")
+            && allowed.contains("before you begin the work"))
+    check("and told why, because a child that knows why will actually send it",
+          allowed.contains("cancelled at minute three instead of minute twenty-six")
+            && allowed.contains("18.5M and 16.5M tokens"))
     check("the at-rest archive key is never named in a child briefing",
           !allowed.contains("orchestrator-archive-key") && !allowed.contains("archive key"))
+
+    let recipe = teaching(depth: 1, allowance: 3)
+    check("the recipe is written, rather than pointed at a skill — half of them are Codex",
+          recipe?.contains("## Handing work on") == true
+            && recipe?.contains("/v1/orchestrator/tasks") == true)
+    check("and it carries the credential path, which is what CHILD.md deliberately does not",
+          recipe?.contains("~/.config/clawdline/orchestrator-token") == true)
+    check("and the recipe teaches Codex's closed reasoning override",
+          recipe?.contains("`reasoning_effort` is Codex-only") == true
+            && recipe?.contains("`high` for coding") == true
+            && recipe?.contains("`xhigh` for planning or review") == true)
+    check("and names only permission values the task parser accepts",
+          recipe?.contains("`permission_mode` is `ask`, `edits` or `full`") == true
+            && recipe?.contains("`ask`, `auto` or `full`") == false)
+    check("with its own task id already filled in as the parent, since that is the field nothing else would tell it",
+          recipe?.contains("\"root\": {\"parent_task\": \"\(taskID)\"}") == true)
+    check("and the task file is built with a heredoc, since screening refuses a quoted jq filter",
+          recipe?.contains("cat > /tmp/.clawdline/$sub/task.json <<JSON") == true)
+    check("with the reason stated, so a child does not helpfully rewrite it as one",
+          recipe?.contains("not with `jq -n` and a quoted filter") == true)
+    check("the token stays this Mac's, not something to pass down",
+          recipe?.contains("do not hand it to anything you dispatch") == true)
+    check("and it names the task whose CHILD.md sent the child here",
+          recipe?.contains("task \(taskID)") == true)
 
     let floor = brief(depth: 2, allowance: 3)
     check("a child already on the floor is told not to dispatch",
           floor.contains("Do not dispatch Clawdline tasks of your own."))
     check("and is given no recipe to ignore", !floor.contains("## Handing work on"))
+    check("and no file to read it out of either", teaching(depth: 2, allowance: 3) == nil)
 
     let off = brief(depth: 1, allowance: 0)
     check("nor is one on a Mac where the level is switched off",
           off.contains("Do not dispatch Clawdline tasks of your own.")
               && !off.contains("## Handing work on"))
+    check("and that Mac writes no teaching file at all", teaching(depth: 1, allowance: 0) == nil)
+    check("the first-progress ask reaches a leaf too, which is where most of the tokens are",
+          off.contains("within about three minutes of starting"))
+
+    // What the split is worth, stated as an arithmetic somebody can break: a child that may
+    // dispatch and one that may not are now briefed with almost the same file. Before this,
+    // they differed by the whole recipe.
+    check("a child that may dispatch is briefed with barely more than one that may not",
+          allowed.count - off.count < 500,
+          "difference of \(allowed.count - off.count) characters")
 
     Config.shared.orchestratorMaxGrandchildren = 0
     expect("zero grandchildren is the rule this app had before the level existed",
@@ -13719,14 +13766,20 @@ group("the graph and the house rules reach the child that needs them") {
             try? FileManager.default.removeItem(at: policyFile)
         }
     }
-    func brief(plan: String?, allowance: Int) -> String {
+    func fixture(plan: String?, allowance: Int) -> Orchestrator.Task {
         Config.shared.orchestratorMaxGrandchildren = allowance
         var task = Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
                                      assistant: .claude, projectDir: "/Users/me/code/thing",
                                      timeoutMinutes: 30, created: Date(), depth: 1,
                                      secretHash: String(repeating: "0", count: 64))
         task.plan = plan
-        return Orchestrator.childBrief(for: task)
+        return task
+    }
+    func brief(plan: String?, allowance: Int) -> String {
+        Orchestrator.childBrief(for: fixture(plan: plan, allowance: allowance))
+    }
+    func rules(plan: String?, allowance: Int) -> String? {
+        Orchestrator.dispatchingBrief(for: fixture(plan: plan, allowance: allowance))
     }
     try? FileManager.default.createDirectory(at: policyFile.deletingLastPathComponent(),
                                              withIntermediateDirectories: true)
@@ -13738,44 +13791,81 @@ group("the graph and the house rules reach the child that needs them") {
     check("above the rules, because it is what the rules are read in the light of",
           both.range(of: "## The plan this is part of")!.lowerBound
               < both.range(of: "## Rules")!.lowerBound)
+    // The house rules travel with the recipe rather than with the briefing: they are about a
+    // decision only a dispatching child makes, and they used to be pasted beside the task's own
+    // instructions in every child's CHILD.md.
+    let handOn = rules(plan: "root → 3 searchers → this one joins them up", allowance: 3)
     check("and this Mac's house rules are there for a child that may dispatch",
-          both.contains("Review runs on opus."))
+          handOn?.contains("Review runs on opus.") == true)
     check("named by path, so a child can say where a rule it followed came from",
-          both.contains(Orchestrator.policyURL.path))
+          handOn?.contains(Orchestrator.policyURL.path) == true)
+    check("and they are not also copied into the briefing every child pays for",
+          !both.contains("Review runs on opus."))
 
     let leaf = brief(plan: "root → 3 searchers → this one", allowance: 0)
     check("a leaf is told the plan too — it is what makes its answer joinable",
           leaf.contains("root → 3 searchers → this one"))
     check("but not the rules for handing work out, which it has no decision to spend them on",
-          !leaf.contains("Review runs on opus."))
+          !leaf.contains("Review runs on opus.")
+            && rules(plan: nil, allowance: 0) == nil)
 
     try? FileManager.default.removeItem(at: policyFile)
     check("no file at all is no paragraph, rather than an empty heading",
-          !brief(plan: nil, allowance: 3).contains("What this Mac says"))
+          rules(plan: nil, allowance: 3)?.contains("What this Mac says") == false)
     check("and no plan is no paragraph either",
           !brief(plan: nil, allowance: 3).contains("## The plan this is part of"))
     try? Data("   \n\n  ".utf8).write(to: policyFile, options: .atomic)
     check("a file of nothing but whitespace counts as nobody having said anything",
           Orchestrator.policy() == nil)
 
-    check("the starting rules say something about models and something about shape",
-          Orchestrator.defaultPolicy.contains("haiku")
-              && Orchestrator.defaultPolicy.contains("Breadth before depth"))
-    // The two halves a dispatcher needs before it picks anything: whether to dispatch, and what
-    // shape to use. Both were added after a graph was dispatched to research them.
-    check("and it decides whether to dispatch before it decides how",
-          Orchestrator.defaultPolicy.contains("should this be dispatched at all"))
-    // A judgement the person can overrule. The first draft told a dispatcher to decline and do
-    // the work itself, which turns a useful check into a veto over somebody else's call — and
-    // "I want Codex to take this one" is a reason no policy file can see.
-    check("and a no there asks rather than refuses",
-          Orchestrator.defaultPolicy.contains("a recommendation and not a refusal")
-              && Orchestrator.defaultPolicy.contains("Their yes settles it"))
-    check("and offers named shapes rather than leaving the graph improvised",
-          Orchestrator.defaultPolicy.contains("Split and join")
-              && Orchestrator.defaultPolicy.contains("Build then read"))
-    check("and the whole of it fits inside what a briefing will carry",
-          Orchestrator.defaultPolicy.count <= Orchestrator.policyLimit)
+    // The starting rules used to be a Swift string literal holding an old draft of the file this
+    // repository actually edits — and that literal is what a fresh install received, because
+    // `ensurePolicyFile` writes it. Now it is the shipped resource, read at the point of use.
+    let bundledOverride = Orchestrator.bundledPolicyURLOverrideForTesting
+    defer { Orchestrator.bundledPolicyURLOverrideForTesting = bundledOverride }
+    Orchestrator.bundledPolicyURLOverrideForTesting =
+        URL(fileURLWithPath: "Resources/dispatch-policy.md")
+    let shipped = (try? String(contentsOfFile: "Resources/dispatch-policy.md", encoding: .utf8))?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    check("the starting rules are the file this repository ships, character for character",
+          !shipped.isEmpty && Orchestrator.defaultPolicy == shipped)
+    // Nothing below quotes the rules themselves. This file is the house's opinion and is meant to
+    // be rewritten; a suite that pins its sentences goes red for a reason that has nothing to do
+    // with the code, and the person who reworded a paragraph is left reading a compiler.
+    // What is the code's business is that the document arrives whole and usable.
+    let policyLines = Orchestrator.defaultPolicy.split(separator: "\n", omittingEmptySubsequences: false)
+    check("it arrives as the whole document rather than a first paragraph of it",
+          policyLines.count > 1 && policyLines.first?.hasPrefix("# ") == true
+              && policyLines.filter { $0.hasPrefix("## ") }.count >= 2)
+    // Not merely under the limit: what a briefing would actually carry is the same document,
+    // unshortened. Shipping rules that trip the app's own truncation notice would be the house
+    // arguing with itself, and asked this way the assertion quotes neither the rules nor the notice.
+    check("and what a briefing carries is the whole of it, uncut",
+          Orchestrator.defaultPolicy.count <= Orchestrator.policyLimit
+              && Orchestrator.policy(reading: Orchestrator.defaultPolicy) == Orchestrator.defaultPolicy)
+
+    // A missing resource means no house rules, which is exactly what an empty policy file has
+    // always meant. Nothing is invented to fill the gap.
+    Orchestrator.bundledPolicyURLOverrideForTesting =
+        URL(fileURLWithPath: "/nowhere/dispatch-policy.md")
+    check("a bundle with no policy resource in it means no starting rules at all",
+          Orchestrator.defaultPolicy.isEmpty)
+    // …and it must not leave an empty file behind, because `ensurePolicyFile` never overwrites:
+    // a machine that once could not read the resource would keep the empty rules for good.
+    try? FileManager.default.removeItem(at: policyFile)
+    let answered = Orchestrator.ensurePolicyFile()
+    check("nothing to write is not the same as writing nothing",
+          answered == policyFile
+            && !FileManager.default.fileExists(atPath: policyFile.path))
+    Orchestrator.bundledPolicyURLOverrideForTesting =
+        URL(fileURLWithPath: "Resources/dispatch-policy.md")
+    _ = Orchestrator.ensurePolicyFile()
+    check("with the resource there, a machine with no rules of its own starts with the shipped ones",
+          (try? String(contentsOf: policyFile, encoding: .utf8)) == shipped)
+    try? Data("mine, and nobody rewrites it".utf8).write(to: policyFile, options: .atomic)
+    _ = Orchestrator.ensurePolicyFile()
+    check("and a file that is already there is never overwritten",
+          (try? String(contentsOf: policyFile, encoding: .utf8)) == "mine, and nobody rewrites it")
 
     // Cutting used to be silent and mid-word: the first policy long enough to hit the limit lost
     // its last rule, and the briefing read as though the file simply ended there.
@@ -18819,6 +18909,281 @@ group("dispatch answers an immediate tab refusal; the later pump finalizes its r
     check("a pump-promoted tab refusal carries both reclaim deadlines",
           Orchestrator.workCleanupAtForTesting(reclaimID) != nil
             && Orchestrator.buildCleanupAtForTesting(reclaimID) != nil)
+}
+
+// `spawn_failed` was 34 of 206 dispatches on the machine this was measured on, and the answer
+// used to be that the root writes the whole task out again under a fresh id — thirty-four
+// rewrites by the most context-loaded session in the tree. The retry belongs to the broker,
+// which already holds everything the original said.
+group("a tab that never opened is retried from its own task file, twice and no further") {
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    var made: [URL] = []
+    defer {
+        for directory in made { try? manager.removeItem(at: directory) }
+        AssistantQuota.clearOverridesForTesting()
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    AssistantQuota.setOverrideForTesting(
+        AssistantQuota(assistant: .claude, installed: true, loggedIn: true, plan: nil,
+                       availability: .ok, source: .observed,
+                       observedAt: Int(Date().timeIntervalSince1970), resetsAt: nil,
+                       detail: "plenty", windows: []),
+        for: .claude)
+    Orchestrator.workspaceOverlapObserverForTesting = { _, _ in }
+    Orchestrator.rootNotificationObserverForTesting = { _ in }
+    var tabOpens = false
+    Orchestrator.taskStarterForTesting = { _, _, _, _, _, _ in
+        tabOpens
+            ? .started(id: "TAB-\(UUID().uuidString)", backend: .iterm)
+            : .refused(status: 409, code: "terminal_closed",
+                       message: "no terminal is running", app: "iTerm")
+    }
+
+    func write(_ id: String) {
+        let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
+        made.append(directory)
+        try? manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try! JSONSerialization.data(withJSONObject: [
+            "clawdline_protocol": 1, "task_id": id, "kind": "code", "assistant": "claude",
+            "model": "opus", "project_dir": "/tmp", "title": "the work itself",
+            "instructions": "the instructions nothing else wrote down", "timeout_minutes": 45,
+            "plan": "one node, retried", "claims": ["Sources/Respawned.swift"],
+            "root": ["session_id": "respawn-root"],
+        ]).write(to: directory.appendingPathComponent("task.json"), options: .atomic)
+    }
+    func refusal(_ reply: Orchestrator.Reply) -> (Int, String)? {
+        guard case .refused(let status, let code, _, _) = reply else { return nil }
+        return (status, code)
+    }
+    func extra(_ reply: Orchestrator.Reply) -> [String: Any]? {
+        guard case .refused(_, _, _, let extra) = reply else { return nil }
+        return extra
+    }
+    func payload(_ reply: Orchestrator.Reply) -> [String: Any]? {
+        guard case .ok(let body) = reply else { return nil }
+        return body
+    }
+    func record(_ body: [String: Any]?) -> [String: Any]? { body?["task"] as? [String: Any] }
+    // Never `appendingPathComponent("")`: that names the task root itself, and this group's
+    // `defer` deletes what it is given.
+    func sweep(_ candidate: String?) {
+        guard let candidate, Orchestrator.isTaskID(candidate) else { return }
+        made.append(Orchestrator.root.appendingPathComponent(candidate, isDirectory: true))
+    }
+
+    let originalID = UUID().uuidString.lowercased()
+    let originalSecret = String(repeating: "a1", count: 32)
+    write(originalID)
+    expect("the original dispatch fails to open a tab",
+           record(payload(Orchestrator.dispatch(taskID: originalID,
+                                                secret: originalSecret)))?["state"] as? String,
+           "spawn_failed")
+
+    let firstReply = Orchestrator.respawn(taskID: originalID)
+    let first = payload(firstReply)
+    let firstRecord = record(first)
+    let firstID = firstRecord?["id"] as? String ?? ""
+    sweep(firstID)
+    check("a spawn_failed task is respawned under a new id", !firstID.isEmpty && firstID != originalID)
+    check("and the retry carries everything the original task file said",
+          firstRecord?["title"] as? String == "the work itself"
+            && firstRecord?["kind"] as? String == "code"
+            && firstRecord?["model"] as? String == "opus"
+            && firstRecord?["claims"] as? [String] == ["Sources/Respawned.swift"]
+            && (firstRecord?["root"] as? [String: Any])?["sessionId"] as? String == "respawn-root")
+    // The one field that lives nowhere but the file: the broker never held it, so a retry that
+    // did not copy the file would open a tab with nothing in it.
+    let copied = try? String(contentsOf: Orchestrator.root
+        .appendingPathComponent(firstID, isDirectory: true)
+        .appendingPathComponent("task.json"), encoding: .utf8)
+    check("including the instructions, which the registry never held",
+          copied?.contains("the instructions nothing else wrote down") == true
+            && copied?.contains("\"task_id\"") == true && copied?.contains(firstID) == true)
+    check("the secret is fresh, and handed back so the caller has what a dispatch would give it",
+          (first?["secret"] as? String).map(Orchestrator.isTaskSecret) == true
+            && first?["secret"] as? String != originalSecret)
+    check("and the chain is visible in the registry rather than three unrelated tasks",
+          firstRecord?["respawn_of"] as? String == originalID
+            && firstRecord?["respawn_generation"] as? Int == 1
+            && first?["original_task"] as? String == originalID)
+    // Straight through the registry serializer, because the chain has to outlive a restart: a
+    // respawn cap that forgets on relaunch is a cap somebody can wait out.
+    var carried = Orchestrator.Task(
+        id: firstID, state: .spawnFailed, kind: "code", title: "the work itself",
+        assistant: .claude, projectDir: "/tmp", timeoutMinutes: 45, created: Date(),
+        secretHash: String(repeating: "0", count: 64))
+    carried.respawnOf = originalID
+    carried.respawnGeneration = 2
+    let carriedBack = Orchestrator.task(from: Orchestrator.stored(carried))
+    check("the chain survives being written down and read back",
+          carriedBack?.respawnOf == originalID && carriedBack?.respawnGeneration == 2)
+    var orphan = Orchestrator.stored(carried)
+    orphan["respawn_of"] = nil
+    check("and a generation with no task to descend from counts as no chain at all",
+          Orchestrator.task(from: orphan)?.respawnGeneration == 0)
+
+    let secondReply = Orchestrator.respawn(taskID: firstID)
+    let secondRecord = record(payload(secondReply))
+    let secondID = secondRecord?["id"] as? String ?? ""
+    sweep(secondID)
+    check("a second retry is allowed, and counts along the chain",
+          !secondID.isEmpty && secondRecord?["respawn_generation"] as? Int == 2
+            && secondRecord?["respawn_of"] as? String == firstID)
+    check("and still names the task the whole chain descends from",
+          payload(secondReply)?["original_task"] as? String == originalID)
+
+    // Counting per call rather than along the chain is the mistake this forbids: each of these
+    // respawns was the first from *its* immediate parent.
+    let third = refusal(Orchestrator.respawn(taskID: secondID))
+    expect("the third retry in one chain is refused", third?.0, 409)
+    expect("with its own code", third?.1, "respawn_exhausted")
+
+    // The chain is one shape the family can take; the caller falls into the other. The id a root
+    // holds is the one that failed, so the natural retry loop asks the *same* original again —
+    // and a chain depth cannot see that, because a respawn writes nothing back to the task it
+    // retried, leaving a spent original at generation zero for ever. The cap is on the family.
+    let spent = refusal(Orchestrator.respawn(taskID: originalID))
+    expect("an original whose family is full refuses a further retry", spent?.0, 409)
+    expect("whatever shape spent it", spent?.1, "respawn_exhausted")
+    check("and the number it reports is the family, not one task's depth",
+          extra(Orchestrator.respawn(taskID: originalID))?["respawns"] as? Int == 2)
+
+    // Two calls on the same original, which is what that loop actually does: both are retries of
+    // one original, so the second is the family's last and the third is refused by the same count.
+    let loopedID = UUID().uuidString.lowercased()
+    write(loopedID)
+    _ = Orchestrator.dispatch(taskID: loopedID, secret: String(repeating: "e5", count: 32))
+    let loopedFirst = record(payload(Orchestrator.respawn(taskID: loopedID)))?["id"] as? String
+    sweep(loopedFirst)
+    let loopedSecond = record(payload(Orchestrator.respawn(taskID: loopedID)))?["id"] as? String
+    sweep(loopedSecond)
+    check("two retries may descend from one original by asking that original twice",
+          Orchestrator.isTaskID(loopedFirst ?? "") && Orchestrator.isTaskID(loopedSecond ?? "")
+            && loopedFirst != loopedSecond)
+    let looped = refusal(Orchestrator.respawn(taskID: loopedID))
+    expect("and a third from that same original is refused", looped?.0, 409)
+    expect("by the code the limit answers with", looped?.1, "respawn_exhausted")
+
+    let successID = UUID().uuidString.lowercased()
+    tabOpens = true
+    write(successID)
+    _ = Orchestrator.dispatch(taskID: successID, secret: String(repeating: "b2", count: 32))
+    let live = refusal(Orchestrator.respawn(taskID: successID))
+    expect("a task whose tab did open is not respawnable", live?.0, 409)
+    expect("and says so in its own code", live?.1, "not_respawnable")
+    Orchestrator.finalize(successID, as: .success, summary: "it did the work")
+    expect("nor is one that finished — that would be re-running work, not retrying a dispatch",
+           refusal(Orchestrator.respawn(taskID: successID))?.1, "not_respawnable")
+    expect("and a task nobody has heard of is a 404",
+           refusal(Orchestrator.respawn(taskID: UUID().uuidString.lowercased()))?.0, 404)
+
+    // A caller may still choose the secret, exactly as it does for an ordinary dispatch.
+    let chosenID = UUID().uuidString.lowercased()
+    tabOpens = false
+    write(chosenID)
+    _ = Orchestrator.dispatch(taskID: chosenID, secret: String(repeating: "c3", count: 32))
+    let chosen = String(repeating: "d4", count: 32)
+    let chosenReply = Orchestrator.respawn(taskID: chosenID, secret: chosen)
+    if let body = payload(chosenReply), let id = record(body)?["id"] as? String {
+        sweep(id)
+        expect("a supplied secret is used rather than replaced", body["secret"] as? String, chosen)
+    } else {
+        check("a respawn accepts a caller's own secret", false, "\(chosenReply)")
+    }
+    expect("and a malformed one is refused before anything is written",
+           refusal(Orchestrator.respawn(taskID: chosenID, secret: "too-short"))?.1, "bad_task")
+}
+
+// 60.7% of the dispatches measured on this machine declared no claims at all. Twenty output
+// tokens against a collision that costs a whole task — three to eighteen million on that same
+// record — so the reply says something. It says it about absence only: `"claims": []` is a
+// positive declaration that the task writes nothing.
+group("a dispatch that never said what it writes is warned, and one that said nothing is not") {
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    var made: [URL] = []
+    defer {
+        for directory in made { try? manager.removeItem(at: directory) }
+        AssistantQuota.clearOverridesForTesting()
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    AssistantQuota.setOverrideForTesting(
+        AssistantQuota(assistant: .claude, installed: true, loggedIn: true, plan: nil,
+                       availability: .ok, source: .observed,
+                       observedAt: Int(Date().timeIntervalSince1970), resetsAt: nil,
+                       detail: "plenty", windows: []),
+        for: .claude)
+    Orchestrator.workspaceOverlapObserverForTesting = { _, _ in }
+    Orchestrator.taskStarterForTesting = { _, _, _, _, _, _ in
+        .started(id: "TAB-\(UUID().uuidString)", backend: .iterm)
+    }
+
+    func dispatch(claims: [String]?, secret pair: String) -> [String: Any]? {
+        let id = UUID().uuidString.lowercased()
+        let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
+        made.append(directory)
+        try? manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        var obj: [String: Any] = [
+            "clawdline_protocol": 1, "task_id": id, "kind": "code", "assistant": "claude",
+            "project_dir": "/tmp", "title": "writes something, or says it does not",
+            "instructions": "do the work", "timeout_minutes": 30,
+        ]
+        if let claims { obj["claims"] = claims }
+        try! JSONSerialization.data(withJSONObject: obj)
+            .write(to: directory.appendingPathComponent("task.json"), options: .atomic)
+        guard case .ok(let payload) = Orchestrator.dispatch(taskID: id,
+                                                           secret: String(repeating: pair, count: 32))
+        else { return nil }
+        return payload
+    }
+    func warns(_ payload: [String: Any]?) -> Bool {
+        (payload?["warnings"] as? [[String: Any]] ?? [])
+            .contains { $0["code"] as? String == "claims_missing" }
+    }
+
+    let silent = dispatch(claims: nil, secret: "a1")
+    check("a task.json with no claims field at all is warned about",
+          warns(silent))
+    check("and it is a warning: the task was still dispatched",
+          (silent?["task"] as? [String: Any])?["state"] as? String == "spawning")
+    check("the warning says what to add, since the point is to change what the next one sends",
+          ((silent?["warnings"] as? [[String: Any]] ?? [])
+            .first { $0["code"] as? String == "claims_missing" }?["message"] as? String)?
+            .contains("\"claims\": []") == true)
+    // The difference between the two is the whole point: warning about an empty list would teach
+    // callers that the field is noise, which is how it got to 60.7% in the first place.
+    check("a task that declared it writes nothing is not warned about",
+          !warns(dispatch(claims: [], secret: "b2")))
+    check("nor is one that declared what it writes",
+          !warns(dispatch(claims: ["Sources/Declared.swift"], secret: "c3")))
+
+    // The idempotent retry answers with the same record, and the same task is still the one that
+    // did not say what it writes.
+    let repeatedID = UUID().uuidString.lowercased()
+    let repeatedDirectory = Orchestrator.root.appendingPathComponent(repeatedID, isDirectory: true)
+    made.append(repeatedDirectory)
+    try? manager.createDirectory(at: repeatedDirectory, withIntermediateDirectories: true)
+    try! JSONSerialization.data(withJSONObject: [
+        "clawdline_protocol": 1, "task_id": repeatedID, "kind": "code", "assistant": "claude",
+        "project_dir": "/tmp", "title": "asked for twice", "instructions": "do the work",
+        "timeout_minutes": 30,
+    ]).write(to: repeatedDirectory.appendingPathComponent("task.json"), options: .atomic)
+    let secret = String(repeating: "d4", count: 32)
+    _ = Orchestrator.dispatch(taskID: repeatedID, secret: secret)
+    guard case .ok(let again) = Orchestrator.dispatch(taskID: repeatedID, secret: secret) else {
+        check("a repeated dispatch answers with the existing record", false)
+        return
+    }
+    check("and the retry of an undeclared task is warned about too", warns(again))
 }
 
 group("an attached briefing is delivered work, not a tab still trying to open") {
