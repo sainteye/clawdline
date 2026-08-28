@@ -26,7 +26,14 @@ struct TargetSession: Equatable, Identifiable {
     /// Everywhere else that used to ask this wanted ``isAssistant`` and now says so.
     var isClaude: Bool { assistant == .claude }
 
-    /// A short label for display: the task, and only the task.
+    /// Where the tab is: the keystroke that would bring it to the front.
+    ///
+    /// The last thing a row can say when nothing knows what the session is *called* — and it is
+    /// still a true statement about this session, which is what makes it the right last thing.
+    /// A profile name is not: eleven tabs reading `Default` at once name nothing.
+    var coordinate: String { "⌘\(windowIndex + 1)-\(tabIndex + 1)" }
+
+    /// The tab's own title, tidied — **for looking at, not for naming a session by.**
     ///
     /// Two things get taken off. iTerm appends " (job name)", which helps nobody pick a tab. And
     /// Claude Code puts a status glyph on the front — which used to be a fixed ✳ and was worth
@@ -34,6 +41,11 @@ struct TargetSession: Equatable, Identifiable {
     /// through the title, so the same tab reads `◐ …`, `◑ …`, `◒ …` one after another. A label
     /// that changes four times a second is not a label, it is noise on every surface that draws
     /// one — and the thing it was standing in for is now answered properly by ``SessionState``.
+    ///
+    /// **``displayLabel`` deliberately does not use this**, and that is the whole of the fix
+    /// recorded there. What is left here is the terminal-side uses — a tmux pane's name, and the
+    /// title matching inside ``Transcript/locate(cwd:tabTitle:startedAt:sessionID:)`` when a
+    /// pane's own record has to be guessed at.
     var label: String {
         var s = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.hasSuffix(")"), let open = s.lastIndex(of: "("), open > s.startIndex {
@@ -42,34 +54,65 @@ struct TargetSession: Equatable, Identifiable {
         }
         s = TargetSession.withoutStatusGlyph(s)
         s = s.trimmingCharacters(in: .whitespaces)
-        return s.isEmpty ? "⌘\(windowIndex + 1)-\(tabIndex + 1)" : s
+        return s.isEmpty ? coordinate : s
     }
 
-    /// The task name Clawdline should draw. Claude Code puts its task in the terminal title;
-    /// Codex persists it as thread metadata, so its optional bridge takes precedence here.
+    /// What Clawdline calls this session on every surface that lists one.
+    ///
+    /// **The tab title is not one of the sources, and that is the point.** It used to be the
+    /// last one, and on 2026-08-28 that made eleven of fifteen rows read `Default` — the name of
+    /// the iTerm2 profile, which is what iTerm2 reports for a tab whose title nobody has set.
+    /// Asked directly, iTerm2 said `Default (python)` for those tabs, so the app was reading its
+    /// source correctly; the source had simply been emptied. Meanwhile every one of those
+    /// sessions had a name sitting in Claude Code's own files the whole time.
+    ///
+    /// A tab title is **a place a name is displayed**, not a place a name is kept: anything in
+    /// the terminal may overwrite it, Claude Code clears it, and nothing announces either. So the
+    /// resolution below reads authoritative records only, and a terminal that has been renamed to
+    /// `WRONG`, to `Default`, or to nothing at all cannot change a single row.
     var displayLabel: String {
         Self.preferredDisplayLabel(
             manualTitle: Config.shared.sessionTitle(for: self),
             orchestratorTitle: Orchestrator.title(forTerminal: id),
-            threadName: CodexNaming.shared.title(for: self), terminalLabel: label)
+            conversationTitle: SessionNaming.title(of: self),
+            threadName: CodexNaming.shared.title(for: self),
+            handle: SessionNaming.handle(of: self),
+            coordinate: coordinate)
     }
 
-    /// The only human-authored source comes first; every other label is generated or inferred.
-    /// `terminalLabel` is an input, never an output written back to ``label``: transcript lookup
-    /// relies on the terminal's original title when hooks are unavailable.
+    /// The order, and why each rung is above the next. **No parameter here carries a terminal
+    /// title**; there is nowhere to pass one, which is what keeps a later edit from quietly
+    /// reintroducing the source this list exists to remove.
     ///
-    /// `manualTitle` is not a constant a person set once: ``Config/sessionTitle(for:)`` already
-    /// withholds it the moment a later `/rename` in the terminal supersedes it, so this still
-    /// picks "the only human-authored source" — just not always the same one.
+    /// 1. `manualTitle` — the name a person typed for this conversation, from
+    ///    ``Config/sessionTitle(sessionID:terminalID:conversationStart:currentCustomTitle:)``.
+    ///    The only human-authored source, and not a constant somebody set once: `Config` already
+    ///    withholds it the moment a later `/rename` in the terminal supersedes it.
+    /// 2. `orchestratorTitle` — the task this app opened the tab for, whichever assistant is in
+    ///    it. The title was known before the tab existed and is what a list of work should say.
+    /// 3. `conversationTitle` — what the conversation calls *itself*: the `customTitle` a
+    ///    `/rename` wrote, or the `aiTitle` Claude Code wrote, out of the transcript under
+    ///    `~/.claude/projects/`. This is the rung that was missing. Measured against the one tab
+    ///    still showing a name on 2026-08-28: the screen read `Clawdfather 新增介面` and so did
+    ///    the transcript's `aiTitle`, while the same session's registry `name` read
+    ///    `clawdline-97`. The transcript is where the descriptive name lives.
+    /// 4. `threadName` — the same thing for Codex, which keeps its name in thread metadata
+    ///    rather than in a transcript. Disjoint from the rung above by assistant, so the order
+    ///    between the two is a formality.
+    /// 5. `handle` — `~/.claude/sessions/<pid>.json`'s `name`, `clawdline-cb` and the like.
+    ///    **Never descriptive** — all eleven files read on 2026-08-28 said `nameSource:
+    ///    "derived"` — but it is durable, it is per-conversation, and it names the project. It
+    ///    is here because a session whose transcript has not been written yet still has one.
+    /// 6. `coordinate` — where the tab is. Never a profile name, never a job name.
     static func preferredDisplayLabel(manualTitle: String?, orchestratorTitle: String?,
-                                      threadName: String?, terminalLabel: String) -> String {
-        if let manualTitle = manualTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !manualTitle.isEmpty { return manualTitle }
-        // A session this app opened for a task is called by that task, whichever assistant is
-        // in it: the title was known before the tab existed, and it is what a list should say.
-        if let orchestratorTitle { return orchestratorTitle }
-        return CodexNaming.displayLabel(threadName: threadName,
-                                        terminalLabel: terminalLabel)
+                                      conversationTitle: String?, threadName: String?,
+                                      handle: String?, coordinate: String) -> String {
+        for candidate in [manualTitle, orchestratorTitle, conversationTitle, threadName, handle] {
+            guard let candidate = candidate?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !candidate.isEmpty else { continue }
+            return candidate
+        }
+        return coordinate
     }
 
     /// Strip a leading status glyph and the space after it.
@@ -96,6 +139,173 @@ struct TargetSession: Equatable, Identifiable {
         guard isMarker else { return title }
         chars.removeFirst(2)
         return String(chars)
+    }
+}
+
+/// What a Claude Code conversation calls itself, read out of the files Claude Code keeps rather
+/// than off the terminal it happens to be sitting in.
+///
+/// **The defect this exists to close is a shape, not an incident.** A value a person reads had
+/// exactly one source; that source could be emptied by something outside this app; and when it
+/// was emptied nothing said so — the row simply started reading `Default`. Two rules follow, and
+/// both are load-bearing here:
+///
+/// - **More than one source.** Three of them answer the same question independently: the
+///   registry file names the conversation by pid, a hook-free installation still has a transcript
+///   findable by process start time, and either of those alone is enough. See ``look(at:)``.
+/// - **A source going quiet is not news that the name has changed.** ``reconcile(remembered:found:startedAt:now:)``
+///   keeps the last good answer field by field, and gives it up only on evidence that the tab now
+///   holds a *different* conversation. A lookup that fails for a second — a `ps` that did not
+///   answer, a registry file mid-rewrite — must not blank a name on screen.
+enum SessionNaming {
+
+    /// What one look found. Two fields because they fail independently: a session in its first
+    /// seconds has a registry file and no transcript worth reading, and a session whose Claude
+    /// Code predates the registry has the transcript and no file.
+    struct Name: Equatable {
+        /// The conversation's own descriptive title — a `/rename`'s `customTitle`, else the
+        /// `aiTitle` Claude Code wrote for it.
+        let title: String?
+        /// Claude Code's derived short handle for the session, `clawdline-cb` and the like.
+        /// Not a description of anything; kept because it is durable, per-conversation, and
+        /// better than a coordinate for telling two rows apart.
+        let handle: String?
+        static let none = Name(title: nil, handle: nil)
+        var isEmpty: Bool { title == nil && handle == nil }
+    }
+
+    /// A look, kept so the next redraw is free and so a momentary failure cannot blank a row.
+    struct Remembered: Equatable {
+        let at: Date
+        /// When the assistant process behind that look started, as far as anything could tell.
+        /// The only thing that can say the tab now holds a *different* conversation.
+        let startedAt: Date?
+        let name: Name
+    }
+
+    /// How long a look stands before it is taken again. Twenty seconds, the same as
+    /// ``Targets/workingDirectory(of:)`` and ``Targets/processStart(of:)`` beside it, and for the
+    /// same reason: these are asked once per session on every move through the list, and the
+    /// answers are facts about a conversation that is not changing its name several times a
+    /// second. It bounds the cost too — a busy transcript is re-read at most three times a
+    /// minute rather than on every repaint.
+    static let ttl: TimeInterval = 20
+
+    private static let lock = NSLock()
+    private static var remembered: [String: Remembered] = [:]
+
+    /// The whole of the impure part: decide whether to look, look, reconcile, keep.
+    private static func name(of target: TargetSession, now: Date = Date()) -> Name {
+        // A tab with no Claude Code in it has no conversation to name, and a tab whose session
+        // has exited must not keep wearing its name. Forgetting here rather than in `reconcile`
+        // keeps that case out of the pure function, where "no assistant" and "the lookup failed"
+        // would otherwise look identical.
+        guard target.isClaude else {
+            lock.lock(); remembered.removeValue(forKey: target.id); lock.unlock()
+            return .none
+        }
+        lock.lock()
+        let previous = remembered[target.id]
+        lock.unlock()
+        if let previous, now.timeIntervalSince(previous.at) < ttl { return previous.name }
+
+        // The seam replaces the whole of the reading, the `ps` behind the start time included:
+        // a suite has no terminal to measure and no business running one to find that out.
+        let startedAt: Date?
+        let found: Name
+        if let stub = lookForTesting {
+            startedAt = nil
+            found = stub(target)
+        } else {
+            startedAt = Targets.processStart(of: target)
+            found = look(at: target, startedAt: startedAt)
+        }
+        let kept = reconcile(remembered: previous, found: found, startedAt: startedAt, now: now)
+        lock.lock()
+        if let kept { remembered[target.id] = kept } else { remembered.removeValue(forKey: target.id) }
+        lock.unlock()
+        return kept?.name ?? .none
+    }
+
+    static func title(of target: TargetSession) -> String? { name(of: target).title }
+    static func handle(of target: TargetSession) -> String? { name(of: target).handle }
+
+    /// Reading the files. Kept apart from the caching and the reconciling above so that the two
+    /// rules this type exists for can be tested without a live terminal, a real `~/.claude`, or
+    /// a clock.
+    ///
+    /// **`tabTitle: ""` is the fix, stated where it is made.** ``Transcript/locate(cwd:tabTitle:startedAt:sessionID:)``
+    /// will rank candidate transcripts by how well their recorded title matches the tab's, which
+    /// is exactly the dependency being removed: a tab renamed to `Default` would go looking for a
+    /// transcript called `Default`. Passing nothing skips that branch, leaving the two routes
+    /// that rest on identity — the session id from the registry, and failing that the process
+    /// start time, which no terminal can rewrite.
+    private static func look(at target: TargetSession, startedAt: Date?) -> Name {
+        // Behind the same setting as every other read of that directory: somebody who has turned
+        // the registry off has said not to read those files, and the transcript route below still
+        // answers without them.
+        let entry = Config.shared.sessionRegistry
+            ? SessionRegistry.entry(for: target.id, in: Targets.registry(of: [target])) : nil
+        guard let cwd = Targets.workingDirectory(of: target) else {
+            return Name(title: nil, handle: entry?.name)
+        }
+        guard let url = Transcript.locate(cwd: cwd, tabTitle: "", startedAt: startedAt,
+                                          sessionID: entry?.sessionID) else {
+            return Name(title: nil, handle: entry?.name)
+        }
+        return Name(title: Transcript.title(ofTranscript: url), handle: entry?.name)
+    }
+
+    /// What survives a look, field by field.
+    ///
+    /// Field by field rather than whole, because the two halves come from two files and go quiet
+    /// separately: a registry file rewritten between a `stat` and a read answers with a handle
+    /// and no title, and replacing a remembered descriptive name with `clawdline-cb` would be
+    /// this feature reintroducing its own bug at a smaller scale.
+    ///
+    /// Nothing is kept once the tab holds a different conversation — a name is a fact about a
+    /// conversation, not about a tab, and a tab outlives what runs in it.
+    static func reconcile(remembered previous: Remembered?, found: Name,
+                          startedAt: Date?, now: Date) -> Remembered? {
+        let carried = continues(previous, startedAt: startedAt) ? previous?.name : nil
+        let merged = Name(title: found.title ?? carried?.title,
+                          handle: found.handle ?? carried?.handle)
+        guard !merged.isEmpty else { return nil }
+        // The last start time known for this tab, so a look that could not measure one still
+        // leaves a baseline for the look after it to be compared against.
+        return Remembered(at: now, startedAt: startedAt ?? previous?.startedAt, name: merged)
+    }
+
+    /// Whether the conversation a remembered name was taken from is still the one in the tab.
+    ///
+    /// **Unknown is not "changed".** ``Config/sameConversation(_:_:)`` next door answers a
+    /// stricter question — whether a name a person typed may be shown at all — and reads a
+    /// missing start time as a mismatch. Here a missing one is a `ps` that did not answer, which
+    /// is the ordinary way a source goes quiet for a moment and is the exact case that must not
+    /// blank a row.
+    static func continues(_ previous: Remembered?, startedAt: Date?) -> Bool {
+        guard let previous else { return false }
+        guard let known = previous.startedAt, let current = startedAt else { return true }
+        return Config.sameConversation(known, current)
+    }
+
+    /// Test seam for the caching and reconciling above, which are otherwise reachable only
+    /// through a live terminal's `ps`, `lsof` and somebody's real `~/.claude`.
+    static var lookForTesting: ((TargetSession) -> Name)?
+
+    static func forgetForTesting() {
+        lock.lock(); remembered.removeAll(); lock.unlock()
+    }
+
+    /// Push every remembered look past ``ttl`` so the next question takes a fresh one. A test for
+    /// "the source went quiet and the name stayed" has to get past the cache to reach the case.
+    static func expireForTesting() {
+        lock.lock()
+        remembered = remembered.mapValues {
+            Remembered(at: $0.at.addingTimeInterval(-ttl - 1), startedAt: $0.startedAt,
+                       name: $0.name)
+        }
+        lock.unlock()
     }
 }
 

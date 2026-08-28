@@ -2586,17 +2586,23 @@ enum Orchestrator {
     }
 
     /// What a terminal this app opened for a task is called. Nil for every other session.
+    ///
+    /// `load()` first, like ``role(forTerminal:)`` below. It used not to, and the comment there
+    /// explained the asymmetry: *a title that is briefly missing is a row drawn with the tab's
+    /// own name*. That sentence stopped being true when ``TargetSession/displayLabel`` stopped
+    /// reading tab titles — a title missing because nothing had loaded the records yet is now a
+    /// row that has quietly dropped a rung, which is the same shape as the defect that change
+    /// was made for. It costs a flag check after the first call.
     static func title(forTerminal id: String) -> String? {
+        load()
         lock.lock(); defer { lock.unlock() }
         return titlesByTerminal[id]
     }
 
     /// Where that terminal sits in the tree. Nil for every session a person opened themselves.
     ///
-    /// `load()` first, unlike ``title(forTerminal:)`` beside it, and the asymmetry is deliberate:
-    /// a title that is briefly missing is a row drawn with the tab's own name, while a role that
-    /// is briefly missing is a child mistaken for a person — which is the one wrong answer this
-    /// whole arrangement exists to avoid. It costs a flag check after the first call.
+    /// `load()` first, because a role that is briefly missing is a child mistaken for a person —
+    /// which is the one wrong answer this whole arrangement exists to avoid.
     static func role(forTerminal id: String) -> Role? {
         load()
         lock.lock(); defer { lock.unlock() }
