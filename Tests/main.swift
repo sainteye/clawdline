@@ -7617,14 +7617,20 @@ group("the line a new tab is given, before anything types it") {
     // The list these come from is derived from the filesystem, which is to say from names the
     // person at the Mac did not necessarily choose. A quote in one of them must not be able to
     // end the quoting and start a command.
+    // Every line this app types now opens with `env -u …` between the `&&` and the program
+    // name. What that prefix is exactly is pinned in "a new tab is not handed the identity of
+    // whatever launched the terminal"; here it is composed, so these stay assertions about
+    // the thing they were written for.
+    let starts = "&& " + Assistant.claude.dropInheritedIdentity + "claude"
     expect("an ordinary path is still quoted",
-           StartPoints.itermLine(cwd: "/Users/me/code/notebook"), "cd '/Users/me/code/notebook' && claude")
+           StartPoints.itermLine(cwd: "/Users/me/code/notebook"),
+           "cd '/Users/me/code/notebook' " + starts)
     expect("a space changes nothing about it",
-           StartPoints.itermLine(cwd: "/a/My Work"), "cd '/a/My Work' && claude")
+           StartPoints.itermLine(cwd: "/a/My Work"), "cd '/a/My Work' " + starts)
     expect("a quote cannot close the quoting",
-           StartPoints.itermLine(cwd: "/a/it's here"), "cd '/a/it'\\''s here' && claude")
+           StartPoints.itermLine(cwd: "/a/it's here"), "cd '/a/it'\\''s here' " + starts)
     expect("a backslash is a backslash inside single quotes",
-           StartPoints.itermLine(cwd: "/a/back\\slash"), "cd '/a/back\\slash' && claude")
+           StartPoints.itermLine(cwd: "/a/back\\slash"), "cd '/a/back\\slash' " + starts)
     check("and nothing a client sent is anywhere in it",
           !StartPoints.itermLine(cwd: "/a/b").contains(";"))
 
@@ -10931,16 +10937,20 @@ group("assistant product marks load at row size") {
 }
 
 group("the line a new tab is given names the assistant") {
+    // Every line this app types now opens with `env -u …` between the `&&` and the program
+    // name. What that prefix is exactly is pinned in "a new tab is not handed the identity of
+    // whatever launched the terminal"; here it is composed, so these stay assertions about
+    // the thing they were written for.
     expect("Claude Code, as it always was",
            StartPoints.itermLine(cwd: "/Users/me/code/thing"),
-           "cd '/Users/me/code/thing' && claude")
+           "cd '/Users/me/code/thing' && " + Assistant.claude.dropInheritedIdentity + "claude")
     expect("Codex, by the same route",
            StartPoints.itermLine(cwd: "/Users/me/code/thing", assistant: .codex),
-           "cd '/Users/me/code/thing' && codex")
+           "cd '/Users/me/code/thing' && " + Assistant.codex.dropInheritedIdentity + "codex")
     // The quoting is the same quoting, which is the point of it being one function.
     expect("and a directory with a quote in it survives",
            StartPoints.itermLine(cwd: "/Users/me/it's", assistant: .codex),
-           "cd '/Users/me/it'\\''s' && codex")
+           "cd '/Users/me/it'\\''s' && " + Assistant.codex.dropInheritedIdentity + "codex")
 }
 
 // MARK: - Picking a recorded conversation back up
@@ -10977,17 +10987,20 @@ group("the line that picks a conversation back up") {
     expect("Claude Code takes a flag, and it comes before everything else",
            StartPoints.itermLine(cwd: "/Users/me/code/thing",
                                  resume: "105344fb-c769-4b37-b766-403b410897eb"),
-           "cd '/Users/me/code/thing' && claude --resume 105344fb-c769-4b37-b766-403b410897eb")
+           "cd '/Users/me/code/thing' && " + Assistant.claude.dropInheritedIdentity
+             + "claude --resume 105344fb-c769-4b37-b766-403b410897eb")
     // The route selects this spelling from the assistant segment rather than accepting a command.
     expect("Codex spells it as a subcommand",
            StartPoints.itermLine(cwd: "/a/b", assistant: .codex,
                                  resume: "105344fb-c769-4b37-b766-403b410897eb"),
-           "cd '/a/b' && codex resume 105344fb-c769-4b37-b766-403b410897eb")
+           "cd '/a/b' && " + Assistant.codex.dropInheritedIdentity
+             + "codex resume 105344fb-c769-4b37-b766-403b410897eb")
     expect("an id that is not one leaves no flag behind rather than a bare `--resume`",
            StartPoints.itermLine(cwd: "/a/b", resume: "not-an-id"),
-           "cd '/a/b' && claude")
+           "cd '/a/b' && " + Assistant.claude.dropInheritedIdentity + "claude")
     expect("and the ordinary line is exactly what it was",
-           StartPoints.itermLine(cwd: "/a/b"), "cd '/a/b' && claude")
+           StartPoints.itermLine(cwd: "/a/b"),
+           "cd '/a/b' && " + Assistant.claude.dropInheritedIdentity + "claude")
     check("nothing a client sent is anywhere in it",
           !StartPoints.itermLine(cwd: "/a/b", resume: "$(id)").contains("$"))
 }
@@ -11546,31 +11559,107 @@ group("a model name is a name, not a fragment of a command line") {
     check("64 characters is a name", StartPoints.modelName(String(repeating: "a", count: 64)) != nil)
     check("65 is not", StartPoints.modelName(String(repeating: "a", count: 65)) == nil)
 
+    // Every line this app types now opens with `env -u …` between the `&&` and the program
+    // name. What that prefix is exactly is pinned in "a new tab is not handed the identity of
+    // whatever launched the terminal"; here it is composed, so these stay assertions about
+    // the thing they were written for.
+    let claudeRuns = Assistant.claude.dropInheritedIdentity
+    let codexRuns = Assistant.codex.dropInheritedIdentity
     expect("the flag is written once", Assistant.claude.command(model: "haiku"),
-           "claude --model haiku")
+           claudeRuns + "claude --model haiku")
     check("and the permission flags land after it, not instead of it",
           Assistant.claude.command(model: "haiku", permission: .edits)
-              .hasPrefix("claude --model haiku "))
+              .hasPrefix(claudeRuns + "claude --model haiku "))
     expect("and not written at all when nothing was named", Assistant.claude.command(model: nil),
-           "claude")
+           claudeRuns + "claude")
     expect("Codex reasoning effort follows the model and precedes reach and permission",
            Assistant.codex.command(model: "gpt-5.6-sol", reasoningEffort: .xhigh,
                                    permission: .edits, addDir: "/tmp/.clawdline"),
-           "codex --model gpt-5.6-sol --config model_reasoning_effort=xhigh "
+           codexRuns + "codex --model gpt-5.6-sol --config model_reasoning_effort=xhigh "
              + "--add-dir /tmp/.clawdline --ask-for-approval on-request --sandbox workspace-write")
     expect("omitted reasoning effort adds no Codex override",
            Assistant.codex.command(model: "gpt-5.6-sol"),
-           "codex --model gpt-5.6-sol")
+           codexRuns + "codex --model gpt-5.6-sol")
     expect("StartPoints carries the typed override to the same command builder",
            StartPoints.itermLine(cwd: "/tmp/x", assistant: .codex,
                                  model: "gpt-5.6-sol", reasoningEffort: .high),
-           "cd '/tmp/x' && codex --model gpt-5.6-sol --config model_reasoning_effort=high")
+           "cd '/tmp/x' && " + codexRuns
+             + "codex --model gpt-5.6-sol --config model_reasoning_effort=high")
     check("the line a tab is opened with is still one command",
           StartPoints.itermLine(cwd: "/tmp/x", assistant: .codex, model: "gpt-5.1-codex")
-              .hasSuffix("&& codex --model gpt-5.1-codex"))
+              .hasSuffix("&& " + codexRuns + "codex --model gpt-5.1-codex"))
     check("and a refused name reaches that line as no flag rather than as an argument",
           StartPoints.itermLine(cwd: "/tmp/x", assistant: .claude, model: "haiku; id")
-              .hasSuffix("&& claude"))
+              .hasSuffix("&& " + claudeRuns + "claude"))
+}
+
+/// A tab this app opens is a new session, and nothing in its environment may say otherwise.
+///
+/// iTerm2 launched once from a shell inside a Claude Code session keeps that session's identity
+/// variables for as long as it runs and hands them to every tab afterwards. Measured on
+/// 2026-08-28: `ps -Ewww` on the iTerm2 process held `CLAUDE_PID`, `CLAUDE_CODE_SESSION_ID` and
+/// `CLAUDE_CODE_CHILD_SESSION=1` from a session in another window, and the children dispatched
+/// into it wrote neither a `~/.claude/sessions/<pid>.json` nor a transcript, because the CLI had
+/// been told it was already somebody's nested session. Nothing downstream could then prove a
+/// briefing had arrived, and the spawn-failure path that follows deletes an uncommitted checkout.
+///
+/// So this is not a cosmetic test about a command line. It is the one place the list itself is
+/// spelled out; every other assertion in this file composes the prefix from the property, and a
+/// list that quietly emptied would leave all of those passing.
+group("a new tab is not handed the identity of whatever launched the terminal") {
+    expect("Claude Code's line drops the session identity before it names the program",
+           Assistant.claude.command(model: nil),
+           "env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_CHILD_SESSION "
+             + "-u CLAUDE_PID -u CLAUDE_CODE_MESSAGING_SOCKET -u CLAUDE_CODE_MESSAGING_TOKEN "
+             + "-u CLAUDE_CODE_BRIDGE_SESSION_ID claude")
+    expect("and Codex's drops the rollout id it exports, under both its spellings",
+           Assistant.codex.command(model: nil),
+           "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CODEX_SANDBOX "
+             + "-u CODEX_SANDBOX_NETWORK_DISABLED codex")
+
+    // The three read off the terminal that caused this. They are the ones that did the damage,
+    // and a future version renaming one of them has to come back through this test.
+    for measured in ["CLAUDE_PID", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION"] {
+        check("\(measured), read off the polluted iTerm2 itself, is dropped",
+              Assistant.claude.inheritedIdentityVariables.contains(measured))
+    }
+    // And what a session exports about the *installation* stays, because it is still true in the
+    // tab being opened: `claude` typed at a prompt really is the `cli` entrypoint, the exec path
+    // names the program rather than a conversation, and the subagent cap is a number this Mac
+    // sets in its own settings.
+    for kept in ["CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_EXECPATH",
+                 "CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION"] {
+        check("\(kept) is not swept up with them",
+              !Assistant.claude.inheritedIdentityVariables.contains(kept))
+    }
+
+    // `env` execs the program, so a tty still lists `claude --model haiku` with no wrapper in
+    // front of it — which is what `Assistant.running(fromPS:)` reads a session out of. Checked on
+    // a real process rather than assumed: `env -u CLAUDECODE sleep 3` lists as `sleep 3`.
+    check("the program is the last word of the prefix, so `ps` reads as it always did",
+          Assistant.claude.command(model: "haiku").hasSuffix(" claude --model haiku"))
+
+    // Every route that types a command builds it here, so there is no second one left to forget.
+    check("the line an iTerm2 tab is opened with carries it",
+          StartPoints.itermLine(cwd: "/a/b").hasPrefix("cd '/a/b' && env -u "))
+    check("and so does the line that picks a conversation back up",
+          StartPoints.itermLine(cwd: "/a/b", assistant: .codex,
+                                resume: "105344fb-c769-4b37-b766-403b410897eb")
+              .hasPrefix("cd '/a/b' && env -u CODEX_THREAD_ID "))
+
+    // The prefix is part of a line this app promises holds nothing a shell reads. A name that is
+    // anything but an environment name would be the way that promise breaks.
+    for assistant in Assistant.allCases {
+        check("\(assistant.rawValue) drops plain environment names and nothing else",
+              assistant.inheritedIdentityVariables.allSatisfy { name in
+                  !name.isEmpty && name.allSatisfy {
+                      ("A"..."Z").contains($0) || ("0"..."9").contains($0) || $0 == "_"
+                  }
+              })
+        check("\(assistant.rawValue) names each of them once",
+              Set(assistant.inheritedIdentityVariables).count
+                  == assistant.inheritedIdentityVariables.count)
+    }
 }
 
 group("a child row resolves only to its current parent session") {
@@ -11768,7 +11857,8 @@ group("how far a child may go is this Mac's answer, not the asking session's") {
     expect("files-without-asking is spelled acceptEdits for Claude Code",
            Permission.edits.flags(for: .claude), "--permission-mode acceptEdits")
     check("a bare command is still what an unasked-for permission produces",
-          Assistant.claude.command(model: nil, permission: .ask) == "claude")
+          Assistant.claude.command(model: nil, permission: .ask)
+              == Assistant.claude.dropInheritedIdentity + "claude")
 }
 
 group("the directory a child is given reach over is a path, not a fragment of one") {
@@ -11793,18 +11883,19 @@ group("the directory a child is given reach over is a path, not a fragment of on
           StartPoints.extraDir("/tmp/" + String(repeating: "a", count: 256)) == nil)
 
     // Both CLIs spell it the same, which is the only reason the flag is not a switch.
+    let claudeRuns = Assistant.claude.dropInheritedIdentity
     expect("claude is given it by name", Assistant.claude.command(model: nil, addDir: "/tmp/.clawdline"),
-           "claude --add-dir /tmp/.clawdline")
+           claudeRuns + "claude --add-dir /tmp/.clawdline")
     expect("and so is codex", Assistant.codex.command(model: nil, addDir: "/tmp/.clawdline"),
-           "codex --add-dir /tmp/.clawdline")
+           Assistant.codex.dropInheritedIdentity + "codex --add-dir /tmp/.clawdline")
     expect("with the model in front of it when there is one",
            Assistant.claude.command(model: "haiku", addDir: "/tmp/.clawdline"),
-           "claude --model haiku --add-dir /tmp/.clawdline")
+           claudeRuns + "claude --model haiku --add-dir /tmp/.clawdline")
     check("a refused path reaches the line as no flag rather than as an argument",
           StartPoints.itermLine(cwd: "/tmp/x", assistant: .claude, addDir: "/tmp/a b")
-              .hasSuffix("&& claude"))
+              .hasSuffix("&& " + claudeRuns + "claude"))
     expect("and nothing at all is still the bare command",
-           Assistant.claude.command(model: nil, addDir: nil), "claude")
+           Assistant.claude.command(model: nil, addDir: nil), claudeRuns + "claude")
 }
 
 group("a task id is the name of a directory, so it may not be a path") {
