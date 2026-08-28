@@ -56,6 +56,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private var root: FlippedView?
     private var strip: TabStrip?
+    private var scroll: NSScrollView?
     private var panes: [SettingsPane] = []
     private var current = 0
     private var contentWidth: CGFloat = 760
@@ -176,6 +177,24 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
         let root = FlippedView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: 400))
         root.addSubview(strip)
+
+        // The pane sits inside a scroller rather than straight on the root. Without one the window
+        // simply grew to whatever the tab needed, and a tab taller than the screen — the device
+        // list, the schedule list — put its last rows below the bottom edge where nothing could
+        // reach them. The strip and the footer stay outside it, so the tabs do not scroll away
+        // from under the pointer.
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: Metric.stripHeight + 22,
+                                                width: contentWidth, height: 200))
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.autohidesScrollers = true
+        // This window is pinned dark; a scroller drawing its own background would put a pale band
+        // down the side of it.
+        scroll.drawsBackground = false
+        scroll.contentView.drawsBackground = false
+        root.addSubview(scroll)
+        self.scroll = scroll
+
         root.addSubview(footer())
         self.root = root
 
@@ -214,12 +233,23 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         let pane = panes[index]
         let inner = contentWidth - Metric.pad * 2
         let paneHeight = max(pane.layout(width: inner), 140)
-        pane.view.frame = NSRect(x: Metric.pad, y: Metric.stripHeight + 22,
-                                 width: inner, height: paneHeight)
-        root.addSubview(pane.view)
 
-        let height = (Metric.stripHeight + 22 + paneHeight + 24 + Metric.footerHeight).rounded()
+        // The document is the full window width and the pane is inset inside it, so that a legacy
+        // scroller — what somebody gets by asking for scroll bars to always be visible — lands in
+        // the margin rather than over the text.
+        let document = FlippedView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: paneHeight))
+        pane.view.frame = NSRect(x: Metric.pad, y: 0, width: inner, height: paneHeight)
+        document.addSubview(pane.view)
+        scroll?.documentView = document
+
+        let above = Metric.stripHeight + 22
+        let below = 24 + Metric.footerHeight
+        let natural = (above + paneHeight + below).rounded()
+        let fit = Self.contentFit(natural: natural, ceiling: ceilingContentHeight(),
+                                  chrome: above + below)
+        let height = fit.height
         strip?.frame = NSRect(x: 0, y: 0, width: contentWidth, height: Metric.stripHeight)
+        scroll?.frame = NSRect(x: 0, y: above, width: contentWidth, height: fit.viewport)
         for view in root.subviews where view.identifier == Self.footerID {
             view.frame = NSRect(x: 0, y: height - Metric.footerHeight,
                                 width: contentWidth, height: Metric.footerHeight)
@@ -235,6 +265,37 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         next.origin.y += next.height - sized.height
         next.size = sized.size
         w.setFrame(next, display: true)
+    }
+
+    /// How tall the window ends up, and how much of that the scroller gets to show.
+    ///
+    /// Split out from the window so the decision can be checked without an `NSWindow` or a screen.
+    /// Before it existed the height was simply the natural one, so a pane taller than the display
+    /// made a window taller than the display, and its last rows sat below the bottom edge where
+    /// nothing could reach them.
+    static func contentFit(natural: CGFloat, ceiling: CGFloat,
+                           chrome: CGFloat) -> (height: CGFloat, viewport: CGFloat) {
+        let height = min(natural, ceiling)
+        return (height, max(height - chrome, 0))
+    }
+
+    /// The tallest the content is allowed to get: what the screen leaves once the window's own
+    /// title bar is taken off it.
+    ///
+    /// A tab taller than this used to make a window taller than the screen, and the rows past the
+    /// bottom edge could not be reached by any means — not by dragging the window, which is pinned
+    /// by its title bar, and not by resizing it, which this window does not offer. Capping the
+    /// height is what turns the overflow into something the scroller can reach.
+    private func ceilingContentHeight() -> CGFloat {
+        guard let visible = (window?.screen ?? NSScreen.main)?.visibleFrame else {
+            return .greatestFiniteMagnitude
+        }
+        // A titled window's chrome, asked for rather than assumed — except before the window
+        // exists, where the usual title bar is close enough to keep the first open on screen.
+        let chrome = window.map {
+            $0.frameRect(forContentRect: NSRect(x: 0, y: 0, width: contentWidth, height: 0)).height
+        } ?? 28
+        return max(240, visible.height - chrome)
     }
 
     private static let footerID = NSUserInterfaceItemIdentifier("clawdline.settings.footer")

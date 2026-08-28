@@ -114,7 +114,7 @@ stream being the one that stays open, which is its whole job.
 | `GET` | `/v1/orchestrator/tasks/:id` | orchestrator token, **or** token | `read` |
 | `POST` | `/v1/orchestrator/tasks/:id/notify` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/complete` | that task's secret | — |
-| `POST` | `/v1/orchestrator/tasks/:id/landing` | task secret for pending/abandoned; **orchestrator token only for landed** | — |
+| `POST` | `/v1/orchestrator/tasks/:id/landing` | task secret **or** orchestrator token for pending/abandoned; **orchestrator token only for landed** | — |
 | `POST` | `/v1/orchestrator/tasks/:id/progress` | that task's secret | — |
 | `GET` | `/v1/orchestrator/tasks/:id/inflight` | that task's secret | — |
 | `POST` | `/v1/orchestrator/tasks/:id/cancel` | orchestrator token, **or** token + key | `send` **and** the write switch |

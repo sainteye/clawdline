@@ -19648,6 +19648,29 @@ group("the production route preserves scan evidence across cache reads and app g
           watchSource.contains("if scanComplete { self.scanObservedAt = Date() }"))
 }
 
+group("a settings tab taller than the screen is capped, and the overflow goes to the scroller") {
+    // The window has no resize control and is pinned by its title bar, so a height past the
+    // screen's is not merely awkward — those rows cannot be reached by any means. The device
+    // list and the schedule list both got there.
+    let chrome: CGFloat = 46 + 22 + 24 + 40      // strip, its gap, the gap under the pane, footer
+
+    let fits = SettingsWindow.contentFit(natural: 600, ceiling: 900, chrome: chrome)
+    check("a tab that fits still sizes the window to itself", fits.height == 600,
+          "got \(fits.height)")
+    check("and the scroller is exactly the pane, so no scroller shows",
+          fits.viewport == 600 - chrome, "got \(fits.viewport)")
+
+    let overflows = SettingsWindow.contentFit(natural: 2000, ceiling: 900, chrome: chrome)
+    check("a tab taller than the screen stops at the screen", overflows.height == 900,
+          "got \(overflows.height)")
+    check("and the scroller gets the rest to scroll through",
+          overflows.viewport == 900 - chrome, "got \(overflows.viewport)")
+
+    let squeezed = SettingsWindow.contentFit(natural: 2000, ceiling: 60, chrome: chrome)
+    check("a ceiling below the chrome itself never asks for a negative viewport",
+          squeezed.viewport == 0, "got \(squeezed.viewport)")
+}
+
 // MARK: - Schedule session resume
 
 checks += 1
