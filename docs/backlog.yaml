@@ -433,6 +433,33 @@ items:
     trigger: A Codex task binds to a rollout from a replaced process or reused tty.
     opened: 2026-08-26
 
+  - id: B-PAGE-PROSE-UNCHECKED
+    title: Only the protocol page's code names are checked; its sentences can go stale silently
+    problem: >-
+      The suite compares the refusal codes named on docs/clawdline-protocol.html against the set
+      derived from Sources/Orchestrator.swift, so a code added and never documented, or documented
+      and never built, is caught. Nothing checks the sentences around those codes. Two of the three
+      falsehoods found on that page in one review were prose rather than names: a conditional
+      success path written as though it were unconditional, and a bound that exists in the code and
+      appeared nowhere on the page. Both can regress the same way again, and this is the page the
+      project points the community at. The distinction worth keeping in view is that a set equality
+      catches an inconsistency after it exists, while generating the text makes the inconsistency
+      impossible — the difference between a check and a guarantee.
+    evidence: >-
+      Review 3cbbb7b7 (F1, MEDIUM) found three false claims on that page, and a previous reviewer
+      had run a keyword scan over the same file and missed all three — which is why the assertion
+      that landed derives its set from the source instead of listing more keywords. That closes the
+      names half and leaves this half open by design rather than by oversight. 2026-08-28.
+    severity: degrades
+    cost: days
+    who_hurts: user
+    trigger: >-
+      Another reviewer finding a false sentence on that page, or somebody building against it and
+      hitting the gap. The shape worth trying first is generating the error code table from the
+      source instead of writing it, so that section stops being prose at all — which is what
+      tools/build-compatibility.py already does for the compatibility page.
+    opened: 2026-08-28
+
   - id: B-ATTACH-GRANT-TIED-TO-TAB
     title: The attach grant is recorded against a terminal id, not the process that actually holds it
     problem: >-

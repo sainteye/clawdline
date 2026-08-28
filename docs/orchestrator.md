@@ -501,7 +501,10 @@ task's first line was already typed by `spawnAttached`, so waiting longer for th
 session's owner to answer a menu does not relabel delivered work as `spawn_failed`. The wait is
 nevertheless bounded: before transcript acceptance, its ordinary `timeout_minutes` runs from that
 delivery. Expiry finalizes the task as `timeout`, releases claims and serialize tokens, and returns
-the standing session to its earlier role.
+the standing session to its earlier role. Budget for what that means end to end: **an attached
+task's total wall-clock can reach twice `timeout_minutes`**, once waiting to be picked up and once
+running. A dispatcher choosing that number for a standing session is choosing half of the longest
+the work can take.
 
 For `worktree`, the broker resolves the base to a commit SHA and records that immutable value.
 Branch names and `HEAD` can move while other sessions commit; the SHA is the receipt for what the

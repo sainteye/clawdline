@@ -19412,15 +19412,45 @@ group("coordinator routes require the machine token and expose no implicit takeo
 
     let apiDoc = try! String(contentsOfFile: "docs/api.md", encoding: .utf8)
     let orchestratorDoc = try! String(contentsOfFile: "docs/orchestrator.md", encoding: .utf8)
-    let artifact = try! String(contentsOfFile:
-        "artifacts/2026-08-26-clawdline-communication-protocol.html", encoding: .utf8)
+    // The protocol page, not the working Artifact it replaced. That Artifact lives behind an
+    // ignored symlink into a private repository, so reading it here meant `./test.sh` could only
+    // pass on a machine that also had that repository checked out beside this one — a fresh clone
+    // trapped on this very line, at check 283 of about four thousand, and everything after it had
+    // never run anywhere.
+    let protocolPage = try! String(contentsOfFile: "docs/clawdline-protocol.html", encoding: .utf8)
     for (name, text) in [("API", apiDoc), ("orchestrator", orchestratorDoc),
-                         ("candidate Artifact", artifact)] {
+                         ("protocol page", protocolPage)] {
         check("\(name) documents observer_unreachable provenance without authorizing restart",
               text.contains("observer_unreachable") && text.contains("sandbox_loopback")
               && text.contains("host_listener") && text.contains("host_health")
               && text.lowercased().contains("cannot authorize restart"))
     }
+
+    // **A keyword scan is what let the page drift.** A reviewer ran one over it and missed three
+    // false claims, one of which was a refusal the broker had gained and the page had never heard
+    // of. So this does not look for words somebody thought to list: it derives the set of refusal
+    // codes from the source and requires the page to name exactly that set, reporting the
+    // difference in both directions. Undocumented codes and documented-but-nonexistent ones are
+    // the same defect seen from either end, and the second one shipped here once already.
+    let source = try! String(contentsOfFile: "Sources/Orchestrator.swift", encoding: .utf8)
+    func codes(in text: String, matching pattern: String) -> Set<String> {
+        let expression = try! NSRegularExpression(pattern: pattern)
+        let range = NSRange(text.startIndex..., in: text)
+        var found: Set<String> = []
+        expression.enumerateMatches(in: text, range: range) { match, _, _ in
+            guard let match, let captured = Range(match.range(at: 1), in: text) else { return }
+            found.insert(String(text[captured]))
+        }
+        return found
+    }
+    // Written both ways in the source: `code: "…"` in a typed refusal, `"code": "…"` in a warning.
+    let declared = codes(in: source, matching: "\"?code\"?: \"(attach_[a-z_]+|root_unresolved)\"")
+    let documented = codes(in: protocolPage, matching: "(attach_[a-z_]+|root_unresolved)")
+        .filter { $0 != "attach_session" }          // the task.json field, not a refusal
+    check("the protocol page names every attach refusal the broker can return, and no others",
+          declared == Set(documented),
+          "undocumented: \(declared.subtracting(documented).sorted()); "
+          + "documented but absent from the source: \(Set(documented).subtracting(declared).sorted())")
 }
 
 group("the reconnect route is closed, machine-only and refuses online takeover") {
