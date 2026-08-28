@@ -1316,6 +1316,30 @@ was away gets twenty seconds first, so the first reading has landed before anyth
 missing — and a reading with no terminals in it at all decides nothing, since that is also what
 the first second after launch looks like, and what iTerm2 not answering looks like.
 
+The deadline is not permission to force-close a busy child. Linger cleanup and explicit root close
+share one bounded terminal broker, one per-task closing guard, and one success-only deadline clear.
+Inventory, screen classification and the irreversible decision all execute inside that broker.
+Activity is `busy`, `idle` or `unknown`; capture failure is `unknown` and can never authorize close.
+Immediately before every explicit or linger close Clawdline takes a fresh complete iTerm/tmux
+inventory and requires the same terminal id, backend and tty. After `/quit` or `/exit`, it re-scans
+the exact tty; every TERM/KILL rung is bound to the same `(pid, process start)` identity, so a
+different PID or the same PID reused by a later process fails closed. Only complete inventory plus
+an exact-tty observation proving the assistant absent permits the tab close. A failed scan or a process still present after TERM/KILL
+leaves the tab open and records `terminal_intervention`. There is no ten-minute force-close. An
+empty whole-machine reading may forget a missing tab only when SessionWatch marks that empty
+inventory authoritative. Only an actual iTerm automation timeout/malformed list reports
+`answer_dialog`; process-scan failures and a still-running tty report `inspect_terminal` instead.
+That distinction is persisted as typed state. A modal gets one automatic retry after a fresh
+well-formed iTerm list closes the circuit; `inspect_terminal` never repeats `/exit`, TERM or KILL
+on the five-second beat.
+
+The same global admission domain also owns manual and timer schedule fire, serialized task
+promotion, background shell kill, focus/start/resume, root cascades and every terminal-bearing
+task/handoff/wait delivery. It admits eight operations globally and two per real recipient session;
+nested cascades execute inline to preserve ordering, while inheriting or adding recipient
+accounting. tmux subprocesses have a real deadline and TERM/SIGKILL cleanup, so a hung tmux process
+settles as a typed timeout rather than occupying the serial lane forever.
+
 **A `spawn_failed` that never reached briefing is the exception, and it closes at once.** Nothing
 of the task is on that screen: the session was opened and never spoken to, so what is there is a
 fresh prompt that explains less than the summary does. And keeping it is not free — each one is a

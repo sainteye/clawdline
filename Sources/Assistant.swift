@@ -226,6 +226,16 @@ enum Assistant: String, CaseIterable {
     struct Running: Equatable {
         let assistant: Assistant
         let pid: Int32
+        /// Kernel process identity is PID plus its authoritative start instant. `nil` is kept
+        /// only for legacy/test process listings that did not carry `lstart`; no safe-close
+        /// signal is allowed to use such a partial identity.
+        let processStart: Date?
+
+        init(assistant: Assistant, pid: Int32, processStart: Date? = nil) {
+            self.assistant = assistant
+            self.pid = pid
+            self.processStart = processStart
+        }
     }
 
     /// Subcommands that are the same binary doing something you cannot type into.
@@ -258,6 +268,7 @@ enum Assistant: String, CaseIterable {
             let tty: String
             let pid: Int32
             let parent: Int32?
+            let processStart: Date?
             let assistant: Assistant
             let viaShim: Bool
             let denied: Bool
@@ -274,9 +285,18 @@ enum Assistant: String, CaseIterable {
             // because ancestry is the only reliable way to distinguish `codex exec`'s native
             // child from an interactive Codex session that happens to have an app-server child.
             let parent = fields.count >= 4 ? Int32(fields[2]) : nil
-            let start = parent == nil ? 2 : 3
+            // Production includes `lstart`, whose five fixed POSIX-English fields sit between
+            // ppid and command. Old fixtures and old callers remain readable, but yield no
+            // process-start identity and therefore cannot authorize a signal.
+            let hasLongStart = parent != nil && fields.count >= 9
+                && fields[3].count == 3 && fields[6].contains(":")
+                && Int(fields[7]) != nil
+            let processStart = hasLongStart
+                ? parseProcessStart(fields[3...7].map(String.init)) : nil
+            let start = hasLongStart ? 8 : (parent == nil ? 2 : 3)
             guard let seen = read(tokens: fields.dropFirst(start).map(String.init)) else { continue }
-            rows.append(Row(tty: tty, pid: pid, parent: parent, assistant: seen.assistant,
+            rows.append(Row(tty: tty, pid: pid, parent: parent, processStart: processStart,
+                            assistant: seen.assistant,
                             viaShim: seen.viaShim, denied: seen.denied))
         }
 
@@ -308,9 +328,22 @@ enum Assistant: String, CaseIterable {
             guard let chosen = candidates.last(where: { !$0.viaShim }) ?? candidates.first else {
                 continue
             }
-            found[tty] = Running(assistant: chosen.assistant, pid: chosen.pid)
+            found[tty] = Running(assistant: chosen.assistant, pid: chosen.pid,
+                                 processStart: chosen.processStart)
         }
         return found
+    }
+
+    /// Parse macOS `ps -o lstart=` without inheriting the person's locale. `ps` emits this
+    /// column in its POSIX English shape even when the UI locale is not English.
+    static func parseProcessStart(_ fields: [String]) -> Date? {
+        guard fields.count == 5 else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = .current
+        formatter.dateFormat = "EEE MMM d HH:mm:ss yyyy"
+        return formatter.date(from: fields.joined(separator: " "))
     }
 
     /// One process's command line, as far as this cares: which assistant it is, whether it

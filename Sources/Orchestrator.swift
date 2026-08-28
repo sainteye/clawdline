@@ -960,7 +960,19 @@ enum Orchestrator {
             case .run:
                 let work = { runScheduledFire(schedule, fire: fire) }
                 if let enqueue = scheduleDispatchEnqueuerForTesting { enqueue(work) }
-                else { RemoteServer.shared.serialized(work) }
+                else {
+                    let admitted = RemoteServer.shared.enqueueTerminalCommand(
+                        channel: "schedule:\(schedule.id)", work)
+                    if !admitted {
+                        lock.lock()
+                        if pendingScheduleFires[schedule.id] == fire {
+                            pendingScheduleFires.removeValue(forKey: schedule.id)
+                        }
+                        lock.unlock()
+                        RemoteAuth.audit("orchestrator.schedule.retry",
+                                         ["schedule": schedule.id, "why": "terminal_busy"])
+                    }
+                }
             case .active:
                 RemoteAuth.audit("orchestrator.schedule.skipped",
                                  ["schedule": schedule.id, "why": "active"])
@@ -1304,8 +1316,23 @@ enum Orchestrator {
         /// What crosses the restart is the deadline and nothing else. Whether that tab is still
         /// the child's is asked again, of a reading this process took — see ``closeStep``.
         var closeAt: Date?
+        /// Why an automatic terminal cleanup is deliberately still pending. The kind is durable:
+        /// an iTerm modal may be tried once after a fresh list proves recovery, while a process
+        /// scan/still-running/tmux failure must stay stopped for a person instead of sending the
+        /// quit word and signals again on every five-second beat.
+        var terminalIntervention: TerminalIntervention?
 
         var dir: URL { Orchestrator.root.appendingPathComponent(id, isDirectory: true) }
+    }
+
+    enum TerminalInterventionKind: String {
+        case iTermModal = "iterm_modal"
+        case terminal = "terminal"
+    }
+
+    struct TerminalIntervention: Equatable {
+        let kind: TerminalInterventionKind
+        let message: String
     }
 
     // MARK: - A handoff envelope
@@ -3667,7 +3694,21 @@ enum Orchestrator {
     /// finalizes on main with `pumpQueue: false`; the outer pass is already responsible for the
     /// next waiter, so it cannot recurse back into itself.
     private static func scheduleSerializePump() {
-        serializePumpQueue.async { _ = pumpSerializeQueue() }
+        serializePumpQueue.async {
+            let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: "serialize-promotion") {
+                _ = pumpSerializeQueue()
+            }
+            if !admitted {
+                lock.lock()
+                let waiting = tasks.values.contains { $0.state == .queued && !$0.serialize.isEmpty }
+                lock.unlock()
+                if waiting {
+                    serializePumpQueue.asyncAfter(deadline: .now() + 0.25) {
+                        scheduleSerializePump()
+                    }
+                }
+            }
+        }
     }
 
     /// Ten dispatches in ten minutes, or one full tree's worth, whichever is more.
@@ -4742,19 +4783,45 @@ enum Orchestrator {
     /// actually be gone — a few hundred milliseconds when it leaves on the word, and a bounded
     /// five and a bit when it has to be made to. Both callers arrive on the server's queue.
     private static func cancelInPlace(_ task: Task) {
-        var tabEnded = true
-        if let childID = task.childTerminalId,
-           let child = target(withID: childID) {
-            tabEnded = Targets.end(child) == nil
-        }
-        let ended = tabEnded
-        DispatchQueue.main.async {
-            finalize(task.id, as: .cancelled, summary: "Cancelled.")
-            if ended, let worktree = task.worktree {
-                scheduleWorktreeDisposal(worktree, taskID: task.id, why: "empty",
-                                         allowCommitted: false)
+        let finish: (TerminalIntervention?) -> Void = { intervention in
+            DispatchQueue.main.async {
+                finalize(task.id, as: .cancelled, summary: "Cancelled.")
+                if let intervention, var current = held(task.id) {
+                    current.terminalIntervention = intervention
+                    if replaceTask(current, expecting: current.state) {
+                        save(); RemoteServer.shared.broadcastOrchestrator()
+                    }
+                } else if let worktree = task.worktree {
+                    scheduleWorktreeDisposal(worktree, taskID: task.id, why: "empty",
+                                             allowCommitted: false)
+                }
             }
         }
+        guard let childID = task.childTerminalId, let child = target(withID: childID) else {
+            finish(nil); return
+        }
+        let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: child.id) {
+            let intervention = Targets.end(child).map {
+                terminalIntervention(for: $0, backend: child.backend)
+            }
+            finish(intervention)
+        }
+        if !admitted {
+            finish(TerminalIntervention(
+                kind: .terminal, message: "The terminal broker is full; the tab was left open."))
+        }
+    }
+
+    /// Preserve the source of a failed close as data, not a phrase inferred later by the API.
+    /// Only a real iTerm automation circuit has a recovery probe; every other backend/process
+    /// failure needs a person and is never eligible for timer-driven retry.
+    static func terminalIntervention(for failure: String,
+                                     backend: Backend?) -> TerminalIntervention {
+        if backend == .iterm, let attention = ITerm.automationAttention,
+           failure == attention {
+            return TerminalIntervention(kind: .iTermModal, message: attention)
+        }
+        return TerminalIntervention(kind: .terminal, message: failure)
     }
 
     /// The live tasks a root session dispatched, oldest first.
@@ -4929,40 +4996,21 @@ enum Orchestrator {
     /// is the ten minutes of patience — that is for a linger running out on its own, and this is
     /// somebody pressing close.
     private static func closeChildTab(ofTask id: String, root: String) -> Bool {
-        guard var task = held(id), let childID = task.childTerminalId,
+        guard let task = held(id), let childID = task.childTerminalId,
               let child = target(withID: childID),
               child.assistant == nil || child.assistant == task.assistant,
               task.childTTY == nil || child.tty == task.childTTY else { return false }
-        let justTheTab = childIsBusy(child) || child.assistant == nil
-        task.closeAt = nil
-        guard replaceTask(task, expecting: task.state) else { return false }
+        // Busy/idle/unknown is deliberately not read here. Root `/end` already entered the
+        // broker; the shared close operation classifies the fresh screen there immediately
+        // before any irreversible terminal action.
+        let justTheTab = child.assistant == nil
         RemoteAuth.audit("orchestrator.close", ["task": id, "child": childID,
                                                 "how": justTheTab ? "tab" : "exit",
                                                 "why": "root_ended", "root": root])
-        if let failure = endChildTab(child, justTheTab: justTheTab) {
-            Log.write("orchestrator: could not close the child — \(failure)")
-        } else if let worktree = task.worktree {
-            scheduleWorktreeDisposal(worktree, taskID: task.id, why: "empty",
-                                     allowCommitted: false)
-        }
-        return true
-    }
-
-    /// Whether there is a turn running in the child, read the way `closeChild` reads it.
-    ///
-    /// The screen reading is left where it is called from — it is the slow half, and neither
-    /// caller is on the main thread by accident — but the states table belongs to main, so that
-    /// half takes the same hop `target(withID:)` takes.
-    private static func childIsBusy(_ child: TargetSession) -> Bool {
-        if Targets.isChoosing(child) { return true }
-        if Thread.isMainThread {
-            if case .working? = SessionWatch.shared.states[child.id] { return true }
-            return false
-        }
-        return DispatchQueue.main.sync { () -> Bool in
-            if case .working? = SessionWatch.shared.states[child.id] { return true }
-            return false
-        }
+        // Explicit root close and linger expiry share the same admission, closing guard and
+        // success-only deadline clearing. A failed safe-close therefore remains visible and can
+        // never be mistaken for completed cleanup.
+        return takeChildTab(child, justTheTab: justTheTab, for: task)
     }
 
     /// What a session calls itself, which is what `rootSessionId` was written from. The unified
@@ -5141,7 +5189,7 @@ enum Orchestrator {
         // announces only while something is still on the list is one that never announces.
         sweepBatches()
 
-        for id in liveHandoffs { handoffStep(id) }
+        for id in liveHandoffs { scheduleHandoffStep(id) }
         if fromTimer, !liveHandoffs.isEmpty { SessionWatch.shared.nudge() }
 
         guard !liveIDs.isEmpty else { return }
@@ -5155,7 +5203,7 @@ enum Orchestrator {
             switch task.state {
             case .spawning:
                 sawSpawning = true
-                changed = brief(task) || changed
+                scheduleBriefStep(task)
             case .briefed:  changed = watch(task) || changed
             default: changed = closeChild(task) || changed
             }
@@ -5169,6 +5217,38 @@ enum Orchestrator {
             save()
             RemoteServer.shared.broadcastOrchestrator()
         }
+    }
+
+    /// Capture/menu/injection work is terminal I/O and therefore never runs on the main-thread
+    /// beat. The in-flight sets prevent a five-second beat from stacking duplicates while an
+    /// Apple Event is blocked.
+    private static var briefingStepsInFlight: Set<String> = []
+    private static var handoffStepsInFlight: Set<String> = []
+
+    private static func scheduleBriefStep(_ task: Task) {
+        guard !briefingStepsInFlight.contains(task.id) else { return }
+        briefingStepsInFlight.insert(task.id)
+        let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: task.childTerminalId) {
+            let changed = brief(task)
+            DispatchQueue.main.async {
+                briefingStepsInFlight.remove(task.id)
+                if changed { save(); RemoteServer.shared.broadcastOrchestrator() }
+            }
+        }
+        if !admitted { briefingStepsInFlight.remove(task.id) }
+    }
+
+    private static func scheduleHandoffStep(_ id: String) {
+        guard !handoffStepsInFlight.contains(id) else { return }
+        handoffStepsInFlight.insert(id)
+        lock.lock()
+        let channel = handoffDeliveries[id]?.terminalID
+        lock.unlock()
+        let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: channel) {
+            handoffStep(id)
+            DispatchQueue.main.async { handoffStepsInFlight.remove(id) }
+        }
+        if !admitted { handoffStepsInFlight.remove(id) }
     }
 
     /// How long a tab has to reach a prompt before the task gives up on it.
@@ -5200,7 +5280,7 @@ enum Orchestrator {
             return false // finalize saved and broadcast already
         }
         guard let childID = task.childTerminalId,
-              let child = SessionWatch.shared.targets.first(where: { $0.id == childID }),
+              let child = target(withID: childID),
               child.assistant == task.assistant else { return false }
         if task.childTTY == nil {
             task.childTTY = child.tty
@@ -5306,9 +5386,8 @@ enum Orchestrator {
                           why: "prompt_timeout")
             return
         }
-        guard let child = SessionWatch.shared.targets.first(where: {
-            $0.id == delivery.terminalID && $0.assistant == delivery.assistant
-        }) else { return }
+        guard let child = target(withID: delivery.terminalID),
+              child.assistant == delivery.assistant else { return }
 
         let line = handoffLine(id: id)
         let recorded: Bool
@@ -5401,13 +5480,11 @@ enum Orchestrator {
               let sender = target(forRootSession: from, assistant: nil,
                                   resolution: .handoff,
                                   among: rootTargets(),
-                                  sessionID: Transcript.sessionID(of:)),
-              !Targets.isChoosing(sender) else { return }
+                                  sessionID: Transcript.sessionID(of:)) else { return }
         let receipt = handoffReceipt(id: id, title: envelope.title, assistant: assistant,
                                      projectDir: envelope.projectDir, delivered: delivered)
-        if let failure = Targets.send(ClawdlineMessage.encode(receipt), to: sender) {
-            Log.write("orchestrator: could not send handoff receipt — \(failure)")
-        }
+        deliverTerminalNotice(ClawdlineMessage.encode(receipt), to: sender,
+                              label: "handoff receipt")
     }
 
     /// Watch a briefed child for its result, its death, or its deadline. True when the record
@@ -5687,77 +5764,186 @@ enum Orchestrator {
 
     /// `busy` is a closure because answering it costs a screen capture, and it is only worth
     /// paying for once everything cheaper has already said the tab is ours and due.
-    static func closeStep(now: Date, closeAt: Date, sawTerminals: Bool, child: TargetSession?,
-                          assistant: Assistant, tty: String?,
-                          busy: () -> Bool) -> CloseStep {
+    static func closeStep(now: Date, closeAt: Date, inventoryComplete: Bool,
+                          inventoryEmpty: Bool = false,
+                          emptyInventoryAuthoritative: Bool = false,
+                          automationReady: Bool,
+                          intervention: TerminalIntervention? = nil,
+                          child: TargetSession?, assistant: Assistant, tty: String?,
+                          activity: () -> Targets.SafeCloseActivity) -> CloseStep {
         guard now >= closeAt else { return .wait }
+        // An omitted row has meaning only in a complete inventory, and no terminal command is
+        // safe while the previous Apple event is waiting on a modal answer. Both conditions are
+        // re-evaluated on every beat, so one later complete scan is the recovery signal.
+        guard inventoryComplete,
+              terminalCloseRetryAllowed(intervention: intervention,
+                                        automationReady: automationReady) else { return .wait }
         guard let child else {
             // **`forget` is permanent**, and a reading with no terminals in it at all is not a
             // reading that found this one gone: it is the first seconds after launch, or iTerm2
             // not answering. Deciding on one closed nothing and left the tab standing for good.
-            return sawTerminals ? .forget : .wait
+            return !inventoryEmpty || emptyInventoryAuthoritative ? .forget : .wait
         }
         guard child.assistant == nil || child.assistant == assistant,
               tty == nil || child.tty == tty else { return .forget }
-        // A child still mid-turn is left alone — result.json was meant to be the last thing it
-        // wrote, but a tab closed under a running turn is a mess, not an exit. Ten minutes of
-        // patience, then the tab goes without the courtesy of `/exit`, because typing into a
-        // menu confirms whatever is highlighted. An assistant that already left on its own
-        // gets the same treatment: there is nobody in that tab to say the word to.
-        let busyNow = busy()
-        let overdue = now.timeIntervalSince(closeAt) > 600
-        if busyNow, !overdue { return .wait }
-        return .close(justTheTab: busyNow || child.assistant == nil)
+        // A child still mid-turn is left alone. Elapsed time is never evidence that a process is
+        // gone, so there is no force-after-ten-minutes escape hatch.
+        // Unknown is not idle. Capture failure, an unreadable screen, or a classifier that
+        // cannot prove what it saw therefore has exactly the same irreversible authority as a
+        // positively busy child: none.
+        guard activity() == .idle else { return .wait }
+        return .close(justTheTab: child.assistant == nil)
+    }
+
+    /// Compatibility seam for older pure decision callers. Production uses the tri-state form
+    /// above so an unreadable screen cannot collapse into `false == idle`.
+    static func closeStep(now: Date, closeAt: Date, inventoryComplete: Bool,
+                          inventoryEmpty: Bool = false,
+                          emptyInventoryAuthoritative: Bool = false,
+                          automationReady: Bool,
+                          intervention: TerminalIntervention? = nil,
+                          child: TargetSession?, assistant: Assistant, tty: String?,
+                          busy: () -> Bool) -> CloseStep {
+        closeStep(now: now, closeAt: closeAt, inventoryComplete: inventoryComplete,
+                  inventoryEmpty: inventoryEmpty,
+                  emptyInventoryAuthoritative: emptyInventoryAuthoritative,
+                  automationReady: automationReady, intervention: intervention,
+                  child: child, assistant: assistant, tty: tty,
+                  activity: { busy() ? .busy : .idle })
+    }
+
+    /// A modal failure has exactly one automatic recovery edge: a later well-formed iTerm list
+    /// clears the global circuit. Non-modal failures have no equivalent positive recovery proof,
+    /// so another timer beat must not repeat `/exit`, TERM or KILL.
+    static func terminalCloseRetryAllowed(intervention: TerminalIntervention?,
+                                          automationReady: Bool) -> Bool {
+        guard automationReady else { return false }
+        return intervention == nil || intervention?.kind == .iTermModal
     }
 
     /// Close a reported child's terminal once its linger has run out. True when the record changed.
     private static func closeChild(_ task: Task) -> Bool {
-        var task = task
         guard let closeAt = task.closeAt, let childID = task.childTerminalId else { return false }
         let now = Date()
+        guard now >= closeAt, SessionWatch.shared.scanComplete,
+              terminalCloseRetryAllowed(intervention: task.terminalIntervention,
+                                        automationReady: ITerm.automationReady) else {
+            return false
+        }
         let seen = SessionWatch.shared.targets
         let child = seen.first { $0.id == childID }
-        let step = closeStep(now: now, closeAt: closeAt, sawTerminals: !seen.isEmpty,
-                             child: child, assistant: task.assistant, tty: task.childTTY,
-                             busy: { child.map(childIsBusy) ?? false })
-        switch step {
-        case .wait:
-            return false
-        case .forget:
-            task.closeAt = nil
-            guard replaceTask(task, expecting: task.state) else { return false }
-            Log.write("orchestrator: nothing left to close for \(task.id) — dropping its linger")
-            if let worktree = task.worktree {
-                scheduleWorktreeDisposal(worktree, taskID: task.id, why: "empty",
-                                         allowCommitted: false)
-            }
-            return true
-        case .close(let justTheTab):
-            guard let child else { return false }
-            return takeChildTab(child, justTheTab: justTheTab, for: task)
+        guard let child else {
+            return verifyChildGone(task)
         }
+        guard child.assistant == nil || child.assistant == task.assistant,
+              task.childTTY == nil || child.tty == task.childTTY else {
+            return verifyChildGone(task)
+        }
+        // The main-thread inventory nominates work only. A complete fresh inventory, activity
+        // classification and every irreversible action happen in the broker below.
+        return takeChildTab(child, justTheTab: child.assistant == nil, for: task)
     }
 
     /// The half of `closeChild` that touches a terminal, once the decision is made.
     private static func takeChildTab(_ child: TargetSession, justTheTab: Bool,
                                      for task: Task) -> Bool {
-        var task = task
-        task.closeAt = nil
-        guard replaceTask(task, expecting: task.state) else { return false }
+        guard beginClosing(task.id) else { return false }
         RemoteAuth.audit("orchestrator.close", ["task": task.id, "child": child.id,
                                                  "how": justTheTab ? "tab" : "exit"])
-        // Off the main thread: `end` types the quit word, waits for it to land, then closes the
-        // tab, and a second of that on the main thread is a second the panel does not draw.
-        DispatchQueue.global(qos: .utility).async {
-            if let failure = endChildTab(child, justTheTab: justTheTab) {
-                Log.write("orchestrator: could not close the child — \(failure)")
-            } else if let worktree = task.worktree {
-                scheduleWorktreeDisposal(worktree, taskID: task.id, why: "empty",
-                                         allowCommitted: false)
+        // The deadline remains present until this succeeds. Clearing it before `ITerm.close`
+        // meant a timed-out modal was recorded as completed cleanup and could never be retried
+        // after the person answered it.
+        let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: child.id) {
+            let activity = Targets.safeCloseActivity(of: child)
+            if activity == .busy {
+                DispatchQueue.main.async { finishClosing(task.id) }
+                return
             }
-            DispatchQueue.main.async { SessionWatch.shared.nudge() }
+            let failure = activity == .unknown
+                ? "Could not classify the child terminal activity; the tab was left open."
+                : endChildTab(child, justTheTab: justTheTab)
+            // Type it here, while the returned failure and the circuit that produced it are one
+            // observation. A later main callback must not mistake an unrelated process failure
+            // for a modal another terminal operation happened to open in the meantime.
+            let intervention = failure.map {
+                terminalIntervention(for: $0, backend: child.backend)
+            }
+            DispatchQueue.main.async {
+                finishClosing(task.id)
+                guard var current = held(task.id), current.childTerminalId == child.id else {
+                    return
+                }
+                if let intervention {
+                    current.terminalIntervention = intervention
+                    Log.write("orchestrator: could not close the child — \(intervention.message)")
+                } else {
+                    current.closeAt = nil
+                    current.terminalIntervention = nil
+                }
+                guard replaceTask(current, expecting: current.state) else { return }
+                save()
+                RemoteServer.shared.broadcastOrchestrator()
+                if failure == nil, let worktree = current.worktree {
+                    scheduleWorktreeDisposal(worktree, taskID: current.id, why: "empty",
+                                             allowCommitted: false)
+                }
+                SessionWatch.shared.nudge()
+            }
         }
-        return true
+        if !admitted { finishClosing(task.id) }
+        return false
+    }
+
+    /// `forget` is permanent, so the cached SessionWatch inventory may only nominate it. A
+    /// complete inventory is taken inside the broker and absence is decided there; a failed or
+    /// partial walk leaves the deadline untouched for a later beat.
+    private static func verifyChildGone(_ task: Task) -> Bool {
+        guard beginClosing(task.id) else { return false }
+        let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: task.childTerminalId) {
+            let inventory = Targets.safeCloseInventory()
+            let observed = inventory.sessions.first { $0.id == task.childTerminalId }
+            let noLongerOurs = inventory.isComplete && (observed == nil
+                || (observed?.assistant != nil && observed?.assistant != task.assistant)
+                || (task.childTTY != nil && observed?.tty != task.childTTY))
+            DispatchQueue.main.async {
+                finishClosing(task.id)
+                guard noLongerOurs, var current = held(task.id), current.closeAt != nil else { return }
+                current.closeAt = nil
+                current.terminalIntervention = nil
+                guard replaceTask(current, expecting: current.state) else { return }
+                Log.write("orchestrator: fresh inventory found nothing left to close for "
+                          + "\(task.id) — dropping its linger")
+                save()
+                RemoteServer.shared.broadcastOrchestrator()
+                if let worktree = current.worktree {
+                    scheduleWorktreeDisposal(worktree, taskID: current.id, why: "empty",
+                                             allowCommitted: false)
+                }
+            }
+        }
+        if !admitted { finishClosing(task.id) }
+        return false
+    }
+
+    /// Main-thread membership: one automatic close per task, even when a five-second beat lands
+    /// while the previous Apple event is still in flight.
+    private static let closingTasksLock = NSLock()
+    private static var closingTasks: Set<String> = []
+
+    private static func beginClosing(_ id: String) -> Bool {
+        closingTasksLock.lock(); defer { closingTasksLock.unlock() }
+        return closingTasks.insert(id).inserted
+    }
+
+    private static func finishClosing(_ id: String) {
+        closingTasksLock.lock(); closingTasks.remove(id); closingTasksLock.unlock()
+    }
+
+    static func beginTerminalCloseForTesting(_ id: String) -> Bool { beginClosing(id) }
+    static func finishTerminalCloseForTesting(_ id: String) { finishClosing(id) }
+    static func terminalClosesInFlightForTesting() -> Int {
+        closingTasksLock.lock(); defer { closingTasksLock.unlock() }
+        return closingTasks.count
     }
 
     /// Take a child's tab away: the quit word first when there is an assistant in there to hear
@@ -5769,10 +5955,7 @@ enum Orchestrator {
     /// afford a wait measured in seconds when the child is busy.
     private static func endChildTab(_ child: TargetSession, justTheTab: Bool) -> String? {
         if justTheTab {
-            switch child.backend {
-            case .iterm: return ITerm.close(child.id)
-            case .tmux:  return Tmux.close(child.id)
-            }
+            return Targets.closeIfAssistantGone(child)
         }
         return Targets.end(child)
     }
@@ -6151,14 +6334,11 @@ enum Orchestrator {
            !parent.state.isTerminal, let terminalID = parent.childTerminalId,
            let terminal = target(withID: terminalID) {
             // Words into a menu confirm the highlighted row instead of typing.
-            guard !Targets.isChoosing(terminal) else { return }
             let outstanding = liveTasks(under: [parentID]).count
             guard let notice = taskFinishedNotice(for: task, audience: .parent,
                                                   outstanding: outstanding) else { return }
             let line = ClawdlineMessage.encode(notice)
-            if let failure = Targets.send(line, to: terminal) {
-                Log.write("orchestrator: could not notify the parent task — \(failure)")
-            }
+            deliverTerminalNotice(line, to: terminal, label: "parent task notification")
             return
         }
 
@@ -6170,11 +6350,23 @@ enum Orchestrator {
                                 sessionID: Transcript.sessionID(of:)) else { return }
         // Words into a menu confirm the highlighted row instead of typing. Skip rather than risk
         // answering a question on the root's behalf; the record is still in the app and the page.
-        guard !Targets.isChoosing(root) else { return }
         guard let notice = taskFinishedNotice(for: task, audience: .root) else { return }
         let line = ClawdlineMessage.encode(notice)
-        if let failure = Targets.send(line, to: root) {
-            Log.write("orchestrator: could not notify the root — \(failure)")
+        deliverTerminalNotice(line, to: root, label: "root notification")
+    }
+
+    /// Notifications are best-effort, but their Apple Events still obey the same bounded broker
+    /// as interactive writes. A modal can delay this lane without ever occupying main or HTTP.
+    private static func deliverTerminalNotice(_ line: String, to target: TargetSession,
+                                              label: String) {
+        let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: target.id) {
+            guard !Targets.isChoosing(target) else { return }
+            if let failure = Targets.send(line, to: target) {
+                Log.write("orchestrator: could not send \(label) — \(failure)")
+            }
+        }
+        if !admitted {
+            Log.write("orchestrator: could not send \(label) — terminal broker full")
         }
     }
 
@@ -6248,12 +6440,8 @@ enum Orchestrator {
         guard let root = target(forRootSession: sessionID, assistant: assistant,
                                 resolution: .task,
                                 among: rootTargets(),
-                                sessionID: Transcript.sessionID(of:)),
-              !Targets.isChoosing(root) else { return }
-        if let failure = Targets.send(line, to: root) {
-            Log.write("orchestrator: could not notify task \(taskID) root of workspace overlap"
-                      + " — \(failure)")
-        }
+                                sessionID: Transcript.sessionID(of:)) else { return }
+        deliverTerminalNotice(line, to: root, label: "task \(taskID) workspace overlap")
     }
 
     // MARK: - Telling the person, once
@@ -7123,6 +7311,17 @@ enum Orchestrator {
         if let backend = task.childBackend { child["backend"] = backend.rawValue }
         if let id = task.childSessionId { child["sessionId"] = id }
         if !child.isEmpty { out["child"] = child }
+        if let intervention = task.terminalIntervention {
+            let modal = intervention.kind == .iTermModal
+            var payload: [String: Any] = [
+                "code": modal ? "iterm_attention_required" : "terminal_intervention_required",
+                "action": modal ? "answer_dialog" : "inspect_terminal",
+                "message": intervention.message,
+            ]
+            if modal { payload["app"] = "iTerm2" }
+            if let backend = task.childBackend { payload["backend"] = backend.rawValue }
+            out["terminal_intervention"] = payload
+        }
         if let summary = task.summary { out["summary"] = summary }
         if !task.artifacts.isEmpty { out["artifacts"] = task.artifacts }
         if task.claimsDeclared { out["claims"] = task.claims }
@@ -7700,6 +7899,9 @@ enum Orchestrator {
         if let v = task.childProcStart { out["child_proc_start"] = v.timeIntervalSince1970 }
         if let v = task.childSessionId { out["child_session"] = v }
         if let at = task.closeAt { out["close_at"] = at.timeIntervalSince1970 }
+        if let v = task.terminalIntervention {
+            out["terminal_intervention"] = ["kind": v.kind.rawValue, "message": v.message]
+        }
         if let v = task.transcriptPath { out["transcript"] = v }
         if task.transcriptProven { out["transcript_proven"] = true }
         if let v = task.summary { out["summary"] = v }
@@ -7941,6 +8143,17 @@ enum Orchestrator {
             .map(Date.init(timeIntervalSince1970:))
         task.childSessionId = obj["child_session"] as? String
         task.closeAt = (obj["close_at"] as? Double).map(Date.init(timeIntervalSince1970:))
+        if let raw = obj["terminal_intervention"] as? [String: Any],
+           let kind = (raw["kind"] as? String).flatMap(TerminalInterventionKind.init(rawValue:)),
+           let message = raw["message"] as? String, !message.isEmpty {
+            task.terminalIntervention = TerminalIntervention(kind: kind, message: message)
+        } else if let legacy = obj["terminal_intervention"] as? String, !legacy.isEmpty {
+            // Compatibility for the short-lived crash-recovery store that persisted only prose.
+            // New rows never infer type from text; this branch exists solely to retain its reason.
+            let modal = task.childBackend == .iterm && legacy.contains("iTerm2 needs attention")
+            task.terminalIntervention = TerminalIntervention(
+                kind: modal ? .iTermModal : .terminal, message: legacy)
+        }
         task.transcriptPath = obj["transcript"] as? String
         task.transcriptProven = obj["transcript_proven"] as? Bool == true
             && task.childSessionId != nil && task.transcriptPath != nil

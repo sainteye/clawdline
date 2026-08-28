@@ -874,8 +874,27 @@ $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/send \
 ```
 
 With the switch on it answers `{"ok":true,"at":<unix seconds>}`. `text` must be a non-empty string;
-anything else is `400 bad_request`. Failure to reach the terminal is `502` with code `internal` and
-whatever the terminal said as the message.
+anything else is `400 bad_request`.
+
+Authentication, the write-origin check, session lookup, body validation and the idempotency
+reservation all happen on the server's serial state queue. The terminal handoff then moves to a
+separate serial command queue shared with `/key`, `/focus`, `/end`, `/start`, `/resume`, background
+shell kill and automatic child close, plus manual/timer schedule dispatch, serialized promotion and
+terminal-bearing orchestrator task/handoff/wait delivery. That one admission domain is bounded at
+eight operations globally and two per terminal session; coordination fan-out reserves every known
+recipient, and nested inline work inherits or adds its real terminal channel. Health replies, SSE heartbeats
+and slow-read completions therefore continue while iTerm2 is waiting on an Apple event. A concurrent
+request with the same in-flight `Idempotency-Key` joins the first one and both connections receive
+the same final response. This is an in-flight same-key guarantee, not terminal exactly-once: after
+an Apple Event timeout, late execution is unknown and a new key may execute again. A ninth admitted
+operation is `429 busy` and is not filed under its key.
+
+Terminal failures are `502 terminal_io_failed`. Failure kind is bound to the operation that returned
+it; a later global circuit sample cannot relabel an unrelated `ps` or backend failure. If an iTerm Apple Event times out or its list
+response is malformed, the circuit fails closed with `502 iterm_attention_required`, `app: "iTerm2"` and
+`action: "answer_dialog"`. Do not retry in a loop and do not click anything automatically: a person
+must inspect the Mac. Automation resumes after a later well-formed list response proves that iTerm2
+is accepting Apple events again; an incomplete `ps` scan does not arm the circuit.
 
 ### `POST /v1/sessions/:id/key`
 
@@ -887,8 +906,9 @@ allowlist is checked before anything goes looking for a terminal.
 `submit` is the one that is a name rather than a key, and it is valid only on a menu whose `submit`
 field is present. The button a multi-select draws under its rows has no keystroke of its own, so
 the Mac walks the highlight onto it and presses Return there — reading the screen back at each
-step, and stopping with the dialog untouched if the highlight will not land. It answers `502` with
-code `internal` when the menu on screen turns out not to have one.
+step, and stopping with the dialog untouched if the highlight will not land. A backend failure is
+`502 terminal_io_failed`; an operation-bound iTerm modal refusal is
+`502 iterm_attention_required`.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/key \
@@ -912,6 +932,9 @@ character into whatever replaced it.
 ### `POST /v1/sessions/:id/focus`
 
 Brings that session's window to the front. No body.
+It enters the same bounded terminal broker as the other mutations. A focus Apple Event that is
+refused by the open iTerm circuit answers `502 iterm_attention_required`; focus never reports 200
+after discarding a backend failure.
 
 ```console
 $ curl -s -X POST http://127.0.0.1:7717/v1/sessions/$ID/focus \
@@ -1964,6 +1987,10 @@ The record:
   "root":  {"sessionId": "841cbb8d-…", "assistant": "claude", "label": "clawdline main", "terminalId": "27439AEE-…",
             "taskId": "a70c5e11-…"},   // the parent task — depth 2 only, and only when it said so
   "child": {"terminalId": "9A1F…", "backend": "iterm", "sessionId": "0f2b91ac-…"},
+  "terminal_intervention": {       // absent unless automatic cleanup is deliberately pending
+    "code": "iterm_attention_required", "app": "iTerm2",
+    "action": "answer_dialog", "message": "iTerm2 needs attention…"
+  },
   "summary": "…",               // finished tasks; the child's own sentence
   "artifacts": ["artifacts/project-portrait.svg"],
   "claims": ["Sources/Orchestrator.swift"],   // present (maybe []) only when task.json declared it
@@ -2007,6 +2034,16 @@ every OpenAI one, since Codex bills against a plan. Tokens are still counted. Nu
 omitted the way they are everywhere else on this API — read by name, and treat absent as unknown.
 `waiting_on` follows the same rule: it is present only on a queued serialized task with blockers,
 and it may name a current holder or an older FIFO waiter.
+
+`terminal_intervention` means the task's terminal cleanup is still pending, not that its tab was
+closed. Clawdline retains the close deadline and will not pile up another close while the inventory
+is incomplete or iTerm's circuit is open. A modal case uses `iterm_attention_required` and
+`answer_dialog`; a process still present or a failed exact-tty scan uses
+`terminal_intervention_required` and `inspect_terminal` without inventing an iTerm dialog. After a
+well-formed iTerm list response, a modal intervention gets one next safe cleanup attempt and
+success removes this field. A non-modal intervention has no timer-driven retry: another five-second
+beat never sends `/exit`, TERM or KILL again; a new explicit close action or a person inspecting the
+terminal is required.
 
 `projectDir` never changes meaning: it is the repository/subdirectory the task concerns.
 `worktree.path` is the isolated checkout root, while `dir` is still the unrelated protocol and
@@ -2718,9 +2755,11 @@ it draws them, and that is a drawing decision which does not travel over the wir
 | `already_done` | 409 | that task has already reported; the first report wins |
 | `bad_task` | 422 | a `task.json` that is missing, unparseable, or out of range. `message` names the field |
 | `rate_limited` | 429 | a sliding window of counted attempts is full — pairing attempts, dispatches per ten minutes, schedules written per ten minutes, agent notifications per hour. What was counted ages out of the window on its own; nothing is draining, which is what separates this from `busy` |
-| `busy` | 429 | a queue on this Mac is full — something is already in hand and will drain in seconds. On `/v1/voice`, one recording is being read and one is waiting. On `/v1/sessions/:id/info` and `/v1/places`, eight slow reads are already in hand — `/v1/sessions/:id/transcript` stands in that same queue but is never refused by this number. All of them drain on their own, and none is filed under an `Idempotency-Key` |
+| `busy` | 429 | a queue on this Mac is full — something is already in hand and will drain in seconds. On `/v1/voice`, one recording is being read and one is waiting. On `/v1/sessions/:id/info` and `/v1/places`, eight slow reads are already in hand — `/v1/sessions/:id/transcript` stands in that same queue but is never refused by this number. The terminal broker admits eight operations globally and two per terminal session, shared by remote terminal mutations, terminal-bearing orchestrator writes and automatic child close; a same-key in-flight retry joins without consuming another place. These refusals are not filed under an `Idempotency-Key` |
 | `over_capacity` | 429 | the dispatcher's child slots are full — `orchestrator_max_children` from a root, `orchestrator_max_grandchildren` from a child — or the whole Mac's are. `retry_after` is seconds. (`rate_limited` covers the other orchestrator limit: dispatches per ten minutes) |
-| `internal` | 500, 502 | a tab that would not open; a terminal that would not take the text |
+| `terminal_io_failed` | 502 | a terminal mutation reached its isolated command queue but the selected backend did not complete the handoff; this includes a bounded tmux subprocess timeout after cleanup |
+| `iterm_attention_required` | 502 | an iTerm Apple Event timed out or returned a malformed list; `app` is `iTerm2`, `action` is `answer_dialog`, and a well-formed later list response re-enables automation. The timed-out event may still execute later |
+| `internal` | 500, 502 | another internal operation failed, including a tab that would not open |
 | `no_whisper` | 503 | `/v1/voice` only: this Mac has nothing to transcribe with. `reason` is `no_binary` or `no_model` |
 
 A client that has handled one of these has handled all of them. Branch on `code` — the status is

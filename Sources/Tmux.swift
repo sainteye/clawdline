@@ -13,9 +13,14 @@ import Foundation
 /// needs **no permission at all** — no accessibility, no automation prompt, nothing.
 enum Tmux {
 
+    static var binaryForTesting: String?
+    static var subprocessTimeoutForTesting: TimeInterval?
+    static private(set) var lastTimedOutPIDForTesting: pid_t?
+
     /// tmux is almost never on an app's PATH — apps do not inherit a login shell.
     /// Config can name it outright; otherwise try where package managers actually put it.
     static var binary: String? {
+        if let binaryForTesting { return binaryForTesting }
         let configured = Config.shared.tmuxPath
         if !configured.isEmpty, FileManager.default.isExecutableFile(atPath: configured) {
             return configured
@@ -27,41 +32,122 @@ enum Tmux {
         return nil
     }
 
+    struct RunReceipt {
+        let out: String
+        let ok: Bool
+        let failure: TerminalFailure?
+    }
+
+    private final class Sink { var data = Data() }
+
+    /// Every tmux invocation is bounded and reaped. stdout and stderr are drained concurrently
+    /// so a verbose failure cannot fill a pipe and turn the deadline into a deadlock.
     @discardableResult
-    private static func run(_ args: [String], stdin: String? = nil) -> (out: String, ok: Bool) {
-        guard let bin = binary else { return ("", false) }
+    private static func run(_ args: [String], stdin: String? = nil,
+                            timeout: TimeInterval? = nil) -> RunReceipt {
+        guard let bin = binary else {
+            return RunReceipt(out: "", ok: false,
+                              failure: TerminalFailure(kind: .io, message: "tmux not found"))
+        }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
         p.arguments = args
         let out = Pipe()
+        let err = Pipe()
         p.standardOutput = out
-        p.standardError = Pipe()
-        if let stdin {
-            let input = Pipe()
-            p.standardInput = input
-            do { try p.run() } catch { return ("", false) }
-            input.fileHandleForWriting.write(Data(stdin.utf8))
-            input.fileHandleForWriting.closeFile()
-            let data = out.fileHandleForReading.readDataToEndOfFile()
-            p.waitQuietly()
-            return (String(data: data, encoding: .utf8) ?? "", p.terminationStatus == 0)
+        p.standardError = err
+        let input = stdin.map { _ in Pipe() }
+        if let input { p.standardInput = input }
+
+        let stdout = Sink(), stderr = Sink()
+        let readers = DispatchGroup()
+        func drain(_ handle: FileHandle, into sink: Sink) {
+            readers.enter()
+            let reader = Thread {
+                sink.data = handle.readDataToEndOfFile()
+                readers.leave()
+            }
+            reader.stackSize = 64 * 1024
+            reader.start()
         }
-        do { try p.run() } catch { return ("", false) }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitQuietly()
-        return (String(data: data, encoding: .utf8) ?? "", p.terminationStatus == 0)
+        drain(out.fileHandleForReading, into: stdout)
+        drain(err.fileHandleForReading, into: stderr)
+
+        let exited = DispatchSemaphore(value: 0)
+        p.terminationHandler = { _ in exited.signal() }
+        do { try p.run() } catch {
+            input?.fileHandleForWriting.closeFile()
+            out.fileHandleForWriting.closeFile()
+            err.fileHandleForWriting.closeFile()
+            _ = readers.wait(timeout: .now() + 1)
+            return RunReceipt(out: "", ok: false,
+                              failure: TerminalFailure(kind: .io,
+                                                       message: error.localizedDescription))
+        }
+        if let stdin {
+            input?.fileHandleForWriting.write(Data(stdin.utf8))
+        }
+        input?.fileHandleForWriting.closeFile()
+
+        let limit = timeout ?? subprocessTimeoutForTesting ?? 15
+        if exited.wait(timeout: .now() + limit) == .timedOut {
+            let pid = p.processIdentifier
+            lastTimedOutPIDForTesting = pid
+            p.terminate()
+            if exited.wait(timeout: .now() + 0.25) == .timedOut {
+                kill(pid, SIGKILL)
+                _ = exited.wait(timeout: .now() + 1)
+            }
+            _ = readers.wait(timeout: .now() + 1)
+            return RunReceipt(out: String(data: stdout.data, encoding: .utf8) ?? "",
+                              ok: false,
+                              failure: TerminalFailure(
+                                kind: .timeout,
+                                message: "tmux did not finish within \(limit) seconds"))
+        }
+        _ = readers.wait(timeout: .now() + 1)
+        let output = String(data: stdout.data, encoding: .utf8) ?? ""
+        let error = String(data: stderr.data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let ok = p.terminationStatus == 0
+        return RunReceipt(out: output, ok: ok,
+                          failure: ok ? nil : TerminalFailure(
+                            kind: .io, message: error.isEmpty ? "tmux command failed" : error))
+    }
+
+    static func runForTesting(_ args: [String], timeout: TimeInterval) -> RunReceipt {
+        run(args, timeout: timeout)
     }
 
     /// Every pane in every session, whether or not a client is attached.
     /// `-a` matters: a detached session is still somewhere text can usefully go.
-    static func panes() -> [TargetSession] {
-        guard binary != nil else { return [] }
+    struct PaneObservation {
+        let sessions: [TargetSession]
+        let error: TerminalFailure?
+        var isComplete: Bool { error == nil }
+    }
+
+    static func paneObservation() -> PaneObservation {
+        guard binary != nil else { return PaneObservation(sessions: [], error: nil) }
         let fmt = "#{pane_id}\u{1}#{pane_tty}\u{1}#{pane_current_command}\u{1}"
             + "#{session_name}\u{1}#{window_index}\u{1}#{pane_index}\u{1}#{pane_title}"
             + "\u{1}#{pane_current_path}"
-        let (out, ok) = run(["list-panes", "-a", "-F", fmt])
-        guard ok else { return [] }
-        return parsePanes(out, running: ITerm.assistantPIDs())
+        let receipt = run(["list-panes", "-a", "-F", fmt])
+        if !receipt.ok {
+            // No server is a complete empty inventory, not a failed one. Other failures — and
+            // especially a timeout — have no authority to prove a pane absent.
+            let message = receipt.failure?.message.lowercased() ?? ""
+            if message.contains("no server running") || message.contains("failed to connect to server") {
+                return PaneObservation(sessions: [], error: nil)
+            }
+            return PaneObservation(sessions: [], error: receipt.failure)
+        }
+        return PaneObservation(sessions: parsePanes(receipt.out, running: ITerm.assistantPIDs()),
+                               error: nil)
+    }
+
+    static func panes() -> [TargetSession] {
+        paneObservation().sessions
     }
 
     /// Split out from `panes()` so it can be tested without a tmux server running.
@@ -117,14 +203,25 @@ enum Tmux {
     /// `-P -F '#{pane_id}'` so the pane it made comes back rather than having to be guessed at by
     /// listing everything again and looking for what is new — which would be a race against
     /// anybody else's window opening at the same moment.
-    static func newWindow(cwd: String, command: String) -> String? {
+    static func newWindowResult(cwd: String, command: String) -> Result<String, TerminalFailure> {
         var args = ["new-window", "-P", "-F", "#{pane_id}"]
         if !cwd.isEmpty { args += ["-c", cwd] }
         args.append(command.isEmpty ? Assistant.claude.command : command)
         let result = run(args)
-        guard result.ok else { return nil }
+        guard result.ok else {
+            return .failure(result.failure ?? TerminalFailure(
+                kind: .io, message: "tmux would not open a window."))
+        }
         let id = result.out.trimmingCharacters(in: .whitespacesAndNewlines)
-        return id.hasPrefix("%") ? id : nil
+        guard id.hasPrefix("%") else {
+            return .failure(TerminalFailure(kind: .io,
+                                            message: "tmux returned no new pane id."))
+        }
+        return .success(id)
+    }
+
+    static func newWindow(cwd: String, command: String) -> String? {
+        try? newWindowResult(cwd: cwd, command: command).get()
     }
 
     static func send(_ text: String, to paneID: String,
@@ -184,14 +281,17 @@ enum Tmux {
     static func capture(_ paneID: String, scrollback: Int = 200) -> String? {
         guard binary != nil else { return nil }
         // -e keeps the escape sequences, which is the only way any of this arrives with colour.
-        let (out, ok) = run(["capture-pane", "-p", "-e", "-J", "-S", "-\(scrollback)", "-t", paneID])
-        return ok ? out : nil
+        let receipt = run(["capture-pane", "-p", "-e", "-J", "-S", "-\(scrollback)", "-t", paneID])
+        return receipt.ok ? receipt.out : nil
     }
 
     /// Bring a pane to the front within tmux. Whether the terminal window itself comes
     /// forward is up to whichever emulator is drawing it, and not something to chase.
-    static func reveal(_ paneID: String) {
-        run(["select-pane", "-t", paneID])
-        run(["select-window", "-t", paneID])
+    @discardableResult
+    static func reveal(_ paneID: String) -> TerminalFailure? {
+        let pane = run(["select-pane", "-t", paneID])
+        guard pane.ok else { return pane.failure }
+        let window = run(["select-window", "-t", paneID])
+        return window.ok ? nil : window.failure
     }
 }
