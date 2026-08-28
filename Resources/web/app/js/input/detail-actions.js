@@ -235,7 +235,7 @@ export var SessionActions = {
             .catch(function (e) { toast(e.message, true); });
     },
 
-    end: function (sessionID) {
+    end: function (sessionID, acceptLoss) {
         var id = sessionID || S.openId;
         // The answer matters to the confirmation sheet, which has already disabled both of its
         // buttons on the assumption that a request is on its way: `false` is the only thing that
@@ -249,7 +249,7 @@ export var SessionActions = {
         Waits.end.start();
         render();
         ActionConfirm.sync();
-        api.end(id).then(function () {
+        api.end(id, acceptLoss).then(function () {
             self.finishEnd(id, ticket, true);
         }).catch(function (e) {
             self.finishEnd(id, ticket, false, e);
@@ -270,6 +270,14 @@ export var SessionActions = {
             self.settlingEnd = false;
             self.ticket += 1;
             ActionConfirm.finish();
+            // The close gate answered with what the close would take — a list this page did
+            // not show, from a fresher frame than its own. That is not a failure to toast; it
+            // is the question, asked properly this time.
+            if (!ok && error && error.code === "would_lose_work") {
+                render();
+                ActionConfirm.reopenEndWithLost(id, error.lost);
+                return;
+            }
             if (ok && S.openId === id) closeDetail();
             else render();
             toast(ok ? T.webEndSession + " ✓" : ((error && error.message) || T.webRequestFailed), !ok);

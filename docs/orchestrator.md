@@ -1370,8 +1370,8 @@ migrates to a matching label or the most recently active assistant.
 
 `GET /v1/orchestrator/coordinator`, also orchestrator-token-only, returns safe durable presence and
 **Bearings**: one deterministic snapshot over existing Session metadata, active task records,
-pending landing records and open coordination-wait groups. It always counts the seven closed
-`work_state` values and names safe metadata for `needs_triage`, human/peer `waiting`, and owners
+pending landing records and open coordination-wait groups. It always counts the eight closed
+`work_state` values and names safe metadata for `unknown`, human/peer `waiting`, and owners
 `blocking` peers. Named lists are independent filters and may honestly overlap when a session is
 both owner and waiter. RemoteServer takes one SessionWatch observation and then one Orchestrator
 snapshot; every Orchestrator-derived row flag plus task, landing and open-wait total is computed in
@@ -1514,7 +1514,7 @@ $ curl -s "http://127.0.0.1:$PORT/v1/orchestrator/coordinator" \
    "rebound_at":1787882803,"status":"online","lifecycle":"standby",
    "session":{"id":"509F54A8-356E-420D-9EAC-73D676C9580E","assistant":"claude",
               "label":"Clawdfather 新增介面","cwd":"/Users/you/code/clawdline",
-              "work_state":"needs_triage"}},
+              "work_state":"unknown"}},
  "bearings":{…}}
 ```
 
@@ -1571,26 +1571,38 @@ online and left them there, that sentence is the deliverable.
 
 ### Session work-state projection: one answer, separate evidence axes
 
-Every live Session row carries exactly one closed `work_state`: `ready`, `working`,
-`waiting_human`, `waiting_session`, `needs_triage`, `milestone_complete`, or `work_complete`.
+Every live Session row carries exactly one closed `work_state`: `ready`, `working`, `holding`,
+`waiting_you`, `waiting_session`, `unknown`, `milestone_complete`, or `work_complete` — plus the
+independent `owed` overlay, the second axis. **The per-state contract — what a person should do
+on seeing each state, the icons, the declaration route, and the holding/waiting_session
+boundary — is [`docs/session-states.md`](session-states.md); that page governs where the two
+disagree.** (`waiting_you` was `waiting_human`; `unknown` was `needs_triage`, renamed because the
+fail-closed default means "the broker has no positive evidence" — an absence, never the reader's
+to-do.)
+
 This is not another free-form truth store. The broker deterministically projects it from the
 terminal presence reading, the task registry's authenticated result, a root's process-bound
-session-delivery receipt, the matching landing record, durable handoff state, and coordination
-waits. Those sources remain separate, and top-level terminal
-`state` is unchanged. A missing or unknown projected value fails closed in the web client as
-`needs_triage`, never as blank idle and never as a check.
+session-delivery receipt, the matching landing record, durable handoff state, coordination
+waits, and the session's own bounded self-declaration (`ready`/`holding` claims and the `owed`
+debt, `POST /v1/orchestrator/sessions/:id/state`, provenance `self`). Those sources remain
+separate, and top-level terminal `state` is unchanged. A missing or unknown projected value
+fails closed in the web client as `unknown`, never as blank idle and never as a check.
 
-The precedence is `waiting_human` (terminal question) > waiting-on/owed coordination file wait >
-unreadable or missing evidence (`needs_triage`) > current `working` > an idle dispatcher's live
-child (`waiting_session`) > delivered milestone > broker-verified target landing. Current work
+The precedence is `waiting_you` (terminal question) > waiting-on/owed coordination file wait >
+unreadable or missing evidence (`unknown`) > current `working` > an idle dispatcher's live
+child (`waiting_session`) > the finished task receipt > delivered milestone > the self claim >
+`ready` for an assistant-free prompt. Current work
 intentionally outranks an older receipt: during the
 child's linger somebody can resume using the terminal, and the earlier assignment's success cannot claim
-that new activity is finished. `waiting_human` remains the only state that requests a person's
-attention or drives the loud row/push. `waiting_session` stays the quiet `⏳` relationship.
+that new activity is finished. `waiting_you` remains the only state that requests a person's
+attention or drives the loud row/push. `waiting_session` stays the quiet `⏳` relationship, and
+`holding` has exactly one entrance — a self claim carrying a declared next step and a non-person
+mover — so it can never become the new default exit.
 
 An active child is already typed broker evidence that its dispatcher has an outstanding Session
 obligation. When that exact root process is idle, the projection is therefore `waiting_session`,
-not `needs_triage`; when it works in parallel, current `working` wins. The browser validates the
+not `unknown` and deliberately not `holding` — a child can wedge, so waiting on one is waiting
+on a session; when it works in parallel, current `working` wins. The browser validates the
 same fact against the live task's resolved `root.terminalId` and names the child task beside `⏳`.
 The child finishing removes this wait evidence; it does not itself mark the root delivered.
 
@@ -1618,7 +1630,7 @@ git-verified target landing fields above and the terminal has no unresolved coor
 handoff. Legacy landed rows without those fields remain a milestone. Neither unstructured
 assistant prose, progress notes nor Clawdfather advisory can write either check. Clawdfather
 explains which receipt
-is missing, coordinates its owner, and prioritizes `needs_triage`; it is not a status-truth writer.
+is missing, coordinates its owner, and prioritizes `unknown` rows; it is not a status-truth writer.
 
 The existing task result remains a child's typed, durable Session report: `success` maps to
 delivered milestone evidence, while `failure`, `timeout`, cancellation, or a missing finish receipt
@@ -1634,9 +1646,11 @@ review, landing, and handoff obligation belonging to a human root's whole graph.
 broader completion would be invented global truth, so neither scope calls a root graph complete.
 The typed double-check evidence remains `broker_verified_target_landing`, not “task closure”: the
 broker verified local git containment, not the root's complete test/review graph. `ready` is
-likewise not inferred for an idle assistant: without positive evidence
-that no assignment exists, its stopped state is `needs_triage` (the health target for this queue is
-zero). Plain non-assistant prompts can be `ready` because their absence of an assistant assignment
+likewise never inferred for an idle assistant: without positive evidence, its stopped state is
+`unknown` — an absence that asks nothing of the reader. The positive evidence can now also be the
+session's own authenticated declaration (`POST /v1/orchestrator/sessions/:id/state`, provenance
+`self`, docs/session-states.md), which is how an idle assistant honestly reaches `ready`. Plain
+non-assistant prompts can be `ready` because their absence of an assistant assignment
 is directly observable.
 
 ### The protocol has a living Claude Code Artifact

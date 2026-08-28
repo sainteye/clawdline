@@ -28,6 +28,10 @@ export function jsonFetch(path, options) {
                 // Whisper" and "Whisper is there but has no model" — two different afternoons.
                 if (typeof err.app === "string") e2.app = err.app;
                 if (typeof err.reason === "string") e2.reason = err.reason;
+                // And the 409 from closing a session carries `lost` — the live children and
+                // stranded waiters the close would take — so the page can put the list in
+                // front of the person instead of a sentence about a list.
+                if (Array.isArray(err.lost)) e2.lost = err.lost;
                 throw e2;
             }
             if (!data) throw new Error(T.webNotJSON);

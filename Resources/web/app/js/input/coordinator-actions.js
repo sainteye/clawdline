@@ -237,9 +237,9 @@ export function coordinatorAnswerHTML(action, data) {
         out.push(line([
             fill(T.webCountWorking, { n: counts.working || 0 }),
             fill(T.webCountWaiting, {
-                n: (counts.waiting_human || 0) + (counts.waiting_session || 0)
+                n: (counts.waiting_you || 0) + (counts.waiting_session || 0)
             }),
-            fill(T.webCoordCountTriage, { n: counts.needs_triage || 0 })
+            fill(T.webCoordCountUnknown, { n: counts.unknown || 0 })
         ].join(" · ")));
         out.push(line([
             fill(T.webCoordActiveTasks, { n: bearings.active_task_count || 0 }),
@@ -249,7 +249,7 @@ export function coordinatorAnswerHTML(action, data) {
     } else if (type === "duplicates_conflicts_ownership") {
         var lists = list(T.webCoordBlockingList, bearings.blocking) +
             list(T.webCoordWaitingList, bearings.waiting) +
-            list(T.webCoordNeedsTriage, bearings.needs_triage);
+            list(T.webCoordUnknown, bearings.unknown);
         out.push(lists || line(T.webCoordAllQuiet));
         out.push(line(fill(T.webCoordOpenWaits, { n: bearings.open_wait_count || 0 })));
     } else if (type === "landing_closure") {

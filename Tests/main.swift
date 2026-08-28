@@ -4889,7 +4889,8 @@ group("the languages the interface speaks") {
 }
 
 group("every Session work-state string crosses the typed localization contract") {
-    let keys = ["sessionWorkReady", "sessionWorkNeedsTriage",
+    let keys = ["sessionWorkReady", "sessionWorkUnknown", "sessionWorkHolding",
+                "sessionWorkOwed", "sessionWorkSelfStated",
                 "sessionWorkMilestone", "sessionWorkComplete"]
     let fallback = try! String(contentsOfFile: "Resources/web/app/js/core/i18n.js")
     let server = try! String(contentsOfFile: "Sources/RemoteServer.swift")
@@ -4898,9 +4899,10 @@ group("every Session work-state string crosses the typed localization contract")
               fallback.contains("\(key):") && server.contains("\"\(key)\":"))
     }
     for (tag, copy) in L.catalog {
-        let values = [copy.sessionWorkReady, copy.sessionWorkNeedsTriage,
+        let values = [copy.sessionWorkReady, copy.sessionWorkUnknown, copy.sessionWorkHolding,
+                      copy.sessionWorkOwed, copy.sessionWorkSelfStated,
                       copy.sessionWorkMilestone, copy.sessionWorkComplete]
-        check("\(tag) supplies all four Session work-state strings",
+        check("\(tag) supplies every Session work-state string",
               values.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
     }
 }
@@ -12903,7 +12905,7 @@ group("session work state is a closed broker projection, never an idle guess") {
     typealias W = Orchestrator.SessionWorkState
     expect("the public work-state vocabulary is closed",
            W.allCases.map(\.rawValue), [
-            "ready", "working", "waiting_human", "waiting_session", "needs_triage",
+            "ready", "working", "holding", "waiting_you", "waiting_session", "unknown",
             "milestone_complete", "work_complete",
            ])
     func landing(_ state: Orchestrator.LandingState) -> Orchestrator.Landing {
@@ -12930,19 +12932,43 @@ group("session work state is a closed broker projection, never an idle guess") {
     }
     func project(_ terminal: SessionState, task: Orchestrator.Task? = nil,
                  waiting: Bool = false, handoff: Bool = false,
-                 knownReady: Bool = false) -> W {
+                 knownReady: Bool = false, delivered: Bool = false,
+                 claim: W? = nil) -> W {
         Orchestrator.projectSessionWorkState(
             terminalState: terminal, task: task, hasCoordinationWait: waiting,
-            hasOpenHandoff: handoff, assignmentKnownAbsent: knownReady)
+            hasOpenHandoff: handoff, assignmentKnownAbsent: knownReady,
+            hasSessionDelivery: delivered, selfClaim: claim)
     }
 
     expect("an explicitly assignment-free prompt is ready",
            project(.idle, knownReady: true), .ready)
-    expect("idle without an assignment-free receipt fails closed",
-           project(.idle), .needsTriage)
+    expect("idle without evidence is the quiet absence, not a demand",
+           project(.idle), .unknown)
+    // The gate this vocabulary exists to fix: an idle assistant session can now reach ready —
+    // through its own authenticated declaration, shown as stated rather than proven.
+    expect("a declared ready claim makes an idle assistant session ready",
+           project(.idle, claim: .ready), .ready)
+    expect("a declared holding claim is the only entrance to holding",
+           project(.idle, claim: .holding), .holding)
+    expect("a self claim can never produce a check state",
+           project(.idle, claim: .workComplete), .unknown)
+    expect("nor the single check",
+           project(.idle, claim: .milestoneComplete), .unknown)
+    expect("a question on screen outranks any claim",
+           project(.waiting, claim: .ready), .waitingYou)
+    expect("current activity outranks any claim",
+           project(.working("busy"), claim: .holding), .working)
+    expect("a finished failure receipt outranks a ready claim",
+           project(.idle, task: task(.failure), claim: .ready), .unknown)
+    expect("a delivered turn outranks a ready claim",
+           project(.idle, delivered: true, claim: .ready), .milestoneComplete)
+    expect("a child mid-task may still declare its own quiet hold",
+           project(.idle, task: task(.briefed, finished: false), claim: .holding), .holding)
+    expect("a live task without a claim stays the quiet absence",
+           project(.idle, task: task(.briefed, finished: false)), .unknown)
     expect("current terminal activity is working", project(.working("building")), .working)
     expect("a human question is the only waiting-human state",
-           project(.waiting, waiting: true), .waitingHuman)
+           project(.waiting, waiting: true), .waitingYou)
     expect("a peer or owed wait is waiting-session without asking the human",
            project(.idle, waiting: true), .waitingSession)
     expect("an idle root with an active child is waiting-session",
@@ -12956,7 +12982,7 @@ group("session work state is a closed broker projection, never an idle guess") {
             hasCoordinationWait: false, hasOpenHandoff: false,
             assignmentKnownAbsent: false, hasOutstandingChild: true), .working)
     expect("an unreadable terminal outranks a delivered milestone",
-           project(.unknown, task: task(.success)), .needsTriage)
+           project(.unknown, task: task(.success)), .unknown)
     expect("renewed activity outranks an older delivery receipt",
            project(.working("follow-up"), task: task(.success, landing: landing(.landed))),
            .working)
@@ -12966,7 +12992,7 @@ group("session work state is a closed broker projection, never an idle guess") {
            project(.idle, task: task(.success, landing: landing(.pending))),
            .milestoneComplete)
     expect("a malformed success without its finished receipt fails closed",
-           project(.idle, task: task(.success, finished: false)), .needsTriage)
+           project(.idle, task: task(.success, finished: false)), .unknown)
     expect("a broker-verified target landing closes exactly that task scope",
            project(.idle, task: task(.success, landing: landing(.landed))), .workComplete)
     expect("an open handoff keeps landed delivery at a milestone",
@@ -12975,8 +13001,97 @@ group("session work state is a closed broker projection, never an idle guess") {
     expect("a durable peer wait outranks broker closure",
            project(.idle, task: task(.success, landing: landing(.landed)), waiting: true),
            .waitingSession)
-    expect("failure is a triage receipt, not completion",
-           project(.idle, task: task(.failure)), .needsTriage)
+    expect("failure is never completion, and never a demand either",
+           project(.idle, task: task(.failure)), .unknown)
+}
+
+group("a session's own declaration is bounded, typed, and can never mint a check") {
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+
+    let started = Date(timeIntervalSince1970: 700)
+    let identity = Orchestrator.SessionWorkIdentity(
+        terminalID: "SELF-TAB", assistant: .claude, tty: "/dev/ttys20", pid: 2000,
+        processStart: started, conversationID: "conversation-self")
+
+    if case .refused(let status, let code, _, _) = Orchestrator.declareSessionState(
+        identity: identity, terminalState: .idle, claim: "ready", note: nil, movedBy: nil,
+        personNeeded: nil, owed: nil, clearOwed: false) {
+        expect("declaring from an idle prompt is refused like delivery is", status, 409)
+        expect("with the same typed reason", code, "session_not_working")
+    } else { check("an idle declaration must be refused", false) }
+
+    if case .refused(let status, let code, _, _) = Orchestrator.declareSessionState(
+        identity: identity, terminalState: .working("wrapping"), claim: "work_complete",
+        note: nil, movedBy: nil, personNeeded: nil, owed: nil, clearOwed: false) {
+        expect("the check states are refused by name", status, 403)
+        expect("with a boundary-naming code", code, "self_completion_refused")
+    } else { check("a self-declared check must be refused", false) }
+
+    if case .refused(_, let code, _, _) = Orchestrator.declareSessionState(
+        identity: identity, terminalState: .working("wrapping"), claim: "holding",
+        note: nil, movedBy: nil, personNeeded: nil, owed: nil, clearOwed: false) {
+        expect("holding without its evidence is refused, never defaulted",
+               code, "holding_needs_evidence")
+    } else { check("an evidence-free holding must be refused", false) }
+
+    guard case .ok = Orchestrator.declareSessionState(
+        identity: identity, terminalState: .working("wrapping"), claim: "ready",
+        note: "fix landed; can take new work", movedBy: nil, personNeeded: nil,
+        owed: ["note": "the schedules design is still your call"], clearOwed: false,
+        now: Date(timeIntervalSince1970: 800)) else {
+        check("a bound working session can declare ready with a debt", false); return
+    }
+    let projected = Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle)
+    expect("the idle prompt now reads ready", projected.state, .ready)
+    expect("and says who said so", projected.provenance, "self")
+    expect("in the session's own words", projected.note, "fix landed; can take new work")
+    expect("the debt rides beside the claim",
+           projected.owed?["note"] as? String, "the schedules design is still your call")
+    expect("a debt defaults to needing a person", projected.owed?["person_needed"] as? Bool, true)
+
+    var reused = identity
+    reused.pid = 2001
+    expect("a later process in the same terminal cannot borrow the claim",
+           Orchestrator.sessionWorkProjection(identity: reused, terminalState: .idle).state,
+           .unknown)
+
+    // Redeclaring the same debt must keep its first clock: age is the debt's whole risk.
+    _ = Orchestrator.declareSessionState(
+        identity: identity, terminalState: .working("still"), claim: nil, note: nil,
+        movedBy: nil, personNeeded: nil,
+        owed: ["note": "the schedules design is still your call"], clearOwed: false,
+        now: Date(timeIntervalSince1970: 5_000))
+    expect("the same debt keeps its original since",
+           Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle)
+               .owed?["since"] as? Int, 800)
+
+    Orchestrator.noteSessionStateChange(terminalID: identity.terminalID, to: .idle)
+    Orchestrator.noteSessionStateChange(terminalID: identity.terminalID,
+                                        to: .working("next turn"))
+    let afterTurn = Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle)
+    expect("the next observed turn consumes the claim", afterTurn.state, .unknown)
+    expect("but the debt survives the turn — its failure mode is being forgotten",
+           afterTurn.owed?["note"] as? String, "the schedules design is still your call")
+
+    Orchestrator.saveForTesting()
+    Orchestrator.forget()
+    expect("the surviving debt also survives a restart",
+           Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle)
+               .owed?["note"] as? String, "the schedules design is still your call")
+
+    _ = Orchestrator.declareSessionState(
+        identity: identity, terminalState: .working("clearing"), claim: nil, note: nil,
+        movedBy: nil, personNeeded: nil, owed: nil, clearOwed: true)
+    check("an explicit clear is the one thing that pays the debt",
+          Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle)
+              .owed == nil)
 }
 
 group("session completion receipts are bound to the current process, not a reusable terminal") {
@@ -13096,14 +13211,14 @@ group("a root session can report one delivered turn without becoming a child tas
     reused.pid = 901
     expect("a later process in the same terminal cannot borrow the root receipt",
            Orchestrator.sessionWorkProjection(identity: reused, terminalState: .idle).state,
-           .needsTriage)
+           .unknown)
 
     Orchestrator.noteSessionStateChange(terminalID: identity.terminalID, to: .idle)
     Orchestrator.noteSessionStateChange(terminalID: identity.terminalID,
                                         to: .working("new request"))
     expect("starting the next observed turn consumes the old root receipt",
            Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle).state,
-           .needsTriage)
+           .unknown)
 
     let child = Orchestrator.Task(
         id: "dededede-1111-4222-8333-444444444444", state: .briefed, kind: "custom",
@@ -15261,7 +15376,7 @@ group("the wait session index says what a wait must name, and nothing off the sc
            first["state"] as? String, "working")
     expect("and every row has exactly one closed work-state projection",
            rows.compactMap { $0["work_state"] as? String },
-           ["working", "waiting_human", "needs_triage"])
+           ["working", "waiting_you", "unknown"])
     expect("a session showing a question reads as waiting", rows[1]["state"] as? String, "waiting")
     check("a session nothing has read yet is unknown rather than idle",
           rows[2]["state"] as? String == "unknown")
@@ -16382,6 +16497,8 @@ group("closing a root session takes the work it dispatched with it") {
                                 assistant: .claude)
     expect("a session with no note of its own takes nothing down with it",
            Orchestrator.cancelChildren(ofRoot: unknown), [])
+    check("and a close of it would lose nothing, so the close gate stays open",
+          Orchestrator.lostIfClosed(root: unknown).isEmpty)
 }
 
 group("what a linger running out decides, one instant at a time") {
@@ -20703,7 +20820,7 @@ group("a coordinator is explicitly registered, durable, singleton and process-bo
     // The device-readable half of Bearings: what a paired phone may see, and nothing more.
     let device = Coordinator.deviceBearings(
         liveSessions: [father, coordinatorFixture(
-            "triage", pid: 412, conversation: "conversation-c", workState: .needsTriage)],
+            "triage", pid: 412, conversation: "conversation-c", workState: .unknown)],
         bearings: .init(sessionsFresh: false, activeTaskCount: 3, pendingLandingCount: 2,
                         openWaitCount: 1,
                         sessionsObservedAt: Date(timeIntervalSince1970: 1_800_000_005),
@@ -20723,7 +20840,7 @@ group("a coordinator is explicitly registered, durable, singleton and process-bo
     expect("aggregate counts survive the allowlist", deviceFacts["active_task_count"] as? Int, 3)
     expect("and the landing count", deviceFacts["pending_landing_count"] as? Int, 2)
     expect("the triage rows survive with their session facts",
-           ((deviceFacts["needs_triage"] as? [[String: Any]])?.first?["id"]) as? String, "triage")
+           ((deviceFacts["unknown"] as? [[String: Any]])?.first?["id"]) as? String, "triage")
     let deviceSessionsSource = ((deviceFacts["sources"] as? [String: Any])?["sessions"])
         as? [String: Any] ?? [:]
     expect("source freshness survives, so a stale picture is never drawn as current",
@@ -21113,7 +21230,7 @@ group("Bearings is a closed deterministic projection without transcript data") {
         now: Date(timeIntervalSince1970: 1_800_000_100))
     let bearings = snapshot["bearings"] as? [String: Any]
     let counts = bearings?["work_state_counts"] as? [String: Any]
-    expect("all seven work states are counted even when zero would be needed", counts?.count, 7)
+    expect("all eight work states are counted even when zero would be needed", counts?.count, 8)
     for state in states { expect("one \(state.rawValue) row", counts?[state.rawValue] as? Int, 1) }
     expect("active task count comes through unchanged", bearings?["active_task_count"] as? Int, 3)
     expect("pending landing count comes through unchanged",
@@ -21123,7 +21240,7 @@ group("Bearings is a closed deterministic projection without transcript data") {
            ((bearings?["sources"] as? [String: Any])?["sessions"] as? [String: Any])?["freshness"] as? String,
            "stale")
     expect("needs-triage names only that safe session",
-           (bearings?["needs_triage"] as? [[String: Any]])?.count, 1)
+           (bearings?["unknown"] as? [[String: Any]])?.count, 1)
     expect("waiting names human and peer waiting states",
            (bearings?["waiting"] as? [[String: Any]])?.count, 2)
     expect("blocking names only a session with current waiters",
@@ -21150,7 +21267,7 @@ group("Bearings is a closed deterministic projection without transcript data") {
                                   workState: .waitingSession, waitingOnSession: true,
                                   hasWaiters: true)
     let human = coordinatorFixture("human", pid: 613, conversation: "human",
-                                   workState: .waitingHuman)
+                                   workState: .waitingYou)
     let overlap = Coordinator.inspection(
         liveSessions: [owner, waiter, both, human],
         bearings: .init(sessionsFresh: true, activeTaskCount: 0,
@@ -21216,7 +21333,7 @@ group("Bearings takes one coherent Orchestrator snapshot for every session fact"
     check("the same session can honestly be both owner and waiter",
           both.coordination.waitingOn.count == 1 && both.coordination.waitedOnBy.count == 1)
     expect("a human question outranks other registry-derived work states",
-           human.work.state, .waitingHuman)
+           human.work.state, .waitingYou)
     expect("both wait groups and their per-session flags share the snapshot",
            snapshot.openWaits, 2)
     expect("the registry source keeps its own observation time",
@@ -21237,7 +21354,7 @@ group("coordinator routes require the machine token and expose no implicit takeo
             terminalID: "unbound", assistant: .claude, tty: "/dev/ttys099", pid: nil,
             processStart: nil, conversationID: nil),
         label: "Clawdfather by title only", cwd: "/Users/me/code/clawdline",
-        workState: .needsTriage, waitingOnSession: false, hasWaiters: false)
+        workState: .unknown, waitingOnSession: false, hasWaiters: false)
     RemoteServer.coordinatorSessionsForTesting = [father, other, unbound]
     defer {
         RemoteServer.coordinatorSessionsForTesting = nil

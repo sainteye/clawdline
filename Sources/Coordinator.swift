@@ -316,9 +316,9 @@ enum Coordinator {
         let sorted = liveSessions.sorted {
             $0.identity.terminalID < $1.identity.terminalID
         }
-        let needsTriage = sorted.filter { $0.workState == .needsTriage }.map(safeSession)
+        let unknown = sorted.filter { $0.workState == .unknown }.map(safeSession)
         let waiting = sorted.filter {
-            $0.workState == .waitingHuman || $0.workState == .waitingSession
+            $0.workState == .waitingYou || $0.workState == .waitingSession
         }.map(safeSession)
         let blocking = sorted.filter(\.hasWaiters).map(safeSession)
 
@@ -338,7 +338,7 @@ enum Coordinator {
             "active_task_count": max(0, input.activeTaskCount),
             "pending_landing_count": max(0, input.pendingLandingCount),
             "open_wait_count": max(0, input.openWaitCount),
-            "needs_triage": needsTriage,
+            "unknown": unknown,
             "waiting": waiting,
             "blocking": blocking,
             "sources": [
@@ -425,7 +425,7 @@ enum Coordinator {
                         "active_task_count", "pending_landing_count", "open_wait_count"] {
                 if let value = record[key] { bearings[key] = value }
             }
-            for key in ["needs_triage", "waiting", "blocking"] {
+            for key in ["unknown", "waiting", "blocking"] {
                 bearings[key] = ((record[key] as? [[String: Any]]) ?? []).map(allowedSession)
             }
             if let sources = record["sources"] as? [String: Any] {

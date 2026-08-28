@@ -1876,6 +1876,7 @@ enum Orchestrator {
     /// Root terminal id → the last turn that root explicitly delivered. Unlike a child result,
     /// this receipt is consumed when the same tab begins another observed turn.
     private static var sessionDeliveries: [String: SessionDelivery] = [:]
+    private static var sessionSelfStates: [String: SessionSelfState] = [:]
     /// How many `beat` walks are inside the loop, and which walk this is. Both exist to catch the
     /// overlap that should not be possible; neither changes what a walk does.
     private static var beatsInFlight = 0
@@ -1987,21 +1988,61 @@ enum Orchestrator {
     /// This is a projection, not a replacement for any source axis. `SessionState` still says
     /// what the terminal shows; task results, landings, handoffs, and coordination waits remain
     /// separate durable receipts. Keeping the enum closed makes a missing or future value a
-    /// visible `needs_triage` at the client instead of another kind of blank idle row.
+    /// visible `unknown` at the client instead of another kind of blank idle row.
+    ///
+    /// Each state exists to be looked at by one person, so that after looking they know what to
+    /// do next — a value that does not change what the reader does is a field, not a state. The
+    /// per-state contract lives in docs/session-states.md. Two names deserve their history:
+    /// `waiting_you` was `waiting_human`, renamed because the state is an instruction to the
+    /// reader, not a taxonomy of blockers; `unknown` was `needs_triage`, renamed because the
+    /// projection's fail-closed default is the *broker's* ignorance and must never read as the
+    /// person's to-do — five quiet idle rows once all demanded "triage" when none needed anything.
     enum SessionWorkState: String, CaseIterable {
-        case ready, working
-        case waitingHuman = "waiting_human"
+        case ready, working, holding
+        case waitingYou = "waiting_you"
         case waitingSession = "waiting_session"
-        case needsTriage = "needs_triage"
+        case unknown
         case milestoneComplete = "milestone_complete"
         case workComplete = "work_complete"
     }
 
     struct SessionWorkProjection {
         let state: SessionWorkState
+        /// `broker` when the leading state was projected from evidence, `self` when it is the
+        /// session's own declared claim. The check states are evidence-only, so they are always
+        /// `broker`; a row can therefore show a person the difference between a proven state and
+        /// a stated one.
+        let provenance: String
+        /// One line in the session's own words, behind a self-claimed `ready` or `holding`.
+        let note: String?
+        /// When the leading evidence was recorded. Self claims and debts carry clocks; live
+        /// terminal observations do not, so this is honest and absent rather than invented.
+        let since: Date?
+        /// Who or what will move this state, and whether that mover is a person. "Your build;
+        /// nobody" and "the user's decision; the user" are the same colour of idle and opposite
+        /// calls to action.
+        let movedBy: String?
+        let personNeeded: Bool?
+        /// The second axis: an unpaid debt owed to this session's line of work. Independent of
+        /// `state` on purpose — the most common real combination is "my main line waits on a
+        /// person, my side work proceeds", which a single value cannot spell.
+        let owed: [String: Any]?
         /// Only check states carry this. It describes the receipt and its deliberately narrow
         /// task scope; it is never accepted back as a source of truth.
         let disposition: [String: Any]?
+
+        init(state: SessionWorkState, provenance: String = "broker", note: String? = nil,
+             since: Date? = nil, movedBy: String? = nil, personNeeded: Bool? = nil,
+             owed: [String: Any]? = nil, disposition: [String: Any]?) {
+            self.state = state
+            self.provenance = provenance
+            self.note = note
+            self.since = since
+            self.movedBy = movedBy
+            self.personNeeded = personNeeded
+            self.owed = owed
+            self.disposition = disposition
+        }
     }
 
     /// Facts proved for the process occupying one terminal *now*. A terminal id alone is not
@@ -2031,21 +2072,60 @@ enum Orchestrator {
     }
 
     static let sessionDeliverySummaryLimit = 500
+    /// One line, the brief's own bound: a note is the session's words on a row, not a report.
+    static let sessionSelfNoteLimit = 200
 
-    static func sessionDeliveryMatchesCurrentSession(_ delivery: SessionDelivery,
+    /// The unpaid half of the two axes: somebody owes this session's line of work an answer,
+    /// while the session itself may keep moving. Its failure mode is being forgotten, not being
+    /// stale, so `since` is kept from the first declaration and re-declaring the same debt does
+    /// not reset the clock.
+    struct OwedDebt: Equatable {
+        let note: String
+        let movedBy: String?
+        let personNeeded: Bool
+        let since: Date
+    }
+
+    /// A session's authenticated declaration about its own quiet state, bound to the exact
+    /// process like ``SessionDelivery``. Two independent halves with two lifecycles: `claim`
+    /// (`ready` or `holding`) describes one stopped turn and is consumed when the next turn
+    /// starts; `owed` survives turns until the session clears it, because a debt that vanished
+    /// the moment its owner did side work would be the axis collapse this record exists to fix.
+    /// A self declaration may never produce a check state; that boundary is enforced at the
+    /// route, in the projection, and by test.
+    struct SessionSelfState {
+        let identity: SessionWorkIdentity
+        var claim: SessionWorkState?
+        var note: String?
+        var movedBy: String?
+        var personNeeded: Bool?
+        var claimReportedAt: Date?
+        var claimSettled: Bool
+        var owed: OwedDebt?
+    }
+
+    /// The one process-binding rule shared by every session-scoped self record: exact assistant,
+    /// terminal, tty, pid, process start within tolerance, and conversation. Missing fields fail
+    /// closed so an old record cannot decorate an unrelated later process.
+    static func recordedIdentityMatchesCurrentSession(_ recorded: SessionWorkIdentity,
                                                       identity: SessionWorkIdentity) -> Bool {
         guard let assistant = identity.assistant,
-              delivery.identity.assistant == assistant,
-              delivery.identity.terminalID == identity.terminalID,
-              delivery.identity.tty == identity.tty,
-              let recordedPID = delivery.identity.pid, recordedPID == identity.pid,
-              let recordedStart = delivery.identity.processStart,
+              recorded.assistant == assistant,
+              recorded.terminalID == identity.terminalID,
+              recorded.tty == identity.tty,
+              let recordedPID = recorded.pid, recordedPID == identity.pid,
+              let recordedStart = recorded.processStart,
               let currentStart = identity.processStart,
               abs(recordedStart.timeIntervalSince(currentStart))
                 <= SessionRegistry.startTolerance,
-              let recordedConversation = delivery.identity.conversationID,
+              let recordedConversation = recorded.conversationID,
               recordedConversation == identity.conversationID else { return false }
         return true
+    }
+
+    static func sessionDeliveryMatchesCurrentSession(_ delivery: SessionDelivery,
+                                                      identity: SessionWorkIdentity) -> Bool {
+        recordedIdentityMatchesCurrentSession(delivery.identity, identity: identity)
     }
 
     /// A terminal task receipt belongs to the current Session only when every durable child
@@ -2089,6 +2169,13 @@ enum Orchestrator {
     /// A newly active terminal outranks an older completion receipt. That conflict is possible
     /// during the child's linger (or if somebody keeps using its tab), and continuing to draw a
     /// check would claim the *current* work is over on evidence from the previous phase.
+    ///
+    /// `selfClaim` is the session's own declared quiet state and is honoured only as `ready` or
+    /// `holding` — never a check, and never ahead of a question, a wait, live activity, or a
+    /// finished receipt. `holding` in particular has no other entrance and is no branch's
+    /// default: it demands a declared next step with a mover that is not a person, because the
+    /// old vocabulary's defect was precisely a fallback case (`needs_triage`) that anything
+    /// unmatched fell into.
     static func projectSessionWorkState(
         terminalState: SessionState,
         task: Task?,
@@ -2096,12 +2183,15 @@ enum Orchestrator {
         hasOpenHandoff: Bool,
         assignmentKnownAbsent: Bool,
         hasSessionDelivery: Bool = false,
-        hasOutstandingChild: Bool = false
+        hasOutstandingChild: Bool = false,
+        selfClaim: SessionWorkState? = nil
     ) -> SessionWorkState {
-        if terminalState == .waiting { return .waitingHuman }
+        if terminalState == .waiting { return .waitingYou }
         if hasCoordinationWait { return .waitingSession }
-        if terminalState == .unknown { return .needsTriage }
+        if terminalState == .unknown { return .unknown }
         if case .working = terminalState { return .working }
+        // Waiting on one's own child is waiting on another session, not on an event: a child can
+        // wedge, and the reader may have to go and unwedge it. That keeps it out of `holding`.
         if hasOutstandingChild { return .waitingSession }
 
         if let task {
@@ -2112,13 +2202,19 @@ enum Orchestrator {
                 }
                 return .milestoneComplete
             }
-            return .needsTriage
+            // A finished non-success receipt outranks any self claim: a failure the session
+            // talks past is exactly what fail-closed exists for. A still-live assignment falls
+            // through — its child may honestly declare its own quiet state mid-task.
+            if task.state.isTerminal { return .unknown }
         }
         if hasSessionDelivery { return .milestoneComplete }
+        if selfClaim == .ready || selfClaim == .holding { return selfClaim ?? .unknown }
         if assignmentKnownAbsent { return .ready }
         // Idle is intentionally absent from the success rules. A prompt proves that activity
-        // stopped; without a matching receipt it proves neither completion nor readiness.
-        return .needsTriage
+        // stopped; without a matching receipt it proves neither completion nor readiness. And
+        // `unknown` means exactly that: the broker has no positive evidence. It is an absence,
+        // not a demand — nothing here asks the reader to do anything.
+        return .unknown
     }
 
     /// Broker projection for the process currently occupying a terminal. The role/title index is
@@ -2157,6 +2253,19 @@ enum Orchestrator {
         let hasOpenHandoff = handoffs.values.contains {
             $0.state != .delivered && handoffSource($0.fromSession, matches: identity)
         }
+        let selfState = sessionSelfStates[identity.terminalID].flatMap {
+            recordedIdentityMatchesCurrentSession($0.identity, identity: identity) ? $0 : nil
+        }
+        let owed: [String: Any]? = selfState?.owed.map { debt in
+            var row: [String: Any] = [
+                "note": debt.note,
+                "since": Int(debt.since.timeIntervalSince1970),
+                "person_needed": debt.personNeeded,
+                "provenance": "self",
+            ]
+            if let movedBy = debt.movedBy { row["moved_by"] = movedBy }
+            return row
+        }
 
         // A non-assistant prompt is a terminal waiting for a command. For an assistant, absence
         // of a broker task is not proof that its human-authored assignment ended; fail closed.
@@ -2165,12 +2274,27 @@ enum Orchestrator {
             hasCoordinationWait: hasWait, hasOpenHandoff: hasOpenHandoff,
             assignmentKnownAbsent: identity.assistant == nil,
             hasSessionDelivery: sessionDelivery != nil,
+            hasOutstandingChild: hasOutstandingChild,
+            selfClaim: selfState?.claim)
+        // The claim led exactly when leaving it out changes the answer; everything above it in
+        // the precedence is broker evidence and keeps `broker` provenance.
+        let claimLed = selfState?.claim != nil && state != projectSessionWorkState(
+            terminalState: terminalState, task: task,
+            hasCoordinationWait: hasWait, hasOpenHandoff: hasOpenHandoff,
+            assignmentKnownAbsent: identity.assistant == nil,
+            hasSessionDelivery: sessionDelivery != nil,
             hasOutstandingChild: hasOutstandingChild)
         guard state == .milestoneComplete || state == .workComplete else {
-            return SessionWorkProjection(state: state, disposition: nil)
+            if claimLed, let selfState {
+                return SessionWorkProjection(
+                    state: state, provenance: "self", note: selfState.note,
+                    since: selfState.claimReportedAt, movedBy: selfState.movedBy,
+                    personNeeded: selfState.personNeeded, owed: owed, disposition: nil)
+            }
+            return SessionWorkProjection(state: state, owed: owed, disposition: nil)
         }
         if let delivery = sessionDelivery, task == nil {
-            return SessionWorkProjection(state: state, disposition: [
+            return SessionWorkProjection(state: state, owed: owed, disposition: [
                 "scope": "session",
                 "title": delivery.summary,
                 "evidence": "authenticated_session_delivery",
@@ -2178,7 +2302,7 @@ enum Orchestrator {
             ])
         }
         guard let task else {
-            return SessionWorkProjection(state: .needsTriage, disposition: nil)
+            return SessionWorkProjection(state: .unknown, owed: owed, disposition: nil)
         }
         var disposition: [String: Any] = [
             "scope": "task",
@@ -2200,7 +2324,7 @@ enum Orchestrator {
                 disposition["landedAt"] = Int(landedAt.timeIntervalSince1970)
             }
         }
-        return SessionWorkProjection(state: state, disposition: disposition)
+        return SessionWorkProjection(state: state, owed: owed, disposition: disposition)
     }
 
     /// Record one root turn's explicit delivery claim. The route supplies identity from the
@@ -2260,9 +2384,155 @@ enum Orchestrator {
         ]
     }
 
+    /// One bounded line of the session's own words, or a typed refusal reason via nil.
+    private static func selfNote(_ raw: String?) -> String?? {
+        guard let raw else { return .some(nil) }
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.count <= sessionSelfNoteLimit,
+              !text.contains("\n"), !text.unicodeScalars.contains(where: { $0.value == 0 })
+        else { return .none }
+        return .some(text)
+    }
+
+    /// Record a session's declaration about its own quiet state — the `self` half of the
+    /// provenance boundary. The route supplies identity from the current watched process, like
+    /// ``reportSessionDelivery``, and only while the declaring turn is observably working.
+    ///
+    /// What may be declared: `claim` of `ready` (an invitation: you can hand this session work)
+    /// or `holding` (it moves by itself). `holding` is deliberately hard to enter — it needs the
+    /// declared next step in `note`, a `movedBy`, and `personNeeded == false`, because a mover
+    /// who is a person or another session makes the truth a wait, not a hold. The check states
+    /// are refused by name: a self declaration may never produce ☑︎ or ✅.
+    ///
+    /// The `owed` half is the second axis and survives turns. Redeclaring the same debt keeps
+    /// its original `since` — age is the debt's whole risk, and a clock that reset on every
+    /// mention would hide exactly the three-day-old decision this field exists to surface.
+    static func declareSessionState(identity: SessionWorkIdentity,
+                                    terminalState: SessionState,
+                                    claim rawClaim: String?,
+                                    note rawNote: String?,
+                                    movedBy rawMovedBy: String?,
+                                    personNeeded: Bool?,
+                                    owed rawOwed: [String: Any]?,
+                                    clearOwed: Bool,
+                                    now: Date = Date()) -> Reply {
+        load()
+        guard case .working = terminalState else {
+            return .refused(409, "session_not_working",
+                            "A session may declare its state only while its current turn is working.")
+        }
+        guard identity.assistant != nil, identity.pid != nil, identity.processStart != nil,
+              identity.conversationID != nil else {
+            return .refused(409, "session_unbound",
+                            "The current assistant process and conversation could not be bound.")
+        }
+        var claim: SessionWorkState?
+        if let rawClaim {
+            switch SessionWorkState(rawValue: rawClaim) {
+            case .some(.ready): claim = .ready
+            case .some(.holding): claim = .holding
+            case .some(.milestoneComplete), .some(.workComplete):
+                return .refused(403, "self_completion_refused",
+                                "The check states are evidence-only: a session cannot declare "
+                                    + "milestone_complete or work_complete about itself.")
+            default:
+                return .refused(400, "bad_request",
+                                "state must be \"ready\" or \"holding\"; the broker projects "
+                                    + "every other state from evidence.")
+            }
+        }
+        guard case .some(let note) = selfNote(rawNote) else {
+            return .refused(400, "bad_request",
+                            "note must be one line of 1–\(sessionSelfNoteLimit) characters.")
+        }
+        guard case .some(let movedBy) = selfNote(rawMovedBy) else {
+            return .refused(400, "bad_request",
+                            "moved_by must be one line of 1–\(sessionSelfNoteLimit) characters.")
+        }
+        if claim == .holding {
+            guard note != nil, movedBy != nil, personNeeded == false else {
+                return .refused(422, "holding_needs_evidence",
+                                "holding requires its declared next step (note), a mover "
+                                    + "(moved_by), and person_needed: false. A mover who is a "
+                                    + "person or another session is a wait, not a hold.")
+            }
+        }
+        var owed: OwedDebt?
+        if let rawOwed {
+            guard case .some(let owedNoteValue) = selfNote(rawOwed["note"] as? String),
+                  let owedNote = owedNoteValue,
+                  case .some(let owedMovedBy) = selfNote(rawOwed["moved_by"] as? String) else {
+                return .refused(400, "bad_request",
+                                "owed.note (required) and owed.moved_by must each be one line "
+                                    + "of 1–\(sessionSelfNoteLimit) characters.")
+            }
+            owed = OwedDebt(note: owedNote, movedBy: owedMovedBy,
+                            personNeeded: rawOwed["person_needed"] as? Bool ?? true,
+                            since: now)
+        }
+        guard claim != nil || owed != nil || clearOwed else {
+            return .refused(400, "bad_request",
+                            "The declaration is empty: give state, owed, or owed: null.")
+        }
+
+        lock.lock()
+        let existing = sessionSelfStates[identity.terminalID].flatMap {
+            recordedIdentityMatchesCurrentSession($0.identity, identity: identity) ? $0 : nil
+        }
+        var made = SessionSelfState(
+            identity: identity, claim: claim, note: note, movedBy: movedBy,
+            personNeeded: personNeeded, claimReportedAt: claim != nil ? now : nil,
+            claimSettled: false, owed: nil)
+        if clearOwed {
+            made.owed = nil
+        } else if let owed {
+            // The same debt keeps its first clock; only a different note is a new debt.
+            if let held = existing?.owed, held.note == owed.note {
+                made.owed = OwedDebt(note: owed.note, movedBy: owed.movedBy,
+                                     personNeeded: owed.personNeeded, since: held.since)
+            } else {
+                made.owed = owed
+            }
+        } else {
+            made.owed = existing?.owed
+        }
+        if claim == nil {
+            // An owed-only declaration leaves the current turn's claim half alone.
+            made.claim = existing?.claim
+            made.note = existing?.note
+            made.movedBy = existing?.movedBy
+            made.personNeeded = existing?.personNeeded
+            made.claimReportedAt = existing?.claimReportedAt
+            made.claimSettled = existing?.claimSettled ?? false
+        }
+        if made.claim == nil, made.owed == nil {
+            sessionSelfStates.removeValue(forKey: identity.terminalID)
+        } else {
+            sessionSelfStates[identity.terminalID] = made
+        }
+        var payload: [String: Any] = ["ok": true]
+        if let claim = made.claim { payload["state"] = claim.rawValue }
+        if let debt = made.owed {
+            payload["owed"] = ["note": debt.note,
+                               "since": Int(debt.since.timeIntervalSince1970)]
+        }
+        lock.unlock()
+        save()
+        RemoteAuth.audit("orchestrator.session.declared", [
+            "session": identity.terminalID, "state": claim?.rawValue ?? "-",
+            "owed": made.owed == nil ? "none" : "held",
+        ])
+        return .ok(payload)
+    }
+
     /// Advance the one-turn receipt lifecycle from observed terminal transitions. The first idle
     /// after reporting arms consumption; the next active state removes the old receipt before a
     /// later idle prompt could display it again.
+    ///
+    /// A self-declared claim (`ready`/`holding`) lives on the same clock: it described one
+    /// stopped turn, and the turn after it starts a different story. The `owed` half is exempt
+    /// on purpose — a debt is not consumed by its owner doing side work; only an explicit
+    /// declaration (or a different process in the terminal) clears it.
     static func noteSessionStateChange(terminalID: String, to state: SessionState) {
         load()
         var changed = false
@@ -2275,6 +2545,29 @@ enum Orchestrator {
                 changed = true
             case .working where delivery.settled, .waiting where delivery.settled:
                 sessionDeliveries.removeValue(forKey: terminalID)
+                changed = true
+            default:
+                break
+            }
+        }
+        if var selfState = sessionSelfStates[terminalID], selfState.claim != nil {
+            switch state {
+            case .idle where !selfState.claimSettled:
+                selfState.claimSettled = true
+                sessionSelfStates[terminalID] = selfState
+                changed = true
+            case .working where selfState.claimSettled, .waiting where selfState.claimSettled:
+                selfState.claim = nil
+                selfState.note = nil
+                selfState.movedBy = nil
+                selfState.personNeeded = nil
+                selfState.claimReportedAt = nil
+                selfState.claimSettled = false
+                if selfState.owed == nil {
+                    sessionSelfStates.removeValue(forKey: terminalID)
+                } else {
+                    sessionSelfStates[terminalID] = selfState
+                }
                 changed = true
             default:
                 break
@@ -5761,6 +6054,39 @@ enum Orchestrator {
     /// Leave it and closing a root leaves its children on screen, filed under a session that is
     /// no longer in the list — which is the shape of the bug this was written to fix, and reads
     /// as the close having done nothing at all.
+    /// What pressing close would take with it, read at the moment of the press.
+    ///
+    /// Deliberately not a list column and not a state: `hasOutstandingChild` was already in the
+    /// projection the night a root with four live children was closed anyway. A label read
+    /// earlier cannot stop a close — only the close itself can — so this is computed for the
+    /// gate in `POST /v1/sessions/:id/end` and shown at the confirming press. It names live
+    /// descendant tasks (the exact set `cancelChildren` would cancel) and open coordination
+    /// waits this session owns, whose waiters a close would strand unreleased.
+    static func lostIfClosed(root session: TargetSession) -> [[String: Any]] {
+        load()
+        var lost: [[String: Any]] = []
+        if let rootSession = rootIdentity(of: session, sessionID: Transcript.sessionID(of:)) {
+            let mine = liveTasks(dispatchedBy: rootSession)
+            let below = liveTasks(under: mine + lingeringTasks(dispatchedBy: rootSession))
+            for id in mine + below {
+                guard let task = held(id) else { continue }
+                lost.append(["task": task.id, "title": task.title,
+                             "state": task.state.rawValue])
+            }
+        }
+        lock.lock()
+        let ownedWaits = coordinationWaits.values.filter { wait in
+            wait.ownerSessionID == session.id
+                && wait.waiters.contains { $0.releaseDeliveredAt == nil }
+        }.sorted { $0.created < $1.created }
+        lock.unlock()
+        for wait in ownedWaits {
+            lost.append(["wait": wait.id, "release_condition": wait.releaseCondition,
+                         "waiters": wait.waiters.filter { $0.releaseDeliveredAt == nil }.count])
+        }
+        return lost
+    }
+
     @discardableResult
     static func cancelChildren(ofRoot session: TargetSession) -> [String] {
         guard let rootSession = rootIdentity(
@@ -8924,11 +9250,17 @@ enum Orchestrator {
             guard let delivery = sessionDelivery(from: row) else { continue }
             foundSessionDeliveries[delivery.identity.terminalID] = delivery
         }
+        var foundSelfStates: [String: SessionSelfState] = [:]
+        for row in obj["session_self_states"] as? [[String: Any]] ?? [] {
+            guard let selfState = sessionSelfState(from: row) else { continue }
+            foundSelfStates[selfState.identity.terminalID] = selfState
+        }
         lock.lock()
         tasks = found
         handoffs = foundHandoffs
         coordinationWaits = foundWaits
         sessionDeliveries = foundSessionDeliveries
+        sessionSelfStates = foundSelfStates
         reindex()
         lock.unlock()
         // Proofs stored before the independent ledger existed are still strong proofs. Backfill
@@ -8949,10 +9281,13 @@ enum Orchestrator {
             .map { stored($0) }
         let sessionDeliveryRows = sessionDeliveries.values
             .sorted { $0.reportedAt < $1.reportedAt }.map { stored($0) }
+        let sessionSelfStateRows = sessionSelfStates.values
+            .sorted { $0.identity.terminalID < $1.identity.terminalID }.map { stored($0) }
         lock.unlock()
         let obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows,
                                   "coordination_waits": waitRows,
-                                  "session_deliveries": sessionDeliveryRows]
+                                  "session_deliveries": sessionDeliveryRows,
+                                  "session_self_states": sessionSelfStateRows]
         guard let data = try? JSONSerialization.data(withJSONObject: obj,
                                                      options: [.prettyPrinted, .sortedKeys,
                                                                .withoutEscapingSlashes]) else {
@@ -9194,6 +9529,80 @@ enum Orchestrator {
         return SessionDelivery(identity: identity, summary: summary,
                                reportedAt: Date(timeIntervalSince1970: reportedAt),
                                settled: settled)
+    }
+
+    static func stored(_ selfState: SessionSelfState) -> [String: Any] {
+        var out: [String: Any] = [
+            "terminal_id": selfState.identity.terminalID,
+            "tty": selfState.identity.tty,
+            "claim_settled": selfState.claimSettled,
+        ]
+        if let assistant = selfState.identity.assistant { out["assistant"] = assistant.rawValue }
+        if let pid = selfState.identity.pid { out["pid"] = Int(pid) }
+        if let start = selfState.identity.processStart {
+            out["process_start"] = start.timeIntervalSince1970
+        }
+        if let conversation = selfState.identity.conversationID {
+            out["conversation_id"] = conversation
+        }
+        if let claim = selfState.claim { out["claim"] = claim.rawValue }
+        if let note = selfState.note { out["note"] = note }
+        if let movedBy = selfState.movedBy { out["moved_by"] = movedBy }
+        if let personNeeded = selfState.personNeeded { out["person_needed"] = personNeeded }
+        if let reportedAt = selfState.claimReportedAt {
+            out["claim_reported_at"] = reportedAt.timeIntervalSince1970
+        }
+        if let debt = selfState.owed {
+            var owed: [String: Any] = ["note": debt.note,
+                                       "person_needed": debt.personNeeded,
+                                       "since": debt.since.timeIntervalSince1970]
+            if let movedBy = debt.movedBy { owed["moved_by"] = movedBy }
+            out["owed"] = owed
+        }
+        return out
+    }
+
+    static func sessionSelfState(from obj: [String: Any]) -> SessionSelfState? {
+        guard let terminalID = obj["terminal_id"] as? String, !terminalID.isEmpty,
+              terminalID.count <= 512,
+              let assistantName = obj["assistant"] as? String,
+              let assistant = Assistant(rawValue: assistantName),
+              let tty = obj["tty"] as? String, !tty.isEmpty, tty.count <= 512,
+              let pidValue = obj["pid"] as? Int, let pid = Int32(exactly: pidValue),
+              let processStart = obj["process_start"] as? Double,
+              let conversation = obj["conversation_id"] as? String,
+              !conversation.isEmpty, conversation.count <= 512,
+              let claimSettled = obj["claim_settled"] as? Bool else { return nil }
+        var claim: SessionWorkState?
+        if let rawClaim = obj["claim"] as? String {
+            // Only the two declarable states survive a reload; anything else in the store is a
+            // record this code has no business believing.
+            guard let parsed = SessionWorkState(rawValue: rawClaim),
+                  parsed == .ready || parsed == .holding else { return nil }
+            claim = parsed
+        }
+        var owed: OwedDebt?
+        if let rawOwed = obj["owed"] as? [String: Any] {
+            guard let note = rawOwed["note"] as? String, !note.isEmpty,
+                  note.count <= sessionSelfNoteLimit,
+                  let personNeeded = rawOwed["person_needed"] as? Bool,
+                  let since = rawOwed["since"] as? Double else { return nil }
+            owed = OwedDebt(note: note, movedBy: rawOwed["moved_by"] as? String,
+                            personNeeded: personNeeded,
+                            since: Date(timeIntervalSince1970: since))
+        }
+        guard claim != nil || owed != nil else { return nil }
+        let identity = SessionWorkIdentity(
+            terminalID: terminalID, assistant: assistant, tty: tty, pid: pid,
+            processStart: Date(timeIntervalSince1970: processStart),
+            conversationID: conversation)
+        return SessionSelfState(
+            identity: identity, claim: claim, note: obj["note"] as? String,
+            movedBy: obj["moved_by"] as? String,
+            personNeeded: obj["person_needed"] as? Bool,
+            claimReportedAt: (obj["claim_reported_at"] as? Double)
+                .map { Date(timeIntervalSince1970: $0) },
+            claimSettled: claimSettled, owed: owed)
     }
 
     static func coordinationWait(from obj: [String: Any]) -> CoordinationWait? {
@@ -9632,6 +10041,7 @@ enum Orchestrator {
         handoffDeliveries = [:]
         coordinationWaits = [:]
         sessionDeliveries = [:]
+        sessionSelfStates = [:]
         handoffTitlesByTerminal = [:]
         secrets = [:]
         dispatchTimes = []
