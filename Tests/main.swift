@@ -15773,6 +15773,107 @@ group("linger expiry and explicit root close share one closing admission") {
     expect("the closing guard returns to zero", Orchestrator.terminalClosesInFlightForTesting(), 0)
 }
 
+group("the automatic close runs closeStep against an inventory it took itself") {
+    // The decision table above is only worth having if the close that runs on this Mac is the
+    // thing that consults it. It was not: `closeStep` had no production caller at all, and the
+    // whole busy/idle/unknown table could be deleted with every check in this file still green.
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    defer {
+        Targets.safeCloseInventoryForTesting = nil
+        Targets.safeCloseCaptureForTesting = nil
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    let child = TargetSession(backend: .iterm, id: "LINGER-TAB", name: "child",
+                              tty: "/dev/ttys81", windowIndex: 0, tabIndex: 0,
+                              assistant: .codex, cwd: "/tmp")
+
+    struct Outcome {
+        var ends: [Bool] = []
+        var closeAt: Date?
+        var intervention: String?
+    }
+
+    /// One whole automatic close, from the beat's nomination to the record it leaves behind.
+    func close(inventory: Targets.Snapshot, screen: String?,
+               failure: String? = nil) -> Outcome {
+        Orchestrator.forget()
+        var task = Orchestrator.Task(
+            id: UUID().uuidString.lowercased(), state: .success, kind: "custom",
+            title: "linger close", assistant: .codex, projectDir: "/tmp",
+            timeoutMinutes: 30, created: Date(),
+            secretHash: String(repeating: "0", count: 64))
+        task.finishedAt = Date()
+        task.childTerminalId = child.id
+        task.childTTY = child.tty
+        task.closeAt = Date().addingTimeInterval(-1)
+        Orchestrator.holdScheduleTaskForTesting(task)
+        // Another group may have left the automation circuit open; this one is about the
+        // inventory and the screen, and `closeStep` refuses everything while a modal is up.
+        ITerm.completeInventoryForTesting()
+        Targets.safeCloseInventoryForTesting = { inventory }
+        Targets.safeCloseCaptureForTesting = { _ in screen }
+        var ends: [Bool] = []
+        _ = Orchestrator.takeChildTab(for: task, childID: child.id,
+                                      closeAt: task.closeAt ?? Date(),
+                                      end: { _, justTheTab in
+                                          ends.append(justTheTab); return failure
+                                      })
+        check("the close settles", eventually {
+            Orchestrator.terminalClosesInFlightForTesting() == 0
+        })
+        let record = Orchestrator.record(id: task.id)
+        let kind = (record?["terminal_intervention"] as? [String: Any])?["code"] as? String
+        return Outcome(ends: ends, closeAt: Orchestrator.closeAtForTesting(task.id),
+                       intervention: kind)
+    }
+
+    var present = Targets.Snapshot()
+    present.sessions = [child]
+    var incomplete = present
+    incomplete.isComplete = false
+    incomplete.error = "iTerm would not answer"
+    var replaced = Targets.Snapshot()
+    replaced.sessions = [TargetSession(backend: .iterm, id: "SOMEBODY-ELSE", name: "other",
+                                       tty: "/dev/ttys82", windowIndex: 0, tabIndex: 0,
+                                       assistant: .claude, cwd: "/tmp")]
+    let emptyButComplete = Targets.Snapshot()
+
+    let busy = close(inventory: present, screen: "• Working (3s • esc to interrupt)")
+    check("a child mid-turn is never closed by its own linger", busy.ends.isEmpty)
+    check("and its deadline is left standing for a later beat", busy.closeAt != nil)
+
+    let unknown = close(inventory: present, screen: nil)
+    check("an unreadable screen is not idle and never reaches the close", unknown.ends.isEmpty)
+    check("an unreadable screen leaves the deadline alone", unknown.closeAt != nil)
+
+    let degraded = close(inventory: incomplete, screen: "❯ ")
+    check("an incomplete inventory never reaches the close", degraded.ends.isEmpty)
+    check("and cannot drop the deadline either", degraded.closeAt != nil)
+
+    let blank = close(inventory: emptyButComplete, screen: "❯ ")
+    check("an inventory with no terminals at all proves nothing", blank.ends.isEmpty)
+    check("so the tab is not forgotten on it", blank.closeAt != nil)
+
+    let gone = close(inventory: replaced, screen: "❯ ")
+    check("a tab absent from a complete inventory is nobody's to close", gone.ends.isEmpty)
+    check("and its deadline is dropped rather than retried forever", gone.closeAt == nil)
+
+    let idle = close(inventory: present, screen: "❯ ")
+    expect("only a proved idle prompt is closed, and with the quit word", idle.ends, [false])
+    check("a successful close clears the deadline exactly then", idle.closeAt == nil)
+
+    let refused = close(inventory: present, screen: "❯ ",
+                        failure: "The assistant is still running on /dev/ttys81")
+    expect("a refused close still happened once", refused.ends, [false])
+    check("a failed close keeps its deadline visible", refused.closeAt != nil)
+    expect("and records why a person has to look", refused.intervention,
+           "terminal_intervention_required")
+}
+
 group("terminal intervention type follows the returned failure, not unrelated global state") {
     defer { ITerm.completeInventoryForTesting() }
     ITerm.blockAutomationForTesting("iTerm modal timeout")
@@ -18368,14 +18469,12 @@ group("every terminal path keeps the reclaim contract at its real filesystem bou
     check("the reclaim half of a beat settles both deadlines",
           Orchestrator.reclaimTaskWorkIfDue(staleID)
             && Orchestrator.reclaimTaskBuildIfDue(staleID))
-    let unrelated = TargetSession(backend: .iterm, id: "OTHER-TAB", name: "other",
-                                  tty: "/dev/ttys099", windowIndex: 0, tabIndex: 0,
-                                  assistant: .codex, cwd: "/tmp")
-    // Safe close now refuses to act on a cached, incomplete inventory at all: absence is decided
-    // on a fresh complete walk inside the terminal broker, never on this snapshot. The deadline
-    // guard the reclaim needs is unchanged — a refusal must not write the stale record back.
+    // Safe close no longer acts on a cached inventory at all: what a beat holds may nominate a
+    // task, and absence, identity and activity are all decided on a fresh walk inside the
+    // terminal broker. The deadline guard the reclaim needs is unchanged — a nomination that
+    // never reaches a decision must not write the stale record back.
     check("and closeChild's stale snapshot cannot resurrect either deadline",
-          !Orchestrator.closeChild(stale, seen: [unrelated])
+          !Orchestrator.closeChild(stale)
             && Orchestrator.workCleanupAtForTesting(staleID) == nil
             && Orchestrator.buildCleanupAtForTesting(staleID) == nil)
 
@@ -18392,10 +18491,15 @@ group("every terminal path keeps the reclaim contract at its real filesystem bou
     let child = TargetSession(backend: .iterm, id: "TAB", name: "child",
                               tty: "/dev/ttys098", windowIndex: 0, tabIndex: 0,
                               assistant: nil, cwd: "/tmp")
+    var freshInventory = Targets.Snapshot()
+    freshInventory.sessions = [child]
+    Targets.safeCloseInventoryForTesting = { freshInventory }
+    defer { Targets.safeCloseInventoryForTesting = nil }
     // The close is asynchronous now — it is admitted to the terminal broker and settles on main
     // — so the synchronous answer is false and the record is read again before it is written.
     check("and takeChildTab's stale snapshot cannot resurrect either deadline",
-          !Orchestrator.takeChildTab(child, justTheTab: true, for: staleTake,
+          !Orchestrator.takeChildTab(for: staleTake, childID: child.id,
+                                     closeAt: staleTake.closeAt ?? Date(),
                                      end: { _, _ in nil })
             && eventually { Orchestrator.closeAtForTesting(staleID) == nil }
             && Orchestrator.workCleanupAtForTesting(staleID) == nil
@@ -19081,6 +19185,33 @@ group("an attached briefing is delivered work, not a tab still trying to open") 
     Orchestrator.beat(fromTimer: true)
     expect("the same deadline still rejects a fresh tab that never reached a prompt",
            Orchestrator.record(id: opening.id)?["state"] as? String, "spawn_failed")
+
+    // Both deadlines are record decisions and must not travel with the briefing, which reads a
+    // screen and types and therefore belongs in the terminal broker. An iTerm sheet nobody has
+    // answered fills every lane; if expiry queued behind that, a task nobody can brief would hold
+    // its claims and a slot on this Mac for as long as the dialog stayed up.
+    let heldLane = DispatchSemaphore(value: 0)
+    var lanes = 0
+    while RemoteServer.shared.enqueueTerminalCommand(channel: "expiry-lane-\(lanes)", {
+        _ = heldLane.wait(timeout: .now() + 5)
+    }) { lanes += 1 }
+    // Counted rather than asserted at eight: another group's terminal work may still be in
+    // flight, and what this needs is only that the broker is full at the moment of the beat.
+    check("no terminal lane is left for a briefing", lanes > 0
+            && !RemoteServer.shared.enqueueTerminalCommand(channel: "expiry-probe") {})
+    let blocked = oldSpawning(attached: true)
+    Orchestrator.holdScheduleTaskForTesting(blocked)
+    Orchestrator.beat(fromTimer: true)
+    expect("a task still expires while every terminal lane is blocked",
+           Orchestrator.record(id: blocked.id)?["state"] as? String, "timeout")
+    let blockedTab = oldSpawning(attached: false)
+    Orchestrator.holdScheduleTaskForTesting(blockedTab)
+    Orchestrator.beat(fromTimer: true)
+    expect("and a tab that never reached a prompt is refused on the same blocked beat",
+           Orchestrator.record(id: blockedTab.id)?["state"] as? String, "spawn_failed")
+    for _ in 0..<lanes { heldLane.signal() }
+    check("the broker drains again",
+          eventually { RemoteServer.shared.terminalOutstandingForTesting().total == 0 })
 }
 
 group("owned storage is visible through the read-only orchestrator route") {
