@@ -408,8 +408,8 @@ $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/info
 |---|---|
 | `session` | `id` and `assistant` always; `sessionId` when the current process can be bound to its exact Claude transcript or Codex rollout; `model` when a transcript has named one — the **last** model the transcript names, so a session that switched mid-way shows what it is on now; `cwd`, `startedAt` and `seconds` (its age, as of this answer) when the process could be found |
 | `permission` | Claude Code's current permission mode and the Shift-Tab cycle order. `current` is `auto`, `manual`, `acceptEdits`, `plan`, or `unknown`; `manual` specifically means the screen was readable and showed no mode line, while `unknown` means the screen capture was absent or empty. **Absent for Codex sessions**, which do not have this mode cycle |
-| `usage` | the transcript's token totals — `input`, `output`, `cacheRead`, `cacheWrite`, `total` — with `model` and, for Claude, `costUsd` at list price. **Absent** when no transcript has been found, which is not the same as zero |
-| `context` | the current conversation against its model window: `usedPercent`, plus `usedTokens` and `windowTokens` for the exact ratio. Codex records all three together on each `token_count`; **absent** when the assistant did not record both sides of that ratio. This is per-turn context, not cumulative `usage` |
+| `usage` | the transcript's token totals — `input`, `output`, `cacheRead`, `cacheWrite`, `total` — with `model` and, for Claude, `costUsd`. Claude Code's own `total_cost_usd` replaces the list-price estimate when its session cache has it — **on this route only**: the task records under `/v1/orchestrator/tasks` still publish the estimate, so the same session can be quoted two different figures. **Absent** when no transcript has been found, which is not the same as zero |
+| `context` | the current conversation against its model window: `usedPercent`, plus `usedTokens`, plus `windowTokens` **only when the window is a stated fact rather than a guess**. Codex records all three together; Claude combines the last parent assistant turn's transcript usage with its cached window, falling back to a model-window table when that cache is absent — and a table row is a guess, so it moves the percentage but never appears as `windowTokens`. **Absent** when no source supplies a window, and when one does but neither the newest parent turn nor the cache supplies a used figure. This is per-turn context, not cumulative `usage` |
 | `limits` | `windows`: each `name` (`5h`, `7d` — the status line's names), `usedPercent`, `resetsAt`, and `hit` when the provider refused the last request on it; `at` is when the record it came from was written. **An empty `windows` means nobody said**, and a client must draw that as unknown rather than as 0% |
 | `files` | the working tree **counted**, not listed: `branch` (empty when detached), `head`, `ahead`, `behind`, `staged`, `unstaged`, `untracked`, `conflict`. A partially added file is under both `staged` and `unstaged`, as `git status` lists it. **Absent** when the directory is not a repository or `git` did not answer in time — and those are the same answer on purpose, because a card that said *clean* about a tree it could not read would be wrong in the direction that matters. The files themselves are `/git` |
 | `deploy` | the `deploy` and `ci` rows of `/links`, unchanged, so a `state` means here what it means there |
@@ -428,11 +428,25 @@ the windows go back to *unknown* — which is the word for it.
 
 **Context is not token spend.** Codex's same `token_count` event carries
 `last_token_usage.total_tokens` and `model_context_window`; their ratio is the optional `context`
-object. The cumulative `total_token_usage` remains under `usage` for the expanded card, but the
-compact status line shows `context.usedPercent`, because that is what determines whether this
-conversation is about to compact. Claude's transcript records current usage but not the model
-window that its status-line input received, so its `context` stays absent rather than guessing a
-percentage from a hard-coded model limit.
+object. **Claude Code states its window nowhere a reader can reach** — not in the transcript, not
+in `~/.claude/sessions/<pid>.json`; it hands `context_window` to the status-line command on stdin
+and to nothing else. So the window comes from a file that command writes, `session-<session-id>.json`
+in the same directory as `rate-limits.json` above (`status_dir`, defaulting to
+`~/.claude/statusline-cache`), shaped as
+`{"context_window":{"context_window_size":…,"total_input_tokens":…,"used_percentage":…},
+"cost":{"total_cost_usd":…}}`.
+
+That stable window size is combined with the last non-sidechain assistant turn's current
+input/cache usage — the size never moves during a session, while the transcript is always
+current, so the reading is live and needs no staleness rule. `<synthetic>` turns are stepped
+over: Claude Code writes one when the provider refuses, with an all-zero `usage` that would
+otherwise read as an empty context at the exact moment the window is full. Before the first
+assistant turn the cached totals stand alone. Without the file, known Claude models fall back to a
+prefix-matched window table and unknown models stay absent — that table is a guess and is
+published as one, moving `usedPercent` without ever appearing as `windowTokens`. The same file's
+`total_cost_usd`, when present, is preferred over the computed `usage` price. Cumulative token
+totals remain under `usage`; the compact row shows `context.usedPercent`, because that is what
+determines whether this conversation is about to compact.
 
 **A route rather than a field on the session**, for the reason `/links` gives and one more: on
 top of that route's `git`, this one reads the transcript, which can be fifty megabytes. Free when

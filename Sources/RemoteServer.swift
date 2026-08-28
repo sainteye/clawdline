@@ -2982,15 +2982,29 @@ final class RemoteServer: @unchecked Sendable {
 
         var usage: Orchestrator.Usage?
         var context: SessionInfo.Context?
+        var costOverrideUsd: Double?
         var limits = SessionInfo.Limits()
         var model: String?
-        if let record, let data = try? Data(contentsOf: record.url), !data.isEmpty {
+        // The transcript is read if it can be, and its absence no longer silences everything
+        // else. Claude Code's status-line cache answers the context fill and the exact cost on
+        // its own, under the same id this record names, so a transcript that is missing, empty
+        // or unreadable now costs only the facts that actually come from it. Every reader below
+        // takes an empty buffer as "the transcript said nothing" and answers absent.
+        if let record {
+            let data = (try? Data(contentsOf: record.url)) ?? Data()
             switch record.assistant {
             case .claude:
+                let sessionID = record.url.deletingPathExtension().lastPathComponent
+                let cache = SessionInfo.claudeSessionCache(
+                    cacheDirectory: ProjectStatus.cacheDirectory, sessionID: sessionID)
                 usage = Orchestrator.claudeUsage(transcript: record.url)
                 let read = SessionInfo.claudeLimits(transcript: data)
                 limits = read.limits
                 model = read.model
+                let usageModel = usage?.model.flatMap { $0.hasPrefix("<") ? nil : $0 }
+                context = SessionInfo.claudeContext(
+                    transcript: data, cache: cache, model: model ?? usageModel)
+                costOverrideUsd = SessionInfo.claudeCost(cache: cache)
             case .codex:
                 usage = Orchestrator.codexUsage(rollout: record.url)
                 context = SessionInfo.codexContext(rollout: data)
@@ -3024,7 +3038,7 @@ final class RemoteServer: @unchecked Sendable {
                                             processBound: Transcript.sessionID(of: session)),
             model: model,
             cwd: cwd, startedAt: Targets.processStart(of: session),
-            usage: usage, context: context, limits: limits,
+            usage: usage, context: context, costOverrideUsd: costOverrideUsd, limits: limits,
             files: cwd.flatMap { SessionInfo.files(cwd: $0) },
             deploy: deploy, models: SessionInfo.models(for: session.assistant),
             permission: permission)

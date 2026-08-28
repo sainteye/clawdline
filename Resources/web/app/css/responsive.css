@@ -50,15 +50,22 @@
     .status-line .item + .item::before, .status-line .files::before,
     .status-line .deploy::before { padding: 0 6px; }
     .status-line .limits { padding-left: 10px; gap: 10px; }
-    /* Cost is the one number on this row that never changes what
-       happens next — a turn is not stopped by what it has cost, it is stopped by the plan window
-       on the right — and it is the last thing standing between the branch and the edge of a
-       390-point screen. It is the headline of the card the left half of this row opens, which is
-       where somebody goes when the question is actually money.
-       The `·` in front of it goes too: the separator is drawn by the item that follows it. */
-    .status-line .cost { display: none; }
-    /* And the tree comes back — see the note at the 1080px breakpoint. */
-    .status-line .files { display: flex; }
+    /* Cost stays on the phone row now. It used to be hidden here, on the argument that a turn is
+       never stopped by what it has cost — but away from the Mac this row is the only place the
+       money is, and since Claude Code's own `total_cost_usd` sits behind it the figure is finally
+       worth reading rather than an estimate that ran 80% high.
+
+       That leaves more content than 390 points can hold, so something has to give, and the
+       decision is which. **The branch gives.** Ellipsised it still identifies itself, while the
+       two things beside it fail badly rather than gracefully: `.context` and `.cost` are
+       `flex: 0 0 auto` and cannot shrink at all, so pressure on the button clips them instead —
+       measured at 390, `$11.57` drew as `$11.`, a wrong number that looks like a right one — and
+       the model word, given the whole squeeze, vanishes outright along with its 13px logo rather
+       than ellipsising. Hence a shrink factor here and no `overflow` on the button: at 390 with
+       `feature/context-fill` the branch yields to 87px and `Opus 5` keeps 36 of its 40.
+
+       The tree itself comes back here too — see the note at the 1080px breakpoint. */
+    .status-line .files { display: flex; flex-shrink: 20; }
     .filter-row .slash { display: none; }
 
     .row { padding: 13px 14px; margin-bottom: 8px; gap: 4px 12px; }

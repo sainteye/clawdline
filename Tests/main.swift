@@ -15726,6 +15726,89 @@ group("the Session info card is read off the files, and says unknown rather than
     check("a token count without a model window is unknown context",
           SessionInfo.codexContext(rollout: Data((tokenCount + "\n").utf8)) == nil)
 
+    // Claude's status-line cache owns the window and Claude Code's own cost, while the
+    // transcript owns the freshest current-turn usage. A sidechain is a different conversation
+    // and must not replace the parent turn merely because it was written later.
+    // The fixture's window is 250,000 on purpose: no row of `claudeWindow` can produce it, so an
+    // implementation that dropped the cache and fell through to the table would fail these
+    // rather than pass them by coincidence.
+    let claudeCache = Data("""
+    {"at":1787894229,"session_id":"s","context_window":{
+      "context_window_size":250000,"total_input_tokens":162752,"used_percentage":65},
+      "cost":{"total_cost_usd":6.43}}
+    """.utf8)
+    let parentTurn = line([
+        "type": "assistant", "isSidechain": false,
+        "message": ["model": "claude-fable-5", "usage": [
+            "input_tokens": 2, "cache_read_input_tokens": 160_655,
+            "cache_creation_input_tokens": 1_620]]])
+    let laterSidechain = line([
+        "type": "assistant", "isSidechain": true,
+        "message": ["model": "claude-fable-5", "usage": [
+            "input_tokens": 9, "cache_read_input_tokens": 900_000,
+            "cache_creation_input_tokens": 90_000]]])
+    let claudeTranscript = Data((parentTurn + "\n" + laterSidechain + "\n").utf8)
+    let claudeContext = SessionInfo.claudeContext(
+        transcript: claudeTranscript, cache: claudeCache, model: "claude-fable-5")
+    expect("Claude context uses the parent transcript turn, not a later sidechain",
+           claudeContext?.usedTokens, 162_277)
+    expect("and takes its exact window from the status-line cache",
+           claudeContext?.windowTokens, 250_000)
+    expect("and derives the live percentage from those two readings",
+           claudeContext?.usedPercent, Double(162_277) * 100 / Double(250_000))
+
+    // `<synthetic>` is the turn Claude Code writes when the provider refused, and its `usage` is
+    // a complete set of zeroes. Read as a turn it says the conversation is empty at the exact
+    // moment it is full, so the reader has to step over it to the last real one.
+    let syntheticTurn = line([
+        "type": "assistant", "isSidechain": false,
+        "message": ["model": "<synthetic>", "usage": [
+            "input_tokens": 0, "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0]]])
+    expect("a <synthetic> refusal does not read as an empty context",
+           SessionInfo.claudeContext(
+             transcript: Data((parentTurn + "\n" + syntheticTurn + "\n").utf8),
+             cache: claudeCache, model: "claude-fable-5")?.usedTokens,
+           162_277)
+
+    let tableContext = SessionInfo.claudeContext(
+        transcript: Data((parentTurn + "\n").utf8), cache: nil,
+        model: "claude-haiku-4-5-20251001")
+    expect("without a cache, a dated known model gets the table's window",
+           tableContext?.windowTokens, 200_000)
+    check("and that window is marked a guess", tableContext?.windowIsExact == false)
+    check("while the cache's window is not", claudeContext?.windowIsExact == true)
+    check("without a cache, an unknown model does not invent a window",
+          SessionInfo.claudeContext(transcript: Data((parentTurn + "\n").utf8), cache: nil,
+                                    model: "claude-unknown-9") == nil)
+
+    let cacheOnly = SessionInfo.claudeContext(
+        transcript: Data("{\"type\":\"user\"}\n".utf8), cache: claudeCache,
+        model: "claude-fable-5")
+    expect("before the first assistant turn, the cache supplies used tokens",
+           cacheOnly?.usedTokens, 162_752)
+    expect("and its exact window", cacheOnly?.windowTokens, 250_000)
+    expect("and a percentage derived from the same pair", cacheOnly?.usedPercent,
+           Double(162_752) * 100 / Double(250_000))
+    // A known model on purpose: with an unknown one the window guard answers nil before a single
+    // cache byte is interpreted, and the assertion would hold against a reader that cannot
+    // survive a broken file at all.
+    check("a malformed cache neither throws nor fabricates context",
+          SessionInfo.claudeContext(transcript: Data(), cache: Data("{".utf8),
+                                    model: "claude-fable-5")?.usedTokens == nil)
+    check("an empty cache is unknown too",
+          SessionInfo.claudeContext(transcript: Data(), cache: Data(),
+                                    model: "claude-fable-5")?.usedTokens == nil)
+    // A number this reader cannot represent is an absent number, not a dead server: `Int(1e30)`
+    // traps, and this file is written by a different project.
+    check("a cache window past Int.max is absent rather than fatal",
+          SessionInfo.claudeContext(
+            transcript: Data((parentTurn + "\n").utf8),
+            cache: Data("{\"context_window\":{\"context_window_size\":1e30}}".utf8),
+            model: "claude-fable-5")?.windowTokens == 1_000_000)
+    expect("the cache exposes Claude Code's own session cost",
+           SessionInfo.claudeCost(cache: claudeCache), 6.43)
+
     // §2.4: once the primary bucket is full, the *next* token_count often falls back to an
     // unnamed "premium" credits bucket with no window at all — `limit_id` turns from "codex" to
     // "premium", `primary`/`secondary` are both null, `credits.balance` is "0". The newest record
@@ -15794,10 +15877,35 @@ group("the Session info card is read off the files, and says unknown rather than
     expect("the totals", counts?["total"] as? Int, 100)
     expect("the cache halves are separate", counts?["cacheWrite"] as? Int, 40)
     expect("and the cost", counts?["costUsd"] as? Double, 0.1234)
+    let officialPayload = SessionInfo.payload(
+        id: "ABC", assistant: .claude, sessionId: "s-1", model: "claude-fable-5", cwd: nil,
+        startedAt: nil, usage: usage,
+        costOverrideUsd: SessionInfo.claudeCost(cache: claudeCache),
+        limits: SessionInfo.Limits(), files: nil, deploy: [])
+    expect("Claude Code's own cache cost replaces the computed estimate",
+           (officialPayload["usage"] as? [String: Any])?["costUsd"] as? Double, 6.43)
+    let estimatedPayload = SessionInfo.payload(
+        id: "ABC", assistant: .claude, sessionId: "s-1", model: "claude-fable-5", cwd: nil,
+        startedAt: nil, usage: usage,
+        costOverrideUsd: SessionInfo.claudeCost(cache: nil),
+        limits: SessionInfo.Limits(), files: nil, deploy: [])
+    expect("without that cache figure, the computed estimate stands",
+           (estimatedPayload["usage"] as? [String: Any])?["costUsd"] as? Double, 0.1234)
     let contextPayload = payload["context"] as? [String: Any]
     expect("the context percentage is on the wire", contextPayload?["usedPercent"] as? Double, 40)
     expect("with its current token count", contextPayload?["usedTokens"] as? Int, 103_360)
     expect("and model window", contextPayload?["windowTokens"] as? Int, 258_400)
+    // A window nobody stated is a table row, and a table row read back as `162,277 / 1,000,000`
+    // would be a guess quoted as a measurement. The percentage still goes; the window does not.
+    let guessedPayload = SessionInfo.payload(
+        id: "ABC", assistant: .claude, sessionId: "s-1", model: "claude-fable-5", cwd: nil,
+        startedAt: nil, usage: nil,
+        context: SessionInfo.Context(usedPercent: 40, usedTokens: 400_000,
+                                     windowTokens: 1_000_000, windowIsExact: false),
+        limits: SessionInfo.Limits(), files: nil, deploy: [])
+    let guessed = guessedPayload["context"] as? [String: Any]
+    expect("a guessed window keeps its percentage", guessed?["usedPercent"] as? Double, 40)
+    check("but does not publish the window it guessed", guessed?["windowTokens"] == nil)
     let plan = payload["limits"] as? [String: Any]
     let windows = plan?["windows"] as? [[String: Any]]
     expect("one window", windows?.count, 1)
