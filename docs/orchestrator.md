@@ -356,7 +356,7 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `serialize` | optional array of 0…4 unique operation names. Each uses the `model` token rule: 1…64 characters from `[a-z0-9._-]`, not starting with `-` |
 | `isolation` | optional `none` or `worktree`; absent is `none`. Unknown values are refused, never downgraded |
 | `isolation_base` | optional Git revision, legal only with `isolation: "worktree"`; 1…200 characters from letters, digits, `._/-~`, not starting with `-` and not containing `..`. Absent means `HEAD`; it must resolve to a commit |
-| `attach_session` | optional terminal-neutral Session id from `GET /v1/orchestrator/sessions`. When present, deliver this complete task into that existing assistant session without opening a tab |
+| `attach_session` | optional terminal-neutral Session id of a standing session — one Clawdline itself opened for an earlier task. When present, deliver this complete task into that existing assistant session without opening a tab. A session a person started for themselves is `409 attach_not_managed` |
 | `project_dir` | absolute, exists, and is a directory — checked at dispatch, not at planning time |
 | `title` | ≤ 200 characters |
 | `instructions` | non-empty, ≤ 16 KiB |
@@ -439,16 +439,28 @@ serialize tokens, timeout, usage, result signal, landing record and inflight vis
 difference is that Clawdline types the ordinary first line into the named existing session instead
 of opening a terminal tab. The public task record carries `attached: true` and `attachSession`.
 
-The id is resolved against the same terminal-neutral list returned by
-`GET /v1/orchestrator/sessions`. A shell is unsupported, the resident assistant must match the
-task's assistant, and **one session runs at most one live Clawdline task**. The single-flight check
-is repeated under the registration lock, so two concurrent requests cannot both pass a stale
-inventory. A cached `waiting` state triggers the same narrow `Targets.isChoosing` screen proof as
+**The session has to be one Clawdline opened for a task.** A standing session in this protocol is
+a child whose tab outlived its first task, and that is not a formality: a tab this app opened for a
+task was started with `--add-dir /tmp/.clawdline`, and a session somebody started for themselves
+was not. `--add-dir` is a launch argument, so there is no way to grant it afterwards — the attached
+child's very first act, reading its own `CHILD.md`, would be a cross-directory permission question
+on somebody else's tab, with nobody watching it on the child's behalf. Naming a session with no
+task role is `409 attach_not_managed`, refused before anything is typed.
+
+The id is resolved against every terminal session Clawdline can see, which is wider than the
+assistant-only rows `GET /v1/orchestrator/sessions` publishes — a plain shell resolves and is then
+refused by name rather than reported missing. A shell is unsupported, the resident assistant must
+match the task's assistant, and **one session runs at most one live Clawdline task**. That
+single-flight population excludes the task being resolved for, so a serialized attached task —
+registered while it queues, resolved again when the pump promotes it — does not read its own
+reservation as somebody else's. The single-flight check is repeated under the registration lock,
+so two concurrent requests cannot both pass a stale inventory. A cached `waiting` state triggers
+the same narrow `Targets.isChoosing` screen proof as
 coordination-wait delivery; a confirmed menu refuses the dispatch before any line is typed or task
 record is created.
 
-An attached task keeps the standing session's existing depth (or depth 1 for a user-opened root),
-including at the configured depth floor. It opens no tab and therefore spends no child,
+An attached task keeps the standing session's existing depth — the depth of the task that session
+was opened for — including at the configured depth floor. It opens no tab and therefore spends no child,
 grandchild, or machine tab-opening capacity, although it remains a live task, passes through the
 dispatch rate limiter and quota gate, and holds its ordinary claims and serialize reservations.
 If terminal delivery itself fails, the registered task finalizes as `spawn_failed` and the request
@@ -459,24 +471,25 @@ The task does not own the tab. Success, failure, timeout, cancellation, root-clo
 `result.json` completes this task but does not end the session, which can then receive a later
 complete follow-up assignment. It also does not own the session's *name*: an attached task
 publishes a live role on that session while it runs, so `GET /v1/orchestrator/sessions` shows the
-`taskId`, but it never renames the session and it leaves no role behind when it ends. A tab this
-app opened keeps its task's name for the life of the record; a standing session is somebody's own
-and keeps its own.
+`taskId`, but it never renames the session. When it ends, the role and title of the earlier task
+that opened this standing child session are visible again.
 
 **Clawdline never answers a menu on a session it did not open.** On a fresh tab there is one menu
 to answer — the trusted-folder dialog — and the root answered it by asking for work in that
-directory, so the first row is taken once and audited. An attached task's screen belongs to a
-person, and the menu on it can be a permission prompt, a plan approval or an overwrite
-confirmation, whose first row is usually "yes"; those are left standing and audited as
-`orchestrator.menu.left`.
+directory, so the first row is taken once and audited. An attached task did not open its standing
+child session, and a menu there can be a permission prompt, a plan approval or an overwrite
+confirmation from the work already resident in that tab. Those are left standing and audited as
+`orchestrator.menu.left`; once that first decision is recorded, an unchanged menu does not rewrite
+the registry or broadcast every five seconds.
 
-**So a standing session has to be started somewhere it can read `/tmp/.clawdline`.** A tab the
-broker opens is given `--add-dir` for the task directory (or for `/tmp/.clawdline` itself when the
-child may dispatch), because a child's first act is to read its own briefing across a directory
-boundary. An attached session was started before the task existed and cannot be given that flag
-afterwards, so if it was opened in a project directory its child will be asked for permission on
-that first read — and nothing will press the button for it. Open a session intended for follow-up
-work with that access, or expect to answer that one question yourself.
+**A standing session already has `/tmp/.clawdline` access.** Only a tab Clawdline opened for an
+earlier task may be attached to, and that tab was launched with the add-dir grant a child needs.
+A user-opened assistant session is refused as `409 attach_not_managed` before anything is typed;
+`--add-dir` cannot be added to a running process.
+
+The four-minute `readyLimit` applies only to a new tab that never reaches a prompt. An attached
+task's first line was already typed by `spawnAttached`, so waiting longer for the standing
+session's owner to answer a menu does not relabel delivered work as `spawn_failed`.
 
 For `worktree`, the broker resolves the base to a commit SHA and records that immutable value.
 Branch names and `HEAD` can move while other sessions commit; the SHA is the receipt for what the
@@ -1121,13 +1134,14 @@ A child copies any diagnostic log or diff worth keeping to `artifacts/` before i
 `result.json`. The existing 24-hour task-root cleanup exempts `landing.state == pending`, because a
 root that has not landed may still need the child's receipts.
 
-Only `success` is reclaimed inside `finalize`. Every other ending waits, so the deadline is carried
-on the record as `work_cleanup_at` and acted on by the five-second beat, which advances a terminal
+Immediate cleanup happens inside `finalize`: success always goes immediately, and zero grace
+reclaims every terminal outcome inside `finalize`. With a positive grace, other endings carry the
+registry-internal `work_cleanup_at` deadline to the five-second beat, which advances a terminal
 task for exactly as long as it still owes one of these directories.
 
 **An isolated checkout's build output is reclaimed the same way, on its own deadline.**
 `orchestrator_build_grace_minutes` is shaped exactly like the `work/` setting — default 60, range
-`-1…1440`, `0` immediate, `-1` deferred — and it names `<worktree.path>/.build`, recorded as
+`-1…1440`, `0` immediate, `-1` deferred — and it names `<worktree.cwd>/.build`, recorded as
 `build_cleanup_at`. It is set only for a task that has a worktree of its own: a task working in a
 shared tree must never be handed the `.build` of the checkout somebody else is using. It waits for
 neither the 24-hour cutoff nor whole-worktree disposal, and a **pending landing does not exempt

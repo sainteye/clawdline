@@ -1159,13 +1159,15 @@ already carried by `task_id`, which is the caller's own identifier for the work 
 per-attempt header. Send the same `task_id` twice and the second call answers `200` with the
 existing record, having opened nothing.
 
-Attached follow-ups add six typed refusals; a client should branch on every applicable code:
+Attached follow-ups add seven typed refusals, checked in the order they are listed; a client should
+branch on every applicable code:
 
 | `code` | status | |
 |---|---|---|
 | `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
 | `attach_session_not_found` | 404 | no watched session has that id. The resolver sees every session this Mac watches, which is wider than what `GET /v1/orchestrator/sessions` publishes: naming a plain shell resolves and is then refused `attach_unsupported`, not `404`. No task is created |
 | `attach_unsupported` | 409 | the named Session is a plain shell with no assistant to read a briefing |
+| `attach_not_managed` | 409 | Clawdline did not open that session for a task, so it is somebody's own session rather than a standing child. It was started without `--add-dir /tmp/.clawdline`, which a running session cannot be given afterwards, and the attached child's first act — reading its own `CHILD.md` — would be a permission question on a tab nobody is watching for it. Only a session that carries a task role can be attached to |
 | `attach_assistant_mismatch` | 409 | the task's `assistant` differs from the assistant resident in the named Session |
 | `attach_session_occupied` | 409 | the Session already has one live Clawdline task; attached sessions are single-flight |
 | `attach_session_busy` | 409 | its cached state is `waiting` and `Targets.isChoosing` confirms a menu; nothing was typed and retrying the same task body is safe |
@@ -1220,9 +1222,11 @@ tree. The checkout lives under `~/Library/Application Support/Clawdline/worktree
 the task protocol directory under `/tmp/.clawdline`.
 
 **What the broker reclaims when the task ends, and when.** Two directories are heavyweight,
-reproducible and task-owned, and each has its own deadline on the task record:
+reproducible and task-owned, and each has its own registry-internal deadline. These housekeeping
+fields are persisted in the broker registry; they are deliberately absent from the public task
+shape returned by dispatch and `GET /v1/orchestrator/tasks`:
 `<dir>/work/` — the scratch directory a child is told to build in — falls due at
-`work_cleanup_at`, and the isolated checkout's `<worktree.path>/.build` falls due at
+`work_cleanup_at`, and the isolated child's `<worktree.cwd>/.build` falls due at
 `build_cleanup_at`. Both deadlines are set the same way from their own setting in
 `~/.config/clawdline/config.json`: `orchestrator_work_grace_minutes` and
 `orchestrator_build_grace_minutes`, each defaulting to `60`, each accepting `-1…1440`. A `success`
@@ -1230,10 +1234,10 @@ reclaims immediately whatever the setting says; `0` does the same for every term
 positive number is minutes of diagnostic grace, so the failing build log outlives the child that
 wrote it; `-1` leaves that directory to the ordinary sweep. A directory that is already gone
 settles its deadline as a success, and a removal the filesystem refuses keeps it, so the next beat
-tries again. `build_cleanup_at` is absent on every task without a worktree of its own — a shared
-checkout's build output belongs to whoever is working in it — and, unlike whole-checkout disposal,
-it is **not** deferred by `landing.state == pending`: a landing under review needs the source and
-the delivery branch, both of which this leaves exactly as they were.
+tries again. In the registry, `build_cleanup_at` is absent on every task without a worktree of its
+own — a shared checkout's build output belongs to whoever is working in it — and, unlike
+whole-checkout disposal, it is **not** deferred by `landing.state == pending`: a landing under
+review needs the source and the delivery branch, both of which this leaves exactly as they were.
 
 An optional `serialize` array in `task.json` makes named operations machine-global mutexes. A task
 leaves `queued` only when it can acquire every name together; shared names are FIFO across roots,

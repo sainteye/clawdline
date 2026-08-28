@@ -12468,7 +12468,7 @@ group("every terminal outcome really pumps the next serialized waiter") {
         let waiter = Orchestrator.record(id: waiterID)
         check("\(outcomes[index].rawValue) schedules the pump",
               pumped && holder?["state"] as? String == outcomes[index].rawValue)
-        check("\(outcomes[index].rawValue) pump spawn failure uses full finalization",
+        check("\(outcomes[index].rawValue) pump records the terminal tab-opening refusal",
               waiter?["state"] as? String == "spawn_failed"
                   && waiter?["finishedAt"] != nil
                   && (waiter?["summary"] as? String)?.contains("not_found") == true)
@@ -13599,20 +13599,35 @@ group("attached follow-up tasks are single-flight broker work in a standing sess
             sessionID: shell.id, assistant: .codex, sessions: [shell], states: [:],
             tasks: [], roles: [:], isChoosing: { _ in false }))?.1,
            "attach_unsupported")
-    expect("the task assistant must match the standing assistant",
+    expect("a session Clawdline never opened for a task cannot be attached to",
+           refusal(Orchestrator.attachmentDecision(
+            sessionID: standing.id, assistant: .codex, sessions: [standing], states: [:],
+            tasks: [], roles: [:], isChoosing: { _ in false }))?.1,
+           "attach_not_managed")
+    expect("and a person's own session is refused before the assistant is even compared",
            refusal(Orchestrator.attachmentDecision(
             sessionID: standing.id, assistant: .claude, sessions: [standing], states: [:],
             tasks: [], roles: [:], isChoosing: { _ in false }))?.1,
+           "attach_not_managed")
+    expect("the task assistant must match the standing assistant",
+           refusal(Orchestrator.attachmentDecision(
+            sessionID: standing.id, assistant: .claude, sessions: [standing], states: [:],
+            tasks: [], roles: [standing.id: role], isChoosing: { _ in false }))?.1,
            "attach_assistant_mismatch")
     expect("one live task occupies a standing session",
            refusal(Orchestrator.attachmentDecision(
             sessionID: standing.id, assistant: .codex, sessions: [standing], states: [:],
-            tasks: [existing], roles: [:], isChoosing: { _ in false }))?.1,
+            tasks: [existing], roles: [standing.id: role], isChoosing: { _ in false }))?.1,
            "attach_session_occupied")
+    check("but not that task's own second resolution, which is how the pump promotes it",
+          refusal(Orchestrator.attachmentDecision(
+            sessionID: standing.id, assistant: .codex, sessions: [standing], states: [:],
+            tasks: [existing], roles: [standing.id: role], isChoosing: { _ in false },
+            excluding: existing.id)) == nil)
     expect("a cached waiting state plus the narrow menu proof refuses before typing",
            refusal(Orchestrator.attachmentDecision(
             sessionID: standing.id, assistant: .codex, sessions: [standing],
-            states: [standing.id: .waiting], tasks: [], roles: [:],
+            states: [standing.id: .waiting], tasks: [], roles: [standing.id: role],
             isChoosing: { _ in true }))?.1,
            "attach_session_busy")
     check("waiting without the menu proof is accepted",
@@ -17061,6 +17076,128 @@ group("the beat reclaims what a terminal task still owes") {
           manager.fileExists(atPath: checkout.appendingPathComponent("Sources/Kept.swift").path))
 }
 
+// Review F2, F3 and F7: all three are deadline holes that the earlier contract tests did not
+// traverse. Restart wrote a terminal record without deadlines; a subdirectory child built below
+// `worktree.cwd`, not `worktree.path`; and a close walk could write its old whole-record snapshot
+// back after the same beat had settled both deadlines.
+group("every terminal path keeps the reclaim contract at its real filesystem boundary") {
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    let workGraceBefore = Config.shared.orchestratorWorkGraceMinutes
+    let buildGraceBefore = Config.shared.orchestratorBuildGraceMinutes
+    var made: [URL] = []
+    defer {
+        Config.shared.orchestratorWorkGraceMinutes = workGraceBefore
+        Config.shared.orchestratorBuildGraceMinutes = buildGraceBefore
+        for directory in made { try? manager.removeItem(at: directory) }
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    Config.shared.orchestratorWorkGraceMinutes = 0
+    Config.shared.orchestratorBuildGraceMinutes = 0
+
+    let restartID = UUID().uuidString.lowercased()
+    let restartDirectory = Orchestrator.root.appendingPathComponent(restartID,
+                                                                    isDirectory: true)
+    made.append(restartDirectory)
+    try! manager.createDirectory(at: restartDirectory.appendingPathComponent("work"),
+                                 withIntermediateDirectories: true)
+    try! Data("heavy".utf8).write(
+        to: restartDirectory.appendingPathComponent("work/restart.bin"))
+    let restartCheckout = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-restart-reclaim-\(UUID().uuidString)",
+                                isDirectory: true)
+    made.append(restartCheckout)
+    try! manager.createDirectory(at: restartCheckout.appendingPathComponent(".build/debug"),
+                                 withIntermediateDirectories: true)
+    try! Data("object".utf8).write(
+        to: restartCheckout.appendingPathComponent(".build/debug/Restart.o"))
+    var restarting = Orchestrator.Task(
+        id: restartID, state: .spawning, kind: "custom", title: "restart orphan",
+        assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+        secretHash: String(repeating: "0", count: 64))
+    restarting.spawnedAt = Date()
+    restarting.isolation = .worktree
+    restarting.worktree = Orchestrator.Worktree(
+        path: restartCheckout.path, branch: "clawdline/task/\(restartID)", base: "d6781a8",
+        repository: restartCheckout.path, cwd: restartCheckout.path)
+    Orchestrator.holdScheduleTaskForTesting(restarting)
+    Orchestrator.resumeAfterRestart()
+    expect("a restart orphan is terminal", Orchestrator.record(id: restartID)?["state"] as? String,
+           "spawn_failed")
+    check("and the restart path assigns both reclaim deadlines before the beat",
+          Orchestrator.workCleanupAtForTesting(restartID) != nil
+            && Orchestrator.buildCleanupAtForTesting(restartID) != nil)
+    Orchestrator.beat(fromTimer: true)
+    check("so its work and build output are reclaimed on the ordinary terminal path",
+          !manager.fileExists(atPath: restartDirectory.appendingPathComponent("work").path)
+            && !manager.fileExists(atPath: restartCheckout.appendingPathComponent(".build").path))
+
+    let nestedID = UUID().uuidString.lowercased()
+    let nestedDirectory = Orchestrator.root.appendingPathComponent(nestedID, isDirectory: true)
+    made.append(nestedDirectory)
+    try! manager.createDirectory(at: nestedDirectory, withIntermediateDirectories: true)
+    let nestedCheckout = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-subdirectory-reclaim-\(UUID().uuidString)",
+                                isDirectory: true)
+    made.append(nestedCheckout)
+    let nestedCwd = nestedCheckout.appendingPathComponent("Packages/App", isDirectory: true)
+    try! manager.createDirectory(at: nestedCwd.appendingPathComponent(".build/debug"),
+                                 withIntermediateDirectories: true)
+    try! Data("object".utf8).write(
+        to: nestedCwd.appendingPathComponent(".build/debug/App.o"))
+    try! Data("source".utf8).write(to: nestedCwd.appendingPathComponent("Kept.swift"))
+    var nested = Orchestrator.Task(
+        id: nestedID, state: .briefed, kind: "custom", title: "subdirectory build",
+        assistant: .codex, projectDir: nestedCwd.path, timeoutMinutes: 30, created: Date(),
+        secretHash: String(repeating: "0", count: 64))
+    nested.isolation = .worktree
+    nested.worktree = Orchestrator.Worktree(
+        path: nestedCheckout.path, branch: "clawdline/task/\(nestedID)", base: "d6781a8",
+        repository: nestedCheckout.path, cwd: nestedCwd.path)
+    Orchestrator.holdScheduleTaskForTesting(nested)
+    Orchestrator.finalize(nestedID, as: .failure, summary: "the package did not compile")
+    check("a subdirectory project's actual build output is reclaimed",
+          !manager.fileExists(atPath: nestedCwd.appendingPathComponent(".build").path))
+    check("and reclaiming its build output leaves the working source in place",
+          manager.fileExists(atPath: nestedCwd.appendingPathComponent("Kept.swift").path))
+
+    let staleID = UUID().uuidString.lowercased()
+    let staleDirectory = Orchestrator.root.appendingPathComponent(staleID, isDirectory: true)
+    made.append(staleDirectory)
+    try! manager.createDirectory(at: staleDirectory.appendingPathComponent("work"),
+                                 withIntermediateDirectories: true)
+    let staleCheckout = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-stale-close-\(UUID().uuidString)", isDirectory: true)
+    made.append(staleCheckout)
+    try! manager.createDirectory(at: staleCheckout.appendingPathComponent(".build/debug"),
+                                 withIntermediateDirectories: true)
+    var stale = Orchestrator.Task(
+        id: staleID, state: .failure, kind: "custom", title: "stale close snapshot",
+        assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+        secretHash: String(repeating: "0", count: 64))
+    stale.finishedAt = Date()
+    stale.childTerminalId = "TAB"
+    stale.closeAt = Date().addingTimeInterval(-1)
+    stale.workCleanupAt = Date().addingTimeInterval(-1)
+    stale.buildCleanupAt = Date().addingTimeInterval(-1)
+    stale.isolation = .worktree
+    stale.worktree = Orchestrator.Worktree(
+        path: staleCheckout.path, branch: "clawdline/task/\(staleID)", base: "d6781a8",
+        repository: staleCheckout.path, cwd: staleCheckout.path)
+    Orchestrator.holdScheduleTaskForTesting(stale)
+    check("the reclaim half of a beat settles both deadlines",
+          Orchestrator.reclaimTaskWorkIfDue(staleID)
+            && Orchestrator.reclaimTaskBuildIfDue(staleID))
+    check("and closing from the beat's older snapshot cannot resurrect either deadline",
+          Orchestrator.settleChildLinger(stale)
+            && Orchestrator.workCleanupAtForTesting(staleID) == nil
+            && Orchestrator.buildCleanupAtForTesting(staleID) == nil)
+}
+
 // Nothing reclaimed an isolated checkout's build output before this. Whole-worktree disposal is
 // gated on a 24-hour cutoff *and* on `landing?.state != .pending`, so a delivery waiting to be
 // landed kept every object file it ever built: 814 MB across five open landings on the machine
@@ -17241,6 +17378,31 @@ group("an isolated checkout's build output is reclaimed on its own deadline") {
     }
 }
 
+group("cleanup documentation describes the API and runtime contract, not registry spelling") {
+    var task = Orchestrator.Task(
+        id: UUID().uuidString.lowercased(), state: .failure, kind: "custom",
+        title: "deadline shape", assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30,
+        created: Date(), secretHash: String(repeating: "0", count: 64))
+    task.workCleanupAt = Date(timeIntervalSince1970: 100)
+    task.buildCleanupAt = Date(timeIntervalSince1970: 200)
+    let publicRecord = Orchestrator.recordForTesting(task)
+    let registryRecord = Orchestrator.stored(task)
+    let api = try! String(contentsOfFile: "docs/api.md", encoding: .utf8)
+    let guide = try! String(contentsOfFile: "docs/orchestrator.md", encoding: .utf8)
+    check("cleanup deadlines are registry-internal and absent from the public task shape",
+          publicRecord["work_cleanup_at"] == nil && publicRecord["build_cleanup_at"] == nil
+            && registryRecord["work_cleanup_at"] != nil
+            && registryRecord["build_cleanup_at"] != nil
+            && api.contains("registry-internal"))
+    let now = Date(timeIntervalSince1970: 300)
+    check("zero grace reclaims every terminal outcome inside finalize, as the guide says",
+          Orchestrator.reclaimDeadline(minutes: 0, outcome: .failure, now: now) == now
+            && guide.contains("zero grace")
+            && guide.contains("every terminal outcome inside `finalize`"))
+    check("both pages name the child cwd as the build-output boundary",
+          api.contains("<worktree.cwd>/.build") && guide.contains("<worktree.cwd>/.build"))
+}
+
 // Everything past `attachmentDecision` was untested: `spawnAttached`, the 502, the single-flight
 // check the serialize pump re-runs, and the claims gate the SPEC promises an attached task goes
 // through. Deleting `spawnAttached` outright left the suite green. These drive the real
@@ -17267,6 +17429,21 @@ group("an attached follow-up goes through dispatch, and survives its own single-
     let standing = session("STANDING-ONE")
     let second = session("STANDING-TWO")
     let third = session("STANDING-THREE")
+    func keepAsStandingChild(_ session: TargetSession, depth: Int) {
+        var opener = Orchestrator.Task(
+            id: UUID().uuidString.lowercased(), state: .success, kind: "custom",
+            title: "standing child \(session.id)", assistant: .codex, projectDir: "/tmp",
+            timeoutMinutes: 30, created: Date().addingTimeInterval(-3_600),
+            secretHash: String(repeating: "0", count: 64))
+        opener.depth = depth
+        opener.finishedAt = Date().addingTimeInterval(-3_000)
+        opener.childTerminalId = session.id
+        Orchestrator.holdScheduleTaskForTesting(opener)
+    }
+    keepAsStandingChild(standing, depth: 1)
+    keepAsStandingChild(second, depth: 1)
+    keepAsStandingChild(third, depth: 2)
+    Orchestrator.saveForTesting()
     Orchestrator.attachmentInventoryForTesting = ([standing, second, third], [:])
     AssistantQuota.setOverrideForTesting(
         AssistantQuota(assistant: .codex, installed: true, loggedIn: true, plan: nil,
@@ -17408,13 +17585,13 @@ group("an attached follow-up goes through dispatch, and survives its own single-
     // Finding 6. A guest does not rename its host, and takes its role with it when it leaves.
     Orchestrator.saveForTesting()
     check("an attached task never renames the session it is a guest in",
-          Orchestrator.title(forTerminal: standing.id) == nil)
+          Orchestrator.title(forTerminal: standing.id) == "standing child \(standing.id)")
     expect("while it runs, the session says which broker task has it",
            Orchestrator.role(forTerminal: standing.id)?.taskID, attachedID)
     Orchestrator.finalize(attachedID, as: .success, summary: "follow-up done")
     check("and when it ends the standing session is a standing session again",
-          Orchestrator.role(forTerminal: standing.id) == nil
-            && Orchestrator.title(forTerminal: standing.id) == nil)
+          Orchestrator.role(forTerminal: standing.id)?.taskID != attachedID
+            && Orchestrator.title(forTerminal: standing.id) == "standing child \(standing.id)")
 }
 
 // Finding 9. `readResult` was widened to run on every finalize so that a `verification` object
@@ -17485,12 +17662,13 @@ group("Clawdline answers a menu only on a tab it opened itself") {
     expect("no menu, nothing to decide",
            Orchestrator.menuStep(task: task(attachedTo: nil, answered: false), choosing: false),
            Orchestrator.MenuStep.none)
-    expect("and the one decision a task gets is taken once",
+    expect("and a settled menu does not claim the record changed again",
            Orchestrator.menuStep(task: task(attachedTo: nil, answered: true), choosing: true),
-           Orchestrator.MenuStep.settled)
+           Orchestrator.MenuStep.none)
     let brief = Orchestrator.childBrief(for: task(attachedTo: "STANDING", answered: false))
-    check("the attached briefing says who answers that session's permission questions",
-          brief.contains("/tmp/.clawdline") && brief.contains("answer it yourself"))
+    check("the attached briefing says the host is managed and who owns its menu decisions",
+          brief.contains("Clawdline opened this standing session")
+            && brief.contains("leave it for the session's owner"))
 }
 
 // Finding 5. `finalize` is the one place a task ends, and everything it does — notifying the
@@ -17553,6 +17731,94 @@ group("a dispatch that could not open a tab answers the caller, and cascades not
            Orchestrator.record(id: belowID)?["state"] as? String, "queued")
     check("the failed dispatch still owes its reclaim deadline like every other ending",
           Orchestrator.workCleanupAtForTesting(parentID) != nil)
+
+    // F9 is the same refusal through the serialize pump. The HTTP request returned `queued`
+    // earlier, but a task whose tab never opened still never ran and therefore cannot cascade
+    // into work somebody happened to record below its id.
+    let holderID = UUID().uuidString.lowercased()
+    var holder = Orchestrator.Task(
+        id: holderID, state: .briefed, kind: "custom", title: "holds pump token",
+        assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+        secretHash: String(repeating: "0", count: 64))
+    holder.serialize = ["pump-spawn-failure"]
+    Orchestrator.holdScheduleTaskForTesting(holder)
+
+    let pumpedID = UUID().uuidString.lowercased()
+    let pumpedDirectory = Orchestrator.root.appendingPathComponent(pumpedID, isDirectory: true)
+    made.append(pumpedDirectory)
+    try! manager.createDirectory(at: pumpedDirectory, withIntermediateDirectories: true)
+    try! JSONSerialization.data(withJSONObject: [
+        "clawdline_protocol": 1, "task_id": pumpedID, "kind": "custom",
+        "assistant": "claude", "project_dir": "/tmp", "title": "pumped refusal",
+        "instructions": "open after the token", "timeout_minutes": 30,
+        "serialize": ["pump-spawn-failure"],
+    ]).write(to: pumpedDirectory.appendingPathComponent("task.json"), options: .atomic)
+    let pumpedReply = Orchestrator.dispatch(
+        taskID: pumpedID, secret: String(repeating: "b2", count: 32))
+    if case .ok(let payload) = pumpedReply {
+        expect("the pump refusal starts life as a queued dispatch",
+               (payload["task"] as? [String: Any])?["state"] as? String, "queued")
+    } else {
+        check("the serialized refusal is accepted into its queue", false, "\(pumpedReply)")
+    }
+
+    let pumpedChildID = UUID().uuidString.lowercased()
+    var childBlocker = Orchestrator.Task(
+        id: UUID().uuidString.lowercased(), state: .briefed, kind: "custom",
+        title: "holds child token", assistant: .claude, projectDir: "/tmp",
+        timeoutMinutes: 30, created: Date(),
+        secretHash: String(repeating: "0", count: 64))
+    childBlocker.serialize = ["never-released-below-pump"]
+    Orchestrator.holdScheduleTaskForTesting(childBlocker)
+    var pumpedChild = Orchestrator.Task(
+        id: pumpedChildID, state: .queued, kind: "custom", title: "recorded below refusal",
+        assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+        secretHash: String(repeating: "0", count: 64))
+    pumpedChild.parentTaskId = pumpedID
+    pumpedChild.serialize = ["never-released-below-pump"]
+    Orchestrator.holdScheduleTaskForTesting(pumpedChild)
+    Orchestrator.finalize(holderID, as: .success, summary: "release pump token")
+    _ = Orchestrator.drainSerializePumpForTesting(timeout: 5)
+    expect("a pumped tab-opening failure also cascades into nothing",
+           Orchestrator.record(id: pumpedChildID)?["state"] as? String, "queued")
+}
+
+group("an attached briefing is delivered work, not a tab still trying to open") {
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    var made: [URL] = []
+    defer {
+        for directory in made { try? manager.removeItem(at: directory) }
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    func oldSpawning(attached: Bool) -> Orchestrator.Task {
+        let id = UUID().uuidString.lowercased()
+        let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
+        made.append(directory)
+        try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        var task = Orchestrator.Task(
+            id: id, state: .spawning, kind: "custom", title: "old briefing",
+            assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+            secretHash: String(repeating: "0", count: 64))
+        task.spawnedAt = Date().addingTimeInterval(-Orchestrator.readyLimit - 1)
+        task.attachSessionId = attached ? "STANDING" : nil
+        return task
+    }
+    let attached = oldSpawning(attached: true)
+    Orchestrator.holdScheduleTaskForTesting(attached)
+    Orchestrator.beat(fromTimer: true)
+    expect("an attached task is not called spawn_failed while its owner answers a menu",
+           Orchestrator.record(id: attached.id)?["state"] as? String, "spawning")
+
+    let opening = oldSpawning(attached: false)
+    Orchestrator.holdScheduleTaskForTesting(opening)
+    Orchestrator.beat(fromTimer: true)
+    expect("the same deadline still rejects a fresh tab that never reached a prompt",
+           Orchestrator.record(id: opening.id)?["state"] as? String, "spawn_failed")
 }
 
 group("owned storage is visible through the read-only orchestrator route") {

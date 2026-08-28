@@ -2366,6 +2366,18 @@ enum Orchestrator {
             return .refused(status: 409, code: "attach_unsupported",
                             message: "attach_session names a plain shell with no assistant.")
         }
+        // A standing session in this protocol is a Clawdline child whose tab outlived its first
+        // task, and the role index is exactly the set of tabs this app opened for one. The
+        // restriction is not tidiness: a session a person started for themselves was started
+        // without `--add-dir /tmp/.clawdline`, so the first thing an attached child does — read
+        // its own CHILD.md — is a cross-directory permission question, asked on a tab whose owner
+        // did not ask for any of this. There is no way to grant that after the fact; `--add-dir`
+        // is a launch argument. So the answer is to refuse, by name, before anything is typed.
+        guard let role = roles[sessionID] else {
+            return .refused(status: 409, code: "attach_not_managed",
+                            message: "attach_session names a session Clawdline did not open for "
+                                   + "a task; only a standing child session can be attached to.")
+        }
         guard resident == assistant else {
             return .refused(status: 409, code: "attach_assistant_mismatch",
                             message: "The task assistant differs from the attached session's assistant.")
@@ -2381,7 +2393,7 @@ enum Orchestrator {
             return .refused(status: 409, code: "attach_session_busy",
                             message: "That session is showing a menu; no briefing was typed.")
         }
-        return .accepted(session, depth: roles[sessionID]?.depth ?? 1)
+        return .accepted(session, depth: role.depth)
     }
 
     static func draft(from obj: [String: Any], expecting id: String,
@@ -3713,13 +3725,15 @@ enum Orchestrator {
         var attachDeliveryFailed = false
         if !needsPump {
             let opened = spawn(task, attachedSession: attachedSession)
-            // Only the attached failure goes through `finalize` here. The 502 has to hand back a
-            // task record that is already terminal, and `spawnAttached` typed nothing, so there
-            // is nothing to unwind. Every other dispatch keeps the write it has always had:
-            // routing a tab-opening `spawn_failed` through `finalize` on this thread types a
-            // "task finished" line into the root's terminal *while the root is still waiting on
-            // this very request*, duplicating what the response is about to say — and schedules
-            // a second disposal of a worktree `spawn` has already disposed of.
+            // Attached delivery is the one failure here that goes through `finalize`, because
+            // `502 attach_delivery_failed` carries the finished record back in its own reply.
+            //
+            // A tab that would not open keeps the recording it always had. `finalize` is the
+            // right place for a task that ran, and the wrong one for a dispatch that failed in
+            // the caller's own request: it types a "task finished (spawn_failed)" line into the
+            // root's terminal, mid-turn, about the very answer the root is at this moment waiting
+            // for in the HTTP response — and then cancels descendants that cannot exist yet and
+            // disposes a worktree the refusal has already disposed.
             if opened.state == .spawnFailed, made.attachSessionId != nil {
                 let fail = {
                     finalize(taskID, as: .spawnFailed, summary: opened.summary)
@@ -3729,12 +3743,11 @@ enum Orchestrator {
                 attachDeliveryFailed = true
             } else {
                 task = opened
-                // The one ending that does not go through `finalize`, and the two reclaim
-                // deadlines are the only thing it would have taken from there that this task
-                // still owes. A tab that never opened has no `work/` and its worktree was
-                // disposed of inside `spawn`, so both are usually already answered — but the
-                // guarantee is "every terminal state", and an exception nobody wrote down is
-                // how the first one of these went unnoticed.
+                // This refusal does not run task-finalization side effects, but the terminal
+                // record still participates in the two ordinary reclaim schedules. A tab that
+                // never opened normally has no `work/`, and `spawn` already attempted to dispose
+                // its worktree; retaining the deadlines keeps the terminal-state contract whole
+                // when either directory nevertheless exists.
                 if task.state == .spawnFailed {
                     task.workCleanupAt = reclaimDeadline(
                         minutes: Config.shared.orchestratorWorkGraceMinutes,
@@ -3951,12 +3964,16 @@ enum Orchestrator {
         let overlaps = workspaceOverlaps(for: starting)
         notifyWorkspaceOverlaps(newTask: starting, overlaps: overlaps)
 
-        let opened = spawn(starting)
+        var opened = spawn(starting)
         if opened.state == .spawnFailed {
-            let fail = {
-                finalize(id, as: .spawnFailed, summary: opened.summary, pumpQueue: false)
-            }
-            if Thread.isMainThread { fail() } else { DispatchQueue.main.sync(execute: fail) }
+            // This is the queued form of the dispatch-time tab refusal above. It still never ran:
+            // do not announce a task completion, cancel descendants, or dispose the worktree a
+            // second time merely because a serialize token delayed the attempt to open its tab.
+            opened.workCleanupAt = reclaimDeadline(
+                minutes: Config.shared.orchestratorWorkGraceMinutes, outcome: .spawnFailed)
+            opened.buildCleanupAt = opened.worktree == nil ? nil : reclaimDeadline(
+                minutes: Config.shared.orchestratorBuildGraceMinutes, outcome: .spawnFailed)
+            guard replaceTask(opened, expecting: .spawning, discardSecret: true) else { return nil }
             return held(id)
         }
         guard replaceTask(opened, expecting: .spawning) else { return nil }
@@ -3990,9 +4007,9 @@ enum Orchestrator {
         return changed
     }
 
-    /// Serialize pumps rather than opening on their callers. A pump-triggered spawn failure
-    /// finalizes on main with `pumpQueue: false`; the outer pass is already responsible for the
-    /// next waiter, so it cannot recurse back into itself.
+    /// Serialize pumps rather than opening on their callers. The outer pass is responsible for
+    /// the next waiter; a pump-triggered tab-opening refusal is recorded directly because the
+    /// task never ran and has no task-finalization side effects to perform.
     private static func scheduleSerializePump() {
         serializePumpQueue.async { _ = pumpSerializeQueue() }
     }
@@ -5367,6 +5384,10 @@ enum Orchestrator {
                 : "The app restarted before the child was briefed."
             dead.finishedAt = Date()
             dead.queuedSecret = nil
+            dead.workCleanupAt = reclaimDeadline(
+                minutes: Config.shared.orchestratorWorkGraceMinutes, outcome: .spawnFailed)
+            dead.buildCleanupAt = dead.worktree == nil ? nil : reclaimDeadline(
+                minutes: Config.shared.orchestratorBuildGraceMinutes, outcome: .spawnFailed)
             tasks[id] = dead
             orphaned.append(id)
         }
@@ -5533,8 +5554,6 @@ enum Orchestrator {
     enum MenuStep: Equatable {
         /// No menu, or nothing left to decide.
         case none
-        /// This task's one menu decision has already been taken.
-        case settled
         /// Press the first row. Only ever on a tab this app opened for this task.
         case answerFirstRow
         /// A menu on a session this task did not open. Leave it standing.
@@ -5547,15 +5566,14 @@ enum Orchestrator {
     /// in a directory the root named has exactly one menu to show — the trusted-folder dialog —
     /// and the root already answered it by asking for work there.
     ///
-    /// An attached task is running in somebody's own session, and the menu on that screen can be
-    /// anything: a permission prompt, a plan approval, an overwrite confirmation. The first row
-    /// is usually "yes". Nothing about the dispatch is consent to that, so the menu is left for
-    /// its owner — including the cross-directory prompt an attached child raises when it reads
-    /// its own `CHILD.md`, which is exactly the prompt a standing session must be started able
-    /// to answer for itself. See `docs/orchestrator.md`, "Attached follow-up tasks".
+    /// An attached task is running in a standing child session this task did not open, and the
+    /// menu on that screen can be anything: a permission prompt, a plan approval, an overwrite
+    /// confirmation. The first row is usually "yes". Nothing about this follow-up dispatch is
+    /// consent to that, so the menu is left for the session's owner. See `docs/orchestrator.md`,
+    /// "Attached follow-up tasks".
     static func menuStep(task: Task, choosing: Bool) -> MenuStep {
         guard choosing else { return .none }
-        guard !task.answeredMenu else { return .settled }
+        guard !task.answeredMenu else { return .none }
         return task.attachSessionId == nil ? .answerFirstRow : .leaveToOwner
     }
 
@@ -5566,7 +5584,12 @@ enum Orchestrator {
         // may have advanced the record.
         guard var task = held(snapshot.id), task.state == .spawning else { return false }
         guard let spawnedAt = task.spawnedAt else { return false }
-        if Date().timeIntervalSince(spawnedAt) > readyLimit {
+        // `readyLimit` measures whether a tab this dispatch opened ever reached a prompt. An
+        // attached task has no tab-opening phase: `spawnAttached` already typed its first line
+        // before registration returned. A standing session may leave a permission or plan menu
+        // up for its owner longer than four minutes without turning delivered work into a false
+        // `spawn_failed` record.
+        if task.attachSessionId == nil && Date().timeIntervalSince(spawnedAt) > readyLimit {
             guard replaceTask(task, expecting: .spawning) else { return false }
             finalize(task.id, as: .spawnFailed,
                      summary: "The child session did not reach a prompt within "
@@ -5588,8 +5611,6 @@ enum Orchestrator {
         switch menuStep(task: task, choosing: choosing) {
         case .none:
             break
-        case .settled:
-            return true
         case .answerFirstRow:
             task.answeredMenu = true
             guard replaceTask(task, expecting: .spawning) else { return false }
@@ -6095,7 +6116,6 @@ enum Orchestrator {
 
     /// Close a reported child's terminal once its linger has run out. True when the record changed.
     private static func closeChild(_ task: Task) -> Bool {
-        var task = task
         guard let closeAt = task.closeAt, let childID = task.childTerminalId else { return false }
         let now = Date()
         let seen = SessionWatch.shared.targets
@@ -6107,8 +6127,7 @@ enum Orchestrator {
         case .wait:
             return false
         case .forget:
-            task.closeAt = nil
-            guard replaceTask(task, expecting: task.state) else { return false }
+            guard settleChildLinger(task) else { return false }
             Log.write("orchestrator: nothing left to close for \(task.id) — dropping its linger")
             if let worktree = task.worktree {
                 scheduleWorktreeDisposal(worktree, taskID: task.id, why: "empty",
@@ -6124,9 +6143,7 @@ enum Orchestrator {
     /// The half of `closeChild` that touches a terminal, once the decision is made.
     private static func takeChildTab(_ child: TargetSession, justTheTab: Bool,
                                      for task: Task) -> Bool {
-        var task = task
-        task.closeAt = nil
-        guard replaceTask(task, expecting: task.state) else { return false }
+        guard settleChildLinger(task) else { return false }
         RemoteAuth.audit("orchestrator.close", ["task": task.id, "child": child.id,
                                                  "how": justTheTab ? "tab" : "exit"])
         // Off the main thread: `end` types the quit word, waits for it to land, then closes the
@@ -6140,6 +6157,21 @@ enum Orchestrator {
             }
             DispatchQueue.main.async { SessionWatch.shared.nudge() }
         }
+        return true
+    }
+
+    /// Clear the linger from the record nominated by a close walk.
+    ///
+    /// Kept separate from terminal I/O so the record transition can be exercised without a live
+    /// terminal. The snapshot is deliberately accepted here: the focused concurrency test makes
+    /// a reclaim settle one of its deadlines between the snapshot and this write.
+    @discardableResult
+    static func settleChildLinger(_ snapshot: Task) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard var current = tasks[snapshot.id], current.state == snapshot.state,
+              current.closeAt == snapshot.closeAt else { return false }
+        current.closeAt = nil
+        tasks[snapshot.id] = current
         return true
     }
 
@@ -6412,13 +6444,15 @@ enum Orchestrator {
     /// it has never needed the object files, and this deliberately does not consult it.
     ///
     /// The checkout, its tracked files and the delivery branch are untouched: the only path this
-    /// will ever remove is `<checkout>/.build`, and only for a task that owns that checkout.
+    /// will ever remove is `<child cwd>/.build`, and only for a task that owns that checkout. The
+    /// registry decoder proves `worktree.path` is the task-id-derived checkout and `cwd` is inside
+    /// it before a restored record can reach this function.
     @discardableResult
     static func reclaimTaskBuildIfDue(_ taskID: String, now: Date = Date()) -> Bool {
         guard let snapshot = held(taskID), snapshot.state.isTerminal,
               let due = snapshot.buildCleanupAt, due <= now,
               let worktree = snapshot.worktree else { return false }
-        let build = URL(fileURLWithPath: worktree.path, isDirectory: true)
+        let build = URL(fileURLWithPath: worktree.cwd, isDirectory: true)
             .appendingPathComponent(".build", isDirectory: true)
         let manager = FileManager.default
         if manager.fileExists(atPath: build.path) { try? manager.removeItem(at: build) }
@@ -6784,9 +6818,10 @@ enum Orchestrator {
         rootKey(of: task, among: tasks)
     }
 
-    /// Main thread, from ``finalize(_:as:summary:artifacts:)``. Every ending goes through there —
-    /// success, failure, timeout, cancellation, a tab that closed under a child — so this counts
-    /// all of them and not only the tidy ones.
+    /// Main thread, from ``finalize(_:as:summary:artifacts:)``. This counts endings for work that
+    /// actually ran: success, failure, timeout, cancellation, or a tab that closed under a child.
+    /// A dispatch-time tab-opening refusal never ran and is returned directly to its caller, so it
+    /// deliberately does not enter a completion batch.
     private static func noteEnded(_ task: Task) {
         lock.lock()
         let key = rootKeyLocked(of: task)
@@ -6932,10 +6967,10 @@ enum Orchestrator {
         failing or cancelling this task does not end this session; after `result.json` is written,
         leave the tab ready for the next complete follow-up task.
 
-        This session was not opened by Clawdline, so it holds no `--add-dir` grant for
-        /tmp/.clawdline. If reading your own task directory raises a cross-directory permission
-        question, answer it yourself: Clawdline does not touch a menu on a session it did not
-        open.
+        Clawdline opened this standing session for an earlier task, so it already has the
+        `/tmp/.clawdline` access a child needs. This follow-up did not open the tab, however: if
+        any permission, plan or confirmation menu appears, leave it for the session's owner.
+        Clawdline does not choose from a menu on a session this task did not open.
 
         """
         return """
