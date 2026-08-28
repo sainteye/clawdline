@@ -60,9 +60,13 @@ enum Compat {
             since: "not known to have a floor"),
         Dependency(
             program: "Claude Code",
-            what: "The tab title, and the status glyph Claude Code puts in front of it",
+            what: "The tab title, and the status glyph Claude Code puts in front of it — as the "
+                + "last-resort way of ranking candidate transcripts, never as a session's name",
             where_: "Transcript.swift",
-            symptom: "The wrong conversation in ⌘J, or a stray glyph in the name",
+            symptom: "⌘J ranks by a title that no longer matches and lands on the wrong "
+                   + "conversation, in the cases where nothing else identifies the session. A "
+                   + "session's `label` is unaffected: it is never read off the tab — see "
+                   + "`SessionNaming`",
             since: "not known to have a floor"),
         Dependency(
             program: "Claude Code",
