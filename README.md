@@ -89,10 +89,12 @@ Also:
   a Mac running one of them the word would be on every row and separate nothing — and when it does,
   it wears that assistant's own product mark beside the word. A Codex session can name itself, too.
   [What it takes →](#codex-in-the-same-bar)
-- **Call a session what it is about** — a row's name comes from whatever the assistant last wrote
-  into the tab, or from the task a dispatched tab was opened for, and neither is always the thing
-  you would call it. Press the title on the Session info card and type your own: it outranks every
-  automatic name, and emptying the field hands that name back. The name belongs to the conversation
+- **Call a session what it is about** — a row's name comes from the conversation's own records: what
+  the assistant called it in its transcript or thread metadata, or the task a dispatched tab was
+  opened for. **Never the tab's title**, which anything in the terminal may overwrite — one iTerm2
+  restart once left eleven of fifteen rows reading `Default`. And neither of those is always the
+  thing you would call it. Press the title on the Session info card and type your own: it outranks
+  every automatic name, and emptying the field hands that name back. The name belongs to the conversation
   rather than to the tab, so the next session started in the same window is named for itself again.
   Codex takes the new name on its thread at once; Claude is told with `/rename` when it is idle and
   not showing a menu, and while it is busy the name still changes here — the answer says the
@@ -244,9 +246,9 @@ be maintained twice.
 **Nothing in Clawdline reads either file.** The assistants do, on their own, in whatever repository
 they are opened in, which is what makes the pattern worth copying rather than installing: two files
 at the root of your own project, no dependency, nothing to undo. What belongs in them is what a new
-session cannot work out from the code — which changes are not its to touch, how to stage, what it
-must never run, and where the house rules live if it may hand work on. A repository with neither
-still works exactly as it did; it simply has nothing to say to whoever opens it next.
+session cannot work out from the code — which changes are not its to touch, how to stage, and what
+it must never run. A repository with neither still works exactly as it did; it simply has nothing to
+say to whoever opens it next.
 
 ### Put the Clawdline rules where every project can read them
 

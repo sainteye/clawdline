@@ -377,7 +377,7 @@ hidden override。
 
 **為什麼預設是 `full`。** 一個 dispatched session 的工作內容就是跑指令和寫檔案，比 `full` 窄的
 每一格都會在某處停住：`ask` 停在它做的第一件事（讀自己的 CHILD.md），`edits` 過得了寫檔
-但過不了 `cat`／`mkdir`／`curl`／`sleep`——而那些正是「往下派工」的全部內容。沒有任何 flag
+但過不了 `cat`／`mkdir`／`curl`／`sleep`——而那些是一件任務的大半內容。沒有任何 flag
 蓋得住那些又停在 `full` 之前。這不放寬「誰能派工」（那還是 `0600` 的 token 檔）。
 
 **⚠️ `auto` 是模型相依的，所以 Clawdline 不提供它。** 實測：`--permission-mode auto` 在
@@ -1132,7 +1132,7 @@ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks" \
   先問「Do you trust this folder?」——那不是權限提示，是啟動前的一道門，`permission_mode`
   管不到它。child 會停在那個畫面上，app 注入不進去，兩分鐘後變成 `spawn_failed`，而畫面上
   只有一個看起來莫名其妙的選單。要派到新目錄，先請使用者在那裡手動開一次 claude。
-- **你自己是 child 又往下派的話，等它做完再寫自己的 `result.json`。** 你這件事一結束，
-  你派出去的那些會一起被收掉——你的完成就是它們的死線。
+- **你派出去的任務還在跑，就不要結束自己的 session。** 你這個 session 一結束，你派出去的那些
+  會一起被收掉——你的完成就是它們的死線。child 沒有這個問題：它派不出東西，這正是 §0 的意思。
 - 完整協定（狀態機、file 格式、API、成本計算）在
   [`docs/orchestrator.md`](../../docs/orchestrator.md)。

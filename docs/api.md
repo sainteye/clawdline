@@ -1093,9 +1093,11 @@ for Codex and `/exit` for Claude Code, because each refuses the other's.
 task is matched to its root through the hook note on the tty of the tab about to go, so after the
 fact there is nothing left to match. A task still running is cancelled with its tab; one that
 already finished keeps its record and loses only the tab, because `success` is a fact about work
-that happened and the tab was being held for a reader who is leaving. **Both levels go**, deepest
-first: what this session's children handed on in turn goes before they do, and it is collected
-from the finished children as well as the live ones. Closing a tab by hand cascades to nothing:
+that happened and the tab was being held for a reader who is leaving. **The cascade goes deepest
+first**, and it is gathered from the finished children as well as the live ones — though in a live
+tree the walk goes one level and stops, because a child dispatches nothing and there is nothing
+below it. The order and the finished-parent sweep are kept for a stored record an older build left
+behind, where a task below a task can still be found. Closing a tab by hand cascades to nothing:
 only this route does. The audit log carries `orchestrator.cancel` for the first kind and
 `orchestrator.close` for the second, both with `why=root_ended`.
 
@@ -1530,7 +1532,7 @@ had nowhere to read the ids it takes.
 | `id` | the terminal-neutral session id — the same value `GET /v1/sessions` calls `id`, and exactly what `owner_session_id` and `waiter_session_id` take |
 | `assistant` | `claude` or `codex` |
 | `cwd` | the checkout the session is working in. **Absent** when this Mac could not resolve one, rather than empty |
-| `label` | one short line naming the session: the Clawdline task title when this app opened the tab, and otherwise the tab's own title, which an assistant sets to what it is working on |
+| `label` | one short line naming the session: a name a person typed for it, else the Clawdline task title when this app opened the tab, else what the conversation calls itself in the assistant's own records, else `⌘<window>-<tab>`. **Never the tab's title** — see [the Session object](#the-session-object) |
 | `state` | `working`, `waiting`, `idle` or `unknown` — the terminal state, so a caller knows whether anybody is home |
 | `work_state` | the closed, fail-closed broker projection documented on [the Session object](#the-session-object); always present |
 | `taskId` | the Clawdline task this tab was opened for. **Absent** for a session a person opened themselves |
@@ -2278,7 +2280,7 @@ The record:
   "projectDir": "/Users/you/code/clawdline",
   "isolation": "worktree",     // absent for the shared-tree default
   "created": 1787100000,        // integer unix seconds, like every time in this API
-  "depth": 1,                   // 1 for one a person's session dispatched, 2 for one its child did
+  "depth": 1,                   // always 1 in a live tree; 2 only in a record an older build stored
   "spawnedAt": 1787100002,      // absent until a tab exists
   "briefedAt": 1787100014,      // absent until the first message landed
   "finishedAt": null,
@@ -2791,9 +2793,10 @@ Stop it. The task goes to `cancelled` and the child's terminal is ended the poli
 own word, then the tab closes. A task that is already finished answers `200` with its record
 unchanged; there is nothing to cancel and nothing went wrong.
 
-**What the task handed on goes with it**, deepest first and for the same reason a closing root
-takes both levels: work whose asker has just been stopped is work nobody is waiting for. Those
-cancellations carry `why=parent_cancelled` in the audit log. The reply names only the task that
+**Anything found below it goes with it**, deepest first and for the same reason a closing root
+sweeps that way: work whose asker has just been stopped is work nobody is waiting for. Unreachable
+in a live tree, where a child dispatches nothing; kept for a stored record an older build left
+behind. Those cancellations carry `why=parent_cancelled` in the audit log. The reply names only the task that
 was asked for — read the list if a client needs to know what else moved.
 
 ```console
@@ -2844,7 +2847,7 @@ app, and an open-ended size is an open-ended cache.
   "id": "27439AEE-3736-4AC3-BF80-CE63280B5CCD",  // iTerm2's session UUID, or a tmux pane id
   "backend": "iterm",                            // "iterm" | "tmux"
   "tty": "ttys006",                              // no /dev/ prefix
-  "label": "IG 設定指引改進",                      // the tab title, cleaned up — see below
+  "label": "IG 設定指引改進",                      // what the conversation calls itself — see below
   "isClaude": true,                              // is this a Claude Code session or just a shell
   "assistant": "claude",                         // "claude" or "codex"; absent for a plain shell
   "state": "working",                            // "working" | "waiting" | "idle" | "unknown"
@@ -2947,10 +2950,25 @@ durable machine coordinator record. The closed renderer boundary contains only `
 reused terminal row. Its registration and read-only Bearings contract are documented under
 [Machine coordinator identity and Bearings](#machine-coordinator-identity-and-bearings).
 
-`label` is the tab title with two things taken off: iTerm's ` (job name)` suffix, which helps nobody
-pick a tab, and the status glyph Claude Code puts on the front — which is now a frame of an
-animation, so a title kept whole would change four times a second and stop being a label. When
-nothing is left, it falls back to `⌘<window>-<tab>`. `id` is the terminal's own id and is opaque:
+`label` is what Clawdline calls the session, and **it is never the tab's title**. On 2026-08-28 an
+iTerm2 restart left eleven of fifteen rows reading `Default` — the profile name iTerm2 reports for a
+tab nobody has titled — while every one of those sessions had a name sitting in the assistant's own
+files the whole time. A tab title is a place a name is *displayed*, not a place a name is *kept*:
+anything in the terminal may overwrite it, the assistant clears it, and nothing announces either. So
+the sources are records, ranked: a name a person typed for this conversation; the Clawdline task
+title, when this app opened the tab; what the conversation calls itself, out of the transcript
+Claude Code writes or the thread metadata Codex keeps; and the short handle Claude Code's session
+registry derives, `clawdline-cb` and the like. When none of them answer it is `⌘<window>-<tab>`,
+which is at least a true statement about this tab and no other.
+
+**And a name is never guessed at.** When nothing can say *which* conversation a tab holds — no
+session id from the registry or a hook, and no process start time this Mac could measure — the field
+falls back rather than naming the project's most recently written transcript. A plausible name
+belonging to somebody else is worse than a coordinate, because nobody checks a name that reads
+right. A client should treat `label` as a display string and never as identity; `sessionId` below is
+the identity, and it is absent exactly when it could not be proved.
+
+`id` is the terminal's own id and is opaque:
 it comes back from iTerm2 or tmux, and a client should carry it around rather than take it apart.
 
 `icon` is the project's mark as colours rather than as a picture — `cells` is rows of `#RRGGBB` or

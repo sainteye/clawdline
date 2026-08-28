@@ -126,7 +126,7 @@ like the treatment is not a test.
 | `WebPush.ttl` | 3600s. Longer than a lift, a tunnel or a meeting; shorter than the point at which the sentence stops being true. |
 | `WebPush.urgency` | `high`. Defensible only because it is rare. |
 | `WebPush.maxPayload` | 3993 octets. If a title and body crowd out the mark, the mark is dropped and the message still goes. |
-| `orchestrator_max_descendants` | 20 — five children with three of their own. The arithmetic that made per-tab pushes untenable. |
+| `orchestrator_max_descendants` | `orchestrator_max_children` × 4 — twenty at the default, and the tree is one level deep, so that is four roots with five children each. The arithmetic that made per-tab pushes untenable. |
 | `orchestrator_child_linger` | 180s. How long a finished child's tab is kept before it is closed for you. |
 | `SmartNotification.timeout` | 8s. The most a completion waits for Haiku before the ordinary wording wins. |
 | `SmartNotification.maxPending` | 4. Past the bounded queue, the ordinary notification is sent immediately. |
