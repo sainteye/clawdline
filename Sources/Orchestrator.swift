@@ -1341,6 +1341,9 @@ enum Orchestrator {
         var attachSessionId: String?
         var childTerminalId: String?
         var childBackend: Backend?
+        /// Whether this task's terminal was actually launched with access to the whole task
+        /// root. Persisted because depth settings can change while the tab remains standing.
+        var childTaskRootAccess = false
         var childTTY: String?
         var childPID: Int32?
         var childProcStart: Date?
@@ -1851,6 +1854,9 @@ enum Orchestrator {
     static var scheduleDispatchEnqueuerForTesting: ((@escaping () -> Void) -> Void)?
     /// Test seam: observes the warning decision before optional terminal delivery.
     static var workspaceOverlapObserverForTesting: ((Task, [WorkspaceOverlap]) -> Void)?
+    /// Test receipt for the semantic root-notification boundary. The terminal transport itself
+    /// is exercised elsewhere; this proves a terminal path reached finalization and its notice.
+    static var rootNotificationObserverForTesting: ((Task) -> Void)?
     static var attachedSenderForTesting: ((String, TargetSession) -> String?)?
     /// The session inventory an attachment resolves against, and the starter a tab-opening
     /// dispatch uses.
@@ -1892,6 +1898,8 @@ enum Orchestrator {
         /// minutes after its task ends (see `orchestratorChildLinger`), and for those three
         /// minutes it is a child's tab with nobody behind it.
         let live: Bool
+        /// The launch-time grant, not an inference from the task's current depth setting.
+        var taskRootAccess = false
     }
 
     /// One session blocked on a coordination group. Request delivery and release delivery are
@@ -2109,7 +2117,8 @@ enum Orchestrator {
             let role = Role(taskID: task.id, depth: task.depth, title: task.title,
                             deadline: task.briefedAt?
                                 .addingTimeInterval(Double(task.timeoutMinutes) * 60),
-                            live: !task.state.isTerminal)
+                            live: !task.state.isTerminal,
+                            taskRootAccess: task.childTaskRootAccess)
             // An attached task is a guest in a session somebody else owns. It may say that the
             // session is busy with broker work while it is running, and that is all: it never
             // renames the session, and it leaves nothing behind when it ends. A tab this app
@@ -2342,8 +2351,9 @@ enum Orchestrator {
         case refused(status: Int, code: String, message: String)
     }
 
-    /// Resolve against exactly the terminal-neutral Session population the orchestrator address
-    /// book publishes. Every refusal happens before registration or terminal input.
+    /// Resolve against the full watched Session inventory, which is intentionally wider than the
+    /// terminal-neutral address book published by the orchestrator route. Every refusal happens
+    /// before registration or terminal input.
     ///
     /// `excluding` is the id of the task this decision is *for*. Single-flight is a rule about
     /// two tasks, and a task is not the other one: the serialize queue writes a task into the
@@ -2366,17 +2376,16 @@ enum Orchestrator {
             return .refused(status: 409, code: "attach_unsupported",
                             message: "attach_session names a plain shell with no assistant.")
         }
-        // A standing session in this protocol is a Clawdline child whose tab outlived its first
-        // task, and the role index is exactly the set of tabs this app opened for one. The
-        // restriction is not tidiness: a session a person started for themselves was started
-        // without `--add-dir /tmp/.clawdline`, so the first thing an attached child does — read
-        // its own CHILD.md — is a cross-directory permission question, asked on a tab whose owner
-        // did not ask for any of this. There is no way to grant that after the fact; `--add-dir`
-        // is a launch argument. So the answer is to refuse, by name, before anything is typed.
-        guard let role = roles[sessionID] else {
+        // A standing host needs two launch-time facts: Clawdline opened its tab for a task, and
+        // that process was given the whole task root. A leaf gets only its original task
+        // directory, so it cannot read a new follow-up's sibling CHILD.md even though Clawdline
+        // opened it. Persist the actual grant instead of inferring it from depth: the configured
+        // floor can change while a tab remains standing, but a process's `--add-dir` cannot.
+        guard let role = roles[sessionID], role.taskRootAccess else {
             return .refused(status: 409, code: "attach_not_managed",
-                            message: "attach_session names a session Clawdline did not open for "
-                                   + "a task; only a standing child session can be attached to.")
+                            message: "attach_session names a session without Clawdline's "
+                                   + "launch-time task-root access; it cannot read a new "
+                                   + "follow-up task's CHILD.md.")
         }
         guard resident == assistant else {
             return .refused(status: 409, code: "attach_assistant_mismatch",
@@ -3665,6 +3674,9 @@ enum Orchestrator {
         task.isolation = made.isolation
         task.worktree = preparedWorktree
         task.attachSessionId = made.attachSessionId
+        // `resolveAttachment` accepts only a host whose launch-time grant covers the task root.
+        // A guest inherits that property while it temporarily supplies the session's live role.
+        task.childTaskRootAccess = made.attachSessionId != nil
         worktreeWarnings += prepareClaimsForIsolation(&task)
         task.claimKeys = freezeClaims(task.claims, projectDir: task.projectDir)
         if !task.serialize.isEmpty {
@@ -3864,6 +3876,7 @@ enum Orchestrator {
             task.spawnedAt = Date()
             task.childTerminalId = id
             task.childBackend = backend
+            task.childTaskRootAccess = mayDispatch
         }
         return task
     }
@@ -3964,16 +3977,16 @@ enum Orchestrator {
         let overlaps = workspaceOverlaps(for: starting)
         notifyWorkspaceOverlaps(newTask: starting, overlaps: overlaps)
 
-        var opened = spawn(starting)
+        let opened = spawn(starting)
         if opened.state == .spawnFailed {
-            // This is the queued form of the dispatch-time tab refusal above. It still never ran:
-            // do not announce a task completion, cancel descendants, or dispose the worktree a
-            // second time merely because a serialize token delayed the attempt to open its tab.
-            opened.workCleanupAt = reclaimDeadline(
-                minutes: Config.shared.orchestratorWorkGraceMinutes, outcome: .spawnFailed)
-            opened.buildCleanupAt = opened.worktree == nil ? nil : reclaimDeadline(
-                minutes: Config.shared.orchestratorBuildGraceMinutes, outcome: .spawnFailed)
-            guard replaceTask(opened, expecting: .spawning, discardSecret: true) else { return nil }
+            // The dispatch that returned `202 queued` is long over. Unlike an immediate
+            // tab-opening refusal, nobody is holding an HTTP response that reports this ending;
+            // run the ordinary finalization tail so audit, batch accounting and the typed root
+            // notice all happen. The outer pump pass, not finalize, chooses the next waiter.
+            let fail = {
+                finalize(id, as: .spawnFailed, summary: opened.summary, pumpQueue: false)
+            }
+            if Thread.isMainThread { fail() } else { DispatchQueue.main.sync(execute: fail) }
             return held(id)
         }
         guard replaceTask(opened, expecting: .spawning) else { return nil }
@@ -4008,8 +4021,8 @@ enum Orchestrator {
     }
 
     /// Serialize pumps rather than opening on their callers. The outer pass is responsible for
-    /// the next waiter; a pump-triggered tab-opening refusal is recorded directly because the
-    /// task never ran and has no task-finalization side effects to perform.
+    /// the next waiter; a pump-triggered tab-opening refusal still finalizes because the queued
+    /// dispatch response is already gone and root otherwise receives no completion signal.
     private static func scheduleSerializePump() {
         serializePumpQueue.async { _ = pumpSerializeQueue() }
     }
@@ -5584,12 +5597,21 @@ enum Orchestrator {
         // may have advanced the record.
         guard var task = held(snapshot.id), task.state == .spawning else { return false }
         guard let spawnedAt = task.spawnedAt else { return false }
+        let spawningAge = Date().timeIntervalSince(spawnedAt)
         // `readyLimit` measures whether a tab this dispatch opened ever reached a prompt. An
-        // attached task has no tab-opening phase: `spawnAttached` already typed its first line
-        // before registration returned. A standing session may leave a permission or plan menu
-        // up for its owner longer than four minutes without turning delivered work into a false
-        // `spawn_failed` record.
-        if task.attachSessionId == nil && Date().timeIntervalSince(spawnedAt) > readyLimit {
+        // attached task has no tab-opening phase: `spawnAttached` typed its first line before
+        // registration returned, so four minutes would be a false `spawn_failed` while its owner
+        // considers a menu. It is still bounded by the task's own timeout, measured from that
+        // delivery, so a permanently unanswered menu cannot retain claims or the host forever.
+        if task.attachSessionId != nil
+            && spawningAge > TimeInterval(task.timeoutMinutes * 60) {
+            guard replaceTask(task, expecting: .spawning) else { return false }
+            finalize(task.id, as: .timeout,
+                     summary: "The attached briefing was not accepted within the task's "
+                            + "\(task.timeoutMinutes)-minute timeout.")
+            return false // finalize saved and broadcast already
+        }
+        if task.attachSessionId == nil && spawningAge > readyLimit {
             guard replaceTask(task, expecting: .spawning) else { return false }
             finalize(task.id, as: .spawnFailed,
                      summary: "The child session did not reach a prompt within "
@@ -6115,10 +6137,10 @@ enum Orchestrator {
     }
 
     /// Close a reported child's terminal once its linger has run out. True when the record changed.
-    private static func closeChild(_ task: Task) -> Bool {
+    static func closeChild(_ task: Task, seen supplied: [TargetSession]? = nil) -> Bool {
         guard let closeAt = task.closeAt, let childID = task.childTerminalId else { return false }
         let now = Date()
-        let seen = SessionWatch.shared.targets
+        let seen = supplied ?? SessionWatch.shared.targets
         let child = seen.first { $0.id == childID }
         let step = closeStep(now: now, closeAt: closeAt, sawTerminals: !seen.isEmpty,
                              child: child, assistant: task.assistant, tty: task.childTTY,
@@ -6141,15 +6163,16 @@ enum Orchestrator {
     }
 
     /// The half of `closeChild` that touches a terminal, once the decision is made.
-    private static func takeChildTab(_ child: TargetSession, justTheTab: Bool,
-                                     for task: Task) -> Bool {
+    static func takeChildTab(_ child: TargetSession, justTheTab: Bool,
+                             for task: Task,
+                             end: @escaping (TargetSession, Bool) -> String? = endChildTab) -> Bool {
         guard settleChildLinger(task) else { return false }
         RemoteAuth.audit("orchestrator.close", ["task": task.id, "child": child.id,
                                                  "how": justTheTab ? "tab" : "exit"])
         // Off the main thread: `end` types the quit word, waits for it to land, then closes the
         // tab, and a second of that on the main thread is a second the panel does not draw.
         DispatchQueue.global(qos: .utility).async {
-            if let failure = endChildTab(child, justTheTab: justTheTab) {
+            if let failure = end(child, justTheTab) {
                 Log.write("orchestrator: could not close the child — \(failure)")
             } else if let worktree = task.worktree {
                 scheduleWorktreeDisposal(worktree, taskID: task.id, why: "empty",
@@ -6674,6 +6697,7 @@ enum Orchestrator {
     }
 
     private static func notifyRoot(_ task: Task) {
+        rootNotificationObserverForTesting?(task)
         guard Config.shared.orchestratorNotifyRoot else { return }
         if let parentID = task.parentTaskId, let parent = held(parentID),
            !parent.state.isTerminal, let terminalID = parent.childTerminalId,
@@ -6967,10 +6991,13 @@ enum Orchestrator {
         failing or cancelling this task does not end this session; after `result.json` is written,
         leave the tab ready for the next complete follow-up task.
 
-        Clawdline opened this standing session for an earlier task, so it already has the
-        `/tmp/.clawdline` access a child needs. This follow-up did not open the tab, however: if
-        any permission, plan or confirmation menu appears, leave it for the session's owner.
-        Clawdline does not choose from a menu on a session this task did not open.
+        Clawdline recorded that this process was launched with access to the whole
+        `/tmp/.clawdline` task root; sessions given only their original task directory are
+        refused before a follow-up is typed. This follow-up did not open the tab, however: if any
+        permission, plan or confirmation menu appears, leave it for the session's owner.
+        Clawdline does not choose from a menu on a session this task did not open. If the briefing
+        is still unaccepted when this task's timeout expires, the task ends as `timeout` and
+        releases the standing session and its claims.
 
         """
         return """
@@ -8279,6 +8306,7 @@ enum Orchestrator {
         if let v = task.attachSessionId { out["attach_session"] = v }
         if let v = task.childTerminalId { out["child_terminal"] = v }
         if let v = task.childBackend { out["child_backend"] = v.rawValue }
+        if task.childTaskRootAccess { out["child_task_root_access"] = true }
         if let v = task.childTTY { out["child_tty"] = v }
         if let v = task.childPID { out["child_pid"] = Int(v) }
         if let v = task.childProcStart { out["child_proc_start"] = v.timeIntervalSince1970 }
@@ -8527,6 +8555,7 @@ enum Orchestrator {
         task.depth = (obj["depth"] as? Int).map { min(max($0, 1), 9) } ?? 1
         task.childTerminalId = obj["child_terminal"] as? String
         task.childBackend = (obj["child_backend"] as? String).flatMap(Backend.init(rawValue:))
+        task.childTaskRootAccess = obj["child_task_root_access"] as? Bool == true
         task.childTTY = obj["child_tty"] as? String
         task.childPID = (obj["child_pid"] as? Int).flatMap(Int32.init(exactly:))
         task.childProcStart = (obj["child_proc_start"] as? Double)
@@ -8731,6 +8760,7 @@ enum Orchestrator {
         scheduleRunnerForTesting = nil
         scheduleDispatchEnqueuerForTesting = nil
         workspaceOverlapObserverForTesting = nil
+        rootNotificationObserverForTesting = nil
         attachedSenderForTesting = nil
         attachmentInventoryForTesting = nil
         taskStarterForTesting = nil

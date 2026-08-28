@@ -356,7 +356,7 @@ Validation is strict and the refusal is `422 bad_task` with a message naming the
 | `serialize` | optional array of 0…4 unique operation names. Each uses the `model` token rule: 1…64 characters from `[a-z0-9._-]`, not starting with `-` |
 | `isolation` | optional `none` or `worktree`; absent is `none`. Unknown values are refused, never downgraded |
 | `isolation_base` | optional Git revision, legal only with `isolation: "worktree"`; 1…200 characters from letters, digits, `._/-~`, not starting with `-` and not containing `..`. Absent means `HEAD`; it must resolve to a commit |
-| `attach_session` | optional terminal-neutral Session id of a standing session — one Clawdline itself opened for an earlier task. When present, deliver this complete task into that existing assistant session without opening a tab. A session a person started for themselves is `409 attach_not_managed` |
+| `attach_session` | optional terminal-neutral Session id of a standing session Clawdline opened with launch-time access to the whole task root. When present, deliver this complete task into that existing assistant session without opening a tab. A user-opened session or a Clawdline leaf launched with access only to its original task directory is `409 attach_not_managed` |
 | `project_dir` | absolute, exists, and is a directory — checked at dispatch, not at planning time |
 | `title` | ≤ 200 characters |
 | `instructions` | non-empty, ≤ 16 KiB |
@@ -439,13 +439,14 @@ serialize tokens, timeout, usage, result signal, landing record and inflight vis
 difference is that Clawdline types the ordinary first line into the named existing session instead
 of opening a terminal tab. The public task record carries `attached: true` and `attachSession`.
 
-**The session has to be one Clawdline opened for a task.** A standing session in this protocol is
-a child whose tab outlived its first task, and that is not a formality: a tab this app opened for a
-task was started with `--add-dir /tmp/.clawdline`, and a session somebody started for themselves
-was not. `--add-dir` is a launch argument, so there is no way to grant it afterwards — the attached
-child's very first act, reading its own `CHILD.md`, would be a cross-directory permission question
-on somebody else's tab, with nobody watching it on the child's behalf. Naming a session with no
-task role is `409 attach_not_managed`, refused before anything is typed.
+**The session needs a recorded task role and the right launch-time grant.** Clawdline gives the
+whole `/tmp/.clawdline` task root only to a child that may dispatch; a leaf gets only
+`/tmp/.clawdline/<its-original-task-id>`. The latter cannot read a new follow-up's sibling
+`CHILD.md`, even though Clawdline opened its tab. A user-opened assistant likewise has no recorded
+task-root grant. Because `--add-dir` cannot be added to a running process, either shape is
+`409 attach_not_managed`, refused before anything is typed. The registry persists the actual grant
+used at launch rather than inferring it from depth, since dispatch settings may change while a tab
+remains standing.
 
 The id is resolved against every terminal session Clawdline can see, which is wider than the
 assistant-only rows `GET /v1/orchestrator/sessions` publishes — a plain shell resolves and is then
@@ -460,9 +461,10 @@ coordination-wait delivery; a confirmed menu refuses the dispatch before any lin
 record is created.
 
 An attached task keeps the standing session's existing depth — the depth of the task that session
-was opened for — including at the configured depth floor. It opens no tab and therefore spends no child,
-grandchild, or machine tab-opening capacity, although it remains a live task, passes through the
-dispatch rate limiter and quota gate, and holds its ordinary claims and serialize reservations.
+was opened for. Acceptance depends on the persisted task-root grant, not that number: a leaf that
+was launched with only its own task directory is refused. It opens no tab and therefore spends no
+child, grandchild, or machine tab-opening capacity, although it remains a live task, passes through
+the dispatch rate limiter and quota gate, and holds its ordinary claims and serialize reservations.
 If terminal delivery itself fails, the registered task finalizes as `spawn_failed` and the request
 returns `502 attach_delivery_failed`.
 
@@ -482,14 +484,17 @@ confirmation from the work already resident in that tab. Those are left standing
 `orchestrator.menu.left`; once that first decision is recorded, an unchanged menu does not rewrite
 the registry or broadcast every five seconds.
 
-**A standing session already has `/tmp/.clawdline` access.** Only a tab Clawdline opened for an
-earlier task may be attached to, and that tab was launched with the add-dir grant a child needs.
-A user-opened assistant session is refused as `409 attach_not_managed` before anything is typed;
-`--add-dir` cannot be added to a running process.
+**An attachable standing session already has `/tmp/.clawdline` access.** Clawdline records whether
+that exact add-dir grant was used when the process launched. A user-opened assistant and a
+Clawdline-opened leaf that received only its own task directory are both refused as
+`409 attach_not_managed` before anything is typed; `--add-dir` cannot be added afterwards.
 
 The four-minute `readyLimit` applies only to a new tab that never reaches a prompt. An attached
 task's first line was already typed by `spawnAttached`, so waiting longer for the standing
-session's owner to answer a menu does not relabel delivered work as `spawn_failed`.
+session's owner to answer a menu does not relabel delivered work as `spawn_failed`. The wait is
+nevertheless bounded: before transcript acceptance, its ordinary `timeout_minutes` runs from that
+delivery. Expiry finalizes the task as `timeout`, releases claims and serialize tokens, and returns
+the standing session to its earlier role.
 
 For `worktree`, the broker resolves the base to a commit SHA and records that immutable value.
 Branch names and `HEAD` can move while other sessions commit; the SHA is the receipt for what the

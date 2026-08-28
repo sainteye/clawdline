@@ -13583,7 +13583,13 @@ group("attached follow-up tasks are single-flight broker work in a standing sess
         timeoutMinutes: 30, created: Date(), attachSessionId: standing.id,
         childTerminalId: standing.id, secretHash: String(repeating: "0", count: 64))
     let role = Orchestrator.Role(taskID: existing.id, depth: 2, title: existing.title,
-                                 deadline: nil, live: false)
+                                 deadline: nil, live: false, taskRootAccess: true)
+    let leafRole = Orchestrator.Role(taskID: existing.id, depth: 2, title: existing.title,
+                                     deadline: nil, live: false, taskRootAccess: false)
+    var durableGrant = existing
+    durableGrant.childTaskRootAccess = true
+    check("the launch-time task-root grant survives a registry round trip",
+          Orchestrator.task(from: Orchestrator.stored(durableGrant))?.childTaskRootAccess == true)
 
     func refusal(_ decision: Orchestrator.AttachmentDecision) -> (Int, String)? {
         guard case .refused(let status, let code, _) = decision else { return nil }
@@ -13608,6 +13614,11 @@ group("attached follow-up tasks are single-flight broker work in a standing sess
            refusal(Orchestrator.attachmentDecision(
             sessionID: standing.id, assistant: .claude, sessions: [standing], states: [:],
             tasks: [], roles: [:], isChoosing: { _ in false }))?.1,
+           "attach_not_managed")
+    expect("a managed leaf without task-root access cannot host a follow-up",
+           refusal(Orchestrator.attachmentDecision(
+            sessionID: standing.id, assistant: .codex, sessions: [standing], states: [:],
+            tasks: [], roles: [standing.id: leafRole], isChoosing: { _ in false }))?.1,
            "attach_not_managed")
     expect("the task assistant must match the standing assistant",
            refusal(Orchestrator.attachmentDecision(
@@ -17192,8 +17203,28 @@ group("every terminal path keeps the reclaim contract at its real filesystem bou
     check("the reclaim half of a beat settles both deadlines",
           Orchestrator.reclaimTaskWorkIfDue(staleID)
             && Orchestrator.reclaimTaskBuildIfDue(staleID))
-    check("and closing from the beat's older snapshot cannot resurrect either deadline",
-          Orchestrator.settleChildLinger(stale)
+    let unrelated = TargetSession(backend: .iterm, id: "OTHER-TAB", name: "other",
+                                  tty: "/dev/ttys099", windowIndex: 0, tabIndex: 0,
+                                  assistant: .codex, cwd: "/tmp")
+    check("and closeChild's stale snapshot cannot resurrect either deadline",
+          Orchestrator.closeChild(stale, seen: [unrelated])
+            && Orchestrator.workCleanupAtForTesting(staleID) == nil
+            && Orchestrator.buildCleanupAtForTesting(staleID) == nil)
+
+    var staleTake = stale
+    staleTake.closeAt = Date().addingTimeInterval(-1)
+    staleTake.workCleanupAt = Date().addingTimeInterval(-1)
+    staleTake.buildCleanupAt = Date().addingTimeInterval(-1)
+    Orchestrator.holdScheduleTaskForTesting(staleTake)
+    check("the second reclaim settles both deadlines before takeChildTab",
+          Orchestrator.reclaimTaskWorkIfDue(staleID)
+            && Orchestrator.reclaimTaskBuildIfDue(staleID))
+    let child = TargetSession(backend: .iterm, id: "TAB", name: "child",
+                              tty: "/dev/ttys098", windowIndex: 0, tabIndex: 0,
+                              assistant: .codex, cwd: "/tmp")
+    check("and takeChildTab's stale snapshot cannot resurrect either deadline",
+          Orchestrator.takeChildTab(child, justTheTab: true, for: staleTake,
+                                    end: { _, _ in nil })
             && Orchestrator.workCleanupAtForTesting(staleID) == nil
             && Orchestrator.buildCleanupAtForTesting(staleID) == nil)
 }
@@ -17389,6 +17420,8 @@ group("cleanup documentation describes the API and runtime contract, not registr
     let registryRecord = Orchestrator.stored(task)
     let api = try! String(contentsOfFile: "docs/api.md", encoding: .utf8)
     let guide = try! String(contentsOfFile: "docs/orchestrator.md", encoding: .utf8)
+    let implementation = try! String(contentsOfFile: "Sources/Orchestrator.swift",
+                                     encoding: .utf8)
     check("cleanup deadlines are registry-internal and absent from the public task shape",
           publicRecord["work_cleanup_at"] == nil && publicRecord["build_cleanup_at"] == nil
             && registryRecord["work_cleanup_at"] != nil
@@ -17401,6 +17434,8 @@ group("cleanup documentation describes the API and runtime contract, not registr
             && guide.contains("every terminal outcome inside `finalize`"))
     check("both pages name the child cwd as the build-output boundary",
           api.contains("<worktree.cwd>/.build") && guide.contains("<worktree.cwd>/.build"))
+    check("the attachment resolver comment names its wider watched-session inventory",
+          implementation.contains("full watched Session inventory, which is intentionally wider"))
 }
 
 // Everything past `attachmentDecision` was untested: `spawnAttached`, the 502, the single-flight
@@ -17429,7 +17464,9 @@ group("an attached follow-up goes through dispatch, and survives its own single-
     let standing = session("STANDING-ONE")
     let second = session("STANDING-TWO")
     let third = session("STANDING-THREE")
-    func keepAsStandingChild(_ session: TargetSession, depth: Int) {
+    @discardableResult
+    func keepAsStandingChild(_ session: TargetSession, depth: Int,
+                             taskRootAccess: Bool) -> String {
         var opener = Orchestrator.Task(
             id: UUID().uuidString.lowercased(), state: .success, kind: "custom",
             title: "standing child \(session.id)", assistant: .codex, projectDir: "/tmp",
@@ -17438,11 +17475,13 @@ group("an attached follow-up goes through dispatch, and survives its own single-
         opener.depth = depth
         opener.finishedAt = Date().addingTimeInterval(-3_000)
         opener.childTerminalId = session.id
+        opener.childTaskRootAccess = taskRootAccess
         Orchestrator.holdScheduleTaskForTesting(opener)
+        return opener.id
     }
-    keepAsStandingChild(standing, depth: 1)
-    keepAsStandingChild(second, depth: 1)
-    keepAsStandingChild(third, depth: 2)
+    let standingOpenerID = keepAsStandingChild(standing, depth: 1, taskRootAccess: true)
+    _ = keepAsStandingChild(second, depth: 1, taskRootAccess: true)
+    _ = keepAsStandingChild(third, depth: 2, taskRootAccess: false)
     Orchestrator.saveForTesting()
     Orchestrator.attachmentInventoryForTesting = ([standing, second, third], [:])
     AssistantQuota.setOverrideForTesting(
@@ -17544,6 +17583,12 @@ group("an attached follow-up goes through dispatch, and survives its own single-
            refusal(Orchestrator.dispatch(taskID: unknownID, secret: secret("d4")))?.1,
            "attach_session_not_found")
 
+    let leafID = UUID().uuidString.lowercased()
+    write(leafID, attach: third.id, root: "root-b")
+    expect("a Clawdline leaf without the launch-time task-root grant is refused before typing",
+           refusal(Orchestrator.dispatch(taskID: leafID, secret: secret("d5")))?.1,
+           "attach_not_managed")
+
     // The one typed refusal with no test at all, and its seam was already in the file.
     deliveryFails = true
     let deadID = UUID().uuidString.lowercased()
@@ -17567,7 +17612,7 @@ group("an attached follow-up goes through dispatch, and survives its own single-
     holder.serialize = ["attach-and-serialize"]
     Orchestrator.holdScheduleTaskForTesting(holder)
     let queuedID = UUID().uuidString.lowercased()
-    write(queuedID, attach: third.id, serialize: ["attach-and-serialize"], root: "root-c")
+    write(queuedID, attach: second.id, serialize: ["attach-and-serialize"], root: "root-c")
     let queued = Orchestrator.dispatch(taskID: queuedID, secret: secret("f6"))
     if case .ok(let payload) = queued {
         expect("an attached serialized task waits for its token like any other",
@@ -17580,7 +17625,7 @@ group("an attached follow-up goes through dispatch, and survives its own single-
     expect("and is briefed, not refused for being itself",
            Orchestrator.record(id: queuedID)?["state"] as? String, "spawning")
     check("its briefing reached the standing session it named",
-          typed.contains { $0.0 == third.id && $0.1.contains(queuedID) })
+          typed.contains { $0.0 == second.id && $0.1.contains(queuedID) })
 
     // Finding 6. A guest does not rename its host, and takes its role with it when it leaves.
     Orchestrator.saveForTesting()
@@ -17589,9 +17634,10 @@ group("an attached follow-up goes through dispatch, and survives its own single-
     expect("while it runs, the session says which broker task has it",
            Orchestrator.role(forTerminal: standing.id)?.taskID, attachedID)
     Orchestrator.finalize(attachedID, as: .success, summary: "follow-up done")
-    check("and when it ends the standing session is a standing session again",
-          Orchestrator.role(forTerminal: standing.id)?.taskID != attachedID
-            && Orchestrator.title(forTerminal: standing.id) == "standing child \(standing.id)")
+    expect("and when it ends the standing session recovers its exact opener role",
+           Orchestrator.role(forTerminal: standing.id)?.taskID, standingOpenerID)
+    expect("and it keeps the standing child's title",
+           Orchestrator.title(forTerminal: standing.id), "standing child \(standing.id)")
 }
 
 // Finding 9. `readResult` was widened to run on every finalize so that a `verification` object
@@ -17666,16 +17712,16 @@ group("Clawdline answers a menu only on a tab it opened itself") {
            Orchestrator.menuStep(task: task(attachedTo: nil, answered: true), choosing: true),
            Orchestrator.MenuStep.none)
     let brief = Orchestrator.childBrief(for: task(attachedTo: "STANDING", answered: false))
-    check("the attached briefing says the host is managed and who owns its menu decisions",
-          brief.contains("Clawdline opened this standing session")
+    check("the attached briefing says the host grant was recorded and who owns menu decisions",
+          brief.contains("launched with access to the whole")
             && brief.contains("leave it for the session's owner"))
 }
 
-// Finding 5. `finalize` is the one place a task ends, and everything it does — notifying the
-// root's terminal, batching the ending, cancelling descendants, disposing a worktree — belongs
-// to a task that actually ran. A tab that never opened is answered by the response the caller
-// is still holding.
-group("a dispatch that could not open a tab answers the caller, and cascades nothing") {
+// An immediate tab refusal is carried by the HTTP response its caller is still holding, so it
+// records the terminal row without finalization side effects. A serialize pump has no such live
+// response: its earlier request returned `queued`, so a later refusal must take the complete
+// finalize path, including the root notice and descendant cancellation.
+group("dispatch answers an immediate tab refusal; the later pump finalizes its refusal") {
     let manager = FileManager.default
     let store = Orchestrator.storeURL
     let storeBefore = try? Data(contentsOf: store)
@@ -17699,6 +17745,8 @@ group("a dispatch that could not open a tab answers the caller, and cascades not
                  message: "no terminal is running", app: "iTerm")
     }
     Orchestrator.workspaceOverlapObserverForTesting = { _, _ in }
+    var rootNotifications: [String] = []
+    Orchestrator.rootNotificationObserverForTesting = { rootNotifications.append($0.id) }
 
     let parentID = UUID().uuidString.lowercased()
     let directory = Orchestrator.root.appendingPathComponent(parentID, isDirectory: true)
@@ -17732,9 +17780,8 @@ group("a dispatch that could not open a tab answers the caller, and cascades not
     check("the failed dispatch still owes its reclaim deadline like every other ending",
           Orchestrator.workCleanupAtForTesting(parentID) != nil)
 
-    // F9 is the same refusal through the serialize pump. The HTTP request returned `queued`
-    // earlier, but a task whose tab never opened still never ran and therefore cannot cascade
-    // into work somebody happened to record below its id.
+    // The pump is deliberately different: the HTTP request returned `queued` earlier, so this
+    // ending has no other delivery path and takes finalize's complete terminal contract.
     let holderID = UUID().uuidString.lowercased()
     var holder = Orchestrator.Task(
         id: holderID, state: .briefed, kind: "custom", title: "holds pump token",
@@ -17779,8 +17826,37 @@ group("a dispatch that could not open a tab answers the caller, and cascades not
     Orchestrator.holdScheduleTaskForTesting(pumpedChild)
     Orchestrator.finalize(holderID, as: .success, summary: "release pump token")
     _ = Orchestrator.drainSerializePumpForTesting(timeout: 5)
-    expect("a pumped tab-opening failure also cascades into nothing",
-           Orchestrator.record(id: pumpedChildID)?["state"] as? String, "queued")
+    expect("a pumped tab-opening failure cancels work recorded below it",
+           Orchestrator.record(id: pumpedChildID)?["state"] as? String, "cancelled")
+    check("and reaches the root-notification boundary because its dispatch reply is long gone",
+          rootNotifications.contains(pumpedID))
+
+    let reclaimHolderID = UUID().uuidString.lowercased()
+    var reclaimHolder = Orchestrator.Task(
+        id: reclaimHolderID, state: .briefed, kind: "custom", title: "reclaim holder",
+        assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+        secretHash: String(repeating: "0", count: 64))
+    reclaimHolder.serialize = ["pump-reclaim-deadlines"]
+    Orchestrator.holdScheduleTaskForTesting(reclaimHolder)
+    let reclaimID = UUID().uuidString.lowercased()
+    let reclaimSecret = String(repeating: "c3", count: 32)
+    var reclaim = Orchestrator.Task(
+        id: reclaimID, state: .queued, kind: "custom", title: "pumped reclaim refusal",
+        assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+        secretHash: Orchestrator.hash(ofSecret: reclaimSecret))
+    reclaim.serialize = ["pump-reclaim-deadlines"]
+    reclaim.queuedSecret = Orchestrator.sealQueuedSecret(reclaimSecret)!
+    reclaim.isolation = .worktree
+    let fakePath = Orchestrator.worktreePath(project: "/tmp", taskID: reclaimID)!
+    reclaim.worktree = Orchestrator.Worktree(
+        path: fakePath, branch: "clawdline/task/\(reclaimID)", base: "deadbeef",
+        repository: "/tmp", cwd: fakePath)
+    Orchestrator.holdScheduleTaskForTesting(reclaim)
+    Orchestrator.finalize(reclaimHolderID, as: .success, summary: "release reclaim token")
+    _ = Orchestrator.drainSerializePumpForTesting(timeout: 5)
+    check("a pump-promoted tab refusal carries both reclaim deadlines",
+          Orchestrator.workCleanupAtForTesting(reclaimID) != nil
+            && Orchestrator.buildCleanupAtForTesting(reclaimID) != nil)
 }
 
 group("an attached briefing is delivered work, not a tab still trying to open") {
@@ -17804,15 +17880,17 @@ group("an attached briefing is delivered work, not a tab still trying to open") 
             id: id, state: .spawning, kind: "custom", title: "old briefing",
             assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
             secretHash: String(repeating: "0", count: 64))
-        task.spawnedAt = Date().addingTimeInterval(-Orchestrator.readyLimit - 1)
+        let age = attached ? TimeInterval(task.timeoutMinutes * 60 + 1)
+                           : Orchestrator.readyLimit + 1
+        task.spawnedAt = Date().addingTimeInterval(-age)
         task.attachSessionId = attached ? "STANDING" : nil
         return task
     }
     let attached = oldSpawning(attached: true)
     Orchestrator.holdScheduleTaskForTesting(attached)
     Orchestrator.beat(fromTimer: true)
-    expect("an attached task is not called spawn_failed while its owner answers a menu",
-           Orchestrator.record(id: attached.id)?["state"] as? String, "spawning")
+    expect("an attached briefing reaches the task timeout while its owner leaves a menu open",
+           Orchestrator.record(id: attached.id)?["state"] as? String, "timeout")
 
     let opening = oldSpawning(attached: false)
     Orchestrator.holdScheduleTaskForTesting(opening)
