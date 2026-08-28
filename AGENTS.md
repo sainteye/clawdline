@@ -130,6 +130,26 @@ runs.
 A new test must be seen red before the change that makes it green. A test born green proves
 nothing: reviews here have repeatedly found suites that stayed green after the guarded logic was
 replaced with a stub — or deleted outright. Break the thing once, watch the test catch it, then fix it.
+
+### To compare two surfaces, hold the observed thing still
+
+Two sessions asked the same question: is a task's cost a stored fact, or something computed at the
+moment it is served? One compared *the first record on disk that has a `usage` block* against *the
+first record in the HTTP response that has one* — *two different tasks* — and read the difference
+between two rows as a difference between two surfaces, then wrote an acceptance condition on top
+of a mechanism that does not exist. The other compared **one task across both surfaces** and had
+the answer immediately: when the cost is there it is a recorded fact and the exit merely spells it
+in camel case; when it is not, neither surface has it and nothing was computed anywhere.
+
+So: **name the single subject first, then look at it through each surface.** Whenever you are
+about to say "the API differs from the registry", "the child sees something different from what
+the root sees", or "this field is computed rather than stored", check that both readings are of
+the *same row, same task, same id*. Different rows are not evidence about surfaces.
+
+This is the sister of the rule about saying what you actually read before claiming to have
+confirmed something, and it is the harder of the two to catch: that one stops an assertion with no
+source, and this one stops an assertion whose sources are real but not aligned. The second kind
+arrives wearing the shape of an experiment, so nobody thinks to question it.
 Do not build from the live working tree, because it may contain another session's partial edits or
 untracked files.
 
