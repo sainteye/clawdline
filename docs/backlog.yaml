@@ -512,3 +512,28 @@ items:
       then delete the guards and confirm the tests still cannot touch a real checkout. If that is
       awkward to arrange, the awkwardness is the finding.
     opened: 2026-08-28
+
+  - id: B-RECLAIM-HAS-NO-BACKFILL
+    title: A task that finished before the deadline field existed never gets one
+    problem: >-
+      `work/` and `.build` are reclaimed on a deadline written when the task reaches a terminal
+      state. Nothing gives a deadline to a task that reached its terminal state earlier, so every
+      task that finished before the field shipped is invisible to the feature that exists to clean
+      up after it. Those directories then wait for the 24-hour whole-task sweep, which takes the
+      evidence with them, or for somebody to notice and delete them by hand. This is not a one-off
+      caused by one upgrade: it is the shape of every future change to how a deadline is decided,
+      so the same orphan set appears again each time.
+    evidence: >-
+      Measured within an hour of the feature landing, 2026-08-28. The new build was installed at
+      12:50:33; `/tmp/.clawdline` held 695 MB across 23 `work/` directories and **not one of them
+      carried a deadline**, because all 23 tasks finished before the build. It was cleared by hand
+      for the third time that day (19 GB at 09:00, 695 MB at 13:00), which is the chore the feature
+      was built to end.
+    severity: degrades
+    cost: hours
+    who_hurts: us
+    trigger: >-
+      Have `cleanup()` give a reclaim deadline to any terminal task that has none, using the same
+      grace rules, so the next pass collects it. Then check the disk an hour after the following
+      upgrade instead of asking somebody to remember.
+    opened: 2026-08-28
